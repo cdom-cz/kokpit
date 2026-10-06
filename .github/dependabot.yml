@@ -1,0 +1,9 @@
+# Dependabot bumps the SHA-pinned GitHub Actions in .github/workflows/ together with their version comments.
+# The curl-installed release binaries (gitleaks, actionlint, zizmor) carry a hard-coded SHA-256 and are bumped
+# by hand, see CONTRIBUTING.md.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

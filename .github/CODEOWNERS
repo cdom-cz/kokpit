@@ -1,0 +1,8 @@
+# Review ownership of the hygiene tooling: a change to any of these paths needs the maintainer.
+# Combined with a ruleset that requires code-owner review, nobody can weaken the gate unnoticed.
+/.github/ @PetrGraf
+/scripts/ @PetrGraf
+/scripts/sensitive-allowlist.txt @PetrGraf
+/lefthook.yml @PetrGraf
+/.gitleaks.toml @PetrGraf
+/.gitleaksignore @PetrGraf

@@ -58,12 +58,51 @@ jobs:
       - name: gitleaks over full history
         run: gitleaks git --config .gitleaks.toml --redact --no-banner --ignore-gitleaks-allow --exit-code 1 .
 
+  # Every change to a workflow is linted by checksum-pinned actionlint and zizmor (offline, no token), so the
+  # gate itself cannot be weakened silently. Digests are hard-coded for the same reason as the gitleaks one.
+  workflow-lint:
+    name: Workflow lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      ACTIONLINT_VERSION: "1.7.12"
+      ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+      ZIZMOR_VERSION: "1.30.1"
+      ZIZMOR_SHA256: "e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a"
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint and zizmor (pinned versions, pinned checksums)
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/bin"
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/actionlint.tar.gz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  ${RUNNER_TEMP}/actionlint.tar.gz" | sha256sum --check --strict -
+          tar -xzf "${RUNNER_TEMP}/actionlint.tar.gz" -C "${RUNNER_TEMP}/bin" actionlint
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/zizmor.tar.gz" \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${ZIZMOR_SHA256}  ${RUNNER_TEMP}/zizmor.tar.gz" | sha256sum --check --strict -
+          tar -xzf "${RUNNER_TEMP}/zizmor.tar.gz" -C "${RUNNER_TEMP}/bin" zizmor
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+
+      - name: actionlint
+        run: actionlint -color
+
+      - name: zizmor (offline, no token)
+        run: zizmor --offline .github/workflows
+
   # Aggregator: the organisation ruleset requires a status check named exactly "CI Passed".
   # always() plus a result check means a failed, skipped or cancelled gated job can never leave it green.
   ci-passed:
     name: CI Passed
     if: ${{ always() }}
-    needs: [scan]
+    needs: [scan, workflow-lint]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
