@@ -2,7 +2,7 @@
 # test-check-sensitive.sh - staged and --all cases for scripts/check-sensitive.sh.
 # Runs the real script against temp repositories; all fake values are built at runtime (see lib.sh).
 HERE=$(cd "$(dirname "$0")" && pwd)
-# shellcheck source=scripts/tests/lib.sh
+# shellcheck source=/dev/null
 . "$HERE/lib.sh"
 SCRIPT="$REPO_ROOT/scripts/check-sensitive.sh"
 

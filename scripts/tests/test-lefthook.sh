@@ -76,16 +76,26 @@ assert_exit 1 "commit from a sub-directory with a staged fake is rejected" in_di
 assert_out_has "sub/s.txt:1: key-prefix" "finding path is repo-relative"
 unstage_all "$repo"
 
-# 5. fail closed: without lefthook on PATH a clean commit is rejected
+# 5. fail closed: when lefthook cannot be found at all, a clean commit is rejected.
+# The generated hook bakes in the absolute path of the lefthook binary that installed it and falls back to it
+# when PATH has no lefthook. To simulate a machine without lefthook, install with a private copy of the
+# binary, delete the copy, and commit with a reduced PATH.
+lhbin="$TEST_TMP/lhbin"
+mkdir -p "$lhbin"
+cp "$(command -v lefthook)" "$lhbin/lefthook" 2> /dev/null || true
 if env PATH=/usr/bin:/bin sh -c 'command -v lefthook' > /dev/null 2>&1; then
   printf 'notice: lefthook is on the reduced PATH, skipping the missing-lefthook case\n'
+elif ! "$lhbin/lefthook" version > /dev/null 2>&1; then
+  printf 'notice: lefthook binary cannot be copied (shim?), skipping the missing-lefthook case\n'
 else
-  head_before=$(git -C "$repo" rev-parse HEAD)
-  stage_file "$repo" clean.txt "second clean content"
-  assert_exit 1 "commit is rejected when lefthook is not on PATH" in_dir "$repo" env PATH=/usr/bin:/bin "$GIT" commit -q -m nolefthook
-  assert_out_has "lefthook" "the rejection names lefthook"
-  assert_eq "HEAD did not move without lefthook" "$head_before" "$(git -C "$repo" rev-parse HEAD)"
-  unstage_all "$repo"
+  repo3=$(hook_repo)
+  assert_exit 0 "installer run with a private lefthook copy" in_dir "$repo3" env PATH="$lhbin:$PATH" scripts/install-hooks.sh
+  rm -rf "$lhbin"
+  head_before=$(git -C "$repo3" rev-parse HEAD)
+  stage_file "$repo3" clean.txt "clean content without lefthook"
+  assert_exit 1 "clean commit is rejected when lefthook cannot be found" in_dir "$repo3" env PATH=/usr/bin:/bin "$GIT" commit -q -m nolefthook
+  assert_out_has "aborted due to lefthook settings" "the rejection comes from assert_lefthook_installed"
+  assert_eq "HEAD did not move without lefthook" "$head_before" "$(git -C "$repo3" rev-parse HEAD)"
 fi
 
 # 6. a configured core.hooksPath: the installer refuses and prints the reset hint
