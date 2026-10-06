@@ -25,6 +25,23 @@ function email_ok(addr,   dom) {
   if (dom ~ /\.(test|invalid|localhost|example)$/) return 1
   return dom == "localhost"
 }
+# True for a routable IPv4 address; private, loopback, link-local, documentation, CGNAT, benchmarking and
+# multicast/reserved ranges are not sensitive. An octet above 255 is not an address at all.
+function ipv4_public(ip,   o, a, b, c) {
+  split(ip, o, "."); a = o[1] + 0; b = o[2] + 0; c = o[3] + 0
+  if (o[1] + 0 > 255 || o[2] + 0 > 255 || o[3] + 0 > 255 || o[4] + 0 > 255) return 0
+  if (a == 0 || a == 10 || a == 127) return 0                      # this-net, RFC1918, loopback
+  if (a == 169 && b == 254) return 0                                # link-local
+  if (a == 172 && b >= 16 && b <= 31) return 0                      # RFC1918
+  if (a == 192 && b == 168) return 0                                # RFC1918
+  if (a == 192 && b == 0 && c == 2) return 0                        # TEST-NET-1
+  if (a == 198 && b == 51 && c == 100) return 0                     # TEST-NET-2
+  if (a == 203 && b == 0 && c == 113) return 0                      # TEST-NET-3
+  if (a == 100 && b >= 64 && b <= 127) return 0                     # CGNAT / Tailscale
+  if (a == 198 && (b == 18 || b == 19)) return 0                    # benchmarking
+  if (a >= 224) return 0                                            # multicast / reserved / broadcast
+  return 1
+}
 # IBAN length by country (exact), so a random uppercase identifier cannot qualify by checksum luck.
 function iban_len_ok(s,   cc) {
   cc = substr(s, 1, 2)
@@ -57,9 +74,13 @@ function scan_re(rule, re, lbad, rbad, s,   off, rest, tok, st, en, cb, ca, cn, 
   }
 }
 # Rule-specific acceptance checks; the generic branch reports every match.
-function handle(rule, tok,   t, n, w, k, m, q) {
+function handle(rule, tok,   t, ip, n, w, k, m, q) {
   if (rule == "email") { if (!email_ok(tok)) hit(rule, tok) }
   else if (rule == "company-id") { t = tok; gsub(/[^0-9]/, "", t); hit(rule, t) }
+  else if (rule == "public-ip") {
+    match(tok, /[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/); ip = substr(tok, RSTART, RLENGTH)
+    if (ipv4_public(ip)) hit(rule, ip)
+  }
   else if (rule == "cz-account") {        # loose core regex, shape check here: [prefix-]number/bank
     split(tok, w, "/"); m = split(w[1], q, "-")
     if (m == 1 && length(q[1]) >= 6 && length(q[1]) <= 10) hit(rule, tok)
@@ -67,6 +88,8 @@ function handle(rule, tok,   t, n, w, k, m, q) {
   } else if (rule == "iban") {            # run of [A-Z0-9 ]; longest whole-word prefix of exact country length that passes mod 97
     n = split(tok, w, " ")
     for (k = n; k >= 1; k--) { t = ""; for (m = 1; m <= k; m++) t = t w[m]; if (iban_len_ok(t) && iban_valid(t)) { hit(rule, t); break } }
+  } else if (rule == "home-path") {       # placeholder account names are not personal
+    if (tok !~ /\/(Users|home)\/(example|user|username|name|you|runner|vagrant|ubuntu|www-data|ddev|Shared)\//) hit(rule, tok)
   } else hit(rule, tok)
 }
 BEGIN {
@@ -83,11 +106,15 @@ BEGIN {
   path = $1; ln = $2; text = $0; sub(/^[^\t]*\t[^\t]*\t/, "", text)
   scan_re("email",        "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z][A-Za-z]+", "[A-Za-z0-9._%+-]", "", text)
   scan_re("company-id",   "[0-9]{8}", "[0-9A-Za-z_./-]", "[0-9A-Za-z_-]", text)
+  scan_re("public-ip",    "[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}", "[0-9A-Za-z_.-]", "[0-9A-Za-z_-]", text)
   scan_re("iban",         "[A-Z][A-Z][0-9][0-9][A-Z0-9 ]+", "[A-Za-z0-9]", "", text)
   scan_re("cz-account",   "[0-9][0-9-]*[0-9]/[0-9]{4}", "[0-9A-Za-z_./-]", "[0-9A-Za-z_-]", text)
+  scan_re("hosting-host", "[A-Za-z0-9.-]+\\.(zerops\\.app|amazonaws\\.com|r2\\.cloudflarestorage\\.com)", "", "[A-Za-z0-9_-]", text)
+  scan_re("hosting-host", "[A-Za-z0-9.-]+\\.(backblazeb2\\.com|wasabisys\\.com|digitaloceanspaces\\.com|linodeobjects\\.com)", "", "[A-Za-z0-9_-]", text)
   scan_re("key-prefix",   "(sk|rk|pk)_live_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}", "[A-Za-z0-9_]", "", text)
   scan_re("key-prefix",   "plink_[A-Za-z0-9]{8,}|acct_[A-Za-z0-9]{8,}", "[A-Za-z0-9_]", "", text)
   scan_re("key-prefix",   "gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}", "[A-Za-z0-9_]", "", text)
   scan_re("key-prefix",   "AKIA[0-9A-Z]{16}", "[A-Za-z0-9_]", "", text)
+  scan_re("home-path",    "/(Users|home)/[A-Za-z0-9._-]+/", "", "", text)
 }
 END { exit(found ? 1 : 0) }
