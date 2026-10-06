@@ -5,8 +5,12 @@
 *.pem
 *.key
 
-# Local AI tooling and IDE settings
-.claude/settings.local.json
+# Local AI tooling and IDE settings. Only .claude/CLAUDE.md is versioned. The directory itself must never
+# be ignored (".claude/"): git cannot re-include a file below an excluded parent, so the negation would
+# be silently dead. The negation must also come after the wildcard (last matching pattern wins).
+.claude/*
+!.claude/CLAUDE.md
+CLAUDE.local.md
 .idea/
 .vscode/
 .DS_Store
