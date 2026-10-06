@@ -18,6 +18,17 @@ BOTH_PHRASES=(
 
 # Phrases only CONTRIBUTING.md must contain (the full hygiene reference).
 CONTRIB_PHRASES=(
+  'secret scanning'
+  'push protection'
+  'KOKPIT_DENYLIST'
+  'CI Passed'
+  '--no-verify'
+  'LEFTHOOK=0'
+  'SECURITY.md'
+  'lefthook 2.1.17'
+  'gitleaks 8.30.1'
+  'scripts/install-hooks.sh'
+  'Require actions to be pinned to a full-length commit SHA'
 )
 
 # has_phrase <file> <phrase>: byte-wise fixed-string match

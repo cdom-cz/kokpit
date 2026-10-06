@@ -6,10 +6,136 @@ Kokpit is a public AGPL-3.0 project. This guide currently covers repository hygi
 
 The rule is: **Fictional data only.** Never put client names, prices, rates, invoice or production data, real e-mail addresses, company IDs, bank accounts, IP addresses, hostnames, tokens or personal absolute paths into code, tests, fixtures, docs, planning docs under `.planning/`, or commit messages.
 
-Use `example.com` addresses, the placeholder company ID `12345678`, paths like `/Users/example/`, and test fakes assembled at runtime from fragments.
+Use `example.com` addresses, the placeholder company ID `12345678`, paths like `/Users/example/`, and test fakes assembled at runtime from fragments, so that no single line of a test file looks like a real value.
 
 Review procedure before every commit:
 
 1. `git status`
 2. `git diff --staged`
 3. `scripts/check-sensitive.sh`
+
+Commit author name and e-mail are Git metadata and are not scanned. Each contributor decides what identity to commit with.
+
+## Setup
+
+Required tools: lefthook and gitleaks. Optional: shellcheck (lints the scripts).
+
+Tested versions: lefthook 2.1.17 (minimum 2.1.0) and gitleaks 8.30.1.
+
+Install with either of:
+
+    brew install lefthook gitleaks
+    mise use -g lefthook@2.1.17 gitleaks@8.30.1
+
+Do not use the npm package for lefthook; use one of the commands above.
+
+Run `scripts/install-hooks.sh` after every fresh clone. It checks both tools, refuses a `core.hooksPath` override, runs `lefthook install` and verifies the hook is in place. It is idempotent.
+
+The pre-commit hook runs two jobs in order: `sensitive-content` (`scripts/check-sensitive.sh` over the staged changes), then `gitleaks` over the staged changes. If lefthook is not installed, the generated hook aborts the commit instead of skipping it.
+
+Run the self-tests with `scripts/tests/run.sh` (`--quick` skips the tests that need lefthook or gitleaks). `scripts/tests/run-in-ubuntu.sh` repeats the quick suite in a container with the awk and grep flavours CI uses.
+
+## What the checker flags
+
+`scripts/check-sensitive.sh` reports the following categories. The rule name is what appears in a finding.
+
+| Rule | What it flags |
+|---|---|
+| `key-prefix` | Secret-key and token prefixes with a body: Stripe, GitHub and AWS style keys |
+| `email` | E-mail addresses outside `example.com`, `example.org`, `example.net`, `.test`, `.invalid`, `.localhost` |
+| `company-id` | 8-digit company-ID-like numbers (the placeholders `12345678` and `00000000` are allowed) |
+| `iban` | IBANs with a valid country length and checksum, also in groups of four |
+| `cz-account` | Czech account numbers, with or without prefix |
+| `public-ip` | Public IPv4 addresses (private, loopback, link-local, documentation and similar ranges are allowed) |
+| `hosting-host` | Zerops and S3-provider endpoint hostnames |
+| `home-path` | Personal absolute home paths such as `/Users/<name>/` or `/home/<name>/` (placeholder names are allowed) |
+| `denylist` | Terms from your local denylist, see below |
+
+Modes:
+
+- no argument (or `--staged`): the added lines of the staged diff. This is what the hook runs.
+- `--all`: every tracked text file in the index. CI runs it.
+- `--history`: every added line in `git log --all`; findings name the introducing commit as `path:line@sha`. CI runs it over the full history.
+- `FILE...`: explicit files (use `--` before a name that starts with a dash).
+
+Exit codes: `0` clean, `1` findings, `2` usage error, not a git repository, an unreadable or in-repository denylist, or a scanner error. Matched values are always masked: a finding prints the rule, the file and the line, plus the first characters and the length of the value, never the value. The same is true for the denylist stage: the term and the line text are never printed. A file path that itself contains a denylist term is printed as the finding path, because the path is the finding.
+
+## Exemptions
+
+Reviewed exemptions live in two files, both covered by code owners and reviewed in pull requests:
+
+- `scripts/sensitive-allowlist.txt`: one entry per line, `rule ;; path-ERE ;; matched-value-ERE`. Make each entry as narrow as possible: one rule, the smallest path scope, an anchored value pattern. The value pattern is tested against the matched value, not the whole line.
+- `.gitleaks.toml`: the allowlists of the gitleaks configuration.
+
+There are no inline ignore comments, no environment variable and no flag that disables or redirects a rule. gitleaks runs with `--ignore-gitleaks-allow`, so a `gitleaks:allow` comment in a file has no effect.
+
+## Local denylist
+
+Terms specific to your own instance (client names, internal project names, company IDs) go into a denylist that never enters the repository:
+
+    export KOKPIT_DENYLIST="$HOME/.config/kokpit/denylist.txt"
+
+The file lives in your home configuration directory. The script refuses a path inside the repository.
+
+Format: one term per line. Blank lines and lines starting with `#` are ignored. Terms are fixed strings matched case-insensitively, with Czech diacritics folded, so a term written with diacritics matches the same text without them. Use terms of at least 3 characters: very short terms match too much.
+
+A fictional example file:
+
+    # fictional example terms
+    Acme Fictional Ltd
+    Project Bluebird
+
+Behaviour:
+
+- `KOKPIT_DENYLIST` unset, or the file does not exist: one notice on stderr, then only the generic rules run. The exit code is unaffected. This is also how CI runs.
+- the file exists but is not readable: exit `2`.
+- the file is inside the repository: exit `2`, so a real list can never be committed through this tool.
+
+Terms are not Unicode-normalised: a term typed in composed form does not match decomposed text.
+
+## Never bypass
+
+`git commit --no-verify` and `LEFTHOOK=0` skip the hook. Do not use either: CI rescans the whole tree and the whole history and fails the pull request, so a bypass only moves the finding to a later and more public place.
+
+A path-limited commit (`git commit -- <path>`) scans only the committed paths, not the whole index.
+
+## If something leaks
+
+If something sensitive was committed or pushed:
+
+1. Rotate or revoke it first. A secret that was ever pushed is compromised, whatever happens to the history afterwards.
+2. Remove it from history. Before the first push, a local history rewrite is enough. After a push, contact the owner: the organisation ruleset blocks force-pushes to `main`, so the repair needs a decision.
+3. Notify the affected parties.
+
+The full runbook will live in `SECURITY.md` (arrives with the community files in Phase 2).
+
+## CI
+
+The workflow `Hygiene` runs on pushes to `main` and on pull requests, never on `pull_request_target`. Its jobs are `scan` (self-tests, `--all`, `--history`, gitleaks), `workflow-lint` (actionlint and zizmor) and the aggregator `CI Passed`, which is the status check the organisation ruleset requires.
+
+Everything is pinned. Actions are pinned by full commit SHA and bumped by Dependabot. The tools gitleaks, actionlint and zizmor are downloaded as a release tarball by version and verified against a SHA-256 hard-coded in the workflow. Never trust a checksums file taken from the same release.
+
+Manual bump procedure for a tool:
+
+1. Read the new version and its asset digest: `gh api repos/<owner>/<repo>/releases/latest --jq '.assets[]|[.name,.digest]|@tsv'`.
+2. Verify the digest against the upstream checksums.
+3. Update the version and the digest in the workflow together, in one change, and update the tested versions in the Setup section.
+
+## GitHub settings checklist (maintainer, manual)
+
+These settings cannot be enforced from code or from CI (reading them needs an admin token), so the maintainer confirms them by hand and re-checks after GitHub UI changes:
+
+- [ ] secret scanning enabled
+- [ ] push protection enabled (Settings -> Advanced Security -> Secret Protection); review every push protection bypass alert
+- [ ] non-provider patterns and validity checks enabled
+- [ ] "Require actions to be pinned to a full-length commit SHA" enabled
+- [ ] "Allow GitHub Actions to create and approve pull requests" disabled
+- [ ] workflow approval required for outside contributors
+- [ ] Dependabot alerts and security updates enabled
+- [ ] two-factor authentication on the maintainer account
+- [ ] optional: e-mail privacy settings for commit author metadata ("Keep my email addresses private" and "Block command line pushes that expose my email")
+- [ ] the organisation ruleset on `main`: block deletion, block force push, require a pull request, required status check `CI Passed`. The first push of a new branch goes through a pull request.
+
+A read-only audit of the repository-level values, run by the maintainer (never in CI):
+
+    gh api repos/<owner>/<repo> --jq .security_and_analysis
