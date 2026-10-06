@@ -20,12 +20,29 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
     steps:
       - name: Check out full history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      # The digest is hard-coded here on purpose: a checksum file fetched from the same release would verify
+      # nothing if that release were tampered with. The upstream gitleaks GitHub Action is not used (it needs
+      # an organisation licence key). Bump version and digest together, by hand, see CONTRIBUTING.md.
+      - name: Install gitleaks (pinned version, pinned checksum)
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/gitleaks.tar.gz"
+          curl -fsSL --retry 3 -o "${archive}" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum --check --strict -
+          mkdir -p "${RUNNER_TEMP}/bin"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/bin" gitleaks
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
 
       - name: Script self-tests (planted fake secrets built at runtime)
         run: bash scripts/tests/run.sh
@@ -35,6 +52,11 @@ jobs:
 
       - name: Sensitive-content check (full history, no local denylist)
         run: scripts/check-sensitive.sh --history
+
+      # Same config as the hook. --redact keeps values out of the log, --ignore-gitleaks-allow ignores inline
+      # allow comments. The default log range covers every ref of the checkout (fetch-depth: 0 above).
+      - name: gitleaks over full history
+        run: gitleaks git --config .gitleaks.toml --redact --no-banner --ignore-gitleaks-allow --exit-code 1 .
 
   # Aggregator: the organisation ruleset requires a status check named exactly "CI Passed".
   # always() plus a result check means a failed, skipped or cancelled gated job can never leave it green.

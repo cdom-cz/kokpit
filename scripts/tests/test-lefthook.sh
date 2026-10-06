@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # test-lefthook.sh - real commits through the lefthook pre-commit hook (local only, never run in CI).
 # Skips when CI=true, in quick mode, or when lefthook / gitleaks are not on PATH.
+# The hook has two jobs: the shell scanner (sensitive-content) and gitleaks.
 HERE=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=/dev/null
 . "$HERE/lib.sh"
@@ -40,7 +41,7 @@ stage_file() {  # stage_file <repo> <path> <content>
 
 unstage_all() {  # unstage_all <repo>: reset the index and remove untracked files created by the test
   git -C "$1" reset -q
-  rm -rf "${1:?}/secret.txt" "${1:?}/clean.txt" "${1:?}/sub"
+  rm -rf "${1:?}/secret.txt" "${1:?}/clean.txt" "${1:?}/sub" "${1:?}/gl.txt"
 }
 
 repo=$(hook_repo)
@@ -75,6 +76,35 @@ stage_file "$repo" sub/s.txt "$stripe"
 assert_exit 1 "commit from a sub-directory with a staged fake is rejected" in_dir "$repo/sub" git commit -q -m sub
 assert_out_has "sub/s.txt:1: key-prefix" "finding path is repo-relative"
 unstage_all "$repo"
+
+# 4b. gitleaks job: a generic high-entropy credential assignment that no shell rule covers is rejected by
+# gitleaks (default generic-api-key rule), and its value is redacted in the hook output.
+gl_val=$(printf '%s%s%s%s' Xq7Lm2Vb9 Nc4Zr1Wk 6Ty3Hp8Js 5Df0Ga2E)
+stage_file "$repo" gl.txt "$(printf 'api%skey = "%s"' _ "$gl_val")"
+head_before=$(git -C "$repo" rev-parse HEAD)
+assert_exit 1 "commit with a staged credential only gitleaks recognises is rejected" in_dir "$repo" git commit -q -m glonly
+assert_out_has "REDACTED" "the rejection comes from gitleaks and shows REDACTED"
+assert_out_lacks "$gl_val" "rejected commit output has no credential value"
+assert_out_has "gitleaks failed or is not installed" "the gitleaks job prints its fail_text"
+assert_eq "HEAD did not move after the gitleaks rejection" "$head_before" "$(git -C "$repo" rev-parse HEAD)"
+unstage_all "$repo"
+
+# 4c. fail closed without gitleaks (D-09): PATH has lefthook but no gitleaks, a clean commit is rejected.
+# The hook is installed first with the normal PATH (the installer itself requires gitleaks).
+if env PATH=/usr/bin:/bin sh -c 'command -v gitleaks' > /dev/null 2>&1; then
+  printf 'notice: gitleaks is on the reduced PATH, skipping the missing-gitleaks case\n'
+else
+  repo4=$(hook_repo)
+  assert_exit 0 "installer run for the missing-gitleaks case" in_dir "$repo4" scripts/install-hooks.sh
+  nogl="$TEST_TMP/nogl-bin"
+  mkdir -p "$nogl"
+  ln -s "$(command -v lefthook)" "$nogl/lefthook"
+  head_before=$(git -C "$repo4" rev-parse HEAD)
+  stage_file "$repo4" clean.txt "clean content without gitleaks"
+  assert_exit 1 "clean commit is rejected when gitleaks is not on PATH" in_dir "$repo4" env PATH="$nogl:/usr/bin:/bin" "$GIT" commit -q -m nogitleaks
+  assert_out_has "gitleaks failed or is not installed" "the rejection prints the install hint from fail_text"
+  assert_eq "HEAD did not move without gitleaks" "$head_before" "$(git -C "$repo4" rev-parse HEAD)"
+fi
 
 # 5. fail closed: when lefthook cannot be found at all, a clean commit is rejected.
 # The generated hook bakes in the absolute path of the lefthook binary that installed it and falls back to it

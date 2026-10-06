@@ -1,0 +1,59 @@
+title = "Kokpit gitleaks config"
+
+# Extends the upstream default ruleset (Stripe sk_/rk_ tokens, GitHub PATs, generic API keys, ...) and adds the
+# Kokpit-specific shapes it lacks (D-10, HYG-05). Pass this file explicitly with --config everywhere
+# (hook, CI, tests); never rely on auto-discovery.
+#
+# Exemptions live only here or in a reviewed .gitleaksignore. The hook and CI run with
+# --ignore-gitleaks-allow, so an inline "gitleaks:allow" comment can never hide a finding.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "kokpit-stripe-publishable-or-webhook"
+description = "Stripe publishable live key or webhook signing secret"
+regex = '''\b(?:pk_live_|whsec_)[A-Za-z0-9]{16,}'''
+keywords = ["pk_live_", "whsec_"]
+
+[[rules]]
+id = "kokpit-stripe-object-id"
+description = "Stripe account id or Payment Link id"
+regex = '''\b(?:acct|plink)_[A-Za-z0-9]{12,}'''
+keywords = ["acct_", "plink_"]
+
+[[rules]]
+id = "kokpit-home-path"
+description = "Personal absolute home directory path"
+regex = '''/(?:Users|home)/[A-Za-z0-9._-]+/'''
+keywords = ["/users/", "/home/"]
+[[rules.allowlists]]
+# Placeholder and system names that are documentation, CI-runner or OS conventions, not a person. Kept in step
+# with the home-path rule of scripts/lib/scan.awk (which also allows ddev and the macOS Shared folder).
+regexes = ['''/(?:Users|home)/(?:example|user|username|name|you|runner|vagrant|ubuntu|www-data|ddev|Shared)/''']
+
+[[rules]]
+id = "kokpit-ico-like"
+description = "Company-ID-like 8-digit number next to an ID keyword"
+regex = '''(?i)\b(?:ico|ič|ičo|company[_ -]?id)\b["']?\s*[:=]\s*["']?(\d{8})\b'''
+secretGroup = 1
+keywords = ["ico", "ič", "company"]
+[[rules.allowlists]]
+# The placeholder company ids the repository documents (CLAUDE.md, CONTRIBUTING.md).
+stopwords = ["12345678", "00000000"]
+
+[[rules]]
+id = "kokpit-hosting-endpoint"
+description = "Hosting or S3-compatible object-storage endpoint hostname"
+regex = '''(?i)\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:zerops\.app|amazonaws\.com|r2\.cloudflarestorage\.com|backblazeb2\.com|wasabisys\.com|digitaloceanspaces\.com|linodeobjects\.com)\b'''
+keywords = ["zerops.app", "amazonaws.com", "r2.cloudflarestorage.com", "backblazeb2.com", "wasabisys.com", "digitaloceanspaces.com", "linodeobjects.com"]
+
+[[rules]]
+id = "kokpit-zerops-token"
+description = "Zerops access token assigned to a ZEROPS_TOKEN-style variable"
+# [ASSUMED] (research A2): Zerops documents no stable token prefix, so this is anchored on the variable name
+# next to a 16+ character token instead of on a token format. Generic high-entropy values are additionally
+# covered by the default generic-api-key rule.
+regex = '''(?i)\bzerops[_-]?(?:api[_-]?)?(?:token|key)\b["']?\s*[:=]\s*["']?([A-Za-z0-9_\-]{16,})'''
+secretGroup = 1
+keywords = ["zerops"]
