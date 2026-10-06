@@ -121,4 +121,46 @@ stage "$repo" l.txt "$(printf '%s\n' "$stripe")"
 assert_exit 2 "(l) scanner exiting with an error exits 2" in_dir "$repo" "$broken/scripts/check-sensitive.sh"
 assert_out_has "scanner error" "(l) the failure is reported as a scanner error"
 
+# Helpers for the per-rule cases: every case stages one file in a fresh temp repository.
+# case_hit  <description> <rule> <content>   expects exit 1 and "n.txt:1: <rule>" in the output
+# case_pass <description> <content>          expects exit 0
+case_hit() {
+  local r
+  r=$(new_repo)
+  stage "$r" n.txt "$3"
+  assert_exit 1 "$1" in_dir "$r" "$SCRIPT"
+  assert_out_has "n.txt:1: $2" "$1 (reported as $2 with file and line)"
+}
+case_pass() {
+  local r
+  r=$(new_repo)
+  stage "$r" n.txt "$2"
+  assert_exit 0 "$1" in_dir "$r" "$SCRIPT"
+}
+
+AT='@'
+
+# (m) email rule: a non-example address is reported with file and line, masked
+mail=$(fake_email)
+repo=$(new_repo)
+stage "$repo" m.txt "$(printf 'contact: %s\n' "$mail")"
+assert_exit 1 "(m) non-example e-mail exits 1" in_dir "$repo" "$SCRIPT"
+assert_out_has "m.txt:1: email" "(m) finding names file, line and rule"
+assert_out_lacks "$mail" "(m) the full address is not printed"
+assert_out_lacks "jane" "(m) the local part is not printed"
+assert_out_lacks "corp-fake" "(m) the domain is not printed"
+
+# (n) addresses at example domains and reserved TLDs pass
+case_pass "(n) address at example.com passes" "$(printf 'a%sexample.com\n' "$AT")"
+case_pass "(n) address at a subdomain of example.org passes" "$(printf 'a%sdocs.example.org\n' "$AT")"
+case_pass "(n) address at example.net passes" "$(printf 'a%sexample.net\n' "$AT")"
+case_pass "(n) address at a .test host passes" "$(printf 'a%smail.fake.test\n' "$AT")"
+case_pass "(n) address at a .invalid host passes" "$(printf 'a%smail.fake.invalid\n' "$AT")"
+case_pass "(n) address at localhost passes" "$(printf 'a%slocalhost\n' "$AT")"
+case_pass "(n) address at a .localhost host passes" "$(printf 'a%sapp.localhost\n' "$AT")"
+
+# (o) allowlist: the SSH remote notation passes, another user at the same domain does not
+case_pass "(o) the git-at-github SSH notation passes (reviewed entry)" "$(printf 'git%sgithub.com:owner/repo.git\n' "$AT")"
+case_hit "(o) another user at github.com is reported" email "$(printf 'bob%sgithub.com\n' "$AT")"
+
 finish
