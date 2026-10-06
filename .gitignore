@@ -11,6 +11,8 @@
 .claude/*
 !.claude/CLAUDE.md
 CLAUDE.local.md
+.cursor/
+.aider*
 .idea/
 .vscode/
 .DS_Store
@@ -45,3 +47,23 @@ CLAUDE.local.md
 /.planning/sessions/
 /.planning/**/*.log
 /.planning/migration-notes/
+
+# Exports and local databases
+*.xls
+*.ods
+*.sqlite
+*.sqlite3
+/exports/
+
+# Credentials and signing material
+auth.json
+*.p12
+*.pfx
+*.keystore
+id_rsa*
+
+# Test, coverage and tool caches
+/coverage/
+.phpunit.cache/
+.phpunit.result.cache
+.php-cs-fixer.cache

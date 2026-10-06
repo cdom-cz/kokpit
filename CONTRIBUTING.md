@@ -139,3 +139,9 @@ These settings cannot be enforced from code or from CI (reading them needs an ad
 A read-only audit of the repository-level values, run by the maintainer (never in CI):
 
     gh api repos/<owner>/<repo> --jq .security_and_analysis
+
+## Per-phase .gitignore review
+
+Review .gitignore at the start of every phase. For each new tool or framework output that the phase introduces (DDEV in Phase 2, Laravel storage, coverage reports, build output), add the ignore rule and a matching case to `scripts/tests/test-gitignore.sh` in the same change. The test asks `git check-ignore --no-index` about paths that do not exist on disk, so the verdicts hold for an empty checkout.
+
+Only `.claude/CLAUDE.md` is versioned below `.claude/`. The directory itself must never be ignored (`.claude/`): git cannot re-include a file below an excluded parent. The rule is `.claude/*` followed by `!.claude/CLAUDE.md`, in that order, and the test fails if the order is reversed.

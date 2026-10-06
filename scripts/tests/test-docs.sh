@@ -29,6 +29,7 @@ CONTRIB_PHRASES=(
   'gitleaks 8.30.1'
   'scripts/install-hooks.sh'
   'Require actions to be pinned to a full-length commit SHA'
+  'Review .gitignore'
 )
 
 # has_phrase <file> <phrase>: byte-wise fixed-string match
