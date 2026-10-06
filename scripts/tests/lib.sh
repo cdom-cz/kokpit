@@ -15,6 +15,8 @@ trap 'rm -rf "$TEST_TMP"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null
 export GIT_CONFIG_NOSYSTEM=1
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+# A developer's real denylist must not leak into the tests; denylist tests set the variable explicitly.
+unset KOKPIT_DENYLIST
 
 pass=0
 fail=0
