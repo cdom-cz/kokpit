@@ -33,6 +33,9 @@ jobs:
       - name: Sensitive-content check (tree, no local denylist)
         run: scripts/check-sensitive.sh --all
 
+      - name: Sensitive-content check (full history, no local denylist)
+        run: scripts/check-sensitive.sh --history
+
   # Aggregator: the organisation ruleset requires a status check named exactly "CI Passed".
   # always() plus a result check means a failed, skipped or cancelled gated job can never leave it green.
   ci-passed:

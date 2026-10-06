@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # check-sensitive.sh - block secrets and instance-specific values before they enter the repository.
 #
-# Usage: scripts/check-sensitive.sh [--staged|--all]
+# Usage: scripts/check-sensitive.sh [--staged | --all | --history] [--] [FILE...]
 #   (no flag) / --staged   scan the added lines of the staged diff (what a commit would add)
 #   --all                  scan every tracked text file as stored in the index
+#   --history              scan the added lines of every commit reachable from any ref (git log --all);
+#                          findings are "path:line@<sha7>: rule [masked]" naming the introducing commit
+#   FILE...                scan the named files as they are on disk (paths reported repository-relative)
+# A mode flag and FILE operands are mutually exclusive, and so are two mode flags (exit 2).
 #
 # Output: "path:line: rule [masked]" on stdout, one line per finding. A value is never printed in full:
 # at most its first 2 characters plus its length. Notices and errors go to stderr.
@@ -17,27 +21,47 @@
 # Read-only: never writes to the git index or the working tree. Portable to bash 3.2 (macOS) and Linux.
 set -eu
 
+usage_text='usage: check-sensitive.sh [--staged | --all | --history] [--] [FILE...]'
 usage() {
-  printf 'usage: check-sensitive.sh [--staged|--all]\n' >&2
+  printf '%s\n' "$usage_text" >&2
   exit 2
 }
 
-mode=staged
-if [ "$#" -gt 1 ]; then usage; fi
-if [ "$#" -eq 1 ]; then
-  case "$1" in
-    --staged) mode=staged ;;
-    --all) mode=all ;;
-    *) usage ;;
-  esac
+mode=''
+nfiles=0
+files=()
+endopts=0
+for arg in "$@"; do
+  if [ "$endopts" -eq 0 ]; then
+    case "$arg" in
+      --) endopts=1; continue ;;
+      --help) printf '%s\n' "$usage_text"; exit 0 ;;
+      --staged | --all | --history)
+        [ -z "$mode" ] || usage
+        mode=${arg#--}
+        continue
+        ;;
+      -*) usage ;;
+    esac
+  fi
+  files[nfiles]=$arg
+  nfiles=$((nfiles + 1))
+done
+if [ "$nfiles" -gt 0 ]; then
+  [ -z "$mode" ] || usage
+  mode=files
 fi
+[ -n "$mode" ] || mode=staged
 
 here=$(cd "$(dirname "$0")" && pwd)
 if ! top=$(git rev-parse --show-toplevel 2>/dev/null); then
   echo 'check-sensitive: not a git repository' >&2
   exit 2
 fi
+# Explicit operands are relative to the caller's directory: capture where it sits inside the repository.
+prefix=$(git rev-parse --show-prefix)
 orig_pwd=$PWD
+top_phys=$(cd "$top" && pwd -P)
 cd "$top"
 
 if ! tmp=$(mktemp -d "${TMPDIR:-/tmp}/kokpit.XXXXXX"); then
@@ -64,7 +88,6 @@ else
     # HYG-03: the real list must never be committable. Compare physical directories (pwd -P on both
     # sides, no symlink-resolving flags: bash 3.2 and BSD tools); equal or prefix-with-slash = inside.
     dl_dir=$(cd "$(dirname "$dl")" && pwd -P) || dl_dir=''
-    top_phys=$(cd "$top" && pwd -P)
     case "$dl_dir/" in
       "$top_phys"/*)
         echo 'check-sensitive: KOKPIT_DENYLIST must live outside the repository' >&2
@@ -84,27 +107,98 @@ else
   fi
 fi
 
+# lexically normalise a repository-relative path: drop "." and empty segments, resolve "..".
+normpath() {
+  printf '%s\n' "$1" | LC_ALL=C awk -F/ '{
+    n = 0
+    for (i = 1; i <= NF; i++) {
+      s = $i
+      if (s == "" || s == ".") continue
+      if (s == ".." && n > 0 && out[n] != "..") { n--; continue }
+      out[++n] = s
+    }
+    r = ""
+    for (i = 1; i <= n; i++) r = r (i > 1 ? "/" : "") out[i]
+    print r
+  }'
+}
+
 # Producer: every row is "path<TAB>line<TAB>text".
-if [ "$mode" = staged ]; then
-  if ! git -c core.quotepath=off diff --cached -U0 --no-color --no-ext-diff \
-      --src-prefix=a/ --dst-prefix=b/ --diff-filter=ACMR > "$tmp/diff.txt"; then
-    echo 'check-sensitive: git diff failed' >&2
-    exit 2
-  fi
-  if ! LC_ALL=C awk -f "$here/lib/diff2tsv.awk" "$tmp/diff.txt" > "$tmp/rows.tsv"; then
-    echo 'check-sensitive: diff parser error' >&2
-    exit 2
-  fi
-else
-  rc=0
-  git -c core.quotepath=off grep --cached -I -n -z -e '' > "$tmp/grep.out" || rc=$?
-  # git grep: 0 = matches, 1 = no lines at all (empty tree); anything else is an error.
-  if [ "$rc" -gt 1 ]; then
-    echo 'check-sensitive: git grep failed' >&2
-    exit 2
-  fi
-  LC_ALL=C tr '\0' '\t' < "$tmp/grep.out" > "$tmp/rows.tsv"
-fi
+case "$mode" in
+  staged | history)
+    if [ "$mode" = staged ]; then
+      if ! git -c core.quotepath=off diff --cached -U0 --no-color --no-ext-diff \
+          --src-prefix=a/ --dst-prefix=b/ --diff-filter=ACMR > "$tmp/diff.txt"; then
+        echo 'check-sensitive: git diff failed' >&2
+        exit 2
+      fi
+    else
+      # One "commit <hash>" line per commit; diff2tsv.awk turns it into the @<sha7> suffix. Merge commits
+      # are not diffed by `git log -p`; their content is covered by the parents (assumption A-HYG-05).
+      if ! git -c core.quotepath=off log --all -p -U0 --no-color --no-ext-diff \
+          --src-prefix=a/ --dst-prefix=b/ --diff-filter=ACMR --format='commit %H' > "$tmp/diff.txt"; then
+        echo 'check-sensitive: git log failed' >&2
+        exit 2
+      fi
+    fi
+    if ! LC_ALL=C awk -f "$here/lib/diff2tsv.awk" "$tmp/diff.txt" > "$tmp/rows.tsv"; then
+      echo 'check-sensitive: diff parser error' >&2
+      exit 2
+    fi
+    ;;
+  files)
+    scan_files=()
+    nscan=0
+    i=0
+    while [ "$i" -lt "$nfiles" ]; do
+      f=${files[$i]}
+      i=$((i + 1))
+      case "$f" in
+        /*)
+          # Absolute: made repository-relative when its physical directory is inside the repository.
+          abs_dir=$(cd "$(dirname "$f")" 2> /dev/null && pwd -P) || abs_dir=''
+          rel=''
+          case "$abs_dir/" in
+            "$top_phys"/*) rel=$(normpath "${abs_dir#"$top_phys"}/$(basename "$f")") ;;
+          esac
+          if [ -n "$rel" ]; then op="./$rel"; else op=$f; fi
+          ;;
+        *)
+          rel=$(normpath "$prefix$f")
+          op="./$rel"
+          ;;
+      esac
+      if [ ! -f "$op" ] || [ ! -r "$op" ]; then
+        echo "check-sensitive: not a readable file: $f" >&2
+        exit 2
+      fi
+      [ -s "$op" ] || continue
+      if ! grep -Iq . "$op"; then
+        echo "check-sensitive: skipping binary or blank file: $f" >&2
+        continue
+      fi
+      scan_files[nscan]=$op
+      nscan=$((nscan + 1))
+    done
+    # "./"-prefixed operands cannot be read as options or as awk var=value assignments (T-01-17).
+    if [ "$nscan" -gt 0 ]; then
+      LC_ALL=C awk 'FNR == 1 { f = FILENAME; sub(/^\.\//, "", f) } { print f "\t" FNR "\t" $0 }' \
+        "${scan_files[@]}" > "$tmp/rows.tsv"
+    else
+      : > "$tmp/rows.tsv"
+    fi
+    ;;
+  all)
+    rc=0
+    git -c core.quotepath=off grep --cached -I -n -z -e '' > "$tmp/grep.out" || rc=$?
+    # git grep: 0 = matches, 1 = no lines at all (empty tree); anything else is an error.
+    if [ "$rc" -gt 1 ]; then
+      echo 'check-sensitive: git grep failed' >&2
+      exit 2
+    fi
+    LC_ALL=C tr '\0' '\t' < "$tmp/grep.out" > "$tmp/rows.tsv"
+    ;;
+esac
 
 # D-05: the scanner, its libraries, its allowlist and the gitleaks config necessarily contain the patterns.
 # Exclude exactly these five paths, never directories, so a secret cannot hide in another file under scripts/.
