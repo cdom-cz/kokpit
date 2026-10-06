@@ -1,0 +1,43 @@
+# Secrets and environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local AI tooling and IDE settings
+.claude/settings.local.json
+.idea/
+.vscode/
+.DS_Store
+
+# Local-only data, imports, exports and dumps (never commit real data)
+/local/
+*.sql
+*.dump
+*.sql.gz
+*.csv
+*.xlsx
+
+# Runtime artefacts
+/storage/*.key
+/storage/logs/
+/storage/framework/cache/
+/storage/framework/sessions/
+/storage/framework/views/
+/storage/app/
+*.log
+
+# Dependencies and build output
+/vendor/
+/node_modules/
+/public/build/
+/public/hot
+/public/storage
+
+# Planning: risky session artefacts (logs, debug output, conversation copies, migration notes)
+/.planning/debug/
+/.planning/logs/
+/.planning/sessions/
+/.planning/**/*.log
+/.planning/migration-notes/
