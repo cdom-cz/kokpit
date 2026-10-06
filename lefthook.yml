@@ -1,0 +1,14 @@
+# lefthook configuration. Install the hook once per clone with scripts/install-hooks.sh.
+# Tested with lefthook 2.1.17. Local developer tool only; CI never depends on it.
+min_version: 2.1.0
+# Fail closed: if the lefthook binary is missing the generated hook aborts the commit instead of skipping.
+assert_lefthook_installed: true
+output:
+  - failure
+  - summary
+pre-commit:
+  jobs:
+    # The scanner reads the git index itself, so no staged-file placeholder is passed.
+    - name: sensitive-content
+      run: scripts/check-sensitive.sh
+      fail_text: "Sensitive content found (file:line above). Fix it; see CONTRIBUTING.md. Do not bypass."

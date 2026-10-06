@@ -1,0 +1,53 @@
+name: Hygiene
+
+# Triggers are deliberately limited to push (main) and pull_request. Never pull_request_target, workflow_run
+# or issue_comment: this workflow runs repository-controlled scripts and must not get a privileged token.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: hygiene-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Sensitive-content and secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Script self-tests (planted fake secrets built at runtime)
+        run: bash scripts/tests/run.sh
+
+      - name: Sensitive-content check (tree, no local denylist)
+        run: scripts/check-sensitive.sh --all
+
+  # Aggregator: the organisation ruleset requires a status check named exactly "CI Passed".
+  # always() plus a result check means a failed, skipped or cancelled gated job can never leave it green.
+  ci-passed:
+    name: CI Passed
+    if: ${{ always() }}
+    needs: [scan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    env:
+      RESULTS: ${{ join(needs.*.result, ' ') }}
+    steps:
+      - name: Require every gated job to have succeeded
+        run: |
+          set -eu
+          for r in ${RESULTS}; do
+            [ "${r}" = "success" ] || { echo "A required job finished as: ${r}"; exit 1; }
+          done
