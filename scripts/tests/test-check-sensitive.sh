@@ -122,21 +122,24 @@ assert_exit 2 "(l) scanner exiting with an error exits 2" in_dir "$repo" "$broke
 assert_out_has "scanner error" "(l) the failure is reported as a scanner error"
 
 # Helpers for the per-rule cases: every case stages one file in a fresh temp repository.
-# case_hit  <description> <rule> <content>   expects exit 1 and "n.txt:1: <rule>" in the output
-# case_pass <description> <content>          expects exit 0
-case_hit() {
+# path_hit  <description> <rule> <path> <content>   expects exit 1 and "<path>:1: <rule>" in the output
+# path_pass <description> <path> <content>          expects exit 0
+# case_hit / case_pass use the default path n.txt.
+path_hit() {
   local r
   r=$(new_repo)
-  stage "$r" n.txt "$3"
+  stage "$r" "$3" "$4"
   assert_exit 1 "$1" in_dir "$r" "$SCRIPT"
-  assert_out_has "n.txt:1: $2" "$1 (reported as $2 with file and line)"
+  assert_out_has "$3:1: $2" "$1 (reported as $2 with file and line)"
 }
-case_pass() {
+path_pass() {
   local r
   r=$(new_repo)
-  stage "$r" n.txt "$2"
+  stage "$r" "$2" "$3"
   assert_exit 0 "$1" in_dir "$r" "$SCRIPT"
 }
+case_hit() { path_hit "$1" "$2" n.txt "$3"; }
+case_pass() { path_pass "$1" n.txt "$2"; }
 
 AT='@'
 
@@ -162,5 +165,53 @@ case_pass "(n) address at a .localhost host passes" "$(printf 'a%sapp.localhost\
 # (o) allowlist: the SSH remote notation passes, another user at the same domain does not
 case_pass "(o) the git-at-github SSH notation passes (reviewed entry)" "$(printf 'git%sgithub.com:owner/repo.git\n' "$AT")"
 case_hit "(o) another user at github.com is reported" email "$(printf 'bob%sgithub.com\n' "$AT")"
+
+# (p) company-id rule: an 8-digit number is reported as company-id, masked
+ico=$(fake_ico)
+repo=$(new_repo)
+stage "$repo" p.txt "$(printf 'ICO: %s\n' "$ico")"
+assert_exit 1 "(p) 8-digit company ID exits 1" in_dir "$repo" "$SCRIPT"
+assert_out_has "p.txt:1: company-id" "(p) finding names file, line and rule"
+assert_out_lacks "$ico" "(p) the full number is not printed"
+
+# (q) the documented placeholders pass in any path
+case_pass "(q) placeholder 12345678 passes" "$(printf 'ICO: %s%s\n' 1234 5678)"
+case_pass "(q) placeholder 00000000 passes" "$(printf 'ICO: %s%s\n' 0000 0000)"
+path_pass "(q) placeholder 12345678 passes under src/" src/q.md "$(printf '%s%s\n' 1234 5678)"
+
+# (r) invoice-like numbers: exempt under .planning/ only (path-scoped allowlist entry)
+inv=$(printf '%s%s' 2026 0001)
+path_pass "(r) invoice-like number under .planning/ passes" .planning/notes.md "$(printf 'Invoice %s\n' "$inv")"
+path_hit "(r) the same number under src/ is reported" company-id src/notes.md "$(printf 'Invoice %s\n' "$inv")"
+
+# (s) shapes that are not company IDs
+case_pass "(s) an 8-digit group starting a UUID-like token passes" "$(printf '%s%s-aaaa-bbbb-cccc-dddddddddddd\n' 3141 5926)"
+case_pass "(s) a 9-digit run passes" "$(printf '%s%s%s\n' 314 159 265)"
+case_pass "(s) an 8-digit run inside a dotted version string passes" "$(printf 'v1.2.%s%s\n' 3141 5926)"
+
+# (t) iban rule: checksum-valid IBAN of the exact country length
+iban=$(fake_iban)
+repo=$(new_repo)
+stage "$repo" t.txt "$(printf 'IBAN: %s\n' "$iban")"
+assert_exit 1 "(t) valid IBAN exits 1" in_dir "$repo" "$SCRIPT"
+assert_out_has "t.txt:1: iban" "(t) finding names file, line and rule"
+assert_out_lacks "$iban" "(t) the full IBAN is not printed"
+grouped=$(printf '%s' "$iban" | sed 's/.\{4\}/& /g')
+case_hit "(t) the same IBAN written in 4-character groups is reported" iban "$(printf 'IBAN: %s\n' "$grouped")"
+last=${iban#"${iban%?}"}
+wrong="${iban%?}$(( (last + 1) % 10 ))"
+case_pass "(t) the IBAN with one digit changed passes (wrong checksum)" "$(printf 'IBAN: %s\n' "$wrong")"
+case_pass "(t) a 24-character random uppercase identifier passes" "$(printf 'id: %s%s\n' QX12ABCDEFGH JKLMNPQRSTUV)"
+
+# (u) cz-account rule: [prefix-]number/bank
+acct=$(fake_account)
+repo=$(new_repo)
+stage "$repo" u.txt "$(printf 'account %s\n' "$acct")"
+assert_exit 1 "(u) account number with prefix exits 1" in_dir "$repo" "$SCRIPT"
+assert_out_has "u.txt:1: cz-account" "(u) finding names file, line and rule"
+assert_out_lacks "$acct" "(u) the full account is not printed"
+case_hit "(u) account number without prefix is reported" cz-account "$(printf 'account %s%s/%s%s\n' 34567 89012 99 99)"
+case_pass "(u) a month/year string 10/2026 passes" "$(printf 'due 10/%s\n' 2026)"
+case_pass "(u) a month/year string 1/2026 passes" "$(printf 'due 1/%s\n' 2026)"
 
 finish
