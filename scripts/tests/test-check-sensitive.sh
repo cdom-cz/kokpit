@@ -214,4 +214,47 @@ case_hit "(u) account number without prefix is reported" cz-account "$(printf 'a
 case_pass "(u) a month/year string 10/2026 passes" "$(printf 'due 10/%s\n' 2026)"
 case_pass "(u) a month/year string 1/2026 passes" "$(printf 'due 1/%s\n' 2026)"
 
+# (v) public-ip rule: a public IPv4 address is reported, masked
+ip=$(fake_ip)
+repo=$(new_repo)
+stage "$repo" v.txt "$(printf 'host %s\n' "$ip")"
+assert_exit 1 "(v) public IPv4 exits 1" in_dir "$repo" "$SCRIPT"
+assert_out_has "v.txt:1: public-ip" "(v) finding names file, line and rule"
+assert_out_lacks "$ip" "(v) the full address is not printed"
+
+# (w) private, loopback, link-local, documentation, CGNAT and multicast ranges pass
+for addr in 10.1.2.3 172.16.0.1 172.31.255.254 192.168.1.1 127.0.0.1 0.0.0.0 169.254.1.1 \
+            192.0.2.1 198.51.100.1 203.0.113.1 100.64.0.1 224.0.0.1; do
+  case_pass "(w) $addr passes" "$(printf 'ip %s\n' "$addr")"
+done
+
+# (x) shapes that are not addresses
+case_pass "(x) a version string preceded by a letter passes" "$(printf 'v%s\n' "$ip")"
+case_pass "(x) an octet above 255 passes" "$(printf '%s.%s.%s.%s\n' 300 1 1 1)"
+case_pass "(x) a five-part dotted number passes" "$(printf '%s.%s\n' "$ip" 5)"
+
+# (y) hosting-host rule: Zerops and S3-provider hostnames
+host=$(fake_host)
+repo=$(new_repo)
+stage "$repo" y.txt "$(printf 'url https://%s/\n' "$host")"
+assert_exit 1 "(y) Zerops hostname exits 1" in_dir "$repo" "$SCRIPT"
+assert_out_has "y.txt:1: hosting-host" "(y) finding names file, line and rule"
+assert_out_lacks "$host" "(y) the full hostname is not printed"
+for sfx in amazonaws.com r2.cloudflarestorage.com backblazeb2.com wasabisys.com digitaloceanspaces.com linodeobjects.com; do
+  case_hit "(y) bucket host under $sfx is reported" hosting-host "$(printf 'endpoint %s.%s\n' fake-bucket "$sfx")"
+done
+
+# (z) home-path rule: personal home directories
+home=$(fake_home)
+repo=$(new_repo)
+stage "$repo" z.txt "$(printf 'path %s\n' "$home")"
+assert_exit 1 "(z) /Users/<name>/ exits 1" in_dir "$repo" "$SCRIPT"
+assert_out_has "z.txt:1: home-path" "(z) finding names file, line and rule"
+assert_out_lacks "fictionalperson" "(z) the user name is not printed"
+case_hit "(z) /home/<name>/ is reported" home-path "$(printf 'path /%s/%s/projects\n' home fictionalperson)"
+case_pass "(z) /Users/example/ passes" "path /Users/example/app"
+case_pass "(z) /home/runner/ passes" "path /home/runner/work"
+case_pass "(z) /home/ubuntu/ passes" "path /home/ubuntu/app"
+case_pass "(z) /Users/Shared/ passes" "path /Users/Shared/tmp"
+
 finish
