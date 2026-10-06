@@ -15,3 +15,9 @@
 
 # SSH remote notation in documentation (fictional-safe, value-scoped).
 email ;; * ;; ^git@github\.com$
+
+# Documented placeholder company IDs (D-02).
+company-id ;; * ;; ^(12345678|00000000)$
+
+# Planning documents contain YYYYNNNN invoice-number examples. Path-scoped: the same value in code still fails.
+company-id ;; ^\.planning/ ;; ^20[0-9]{6}$

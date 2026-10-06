@@ -25,6 +25,21 @@ function email_ok(addr,   dom) {
   if (dom ~ /\.(test|invalid|localhost|example)$/) return 1
   return dom == "localhost"
 }
+# IBAN length by country (exact), so a random uppercase identifier cannot qualify by checksum luck.
+function iban_len_ok(s,   cc) {
+  cc = substr(s, 1, 2)
+  return index(" CZ24 SK24 DE22 AT20 PL28 HU28 GB22 FR27 IT27 ES24 NL18 BE16 CH21 LU20 DK18 SE24 NO15 FI18 IE22 PT25 RO24 BG22 HR21 SI19 LT20 LV21 EE20 GR27 CY28 MT31 IS26 LI21 ", " " cc length(s) " ") > 0
+}
+# ISO 13616 mod 97, digit by digit (no big numbers: awk doubles lose precision).
+function iban_valid(s,   i, ch, r, rearr, n, pos) {
+  rearr = substr(s, 5) substr(s, 1, 4); r = 0; n = length(rearr)
+  for (i = 1; i <= n; i++) {
+    ch = substr(rearr, i, 1)
+    if (ch ~ /[0-9]/) r = (r * 10 + ch) % 97
+    else { pos = index("ABCDEFGHIJKLMNOPQRSTUVWXYZ", ch); if (pos == 0) return 0; r = (r * 100 + pos + 9) % 97 }
+  }
+  return r == 1
+}
 # Leftmost non-overlapping matches of core regex `re`; accept only if the char before does not match `lbad`
 # and the char after does not match `rbad` (boundaries in code - mawk panics on anchors inside groups).
 function scan_re(rule, re, lbad, rbad, s,   off, rest, tok, st, en, cb, ca, cn, ok) {
@@ -41,10 +56,18 @@ function scan_re(rule, re, lbad, rbad, s,   off, rest, tok, st, en, cb, ca, cn, 
     if (ok) { handle(rule, tok); off = en } else off = st + 1
   }
 }
-# Rule-specific acceptance checks are added here by later plans; the generic branch reports every match.
-function handle(rule, tok) {
+# Rule-specific acceptance checks; the generic branch reports every match.
+function handle(rule, tok,   t, n, w, k, m, q) {
   if (rule == "email") { if (!email_ok(tok)) hit(rule, tok) }
-  else hit(rule, tok)
+  else if (rule == "company-id") { t = tok; gsub(/[^0-9]/, "", t); hit(rule, t) }
+  else if (rule == "cz-account") {        # loose core regex, shape check here: [prefix-]number/bank
+    split(tok, w, "/"); m = split(w[1], q, "-")
+    if (m == 1 && length(q[1]) >= 6 && length(q[1]) <= 10) hit(rule, tok)
+    else if (m == 2 && length(q[1]) >= 2 && length(q[1]) <= 6 && length(q[2]) >= 2 && length(q[2]) <= 10) hit(rule, tok)
+  } else if (rule == "iban") {            # run of [A-Z0-9 ]; longest whole-word prefix of exact country length that passes mod 97
+    n = split(tok, w, " ")
+    for (k = n; k >= 1; k--) { t = ""; for (m = 1; m <= k; m++) t = t w[m]; if (iban_len_ok(t) && iban_valid(t)) { hit(rule, t); break } }
+  } else hit(rule, tok)
 }
 BEGIN {
   FS = "\t"; found = 0; na = 0; al = ENVIRON["CS_ALLOWLIST"]
@@ -59,6 +82,9 @@ BEGIN {
 {
   path = $1; ln = $2; text = $0; sub(/^[^\t]*\t[^\t]*\t/, "", text)
   scan_re("email",        "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z][A-Za-z]+", "[A-Za-z0-9._%+-]", "", text)
+  scan_re("company-id",   "[0-9]{8}", "[0-9A-Za-z_./-]", "[0-9A-Za-z_-]", text)
+  scan_re("iban",         "[A-Z][A-Z][0-9][0-9][A-Z0-9 ]+", "[A-Za-z0-9]", "", text)
+  scan_re("cz-account",   "[0-9][0-9-]*[0-9]/[0-9]{4}", "[0-9A-Za-z_./-]", "[0-9A-Za-z_-]", text)
   scan_re("key-prefix",   "(sk|rk|pk)_live_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}", "[A-Za-z0-9_]", "", text)
   scan_re("key-prefix",   "plink_[A-Za-z0-9]{8,}|acct_[A-Za-z0-9]{8,}", "[A-Za-z0-9_]", "", text)
   scan_re("key-prefix",   "gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}", "[A-Za-z0-9_]", "", text)
