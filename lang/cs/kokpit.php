@@ -1,0 +1,26 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+
+    'install' => [
+        'prompt_name' => 'Zadejte jméno správce',
+        'prompt_email' => 'Zadejte e-mail správce',
+        'prompt_password' => 'Zadejte heslo (nejméně 12 znaků)',
+        'prompt_password_confirmation' => 'Zopakujte heslo',
+        'password_mismatch' => 'Hesla se neshodují.',
+        'password_env_missing' => 'Heslo správce nebylo zadáno. V neinteraktivním režimu ho předejte v proměnné prostředí KOKPIT_ADMIN_PASSWORD.',
+        'name_email_required' => 'V neinteraktivním režimu je nutné zadat volby --name a --email.',
+        'password_too_long' => 'Heslo smí mít nejvýše 72 bajtů.',
+        'admin_exists' => 'Správce již existuje. Druhý účet správce nelze vytvořit.',
+        'created' => 'Správce byl vytvořen. Přihlaste se a nastavte dvoufázové ověření.',
+        'login_url' => 'Přihlášení: :url',
+        'attributes' => [
+            'name' => 'jméno',
+            'email' => 'e-mail',
+            'password' => 'heslo',
+        ],
+    ],
+
+];
