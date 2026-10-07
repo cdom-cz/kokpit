@@ -22,9 +22,6 @@ description = "Stripe account id or Payment Link id"
 regex = '''\b(?:acct|plink)_[A-Za-z0-9]{12,}'''
 keywords = ["acct_", "plink_"]
 
-[[rules]]
-id = "kokpit-home-path"
-description = "Personal absolute home directory path"
 # Parity with the home-path rule of scripts/lib/scan.awk: the name segment may end the token (bare after an
 # assignment, quoted, at the end of a line, before "&&" or ":"), and a /home/ or /Users/ segment that follows a
 # letter, digit, dot, underscore, tilde or hyphen (a URL path, a relative path) is not a home directory.
@@ -33,6 +30,9 @@ description = "Personal absolute home directory path"
 # The secret is the name segment only (secretGroup = 1). The default ruleset's global allowlist drops any
 # finding whose secret is a path starting with /home/ or /Users/<a>/<b>, which used to hide every /home/ path;
 # a bare name is not path-shaped, so it survives. The allowlist below therefore tests the captured name.
+[[rules]]
+id = "kokpit-home-path"
+description = "Personal absolute home directory path"
 regex = '''(?m)(?:^|[^A-Za-z0-9._~\r\n-])/(?:Users|home)/([A-Za-z0-9._-]+)'''
 secretGroup = 1
 keywords = ["/users/", "/home/"]
@@ -48,14 +48,14 @@ regexes = ['''^(?:example|user|username|name|you|runner|vagrant|ubuntu|www-data|
 regexTarget = "match"
 regexes = ['''(?i)^:/Users/(?:public|default|all|runneradmin)$''']
 
-[[rules]]
-id = "kokpit-windows-home-path"
-description = "Personal Windows home directory path"
 # Drive letter, colon, then Users and the name segment, with backslashes, doubled backslashes (JSON or string
 # escaping) or forward slashes in any letter case. Parity with the Windows branch of the home-path rule in
 # scripts/lib/scan.awk. In a TOML literal string the backslashes are literal, so RE2 sees a class of backslash
 # and slash. The left boundary is a consumed character that excludes CR and LF (see kokpit-home-path), so a
 # drive letter that ends a word ("file:///users/x") is not a drive. The secret is the name segment only.
+[[rules]]
+id = "kokpit-windows-home-path"
+description = "Personal Windows home directory path"
 regex = '''(?im)(?:^|[^0-9a-z\r\n])[a-z]:[\\/]+users[\\/]+([a-z0-9._-]+)'''
 secretGroup = 1
 keywords = ["users"]
@@ -63,13 +63,13 @@ keywords = ["users"]
 # System folders and placeholder names, whole name segments only; the same list as the scanner's Windows branch.
 regexes = ['''(?i)^(?:example|user|username|name|you|public|default|all|runneradmin)$''']
 
-[[rules]]
-id = "kokpit-ico-like"
-description = "Company-ID-like 8-digit number next to an ID keyword"
 # RE2's \b is ASCII-only, so the old trailing word boundary made the "ič" alternative dead ("č" is not a word
 # character, so no boundary exists before ":"). The keyword is followed directly by the optional quote and the
 # separator, which is boundary enough; the left boundary is a consumed character, as in kokpit-home-path.
 # "ic" is the common transliteration of "ič".
+[[rules]]
+id = "kokpit-ico-like"
+description = "Company-ID-like 8-digit number next to an ID keyword"
 regex = '''(?im)(?:^|[^0-9a-z\r\n])(?:ičo|ico|ič|ic|company[_ -]?id)["']?\s*[:=]\s*["']?(\d{8})\b'''
 secretGroup = 1
 keywords = ["ic", "ič", "company"]
