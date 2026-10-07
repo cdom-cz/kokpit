@@ -101,12 +101,82 @@ jobs:
       - name: zizmor (offline, no token)
         run: zizmor --offline .github/workflows
 
+  # Application tests on the same PostgreSQL major and PHP version as .ddev/config.yaml (tests/Feature/Repo/
+  # CiParityTest.php keeps them equal). The application is first booted from .env.example alone, which is the
+  # automated proof that a fresh clone installs; the real job environment wins over phpunit.xml and .env, and
+  # the database name ends in _test because tests/TestCase.php refuses any other. The database credentials are
+  # throwaway values of a service container that lives for this job only.
+  tests:
+    name: Tests (PostgreSQL 18)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: kokpit
+          POSTGRES_PASSWORD: kokpit-ci-only
+          POSTGRES_DB: kokpit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kokpit -d kokpit_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_DATABASE: kokpit_test
+      DB_USERNAME: kokpit
+      DB_PASSWORD: kokpit-ci-only
+      REDIS_HOST: 127.0.0.1
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.5"
+          extensions: intl, bcmath, pdo_pgsql, gd, exif, zip, sodium, mbstring, redis
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      # The Admin password is created inside this step and never echoed; it is valid only in this job's
+      # throwaway database.
+      - name: Boot the application from .env.example alone
+        run: |
+          set -euo pipefail
+          KOKPIT_ADMIN_PASSWORD="$(openssl rand -base64 24)"
+          export KOKPIT_ADMIN_PASSWORD
+          bash scripts/boot-from-env-example.sh
+
+      - name: Pest
+        run: vendor/bin/pest
+
   # Aggregator: the organisation ruleset requires a status check named exactly "CI Passed".
   # always() plus a result check means a failed, skipped or cancelled gated job can never leave it green.
   ci-passed:
     name: CI Passed
     if: ${{ always() }}
-    needs: [scan, workflow-lint]
+    needs: [scan, workflow-lint, tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
