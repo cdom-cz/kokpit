@@ -33,12 +33,37 @@ do
   ignored "$repo" "$p"
 done
 
+# --- ignored: Laravel runtime content, Filament published assets, caches (Phase 2) -----------------------
+for p in \
+  storage/logs/laravel.log storage/app/private/x.pdf storage/app/public/x.png storage/app/loose.bin \
+  storage/framework/views/abc.php storage/framework/cache/data/ab/cd storage/framework/cache/locks/x \
+  storage/framework/sessions/abc storage/framework/testing/x storage/framework/phpstan/cache.php \
+  storage/pail/x.log bootstrap/cache/packages.php bootstrap/cache/services.php \
+  public/js/filament/forms/forms.js public/css/filament/filament/app.css public/fonts/filament/filament/inter/x.woff2
+do
+  ignored "$repo" "$p"
+done
+
 # --- trackable: hygiene artefacts and the paths next to ignored ones --------------------------------------
 for p in \
   .env.example .claude/CLAUDE.md .ddev/config.yaml \
   scripts/check-sensitive.sh scripts/sensitive-allowlist.txt lefthook.yml .gitleaks.toml \
   .github/workflows/hygiene.yml CONTRIBUTING.md LICENSE .planning/ROADMAP.md \
   .npmrc.example terraform/main.tf config/credentials.php
+do
+  trackable "$repo" "$p"
+done
+
+# --- trackable: every placeholder .gitignore the Laravel skeleton ships (a fresh clone needs them) -----
+# Without them a fresh clone has no storage/framework/views or bootstrap/cache and composer install fails
+# in the post-autoload-dump scripts. The verdicts also pin the re-include order for the nested directories.
+for p in \
+  storage/app/.gitignore storage/app/private/.gitignore storage/app/public/.gitignore \
+  storage/framework/.gitignore storage/framework/cache/.gitignore storage/framework/cache/data/.gitignore \
+  storage/framework/cache/locks/.gitignore storage/framework/sessions/.gitignore \
+  storage/framework/testing/.gitignore storage/framework/views/.gitignore storage/logs/.gitignore \
+  bootstrap/cache/.gitignore database/.gitignore app/Providers/Filament/AdminPanelProvider.php \
+  public/index.php config/queue.php
 do
   trackable "$repo" "$p"
 done
