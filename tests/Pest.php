@@ -10,10 +10,13 @@ use Tests\TestCase;
  * Unit tests are plain PHPUnit test cases without the application.
  * Feature tests boot the application on the guarded kokpit_test database.
  * Arch tests boot the application too but never touch the database.
- * Later plans add their own suites (Concurrency, Isolation).
+ * Concurrency tests boot the application and spawn real worker processes; they
+ * commit real rows, so they have no RefreshDatabase wrapper and clean up after
+ * themselves. Later plans add their own suites (Isolation).
  */
 pest()->extend(TestCase::class)->use(RefreshDatabase::class)->in('Feature');
 pest()->extend(TestCase::class)->in('Arch');
+pest()->extend(TestCase::class)->in('Concurrency');
 
 /**
  * An example.com address assembled at runtime from fragments, so no test file
