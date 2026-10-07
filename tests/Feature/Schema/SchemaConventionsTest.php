@@ -5,11 +5,15 @@ declare(strict_types=1);
 use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
+use App\Domain\Shared\Models\Media;
+use App\Domain\Shared\Models\Tag;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Laravel\Sanctum\PersonalAccessToken as BasePersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
+use Spatie\MediaLibrary\MediaCollections\Models\Media as BaseMedia;
 use Spatie\Permission\Models\Permission as BasePermission;
 use Spatie\Permission\Models\Role as BaseRole;
+use Spatie\Tags\Tag as BaseTag;
 use Tests\Support\ModelRules;
 use Tests\Support\PgSchema;
 
@@ -185,6 +189,8 @@ function packageModelRegistry(): array
     return [
         'permission roles' => [config('permission.models.role'), Role::class, BaseRole::class],
         'permission permissions' => [config('permission.models.permission'), Permission::class, BasePermission::class],
+        'medialibrary media' => [config('media-library.media_model'), Media::class, BaseMedia::class],
+        'tags tags' => [config('tags.tag_model'), Tag::class, BaseTag::class],
         'sanctum tokens' => [Sanctum::$personalAccessTokenModel, PersonalAccessToken::class, BasePersonalAccessToken::class],
     ];
 }
