@@ -38,7 +38,7 @@ final class CanaryRecordResource extends Resource
     public static function table(Table $table): Table
     {
         return $table->columns([
-            TextColumn::make('secret'),
+            TextColumn::make('secret')->searchable(),
             TextColumn::make('client_id'),
         ]);
     }
