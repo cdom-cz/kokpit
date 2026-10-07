@@ -60,12 +60,14 @@ assert_exit 1 "(f) several operands exit 1" in_dir "$repo" "$SCRIPT" clean.txt "
 assert_out_has "my notes.txt:1: key-prefix" "(f) name with a space reported"
 assert_out_has "a=b.txt:2: key-prefix" "(f) name with '=' is a file, not an awk assignment"
 
-# (g) empty and binary files contribute nothing
+# (g) an empty file contributes nothing; a binary file is scanned in full (WR-05: never "clean" unscanned)
 : > "$repo/empty.txt"
 printf 'bin\000%s\n' "$stripe" > "$repo/blob.bin"
 assert_exit 0 "(g) empty file exits 0" in_dir "$repo" "$SCRIPT" empty.txt
-assert_exit 0 "(g) binary file is skipped, exit 0" in_dir "$repo" "$SCRIPT" blob.bin
-assert_out_has "binary" "(g) skipped binary is announced on stderr"
+assert_exit 1 "(g) binary file with a fake key exits 1" in_dir "$repo" "$SCRIPT" blob.bin
+assert_out_has "blob.bin:1: key-prefix" "(g) the binary operand is reported"
+assert_out_lacks "$stripe" "(g) full key is not printed"
+assert_out_lacks "skipping" "(g) no operand is skipped"
 
 # (h) D-05 exclusions apply to explicit files as well
 put "$repo" scripts/lib/scan.awk "$(printf '%s\n' "$stripe")"
