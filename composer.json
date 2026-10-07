@@ -54,6 +54,13 @@
         "test": "vendor/bin/pest",
         "lint": "vendor/bin/pint --test",
         "stan": "vendor/bin/phpstan analyse --no-progress --memory-limit=1G",
+        "check-licenses": "@composer licenses --locked --format=json | php scripts/check-licenses.php",
+        "ci": [
+            "@test",
+            "@lint",
+            "@stan",
+            "@check-licenses"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi",

@@ -171,12 +171,74 @@ jobs:
       - name: Pest
         run: vendor/bin/pest
 
+  # Formatting and static analysis. No database or services: Larastan boots the application from the committed
+  # files only, so a fresh checkout without .env must analyse cleanly.
+  static-analysis:
+    name: Static analysis (Pint, Larastan)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.5"
+          extensions: intl, bcmath, pdo_pgsql, gd, exif, zip, sodium, mbstring, redis
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Pint (formatting, no changes written)
+        run: vendor/bin/pint --test
+
+      - name: PHPStan (Larastan, level 8)
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+
+  # Dependency gates: a valid composer.json, no known vulnerabilities in the locked versions, and only
+  # AGPL-3.0-compatible licences (scripts/check-licenses.php, OR semantics for dual-licensed packages).
+  # Nothing is installed: every command reads composer.json and composer.lock.
+  dependencies:
+    name: Dependencies (validate, audit, licences)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.5"
+          coverage: none
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Audit locked packages for known vulnerabilities
+        run: composer audit --locked
+
+      - name: Check licences against the AGPL-compatible allowlist
+        run: |
+          set -euo pipefail
+          composer licenses --locked --format=json | php scripts/check-licenses.php
+
   # Aggregator: the organisation ruleset requires a status check named exactly "CI Passed".
   # always() plus a result check means a failed, skipped or cancelled gated job can never leave it green.
   ci-passed:
     name: CI Passed
     if: ${{ always() }}
-    needs: [scan, workflow-lint, tests]
+    needs: [scan, workflow-lint, tests, static-analysis, dependencies]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}

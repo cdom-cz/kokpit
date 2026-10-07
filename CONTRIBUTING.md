@@ -116,7 +116,11 @@ The full runbook will live in `SECURITY.md` (arrives with the community files in
 
 ## CI
 
-The workflow `Hygiene` runs on pushes to `main` and on pull requests, never on `pull_request_target`. Its jobs are `scan` (self-tests, `--all`, `--history`, gitleaks), `workflow-lint` (actionlint and zizmor) and the aggregator `CI Passed`, which is the status check the organisation ruleset requires.
+The workflow `Hygiene` runs on pushes to `main` and on pull requests, never on `pull_request_target`. Its jobs are `scan` (self-tests, `--all`, `--history`, gitleaks), `workflow-lint` (actionlint and zizmor), `tests` (Pest on PostgreSQL 18 after booting the application from `.env.example` alone), `static-analysis` (Pint and Larastan level 8), `dependencies` (`composer validate --strict`, `composer audit --locked` and the licence allowlist) and the aggregator `CI Passed`, which is the status check the organisation ruleset requires and waits for every other job (`scripts/tests/test-workflow.sh` fails when a job is missing from its `needs` list).
+
+Run the PHP gates locally inside DDEV with `ddev composer ci` (tests, formatting, static analysis and the licence check; `ddev composer check-licenses` runs the last one alone). The bash self-tests stay a host command: `bash scripts/tests/run.sh`.
+
+The licence check passes a package when at least one of its declared licences is AGPL-3.0-compatible (a dual-licensed package lists its alternatives separately) and fails on `GPL-2.0-only`, on proprietary terms and on a package with no licence. A failure is a prompt to decide, not to extend the list in `scripts/check-licenses.php` silently; the change needs maintainer review.
 
 The gitleaks step runs with `--log-opts="--all --diff-merges=first-parent --text --no-textconv"`, so it also reads merge commits and content git treats as binary. UTF-16 content stays invisible to gitleaks and is covered by the shell scan. In the pre-commit hook gitleaks cannot read binary-classified content; the `sensitive-content` job before it does.
 
