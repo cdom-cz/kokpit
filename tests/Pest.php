@@ -9,9 +9,11 @@ use Tests\TestCase;
 /*
  * Unit tests are plain PHPUnit test cases without the application.
  * Feature tests boot the application on the guarded kokpit_test database.
- * Later plans add their own suites (Arch, Concurrency, Isolation).
+ * Arch tests boot the application too but never touch the database.
+ * Later plans add their own suites (Concurrency, Isolation).
  */
 pest()->extend(TestCase::class)->use(RefreshDatabase::class)->in('Feature');
+pest()->extend(TestCase::class)->in('Arch');
 
 /**
  * An example.com address assembled at runtime from fragments, so no test file
