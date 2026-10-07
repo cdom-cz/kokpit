@@ -2,7 +2,7 @@
 
 **Domain:** Self-hosted freelancer / small-company CRM + ERP (clients -> projects -> tasks -> time -> invoice -> payment), Czech invoicing conventions, non-VAT-payer supplier, client-account (Partner) restricted view
 **Researched:** 2026-10-06
-**Confidence:** MEDIUM overall. Czech invoicing rules: MEDIUM-HIGH (law 563/1991 Sb., civil code s.435, corroborated by Fakturoid, iDoklad, Pohoda, Money.cz guides). SPAYD: HIGH for field set (Wikipedia + Czech Banking Association format, multiple libraries), MEDIUM for edge rules. Competitor behaviour (hosted CRM/ERP tools, Harvest, Toggl, Clockify, Jira): MEDIUM, from product knowledge plus general search; competitor pages were not exhaustively scraped. Stripe Payment Link edge cases and VAT-threshold figures: MEDIUM, verify in the phase that implements them.
+**Confidence:** MEDIUM overall. Czech invoicing rules: MEDIUM-HIGH (law 563/1991 Sb., civil code s.435, corroborated by Fakturoid, iDoklad, Pohoda, Money.cz guides). SPAYD: HIGH for field set (Wikipedia + Czech Banking Association format, multiple libraries), MEDIUM for edge rules. Competitor behaviour (Caflou, Harvest, Toggl, Clockify, Jira): MEDIUM, from product knowledge plus general search; competitor pages were not exhaustively scraped. Stripe Payment Link edge cases and VAT-threshold figures: MEDIUM, verify in the phase that implements them.
 
 Scope note: the functional scope is fixed by the brief (PROJECT.md Active). This file does not re-litigate it. It (a) classifies each area into table stakes / differentiators / anti-features, (b) pins down Czech invoicing details, (c) lists what the brief omits that will hurt v1, and (d) gives dependencies and complexity for roadmap ordering.
 
@@ -19,7 +19,7 @@ Grouped by feature area. "Brief" = already in PROJECT.md Active; "GAP" = not (or
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
 | Client record: name, company ID (IČO), tax ID (DIČ, optional), billing address, country | Every Czech invoice tool; needed as customer snapshot on invoices | LOW | Brief. Keep billing address separate from "contact" address only if cheap; one structured address is enough for v1 |
-| ARES lookup by IČO (name, address, DIČ, legal form) | Fakturoid/iDoklad and hosted CRM/ERP tools all do it; saves typing and typos | MEDIUM | Brief. Synchronous call with short timeout, graceful failure to manual entry. Only on create/refresh, never on invoice render |
+| ARES lookup by IČO (name, address, DIČ, legal form) | Caflou/Fakturoid/iDoklad all do it; saves typing and typos | MEDIUM | Brief. Synchronous call with short timeout, graceful failure to manual entry. Only on create/refresh, never on invoice render |
 | Per-client invoice defaults: currency, invoice language (cs/en), payment term days, default hourly rate | Tool must not make you retype these per invoice | LOW | Brief (currency, language). GAP: payment term days and default rate belong here too |
 | Contacts per client with e-mail/phone/role; flag "invoice recipient" | Invoice e-mail needs recipient(s) and CC | LOW | GAP (recipient flag + multiple recipients). Without it invoice e-mail has no defined target |
 | Tags, search, archive (not delete) | Basic CRM hygiene; clients with invoices must never be hard-deleted (accounting docs kept 5 yrs, tax docs 10 yrs) | LOW | Brief (tags). GAP: archive instead of delete, restrict delete when invoices/time exist |
@@ -29,7 +29,7 @@ Grouped by feature area. "Brief" = already in PROJECT.md Active; "GAP" = not (or
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Project with client, key (Jira-style), status (active/on hold/archived), dates | Harvest/Jira baseline | LOW | Brief. Key frozen after first task |
+| Project with client, key (Jira-style), status (active/on hold/archived), dates | Harvest/Caflou/Jira baseline | LOW | Brief. Key frozen after first task |
 | Billing type: hourly / fixed price / non-billable (+ optional retainer later) | Decides how invoice is produced from the project | MEDIUM | Brief (billing type, rates, fixed price, estimate). Fixed price still needs an invoicing path that does NOT consume time entries (see Invoicing) |
 | Rate resolution order (task/entry override -> project -> client -> user/default) with snapshot at billing | Disputes over rates are the #1 time-billing support issue | MEDIUM | Brief ("snapshots for rates"). Define the precedence once, test it |
 | Client visibility flag per project | Drives Partner view | LOW | Brief |
@@ -43,7 +43,7 @@ Grouped by feature area. "Brief" = already in PROJECT.md Active; "GAP" = not (or
 | Subtasks, to-do checklist, comments with internal flag | Brief; internal-flag is the key Partner-safety primitive | MEDIUM | Brief. Internal flag must be filtered in every channel: UI, API, notification e-mails, activity log |
 | List view with filters (project, client, status, priority, assignee, due, tag) and sorting | Where users actually live; kanban alone is not enough | MEDIUM | Brief. spatie/query-builder fits |
 | Kanban per project and global, drag-and-drop persists status and order | Jira/Trello expectation | MEDIUM-HIGH | Brief. Needs stable ordering (eloquent-sortable or fractional index), optimistic UI, concurrency-safe move, Partner cannot move cards |
-| File attachments on tasks | Jira and hosted project-management tools baseline; people paste screenshots into tasks | LOW-MEDIUM | GAP (brief has documents module; make explicit that tasks attach via medialibrary and reuse the central listing) |
+| File attachments on tasks | Jira/Caflou baseline; people paste screenshots into tasks | LOW-MEDIUM | GAP (brief has documents module; make explicit that tasks attach via medialibrary and reuse the central listing) |
 | Notifications: new task/comment from Partner -> admin; non-internal admin reply -> Partner (e-mail, queued; in-app bell for admin) | A client-facing request channel that does not notify anyone is a silent failure | MEDIUM | GAP, important. Partner "creates/comments" per brief assumption but nothing alerts the admin. Minimal version: e-mail on Partner-created task or comment; e-mail to Partner on non-internal admin comment |
 | Task status fixed set (e.g. Backlog / To do / In progress / Review / Done / Cancelled) | Brief assumption 3 | LOW | Brief. Keep enum, not configurable columns |
 
@@ -233,7 +233,7 @@ Rules and judgement calls:
 
 ### Time-to-invoice billing flow (Core Value path)
 
-What users expect, derived from Harvest, hosted CRM/ERP tools, Fakturoid + Toggl-to-invoice practice:
+What users expect, derived from Harvest, Caflou, Fakturoid + Toggl-to-invoice practice:
 
 1. **Entry point:** "Bill unbilled time" from client or project page and from the dashboard widget "Unbilled: 42 h / 63,000 CZK (Client X)".
 2. **Selection:** list of unbilled, billable, completed (not running) entries for the client, filter by project and date range, preselected all, individually deselectable. Show totals before committing.
@@ -278,7 +278,7 @@ Cross-cutting leak vectors the audit phase must cover (these are the usual real-
 - Partner-created task defaults (must not set priority/assignee/internal flag or be able to submit them via crafted requests: mass assignment).
 - Invoice PDF for Partner must be the stored issued PDF, not re-rendered with different data.
 
-Expectation level: Harvest and hosted CRM/ERP portal-style (clients see their invoices, tasks and shared files, can pay). Not expected: client-side time approval, budgets, client-editable tasks beyond comments/creation, multiple permission tiers within Partner.
+Expectation level: Harvest/Caflou portal-style (clients see their invoices, tasks and shared files, can pay). Not expected: client-side time approval, budgets, client-editable tasks beyond comments/creation, multiple permission tiers within Partner.
 
 ---
 
@@ -288,15 +288,15 @@ Aligned with Core Value: "tracked time turns into an issued, payable invoice in 
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| One-pass bill-from-time wizard with reservation, rate snapshots and automatic Stripe link + work report | Collapses the multi-step flow of Harvest and hosted CRM/ERP tools into one screen; the product's reason to exist | MEDIUM-HIGH | Core Value; P1 |
+| One-pass bill-from-time wizard with reservation, rate snapshots and automatic Stripe link + work report | Collapses caflou/Harvest multi-step flow into one screen; the product's reason to exist | MEDIUM-HIGH | Core Value; P1 |
 | "Slip-through" alerts: unbilled time older than N days, overdue invoices, unmatched/duplicate Stripe payments, failed CNB download | Directly implements the Core Value; most competitors only list, they do not nag | MEDIUM | P1 for dashboard widgets and a daily digest e-mail to admin; P2 for configurable thresholds |
 | Stripe Payment Link per invoice with DB-enforced idempotent matching and auto-paid status | Czech tools mostly rely on bank-statement matching; card payment closes the loop instantly | MEDIUM-HIGH | Brief |
 | Time API (token abilities, OpenAPI, idempotency) so any tool can track into Kokpit | Open source + self-hosted users script everything | MEDIUM | Brief |
-| Self-hosted, AGPL, no per-seat pricing, one-company-per-instance | Positioning vs hosted CRM/ERP and Fakturoid SaaS | n/a | Positioning, not a feature |
+| Self-hosted, AGPL, no per-seat pricing, one-company-per-instance | Positioning vs Caflou/Fakturoid SaaS | n/a | Positioning, not a feature |
 | Project profitability: fixed-price effective hourly rate, estimate vs actual burn | Freelancers on fixed price rarely know real rate; data already exists | LOW-MEDIUM | P2 |
 | VAT-threshold monitor (rolling 12-month turnover vs limit) for non-VAT-payers | Missing the threshold is a real legal risk for the target user | LOW-MEDIUM | P2; income data already in finance; verify current threshold figure at implementation |
 | Scheduled overdue reminders (templated, cs/en, one or two escalation steps) | Fakturoid/iDoklad have it; automation beats manual chasing | MEDIUM | P2 (v1 offers a manual "send reminder" button) |
-| Recurring invoices / retainers | Fakturoid and hosted CRM/ERP parity; common for hosting/maintenance work | MEDIUM-HIGH | P2; see gaps |
+| Recurring invoices / retainers | Caflou/Fakturoid parity; common for hosting/maintenance work | MEDIUM-HIGH | P2; see gaps |
 | Accountant export: month/year ZIP of issued invoice PDFs + CSV of invoices and payments (+ optional ISDOC) | Czech freelancers send a monthly pack to their accountant | MEDIUM | P2; documents ZIP infra and finance data exist |
 | Forgotten-timer notifications (e-mail/push after N hours) | Fewer garbage entries | LOW | P2 |
 | Multi-currency awareness end to end (client currency, CNB snapshot, CZK finance) | Czech tools often bolt this on; here it is designed in | MEDIUM | Brief |
@@ -321,7 +321,7 @@ Aligned with Core Value: "tracked time turns into an issued, payable invoice in 
 | Rich in-app invoice template designer | Branding wishes | Large UX/engineering cost | One good Blade/PDF template, logo, footer text, accent colour setting |
 | Live chat / client messaging beyond task comments | Portal temptation | Duplicates comments, adds moderation | Task comments + e-mail notifications |
 | In-app backup, GDPR tooling suite | "Complete product" | Out of scope (DB provider backups) | README guidance |
-| Gantt, dependencies, resource planning | Hosted project-management tools offer Gantt | Jira-lite should stay lite | List + kanban; revisit with demand |
+| Gantt, dependencies, resource planning | Caflou has Gantt | Jira-lite should stay lite | List + kanban; revisit with demand |
 
 ---
 
@@ -412,7 +412,7 @@ Ranked by damage. "Cheap" means <= 1-2 days of work when designed in at the righ
 | 10 | Admin 2FA | Financial data on public internet | Low | Enable Filament MFA in Foundation |
 | 11 | Document visibility to Partner (explicit flag) | Brief silent; default must be hidden | Low | Add column + policy in Documents phase |
 | 12 | Archive instead of delete (clients, projects) with FK restriction | Deleting a client with invoices breaks history and retention duties | Low | Soft-delete/archived status; DB RESTRICT |
-| 13 | Recurring invoices (retainers, hosting) | Fakturoid and hosted CRM/ERP parity; many freelancers have monthly recurring items | Medium | Defer to v1.x but keep invoice-create action callable from a job |
+| 13 | Recurring invoices (retainers, hosting) | Caflou/Fakturoid parity; many freelancers have monthly recurring items | Medium | Defer to v1.x but keep invoice-create action callable from a job |
 | 14 | Expense re-billing to client | Common for freelancers (domains, licences) | Medium | Defer; model allows an invoice line referencing an expense |
 | 15 | Invoice e-mail templates editable; reminder templates | Users always tweak wording | Low | Defaults in v1, editor v1.x |
 | 16 | Public/secured invoice link for clients without a Partner account | Many clients will never log in | Medium | Not needed if PDF is attached and Stripe link works; skip in v1 |
@@ -512,24 +512,24 @@ Everything in the brief's Active list qualifies as the product (the brief is alr
 
 Confidence MEDIUM (product knowledge + general search; not a full feature audit).
 
-| Feature | Harvest | Toggl / Clockify | Fakturoid / iDoklad (Czech invoicing) | Our Approach |
-|---------|---------|------------------|----------------------------------------|--------------|
-| Projects/tasks | Projects with tasks as billing categories only | Projects and tasks (light) | None | Jira-lite: KEY-N, kanban, subtasks, comments, no Gantt |
-| Time tracking | Best-in-class timer, timesheet, reminders | Best-in-class timer, idle detection, integrations | Fakturoid has simple time-to-invoice import in some plans | Timer + timesheet + API; exact seconds, no rounding |
-| Time -> invoice | One-click invoice from tracked time, grouping options | Invoicing in paid tiers (Clockify) / none (Toggl) | Import of hours as items (limited) | One-pass wizard with reservation, rate snapshots, work report |
-| Czech invoice conventions | No (US-centric) | No | Yes: VS, QR, ARES, proforma, credit note, ISDOC, bank matching | Yes: SPAYD QR, VS, proforma/credit note, ARES, non-VAT-payer first |
-| Payments | Stripe/PayPal | none | Bank pairing, card gateway (Fakturoid), reminders | Stripe Payment Links + webhook; no bank pairing v1 |
-| Reminders | Auto reminders | n/a | Automatic dunning | Manual in v1, scheduled in v1.x |
-| Client portal | Invoice viewing/paying link | Reports share links | Public invoice link | Partner accounts in same panel; invoices, tasks, shared files |
-| Finance overview | Expenses | none | Expenses, tax views for OSVČ | Income/expense overview in CZK, no tax calculations |
-| API | Public REST API | Public API | Public API (Fakturoid) | Time-only API, token abilities |
-| Pricing | SaaS per seat | Freemium | SaaS | Self-hosted AGPL |
+| Feature | Caflou | Harvest | Toggl / Clockify | Fakturoid / iDoklad (Czech invoicing) | Our Approach |
+|---------|--------|---------|------------------|----------------------------------------|--------------|
+| Projects/tasks | Projects, tasks, Gantt, statuses | Projects with tasks as billing categories only | Projects and tasks (light) | None | Jira-lite: KEY-N, kanban, subtasks, comments, no Gantt |
+| Time tracking | Timer + manual, tied to tasks | Best-in-class timer, timesheet, reminders | Best-in-class timer, idle detection, integrations | Fakturoid has simple time-to-invoice import in some plans | Timer + timesheet + API; exact seconds, no rounding |
+| Time -> invoice | In-app, billing from tracked time and expenses | One-click invoice from tracked time, grouping options | Invoicing in paid tiers (Clockify) / none (Toggl) | Import of hours as items (limited) | One-pass wizard with reservation, rate snapshots, work report |
+| Czech invoice conventions | Yes (Czech product): VS, QR, proforma, ARES | No (US-centric) | No | Yes: VS, QR, ARES, proforma, credit note, ISDOC, bank matching | Yes: SPAYD QR, VS, proforma/credit note, ARES, non-VAT-payer first |
+| Payments | Online payment gateways (limited), bank pairing | Stripe/PayPal | none | Bank pairing, card gateway (Fakturoid), reminders | Stripe Payment Links + webhook; no bank pairing v1 |
+| Reminders | Basic | Auto reminders | n/a | Automatic dunning | Manual in v1, scheduled in v1.x |
+| Client portal | Shared project/task visibility and documents | Invoice viewing/paying link | Reports share links | Public invoice link | Partner accounts in same panel; invoices, tasks, shared files |
+| Finance overview | Income/expense, budgets | Expenses | none | Expenses, tax views for OSVČ | Income/expense overview in CZK, no tax calculations |
+| API | REST API | Public REST API | Public API | Public API (Fakturoid) | Time-only API, token abilities |
+| Pricing | SaaS per user | SaaS per seat | Freemium | SaaS | Self-hosted AGPL |
 
 Competitor observations that shape scope:
 - Harvest's strongest idea is **tracked time -> invoice in a few clicks**; this is exactly the Core Value, so polish there beats breadth elsewhere.
 - Czech invoicing tools win on **QR, VS, ARES, dunning, accountant export**; the first three are in the brief, the last two are the P2 list.
 - Toggl/Clockify win on timer ergonomics and integrations; the always-visible timer and the API are the answer, with idempotency to match their robustness.
-- The weak spot of hosted CRM/ERP tools (and the reason this exists) is likely cost/hosting/control; the self-hosted angle is positioning, not features.
+- Caflou's weak spot (and the reason this exists) is likely cost/hosting/control; the self-hosted angle is positioning, not features.
 
 ---
 
@@ -543,6 +543,7 @@ Competitor observations that shape scope:
 - [Fakturoid support: proforma invoice](https://www.fakturoid.cz/podpora/faktury/zalohova-faktura) and [iDoklad: proforma invoices](https://www.idoklad.cz/podpora/zalohove-faktury) — proforma is not an accounting/tax document for non-payers (MEDIUM-HIGH)
 - [Wikipedia: Short Payment Descriptor](https://en.wikipedia.org/wiki/Short_Payment_Descriptor) — SPAYD fields and limits (HIGH for field set)
 - [Czech Banking Association QR format as published by KB](https://www.kb.cz/getmedia/35265715-fe8e-4df9-9212-beaf625ba417/Klientsky-format-pro-QR-platbu-v-KB-pdf.pdf) (HIGH, not re-read in full)
+- [Capterra and GetApp listings for Caflou](https://www.capterra.com/p/166938/Caflou/reviews/) — product scope (LOW-MEDIUM)
 - Law references (not fetched, standard knowledge, verify when implementing): act no. 563/1991 Sb. on accounting, civil code s.435 on business-document identification, VAT-registration threshold of 2,000,000 CZK (from 2025; MEDIUM)
 - Project context: `.planning/PROJECT.md`
 
