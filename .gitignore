@@ -47,6 +47,9 @@ CLAUDE.local.md
 /.planning/sessions/
 /.planning/**/*.log
 /.planning/migration-notes/
+# GSD codebase map: regenerate once Kokpit code exists, and keep it untracked until it passes
+# scripts/check-sensitive.sh (the current map describes the GSD framework, not Kokpit).
+/.planning/codebase/
 
 # Exports and local databases
 *.xls
