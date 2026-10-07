@@ -296,4 +296,53 @@ case_pass "(W4) the forward-slash Windows path ending in Public passes" "$(print
 case_pass "(W5) a URL path /users/<name> without a drive letter passes" "$(printf 'https://example.com/%s/fictionalperson\n' users)"
 case_pass "(W5) a drive-like letter run before the colon is not a drive" "$(printf 'see file%s/%s/%s/x\n' ':' users fictionalperson)"
 
+# (B) boundary false negatives, case handling, ASIA keys, the interval self-test and the planning exemption
+# (WR-03, WR-07, IN-03, IN-04). Every value is built from fragments.
+n8=$(fake_ico)
+case_hit "(B1) an 8-digit number after ico- is reported" company-id "$(printf 'ico-%s\n' "$n8")"
+case_hit "(B1) an 8-digit number as a URL path segment is reported" company-id "$(printf 'https://example.com/ekonomicke-subjekty/%s\n' "$n8")"
+case_hit "(B1) an 8-digit number in invoice-N.pdf is reported" company-id "$(printf 'invoice-%s.pdf\n' "$n8")"
+case_hit "(B1) an 8-digit number after id_ is reported" company-id "$(printf 'id_%s\n' "$n8")"
+case_pass "(B2) a letter directly before the 8 digits passes" "$(printf 'x%s\n' "$n8")"
+case_pass "(B2) a digit and a dot before the 8 digits (version-like) pass" "$(printf '1.%s\n' "$n8")"
+case_pass "(B2) an 8-digit group starting a UUID-like token still passes" "$(printf '%s-aaaa-bbbb-cccc-dddddddddddd\n' "$n8")"
+ip=$(fake_ip)
+case_hit "(B3) a public address after host- is reported" public-ip "$(printf 'host-%s\n' "$ip")"
+case_hit "(B3) a public address after srv_ is reported" public-ip "$(printf 'srv_%s\n' "$ip")"
+case_pass "(B3) a public address after a digit and a dot (five parts) passes" "$(printf '5.%s\n' "$ip")"
+acct=$(fake_account)
+sp_acct=$(printf '%s-%s%s / %s%s' 12 34567 89012 99 99)
+case_hit "(B4) an account number with spaces on both sides of the slash is reported" cz-account "$(printf 'account %s\n' "$sp_acct")"
+case_hit "(B4) an account number with a space after the slash is reported" cz-account "$(printf 'account %s%s/ %s%s\n' 34567 89012 99 99)"
+case_hit "(B4) an account number with a space before the slash is reported" cz-account "$(printf 'account %s%s /%s%s\n' 34567 89012 99 99)"
+case_pass "(B4) 10 / 2026 passes" "$(printf 'due 10 / %s\n' 2026)"
+case_hit "(B5) an upper-case Zerops host is reported" hosting-host "$(printf 'url %s\n' "$(printf '%s.%s.%s' FAKE-SVC ZEROPS APP)")"
+case_hit "(B5) an upper-case S3 bucket host is reported" hosting-host "$(printf 'url %s\n' "$(printf '%s.%s.%s.%s' FAKE-BUCKET S3 AMAZONAWS COM)")"
+lower_iban=$(fake_iban | tr '[:upper:]' '[:lower:]')
+case_hit "(B6) a lower-case IBAN is reported" iban "$(printf 'iban: %s\n' "$lower_iban")"
+case_hit "(B6) a lower-case IBAN in groups of four is reported" iban "$(printf 'iban: %s\n' "$(printf '%s' "$lower_iban" | sed 's/.\{4\}/& /g')")"
+asia=$(printf '%s%s%s' AS IA FAKEFIXTURE01234)
+repo=$(new_repo)
+stage "$repo" b7.txt "$(printf 'key %s\n' "$asia")"
+assert_exit 1 "(B7) an ASIA-prefixed AWS key exits 1" in_dir "$repo" "$SCRIPT"
+assert_out_has "b7.txt:1: key-prefix" "(B7) finding names file, line and rule"
+assert_out_lacks "FAKEFIXTURE" "(B7) the key body is not printed"
+path_hit "(B8) an 8-digit number starting 201 under .planning/ is reported" company-id .planning/notes.md "$(printf 'Invoice %s%s\n' 2019 0001)"
+path_pass "(B8) a number starting 2031 under .planning/ passes" .planning/notes.md "$(printf 'Invoice %s%s\n' 2031 0001)"
+path_hit "(B8) a number starting 2040 under .planning/ is reported" company-id .planning/notes.md "$(printf 'Invoice %s%s\n' 2040 0001)"
+review_host=$(printf '%s.%s.%s.%s' BUCKET S3 AMAZONAWS COM)
+path_pass "(B9) the upper-case example bucket host passes in the review record" .planning/phases/01-repository-hygiene/01-REVIEW.md "$(printf 'host %s\n' "$review_host")"
+path_hit "(B9) the same host is reported anywhere else" hosting-host src/notes.md "$(printf 'host %s\n' "$review_host")"
+path_hit "(B9) another host in the review record is reported" hosting-host .planning/phases/01-repository-hygiene/01-REVIEW.md "$(printf 'host %s.%s.%s.%s\n' OTHER S3 AMAZONAWS COM)"
+# (B10) an awk without regex interval support turns every {n} rule into a dead rule; the self-test fails closed
+blind="$TEST_TMP/blind"
+mkdir -p "$blind/scripts"
+cp -R "$REPO_ROOT/scripts/check-sensitive.sh" "$REPO_ROOT/scripts/lib" "$REPO_ROOT/scripts/sensitive-allowlist.txt" "$blind/scripts/"
+sed 's/\^\[0-9\]{8}\$"/^[0-9]{9}$"/' "$REPO_ROOT/scripts/lib/scan.awk" > "$blind/scripts/lib/scan.awk"
+repo=$(new_repo)
+stage "$repo" b10.txt "$(printf '%s\n' "$stripe")"
+assert_exit 2 "(B10) a failing interval self-test exits 2, never clean" in_dir "$repo" "$blind/scripts/check-sensitive.sh"
+assert_out_has "scanner error" "(B10) the driver reports a scanner error"
+assert_out_has "no regex interval support" "(B10) the reason is printed on stderr"
+
 finish
