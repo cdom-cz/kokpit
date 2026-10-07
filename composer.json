@@ -51,10 +51,9 @@
         }
     },
     "scripts": {
-        "test": [
-            "@php artisan config:clear --ansi @no_additional_args",
-            "@php artisan test"
-        ],
+        "test": "vendor/bin/pest",
+        "lint": "vendor/bin/pint --test",
+        "stan": "vendor/bin/phpstan analyse --no-progress --memory-limit=1G",
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi",

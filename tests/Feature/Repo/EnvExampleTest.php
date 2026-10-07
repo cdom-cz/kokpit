@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * .env.example must stay in sync with the config files, in both directions.
  *
