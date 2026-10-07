@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Domain\Shared\Money\Money;
 
+// A bare 'Brick' target is not treated as a namespace prefix by Pest and would pass vacuously,
+// so both Brick packages are named by their full namespace.
 arch('Brick classes are used only inside the Money namespace')
-    ->expect('Brick')
+    ->expect(['Brick\Math', 'Brick\Money'])
     ->toOnlyBeUsedIn('App\Domain\Shared\Money');
 
 arch('the rounding mode is used only by the Money class')

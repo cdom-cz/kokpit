@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace App\Domain\Shared\Money;
 
+use Brick\Math\BigDecimal;
 use Brick\Math\BigInteger;
 use Brick\Math\BigNumber;
 use Brick\Math\BigRational;
 use Brick\Math\Exception\MathException;
 use Brick\Math\RoundingMode;
 use Brick\Money\Currency;
+use Brick\Money\Exception\MoneyException;
 use Brick\Money\Exception\UnknownCurrencyException;
+use Brick\Money\Money as BrickMoney;
 use InvalidArgumentException;
+use JsonSerializable;
 use OverflowException;
 
 /**
@@ -22,7 +26,7 @@ use OverflowException;
  * accepts or returns a float, and every operation is exact except one:
  * {@see Money::fromExactMinor()} is the single rounding point (D-09).
  */
-final readonly class Money
+final readonly class Money implements JsonSerializable
 {
     private function __construct(
         public int $minor,
@@ -120,12 +124,22 @@ final readonly class Money
      * sum of rate * seconds / 3600 over all parts, rounded once (D-09).
      *
      * @param  iterable<array{0: self, 1: int}>  $parts  pairs of hourly rate and whole seconds
+     *
+     * @throws InvalidArgumentException when a part is in another currency than the line or has negative seconds
      */
     public static function forDurations(string $currency, iterable $parts): self
     {
         $exact = BigRational::zero();
 
         foreach ($parts as [$hourlyRate, $seconds]) {
+            if ($hourlyRate->currency !== $currency) {
+                throw new InvalidArgumentException('Every duration part must use the currency of the line.');
+            }
+
+            if ($seconds < 0) {
+                throw new InvalidArgumentException('A duration cannot be negative.');
+            }
+
             $exact = $exact->plus(
                 BigRational::ofFraction(BigInteger::of($hourlyRate->minor)->multipliedBy($seconds), 3600),
             );
@@ -134,9 +148,67 @@ final readonly class Money
         return self::fromExactMinor($exact->toString(), $currency);
     }
 
+    /**
+     * Converts this amount into another currency with an exchange rate.
+     *
+     * The rate is the stored NUMERIC(20,10) decimal string, quoted for
+     * `$unitAmount` units of this currency (the central bank quotes 1, 100 or
+     * 1000). The product is exact; the single rounding point is applied once
+     * to the result. Each currency's default fraction digits decide the minor
+     * unit, so JPY (no fraction) converts correctly.
+     *
+     * @param  string  $decimalRate  digits with an optional point and at most ten fraction digits, no comma, no exponent
+     *
+     * @throws InvalidArgumentException when the rate or the target currency is malformed or the unit amount is below one
+     */
+    public function convert(string $decimalRate, string $toCurrency, int $unitAmount = 1): self
+    {
+        if (preg_match('/^-?\d+(\.\d{1,10})?$/D', $decimalRate) !== 1) {
+            throw new InvalidArgumentException('The exchange rate must be a decimal string with at most ten fraction digits.');
+        }
+
+        if ($unitAmount < 1) {
+            throw new InvalidArgumentException('The quoted unit amount must be at least one.');
+        }
+
+        $target = self::validCurrency($toCurrency);
+        $sourceDigits = Currency::of($this->currency)->getDefaultFractionDigits();
+        $targetDigits = Currency::of($target)->getDefaultFractionDigits();
+
+        $exact = BigRational::of($this->minor)
+            ->dividedBy(BigInteger::ten()->power($sourceDigits))
+            ->multipliedBy(BigDecimal::of($decimalRate))
+            ->dividedBy($unitAmount)
+            ->multipliedBy(BigInteger::ten()->power($targetDigits));
+
+        return self::fromExactMinor($exact->toString(), $target);
+    }
+
+    /**
+     * Formats the amount for display in a locale, for example "cs" gives "1 234,50 Kč".
+     *
+     * @throws InvalidArgumentException when the locale is unknown or the amount cannot be formatted exactly
+     */
+    public function format(string $locale): string
+    {
+        try {
+            return BrickMoney::ofMinor($this->minor, $this->currency)->formatToLocale($locale);
+        } catch (MoneyException $e) {
+            throw new InvalidArgumentException('The amount cannot be formatted for this locale.', 0, $e);
+        }
+    }
+
+    /**
+     * @return array{minor: int, currency: string}
+     */
+    public function jsonSerialize(): array
+    {
+        return ['minor' => $this->minor, 'currency' => $this->currency];
+    }
+
     private static function validCurrency(string $currency): string
     {
-        if (preg_match('/^[A-Z]{3}$/', $currency) !== 1) {
+        if (preg_match('/^[A-Z]{3}$/D', $currency) !== 1) {
             throw new InvalidArgumentException('The currency must be an upper-case ISO 4217 code.');
         }
 
