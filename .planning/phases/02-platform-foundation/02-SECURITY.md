@@ -142,3 +142,11 @@ Verification runs: 428 Pest tests across Isolation, Arch, Unit, Feature, Concurr
 - [x] `status: verified` set in frontmatter
 
 **Approval:** verified 2026-10-08
+
+## Security Audit 2026-10-07
+
+| Metric | Count |
+|---|---|
+| Threats found | 55 |
+| Closed | 55 |
+| Open | 0 |
