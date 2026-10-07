@@ -35,6 +35,17 @@ CONTRIB_PHRASES=(
   'git-attributes'
   '--diff-merges=first-parent'
   'path-scoped allowlist entry'
+  'ddev start'
+  'composer ci'
+  'uuidv7()'
+  'timestamptz'
+  'MorphMap'
+  'SequenceAllocator'
+  'PartnerIsolated'
+  'NotPartnerScoped'
+  'AccessRule'
+  'CanaryRegistry'
+  'lang/cs'
 )
 
 # has_phrase <file> <phrase>: byte-wise fixed-string match

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Artisan;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * The public repository files must agree with each other and with the code:
@@ -193,4 +194,27 @@ it('reports an address outside example.com and accepts one inside it', function 
 
     expect(repoForeignEmails("write to {$foreign} or {$own}"))->toBe([$foreign])
         ->and(repoForeignEmails("only {$own}"))->toBe([]);
+});
+
+it('points CONTRIBUTING.md at SECURITY.md and carries a Development section', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    expect($contributing)->toContain('## Development')
+        ->and($contributing)->toContain('SECURITY.md')
+        ->and($contributing)->not->toContain('will live in `SECURITY.md`');
+});
+
+it('lists every job of the Hygiene workflow in the CI section of CONTRIBUTING.md', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+    $workflow = Yaml::parseFile(base_path('.github/workflows/hygiene.yml'));
+    $jobs = is_array($workflow) && is_array($workflow['jobs'] ?? null) ? $workflow['jobs'] : [];
+
+    expect(array_keys($jobs))->not->toBeEmpty();
+
+    foreach ($jobs as $id => $job) {
+        $name = is_array($job) && is_string($job['name'] ?? null) ? $job['name'] : (string) $id;
+        // Jobs are listed by id (scan, tests, ...) except the aggregator, which is listed by its display name.
+        expect(str_contains($contributing, "`{$id}`") || str_contains($contributing, "`{$name}`"))
+            ->toBeTrue("CONTRIBUTING.md does not mention the CI job {$id}");
+    }
 });

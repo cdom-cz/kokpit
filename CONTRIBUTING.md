@@ -1,6 +1,6 @@
 # Contributing to Kokpit
 
-Kokpit is a public AGPL-3.0 project. This guide currently covers repository hygiene; setup and conventions for the application arrive together with the application.
+Kokpit is a public AGPL-3.0 project (SPDX `AGPL-3.0-only`). This guide covers repository hygiene, the development setup and the conventions every change follows. Reporting a vulnerability is described in `SECURITY.md`; installing the application is described in `README.md`.
 
 ## Repository hygiene
 
@@ -34,6 +34,53 @@ Run `scripts/install-hooks.sh` after every fresh clone. It checks both tools, re
 The pre-commit hook runs two jobs in order: `sensitive-content` (`scripts/check-sensitive.sh` over the staged changes), then `gitleaks` over the staged changes. If lefthook is not installed, the generated hook aborts the commit instead of skipping it.
 
 Run the self-tests with `scripts/tests/run.sh` (`--quick` skips the tests that need lefthook or gitleaks). `scripts/tests/run-in-ubuntu.sh` repeats the quick suite in a container with the awk and grep flavours CI uses.
+
+## Development
+
+The application runs in a DDEV project (PHP 8.5, PostgreSQL 18, Redis, RustFS, Mailpit, a queue worker and a scheduler). `README.md` has the install sequence; day to day:
+
+    ddev start
+    ddev composer install
+    ddev artisan migrate
+    ddev exec vendor/bin/pest --filter=<name>
+
+Run every PHP command through DDEV (`ddev composer ...`, `ddev artisan ...`, `ddev exec vendor/bin/pest ...`). The tests use the separate `kokpit_test` database that DDEV creates on start; `tests/TestCase.php` refuses any database whose name does not end in `_test`.
+
+Composer scripts (the PHP gates; `composer ci` runs the first four in order):
+
+| Script | What it runs |
+|---|---|
+| `composer test` | Pest: the Unit, Feature, Arch, Concurrency and Isolation suites |
+| `composer lint` | Pint in check mode (`--test`); run `vendor/bin/pint` to fix |
+| `composer stan` | Larastan level 8 |
+| `composer check-licenses` | the AGPL-compatible licence allowlist over `composer.lock` |
+| `composer ci` | all of the above, the same gates CI runs |
+
+The bash self-tests of the hygiene tooling are a host command: `bash scripts/tests/run.sh`. All gates must be green before a pull request.
+
+### Conventions
+
+Each convention is enforced by a test, so a violation fails `composer test` and not only the review.
+
+- **Keys and time.** Every table has a UUID v7 primary key with the `uuidv7()` column default; foreign keys, morph `*_id` columns and package tables are `uuid` too. Every timestamp is `timestamptz` (`timestampsTz()`, never `timestamps()`); storage is UTC. The schema tests (R1 to R9) read the PostgreSQL catalogue and name the offending column; an exception goes into `PgSchema::EXEMPT` with a reason.
+- **Morph aliases.** Polymorphic relations store a short snake_case alias, never a class name. Aliases live only in `MorphMap`; the morph map is enforced, so an unmapped model fails loudly.
+- **Money.** Money is the `Money` value object with a `<name>_minor` (bigint, minor units) and a `<name>_currency` (char(3)) column pair and `MoneyCast`. There is no float money. `Money::fromExactMinor` is the single rounding point (half up); `tests/Arch/MoneyBoundaryTest` guards the boundary.
+- **Numbering.** Gap-free, duplicate-free numbers (tasks, invoices) come only from `SequenceAllocator`, called inside the caller's own transaction so a rolled-back caller gives the number back. The year is part of the scope key; never hand-roll `max(number) + 1`.
+- **Immutability.** Frozen records (issued invoices, billed time entries) are protected by database triggers built with `Immutability`; a forbidden change raises SQLSTATE `KP001`. Application code is not the only guard.
+- **Localisation.** Every user-facing string lives in `lang/cs` (the interface is Czech, the fallback locale is English); no literal Czech or English text in classes or views. Enum labels are translated too. Times show as `j. n. Y H:i` in Europe/Prague, from the defaults set once in `LocalisationServiceProvider`.
+- **Ordering.** A list that sorts by a timestamp breaks ties by `id`, so pagination is stable. Text that is sorted for people (names, titles) uses a Czech collation instead of the database default; no sorted text column exists yet, so the first one defines the mechanism and adds the test.
+- **Isolation.** A Partner must never see another client's data, and the rule is enforced in the data layer, not by hiding UI. Every model implements `PartnerIsolated` (with `IsolatesPartners`, and a `KokpitPolicy` subclass that grants Partners explicitly; `DeniesPartners` for Admin-only data) or carries `NotPartnerScoped` with a reason. Every Filament resource, page, widget and relation manager carries an `AccessRule` attribute (`Audience::AdminOnly` or `Audience::PartnerAllowed`, with a reason). Every new `PartnerIsolated` model gets one fixture line in `CanaryRegistry` (`tests/Support/CanaryRegistry.php`); the canary tests search every Partner-visible surface for another client's canary string.
+
+### Add-a-model checklist
+
+1. Extend `KokpitModel` (`HasUuids`); create the migration with a uuid primary key defaulting to `uuidv7()`, `timestampsTz()` and database constraints (foreign keys, unique and check constraints, partial indexes) rather than only validation.
+2. Add one line to `MorphMap`.
+3. Money columns as a `_minor` and `_currency` pair with `MoneyCast`; numbers through `SequenceAllocator`; frozen states through `Immutability`.
+4. Declare isolation: implement `PartnerIsolated` and use `IsolatesPartners` (or `DeniesPartners`), or add `NotPartnerScoped` with a reason.
+5. Write the policy as a `KokpitPolicy` subclass that grants Partners explicitly, or register `AdminOnlyPolicy`.
+6. Put `AccessRule` on every Filament class you add, and add its labels and messages to `lang/cs`.
+7. Add one line to `CanaryRegistry` for a `PartnerIsolated` model.
+8. Run `ddev composer ci`.
 
 ## What the checker flags
 
@@ -112,11 +159,18 @@ If something sensitive was committed or pushed:
 2. Remove it from history. Before the first push, a local history rewrite is enough. After a push, contact the owner: the organisation ruleset blocks force-pushes to `main`, so the repair needs a decision.
 3. Notify the affected parties.
 
-The full runbook will live in `SECURITY.md` (arrives with the community files in Phase 2).
+The same runbook, together with how to report a vulnerability privately, is in `SECURITY.md`.
 
 ## CI
 
-The workflow `Hygiene` runs on pushes to `main` and on pull requests, never on `pull_request_target`. Its jobs are `scan` (self-tests, `--all`, `--history`, gitleaks), `workflow-lint` (actionlint and zizmor), `tests` (Pest on PostgreSQL 18 after booting the application from `.env.example` alone), `static-analysis` (Pint and Larastan level 8), `dependencies` (`composer validate --strict`, `composer audit --locked` and the licence allowlist) and the aggregator `CI Passed`, which is the status check the organisation ruleset requires and waits for every other job (`scripts/tests/test-workflow.sh` fails when a job is missing from its `needs` list).
+The workflow `Hygiene` runs on pushes to `main` and on pull requests, never on `pull_request_target`. Its jobs:
+
+- `scan`: the hygiene self-tests, `--all`, `--history` and gitleaks.
+- `workflow-lint`: actionlint and zizmor.
+- `tests`: Pest on PostgreSQL 18 and Redis services, after booting the application from `.env.example` alone (copy, `key:generate`, `migrate`, `kokpit:install`).
+- `static-analysis`: Pint and Larastan level 8.
+- `dependencies`: `composer validate --strict`, `composer audit --locked` and the licence allowlist.
+- `CI Passed`: the aggregator and the only status check the organisation ruleset requires. It waits for every other job, and `scripts/tests/test-workflow.sh` fails when a job is missing from its `needs` list.
 
 Run the PHP gates locally inside DDEV with `ddev composer ci` (tests, formatting, static analysis and the licence check; `ddev composer check-licenses` runs the last one alone). The bash self-tests stay a host command: `bash scripts/tests/run.sh`.
 
