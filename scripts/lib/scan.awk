@@ -88,10 +88,11 @@ function scan_re(rule, re, lbad, rbad, s,   off, rest, tok, st, en, cb, ca, cn, 
     if (cb != "" && lbad != "" && cb ~ lbad) ok = 0
     if (ca != "" && rbad != "" && ca ~ rbad) ok = 0
     if (ca == "." && cn ~ /[0-9]/ && rbad != "") ok = 0       # "1.2.3.4.5" / "20260001.2" are version-like
-    if (ok) { handle(rule, tok); off = en } else off = st + 1
+    if (ok) { lctx = (st > 1) ? substr(s, (st > 3 ? st - 3 : 1), (st > 3 ? 3 : st - 1)) : ""; handle(rule, tok); off = en } else off = st + 1
   }
 }
-# Rule-specific acceptance checks; the generic branch reports every match.
+# Rule-specific acceptance checks; the generic branch reports every match. lctx holds the up to three characters
+# before the match (set by scan_re), for the one check that needs context outside the token.
 function handle(rule, tok,   t, ip, n, w, k, m, q) {
   if (rule == "email") { if (!email_ok(tok)) hit(rule, tok) }
   else if (rule == "company-id") { t = tok; gsub(/[^0-9]/, "", t); hit(rule, t) }
@@ -106,8 +107,12 @@ function handle(rule, tok,   t, ip, n, w, k, m, q) {
   } else if (rule == "iban") {            # run of [A-Z0-9 ]; longest whole-word prefix of exact country length that passes mod 97
     n = split(tok, w, " ")
     for (k = n; k >= 1; k--) { t = ""; for (m = 1; m <= k; m++) t = t w[m]; if (iban_len_ok(t) && iban_valid(t)) { hit(rule, t); break } }
-  } else if (rule == "home-path") {       # placeholder account names are not personal
-    if (tok !~ /^\/(Users|home)\/(example|user|username|name|you|runner|vagrant|ubuntu|www-data|ddev|Shared)$/) hit(rule, tok)
+  } else if (rule == "home-path") {       # placeholder account names are not personal; tok is the whole token
+    if (tok ~ /^[a-z]:\//) {             # Windows form, scanned on the lower-cased copy (see the main block)
+      if (tok !~ /^[a-z]:\/+users\/+(example|user|username|name|you|public|default|all|runneradmin)$/) hit(rule, tok)
+    } else if (tok ~ /^\/Users\// && (lctx ~ /^[A-Za-z]:$/ || lctx ~ /[^A-Za-z0-9][A-Za-z]:$/)) {
+      # a drive letter and colon before /Users/: the Windows rule decides (forward-slash C:/Users/Public)
+    } else if (tok !~ /^\/(Users|home)\/(example|user|username|name|you|runner|vagrant|ubuntu|www-data|ddev|Shared)$/) hit(rule, tok)
   } else hit(rule, tok)
 }
 BEGIN {
@@ -137,6 +142,11 @@ BEGIN {
   # (end of line, quote, space, "&", ":", "/"). The left boundary rejects a segment inside a URL path or a
   # relative path ("example.com/home/about", "views/home/index").
   scan_re("home-path",    "/(Users|home)/[A-Za-z0-9._-]+", "[A-Za-z0-9._~-]", "", text)
+  # Windows home path (backslashes, doubled backslashes or forward slashes, any letter case): scanned on a
+  # lower-cased copy with every backslash turned into a slash, so one lower-case core covers every spelling.
+  # The left boundary keeps a drive letter from being the tail of a word ("file:///users/x" is not a drive).
+  wt = tolower(text); gsub(/\\/, "/", wt)
+  scan_re("home-path",    "[a-z]:/+users/+[a-z0-9._-]+", "[a-z0-9]", "", wt)
   # Current-state policy, never applied to history rows (line field "N@sha7"), so an attribute that a later
   # commit removed cannot keep CI red. No regex with an anchor inside a group here (mawk).
   if ((path == ".gitattributes" || substr(path, length(path) - 14) == "/.gitattributes") && index(ln, "@") == 0) check_attributes(text)

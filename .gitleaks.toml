@@ -41,13 +41,38 @@ keywords = ["/users/", "/home/"]
 # with the home-path rule of scripts/lib/scan.awk (which also allows ddev and the macOS Shared folder). Whole
 # name segments only.
 regexes = ['''^(?:example|user|username|name|you|runner|vagrant|ubuntu|www-data|ddev|Shared)$''']
+[[rules.allowlists]]
+# A Windows system folder written with forward slashes ("C:/Users/Public") also matches this rule, because the
+# colon is a legal left boundary (a PATH list entry). scripts/lib/scan.awk hands every drive-letter path to the
+# Windows rule; here only the four names the Windows rule never reports are exempt, tested on the whole match.
+regexTarget = "match"
+regexes = ['''(?i)^:/Users/(?:public|default|all|runneradmin)$''']
+
+[[rules]]
+id = "kokpit-windows-home-path"
+description = "Personal Windows home directory path"
+# Drive letter, colon, then Users and the name segment, with backslashes, doubled backslashes (JSON or string
+# escaping) or forward slashes in any letter case. Parity with the Windows branch of the home-path rule in
+# scripts/lib/scan.awk. In a TOML literal string the backslashes are literal, so RE2 sees a class of backslash
+# and slash. The left boundary is a consumed character that excludes CR and LF (see kokpit-home-path), so a
+# drive letter that ends a word ("file:///users/x") is not a drive. The secret is the name segment only.
+regex = '''(?im)(?:^|[^0-9a-z\r\n])[a-z]:[\\/]+users[\\/]+([a-z0-9._-]+)'''
+secretGroup = 1
+keywords = ["users"]
+[[rules.allowlists]]
+# System folders and placeholder names, whole name segments only; the same list as the scanner's Windows branch.
+regexes = ['''(?i)^(?:example|user|username|name|you|public|default|all|runneradmin)$''']
 
 [[rules]]
 id = "kokpit-ico-like"
 description = "Company-ID-like 8-digit number next to an ID keyword"
-regex = '''(?i)\b(?:ico|ič|ičo|company[_ -]?id)\b["']?\s*[:=]\s*["']?(\d{8})\b'''
+# RE2's \b is ASCII-only, so the old trailing word boundary made the "ič" alternative dead ("č" is not a word
+# character, so no boundary exists before ":"). The keyword is followed directly by the optional quote and the
+# separator, which is boundary enough; the left boundary is a consumed character, as in kokpit-home-path.
+# "ic" is the common transliteration of "ič".
+regex = '''(?im)(?:^|[^0-9a-z\r\n])(?:ičo|ico|ič|ic|company[_ -]?id)["']?\s*[:=]\s*["']?(\d{8})\b'''
 secretGroup = 1
-keywords = ["ico", "ič", "company"]
+keywords = ["ic", "ič", "company"]
 [[rules.allowlists]]
 # The placeholder company ids the repository documents (CLAUDE.md, CONTRIBUTING.md).
 stopwords = ["12345678", "00000000"]
