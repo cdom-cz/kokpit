@@ -160,4 +160,87 @@ stage "$repo" m.txt "$(printf 'client: FIKTIVNÍ KLIENT\n')"
 assert_exit 1 "(m) ASCII term matches the spelling with diacritics" run_with "$dl" "$repo"
 assert_out_has "m.txt:1: denylist" "(m) spelling with diacritics is reported"
 
+# r_check <term> <line-text> [description]: the last output holds neither the term, its folded form nor the
+# line text (T-01-46). The folded form is computed with the scanner's own fold program.
+r_check() {
+  local folded
+  folded=$(printf '%s\n' "$1" | LC_ALL=C awk -f "$REPO_ROOT/scripts/lib/fold.awk")
+  assert_out_lacks "$1" "(r) $3: term is not printed"
+  assert_out_lacks "$folded" "(r) $3: folded term is not printed"
+  assert_out_lacks "$2" "(r) $3: line text is not printed"
+}
+
+# run_loc <locale> <denylist-path> <repo>: run the script with LC_ALL and LANG forced to <locale>
+run_loc() {
+  ( cd "$3" && LC_ALL="$1" LANG="$1" KOKPIT_DENYLIST="$2" "$SCRIPT" )
+}
+
+# (n) composed and decomposed spellings match each other (combining acute built from octal escapes)
+comb=$(printf '\314\201')
+dl=$(mkdeny deny-n1.txt "$term_a")
+repo=$(new_repo)
+n_text=$(printf 'client Fiktivni\314\201 Klient here')
+stage "$repo" n1.txt "$n_text"
+assert_exit 1 "(n) composed term matches decomposed text" run_with "$dl" "$repo"
+assert_out_has "n1.txt:1: denylist" "(n) decomposed text is reported"
+r_check "$term_a" "$n_text" "decomposed text"
+dl=$(mkdeny deny-n2.txt "$(printf 'Fiktivni\314\201 Klient')")
+repo=$(new_repo)
+stage "$repo" n2.txt "$(printf 'client: %s\n' "$term_a")"
+assert_exit 1 "(n) decomposed term matches composed text" run_with "$dl" "$repo"
+assert_out_has "n2.txt:1: denylist" "(n) composed text is reported"
+
+# (o) letters outside Czech: a German u-umlaut and a Polish l-stroke fold to their ASCII spellings
+term_o=$(printf 'M\303\274ller-Fake Z\305\202oty-Fake')
+dl=$(mkdeny deny-o.txt "$term_o")
+repo=$(new_repo)
+stage "$repo" o.txt "$(printf 'x\nMULLER-FAKE ZLOTY-FAKE\n')"
+assert_exit 1 "(o) umlaut and l-stroke term matches the upper-case ASCII spelling" run_with "$dl" "$repo"
+assert_out_has "o.txt:2: denylist" "(o) other Latin letters are reported"
+
+# (p) WR-01: a term inside a D-05 exempt path is reported; the generic rules still skip those paths
+repo=$(new_repo)
+p_text="see $term_b here"
+stage "$repo" scripts/sensitive-allowlist.txt "$(printf 'x\n%s\n' "$p_text")"
+stage "$repo" .gitleaks.toml "$(printf 'y\n%s\n' "$p_text")"
+dl=$(mkdeny deny-p.txt "$term_b")
+assert_exit 1 "(p) term in exempt paths exits 1" run_with "$dl" "$repo"
+assert_out_has "scripts/sensitive-allowlist.txt:2: denylist" "(p) allowlist file is scanned by the denylist"
+assert_out_has ".gitleaks.toml:2: denylist" "(p) gitleaks config is scanned by the denylist"
+r_check "$term_b" "$p_text" "exempt paths"
+repo=$(new_repo)
+stage "$repo" scripts/sensitive-allowlist.txt "$(printf 'x\n%s\n' "$stripe")"
+stage "$repo" .gitleaks.toml "$(printf 'y\n%s\n' "$stripe")"
+assert_exit 0 "(p) without a denylist the generic rules still skip the exempt paths" run_unset "$repo"
+
+# (q) a list whose only term is a lone combining mark folds to nothing: no terms, never "match every line"
+dl="$TEST_TMP/deny-q.txt"
+printf '%s\n' "$comb" > "$dl"
+repo=$(new_repo)
+stage "$repo" q.txt "$(printf 'plain text\nmore plain text\n')"
+assert_exit 0 "(q) a term that folds to nothing does not match every line" run_with "$dl" "$repo"
+assert_out_has "KOKPIT_DENYLIST has no terms" "(q) notice says the list is empty"
+
+# (s) an ASCII term inside a UTF-16 file and inside a line with Windows-1250 bytes
+dl=$(mkdeny deny-s.txt "$term_b")
+repo=$(new_repo)
+utf16le "see acme-fake-corp here" > "$repo/s16.txt"
+git -C "$repo" add -- s16.txt
+assert_exit 1 "(s) ASCII term inside a UTF-16 file exits 1" run_with "$dl" "$repo"
+assert_out_has "s16.txt:1: denylist" "(s) UTF-16 finding reported"
+repo=$(new_repo)
+printf 'x\350%s\232y\n' "$term_b" > "$repo/s1250.txt"
+git -C "$repo" add -- s1250.txt
+assert_exit 1 "(s) ASCII term between Windows-1250 bytes exits 1" run_with "$dl" "$repo"
+assert_out_has "s1250.txt:1: denylist" "(s) Windows-1250 finding reported"
+
+# (t) the result of (l) does not depend on the system locale
+dl=$(mkdeny deny-t.txt "$term_a")
+repo=$(new_repo)
+stage "$repo" l.txt "$(printf 'client Fiktivni Klient here\n')"
+assert_exit 1 "(t) LC_ALL=C LANG=C still exits 1" run_loc C "$dl" "$repo"
+assert_out_has "l.txt:1: denylist" "(t) finding reported under the C locale"
+assert_exit 1 "(t) a locale name that does not exist still exits 1" run_loc xx_XX.UTF-8 "$dl" "$repo"
+assert_out_has "l.txt:1: denylist" "(t) finding reported under a missing locale"
+
 finish
