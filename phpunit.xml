@@ -26,6 +26,8 @@
         <env name="DB_CONNECTION" value="pgsql"/>
         <env name="DB_DATABASE" value="kokpit_test"/>
         <env name="DB_URL" value=""/>
+        <env name="KOKPIT_CANARY_HARNESS" value="true"/>
+        <env name="KOKPIT_REQUIRE_ADMIN_2FA" value="false"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

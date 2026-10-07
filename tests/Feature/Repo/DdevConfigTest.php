@@ -99,8 +99,10 @@ it('keeps instance-specific values and secrets out of the versioned DDEV files',
             expect($host)->toBeIn(['localhost', '127.0.0.1', 'rustfs', 'redis', 'db', 'example.com']);
         }
 
-        // No public-looking hostname anywhere in the file.
-        expect(preg_match('/\b[a-z0-9-]+\.(com|net|org|cz|io|dev|site|cloud|app)\b/i', str_replace('example.com', '', $contents)))->toBe(0);
+        // No public-looking hostname anywhere in the file. The com.ddev.* label keys
+        // are DDEV's own reverse-DNS label names, not hostnames.
+        $withoutLabels = str_replace(['example.com', 'com.ddev.'], '', $contents);
+        expect(preg_match('/\b[a-z0-9-]+\.(com|net|org|cz|io|dev|site|cloud|app)\b/i', $withoutLabels))->toBe(0);
     }
 
     expect(ddevYaml('config.yaml')['web_environment'] ?? [])->toBe([]);

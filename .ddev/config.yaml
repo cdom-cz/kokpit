@@ -14,6 +14,17 @@ composer_version: "2"
 web_environment: []
 corepack_enable: false
 
+# Supervised daemons. Each waits until Composer has installed vendor/ and the app boots,
+# so a fresh clone does not put them into a restart loop before "ddev composer install".
+# queue:listen reloads code per job, which suits development; production uses queue:work.
+web_extra_daemons:
+  - name: queue-worker
+    command: "until [ -f vendor/autoload.php ] && php artisan about --only=environment >/dev/null 2>&1; do sleep 5; done; exec php artisan queue:listen --tries=3 --sleep=1"
+    directory: /var/www/html
+  - name: scheduler
+    command: "until [ -f vendor/autoload.php ] && php artisan about --only=environment >/dev/null 2>&1; do sleep 5; done; exec php artisan schedule:work"
+    directory: /var/www/html
+
 # Create the dedicated test database once; the DDEV db role is a superuser with CREATEDB.
 # tests/TestCase.php refuses to run against any database whose name does not end in _test.
 hooks:

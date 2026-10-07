@@ -1,0 +1,49 @@
+# Local S3-compatible object storage for development only (RustFS).
+# The key pair below is the publicly documented RustFS default for local use;
+# it is not a secret and protects nothing outside this DDEV project.
+# Images are pinned by version tag, never by latest.
+services:
+  rustfs:
+    container_name: ddev-${DDEV_SITENAME}-rustfs
+    image: rustfs/rustfs:1.0.1
+    restart: "no"
+    labels:
+      com.ddev.site-name: ${DDEV_SITENAME}
+      com.ddev.approot: ${DDEV_APPROOT}
+    expose:
+      - "9000"
+      - "9001"
+    environment:
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_VOLUMES: /data
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:9000/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # One-shot bucket creation. The trailing "exec sleep infinity" is mandatory:
+  # without it the container exits successfully and ddev start fails with
+  # "container exited".
+  rustfs-init:
+    container_name: ddev-${DDEV_SITENAME}-rustfs-init
+    image: rustfs/rc:v0.1.36
+    restart: "no"
+    labels:
+      com.ddev.site-name: ${DDEV_SITENAME}
+      com.ddev.approot: ${DDEV_APPROOT}
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "rc alias set local http://rustfs:9000 rustfsadmin rustfsadmin && (rc bucket create local/kokpit-dev || true) && exec sleep infinity"
+
+volumes:
+  rustfs-data:
