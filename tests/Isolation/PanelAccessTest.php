@@ -7,7 +7,19 @@ use App\Domain\Shared\Auth\Audience;
 use App\Filament\Pages\Dashboard;
 use Filament\Facades\Filament;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Route;
+use Symfony\Component\Process\Process;
 use Tests\Support\Canary;
+use Tests\Support\CanaryRecord;
+use Tests\Support\Filament\CanaryRecordResource;
+use Tests\Support\Filament\CanaryRecordResource\Pages\ListCanaryRecords;
+use Tests\Support\Filament\Fixtures\AdminOnlyRelationManager;
+use Tests\Support\Filament\Fixtures\AdminOnlyWidget;
+use Tests\Support\Filament\Fixtures\PartnerAllowedWidget;
+use Tests\Support\Filament\Fixtures\PolicyDeniedRelationManager;
+use Tests\Support\Filament\Fixtures\PolicyDeniedResource;
+use Tests\Support\Filament\Fixtures\UndeclaredCanaryRecordResource;
 use Tests\Support\Filament\Fixtures\UndeclaredPage;
 
 /**
@@ -116,4 +128,130 @@ it('denies a class that does not exist and a subclass of a declared class', func
 
     expect(AccessRules::allows('App\\Filament\\Pages\\DoesNotExist'))->toBeFalse()
         ->and(AccessRules::allows($subclass::class))->toBeFalse();
+});
+
+/**
+ * Evaluates a check once per state of the access matrix and returns the results
+ * keyed by state name.
+ *
+ * @param  Closure(): bool  $check
+ * @return array<string, bool>
+ */
+function accessByState(Closure $check): array
+{
+    $results = [];
+
+    foreach (accessStates() as $state => $make) {
+        $user = $make();
+        $user !== null ? test()->actingAs($user) : auth()->logout();
+
+        $results[$state] = $check();
+    }
+
+    return $results;
+}
+
+/**
+ * The expected result for the Admin and for a Partner with a client; every other
+ * state is denied.
+ *
+ * @return array<string, bool>
+ */
+function expectedAccess(bool $admin, bool $partnerWithClient): array
+{
+    return [
+        'guest' => false,
+        'admin' => $admin,
+        'partner with a client' => $partnerWithClient,
+        'partner without a client' => false,
+        'user without a role' => false,
+        'user with a client but no role' => false,
+    ];
+}
+
+it('admits an Admin and a Partner with a client to a PartnerAllowed widget, nobody else', function (): void {
+    expect(accessByState(fn () => PartnerAllowedWidget::canView()))->toBe(expectedAccess(admin: true, partnerWithClient: true));
+});
+
+it('admits only an Admin to an AdminOnly widget', function (): void {
+    expect(accessByState(fn () => AdminOnlyWidget::canView()))->toBe(expectedAccess(admin: true, partnerWithClient: false));
+});
+
+it('hides an AdminOnly relation manager from a Partner although the parent check would admit one', function (): void {
+    $owner = new CanaryRecord;
+
+    expect(accessByState(fn () => CanaryRecordResource::canAccess()))->toBe(expectedAccess(admin: true, partnerWithClient: true))
+        ->and(accessByState(fn () => AdminOnlyRelationManager::canViewForRecord($owner, ListCanaryRecords::class)))
+        ->toBe(expectedAccess(admin: true, partnerWithClient: false));
+});
+
+it('keeps the parent policy check of a relation manager under a PartnerAllowed declaration', function (): void {
+    expect(accessByState(fn () => PolicyDeniedRelationManager::canViewForRecord(new CanaryRecord, ListCanaryRecords::class)))
+        ->toBe(expectedAccess(admin: true, partnerWithClient: false));
+});
+
+it('admits an Admin and a Partner with a client to the canary resource through attribute and policy', function (): void {
+    expect(accessByState(fn () => CanaryRecordResource::canAccess()))->toBe(expectedAccess(admin: true, partnerWithClient: true));
+});
+
+it('keeps the policy check of a resource under a PartnerAllowed declaration', function (): void {
+    expect(accessByState(fn () => PolicyDeniedResource::canAccess()))->toBe(expectedAccess(admin: true, partnerWithClient: false));
+});
+
+it('denies a resource without the attribute even though the policy grants viewAny', function (): void {
+    expect(accessByState(fn () => Gate::allows('viewAny', CanaryRecord::class)))
+        ->toBe(['guest' => false, 'admin' => true, 'partner with a client' => true, 'partner without a client' => false, 'user without a role' => false, 'user with a client but no role' => false])
+        ->and(accessByState(fn () => UndeclaredCanaryRecordResource::canAccess()))
+        ->toBe(expectedAccess(admin: false, partnerWithClient: false));
+});
+
+it('leaves a page without the trait open, which is why the registry test exists', function (): void {
+    $this->actingAs(Canary::partnerFor(null));
+
+    expect(UndeclaredPage::canAccess())->toBeTrue();
+});
+
+it('registers the canary resource and its routes while the harness is on', function (): void {
+    expect(config('kokpit.canary_harness'))->toBeTrue()
+        ->and(Filament::getPanel('admin')->getResources())->toContain(CanaryRecordResource::class)
+        ->and(Route::has('filament.admin.resources.canary-records.index'))->toBeTrue()
+        ->and(Route::has('filament.admin.resources.canary-records.view'))->toBeTrue();
+});
+
+/**
+ * Runs a real artisan process with the given environment.
+ *
+ * @param  array<string, string>  $environment
+ * @param  list<string>  $arguments
+ */
+function artisanProcess(array $environment, array $arguments): Process
+{
+    $process = new Process([PHP_BINARY, 'artisan', ...$arguments], base_path(), $environment);
+    $process->run();
+
+    return $process;
+}
+
+it('keeps the canary resource out of the panel while the harness is off', function (): void {
+    $routes = fn (string $harness): string => artisanProcess(
+        ['APP_ENV' => 'testing', 'KOKPIT_CANARY_HARNESS' => $harness],
+        ['route:list', '--json', '--path=admin/canary-records'],
+    )->getOutput();
+
+    expect($routes('true'))->toContain('canary-records')
+        ->and($routes('false'))->not->toContain('canary-records');
+});
+
+it('refuses to start a production process while the canary harness is on', function (): void {
+    $run = fn (string $harness): Process => artisanProcess(
+        ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => 'true', 'KOKPIT_CANARY_HARNESS' => $harness],
+        ['--version'],
+    );
+
+    $on = $run('true');
+    $off = $run('false');
+
+    expect($on->isSuccessful())->toBeFalse()
+        ->and($on->getOutput().$on->getErrorOutput())->toContain('KOKPIT_CANARY_HARNESS')
+        ->and($off->isSuccessful())->toBeTrue();
 });
