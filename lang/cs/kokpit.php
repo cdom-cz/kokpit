@@ -31,4 +31,10 @@ return [
         'done' => 'Dvoufázové ověření bylo zrušeno. Uživatel ho nastaví znovu při příštím přihlášení.',
     ],
 
+    'dashboard' => [
+        'empty_heading' => 'Zatím tu nic není',
+        'empty_description_admin' => 'Nástěnka se naplní, jakmile v Kokpitu přibudou klienti, projekty a odpracovaný čas.',
+        'empty_description_partner' => 'Jakmile pro vás bude něco připraveno, objeví se to tady.',
+    ],
+
 ];

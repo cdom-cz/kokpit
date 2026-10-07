@@ -80,6 +80,9 @@ it('lets an Admin in without a secret when enforcement is off', function (): voi
 it('never forces a Partner to set up two-factor authentication', function (): void {
     config(['kokpit.require_admin_two_factor' => true]);
     [$partner] = panelUser(RoleName::Partner);
+    // A Partner without a client is refused by the dashboard's access rule (FND-18); this test is
+    // about two-factor enforcement, so the Partner gets a client.
+    $partner->forceFill(['client_id' => Str::uuid7()->toString()])->save();
 
     $this->actingAs($partner)->get('/admin')->assertOk();
 });

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Dashboard;
 use App\Http\Middleware\EnsureAdminHasTwoFactor;
 use App\Support\InitialsAvatarProvider;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
@@ -11,12 +12,9 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
-use Filament\Widgets\AccountWidget;
-use Filament\Widgets\FilamentInfoWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -35,6 +33,12 @@ class AdminPanelProvider extends PanelProvider
             ->login()
             ->profile()
             ->spa()
+            // A Resource without a policy method throws instead of being allowed (D-03). Pages and
+            // widgets are covered by #[AccessRule], which strict authorization does not reach.
+            ->strictAuthorization()
+            // Global search is a Partner leakage surface; it comes back per resource together with
+            // an explicit rule (UI-SPEC A-6).
+            ->globalSearch(false)
             // Built-in TOTP with one-time recovery codes (D-07). Enforcement is per request in
             // the middleware below, because Filament evaluates isRequired once at route build.
             ->multiFactorAuthentication([AppAuthentication::make()->recoverable()], isRequired: true)
@@ -49,10 +53,6 @@ class AdminPanelProvider extends PanelProvider
                 Dashboard::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
-            ->widgets([
-                AccountWidget::class,
-                FilamentInfoWidget::class,
-            ])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
