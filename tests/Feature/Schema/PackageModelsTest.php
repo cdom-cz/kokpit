@@ -8,10 +8,8 @@ use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Spatie\WebhookClient\WebhookConfig;
 use Tests\Support\Probes\PackageProbe;
 use Tests\Support\Probes\ProbeNotification;
 use Tests\Support\Uuids;
@@ -156,17 +154,19 @@ it('allows an activity without a causer', function () {
 });
 
 it('stores a webhook call with a version 7 id through the configured model', function () {
-    $properties = config('webhook-client.configs.0');
+    /** @var class-string<WebhookCall> $model */
+    $model = config('webhook-client.configs.0.webhook_model');
     $url = 'https://'.implode('.', ['example', 'com']).'/webhooks/probe';
 
-    $call = WebhookCall::storeWebhook(
-        new WebhookConfig($properties),
-        Request::create($url, 'POST', ['event' => 'fictional.probe']),
-    );
+    $call = $model::create([
+        'name' => 'default',
+        'url' => $url,
+        'payload' => ['event' => 'fictional.probe'],
+    ]);
 
     $row = DB::table('webhook_calls')->first();
 
-    expect($properties['webhook_model'])->toBe(WebhookCall::class)
+    expect($model)->toBe(WebhookCall::class)
         ->and($call)->toBeInstanceOf(WebhookCall::class)
         ->and(DB::table('webhook_calls')->count())->toBe(1)
         ->and($row)->not->toBeNull()

@@ -8,8 +8,10 @@ use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
 use App\Domain\Identity\Models\User;
+use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\Tag;
+use App\Domain\Shared\Models\WebhookCall;
 
 /**
  * The single source of morph aliases.
@@ -28,5 +30,7 @@ final class MorphMap
         'personal_access_token' => PersonalAccessToken::class,
         'media' => Media::class,
         'tag' => Tag::class,
+        'activity' => Activity::class,
+        'webhook_call' => WebhookCall::class,
     ];
 }
