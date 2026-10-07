@@ -116,7 +116,8 @@ assert_exit 0 "(h) --all on the same repository exits 0" in_dir "$repo" "$SCRIPT
 
 # (i) a line present only in a merge result is found, naming the merge commit
 build_merge() {  # build_merge <repo> <extra-line-or-empty>
-  stage "$1" m.txt "$(printf 'base\n')"
+  printf 'base\n' > "$1/m.txt"
+  git -C "$1" add m.txt
   git -C "$1" commit -q -m base
   git -C "$1" checkout -q -b feat
   stage "$1" f.txt "$(printf 'feature\n')"

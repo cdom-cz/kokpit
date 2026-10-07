@@ -5,10 +5,13 @@
 #   (no flag) / --staged   scan the added lines of the staged diff (what a commit would add), including
 #                          files git treats as binary, files with a -diff attribute or a textconv driver,
 #                          and type changes
-#   --all                  scan every tracked text file as stored in the index
-#   --history              scan the added lines of every commit reachable from any ref (git log --all);
+#   --all                  scan every tracked file as stored in the index, read in full (including files git
+#                          treats as binary)
+#   --history              scan the added lines of every commit reachable from any ref (git log --all),
+#                          including merge commits (first-parent diff) and renamed files (shown in full);
 #                          findings are "path:line@<sha7>: rule [masked]" naming the introducing commit
-#   FILE...                scan the named files as they are on disk (paths reported repository-relative)
+#   FILE...                scan the named files as they are on disk, every non-empty operand read in full
+#                          with no binary skip (paths reported repository-relative)
 # A mode flag and FILE operands are mutually exclusive, and so are two mode flags (exit 2).
 #
 # Output: "path:line: rule [masked]" on stdout, one line per finding. A value is never printed in full:
@@ -178,10 +181,15 @@ case "$mode" in
         exit 2
       fi
     else
-      # One "commit <hash>" line per commit; diff2tsv.awk turns it into the @<sha7> suffix. Merge commits
-      # are not diffed by `git log -p`; their content is covered by the parents (assumption A-HYG-05).
-      if ! git -c core.quotepath=off log --all -p --text --no-textconv --no-renames -U0 --no-color --no-ext-diff \
-          --src-prefix=a/ --dst-prefix=b/ --diff-filter=d --format='commit %H' > "$tmp/diff.raw"; then
+      # One "commit <hash>" line per commit; diff2tsv.awk turns it into the @<sha7> suffix.
+      # --diff-merges=first-parent: a merge is diffed against its first parent, so conflict resolutions and
+      # evil merges are scanned, and every line of every commit is covered (the other parents are scanned
+      # through their own history). It is explicit so the log.diffMerges config cannot change it (git 2.31+).
+      # log.showRoot is pinned because user config could hide root-commit diffs; --no-show-signature keeps
+      # signature output out of the stream.
+      if ! git -c core.quotepath=off -c log.showRoot=true log --all -p --text --no-textconv --no-renames -U0 \
+          --no-color --no-ext-diff --no-show-signature --src-prefix=a/ --dst-prefix=b/ --diff-filter=d \
+          --diff-merges=first-parent --format='commit %H' > "$tmp/diff.raw"; then
         echo 'check-sensitive: git log failed' >&2
         exit 2
       fi
@@ -189,8 +197,7 @@ case "$mode" in
     diff_to_rows
     ;;
   files)
-    scan_files=()
-    nscan=0
+    : > "$tmp/rows.tsv"
     i=0
     while [ "$i" -lt "$nfiles" ]; do
       f=${files[$i]}
@@ -214,31 +221,51 @@ case "$mode" in
         echo "check-sensitive: not a readable file: $f" >&2
         exit 2
       fi
+      # Only an empty operand contributes nothing; every other operand is read in full (no binary skip, WR-05).
       [ -s "$op" ] || continue
-      if ! grep -Iq . "$op"; then
-        echo "check-sensitive: skipping binary or blank file: $f" >&2
-        continue
+      # Both NUL readings as in diff_to_rows. "./"-prefixed operands cannot be read as options (T-01-17); the
+      # display path travels through ENVIRON, not -v, so backslashes in a name stay literal.
+      if ! LC_ALL=C tr '\000' ' ' < "$op" > "$tmp/op.txt"; then
+        echo 'check-sensitive: NUL filter failed' >&2
+        exit 2
       fi
-      scan_files[nscan]=$op
-      nscan=$((nscan + 1))
+      if ! CS_PATH="${op#./}" LC_ALL=C awk '{ print ENVIRON["CS_PATH"] "\t" FNR "\t" $0 }' "$tmp/op.txt" >> "$tmp/rows.tsv"; then
+        echo 'check-sensitive: operand reader failed' >&2
+        exit 2
+      fi
+      nul=$(LC_ALL=C tr -cd '\000' < "$op" | LC_ALL=C wc -c) || nul=''
+      case "$nul" in
+        '' | *[!0-9' ']*)
+          echo 'check-sensitive: NUL filter failed' >&2
+          exit 2
+          ;;
+      esac
+      if [ "$((nul + 0))" -gt 0 ]; then
+        if ! LC_ALL=C tr -d '\000' < "$op" > "$tmp/op.txt"; then
+          echo 'check-sensitive: NUL filter failed' >&2
+          exit 2
+        fi
+        if ! CS_PATH="${op#./}" LC_ALL=C awk '{ print ENVIRON["CS_PATH"] "\t" FNR "\t" $0 }' "$tmp/op.txt" >> "$tmp/rows.tsv"; then
+          echo 'check-sensitive: operand reader failed' >&2
+          exit 2
+        fi
+      fi
     done
-    # "./"-prefixed operands cannot be read as options or as awk var=value assignments (T-01-17).
-    if [ "$nscan" -gt 0 ]; then
-      LC_ALL=C awk 'FNR == 1 { f = FILENAME; sub(/^\.\//, "", f) } { print f "\t" FNR "\t" $0 }' \
-        "${scan_files[@]}" > "$tmp/rows.tsv"
-    else
-      : > "$tmp/rows.tsv"
-    fi
     ;;
   all)
-    rc=0
-    git -c core.quotepath=off grep --cached -I -n -z -e '' > "$tmp/grep.out" || rc=$?
-    # git grep: 0 = matches, 1 = no lines at all (empty tree); anything else is an error.
-    if [ "$rc" -gt 1 ]; then
-      echo 'check-sensitive: git grep failed' >&2
+    # The index is diffed against the empty tree, so every line of every tracked file is an added line with its
+    # real line number. The empty tree id is computed, never stored: no -w, so no object is written (read-only).
+    # Works for SHA-1 and SHA-256 repositories.
+    if ! empty_tree=$(git hash-object -t tree /dev/null); then
+      echo 'check-sensitive: cannot compute the empty tree' >&2
       exit 2
     fi
-    LC_ALL=C tr '\0' '\t' < "$tmp/grep.out" > "$tmp/rows.tsv"
+    if ! git -c core.quotepath=off diff --cached --text --no-textconv --no-renames -U0 --no-color --no-ext-diff \
+        --src-prefix=a/ --dst-prefix=b/ --diff-filter=d "$empty_tree" > "$tmp/diff.raw"; then
+      echo 'check-sensitive: git diff failed' >&2
+      exit 2
+    fi
+    diff_to_rows
     ;;
 esac
 
