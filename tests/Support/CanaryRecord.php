@@ -7,6 +7,7 @@ namespace Tests\Support;
 use App\Domain\Shared\Auth\IsolatesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
+use Illuminate\Database\Eloquent\Attributes\UsePolicy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
@@ -22,6 +23,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $client_id
  * @property string $secret
  */
+#[UsePolicy(CanaryRecordPolicy::class)]
 final class CanaryRecord extends KokpitModel implements PartnerIsolated
 {
     use IsolatesPartners;
