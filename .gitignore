@@ -2,6 +2,11 @@
 .env
 .env.*
 !.env.example
+.envrc
+.npmrc
+.netrc
+.pgpass
+.git-credentials
 *.pem
 *.key
 
@@ -64,6 +69,18 @@ auth.json
 *.pfx
 *.keystore
 id_rsa*
+id_ed25519*
+id_ecdsa*
+id_dsa*
+*.p8
+*.jks
+credentials.json
+service-account*.json
+*.ovpn
+
+# Infrastructure state (may hold secrets in plain text)
+*.tfstate
+*.tfstate.*
 
 # Test, coverage and tool caches
 /coverage/
