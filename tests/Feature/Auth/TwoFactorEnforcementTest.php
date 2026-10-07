@@ -187,7 +187,8 @@ it('refuses to boot the application provider in production with enforcement off'
 })->throws(RuntimeException::class);
 
 it('boots the application provider in production with enforcement on', function (): void {
-    config(['kokpit.require_admin_two_factor' => true]);
+    // The test suite runs with the canary harness on; production must not (D-04).
+    config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false]);
     $this->app['env'] = 'production';
 
     (new AppServiceProvider($this->app))->boot();
@@ -200,7 +201,7 @@ it('refuses to start a real production process with enforcement off and starts w
         $process = new Process(
             [PHP_BINARY, 'artisan', '--version'],
             base_path(),
-            ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => $enforcement],
+            ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => $enforcement, 'KOKPIT_CANARY_HARNESS' => 'false'],
         );
         $process->run();
 

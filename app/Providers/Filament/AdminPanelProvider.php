@@ -21,10 +21,25 @@ use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use Tests\Support\Filament\CanaryRecordResource;
 
 class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
+    {
+        $panel = $this->configure($panel);
+
+        // Test-only canary surface (D-04): registered only while the switch is on and the class
+        // exists (autoload-dev is absent in production installs); ProductionConfigGuard refuses
+        // the switch in production on top of that.
+        if (config('kokpit.canary_harness') === true && class_exists(CanaryRecordResource::class)) {
+            $panel->resources([CanaryRecordResource::class]);
+        }
+
+        return $panel;
+    }
+
+    private function configure(Panel $panel): Panel
     {
         return $panel
             ->default()
