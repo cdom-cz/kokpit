@@ -8,6 +8,8 @@
 #     multiplication sign (U+00D7) and the division sign (U+00F7) becomes its lower-case ASCII base
 #     letter or letters (for example the accented i becomes i, the sharp s becomes ss, the ligature
 #     ae becomes ae, the stroked l becomes l); upper and lower case forms map to the same result;
+#   - combining marks U+0300 to U+036F (UTF-8 lead octal 314 and 315) are removed, so a base letter followed
+#     by a combining accent (decomposed spelling) folds exactly like the precomposed letter;
 #   - every other byte is kept exactly as written (Greek, Cyrillic and other scripts compare as written,
 #     including their case, and so do bytes that are not valid UTF-8).
 # No locale, iconv or transliteration table of the system is involved, so macOS awk, mawk and gawk
@@ -15,8 +17,8 @@
 # characters (mawk rejects very long literals), POSIX awk only.
 #
 # Tables: one list of exactly 64 space-separated tokens per UTF-8 lead byte, one token per continuation
-# byte from octal 200 to 277. Token "=" leaves the character unchanged. BEGIN checks the token counts
-# and exits 2 on a mismatch.
+# byte from octal 200 to 277. Token "=" leaves the character unchanged, token "-" removes it. BEGIN checks
+# the token counts and exits 2 on a mismatch.
 
 # The 64 continuation bytes, octal 200 to 277, built from four literals of 16 escapes.
 function build_cont() {
@@ -24,6 +26,13 @@ function build_cont() {
   cont = cont "\220\221\222\223\224\225\226\227\230\231\232\233\234\235\236\237"
   cont = cont "\240\241\242\243\244\245\246\247\250\251\252\253\254\255\256\257"
   cont = cont "\260\261\262\263\264\265\266\267\270\271\272\273\274\275\276\277"
+}
+
+# rep: n copies of a token, space-separated, as a table list.
+function rep(tok, n,   r, i) {
+  r = tok
+  for (i = 2; i <= n; i++) r = r " " tok
+  return r
 }
 
 # addtab: register one lead byte with its 64-token list.
@@ -40,7 +49,7 @@ function addtab(lead, list,   t, n, i) {
     if (t[i] == "=") continue
     ns++
     src[ns] = lead substr(cont, i, 1)
-    dst[ns] = t[i]
+    dst[ns] = (t[i] == "-") ? "" : t[i]
   }
   last[nl] = ns
 }
@@ -64,6 +73,11 @@ BEGIN {
   a = a "r r r r r r s s s s s s s s t t t t t t "
   a = a "u u u u u u u u u u u u w w y y y z z z z z z s"
   addtab("\305", a)
+
+  # Lead octal 314: U+0300 to U+033F, all combining marks. Lead octal 315: U+0340 to U+036F are combining
+  # marks for the first 48 continuation bytes (octal 200 to 257); octal 260 to 277 are Greek letters, unchanged.
+  addtab("\314", rep("-", 64))
+  addtab("\315", rep("-", 48) " " rep("=", 16))
 }
 
 {

@@ -145,21 +145,6 @@ assert_exit 1 "(k) --all with a denylist exits 1" run_with "$dl" "$repo" --all
 assert_out_has "k.txt:2: denylist" "(k) --all finding reported"
 assert_out_lacks "see $term_b" "(k) --all does not print the line"
 
-# (l) CR-02: a term written with diacritics blocks the same name written without them
-dl=$(mkdeny deny-l.txt "$term_a")
-repo=$(new_repo)
-stage "$repo" l.txt "$(printf 'client Fiktivni Klient here\n')"
-assert_exit 1 "(l) term with diacritics matches the ASCII spelling" run_with "$dl" "$repo"
-assert_out_has "l.txt:1: denylist" "(l) ASCII spelling is reported"
-assert_out_lacks "Fiktivni Klient" "(l) line text is not printed"
-
-# (m) the reverse: an ASCII term matches the upper-case spelling with diacritics
-dl=$(mkdeny deny-m.txt "Fiktivni Klient")
-repo=$(new_repo)
-stage "$repo" m.txt "$(printf 'client: FIKTIVNÍ KLIENT\n')"
-assert_exit 1 "(m) ASCII term matches the spelling with diacritics" run_with "$dl" "$repo"
-assert_out_has "m.txt:1: denylist" "(m) spelling with diacritics is reported"
-
 # r_check <term> <line-text> [description]: the last output holds neither the term, its folded form nor the
 # line text (T-01-46). The folded form is computed with the scanner's own fold program.
 r_check() {
@@ -169,6 +154,22 @@ r_check() {
   assert_out_lacks "$folded" "(r) $3: folded term is not printed"
   assert_out_lacks "$2" "(r) $3: line text is not printed"
 }
+
+# (l) CR-02: a term written with diacritics blocks the same name written without them
+dl=$(mkdeny deny-l.txt "$term_a")
+repo=$(new_repo)
+stage "$repo" l.txt "$(printf 'client Fiktivni Klient here\n')"
+assert_exit 1 "(l) term with diacritics matches the ASCII spelling" run_with "$dl" "$repo"
+assert_out_has "l.txt:1: denylist" "(l) ASCII spelling is reported"
+assert_out_lacks "Fiktivni Klient" "(l) line text is not printed"
+r_check "$term_a" "client Fiktivni Klient here" "ASCII spelling"
+
+# (m) the reverse: an ASCII term matches the upper-case spelling with diacritics
+dl=$(mkdeny deny-m.txt "Fiktivni Klient")
+repo=$(new_repo)
+stage "$repo" m.txt "$(printf 'client: FIKTIVNÍ KLIENT\n')"
+assert_exit 1 "(m) ASCII term matches the spelling with diacritics" run_with "$dl" "$repo"
+assert_out_has "m.txt:1: denylist" "(m) spelling with diacritics is reported"
 
 # run_loc <locale> <denylist-path> <repo>: run the script with LC_ALL and LANG forced to <locale>
 run_loc() {
