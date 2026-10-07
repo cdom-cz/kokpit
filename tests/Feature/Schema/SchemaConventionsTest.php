@@ -3,8 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\Identity\Models\Permission;
+use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Laravel\Sanctum\PersonalAccessToken as BasePersonalAccessToken;
+use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Permission as BasePermission;
 use Spatie\Permission\Models\Role as BaseRole;
 use Tests\Support\ModelRules;
@@ -173,23 +176,23 @@ it('R7 self-check: reports an empty map, a missing enforcement, bad aliases and 
 
 /**
  * Package models that must be registered as HasUuids subclasses:
- * description => [config key, expected subclass, package base class].
- * Plan 02-04 adds the remaining packages here.
+ * description => [registered class as the package resolves it, expected subclass, package base class].
  *
- * @return array<string, array{string, class-string, class-string}>
+ * @return array<string, array{mixed, class-string, class-string}>
  */
 function packageModelRegistry(): array
 {
     return [
-        'permission roles' => ['permission.models.role', Role::class, BaseRole::class],
-        'permission permissions' => ['permission.models.permission', Permission::class, BasePermission::class],
+        'permission roles' => [config('permission.models.role'), Role::class, BaseRole::class],
+        'permission permissions' => [config('permission.models.permission'), Permission::class, BasePermission::class],
+        'sanctum tokens' => [Sanctum::$personalAccessTokenModel, PersonalAccessToken::class, BasePersonalAccessToken::class],
     ];
 }
 
 it('R8: package models are the registered HasUuids subclasses', function () {
     $entries = [];
-    foreach (packageModelRegistry() as $description => [$configKey, $expected, $base]) {
-        $entries[$description] = ['registered' => config($configKey), 'expected' => $expected, 'base' => $base];
+    foreach (packageModelRegistry() as $description => [$registered, $expected, $base]) {
+        $entries[$description] = ['registered' => $registered, 'expected' => $expected, 'base' => $base];
     }
 
     $violations = ModelRules::unregisteredPackageModels($entries);
