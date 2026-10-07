@@ -63,6 +63,7 @@ home=$(fake_home)/src
 host=$(fake_host)
 ico=$(fake_ico)
 zt=$(printf '%s%s%s' ZEROPS _TOKEN "=$b5")
+winhome=$(printf '%s:\\%s\\%s\\src' C Users fictionalperson)
 
 # (a) a clean commit: exit 0
 clean=$(new_repo)
@@ -72,12 +73,12 @@ assert_exit 0 "(a) gitleaks git on a clean history exits 0" glk "$clean"
 
 # (b) one default-rule hit plus one hit per custom rule, in one commit
 bad=$(new_repo)
-put "$bad" planted.txt "$(printf 'token: %s\nstripe: %s\nhook: %s\naccount: %s\nlink: %s\nhome: %s\nico: %s\nendpoint: %s\n%s' \
-  "$ghp" "$pk" "$wh" "$acct" "$plink" "$home" "$ico" "$host" "$zt")"
+put "$bad" planted.txt "$(printf 'token: %s\nstripe: %s\nhook: %s\naccount: %s\nlink: %s\nhome: %s\nico: %s\nendpoint: %s\nwin: %s\n%s' \
+  "$ghp" "$pk" "$wh" "$acct" "$plink" "$home" "$ico" "$host" "$winhome" "$zt")"
 commit_all "$bad" planted
 assert_exit 1 "(b) gitleaks git on planted fakes exits 1" glk "$bad"
 for id in github-pat kokpit-stripe-publishable-or-webhook kokpit-stripe-object-id kokpit-home-path \
-  kokpit-ico-like kokpit-hosting-endpoint kokpit-zerops-token; do
+  kokpit-windows-home-path kokpit-ico-like kokpit-hosting-endpoint kokpit-zerops-token; do
   if grep -qF "\"RuleID\": \"$id\"" "$REPORT"; then _ok "(b) report contains rule $id"; else _fail "(b) report lacks rule $id"; fi
 done
 # two values share each Stripe rule (publishable key + webhook secret, account id + payment link id): both must be found
@@ -95,9 +96,9 @@ done
 
 # (c) documented placeholders alone produce no finding
 ph=$(new_repo)
-put "$ph" notes.md "$(printf 'ico: 12345678\ncompany_id = 00000000\npath: /Users/example/project\nrunner: /home/runner/work\nshared: /Users/Shared/tmp\nbare: /Users/example\nbare: /home/runner\nbare: /home/ubuntu\nbare: /Users/Shared\nurl: https://example.com/home/about\nview: resources/views/home/index.blade.php\n')"
+put "$ph" notes.md "$(printf 'ico: 12345678\ncompany_id = 00000000\nIČ: 12345678\npath: /Users/example/project\nrunner: /home/runner/work\nshared: /Users/Shared/tmp\nbare: /Users/example\nbare: /home/runner\nbare: /home/ubuntu\nbare: /Users/Shared\nurl: https://example.com/home/about\nview: resources/views/home/index.blade.php\n')"
 commit_all "$ph" placeholders
-assert_exit 0 "(c) placeholders (12345678, 00000000, /Users/example/, /home/runner/, /Users/Shared/, bare forms) and URL or relative home segments are not reported" glk "$ph"
+assert_exit 0 "(c) placeholders (12345678, 00000000, IČ key, /Users/example/, /home/runner/, /Users/Shared/, bare forms) and URL or relative home segments are not reported" glk "$ph"
 
 # (d) the history case: the bad file is deleted in a later commit, gitleaks still reports it
 git -C "$bad" rm -q planted.txt
@@ -192,5 +193,28 @@ assert_exit 1 "(j) bare personal home paths are reported" glk "$hp"
 assert_eq "(j) exactly four kokpit-home-path findings" "4" "$(grep -cF '"RuleID": "kokpit-home-path"' "$REPORT")"
 if grep -qF '"StartLine": 4' "$REPORT"; then _ok "(j) the line-start path is reported at its own line"; else _fail "(j) no finding at line 4"; fi
 if grep -qF -e fictionalperson "$REPORT"; then _fail "(j) report leaks the name segment"; else _ok "(j) report has no name segment"; fi
+
+# (k) Windows home paths: backslash and forward-slash forms are reported, a system folder is not
+wp=$(new_repo)
+wk1=$(printf '%s:\\%s\\%s\\proj' C Users fictionalperson)
+wk2=$(printf '%s:/%s/%s/proj' c users fictionalperson)
+wk3=$(printf '%s:\\%s\\%s\\x' C Users Public)
+put "$wp" win.txt "$(printf 'cd %s\ncd %s\ncd %s' "$wk1" "$wk2" "$wk3")"
+commit_all "$wp" winpaths
+assert_exit 1 "(k) Windows personal home paths are reported" glk "$wp"
+assert_eq "(k) exactly two kokpit-windows-home-path findings (the Public line is not one)" "2" "$(grep -cF '"RuleID": "kokpit-windows-home-path"' "$REPORT")"
+if grep -qF -e fictionalperson "$REPORT"; then _fail "(k) report leaks the name segment"; else _ok "(k) report has no name segment"; fi
+wq=$(new_repo)
+put "$wq" win.txt "$(printf 'cd %s\ncd %s:/%s/%s/x\ncd %s:\\%s\\%s' "$wk3" C Users Default D Users example)"
+commit_all "$wq" winplaceholders
+assert_exit 0 "(k) Windows system and placeholder folders are not reported" glk "$wq"
+
+# (l) company-id keys: IČ, IC, IČO and ico each give a finding, the placeholder does not
+ik=$(new_repo)
+put "$ik" ids.txt "$(printf 'IČ: %s%s\nIC = %s%s\nIČO: "%s%s"\nico=%s%s' 2712 3401 2712 3402 2712 3403 2712 3404)"
+commit_all "$ik" icokeys
+assert_exit 1 "(l) company-id keys IČ, IC, IČO and ico are reported" glk "$ik"
+assert_eq "(l) exactly four kokpit-ico-like findings" "4" "$(grep -cF '"RuleID": "kokpit-ico-like"' "$REPORT")"
+if grep -qF -e 2712 "$REPORT"; then _fail "(l) report leaks a company id"; else _ok "(l) report has no company id"; fi
 
 finish

@@ -276,4 +276,24 @@ case_pass "(H6) bare /Users/Shared at the end of a line passes" "$(printf 'path 
 case_pass "(H7) a URL with a /home/ path segment passes" "$(printf 'https://example.com/%s/about\n' home)"
 case_pass "(H7) a relative path with a home directory passes" "$(printf 'resources/views/%s/index.blade.php\n' home)"
 
+# (W) home-path rule, Windows form: drive letter, Users, name; backslashes, doubled backslashes or forward
+# slashes, any letter case. In printf formats a doubled backslash prints one backslash.
+w1=$(printf '%s:\\%s\\%s\\proj' C Users fictionalperson)
+w2=$(printf '%s:\\\\%s\\\\%s\\\\proj' C Users fictionalperson)
+w3=$(printf '%s:/%s/%s/proj' c users fictionalperson)
+repo=$(new_repo)
+stage "$repo" w1.txt "$(printf 'cd %s\n' "$w1")"
+assert_exit 1 "(W1) a Windows home path with backslashes exits 1" in_dir "$repo" "$SCRIPT"
+assert_out_has "w1.txt:1: home-path" "(W1) finding names file, line and rule"
+assert_out_lacks "fictionalperson" "(W6) the user name is not printed"
+case_hit "(W2) the same path with doubled backslashes is reported" home-path "$(printf '"path": "%s"\n' "$w2")"
+case_hit "(W3) a lower-case drive letter with forward slashes is reported" home-path "$(printf 'cd %s\n' "$w3")"
+case_hit "(W3) a Windows home path at the end of a line is reported" home-path "$(printf 'HOME=%s:\\%s\\%s\n' D USERS fictionalperson)"
+for nm in Public Default example runneradmin All; do
+  case_pass "(W4) the Windows path ending in $nm passes" "$(printf 'cd %s:\\%s\\%s\\x\n' C Users "$nm")"
+done
+case_pass "(W4) the forward-slash Windows path ending in Public passes" "$(printf 'cd %s:/%s/%s/x\n' C Users Public)"
+case_pass "(W5) a URL path /users/<name> without a drive letter passes" "$(printf 'https://example.com/%s/fictionalperson\n' users)"
+case_pass "(W5) a drive-like letter run before the colon is not a drive" "$(printf 'see file%s/%s/%s/x\n' ':' users fictionalperson)"
+
 finish
