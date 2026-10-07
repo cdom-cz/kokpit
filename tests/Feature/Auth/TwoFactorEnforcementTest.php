@@ -192,14 +192,22 @@ it('boots the application provider in production with enforcement on', function 
     expect(true)->toBeTrue();
 });
 
-it('refuses to start a real production process with enforcement off', function (): void {
-    $process = new Process(
-        [PHP_BINARY, 'artisan', '--version'],
-        base_path(),
-        ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => 'false'],
-    );
-    $process->run();
+it('refuses to start a real production process with enforcement off and starts with it on', function (): void {
+    $run = function (string $enforcement): Process {
+        $process = new Process(
+            [PHP_BINARY, 'artisan', '--version'],
+            base_path(),
+            ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => $enforcement],
+        );
+        $process->run();
 
-    expect($process->isSuccessful())->toBeFalse()
-        ->and($process->getOutput().$process->getErrorOutput())->toContain('RuntimeException');
+        return $process;
+    };
+
+    $off = $run('false');
+    $on = $run('true');
+
+    expect($off->isSuccessful())->toBeFalse()
+        ->and($off->getOutput().$off->getErrorOutput())->toContain('KOKPIT_REQUIRE_ADMIN_2FA must be true')
+        ->and($on->isSuccessful())->toBeTrue();
 });

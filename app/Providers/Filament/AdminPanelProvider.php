@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Http\Middleware\EnsureAdminHasTwoFactor;
+use App\Support\InitialsAvatarProvider;
+use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -30,7 +33,13 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->profile()
             ->spa()
+            // Built-in TOTP with one-time recovery codes (D-07). Enforcement is per request in
+            // the middleware below, because Filament evaluates isRequired once at route build.
+            ->multiFactorAuthentication([AppAuthentication::make()->recoverable()], isRequired: true)
+            ->multiFactorAuthenticationRequiredMiddlewareName(EnsureAdminHasTwoFactor::class)
+            ->defaultAvatarProvider(InitialsAvatarProvider::class)
             ->colors([
                 'primary' => Color::Amber,
             ])
