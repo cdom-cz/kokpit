@@ -2,7 +2,9 @@
 # check-sensitive.sh - block secrets and instance-specific values before they enter the repository.
 #
 # Usage: scripts/check-sensitive.sh [--staged | --all | --history] [--] [FILE...]
-#   (no flag) / --staged   scan the added lines of the staged diff (what a commit would add)
+#   (no flag) / --staged   scan the added lines of the staged diff (what a commit would add), including
+#                          files git treats as binary, files with a -diff attribute or a textconv driver,
+#                          and type changes
 #   --all                  scan every tracked text file as stored in the index
 #   --history              scan the added lines of every commit reachable from any ref (git log --all);
 #                          findings are "path:line@<sha7>: rule [masked]" naming the introducing commit
@@ -11,6 +13,10 @@
 #
 # Output: "path:line: rule [masked]" on stdout, one line per finding. A value is never printed in full:
 # at most its first 2 characters plus its length. Notices and errors go to stderr.
+#
+# Content-complete reading: every mode reads content as text. Git attributes and textconv drivers are ignored,
+# and NUL bytes are read twice (once as a space, once removed) so UTF-16 and NUL-separated data are scanned.
+# Each finding is printed once.
 #
 # Local denylist (D-06): KOKPIT_DENYLIST names a file OUTSIDE the repository, one fixed term per line
 # ("#" comments and blank lines ignored). Rows containing a term (case-insensitive, Czech diacritics folded)
@@ -123,28 +129,64 @@ normpath() {
   }'
 }
 
-# Producer: every row is "path<TAB>line<TAB>text".
+# diff_to_rows: parse the raw git output in $tmp/diff.raw into rows ("path<TAB>line<TAB>text") in $tmp/rows.tsv.
+# NUL bytes are read twice when present: once as a space (strings that a NUL separates in binary data keep
+# their boundaries, so left-boundary rules still work) and once removed (UTF-16 text exposes its ASCII
+# characters). Every generic rule shape is ASCII, so the two readings together make every shape visible.
+# NUL bytes never occur in diff headers (a path cannot contain NUL), so neither reading confuses the parser.
+# LC_ALL=C on every tr: BSD tr aborts with "Illegal byte sequence" on non-UTF-8 bytes otherwise.
+diff_to_rows() {
+  if ! LC_ALL=C tr '\000' ' ' < "$tmp/diff.raw" > "$tmp/diff.txt"; then
+    echo 'check-sensitive: NUL filter failed' >&2
+    exit 2
+  fi
+  if ! LC_ALL=C awk -f "$here/lib/diff2tsv.awk" "$tmp/diff.txt" > "$tmp/rows.tsv"; then
+    echo 'check-sensitive: diff parser error' >&2
+    exit 2
+  fi
+  nul=$(LC_ALL=C tr -cd '\000' < "$tmp/diff.raw" | LC_ALL=C wc -c) || nul=''
+  case "$nul" in
+    '' | *[!0-9' ']*)
+      echo 'check-sensitive: NUL filter failed' >&2
+      exit 2
+      ;;
+  esac
+  if [ "$((nul + 0))" -gt 0 ]; then
+    if ! LC_ALL=C tr -d '\000' < "$tmp/diff.raw" > "$tmp/diff.txt"; then
+      echo 'check-sensitive: NUL filter failed' >&2
+      exit 2
+    fi
+    if ! LC_ALL=C awk -f "$here/lib/diff2tsv.awk" "$tmp/diff.txt" >> "$tmp/rows.tsv"; then
+      echo 'check-sensitive: diff parser error' >&2
+      exit 2
+    fi
+  fi
+}
+
+# Producer: every row is "path<TAB>line<TAB>text". Every mode reads content as text: git attributes (-diff,
+# binary), textconv drivers and NUL-based binary detection must not hide a byte from the rules.
 case "$mode" in
   staged | history)
     if [ "$mode" = staged ]; then
-      if ! git -c core.quotepath=off diff --cached -U0 --no-color --no-ext-diff \
-          --src-prefix=a/ --dst-prefix=b/ --diff-filter=ACMR > "$tmp/diff.txt"; then
+      # --text ignores the diff attribute and NUL-based binary detection; --no-textconv ignores textconv
+      # drivers from any config; --no-renames shows a renamed file in full, so content moved out of a D-05
+      # exempt path is scanned; --diff-filter=d excludes only deletions (the old ACMR filter dropped type
+      # changes, for example a symlink replaced by a regular file).
+      if ! git -c core.quotepath=off diff --cached --text --no-textconv --no-renames -U0 --no-color --no-ext-diff \
+          --src-prefix=a/ --dst-prefix=b/ --diff-filter=d > "$tmp/diff.raw"; then
         echo 'check-sensitive: git diff failed' >&2
         exit 2
       fi
     else
       # One "commit <hash>" line per commit; diff2tsv.awk turns it into the @<sha7> suffix. Merge commits
       # are not diffed by `git log -p`; their content is covered by the parents (assumption A-HYG-05).
-      if ! git -c core.quotepath=off log --all -p -U0 --no-color --no-ext-diff \
-          --src-prefix=a/ --dst-prefix=b/ --diff-filter=ACMR --format='commit %H' > "$tmp/diff.txt"; then
+      if ! git -c core.quotepath=off log --all -p --text --no-textconv --no-renames -U0 --no-color --no-ext-diff \
+          --src-prefix=a/ --dst-prefix=b/ --diff-filter=d --format='commit %H' > "$tmp/diff.raw"; then
         echo 'check-sensitive: git log failed' >&2
         exit 2
       fi
     fi
-    if ! LC_ALL=C awk -f "$here/lib/diff2tsv.awk" "$tmp/diff.txt" > "$tmp/rows.tsv"; then
-      echo 'check-sensitive: diff parser error' >&2
-      exit 2
-    fi
+    diff_to_rows
     ;;
   files)
     scan_files=()
@@ -215,7 +257,7 @@ LC_ALL=C awk -F '\t' '
 
 # CS_ALLOWLIST is always set here, so a caller cannot redirect the allowlist. A missing file = no exemptions.
 rc=0
-CS_ALLOWLIST="$here/sensitive-allowlist.txt" LC_ALL=C awk -f "$here/lib/scan.awk" "$tmp/scan.tsv" || rc=$?
+CS_ALLOWLIST="$here/sensitive-allowlist.txt" LC_ALL=C awk -f "$here/lib/scan.awk" "$tmp/scan.tsv" > "$tmp/findings.txt" || rc=$?
 if [ "$rc" -gt 1 ]; then
   # For example an awk regex engine panic. Never treated as "clean".
   echo 'check-sensitive: scanner error' >&2
@@ -241,10 +283,15 @@ if [ "$deny_active" -eq 1 ]; then
       NR == FNR { want[$1] = 1; next }
       (FNR in want) { printf "%s:%s: denylist\n", $1, $2; n++ }
       END { exit(n > 0 ? 1 : 0) }
-    ' "$tmp/deny.ln" "$tmp/scan.tsv" || deny_found=1
+    ' "$tmp/deny.ln" "$tmp/scan.tsv" >> "$tmp/findings.txt" || deny_found=1
   fi
 fi
 
+# Each finding is printed once, in first-seen order (the two NUL readings can report the same line twice).
+if ! LC_ALL=C awk '!seen[$0]++' "$tmp/findings.txt"; then
+  echo 'check-sensitive: scanner error' >&2
+  exit 2
+fi
 if [ "$rc" -eq 1 ] || [ "$deny_found" -eq 1 ]; then
   echo 'check-sensitive: findings above; see CONTRIBUTING.md' >&2
   exit 1

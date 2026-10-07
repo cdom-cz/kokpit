@@ -95,6 +95,16 @@ iban_cz() {
   printf 'CZ%02d%s\n' $(( 98 - r )) "$bban"
 }
 
+# utf16le <ascii-string>: print UTF-16LE bytes (byte-order mark, then each character followed by a NUL byte)
+utf16le() {
+  local s=$1 i c
+  printf '\377\376'
+  for (( i = 0; i < ${#s}; i++ )); do
+    c=${s:i:1}
+    printf '%s\000' "$c"
+  done
+}
+
 # Fake-value builders, one per D-02 category. Fictional: invented names, a non-existent bank code, a fake domain.
 fake_email()      { printf 'jane%scorp-fake.cz' '@'; }
 fake_ico()        { printf '%s%s' 2712 3456; }
