@@ -19,5 +19,10 @@ email ;; * ;; ^git@github\.com$
 # Documented placeholder company IDs (D-02).
 company-id ;; * ;; ^(12345678|00000000)$
 
-# Planning documents contain YYYYNNNN invoice-number examples. Path-scoped: the same value in code still fails.
-company-id ;; ^\.planning/ ;; ^20[0-9]{6}$
+# Planning documents contain YYYYNNNN invoice-number examples for the years 2020 to 2039 (WR-07: any other
+# 8-digit number, such as one starting 201, stays reportable). Path-scoped: the same value in code still fails.
+company-id ;; ^\.planning/ ;; ^20[23][0-9]{5}$
+
+# The code review record quotes this fictional bucket host as its WR-03 reproduction (an upper-case host the
+# scanner now reports). One rule, one exact path, one exact value; the matched value is lower-cased by the rule.
+hosting-host ;; ^\.planning/phases/01-repository-hygiene/01-REVIEW\.md$ ;; ^bucket\.s3\.amazonaws\.com$

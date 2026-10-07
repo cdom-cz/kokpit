@@ -12,6 +12,12 @@
 # in the pre-commit hook (`gitleaks git --pre-commit` takes no diff options), and a clean/smudge filter stores
 # something other than the file in git, so the real content would reach the remote through neither layer.
 #
+# Rule notes: home-path covers the Unix form (/Users/<name>, /home/<name>) and the Windows form (drive letter,
+# Users, name; any slash style and letter case); hosting-host is matched on a lower-cased copy, iban on an
+# upper-cased one; company-id, public-ip and cz-account use narrow left boundaries (hyphen, underscore and slash
+# are delimiters; a letter or a digit-dot is not) and cz-account accepts one space on either side of the slash;
+# key-prefix covers AKIA and ASIA AWS keys. The BEGIN self-test exits 3 when this awk lacks regex intervals.
+#
 # mawk constraints (Ubuntu runners use mawk): POSIX ERE only, no anchors inside groups, no quantified groups
 # with intervals, short regex literals. Boundary checks live in scan_re(), not in the regex. Run with
 # LC_ALL=C so [A-Z] is byte-ASCII.
@@ -88,6 +94,7 @@ function scan_re(rule, re, lbad, rbad, s,   off, rest, tok, st, en, cb, ca, cn, 
     if (cb != "" && lbad != "" && cb ~ lbad) ok = 0
     if (ca != "" && rbad != "" && ca ~ rbad) ok = 0
     if (ca == "." && cn ~ /[0-9]/ && rbad != "") ok = 0       # "1.2.3.4.5" / "20260001.2" are version-like
+    if (rule == "company-id" && cb == "." && st > 2 && substr(s, st - 2, 1) ~ /[0-9]/) ok = 0   # "1.20260001" likewise
     if (ok) { lctx = (st > 1) ? substr(s, (st > 3 ? st - 3 : 1), (st > 3 ? 3 : st - 1)) : ""; handle(rule, tok); off = en } else off = st + 1
   }
 }
@@ -100,10 +107,11 @@ function handle(rule, tok,   t, ip, n, w, k, m, q) {
     match(tok, /[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/); ip = substr(tok, RSTART, RLENGTH)
     if (ipv4_public(ip)) hit(rule, ip)
   }
-  else if (rule == "cz-account") {        # loose core regex, shape check here: [prefix-]number/bank
-    split(tok, w, "/"); m = split(w[1], q, "-")
-    if (m == 1 && length(q[1]) >= 6 && length(q[1]) <= 10) hit(rule, tok)
-    else if (m == 2 && length(q[1]) >= 2 && length(q[1]) <= 6 && length(q[2]) >= 2 && length(q[2]) <= 10) hit(rule, tok)
+  else if (rule == "cz-account") {        # loose core regex (one space allowed on either side of the slash), shape check here
+    t = tok; gsub(/ /, "", t)               # [prefix-]number/bank, reported without the spaces
+    split(t, w, "/"); m = split(w[1], q, "-")
+    if (m == 1 && length(q[1]) >= 6 && length(q[1]) <= 10) hit(rule, t)
+    else if (m == 2 && length(q[1]) >= 2 && length(q[1]) <= 6 && length(q[2]) >= 2 && length(q[2]) <= 10) hit(rule, t)
   } else if (rule == "iban") {            # run of [A-Z0-9 ]; longest whole-word prefix of exact country length that passes mod 97
     n = split(tok, w, " ")
     for (k = n; k >= 1; k--) { t = ""; for (m = 1; m <= k; m++) t = t w[m]; if (iban_len_ok(t) && iban_valid(t)) { hit(rule, t); break } }
@@ -116,6 +124,14 @@ function handle(rule, tok,   t, ip, n, w, k, m, q) {
   } else hit(rule, tok)
 }
 BEGIN {
+  # Self-test: an awk without regex interval support reads "{8}" literally, so every rule that uses one would
+  # silently never match. Fail closed instead (the driver maps any status above 1 to "scanner error", exit 2).
+  # Dynamic regex on purpose: the same form scan_re uses. "exit 3" twice: some awks skip END after a BEGIN exit.
+  if (!("12345678" ~ "^[0-9]{8}$")) {
+    print "scan.awk: this awk has no regex interval support, so the rules cannot match; use mawk 1.3.4 from 2020 or later, gawk or BWK awk" > "/dev/stderr"
+    broken = 1
+    exit 3
+  }
   FS = "\t"; found = 0; na = 0; al = ENVIRON["CS_ALLOWLIST"]
   if (al != "") {
     while ((getline line < al) > 0) {
@@ -128,16 +144,20 @@ BEGIN {
 {
   path = $1; ln = $2; text = $0; sub(/^[^\t]*\t[^\t]*\t/, "", text)
   scan_re("email",        "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z][A-Za-z]+", "[A-Za-z0-9._%+-]", "", text)
-  scan_re("company-id",   "[0-9]{8}", "[0-9A-Za-z_./-]", "[0-9A-Za-z_-]", text)
-  scan_re("public-ip",    "[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}", "[0-9A-Za-z_.-]", "[0-9A-Za-z_-]", text)
-  scan_re("iban",         "[A-Z][A-Z][0-9][0-9][A-Z0-9 ]+", "[A-Za-z0-9]", "", text)
-  scan_re("cz-account",   "[0-9][0-9-]*[0-9]/[0-9]{4}", "[0-9A-Za-z_./-]", "[0-9A-Za-z_-]", text)
-  scan_re("hosting-host", "[A-Za-z0-9.-]+\\.(zerops\\.app|amazonaws\\.com|r2\\.cloudflarestorage\\.com)", "", "[A-Za-z0-9_-]", text)
-  scan_re("hosting-host", "[A-Za-z0-9.-]+\\.(backblazeb2\\.com|wasabisys\\.com|digitaloceanspaces\\.com|linodeobjects\\.com)", "", "[A-Za-z0-9_-]", text)
+  # Left boundaries are narrow on purpose: a hyphen, underscore or slash before the digits is a delimiter
+  # ("ico-27123456", "/subjekty/27123456", "id_27123456"), a letter or a digit-dot is not (version-like).
+  scan_re("company-id",   "[0-9]{8}", "[0-9A-Za-z]", "[0-9A-Za-z_-]", text)
+  scan_re("public-ip",    "[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}", "[0-9A-Za-z.]", "[0-9A-Za-z_-]", text)
+  ut = toupper(text)                       # IBANs are matched on an upper-cased copy: lower-case spellings count
+  scan_re("iban",         "[A-Z][A-Z][0-9][0-9][A-Z0-9 ]+", "[A-Z0-9]", "", ut)
+  scan_re("cz-account",   "[0-9][0-9-]*[0-9] ?/ ?[0-9]{4}", "[0-9A-Za-z_./-]", "[0-9A-Za-z_-]", text)
+  lt = tolower(text)                       # host names are case-insensitive: lower-case cores on a lower-cased copy
+  scan_re("hosting-host", "[a-z0-9.-]+\\.(zerops\\.app|amazonaws\\.com|r2\\.cloudflarestorage\\.com)", "", "[a-z0-9_-]", lt)
+  scan_re("hosting-host", "[a-z0-9.-]+\\.(backblazeb2\\.com|wasabisys\\.com|digitaloceanspaces\\.com|linodeobjects\\.com)", "", "[a-z0-9_-]", lt)
   scan_re("key-prefix",   "(sk|rk|pk)_live_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}", "[A-Za-z0-9_]", "", text)
   scan_re("key-prefix",   "plink_[A-Za-z0-9]{8,}|acct_[A-Za-z0-9]{8,}", "[A-Za-z0-9_]", "", text)
   scan_re("key-prefix",   "gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}", "[A-Za-z0-9_]", "", text)
-  scan_re("key-prefix",   "AKIA[0-9A-Z]{16}", "[A-Za-z0-9_]", "", text)
+  scan_re("key-prefix",   "A[KS]IA[0-9A-Z]{16}", "[A-Za-z0-9_]", "", text)
   # awk match() is leftmost-longest, so the name segment is consumed whole and any following character ends it
   # (end of line, quote, space, "&", ":", "/"). The left boundary rejects a segment inside a URL path or a
   # relative path ("example.com/home/about", "views/home/index").
@@ -151,4 +171,4 @@ BEGIN {
   # commit removed cannot keep CI red. No regex with an anchor inside a group here (mawk).
   if ((path == ".gitattributes" || substr(path, length(path) - 14) == "/.gitattributes") && index(ln, "@") == 0) check_attributes(text)
 }
-END { exit(found ? 1 : 0) }
+END { if (broken) exit 3; exit(found ? 1 : 0) }
