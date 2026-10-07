@@ -190,17 +190,17 @@ Manual bump procedure for a tool:
 
 These settings cannot be enforced from code or from CI (reading them needs an admin token), so the maintainer confirms them by hand and re-checks after GitHub UI changes:
 
-- [ ] secret scanning enabled
-- [ ] push protection enabled (Settings -> Advanced Security -> Secret Protection); review every push protection bypass alert
-- [ ] non-provider patterns and validity checks enabled
-- [ ] "Require actions to be pinned to a full-length commit SHA" enabled
-- [ ] "Allow GitHub Actions to create and approve pull requests" disabled
-- [ ] workflow approval required for outside contributors
-- [ ] Dependabot alerts and security updates enabled
-- [ ] two-factor authentication on the maintainer account
-- [ ] optional: e-mail privacy settings for commit author metadata ("Keep my email addresses private" and "Block command line pushes that expose my email")
-- [ ] the organisation ruleset on `main`: block deletion, block force push, require a pull request, required status check `CI Passed`. The first push of a new branch goes through a pull request.
-- [ ] decide whether the ruleset on `main` uses "Require review from Code Owners". Without it, `.github/CODEOWNERS` only requests a review. A solo maintainer cannot approve their own pull request, so turning it on blocks the maintainer's own pull requests unless the ruleset grants the maintainer a bypass. The decision is the owner's. CODEOWNERS covers `/.github/`, `/scripts/`, `/lefthook.yml`, `/.gitleaks.toml`, `/.gitleaksignore`, `/.gitattributes`, `/.gitignore`, `/CONTRIBUTING.md` and `/.claude/`.
+- [x] secret scanning enabled
+- [x] push protection enabled (Settings -> Advanced Security -> Secret Protection); review every push protection bypass alert
+- [x] non-provider patterns and validity checks enabled
+- [x] "Require actions to be pinned to a full-length commit SHA" enabled
+- [x] "Allow GitHub Actions to create and approve pull requests" disabled
+- [x] workflow approval required for outside contributors
+- [x] Dependabot alerts and security updates enabled
+- [x] two-factor authentication on the maintainer account
+- [x] optional: e-mail privacy settings for commit author metadata ("Keep my email addresses private" and "Block command line pushes that expose my email")
+- [x] the organisation ruleset on `main`: block deletion, block force push, require a pull request, required status check `CI Passed`. The first push of a new branch goes through a pull request.
+- [x] decide whether the ruleset on `main` uses "Require review from Code Owners". Without it, `.github/CODEOWNERS` only requests a review. A solo maintainer cannot approve their own pull request, so turning it on blocks the maintainer's own pull requests unless the ruleset grants the maintainer a bypass. The decision is the owner's. CODEOWNERS covers `/.github/`, `/scripts/`, `/lefthook.yml`, `/.gitleaks.toml`, `/.gitleaksignore`, `/.gitattributes`, `/.gitignore`, `/CONTRIBUTING.md` and `/.claude/`.
 
 A read-only audit of the repository-level values, run by the maintainer (never in CI):
 
