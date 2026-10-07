@@ -1,5 +1,13 @@
 {
     "preset": "laravel",
+    "notPath": [
+        "lang/cs/actions.php",
+        "lang/cs/auth.php",
+        "lang/cs/http-statuses.php",
+        "lang/cs/pagination.php",
+        "lang/cs/passwords.php",
+        "lang/cs/validation.php"
+    ],
     "rules": {
         "declare_strict_types": true
     }
