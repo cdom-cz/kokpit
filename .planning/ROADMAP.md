@@ -24,7 +24,7 @@ Kokpit is built in dependency order so that every later phase rests on conventio
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Repository Hygiene** - Tooling that keeps secrets and real data out of the public repository, in place before anything else is committed (completed 2026-10-08)
-- [ ] **Phase 2: Platform Foundation** - Installable Laravel + Filament app with enforced UUID/timestamp/money/numbering conventions, Czech UI and default-deny Partner isolation
+- [x] **Phase 2: Platform Foundation** - Installable Laravel + Filament app with enforced UUID/timestamp/money/numbering conventions, Czech UI and default-deny Partner isolation (completed 2026-10-08)
 - [ ] **Phase 3: Operations Foundation** - Typed settings, audit trail, resilient background jobs, health page, release deploy, private storage and technology spikes
 - [ ] **Phase 4: Clients and Projects** - Clients, contacts, ARES lookup, Partner invitations, and projects with keys, billing terms and client visibility
 - [ ] **Phase 5: Tasks and Kanban** - Tasks and subtasks with per-project keys, comments, list filters, drag-and-drop boards and Partner task access
@@ -90,7 +90,7 @@ Plans:
   4. Money is stored as integer minor units plus ISO 4217 currency through one value object with a single documented rounding point, and the sequence allocator hands out gap-free, duplicate-free numbers under real parallel-process tests on PostgreSQL
   5. A Partner test account sees nothing by default (policies plus global scopes, not UI hiding); the canary harness with two fictional clients passes; a registry test fails when any Resource, Page, Widget or relation manager lacks an explicit access rule
 
-**Plans:** 13/13 plans executed (strictly sequential: every plan from 02-02 on runs Pest in the single DDEV project against the shared `kokpit_test` database)
+**Plans:** 13/13 plans complete (strictly sequential: every plan from 02-02 on runs Pest in the single DDEV project against the shared `kokpit_test` database)
 
 Plans:
 **Wave 1**
@@ -288,7 +288,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Repository Hygiene | 11/11 | Complete    | 2026-10-08 |
-| 2. Platform Foundation | 13/13 | In Progress | - |
+| 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
 | 3. Operations Foundation | 0/0 | Not started | - |
 | 4. Clients and Projects | 0/0 | Not started | - |
 | 5. Tasks and Kanban | 0/0 | Not started | - |
