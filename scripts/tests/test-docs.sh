@@ -30,6 +30,11 @@ CONTRIB_PHRASES=(
   'scripts/install-hooks.sh'
   'Require actions to be pinned to a full-length commit SHA'
   'Review .gitignore'
+  'Require review from Code Owners'
+  'composed and decomposed'
+  'git-attributes'
+  '--diff-merges=first-parent'
+  'path-scoped allowlist entry'
 )
 
 # has_phrase <file> <phrase>: byte-wise fixed-string match

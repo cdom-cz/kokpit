@@ -41,22 +41,25 @@ Run the self-tests with `scripts/tests/run.sh` (`--quick` skips the tests that n
 
 | Rule | What it flags |
 |---|---|
-| `key-prefix` | Secret-key and token prefixes with a body: Stripe, GitHub and AWS style keys |
+| `key-prefix` | Secret-key and token prefixes with a body: Stripe, GitHub and AWS style keys (the AKIA and ASIA prefixes) |
 | `email` | E-mail addresses outside `example.com`, `example.org`, `example.net`, `.test`, `.invalid`, `.localhost` |
-| `company-id` | 8-digit company-ID-like numbers (the placeholders `12345678` and `00000000` are allowed) |
-| `iban` | IBANs with a valid country length and checksum, also in groups of four |
-| `cz-account` | Czech account numbers, with or without prefix |
-| `public-ip` | Public IPv4 addresses (private, loopback, link-local, documentation and similar ranges are allowed) |
-| `hosting-host` | Zerops and S3-provider endpoint hostnames |
-| `home-path` | Personal absolute home paths such as `/Users/<name>/` or `/home/<name>/` (placeholder names are allowed) |
+| `company-id` | 8-digit company-ID-like numbers (the placeholders `12345678` and `00000000` are allowed). The number is also found after `-`, `_` or `/`, so write dates with separators (for example 2026-10-07) and not as one run of digits |
+| `iban` | IBANs with a valid country length and checksum, also in groups of four and also in lower case |
+| `cz-account` | Czech account numbers, with or without prefix, also with one space on either side of the slash |
+| `public-ip` | Public IPv4 addresses, also after `-` or `_` (private, loopback, link-local, documentation and similar ranges are allowed) |
+| `hosting-host` | Zerops and S3-provider endpoint hostnames, in any letter case |
+| `home-path` | Personal absolute home paths: `/Users/<name>` and `/home/<name>` with or without a trailing slash, also quoted or at the end of a line, and the Windows form `C:\Users\<name>` (any slash style and letter case). Placeholder names are allowed: `example`, `user`, `username`, `name` and `you`, for the Unix form also `runner`, `vagrant`, `ubuntu`, `www-data`, `ddev` and `Shared`, and for the Windows form `Public`, `Default`, `All` and `runneradmin`. A `home` or `Users` segment inside a URL or a relative path is not a home path |
+| `git-attributes` | A `-diff`, `binary` or `filter=` attribute in any `.gitattributes`. Such an attribute hides content from gitleaks in the hook, or stores something other than the file in git. The rule is checked in staged, `--all` and explicit-file mode, never in `--history`, so a removed line cannot keep CI red. A deliberate use (for example Git LFS) needs a reviewed path-scoped allowlist entry for this rule |
 | `denylist` | Terms from your local denylist, see below |
 
 Modes:
 
 - no argument (or `--staged`): the added lines of the staged diff. This is what the hook runs.
-- `--all`: every tracked text file in the index. CI runs it.
-- `--history`: every added line in `git log --all`; findings name the introducing commit as `path:line@sha`. CI runs it over the full history.
-- `FILE...`: explicit files (use `--` before a name that starts with a dash).
+- `--all`: every tracked file in the index, read in full. CI runs it.
+- `--history`: every added line in `git log --all`; findings name the introducing commit as `path:line@sha`. It covers every commit, including content introduced by a merge commit (diffed against its first parent, `--diff-merges=first-parent`) and renamed files (shown in full). CI runs it over the full history.
+- `FILE...`: explicit files (use `--` before a name that starts with a dash). Every non-empty operand is scanned; there is no binary skip.
+
+Every mode reads the full content of every file, including files git treats as binary (NUL bytes, a `-diff` or `binary` attribute) and UTF-16 text. Diffs are forced to text, textconv drivers are ignored, and NUL bytes are read twice, once as a space and once removed. Each finding is printed once.
 
 Exit codes: `0` clean, `1` findings, `2` usage error, not a git repository, an unreadable or in-repository denylist, or a scanner error. Matched values are always masked: a finding prints the rule, the file and the line, plus the first characters and the length of the value, never the value. The same is true for the denylist stage: the term and the line text are never printed. A file path that itself contains a denylist term is printed as the finding path, because the path is the finding.
 
@@ -66,6 +69,8 @@ Reviewed exemptions live in two files, both covered by code owners and reviewed 
 
 - `scripts/sensitive-allowlist.txt`: one entry per line, `rule ;; path-ERE ;; matched-value-ERE`. Make each entry as narrow as possible: one rule, the smallest path scope, an anchored value pattern. The value pattern is tested against the matched value, not the whole line.
 - `.gitleaks.toml`: the allowlists of the gitleaks configuration.
+
+Exactly five files are exempt from the generic rules, by exact path: `scripts/check-sensitive.sh`, `scripts/lib/scan.awk`, `scripts/lib/diff2tsv.awk`, `scripts/sensitive-allowlist.txt` and `.gitleaks.toml`. The denylist still scans them. Binary assets (images, fonts, PDFs) are scanned too. A false positive in one gets a narrow, path-scoped allowlist entry.
 
 There are no inline ignore comments, no environment variable and no flag that disables or redirects a rule. gitleaks runs with `--ignore-gitleaks-allow`, so a `gitleaks:allow` comment in a file has no effect.
 
@@ -77,7 +82,9 @@ Terms specific to your own instance (client names, internal project names, compa
 
 The file lives in your home configuration directory. The script refuses a path inside the repository.
 
-Format: one term per line. Blank lines and lines starting with `#` are ignored. Terms are fixed strings matched case-insensitively, with Czech diacritics folded, so a term written with diacritics matches the same text without them. Use terms of at least 3 characters: very short terms match too much.
+Format: one term per line. Blank lines and lines starting with `#` are ignored. Terms are fixed strings. Use terms of at least 3 characters: very short terms match too much.
+
+Term and text are folded the same way: ASCII letters and the accented Latin letters from U+00C0 to U+017F (Czech, Slovak, German, Polish and more) become lower-case base letters, and combining marks are removed. A term written with diacritics therefore matches the same text without them, the reverse also holds, and composed and decomposed spellings match. Matching is byte-wise after folding and does not depend on the system locale. Letters of other scripts are compared exactly as written. Accented letters in UTF-16 or in legacy single-byte encodings such as Windows-1250 are not folded; only their ASCII letters match.
 
 A fictional example file:
 
@@ -90,8 +97,6 @@ Behaviour:
 - `KOKPIT_DENYLIST` unset, or the file does not exist: one notice on stderr, then only the generic rules run. The exit code is unaffected. This is also how CI runs.
 - the file exists but is not readable: exit `2`.
 - the file is inside the repository: exit `2`, so a real list can never be committed through this tool.
-
-Terms are not Unicode-normalised: a term typed in composed form does not match decomposed text.
 
 ## Never bypass
 
@@ -112,6 +117,8 @@ The full runbook will live in `SECURITY.md` (arrives with the community files in
 ## CI
 
 The workflow `Hygiene` runs on pushes to `main` and on pull requests, never on `pull_request_target`. Its jobs are `scan` (self-tests, `--all`, `--history`, gitleaks), `workflow-lint` (actionlint and zizmor) and the aggregator `CI Passed`, which is the status check the organisation ruleset requires.
+
+The gitleaks step runs with `--log-opts="--all --diff-merges=first-parent --text --no-textconv"`, so it also reads merge commits and content git treats as binary. UTF-16 content stays invisible to gitleaks and is covered by the shell scan. In the pre-commit hook gitleaks cannot read binary-classified content; the `sensitive-content` job before it does.
 
 Everything is pinned. Actions are pinned by full commit SHA and bumped by Dependabot. The tools gitleaks, actionlint and zizmor are downloaded as a release tarball by version and verified against a SHA-256 hard-coded in the workflow. Never trust a checksums file taken from the same release.
 
@@ -135,6 +142,7 @@ These settings cannot be enforced from code or from CI (reading them needs an ad
 - [ ] two-factor authentication on the maintainer account
 - [ ] optional: e-mail privacy settings for commit author metadata ("Keep my email addresses private" and "Block command line pushes that expose my email")
 - [ ] the organisation ruleset on `main`: block deletion, block force push, require a pull request, required status check `CI Passed`. The first push of a new branch goes through a pull request.
+- [ ] decide whether the ruleset on `main` uses "Require review from Code Owners". Without it, `.github/CODEOWNERS` only requests a review. A solo maintainer cannot approve their own pull request, so turning it on blocks the maintainer's own pull requests unless the ruleset grants the maintainer a bypass. The decision is the owner's. CODEOWNERS covers `/.github/`, `/scripts/`, `/lefthook.yml`, `/.gitleaks.toml`, `/.gitleaksignore`, `/.gitattributes`, `/.gitignore`, `/CONTRIBUTING.md` and `/.claude/`.
 
 A read-only audit of the repository-level values, run by the maintainer (never in CI):
 
