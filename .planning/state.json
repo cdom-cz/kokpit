@@ -1,0 +1,73 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": null,
+  "phases": [
+    {
+      "number": "1",
+      "name": "Repository Hygiene",
+      "status": "complete"
+    },
+    {
+      "number": "2",
+      "name": "Platform Foundation",
+      "status": "in_progress"
+    },
+    {
+      "number": "3",
+      "name": "Operations Foundation",
+      "status": "pending"
+    },
+    {
+      "number": "4",
+      "name": "Clients and Projects",
+      "status": "pending"
+    },
+    {
+      "number": "5",
+      "name": "Tasks and Kanban",
+      "status": "pending"
+    },
+    {
+      "number": "6",
+      "name": "Time Tracking",
+      "status": "pending"
+    },
+    {
+      "number": "7",
+      "name": "REST API",
+      "status": "pending"
+    },
+    {
+      "number": "8",
+      "name": "Exchange Rates and Reports",
+      "status": "pending"
+    },
+    {
+      "number": "9",
+      "name": "Documents and Finance",
+      "status": "pending"
+    },
+    {
+      "number": "10",
+      "name": "Invoicing",
+      "status": "pending"
+    },
+    {
+      "number": "11",
+      "name": "Stripe Payments",
+      "status": "pending"
+    },
+    {
+      "number": "12",
+      "name": "Partner Audit",
+      "status": "pending"
+    }
+  ],
+  "next": {
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step (plan phase 02)",
+    "reason": "Phase 02 of 12 — needs a plan"
+  },
+  "updated_at": "2026-10-07T22:01:30.520Z"
+}
