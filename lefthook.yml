@@ -1,0 +1,23 @@
+# lefthook configuration. Install the hook once per clone with scripts/install-hooks.sh.
+# Tested with lefthook 2.1.17 and gitleaks 8.30.1. Local developer tool only; CI never depends on it.
+min_version: 2.1.0
+# Fail closed: if the lefthook binary is missing the generated hook aborts the commit instead of skipping.
+assert_lefthook_installed: true
+output:
+  - failure
+  - summary
+pre-commit:
+  jobs:
+    # The scanner reads the git index itself, so no staged-file placeholder is passed.
+    - name: sensitive-content
+      run: scripts/check-sensitive.sh
+      fail_text: "Sensitive content found (file:line above). Fix it; see CONTRIBUTING.md. Do not bypass."
+    # In the hook, gitleaks reads `git diff --staged` and cannot see content git treats as binary (NUL bytes,
+    # -diff). The sensitive-content job before it reads that content, the git-attributes rule keeps -diff and
+    # binary out of the repository, and CI runs gitleaks with text and merge diffs (--log-opts).
+    # --redact keeps secret values out of the terminal, --ignore-gitleaks-allow means an inline allow comment
+    # cannot hide a finding. A missing gitleaks binary exits 127 and blocks the commit (fail closed). Only the
+    # current `gitleaks git` command is used.
+    - name: gitleaks
+      run: gitleaks git --pre-commit --staged --redact --no-banner --verbose --ignore-gitleaks-allow --config .gitleaks.toml
+      fail_text: "gitleaks failed or is not installed. Install: brew install gitleaks (see CONTRIBUTING.md)."

@@ -1,0 +1,40 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+
+    'install' => [
+        'prompt_name' => 'Zadejte jméno správce',
+        'prompt_email' => 'Zadejte e-mail správce',
+        'prompt_password' => 'Zadejte heslo (nejméně 12 znaků)',
+        'prompt_password_confirmation' => 'Zopakujte heslo',
+        'password_mismatch' => 'Hesla se neshodují.',
+        'password_env_missing' => 'Heslo správce nebylo zadáno. V neinteraktivním režimu ho předejte v proměnné prostředí KOKPIT_ADMIN_PASSWORD.',
+        'name_email_required' => 'V neinteraktivním režimu je nutné zadat volby --name a --email.',
+        'password_too_long' => 'Heslo smí mít nejvýše 72 bajtů.',
+        'admin_exists' => 'Správce již existuje. Druhý účet správce nelze vytvořit.',
+        'created' => 'Správce byl vytvořen. Přihlaste se a nastavte dvoufázové ověření.',
+        'login_url' => 'Přihlášení: :url',
+        'attributes' => [
+            'name' => 'jméno',
+            'email' => 'e-mail',
+            'password' => 'heslo',
+        ],
+    ],
+
+    'reset_2fa' => [
+        'not_found' => 'Uživatel s tímto e-mailem neexistuje.',
+        'force_required' => 'V neinteraktivním režimu je nutné zadat volbu --force.',
+        'confirm' => 'Opravdu chcete zrušit dvoufázové ověření uživatele :email?',
+        'aborted' => 'Nic se nezměnilo.',
+        'done' => 'Dvoufázové ověření bylo zrušeno. Uživatel ho nastaví znovu při příštím přihlášení.',
+    ],
+
+    'dashboard' => [
+        'empty_heading' => 'Zatím tu nic není',
+        'empty_description_admin' => 'Nástěnka se naplní, jakmile v Kokpitu přibudou klienti, projekty a odpracovaný čas.',
+        'empty_description_partner' => 'Jakmile pro vás bude něco připraveno, objeví se to tady.',
+    ],
+
+];

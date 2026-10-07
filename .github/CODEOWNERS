@@ -1,0 +1,12 @@
+# Review ownership of the hygiene tooling and of the files that steer it: a change to any of these paths
+# needs the maintainer. These entries only take effect when the repository ruleset requires review from
+# code owners; that setting is the maintainer's decision, see the CONTRIBUTING checklist.
+/.github/ @PetrGraf
+/scripts/ @PetrGraf
+/lefthook.yml @PetrGraf
+/.gitleaks.toml @PetrGraf
+/.gitleaksignore @PetrGraf
+/.gitattributes @PetrGraf
+/.gitignore @PetrGraf
+/CONTRIBUTING.md @PetrGraf
+/.claude/ @PetrGraf

@@ -1,0 +1,253 @@
+name: Hygiene
+
+# Triggers are deliberately limited to push (main) and pull_request. Never pull_request_target, workflow_run
+# or issue_comment: this workflow runs repository-controlled scripts and must not get a privileged token.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: hygiene-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Sensitive-content and secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The digest is hard-coded here on purpose: a checksum file fetched from the same release would verify
+      # nothing if that release were tampered with. The upstream gitleaks GitHub Action is not used (it needs
+      # an organisation licence key). Bump version and digest together, by hand, see CONTRIBUTING.md.
+      - name: Install gitleaks (pinned version, pinned checksum)
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/gitleaks.tar.gz"
+          curl -fsSL --retry 3 -o "${archive}" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum --check --strict -
+          mkdir -p "${RUNNER_TEMP}/bin"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/bin" gitleaks
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+
+      - name: Script self-tests (planted fake secrets built at runtime)
+        run: bash scripts/tests/run.sh
+
+      - name: Sensitive-content check (tree, no local denylist)
+        run: scripts/check-sensitive.sh --all
+
+      - name: Sensitive-content check (full history, no local denylist)
+        run: scripts/check-sensitive.sh --history
+
+      # Same config as the hook. --redact keeps values out of the log, --ignore-gitleaks-allow ignores inline
+      # allow comments. The default gitleaks log range skips merge diffs and content git treats as binary
+      # (a -diff attribute, NUL bytes); --log-opts makes gitleaks read both, over every ref of the checkout
+      # (fetch-depth: 0 above). UTF-16 content stays invisible to gitleaks and is covered by
+      # scripts/check-sensitive.sh --history. gitleaks splits the option string on spaces, so it must hold no
+      # quoted arguments. scripts/tests/test-gitleaks.sh asserts this exact string.
+      - name: gitleaks over full history
+        run: gitleaks git --config .gitleaks.toml --redact --no-banner --ignore-gitleaks-allow --exit-code 1 --log-opts="--all --diff-merges=first-parent --text --no-textconv" .
+
+  # Every change to a workflow is linted by checksum-pinned actionlint and zizmor (offline, no token), so the
+  # gate itself cannot be weakened silently. Digests are hard-coded for the same reason as the gitleaks one.
+  workflow-lint:
+    name: Workflow lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      ACTIONLINT_VERSION: "1.7.12"
+      ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+      ZIZMOR_VERSION: "1.30.1"
+      ZIZMOR_SHA256: "e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a"
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint and zizmor (pinned versions, pinned checksums)
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/bin"
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/actionlint.tar.gz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  ${RUNNER_TEMP}/actionlint.tar.gz" | sha256sum --check --strict -
+          tar -xzf "${RUNNER_TEMP}/actionlint.tar.gz" -C "${RUNNER_TEMP}/bin" actionlint
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/zizmor.tar.gz" \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${ZIZMOR_SHA256}  ${RUNNER_TEMP}/zizmor.tar.gz" | sha256sum --check --strict -
+          tar -xzf "${RUNNER_TEMP}/zizmor.tar.gz" -C "${RUNNER_TEMP}/bin" zizmor
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+
+      - name: actionlint
+        run: actionlint -color
+
+      - name: zizmor (offline, no token)
+        run: zizmor --offline .github/workflows
+
+  # Application tests on the same PostgreSQL major and PHP version as .ddev/config.yaml (tests/Feature/Repo/
+  # CiParityTest.php keeps them equal). The application is first booted from .env.example alone, which is the
+  # automated proof that a fresh clone installs; the real job environment wins over phpunit.xml and .env, and
+  # the database name ends in _test because tests/TestCase.php refuses any other. The database credentials are
+  # throwaway values of a service container that lives for this job only.
+  tests:
+    name: Tests (PostgreSQL 18)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: kokpit
+          POSTGRES_PASSWORD: kokpit-ci-only
+          POSTGRES_DB: kokpit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kokpit -d kokpit_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_DATABASE: kokpit_test
+      DB_USERNAME: kokpit
+      DB_PASSWORD: kokpit-ci-only
+      REDIS_HOST: 127.0.0.1
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.5"
+          extensions: intl, bcmath, pdo_pgsql, gd, exif, zip, sodium, mbstring, redis
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      # The Admin password is created inside this step and never echoed; it is valid only in this job's
+      # throwaway database.
+      - name: Boot the application from .env.example alone
+        run: |
+          set -euo pipefail
+          KOKPIT_ADMIN_PASSWORD="$(openssl rand -base64 24)"
+          export KOKPIT_ADMIN_PASSWORD
+          bash scripts/boot-from-env-example.sh
+
+      - name: Pest
+        run: vendor/bin/pest
+
+  # Formatting and static analysis. No database or services: Larastan boots the application from the committed
+  # files only, so a fresh checkout without .env must analyse cleanly.
+  static-analysis:
+    name: Static analysis (Pint, Larastan)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.5"
+          extensions: intl, bcmath, pdo_pgsql, gd, exif, zip, sodium, mbstring, redis
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Pint (formatting, no changes written)
+        run: vendor/bin/pint --test
+
+      - name: PHPStan (Larastan, level 8)
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+
+  # Dependency gates: a valid composer.json, no known vulnerabilities in the locked versions, and only
+  # AGPL-3.0-compatible licences (scripts/check-licenses.php, OR semantics for dual-licensed packages).
+  # Nothing is installed: every command reads composer.json and composer.lock.
+  dependencies:
+    name: Dependencies (validate, audit, licences)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.5"
+          coverage: none
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Audit locked packages for known vulnerabilities
+        run: composer audit --locked
+
+      - name: Check licences against the AGPL-compatible allowlist
+        run: |
+          set -euo pipefail
+          composer licenses --locked --format=json | php scripts/check-licenses.php
+
+  # Aggregator: the organisation ruleset requires a status check named exactly "CI Passed".
+  # always() plus a result check means a failed, skipped or cancelled gated job can never leave it green.
+  ci-passed:
+    name: CI Passed
+    if: ${{ always() }}
+    needs: [scan, workflow-lint, tests, static-analysis, dependencies]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    env:
+      RESULTS: ${{ join(needs.*.result, ' ') }}
+    steps:
+      - name: Require every gated job to have succeeded
+        run: |
+          set -eu
+          for r in ${RESULTS}; do
+            [ "${r}" = "success" ] || { echo "A required job finished as: ${r}"; exit 1; }
+          done

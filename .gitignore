@@ -1,0 +1,121 @@
+# Secrets and environment
+.env
+.env.*
+!.env.example
+.envrc
+.npmrc
+.netrc
+.pgpass
+.git-credentials
+*.pem
+*.key
+
+# Local AI tooling and IDE settings. Only .claude/CLAUDE.md is versioned. The directory itself must never
+# be ignored (".claude/"): git cannot re-include a file below an excluded parent, so the negation would
+# be silently dead. The negation must also come after the wildcard (last matching pattern wins).
+.claude/*
+!.claude/CLAUDE.md
+CLAUDE.local.md
+.cursor/
+.aider*
+.idea/
+.vscode/
+.DS_Store
+
+# Local-only data, imports, exports and dumps (never commit real data)
+/local/
+*.sql
+*.dump
+*.sql.gz
+*.csv
+*.xlsx
+
+# Runtime artefacts. Laravel keeps each storage directory in git through a placeholder .gitignore, and a fresh
+# clone cannot run Composer without them (the framework needs the directories to exist). So these rules ignore
+# the CONTENT of each directory, never the directory itself, and re-include the placeholder .gitignore. Git
+# cannot re-include a file below an excluded parent, so for a nested directory the order is always: wildcard,
+# re-include the child directory, content-ignore the child, re-include the child's .gitignore.
+/storage/*.key
+/storage/pail
+/storage/logs/*
+!/storage/logs/.gitignore
+/storage/app/*
+!/storage/app/.gitignore
+!/storage/app/private/
+!/storage/app/public/
+/storage/app/private/*
+!/storage/app/private/.gitignore
+/storage/app/public/*
+!/storage/app/public/.gitignore
+/storage/framework/cache/*
+!/storage/framework/cache/.gitignore
+!/storage/framework/cache/data/
+!/storage/framework/cache/locks/
+/storage/framework/cache/data/*
+!/storage/framework/cache/data/.gitignore
+/storage/framework/cache/locks/*
+!/storage/framework/cache/locks/.gitignore
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitignore
+/storage/framework/testing/*
+!/storage/framework/testing/.gitignore
+/storage/framework/views/*
+!/storage/framework/views/.gitignore
+/bootstrap/cache/*
+!/bootstrap/cache/.gitignore
+*.log
+
+# Dependencies and build output
+/vendor/
+/node_modules/
+/public/build/
+/public/hot
+/public/storage
+# Published by filament:upgrade on every autoload dump (composer install regenerates them)
+/public/js/filament/
+/public/css/filament/
+/public/fonts/filament/
+
+# Planning: risky session artefacts (logs, debug output, conversation copies, migration notes)
+/.planning/debug/
+/.planning/logs/
+/.planning/sessions/
+/.planning/**/*.log
+/.planning/migration-notes/
+# GSD codebase map: regenerate once Kokpit code exists, and keep it untracked until it passes
+# scripts/check-sensitive.sh (the current map describes the GSD framework, not Kokpit).
+/.planning/codebase/
+
+# Exports and local databases
+*.xls
+*.ods
+*.sqlite
+*.sqlite3
+/exports/
+
+# Credentials and signing material
+auth.json
+*.p12
+*.pfx
+*.keystore
+id_rsa*
+id_ed25519*
+id_ecdsa*
+id_dsa*
+*.p8
+*.jks
+credentials.json
+service-account*.json
+*.ovpn
+
+# Infrastructure state (may hold secrets in plain text)
+*.tfstate
+*.tfstate.*
+
+# Test, coverage and tool caches
+/coverage/
+.phpunit.cache/
+.phpunit.result.cache
+.php-cs-fixer.cache
+# PHPStan tmpDir (phpstan.neon arrives in plan 02-02)
+/storage/framework/phpstan/

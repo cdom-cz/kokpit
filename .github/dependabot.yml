@@ -1,0 +1,15 @@
+# Dependabot bumps the SHA-pinned GitHub Actions in .github/workflows/ together with their version comments,
+# and proposes Composer updates for composer.json and composer.lock (a pull request runs the dependency job,
+# which audits advisories and checks every licence against the AGPL-compatible allowlist).
+# The curl-installed release binaries (gitleaks, actionlint, zizmor) carry a hard-coded SHA-256 and are bumped
+# by hand, see CONTRIBUTING.md.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: composer
+    directory: "/"
+    schedule:
+      interval: weekly

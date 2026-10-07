@@ -1,0 +1,32 @@
+name: kokpit
+type: laravel
+docroot: public
+php_version: "8.5"
+webserver_type: nginx-fpm
+xdebug_enabled: false
+additional_hostnames: []
+additional_fqdns: []
+database:
+    type: postgres
+    version: "18"
+use_dns_when_possible: true
+composer_version: "2"
+web_environment: []
+corepack_enable: false
+
+# Supervised daemons. Each waits until Composer has installed vendor/ and the app boots,
+# so a fresh clone does not put them into a restart loop before "ddev composer install".
+# queue:listen reloads code per job, which suits development; production uses queue:work.
+web_extra_daemons:
+  - name: queue-worker
+    command: "until [ -f vendor/autoload.php ] && php artisan about --only=environment >/dev/null 2>&1; do sleep 5; done; exec php artisan queue:listen --tries=3 --sleep=1"
+    directory: /var/www/html
+  - name: scheduler
+    command: "until [ -f vendor/autoload.php ] && php artisan about --only=environment >/dev/null 2>&1; do sleep 5; done; exec php artisan schedule:work"
+    directory: /var/www/html
+
+# Create the dedicated test database once; the DDEV db role is a superuser with CREATEDB.
+# tests/TestCase.php refuses to run against any database whose name does not end in _test.
+hooks:
+  post-start:
+    - exec: "PGPASSWORD=db psql -h db -U db -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='kokpit_test'\" | grep -q 1 || PGPASSWORD=db createdb -h db -U db kokpit_test"

@@ -1,0 +1,36 @@
+# sensitive-allowlist.txt - reviewed exemptions for scripts/check-sensitive.sh.
+#
+# Format, one entry per line:   rule ;; path-ERE ;; matched-value-ERE
+#   rule              rule name as printed in a finding (email, company-id, iban, ...)
+#   path-ERE          extended regex tested against the repository-relative path; "*" = any path
+#   matched-value-ERE extended regex tested against the MATCHED VALUE, not the whole line (optional; "*" = any)
+# Lines starting with "#" and blank lines are ignored.
+#
+# Rules for this file (D-04, D-05):
+#   - Every entry must be as narrow as possible: one rule, the smallest path scope, an anchored value pattern.
+#   - Entries are reviewed in pull requests (CODEOWNERS covers this file).
+#   - Inline ignore comments are NOT supported anywhere, and no environment variable or flag can redirect,
+#     extend or disable this file or a rule. The scanner reads exactly this path.
+#   - This file is excluded from scanning by its exact path only (it must name the values it exempts).
+
+# SSH remote notation in documentation (fictional-safe, value-scoped).
+email ;; * ;; ^git@github\.com$
+
+# Documented placeholder company IDs (D-02).
+company-id ;; * ;; ^(12345678|00000000)$
+
+# Planning documents contain YYYYNNNN invoice-number examples for the years 2020 to 2039 (WR-07: any other
+# 8-digit number, such as one starting 201, stays reportable). Path-scoped: the same value in code still fails.
+company-id ;; ^\.planning/ ;; ^20[23][0-9]{5}$
+
+# The code review record quotes this fictional bucket host as its WR-03 reproduction (an upper-case host the
+# scanner now reports). One rule, one exact path, one exact value; the matched value is lower-cased by the rule.
+hosting-host ;; ^\.planning/phases/01-repository-hygiene/01-REVIEW\.md$ ;; ^bucket\.s3\.amazonaws\.com$
+
+# composer.lock mirrors public Packagist maintainer metadata; approved by the maintainer in plan 02-01
+# (checkpoint decision "path-scoped"). Scoped to that one generated file: the same value elsewhere still fails.
+email ;; ^composer\.lock$ ;; ^[^@ ]+@[^@ ]+$
+
+# composer.lock holds dotted dependency version strings that look like an address; approved in plan 02-01
+# (checkpoint decision "path-scoped"), same scope as the entry above.
+public-ip ;; ^composer\.lock$ ;; ^[0-9.]+$
