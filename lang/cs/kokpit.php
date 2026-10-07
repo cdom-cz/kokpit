@@ -23,4 +23,12 @@ return [
         ],
     ],
 
+    'reset_2fa' => [
+        'not_found' => 'Uživatel s tímto e-mailem neexistuje.',
+        'force_required' => 'V neinteraktivním režimu je nutné zadat volbu --force.',
+        'confirm' => 'Opravdu chcete zrušit dvoufázové ověření uživatele :email?',
+        'aborted' => 'Nic se nezměnilo.',
+        'done' => 'Dvoufázové ověření bylo zrušeno. Uživatel ho nastaví znovu při příštím přihlášení.',
+    ],
+
 ];
