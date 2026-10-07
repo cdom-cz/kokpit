@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Shared\Auth\PartnerContext;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -26,6 +27,13 @@ class ResetAdminTwoFactorCommand extends Command
     protected $description = 'Clear the two-factor authentication of a user (lost device or rotated APP_KEY)';
 
     public function handle(): int
+    {
+        // Console work has no signed-in user, so the fail-closed scopes would
+        // silence it (Pitfall 8): the whole run is an explicit system run.
+        return app(PartnerContext::class)->runAsSystem(fn (): int => $this->reset());
+    }
+
+    private function reset(): int
     {
         $email = Str::lower(trim((string) $this->argument('email')));
 

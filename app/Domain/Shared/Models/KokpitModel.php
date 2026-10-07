@@ -16,7 +16,9 @@ use Illuminate\Database\Eloquent\Model;
  *   the safety net for raw SQL);
  * - timestamps are `timestampsTz()`, never plain `timestamps()`;
  * - the model has one alias in `App\Domain\Shared\Database\MorphMap`;
- * - a partner-isolation declaration is added by the isolation plan (02-10).
+ * - the isolation is declared on the class itself: it implements PartnerIsolated
+ *   (with IsolatesPartners, or DeniesPartners for Admin-only data) or carries
+ *   #[NotPartnerScoped] with a reason; tests/Arch/ModelDeclarationTest enforces it.
  */
 abstract class KokpitModel extends Model
 {

@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Domain\Identity\Models\Role;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\RoleName;
+use App\Domain\Shared\Auth\PartnerContext;
 use Illuminate\Console\Command;
 use Illuminate\Support\Env;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +36,13 @@ class InstallCommand extends Command
     private const int PASSWORD_MAX_BYTES = 72;
 
     public function handle(): int
+    {
+        // Console work has no signed-in user, so the fail-closed scopes would
+        // silence it (Pitfall 8): the whole run is an explicit system run.
+        return app(PartnerContext::class)->runAsSystem(fn (): int => $this->install());
+    }
+
+    private function install(): int
     {
         // Cheap early refusal so a second run does not prompt for anything.
         // The authoritative check runs again under the advisory lock below.

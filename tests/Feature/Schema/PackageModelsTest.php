@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\Tag;
@@ -74,11 +75,14 @@ it('stores one database notification with a version 7 id and the user alias', fu
 it('stores media for a host model with a version 7 id and the host alias', function () {
     config(['media-library.disk_name' => 'local']);
     Storage::fake('local');
-    $host = PackageProbe::provision();
+    // Media is closed to Partners; this schema test has no signed-in user, so it runs as the system.
+    [$host, $media] = app(PartnerContext::class)->runAsSystem(function (): array {
+        $host = PackageProbe::provision();
 
-    $media = $host->addMediaFromString('Fictional probe file content')
-        ->usingFileName('probe-note.txt')
-        ->toMediaCollection('probe');
+        return [$host, $host->addMediaFromString('Fictional probe file content')
+            ->usingFileName('probe-note.txt')
+            ->toMediaCollection('probe')];
+    });
 
     $row = DB::table('media')->first();
 
@@ -89,14 +93,14 @@ it('stores media for a host model with a version 7 id and the host alias', funct
         ->and($media->getKey())->toBe($row->id)
         ->and($row->model_type)->toBe(PackageProbe::ALIAS)
         ->and($row->model_id)->toBe($host->id)
-        ->and($host->fresh()?->getFirstMedia('probe')?->is($media))->toBeTrue()
+        ->and(app(PartnerContext::class)->runAsSystem(fn () => $host->fresh()?->getFirstMedia('probe')?->is($media)))->toBeTrue()
         ->and(Storage::disk('local')->exists($media->getPathRelativeToRoot()))->toBeTrue();
 });
 
 it('stores a tag with a version 7 id and a taggables row with uuid keys and the host alias', function () {
     $host = PackageProbe::provision();
 
-    $host->attachTag('fictional-topic');
+    app(PartnerContext::class)->runAsSystem(fn () => $host->attachTag('fictional-topic'));
 
     $tag = DB::table('tags')->first();
     $pivot = DB::table('taggables')->first();
@@ -108,14 +112,16 @@ it('stores a tag with a version 7 id and a taggables row with uuid keys and the 
         ->and($pivot->tag_id)->toBe($tag->id)
         ->and($pivot->taggable_type)->toBe(PackageProbe::ALIAS)
         ->and($pivot->taggable_id)->toBe($host->id)
-        ->and($host->fresh()?->tags->first())->toBeInstanceOf(Tag::class);
+        ->and(app(PartnerContext::class)->runAsSystem(fn () => $host->fresh()?->tags->first()))->toBeInstanceOf(Tag::class);
 });
 
 it('removes the taggables row when its tag is deleted', function () {
     $host = PackageProbe::provision();
-    $host->attachTag('fictional-topic');
 
-    Tag::query()->firstOrFail()->delete();
+    app(PartnerContext::class)->runAsSystem(function () use ($host): void {
+        $host->attachTag('fictional-topic');
+        Tag::query()->firstOrFail()->delete();
+    });
 
     expect(DB::table('taggables')->count())->toBe(0);
 });
@@ -173,5 +179,5 @@ it('stores a webhook call with a version 7 id through the configured model', fun
         ->and($row->id)->toMatch(Uuids::V7_PATTERN)
         ->and($call->getKey())->toBe($row->id)
         ->and($row->url)->toBe($url)
-        ->and(WebhookCall::find($row->id)?->payload)->toBe(['event' => 'fictional.probe']);
+        ->and(app(PartnerContext::class)->runAsSystem(fn () => WebhookCall::find($row->id)?->payload))->toBe(['event' => 'fictional.probe']);
 });
