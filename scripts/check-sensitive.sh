@@ -22,9 +22,12 @@
 # Each finding is printed once.
 #
 # Local denylist (D-06): KOKPIT_DENYLIST names a file OUTSIDE the repository, one fixed term per line
-# ("#" comments and blank lines ignored). Rows containing a term (case-insensitive, Czech diacritics folded)
-# are reported as "path:line: denylist"; the term and the line text are never printed. Unset or missing
-# file: one notice on stderr and generic rules only (the CI path). Unreadable or in-repository: exit 2.
+# ("#" comments and blank lines ignored). Rows containing a term are reported as "path:line: denylist";
+# the term and the line text are never printed. Term and text are folded the same way (scripts/lib/fold.awk:
+# ASCII and accented Latin letters to lower-case base letters, combining marks removed), so diacritics and
+# letter case do not matter and composed and decomposed forms match. Matching is byte-wise and independent
+# of the system locale. The denylist also scans the five D-05 exempt paths. Unset or missing file: one
+# notice on stderr and generic rules only (the CI path). Unreadable or in-repository: exit 2.
 # Exit codes: 0 clean, 1 findings, 2 usage error, not a git repository, or scanner error (fail closed).
 #
 # Read-only: never writes to the git index or the working tree. Portable to bash 3.2 (macOS) and Linux.
@@ -103,12 +106,20 @@ else
         exit 2
         ;;
     esac
-    # An empty pattern makes `grep -f` match EVERY line, so the copy drops CR, surrounding whitespace,
+    # An empty pattern makes `grep -f` match EVERY line, so the copy drops CR, NUL, surrounding whitespace,
     # blank lines and comments (Pitfall 6). The grep -v exit status 1 (no terms left) is not an error.
-    LC_ALL=C tr -d '\r' < "$dl" \
+    LC_ALL=C tr -d '\r\000' < "$dl" \
       | LC_ALL=C sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
       | LC_ALL=C grep -v -e '^#' -e '^$' > "$tmp/deny" || true
-    if [ -s "$tmp/deny" ]; then
+    # The same fold as for the scanned text (lib/fold.awk, locale-free). A term that folds to nothing (a lone
+    # combining mark) would be an empty pattern, so lines empty after the fold are dropped, never matched.
+    if ! LC_ALL=C awk -f "$here/lib/fold.awk" "$tmp/deny" > "$tmp/deny.f1"; then
+      echo 'check-sensitive: denylist fold error' >&2
+      exit 2
+    fi
+    LC_ALL=C sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$tmp/deny.f1" \
+      | LC_ALL=C grep -v -e '^$' > "$tmp/deny.fold" || true
+    if [ -s "$tmp/deny.fold" ]; then
       deny_active=1
     else
       echo 'check-sensitive: KOKPIT_DENYLIST has no terms' >&2
@@ -291,15 +302,23 @@ if [ "$rc" -gt 1 ]; then
   exit 2
 fi
 
-# Denylist stage (D-06): same filtered rows as the generic scanner. Matched against path and text only (the
-# line-number field is dropped, so a numeric term cannot match line numbers). C.UTF-8 makes -i fold Czech
-# capitals, which LC_ALL=C does not; -a keeps invalid UTF-8 from turning a match into "Binary file matches".
-# Only "path:line: denylist" is printed: never the term, never the line text (T-01-13).
+# Denylist stage (D-06): reads the UNFILTERED rows, so the five D-05 exempt paths are scanned too (WR-01): the
+# exemption exists because those files must contain the generic patterns; it never applied to instance-specific
+# terms. Matched against path and text only (the line-number field is dropped, so a numeric term cannot match
+# line numbers). Text and terms are folded by the same lib/fold.awk, so case and diacritics do not matter
+# (CR-02), and the match is a plain byte-wise fixed-string match under LC_ALL=C: no locale is involved, so no
+# locale can be missing (WR-08). -a keeps invalid UTF-8 from turning a match into "Binary file matches". The
+# fold keeps one line per line, so the hit line numbers map straight back to rows.tsv.
+# Only "path:line: denylist" is printed: never the term, never the folded form, never the line text (T-01-13).
 deny_found=0
 if [ "$deny_active" -eq 1 ]; then
-  LC_ALL=C cut -f1,3- "$tmp/scan.tsv" > "$tmp/pt.txt"
+  LC_ALL=C cut -f1,3- "$tmp/rows.tsv" > "$tmp/pt.txt"
+  if ! LC_ALL=C awk -f "$here/lib/fold.awk" "$tmp/pt.txt" > "$tmp/pt.fold"; then
+    echo 'check-sensitive: denylist fold error' >&2
+    exit 2
+  fi
   grc=0
-  LC_ALL=C.UTF-8 grep -F -i -a -n -f "$tmp/deny" "$tmp/pt.txt" > "$tmp/deny.hits" 2> /dev/null || grc=$?
+  LC_ALL=C grep -F -a -n -f "$tmp/deny.fold" "$tmp/pt.fold" > "$tmp/deny.hits" 2> /dev/null || grc=$?
   if [ "$grc" -gt 1 ]; then
     echo 'check-sensitive: denylist matcher error' >&2
     exit 2
@@ -310,7 +329,7 @@ if [ "$deny_active" -eq 1 ]; then
       NR == FNR { want[$1] = 1; next }
       (FNR in want) { printf "%s:%s: denylist\n", $1, $2; n++ }
       END { exit(n > 0 ? 1 : 0) }
-    ' "$tmp/deny.ln" "$tmp/scan.tsv" >> "$tmp/findings.txt" || deny_found=1
+    ' "$tmp/deny.ln" "$tmp/rows.tsv" >> "$tmp/findings.txt" || deny_found=1
   fi
 fi
 

@@ -60,16 +60,12 @@ assert_out_lacks "signed in March" "(b) line text is not printed"
 assert_out_lacks "$line_text" "(b) whole line is not printed"
 
 # (c) Czech diacritics fold: lower-case term matches upper-case content including the accented letter
-if printf 'Í\n' | LC_ALL=C.UTF-8 grep -qi 'í' 2> /dev/null; then
-  dl=$(mkdeny deny-c.txt "$(printf '%s\n' "$(printf '%s' "$term_a" | tr '[:upper:]' '[:lower:]')")")
-  repo=$(new_repo)
-  stage "$repo" c.txt "$(printf 'client: FIKTIVNÍ KLIENT\n')"
-  assert_exit 1 "(c) diacritic-folded match exits 1" run_with "$dl" "$repo"
-  assert_out_has "c.txt:1: denylist" "(c) folded match is reported"
-  assert_out_lacks "FIKTIVNÍ" "(c) content is not printed"
-else
-  printf 'SKIP: (c) no C.UTF-8 locale with case folding on this system\n'
-fi
+dl=$(mkdeny deny-c.txt "$(printf '%s\n' "$(printf '%s' "$term_a" | tr '[:upper:]' '[:lower:]')")")
+repo=$(new_repo)
+stage "$repo" c.txt "$(printf 'client: FIKTIVNÍ KLIENT\n')"
+assert_exit 1 "(c) diacritic-folded match exits 1" run_with "$dl" "$repo"
+assert_out_has "c.txt:1: denylist" "(c) folded match is reported"
+assert_out_lacks "FIKTIVNÍ" "(c) content is not printed"
 
 # (d) blank, whitespace-only, comment and CRLF lines never match everything
 dl="$TEST_TMP/deny-d.txt"
@@ -148,5 +144,20 @@ stage "$repo" k.txt "$(printf 'x\nsee %s here\n' "$term_b")"
 assert_exit 1 "(k) --all with a denylist exits 1" run_with "$dl" "$repo" --all
 assert_out_has "k.txt:2: denylist" "(k) --all finding reported"
 assert_out_lacks "see $term_b" "(k) --all does not print the line"
+
+# (l) CR-02: a term written with diacritics blocks the same name written without them
+dl=$(mkdeny deny-l.txt "$term_a")
+repo=$(new_repo)
+stage "$repo" l.txt "$(printf 'client Fiktivni Klient here\n')"
+assert_exit 1 "(l) term with diacritics matches the ASCII spelling" run_with "$dl" "$repo"
+assert_out_has "l.txt:1: denylist" "(l) ASCII spelling is reported"
+assert_out_lacks "Fiktivni Klient" "(l) line text is not printed"
+
+# (m) the reverse: an ASCII term matches the upper-case spelling with diacritics
+dl=$(mkdeny deny-m.txt "Fiktivni Klient")
+repo=$(new_repo)
+stage "$repo" m.txt "$(printf 'client: FIKTIVNÍ KLIENT\n')"
+assert_exit 1 "(m) ASCII term matches the spelling with diacritics" run_with "$dl" "$repo"
+assert_out_has "m.txt:1: denylist" "(m) spelling with diacritics is reported"
 
 finish
