@@ -95,6 +95,22 @@ final class PgSchema
     }
 
     /**
+     * R3: every <x>_type column with a sibling <x>_id has a uuid sibling.
+     *
+     * @param  Collection<int, Column>  $columns
+     * @return list<string>
+     */
+    public static function nonUuidMorphKeys(Collection $columns): array
+    {
+        $byName = $columns->keyBy(fn (object $c): string => "{$c->tbl}.{$c->col}");
+
+        return self::names($columns
+            ->filter(fn (object $c): bool => str_ends_with($c->col, '_type'))
+            ->map(fn (object $c): ?object => $byName->get($c->tbl.'.'.substr($c->col, 0, -5).'_id'))
+            ->filter(fn (?object $sibling): bool => $sibling !== null && $sibling->udt !== 'uuid'));
+    }
+
+    /**
      * R4: no timestamp without time zone anywhere.
      *
      * @param  Collection<int, Column>  $columns

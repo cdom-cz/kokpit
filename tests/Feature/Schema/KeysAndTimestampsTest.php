@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Identity\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\MassAssignmentException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -81,14 +82,11 @@ it('round-trips an instant written in UTC unchanged', function () {
         ->and($read?->setTimezone('UTC')->format('Y-m-d H:i:s'))->toBe('2026-01-05 23:30:00');
 });
 
-it('does not mass assign client_id', function () {
-    $user = User::create([
+it('refuses to mass assign client_id (D-01)', function () {
+    expect(fn () => User::create([
         'name' => 'Client Probe',
         'email' => exampleEmail(),
         'password' => 'not-a-real-secret',
         'client_id' => (string) Str::uuid7(),
-    ]);
-
-    // Task 2 turns on the silent-discard prevention and asserts the exception instead.
-    expect($user->fresh()?->client_id)->toBeNull();
+    ]))->toThrow(MassAssignmentException::class);
 });

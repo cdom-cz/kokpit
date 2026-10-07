@@ -2,6 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Domain\Identity\Models\Permission;
+use App\Domain\Identity\Models\Role;
+use Illuminate\Database\Eloquent\Relations\Relation;
+use Spatie\Permission\Models\Permission as BasePermission;
+use Spatie\Permission\Models\Role as BaseRole;
+use Tests\Support\ModelRules;
 use Tests\Support\PgSchema;
 
 /**
@@ -127,4 +133,84 @@ it('no longer creates the unused jobs, job_batches, cache and cache_locks tables
         ->not->toContain('job_batches')
         ->not->toContain('cache')
         ->not->toContain('cache_locks');
+});
+
+it('R3: every <x>_type column has a uuid <x>_id sibling', function () {
+    $violations = PgSchema::nonUuidMorphKeys(PgSchema::columns());
+
+    expect($violations)->toBe([], violationMessage('R3', $violations));
+});
+
+it('R3 self-check: reports a morph pair whose id sibling is not uuid', function () {
+    $columns = collect([
+        schemaRow(['tbl' => 'bad_pivots', 'col' => 'model_type']),
+        schemaRow(['tbl' => 'bad_pivots', 'col' => 'model_id', 'udt' => 'bigint']),
+        schemaRow(['tbl' => 'good_pivots', 'col' => 'model_type']),
+        schemaRow(['tbl' => 'good_pivots', 'col' => 'model_id', 'udt' => 'uuid']),
+        schemaRow(['tbl' => 'lonely', 'col' => 'kind_type']),
+    ]);
+
+    expect(PgSchema::nonUuidMorphKeys($columns))->toBe(['bad_pivots.model_id']);
+});
+
+it('R7: the morph map is enforced, snake_case and made of HasUuids models', function () {
+    $violations = ModelRules::morphMapViolations(Relation::morphMap(), Relation::requiresMorphMap());
+
+    expect($violations)->toBe([], violationMessage('R7', $violations));
+});
+
+it('R7 self-check: reports an empty map, a missing enforcement, bad aliases and a class without HasUuids', function () {
+    expect(ModelRules::morphMapViolations([], true))->toContain('the morph map is empty')
+        ->and(ModelRules::morphMapViolations(['user' => Role::class], false))
+        ->toContain('the morph map is not required (enforceMorphMap is not active)')
+        ->and(ModelRules::morphMapViolations(['App\\Models\\User' => Role::class], true))
+        ->toContain("alias 'App\\Models\\User' contains a backslash")
+        ->and(ModelRules::morphMapViolations(['TimeEntry' => Role::class], true))
+        ->toContain("alias 'TimeEntry' is not snake_case")
+        ->and(ModelRules::morphMapViolations(['plain' => stdClass::class], true))
+        ->toContain('stdClass (alias \'plain\') does not use HasUuids');
+});
+
+/**
+ * Package models that must be registered as HasUuids subclasses:
+ * description => [config key, expected subclass, package base class].
+ * Plan 02-04 adds the remaining packages here.
+ *
+ * @return array<string, array{string, class-string, class-string}>
+ */
+function packageModelRegistry(): array
+{
+    return [
+        'permission roles' => ['permission.models.role', Role::class, BaseRole::class],
+        'permission permissions' => ['permission.models.permission', Permission::class, BasePermission::class],
+    ];
+}
+
+it('R8: package models are the registered HasUuids subclasses', function () {
+    $entries = [];
+    foreach (packageModelRegistry() as $description => [$configKey, $expected, $base]) {
+        $entries[$description] = ['registered' => config($configKey), 'expected' => $expected, 'base' => $base];
+    }
+
+    $violations = ModelRules::unregisteredPackageModels($entries);
+
+    expect($violations)->toBe([], violationMessage('R8', $violations));
+});
+
+it('R8 self-check: reports an unregistered base model, a wrong parent and a missing HasUuids', function () {
+    $violations = ModelRules::unregisteredPackageModels([
+        'unregistered' => ['registered' => BaseRole::class, 'expected' => Role::class, 'base' => BaseRole::class],
+        'wrong parent' => ['registered' => Permission::class, 'expected' => Permission::class, 'base' => BaseRole::class],
+        'no uuids' => ['registered' => BaseRole::class, 'expected' => BaseRole::class, 'base' => BaseRole::class],
+        'not configured' => ['registered' => null, 'expected' => Role::class, 'base' => BaseRole::class],
+    ]);
+    $joined = implode("\n", $violations);
+
+    expect($joined)->toContain('unregistered: registered')
+        ->toContain('wrong parent: ')
+        ->toContain('no uuids: ')
+        ->toContain('not configured: registered NULL')
+        ->and(ModelRules::unregisteredPackageModels([
+            'fine' => ['registered' => Role::class, 'expected' => Role::class, 'base' => BaseRole::class],
+        ]))->toBe([]);
 });
