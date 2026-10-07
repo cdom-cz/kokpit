@@ -4,37 +4,21 @@ declare(strict_types=1);
 
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
-use App\Domain\Shared\Database\MorphMap;
+use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\Tag;
-use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Database\Schema\Blueprint;
+use App\Domain\Shared\Models\WebhookCall;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Spatie\WebhookClient\WebhookConfig;
 use Tests\Support\Probes\PackageProbe;
 use Tests\Support\Probes\ProbeNotification;
 use Tests\Support\Uuids;
 
-/**
- * Creates the probe table inside the test transaction and merges the probe
- * alias into the morph map, then returns one probe row.
- */
-function probeHost(): PackageProbe
-{
-    Schema::create('package_probes', function (Blueprint $table) {
-        $table->uuid('id')->primary()->default(DB::raw('uuidv7()'));
-        $table->string('name');
-        $table->timestampsTz();
-    });
-    Relation::morphMap([PackageProbe::ALIAS => PackageProbe::class], merge: true);
-
-    return PackageProbe::create(['name' => 'Fictional probe host']);
-}
-
 afterEach(function () {
     // The probe alias is test-only: restore the production morph map.
-    Relation::morphMap(MorphMap::MAP, merge: false);
+    PackageProbe::restoreMorphMap();
 });
 
 it('creates Sanctum tokens as <uuid>|<secret> and resolves the owner through findToken', function () {
@@ -92,7 +76,7 @@ it('stores one database notification with a version 7 id and the user alias', fu
 it('stores media for a host model with a version 7 id and the host alias', function () {
     config(['media-library.disk_name' => 'local']);
     Storage::fake('local');
-    $host = probeHost();
+    $host = PackageProbe::provision();
 
     $media = $host->addMediaFromString('Fictional probe file content')
         ->usingFileName('probe-note.txt')
@@ -112,7 +96,7 @@ it('stores media for a host model with a version 7 id and the host alias', funct
 });
 
 it('stores a tag with a version 7 id and a taggables row with uuid keys and the host alias', function () {
-    $host = probeHost();
+    $host = PackageProbe::provision();
 
     $host->attachTag('fictional-topic');
 
@@ -130,10 +114,64 @@ it('stores a tag with a version 7 id and a taggables row with uuid keys and the 
 });
 
 it('removes the taggables row when its tag is deleted', function () {
-    $host = probeHost();
+    $host = PackageProbe::provision();
     $host->attachTag('fictional-topic');
 
     Tag::query()->firstOrFail()->delete();
 
     expect(DB::table('taggables')->count())->toBe(0);
+});
+
+it('logs an activity with a user as subject and causer under uuid keys and the user alias', function () {
+    $user = User::factory()->create();
+
+    $activity = activity()->performedOn($user)->causedBy($user)->log('Fictional probe activity');
+
+    $row = DB::table('activity_log')->first();
+
+    expect($activity)->toBeInstanceOf(Activity::class)
+        ->and(DB::table('activity_log')->count())->toBe(1)
+        ->and($row)->not->toBeNull()
+        ->and($row->id)->toMatch(Uuids::V7_PATTERN)
+        ->and($row->subject_type)->toBe('user')
+        ->and($row->subject_id)->toBe($user->id)
+        ->and($row->causer_type)->toBe('user')
+        ->and($row->causer_id)->toBe($user->id)
+        ->and($activity->subject?->is($user))->toBeTrue()
+        ->and($activity->causer?->is($user))->toBeTrue();
+});
+
+it('allows an activity without a causer', function () {
+    $user = User::factory()->create();
+
+    activity()->performedOn($user)->log('Fictional system activity');
+
+    $row = DB::table('activity_log')->first();
+
+    expect($row)->not->toBeNull()
+        ->and($row->id)->toMatch(Uuids::V7_PATTERN)
+        ->and($row->causer_type)->toBeNull()
+        ->and($row->causer_id)->toBeNull()
+        ->and($row->subject_type)->toBe('user');
+});
+
+it('stores a webhook call with a version 7 id through the configured model', function () {
+    $properties = config('webhook-client.configs.0');
+    $url = 'https://'.implode('.', ['example', 'com']).'/webhooks/probe';
+
+    $call = WebhookCall::storeWebhook(
+        new WebhookConfig($properties),
+        Request::create($url, 'POST', ['event' => 'fictional.probe']),
+    );
+
+    $row = DB::table('webhook_calls')->first();
+
+    expect($properties['webhook_model'])->toBe(WebhookCall::class)
+        ->and($call)->toBeInstanceOf(WebhookCall::class)
+        ->and(DB::table('webhook_calls')->count())->toBe(1)
+        ->and($row)->not->toBeNull()
+        ->and($row->id)->toMatch(Uuids::V7_PATTERN)
+        ->and($call->getKey())->toBe($row->id)
+        ->and($row->url)->toBe($url)
+        ->and(WebhookCall::find($row->id)?->payload)->toBe(['event' => 'fictional.probe']);
 });

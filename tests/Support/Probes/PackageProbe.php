@@ -4,7 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Support\Probes;
 
+use App\Domain\Shared\Database\MorphMap;
 use App\Domain\Shared\Models\KokpitModel;
+use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\Tags\HasTags;
@@ -27,4 +32,28 @@ final class PackageProbe extends KokpitModel implements HasMedia
     protected $table = 'package_probes';
 
     protected $guarded = [];
+
+    /**
+     * Creates the probe table inside the test transaction, merges the probe
+     * alias into the morph map and returns one probe row.
+     */
+    public static function provision(): self
+    {
+        Schema::create('package_probes', function (Blueprint $table) {
+            $table->uuid('id')->primary()->default(DB::raw('uuidv7()'));
+            $table->string('name');
+            $table->timestampsTz();
+        });
+        Relation::morphMap([self::ALIAS => self::class], merge: true);
+
+        return self::create(['name' => 'Fictional probe host']);
+    }
+
+    /**
+     * Restores the production morph map after a test used provision().
+     */
+    public static function restoreMorphMap(): void
+    {
+        Relation::morphMap(MorphMap::MAP, merge: false);
+    }
 }

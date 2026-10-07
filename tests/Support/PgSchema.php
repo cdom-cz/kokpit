@@ -153,6 +153,51 @@ final class PgSchema
     }
 
     /**
+     * R9 input: the `<x>_type` morph columns, i.e. those with a sibling `<x>_id`.
+     *
+     * @param  Collection<int, Column>  $columns
+     * @return list<array{string, string}> table and column pairs, sorted
+     */
+    public static function morphTypeColumns(Collection $columns): array
+    {
+        $names = $columns->map(fn (object $c): string => "{$c->tbl}.{$c->col}")->all();
+
+        $pairs = $columns
+            ->filter(fn (object $c): bool => str_ends_with($c->col, '_type')
+                && in_array($c->tbl.'.'.substr($c->col, 0, -5).'_id', $names, true))
+            ->map(fn (object $c): array => [$c->tbl, $c->col])
+            ->values()
+            ->all();
+        usort($pairs, fn (array $a, array $b): int => $a <=> $b);
+
+        return $pairs;
+    }
+
+    /**
+     * R9: stored morph type values that are not a key of the morph map.
+     *
+     * @param  array<string, list<string>>  $storedTypes  `table.column` => distinct stored values
+     * @param  array<string, class-string>  $morphMap
+     * @return list<string> `table.column=value`, sorted
+     */
+    public static function unmappedMorphTypes(array $storedTypes, array $morphMap): array
+    {
+        $violations = [];
+
+        foreach ($storedTypes as $column => $values) {
+            foreach ($values as $value) {
+                if (! array_key_exists($value, $morphMap)) {
+                    $violations[] = "{$column}={$value}";
+                }
+            }
+        }
+
+        sort($violations);
+
+        return $violations;
+    }
+
+    /**
      * @param  Collection<int, object>  $columns
      * @return list<string>
      */

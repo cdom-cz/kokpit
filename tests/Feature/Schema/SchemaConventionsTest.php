@@ -5,17 +5,26 @@ declare(strict_types=1);
 use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
+use App\Domain\Identity\Models\User;
+use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\Tag;
+use App\Domain\Shared\Models\WebhookCall;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\PersonalAccessToken as BasePersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
+use Spatie\Activitylog\Models\Activity as BaseActivity;
 use Spatie\MediaLibrary\MediaCollections\Models\Media as BaseMedia;
 use Spatie\Permission\Models\Permission as BasePermission;
 use Spatie\Permission\Models\Role as BaseRole;
 use Spatie\Tags\Tag as BaseTag;
+use Spatie\WebhookClient\Models\WebhookCall as BaseWebhookCall;
 use Tests\Support\ModelRules;
 use Tests\Support\PgSchema;
+use Tests\Support\Probes\PackageProbe;
+use Tests\Support\Probes\ProbeNotification;
 
 /**
  * Builds a synthetic catalogue row. Defaults describe a harmless uuid column.
@@ -186,13 +195,22 @@ it('R7 self-check: reports an empty map, a missing enforcement, bad aliases and 
  */
 function packageModelRegistry(): array
 {
-    return [
+    $registry = [
         'permission roles' => [config('permission.models.role'), Role::class, BaseRole::class],
         'permission permissions' => [config('permission.models.permission'), Permission::class, BasePermission::class],
         'medialibrary media' => [config('media-library.media_model'), Media::class, BaseMedia::class],
         'tags tags' => [config('tags.tag_model'), Tag::class, BaseTag::class],
+        'activitylog activities' => [config('activitylog.activity_model'), Activity::class, BaseActivity::class],
         'sanctum tokens' => [Sanctum::$personalAccessTokenModel, PersonalAccessToken::class, BasePersonalAccessToken::class],
     ];
+
+    /** @var array<int|string, array<string, mixed>> $webhookConfigs */
+    $webhookConfigs = config('webhook-client.configs', []);
+    foreach ($webhookConfigs as $index => $webhookConfig) {
+        $registry["webhook-client config {$index}"] = [$webhookConfig['webhook_model'] ?? null, WebhookCall::class, BaseWebhookCall::class];
+    }
+
+    return $registry;
 }
 
 it('R8: package models are the registered HasUuids subclasses', function () {
@@ -222,4 +240,73 @@ it('R8 self-check: reports an unregistered base model, a wrong parent and a miss
         ->and(ModelRules::unregisteredPackageModels([
             'fine' => ['registered' => Role::class, 'expected' => Role::class, 'base' => BaseRole::class],
         ]))->toBe([]);
+});
+
+/**
+ * One row through every package that writes a morph type column.
+ */
+function exercisePackages(): void
+{
+    config(['media-library.disk_name' => 'local']);
+    Storage::fake('local');
+
+    $user = User::factory()->create();
+    $user->assignRole(Role::findOrCreate('admin'));
+    $user->givePermissionTo(Permission::findOrCreate('view-reports'));
+    $user->createToken('probe');
+    $user->notify(new ProbeNotification);
+
+    $host = PackageProbe::provision();
+    $host->addMediaFromString('Fictional probe file content')->usingFileName('probe-note.txt')->toMediaCollection('probe');
+    $host->attachTag('fictional-topic');
+
+    activity()->performedOn($user)->causedBy($user)->log('Fictional probe activity');
+}
+
+it('R9: after one exercising seed every stored morph type is a key of the morph map', function () {
+    exercisePackages();
+
+    $stored = [];
+    foreach (PgSchema::morphTypeColumns(PgSchema::columns()) as [$table, $column]) {
+        /** @var list<string> $values */
+        $values = DB::table($table)->whereNotNull($column)->distinct()->pluck($column)->all();
+        $stored["{$table}.{$column}"] = $values;
+    }
+
+    $violations = PgSchema::unmappedMorphTypes($stored, Relation::morphMap());
+    $exercised = array_keys(array_filter($stored, fn (array $values): bool => $values !== []));
+
+    PackageProbe::restoreMorphMap();
+
+    expect($violations)->toBe([], violationMessage('R9', $violations))
+        ->and($exercised)->toBe([
+            'activity_log.causer_type',
+            'activity_log.subject_type',
+            'media.model_type',
+            'model_has_permissions.model_type',
+            'model_has_roles.model_type',
+            'notifications.notifiable_type',
+            'personal_access_tokens.tokenable_type',
+            'taggables.taggable_type',
+        ]);
+});
+
+it('R9 self-check: reports a stored morph type that is not a morph map key', function () {
+    $violations = PgSchema::unmappedMorphTypes(
+        ['media.model_type' => ['user', 'App\\Models\\Legacy'], 'notifications.notifiable_type' => ['user'], 'tags.empty_type' => []],
+        ['user' => User::class],
+    );
+
+    expect($violations)->toBe(['media.model_type=App\\Models\\Legacy']);
+});
+
+it('R9 self-check: finds the morph type columns through their id sibling', function () {
+    $columns = collect([
+        schemaRow(['tbl' => 'media', 'col' => 'model_type']),
+        schemaRow(['tbl' => 'media', 'col' => 'model_id', 'udt' => 'uuid']),
+        schemaRow(['tbl' => 'tags', 'col' => 'kind_type']),
+        schemaRow(['tbl' => 'tags', 'col' => 'type']),
+    ]);
+
+    expect(PgSchema::morphTypeColumns($columns))->toBe([['media', 'model_type']]);
 });
