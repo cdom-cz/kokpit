@@ -4,10 +4,10 @@ current_phase: 3
 current_phase_name: Operations Foundation
 status: planning
 stopped_at: Phase 3 context gathered
-last_updated: "2026-10-07T23:42:57.108Z"
+last_updated: "2026-10-07T23:44:42.073Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 02 complete, transitioned to Phase 3
-state_head: 7877081d20967aa325aad32f665508938ddeff27
+state_head: e9437909ac254dc7eb53e517afcd85c7cbb95357
 progress:
   total_phases: 12
   completed_phases: 2
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 Phase: 3 — Operations Foundation
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-10-08 — Phase 02 complete, transitioned to Phase 3
+Last activity: 2026-10-08 - Completed quick task 261008-28i: Remove the hosted product name from all tracked documentation
 
 Progress: [██░░░░░░░░] 17%
 
@@ -164,6 +164,12 @@ Product decisions needed before the owning phase is planned:
 Research flags (run research before planning): Phase 3 (Zerops specifics, PDF and kanban spikes, PHP 8.5 package compatibility, Filament 5 behaviours), Phase 5 (only if the kanban spike fails), Phase 6, Phase 7 (OpenAPI coverage), Phase 10 (Czech invoicing details), Phase 11 (Payment Link API shape, event matrix). Researcher drift: STACK.md is authoritative on package versions.
 
 Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is unreliable; review it in Phase 1 before pushing anything public.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 261008-28i | Remove the hosted product name from all tracked documentation | 2026-10-08 | e943790 | [261008-28i-remove-the-product-name-from-all-tracked](./quick/261008-28i-remove-the-product-name-from-all-tracked/) |
 
 ## Deferred Items
 

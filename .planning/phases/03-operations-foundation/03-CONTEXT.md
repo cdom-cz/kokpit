@@ -20,7 +20,7 @@ Already fixed before this discussion (not re-opened): Laravel 13, Filament 5 SPA
 ### Typed settings
 - **D-01:** Settings are stored with `spatie/laravel-settings` (typed settings classes in the database, cached). The researcher must verify PHP 8.5, Laravel 13 and UUID v7 compatibility (settings table key) before planning; if the package fails, escalate rather than silently switching.
 - **D-02:** The Admin edits all settings on one Filament page with tabs (supplier, bank accounts, invoicing incl. VAT mode / payment terms / numbering, defaults, online payments). One form, one Save, one `#[AccessRule]` (Admin only). Everything is Czech via `lang/cs`.
-- **D-03:** A bank account is a record with a **format** that decides which fields are shown, modelled on the Caflou form:
+- **D-03:** A bank account is a record with a **format** that decides which fields are shown, modelled on the form of a hosted CRM/ERP tool:
   - common: name (label), format, currency, BIC/SWIFT;
   - **Europe 1 (account number):** account number, bank code, bank name, IBAN (needed for QR payment codes);
   - **Europe 2 (IBAN only):** IBAN, BIC/SWIFT;
