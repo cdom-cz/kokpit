@@ -209,7 +209,7 @@ it('R8 self-check: reports an unregistered base model, a wrong parent and a miss
     expect($joined)->toContain('unregistered: registered')
         ->toContain('wrong parent: ')
         ->toContain('no uuids: ')
-        ->toContain('not configured: registered NULL')
+        ->toContain('not configured: registered null')
         ->and(ModelRules::unregisteredPackageModels([
             'fine' => ['registered' => Role::class, 'expected' => Role::class, 'base' => BaseRole::class],
         ]))->toBe([]);
