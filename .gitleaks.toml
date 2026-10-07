@@ -25,12 +25,22 @@ keywords = ["acct_", "plink_"]
 [[rules]]
 id = "kokpit-home-path"
 description = "Personal absolute home directory path"
-regex = '''/(?:Users|home)/[A-Za-z0-9._-]+/'''
+# Parity with the home-path rule of scripts/lib/scan.awk: the name segment may end the token (bare after an
+# assignment, quoted, at the end of a line, before "&&" or ":"), and a /home/ or /Users/ segment that follows a
+# letter, digit, dot, underscore, tilde or hyphen (a URL path, a relative path) is not a home directory.
+# RE2 has no lookbehind, so the left boundary is a consumed character. It excludes CR and LF and the pattern is
+# multi-line, so a path at the start of a line matches on its own line and not from the previous line's newline.
+# The secret is the name segment only (secretGroup = 1). The default ruleset's global allowlist drops any
+# finding whose secret is a path starting with /home/ or /Users/<a>/<b>, which used to hide every /home/ path;
+# a bare name is not path-shaped, so it survives. The allowlist below therefore tests the captured name.
+regex = '''(?m)(?:^|[^A-Za-z0-9._~\r\n-])/(?:Users|home)/([A-Za-z0-9._-]+)'''
+secretGroup = 1
 keywords = ["/users/", "/home/"]
 [[rules.allowlists]]
 # Placeholder and system names that are documentation, CI-runner or OS conventions, not a person. Kept in step
-# with the home-path rule of scripts/lib/scan.awk (which also allows ddev and the macOS Shared folder).
-regexes = ['''/(?:Users|home)/(?:example|user|username|name|you|runner|vagrant|ubuntu|www-data|ddev|Shared)/''']
+# with the home-path rule of scripts/lib/scan.awk (which also allows ddev and the macOS Shared folder). Whole
+# name segments only.
+regexes = ['''^(?:example|user|username|name|you|runner|vagrant|ubuntu|www-data|ddev|Shared)$''']
 
 [[rules]]
 id = "kokpit-ico-like"

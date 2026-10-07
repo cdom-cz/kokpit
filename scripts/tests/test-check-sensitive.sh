@@ -257,4 +257,23 @@ case_pass "(z) /home/runner/ passes" "path /home/runner/work"
 case_pass "(z) /home/ubuntu/ passes" "path /home/ubuntu/app"
 case_pass "(z) /Users/Shared/ passes" "path /Users/Shared/tmp"
 
+# (H) home-path rule, name segment at the end of a token (gap 3, CR-03). Values are built from fragments.
+hu=$(printf '/%s/%s' Users fictionalperson)
+hh=$(printf '/%s/%s' home fictionalperson)
+repo=$(new_repo)
+stage "$repo" h1.txt "$(printf 'export HOME=%s\n' "$hu")"
+assert_exit 1 "(H1) a bare /Users/<name> after an assignment exits 1" in_dir "$repo" "$SCRIPT"
+assert_out_has "h1.txt:1: home-path" "(H1) finding names file, line and rule"
+assert_out_lacks "fictionalperson" "(H8) the user name is not printed"
+case_hit "(H2) the /home/<name> form in double quotes is reported" home-path "$(printf 'dir="%s"\n' "$hh")"
+case_hit "(H3) /home/<name> before && is reported" home-path "$(printf 'cd %s && ls\n' "$hh")"
+case_hit "(H4) a PATH list entry :/home/<name>/bin is reported" home-path "$(printf 'PATH=/usr/bin:%s/bin\n' "$hh")"
+case_hit "(H5) a bare path at the start of a line is reported" home-path "$(printf '%s\n' "$hu")"
+case_pass "(H6) bare /Users/example at the end of a line passes" "$(printf 'path /%s/%s\n' Users example)"
+case_pass "(H6) bare /home/runner at the end of a line passes" "$(printf 'path /%s/%s\n' home runner)"
+case_pass "(H6) bare /home/ubuntu at the end of a line passes" "$(printf 'path /%s/%s\n' home ubuntu)"
+case_pass "(H6) bare /Users/Shared at the end of a line passes" "$(printf 'path /%s/%s\n' Users Shared)"
+case_pass "(H7) a URL with a /home/ path segment passes" "$(printf 'https://example.com/%s/about\n' home)"
+case_pass "(H7) a relative path with a home directory passes" "$(printf 'resources/views/%s/index.blade.php\n' home)"
+
 finish

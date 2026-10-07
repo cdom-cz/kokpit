@@ -107,7 +107,7 @@ function handle(rule, tok,   t, ip, n, w, k, m, q) {
     n = split(tok, w, " ")
     for (k = n; k >= 1; k--) { t = ""; for (m = 1; m <= k; m++) t = t w[m]; if (iban_len_ok(t) && iban_valid(t)) { hit(rule, t); break } }
   } else if (rule == "home-path") {       # placeholder account names are not personal
-    if (tok !~ /\/(Users|home)\/(example|user|username|name|you|runner|vagrant|ubuntu|www-data|ddev|Shared)\//) hit(rule, tok)
+    if (tok !~ /^\/(Users|home)\/(example|user|username|name|you|runner|vagrant|ubuntu|www-data|ddev|Shared)$/) hit(rule, tok)
   } else hit(rule, tok)
 }
 BEGIN {
@@ -133,7 +133,10 @@ BEGIN {
   scan_re("key-prefix",   "plink_[A-Za-z0-9]{8,}|acct_[A-Za-z0-9]{8,}", "[A-Za-z0-9_]", "", text)
   scan_re("key-prefix",   "gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}", "[A-Za-z0-9_]", "", text)
   scan_re("key-prefix",   "AKIA[0-9A-Z]{16}", "[A-Za-z0-9_]", "", text)
-  scan_re("home-path",    "/(Users|home)/[A-Za-z0-9._-]+/", "", "", text)
+  # awk match() is leftmost-longest, so the name segment is consumed whole and any following character ends it
+  # (end of line, quote, space, "&", ":", "/"). The left boundary rejects a segment inside a URL path or a
+  # relative path ("example.com/home/about", "views/home/index").
+  scan_re("home-path",    "/(Users|home)/[A-Za-z0-9._-]+", "[A-Za-z0-9._~-]", "", text)
   # Current-state policy, never applied to history rows (line field "N@sha7"), so an attribute that a later
   # commit removed cannot keep CI red. No regex with an anchor inside a group here (mawk).
   if ((path == ".gitattributes" || substr(path, length(path) - 14) == "/.gitattributes") && index(ln, "@") == 0) check_attributes(text)

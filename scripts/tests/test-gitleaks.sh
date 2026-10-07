@@ -95,9 +95,9 @@ done
 
 # (c) documented placeholders alone produce no finding
 ph=$(new_repo)
-put "$ph" notes.md "$(printf 'ico: 12345678\ncompany_id = 00000000\npath: /Users/example/project\nrunner: /home/runner/work\nshared: /Users/Shared/tmp\n')"
+put "$ph" notes.md "$(printf 'ico: 12345678\ncompany_id = 00000000\npath: /Users/example/project\nrunner: /home/runner/work\nshared: /Users/Shared/tmp\nbare: /Users/example\nbare: /home/runner\nbare: /home/ubuntu\nbare: /Users/Shared\nurl: https://example.com/home/about\nview: resources/views/home/index.blade.php\n')"
 commit_all "$ph" placeholders
-assert_exit 0 "(c) placeholders (12345678, 00000000, /Users/example/, /home/runner/, /Users/Shared/) are not reported" glk "$ph"
+assert_exit 0 "(c) placeholders (12345678, 00000000, /Users/example/, /home/runner/, /Users/Shared/, bare forms) and URL or relative home segments are not reported" glk "$ph"
 
 # (d) the history case: the bad file is deleted in a later commit, gitleaks still reports it
 git -C "$bad" rm -q planted.txt
@@ -179,5 +179,18 @@ put "$cm" main.txt "main"
 commit_all "$cm" main
 git -C "$cm" merge -q --no-ff -m "merge side" side > /dev/null
 assert_exit 0 "(i) CI form on a clean history with a merge exits 0" glk_ci "$cm"
+
+# --- gap 3: personal home paths whose name segment ends the token ------------------------------------------
+
+# (j) bare, quoted, && and line-start shapes in one file: four findings, the line-start one on line 4
+hp=$(new_repo)
+hu=$(printf '/%s/%s' Users fictionalperson)
+hh=$(printf '/%s/%s' home fictionalperson)
+put "$hp" paths.txt "$(printf 'export HOME=%s\ndir="%s"\ncd %s && ls\n%s' "$hu" "$hh" "$hh" "$hu")"
+commit_all "$hp" homepaths
+assert_exit 1 "(j) bare personal home paths are reported" glk "$hp"
+assert_eq "(j) exactly four kokpit-home-path findings" "4" "$(grep -cF '"RuleID": "kokpit-home-path"' "$REPORT")"
+if grep -qF '"StartLine": 4' "$REPORT"; then _ok "(j) the line-start path is reported at its own line"; else _fail "(j) no finding at line 4"; fi
+if grep -qF -e fictionalperson "$REPORT"; then _fail "(j) report leaks the name segment"; else _ok "(j) report has no name segment"; fi
 
 finish
