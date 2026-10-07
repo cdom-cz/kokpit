@@ -106,7 +106,7 @@ repo=$(new_repo)
 hidden_trio "$repo"
 git -C "$repo" commit -q -m seed
 sha_h=$(short "$repo" HEAD)
-git -C "$repo" rm -q g1.dat g2.txt g3.txt
+git -C "$repo" rm -q g1.dat g2.txt g3.txt .gitattributes
 git -C "$repo" commit -q -m drop
 assert_exit 1 "(h) --history exits 1 on deleted hidden fakes" in_dir "$repo" "$SCRIPT" --history
 assert_out_has "g1.dat:2@${sha_h}: key-prefix" "(h) -diff file named with the adding commit"
@@ -185,7 +185,7 @@ assert_exit 1 "(m) --all with findings runs under a private TMPDIR" in_dir "$rep
 assert_eq "(m) the index checksum is unchanged" "$sum_before" "$(cksum < "$repo/.git/index")"
 assert_eq "(m) the object database is unchanged" "$objs_before" "$(git -C "$repo" count-objects -v)"
 assert_eq "(m) the private TMPDIR is empty after findings" "0" "$(count_entries "$priv")"
-git -C "$repo" rm -q g1.dat g2.txt g3.txt
+git -C "$repo" rm -q g1.dat g2.txt g3.txt .gitattributes
 git -C "$repo" commit -q -m clean
 assert_exit 0 "(m) --all on a clean tree runs under a private TMPDIR" in_dir "$repo" env TMPDIR="$priv" "$SCRIPT" --all
 assert_eq "(m) the private TMPDIR is empty after a clean run" "0" "$(count_entries "$priv")"

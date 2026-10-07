@@ -7,6 +7,11 @@
 # Environment: CS_ALLOWLIST = path of the allowlist file ("rule ;; path-ERE ;; matched-value-ERE", third
 # field optional, "*" = any). Set by the driver; a missing file means no exemptions.
 #
+# Rule git-attributes (current-state policy, applied only to .gitattributes rows, never to history rows):
+# a line carrying -diff, binary or filter= is refused. An unset diff attribute hides the content from gitleaks
+# in the pre-commit hook (`gitleaks git --pre-commit` takes no diff options), and a clean/smudge filter stores
+# something other than the file in git, so the real content would reach the remote through neither layer.
+#
 # mawk constraints (Ubuntu runners use mawk): POSIX ERE only, no anchors inside groups, no quantified groups
 # with intervals, short regex literals. Boundary checks live in scan_re(), not in the regex. Run with
 # LC_ALL=C so [A-Z] is byte-ASCII.
@@ -18,6 +23,19 @@ function allowed(rule, p, val,   i) {
   return 0
 }
 function hit(rule, val) { if (allowed(rule, path, val)) return; printf "%s:%s: %s [%s]\n", path, ln, rule, mask(val); found = 1 }
+# One .gitattributes line: field 1 is the path pattern (or the macro name of an [attr] definition, whose
+# definition tokens follow), every later token is an attribute. Reports -diff, binary and filter=.
+function check_attributes(s,   t, n, f, i, tok) {
+  t = s
+  sub(/\r$/, "", t)
+  sub(/^[ \t]+/, "", t)
+  if (t == "" || substr(t, 1, 1) == "#") return
+  n = split(t, f, /[ \t]+/)
+  for (i = 2; i <= n; i++) {
+    tok = f[i]
+    if (tok == "-diff" || tok == "binary" || substr(tok, 1, 7) == "filter=") hit("git-attributes", tok)
+  }
+}
 # E-mail domains that are safe by construction (RFC 2606 / 6761): example.* and reserved TLDs.
 function email_ok(addr,   dom) {
   dom = tolower(substr(addr, index(addr, "@") + 1))
@@ -116,5 +134,8 @@ BEGIN {
   scan_re("key-prefix",   "gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}", "[A-Za-z0-9_]", "", text)
   scan_re("key-prefix",   "AKIA[0-9A-Z]{16}", "[A-Za-z0-9_]", "", text)
   scan_re("home-path",    "/(Users|home)/[A-Za-z0-9._-]+/", "", "", text)
+  # Current-state policy, never applied to history rows (line field "N@sha7"), so an attribute that a later
+  # commit removed cannot keep CI red. No regex with an anchor inside a group here (mawk).
+  if ((path == ".gitattributes" || substr(path, length(path) - 14) == "/.gitattributes") && index(ln, "@") == 0) check_attributes(text)
 }
 END { exit(found ? 1 : 0) }
