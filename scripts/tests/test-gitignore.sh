@@ -25,7 +25,10 @@ for p in \
   auth.json cert.p12 cert.pfx release.keystore id_rsa \
   storage/logs/app.log storage/app/file.bin app.log vendor/x/y.php node_modules/x/index.js public/build/app.js \
   coverage/index.html .phpunit.cache/x .phpunit.result.cache .php-cs-fixer.cache \
-  .planning/debug/x.md .planning/logs/x.md
+  .planning/debug/x.md .planning/logs/x.md \
+  .envrc sub/.envrc .npmrc .netrc .pgpass .git-credentials \
+  id_ed25519 id_ed25519.pub id_ecdsa id_dsa AuthKey_TEST.p8 release.jks \
+  terraform.tfstate terraform.tfstate.backup credentials.json service-account-test.json vpn.ovpn
 do
   ignored "$repo" "$p"
 done
@@ -34,7 +37,8 @@ done
 for p in \
   .env.example .claude/CLAUDE.md .ddev/config.yaml \
   scripts/check-sensitive.sh scripts/sensitive-allowlist.txt lefthook.yml .gitleaks.toml \
-  .github/workflows/hygiene.yml CONTRIBUTING.md LICENSE .planning/ROADMAP.md
+  .github/workflows/hygiene.yml CONTRIBUTING.md LICENSE .planning/ROADMAP.md \
+  .npmrc.example terraform/main.tf config/credentials.php
 do
   trackable "$repo" "$p"
 done
