@@ -25,7 +25,11 @@ class LocalisationServiceProvider extends ServiceProvider
 
     public const string DATE_TIME_FORMAT = 'j. n. Y H:i';
 
+    public const string DATE_TIME_SECONDS_FORMAT = 'j. n. Y H:i:s';
+
     public const string TIME_FORMAT = 'H:i';
+
+    public const string TIME_SECONDS_FORMAT = 'H:i:s';
 
     public function boot(): void
     {
@@ -45,12 +49,14 @@ class LocalisationServiceProvider extends ServiceProvider
             ->defaultNumberLocale('cs')
             ->defaultCurrency('CZK'));
 
-        // DatePicker extends DateTimePicker and picks the date, date-time or time default
-        // by what it shows, so one configuration covers both.
+        // DatePicker and TimePicker extend DateTimePicker and pick the date, date-time or time
+        // default by what they show (with or without seconds), so one configuration covers all.
         DateTimePicker::configureUsing(fn (DateTimePicker $picker): DateTimePicker => $picker
             ->defaultDateDisplayFormat(self::DATE_FORMAT)
             ->defaultDateTimeDisplayFormat(self::DATE_TIME_FORMAT)
-            ->defaultTimeDisplayFormat(self::TIME_FORMAT));
+            ->defaultDateTimeWithSecondsDisplayFormat(self::DATE_TIME_SECONDS_FORMAT)
+            ->defaultTimeDisplayFormat(self::TIME_FORMAT)
+            ->defaultTimeWithSecondsDisplayFormat(self::TIME_SECONDS_FORMAT));
 
         Number::useLocale('cs');
         Number::useCurrency('CZK');

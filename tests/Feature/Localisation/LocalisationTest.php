@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use Filament\Auth\Pages\Login;
 use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Support\Facades\Validator;
+use Livewire\Livewire;
 use Symfony\Component\Process\Process;
 
 it('runs in Czech with an English fallback', function (): void {
@@ -37,4 +39,17 @@ it('renders validation messages in Czech', function (): void {
 it('stores in UTC and displays in Europe/Prague', function (): void {
     expect(config('app.timezone'))->toBe('UTC')
         ->and(FilamentTimezone::get())->toBe('Europe/Prague');
+});
+
+it('shows the Czech required-field message when the login form is submitted without an e-mail', function (): void {
+    $component = Livewire::test(Login::class)
+        ->fillForm(['email' => '', 'password' => ''])
+        ->call('authenticate')
+        ->assertHasFormErrors(['email' => 'required']);
+
+    $message = (string) collect($component->errors()->get('data.email'))->first();
+
+    expect($message)->toContain('musí být vyplněn')
+        ->and($message)->not->toContain('required')
+        ->and($message)->not->toContain('validation.');
 });
