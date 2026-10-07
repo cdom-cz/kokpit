@@ -12,11 +12,13 @@ use Tests\TestCase;
  * Arch tests boot the application too but never touch the database.
  * Concurrency tests boot the application and spawn real worker processes; they
  * commit real rows, so they have no RefreshDatabase wrapper and clean up after
- * themselves. Later plans add their own suites (Isolation).
+ * themselves. Isolation tests prove the Partner default-deny at the data layer on
+ * a test-only tenant model; they use the database inside a RefreshDatabase transaction.
  */
 pest()->extend(TestCase::class)->use(RefreshDatabase::class)->in('Feature');
 pest()->extend(TestCase::class)->in('Arch');
 pest()->extend(TestCase::class)->in('Concurrency');
+pest()->extend(TestCase::class)->use(RefreshDatabase::class)->in('Isolation');
 
 /**
  * An example.com address assembled at runtime from fragments, so no test file
