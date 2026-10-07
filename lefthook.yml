@@ -12,9 +12,12 @@ pre-commit:
     - name: sensitive-content
       run: scripts/check-sensitive.sh
       fail_text: "Sensitive content found (file:line above). Fix it; see CONTRIBUTING.md. Do not bypass."
-    # gitleaks also reads the index itself (--staged). --redact keeps secret values out of the terminal,
-    # --ignore-gitleaks-allow means an inline allow comment cannot hide a finding. A missing gitleaks binary
-    # exits 127 and blocks the commit (fail closed). Only the current `gitleaks git` command is used.
+    # In the hook, gitleaks reads `git diff --staged` and cannot see content git treats as binary (NUL bytes,
+    # -diff). The sensitive-content job before it reads that content, the git-attributes rule keeps -diff and
+    # binary out of the repository, and CI runs gitleaks with text and merge diffs (--log-opts).
+    # --redact keeps secret values out of the terminal, --ignore-gitleaks-allow means an inline allow comment
+    # cannot hide a finding. A missing gitleaks binary exits 127 and blocks the commit (fail closed). Only the
+    # current `gitleaks git` command is used.
     - name: gitleaks
       run: gitleaks git --pre-commit --staged --redact --no-banner --verbose --ignore-gitleaks-allow --config .gitleaks.toml
       fail_text: "gitleaks failed or is not installed. Install: brew install gitleaks (see CONTRIBUTING.md)."

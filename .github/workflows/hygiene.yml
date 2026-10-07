@@ -54,9 +54,13 @@ jobs:
         run: scripts/check-sensitive.sh --history
 
       # Same config as the hook. --redact keeps values out of the log, --ignore-gitleaks-allow ignores inline
-      # allow comments. The default log range covers every ref of the checkout (fetch-depth: 0 above).
+      # allow comments. The default gitleaks log range skips merge diffs and content git treats as binary
+      # (a -diff attribute, NUL bytes); --log-opts makes gitleaks read both, over every ref of the checkout
+      # (fetch-depth: 0 above). UTF-16 content stays invisible to gitleaks and is covered by
+      # scripts/check-sensitive.sh --history. gitleaks splits the option string on spaces, so it must hold no
+      # quoted arguments. scripts/tests/test-gitleaks.sh asserts this exact string.
       - name: gitleaks over full history
-        run: gitleaks git --config .gitleaks.toml --redact --no-banner --ignore-gitleaks-allow --exit-code 1 .
+        run: gitleaks git --config .gitleaks.toml --redact --no-banner --ignore-gitleaks-allow --exit-code 1 --log-opts="--all --diff-merges=first-parent --text --no-textconv" .
 
   # Every change to a workflow is linted by checksum-pinned actionlint and zizmor (offline, no token), so the
   # gate itself cannot be weakened silently. Digests are hard-coded for the same reason as the gitleaks one.
