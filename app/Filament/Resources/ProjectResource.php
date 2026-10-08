@@ -114,6 +114,15 @@ final class ProjectResource extends Resource
         return parent::getRecordRouteBindingEloquentQuery()->withoutGlobalScopes([SoftDeletingScope::class]);
     }
 
+    /**
+     * The key of a project with any task, an archived one included, cannot change
+     * (PR-02). A record that is not saved yet has no tasks.
+     */
+    private static function keyIsFrozen(?Project $record): bool
+    {
+        return $record !== null && $record->exists && $record->tasks()->withTrashed()->exists();
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->components([
@@ -160,7 +169,11 @@ final class ProjectResource extends Resource
                         }),
                     TextInput::make('key')
                         ->label(__('kokpit.projects.fields.key'))
-                        ->helperText(__('kokpit.projects.hints.key'))
+                        ->helperText(static fn (?Project $record): string => self::keyIsFrozen($record)
+                            ? (string) __('kokpit.projects.hints.key_frozen')
+                            : (string) __('kokpit.projects.hints.key'))
+                        // Frozen once the project has any task, an archived one included (PR-02).
+                        ->disabled(static fn (?Project $record): bool => self::keyIsFrozen($record))
                         ->required()
                         ->maxLength(6)
                         ->regex('/^[A-Z]{2,6}$/')

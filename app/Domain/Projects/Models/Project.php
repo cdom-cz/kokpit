@@ -12,6 +12,7 @@ use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Shared\Auth\IsolatesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
+use App\Domain\Tasks\Models\Task;
 use ArrayAccess;
 use Carbon\CarbonInterface;
 use Database\Factories\ProjectFactory;
@@ -20,6 +21,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Tags\HasTags;
@@ -163,6 +165,17 @@ final class Project extends KokpitModel implements PartnerIsolated
     public function billing(): HasOne
     {
         return $this->hasOne(ProjectBilling::class);
+    }
+
+    /**
+     * The tasks of the project. Archived ones are reached through `withTrashed()`;
+     * they still keep the project key frozen.
+     *
+     * @return HasMany<Task, $this>
+     */
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(Task::class);
     }
 
     /**

@@ -55,6 +55,9 @@ final class EditProject extends EditRecord
     {
         assert($record instanceof Project);
 
+        // A frozen key field is disabled and so not part of the form data: the stored key is kept.
+        $data['key'] ??= $record->key;
+
         return $this->withFormErrors(
             static fn (): Project => app(UpdateProject::class)->handle($record, ProjectResource::actionData($data)),
         );

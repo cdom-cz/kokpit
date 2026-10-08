@@ -430,6 +430,7 @@ return [
         'empty_value' => '—',
         'errors' => [
             'key_taken' => 'Tento klíč už používá jiný projekt, i archivovaný. Zvolte jiný.',
+            'key_frozen' => 'Klíč projektu už nelze změnit, protože projekt má úkoly (i archivované). Čísla úkolů z něj vycházejí.',
             'client_archived' => 'Pro archivovaného klienta nelze vytvořit projekt.',
             'client_required' => 'Vyberte klienta.',
             'amount_invalid' => 'Zadejte nezáporné číslo bez oddělovače tisíců a nejvýše s tolika desetinnými místy, kolik dovoluje měna klienta.',
@@ -465,6 +466,7 @@ return [
             'key' => 'Dvě až šest velkých písmen bez diakritiky. Navrhne se z názvu a můžete ho přepsat.',
             'client_visible' => 'Zapnuto: klient projekt uvidí v seznamu Moje projekty s názvem, klíčem, stavem, prioritou, daty, popisem a štítky. Sazby, ceny, odhad a interní poznámku klient nikdy nevidí.',
             'client_locked' => 'Klienta projektu nelze po vytvoření změnit.',
+            'key_frozen' => 'Klíč nelze změnit, projekt už má úkoly. Čísla úkolů z něj vycházejí.',
             'hourly_rate' => 'Prázdné pole znamená sazbu klienta. Měna je měna klienta.',
             'fixed_price' => 'Povinné u pevné ceny. Měna je měna klienta.',
             'estimate_hours' => 'Hodiny s nejvýše dvěma desetinnými místy, například 1,5.',

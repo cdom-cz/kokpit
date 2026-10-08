@@ -8,10 +8,12 @@ use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Shared\Tags\TagType;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use PDOException;
 
 /**
  * Updates a project and its Admin-only billing row in one transaction (PR-01,
@@ -29,6 +31,11 @@ use Illuminate\Validation\ValidationException;
  *   transition rule (D-16).
  * - A key taken by another project, also an archived one, is a field error on
  *   `key` raised from the unique index; keeping the own key succeeds (D-14).
+ * - The key is frozen once the project has any task, an archived one included
+ *   (PR-02): a different key is a field error on `key`. The database trigger
+ *   projects_key_frozen_guard (SQLSTATE KP002) is the writer-independent guard;
+ *   when a task is created between the check and the update, its error is
+ *   translated to the same field error.
  *
  * Every error is keyed by the data key; the Admin form maps it to its state path.
  *
@@ -66,6 +73,10 @@ final class UpdateProject
             throw ValidationException::withMessages(['client_id' => __('kokpit.projects.errors.client_immutable')]);
         }
 
+        if (isset($data['key']) && Str::upper($data['key']) !== $project->key && $project->tasks()->withTrashed()->exists()) {
+            throw ValidationException::withMessages(['key' => __('kokpit.projects.errors.key_frozen')]);
+        }
+
         $client = $project->client()->withTrashed()->firstOrFail();
         $billing = $project->billing;
 
@@ -98,7 +109,24 @@ final class UpdateProject
             });
         } catch (UniqueConstraintViolationException $e) {
             ProjectInput::translateKeyViolation($e);
+        } catch (QueryException $e) {
+            if (self::sqlState($e) === 'KP002') {
+                throw ValidationException::withMessages(['key' => __('kokpit.projects.errors.key_frozen')]);
+            }
+
+            throw $e;
         }
+    }
+
+    private static function sqlState(QueryException $e): string
+    {
+        $previous = $e->getPrevious();
+
+        if ($previous instanceof PDOException && isset($previous->errorInfo[0])) {
+            return (string) $previous->errorInfo[0];
+        }
+
+        return (string) $e->getCode();
     }
 
     /**
