@@ -106,3 +106,67 @@ it('refuses a Partner the list and the page of an own-client task', function ():
     $this->get('/admin/tasks')->assertForbidden();
     $this->get('/admin/tasks/'.$task->reference)->assertForbidden();
 });
+
+/**
+ * The categories of the panel's global search for a term, label => list of [title, details].
+ *
+ * @return array<string, list<array{title: string, details: array<string, string>}>>
+ */
+function taskResSearch(string $term): array
+{
+    $results = Filament::getCurrentOrDefaultPanel()->getGlobalSearchProvider()?->getResults($term);
+    $categories = [];
+
+    foreach ($results?->getCategories() ?? [] as $label => $items) {
+        foreach ($items as $item) {
+            $categories[$label][] = ['title' => (string) $item->title, 'details' => array_map('strval', $item->details)];
+        }
+    }
+
+    return $categories;
+}
+
+it('finds a task by its key in the global search with the project key and status as details', function (): void {
+    app(CreateTask::class)->handle($this->admin, taskResProject(), ['title' => 'Example searchable task']);
+
+    $categories = taskResSearch('ABC-1');
+
+    expect(array_keys($categories))->toBe(['Úkoly'])
+        ->and($categories['Úkoly'])->toHaveCount(1)
+        ->and($categories['Úkoly'][0]['title'])->toBe('ABC-1 · Example searchable task')
+        ->and(array_values($categories['Úkoly'][0]['details']))->toBe(['ABC', 'Plánováno']);
+});
+
+it('finds a task by a word of its title in the global search', function (): void {
+    app(CreateTask::class)->handle($this->admin, taskResProject(), ['title' => 'Example needle task']);
+
+    expect(taskResSearch('needle')['Úkoly'] ?? [])->toHaveCount(1);
+});
+
+it('shows no project, client or activity result in the global search', function (): void {
+    $project = taskResProject();
+    app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example other task']);
+
+    // The project name, the project key and the client name all match something.
+    expect(array_keys(taskResSearch('Example')))->toBe(['Úkoly'])
+        ->and(taskResSearch('ABC'))->not->toHaveKeys(['Projekty', 'Klienti', 'Aktivita']);
+});
+
+it('returns a Partner no global search result for the reference of an own-client task', function (): void {
+    $client = Client::factory()->create();
+    $project = app(CreateProject::class)->handle($client, [
+        'name' => 'Example partner visible project',
+        'key' => 'PVP',
+        'billing_type' => 'hourly',
+        'client_visible' => true,
+    ]);
+    $task = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example partner task']);
+
+    // The control: the Admin finds the very same task, so the empty Partner answer is the rule and not an empty index.
+    expect(taskResSearch($task->reference))->toHaveKey('Úkoly');
+
+    $this->actingAs(Canary::partnerFor($client->id));
+
+    expect(taskResSearch($task->reference))->toBe([])
+        ->and(taskResSearch('Example'))->toBe([]);
+});
