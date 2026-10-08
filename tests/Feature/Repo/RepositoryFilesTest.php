@@ -218,3 +218,45 @@ it('lists every job of the Hygiene workflow in the CI section of CONTRIBUTING.md
             ->toBeTrue("CONTRIBUTING.md does not mention the CI job {$id}");
     }
 });
+
+it('documents the manual GitHub and Zerops deploy settings in CONTRIBUTING.md', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    expect($contributing)->toContain('## Deploy (maintainer, manual)');
+
+    foreach ([
+        'environment',
+        'production',
+        'required reviewer',
+        'ZEROPS_TOKEN',
+        'environment secret',
+        'Git integration',
+        'maxmemory-policy',
+        'volatile-lru',
+        'backward compatible',
+        'rollback',
+    ] as $phrase) {
+        expect($contributing)->toContain($phrase);
+    }
+});
+
+it('names the deploy readiness and storage checks in the README', function () {
+    $readme = repoFile('README.md');
+
+    expect($readme)->toContain('## Deploy')
+        ->and($readme)->toContain('kokpit:deploy:verify')
+        ->and($readme)->toContain('kokpit:storage:check');
+});
+
+it('documents the service id variables the deploy workflow reads', function () {
+    $workflow = repoFile('.github/workflows/deploy.yml');
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    preg_match_all('/vars\.(ZEROPS_[A-Z_]+)/', $workflow, $matches);
+
+    expect($matches[1])->toHaveCount(3);
+
+    foreach ($matches[1] as $variable) {
+        expect($contributing)->toContain($variable);
+    }
+});

@@ -48,6 +48,17 @@ Open the panel URL, sign in as the Admin and set up an authenticator app (TOTP) 
 - After an `APP_KEY` rotation the stored TOTP secrets can no longer be decrypted. Keep the previous key in `APP_PREVIOUS_KEYS` (a comma-separated list in `.env`) so they stay readable, or reset the two-factor authentication with the command above.
 - There is no password recovery path for the Admin yet. Keep access to the server shell.
 
+## Deploy
+
+Production runs on Zerops as three services built from `zerops.yml`: `app` (the web container), `worker` (the queue worker) and `scheduler` (the scheduler, exactly one container), next to PostgreSQL, Valkey (Redis) and private object storage. Nothing in the repository holds a secret: `APP_KEY`, the mail credentials and the access token live in the Zerops project and in the GitHub `production` environment.
+
+A deploy starts only from a published release tagged `v*` (never a prerelease) or from a manual run of the `Deploy` workflow, and it waits for the approval of the `production` environment. The app service migrates the database once per deploy and goes live only after its readiness check passes. Two commands check a running instance from its shell:
+
+    php artisan kokpit:deploy:verify
+    php artisan kokpit:storage:check
+
+The first confirms that the database and Redis answer and that no migration is pending; the second proves the private object storage (upload, signed read, refused unsigned read, delete). The manual GitHub and Zerops settings, rollback and the migration rules are in the "Deploy (maintainer, manual)" section of [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Language and time
 
 The whole interface is Czech (`lang/cs`), the fallback locale is English. Times are stored in UTC and shown in Europe/Prague as `j. n. Y H:i`.

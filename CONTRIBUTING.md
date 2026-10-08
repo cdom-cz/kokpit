@@ -206,6 +206,34 @@ A read-only audit of the repository-level values, run by the maintainer (never i
 
     gh api repos/<owner>/<repo> --jq .security_and_analysis
 
+## Deploy (maintainer, manual)
+
+Kokpit deploys to Zerops from `.github/workflows/deploy.yml` and `zerops.yml`. The workflow starts only from a published release (not a prerelease, tag `v*`, commit on `main`) or a manual dispatch, and its `deploy` job runs in the protected `production` environment. None of the settings below can be enforced from code, so the maintainer applies them by hand before the first deploy and re-checks them after UI changes. The static contract of the workflow is tested (`tests/Feature/Repo/DeployWorkflowTest.php`); the Zerops side is rehearsed once on a throwaway project (`.planning/phases/03-operations-foundation/03-ZEROPS-REHEARSAL.md`).
+
+GitHub:
+
+- [ ] environment `production` exists with a required reviewer (the maintainer). A solo maintainer leaves "prevent self-review" off and accepts the approval as a deliberate pause and audit trail. "Allow administrators to bypass" is off.
+- [ ] environment deployment branches and tags: the tag pattern `v*` plus the default branch (for a manual dispatch)
+- [ ] a tag ruleset protects `v*`, so only the maintainer can create such a tag
+- [ ] `ZEROPS_TOKEN` is stored as an environment secret of `production`, and the three Zerops service ids as environment variables `ZEROPS_APP_SERVICE_ID`, `ZEROPS_WORKER_SERVICE_ID` and `ZEROPS_SCHEDULER_SERVICE_ID`. They are never repository secrets or repository variables.
+- [ ] no other workflow references the `production` environment, and "Require actions to be pinned to a full-length commit SHA" stays enabled
+
+Zerops:
+
+- [ ] the native Git integration (GitHub or GitLab) is disabled for the app, worker and scheduler services (Pipelines and CI/CD settings, stop the automatic build trigger). It deploys on a push or a tag and would bypass the approval of the `production` environment.
+- [ ] a dedicated access token with the narrowest scope that can push these three services; rotate it after any suspected exposure and replace the environment secret
+- [ ] `APP_KEY` is a project secret; the mail credentials (and later the Stripe keys) are service or project secrets. None of them is ever written to `zerops.yml`, which holds only `${...}` references and non-secret values.
+- [ ] Valkey `maxmemory-policy` is `volatile-lru` or `noeviction`. Queue keys carry no TTL, so the default `allkeys-lru` could evict waiting jobs. The DDEV Redis keeps the default of its add-on because it is for development only.
+- [ ] object storage policy is `private`, PostgreSQL backups are enabled, and the scheduler service runs exactly one container
+- [ ] the project services are named `db`, `redis` and `storage`, or the `${...}` references in `zerops.yml` are adjusted to the chosen names
+
+Rules:
+
+- Deploy order is app, then worker, then scheduler. Only the app setup migrates, once per deploy through `zsc execOnce`, and its readiness check `php artisan kokpit:deploy:verify` refuses a pending migration, an unreachable database and an unreachable Redis. A deploy whose migration fails therefore never goes live and the previous version keeps serving.
+- Migrations stay backward compatible with the previous release (expand, deploy, contract): the previous version keeps serving during a deploy and after a failed one, so a column is added first and dropped only one release later.
+- rollback is activating the previous version of the service in Zerops. It does not undo migrations, which is why they must stay backward compatible.
+- The zcli version and its SHA-256 are hard-coded in `deploy.yml` and bumped by hand with the tool bump procedure of the CI section (read the digest of the asset `zcli-linux-amd64`, update version and digest together).
+
 ## Per-phase .gitignore review
 
 Review .gitignore at the start of every phase. For each new tool or framework output that the phase introduces (DDEV in Phase 2, Laravel storage, coverage reports, build output), add the ignore rule and a matching case to `scripts/tests/test-gitignore.sh` in the same change. The test asks `git check-ignore --no-index` about paths that do not exist on disk, so the verdicts hold for an empty checkout.
