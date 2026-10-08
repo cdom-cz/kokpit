@@ -215,7 +215,7 @@ Plans:
   4. From the client detail Admin invites a Partner account by e-mail, and the invited person sets a password and logs in
   5. A Partner sees only projects of their own client that are flagged client-visible, never sees rates, prices or estimates in lists, details, selects or search, and never sees another client's canary data
 
-**Plans:** 19/21 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
+**Plans:** 20/21 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
 **UI hint**: yes
 
 Plans:
@@ -277,7 +277,7 @@ Plans:
 - [x] 04-19-PLAN.md — Invitations in the client detail: invite action and the Pozvánky tab with resend and revoke (US-02)
 
 **Wave 20** *(blocked on Wave 19 completion)*
-- [ ] 04-20-PLAN.md — Partner accounts in the client detail: deactivate, reactivate and password reset (US-02)
+- [x] 04-20-PLAN.md — Partner accounts in the client detail: deactivate, reactivate and password reset (US-02)
 
 **Wave 21** *(blocked on Wave 20 completion)*
 - [ ] 04-21-PLAN.md — Conventions and operator documentation, per-phase .gitignore review and the phase gate
@@ -410,7 +410,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Repository Hygiene | 11/11 | Complete    | 2026-10-08 |
 | 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
 | 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
-| 4. Clients and Projects | 19/21 | In Progress | - |
+| 4. Clients and Projects | 20/21 | In Progress | - |
 | 5. Tasks and Kanban | 0/0 | Not started | - |
 | 6. Time Tracking | 0/0 | Not started | - |
 | 7. REST API | 0/0 | Not started | - |

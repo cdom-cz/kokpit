@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: Clients and Projects
 status: executing
-stopped_at: Completed 04-19-PLAN.md
-last_updated: "2026-10-08T15:56:15.836Z"
+stopped_at: Completed 04-20-PLAN.md
+last_updated: "2026-10-08T16:12:10.829Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 4 execution started
-state_head: ab9d88c92ec87da40c982829cdaba505bafbe001
+state_head: 313370cea2164c98e551f64ac3aafe14826b6b9e
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 64
-  completed_plans: 62
+  completed_plans: 63
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 4 (Clients and Projects) — EXECUTING
-Plan: 20 of 21
+Plan: 21 of 21
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 4 execution started
 
@@ -120,6 +120,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 04 P17 | 10 min | 2 tasks | 12 files |
 | Phase 04 P18 | 15 min | 2 tasks | 11 files |
 | Phase 04 P19 | 7 min | 2 tasks | 7 files |
+| Phase 04 P20 | 13 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -242,6 +243,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-18: the accept Action locks the invitation FOR UPDATE and the client FOR SHARE in one system-run transaction; field errors keep the invitation open, every invitation-side failure is the single neutral InvitationNotAcceptable
 - [Phase 04]: 04-18: Laravel sorts the limiter ahead of other route middleware, so bootstrap/app.php prepends SetNoReferrerPolicy and ValidateSignature to the priority list before ThrottleRequests; unsigned requests are not counted and 403/429 carry no-referrer
 - [Phase 04]: 04-19: ResendInvitation refuses an archived client; revoke stays allowed; the invitations tab hides resend for an archived client
+- [Phase 04]: 04-20: public forgot-password page is an own subclass (Audience::Guest) answering every address alike, because Filament's default reveals which addresses have an account; Password::defaults min 12 set globally
+- [Phase 04]: 04-20: Admin-sent reset within the broker 60 s throttle raises DomainException (danger notification) instead of a false success
 
 ### Pending Todos
 
@@ -280,6 +283,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T15:56:15.671Z
-Stopped at: Completed 04-19-PLAN.md
+Last session: 2026-10-08T16:12:10.704Z
+Stopped at: Completed 04-20-PLAN.md
 Resume file: None
