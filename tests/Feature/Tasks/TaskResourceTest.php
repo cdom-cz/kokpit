@@ -38,13 +38,13 @@ beforeEach(function (): void {
     $this->actingAs($this->admin);
 });
 
-it('creates a task from the quick modal with only a project and a title and lands on its page', function (): void {
+it('creates a task from the quick modal with only a project and a title and continues on its edit page', function (): void {
     $project = taskResProject();
 
     Livewire::test(ListTasks::class)
         ->callAction('quickCreate', ['project_id' => $project->id, 'title' => 'Example quick task'])
         ->assertHasNoActionErrors()
-        ->assertRedirect('/admin/tasks/ABC-1');
+        ->assertRedirect('/admin/tasks/ABC-1/edit');
 
     $task = Task::query()->where('reference', 'ABC-1')->firstOrFail();
 
