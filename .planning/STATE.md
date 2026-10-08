@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: Clients and Projects
 status: executing
-stopped_at: Completed 04-17-PLAN.md
-last_updated: "2026-10-08T15:28:06.172Z"
+stopped_at: Completed 04-18-PLAN.md
+last_updated: "2026-10-08T15:46:34.215Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 4 execution started
-state_head: cd9c463df5db37fac2d61f34dc4ee97a868bcafb
+state_head: 46f92941679178099749b86885475fd5194c9dd5
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 64
-  completed_plans: 60
+  completed_plans: 61
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 4 (Clients and Projects) — EXECUTING
-Plan: 18 of 21
+Plan: 19 of 21
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 4 execution started
 
@@ -118,6 +118,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 04 P15 | 18 min | 2 tasks | 12 files |
 | Phase 04 P16 | 25 min | 2 tasks | 13 files |
 | Phase 04 P17 | 10 min | 2 tasks | 12 files |
+| Phase 04 P18 | 15 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -237,6 +238,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-15: ARES per-user limiter (10 a minute) counts every valid lookup before the cache; retry(3) means two retries; missing dic keeps the typed tax number and shows a warning notification
 - [Phase 04]: 04-16: InvitePartner locks and re-reads the client row so an archived client is refused even for a stale instance; D-03 rules look up users and open invitations as explicit system runs (DB::table is forbidden in app/)
 - [Phase 04]: 04-17: the invitation notification sets afterCommit() itself; an expired mailed link answers 403 from the signed middleware while the neutral page covers every valid-signature, unacceptable-invitation case; state() ranks accepted and revoked above expired
+- [Phase 04]: 04-18: the accept Action locks the invitation FOR UPDATE and the client FOR SHARE in one system-run transaction; field errors keep the invitation open, every invitation-side failure is the single neutral InvitationNotAcceptable
+- [Phase 04]: 04-18: Laravel sorts the limiter ahead of other route middleware, so bootstrap/app.php prepends SetNoReferrerPolicy and ValidateSignature to the priority list before ThrottleRequests; unsigned requests are not counted and 403/429 carry no-referrer
 
 ### Pending Todos
 
@@ -275,6 +278,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T15:28:06.067Z
-Stopped at: Completed 04-17-PLAN.md
+Last session: 2026-10-08T15:46:34.113Z
+Stopped at: Completed 04-18-PLAN.md
 Resume file: None
