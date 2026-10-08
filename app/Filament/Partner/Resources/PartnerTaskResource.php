@@ -14,6 +14,7 @@ use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Partner\Resources\PartnerTaskResource\Pages\CreatePartnerTask;
 use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ListPartnerTasks;
 use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ViewPartnerTask;
+use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerTaskCommentsRelationManager;
 use App\Filament\Support\TaskColumns;
 use Closure;
 use Filament\Forms\Components\RichEditor;
@@ -34,10 +35,11 @@ use Illuminate\Support\Str;
  * client-visible, non-archived projects exist for a Partner, and an archived task
  * is gone with the default soft delete scope. The table and the infolist are
  * built only from the pinned Partner builders of `TaskColumns`; there is no edit
- * page, no record action, no bulk action, no relation manager, no board, no
+ * page, no record action, no bulk action, no board, no
  * export and no global search. The create form offers the project, the title and
  * the description and nothing else: status, priority and people are decided by
- * the domain Action CreateTask. The slug differs from the Admin task resource.
+ * the domain Action CreateTask. The one relation is the comments tab (non-internal
+ * comments only). The slug differs from the Admin task resource.
  */
 #[AccessRule(Audience::PartnerAllowed, reason: 'A Partner sees the tasks of the own client\'s client-visible projects read-only and may create one; only Partner-safe fields are shown.')]
 final class PartnerTaskResource extends Resource
@@ -176,6 +178,16 @@ final class PartnerTaskResource extends Resource
         }
 
         return $options;
+    }
+
+    /**
+     * The only relation of the Partner task page: the non-internal comments.
+     */
+    public static function getRelations(): array
+    {
+        return [
+            PartnerTaskCommentsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

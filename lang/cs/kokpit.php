@@ -710,6 +710,11 @@ return [
             'label' => 'Eskalace',
             'value' => 'Eskalováno (:name, :datetime)',
         ],
+        'comments' => [
+            'relation_title' => 'Komentáře',
+            'empty_heading' => 'Úkol zatím nemá žádné komentáře',
+            'empty_description' => 'Napište správci poznámku tlačítkem Přidat komentář.',
+        ],
     ],
 
     'invitations' => [
