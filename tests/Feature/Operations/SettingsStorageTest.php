@@ -9,6 +9,7 @@ use App\Domain\Shared\Models\SettingsProperty;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Spatie\LaravelSettings\Exceptions\MissingSettings;
 use Tests\Support\Canary;
 
@@ -199,4 +200,62 @@ it('hands a new resolution the value saved meanwhile after the scoped instances 
     app()->forgetScopedInstances();
 
     expect(app(SupplierSettings::class)->company_name)->toBe('Changed Example s.r.o.');
+});
+
+it('refuses a supplier country in lower case outside the form and keeps the stored one', function (): void {
+    $this->actingAs(Canary::admin());
+    saveFictionalSupplier(exampleEmail());
+    app()->forgetScopedInstances();
+
+    $settings = app(SupplierSettings::class);
+    $settings->country = 'cz';
+
+    expect(fn () => $settings->save())->toThrow(ValidationException::class);
+
+    app()->forgetScopedInstances();
+
+    expect(app(SupplierSettings::class)->country)->toBe('CZ');
+});
+
+it('refuses a company id of seven digits and names the field', function (): void {
+    $this->actingAs(Canary::admin());
+    saveFictionalSupplier(exampleEmail());
+    app()->forgetScopedInstances();
+
+    $settings = app(SupplierSettings::class);
+    $settings->company_id = '1234567';
+
+    try {
+        $settings->save();
+        $errors = [];
+    } catch (ValidationException $exception) {
+        $errors = $exception->errors();
+    }
+
+    app()->forgetScopedInstances();
+
+    expect(array_keys($errors))->toBe(['company_id'])
+        ->and(app(SupplierSettings::class)->company_id)->toBe('12345678');
+});
+
+it('writes nothing for a settings class filled with invalid values before it ever saved', function (): void {
+    $this->actingAs(Canary::admin());
+    $before = SettingsProperty::query()->where('group', 'supplier')->pluck('payload', 'name')->all();
+
+    $settings = app(SupplierSettings::class);
+    $settings->company_name = '';
+    $settings->vat_id = 'not a vat id';
+
+    expect(fn () => $settings->save())->toThrow(ValidationException::class)
+        ->and(SettingsProperty::query()->where('group', 'supplier')->pluck('payload', 'name')->all())->toBe($before);
+});
+
+it('ignores keys of a form state that are not declared properties', function (): void {
+    $this->actingAs(Canary::admin());
+    $settings = app(SupplierSettings::class);
+
+    $settings->fillFromFormState(['company_name' => 'Example s.r.o.', 'is_admin' => true, 'unknown' => 'x']);
+
+    expect($settings->company_name)->toBe('Example s.r.o.')
+        ->and($settings->toArray())->not->toHaveKeys(['is_admin', 'unknown']);
 });

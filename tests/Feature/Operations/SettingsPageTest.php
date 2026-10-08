@@ -133,3 +133,36 @@ it('runs no settings query for a Partner before refusing', function (): void {
 
     expect(array_filter($queries, fn (string $sql): bool => str_contains($sql, '"settings"')))->toBe([]);
 });
+
+it('rolls the save back and shows a data-layer error on the field when the class refuses the values', function (): void {
+    $this->actingAs(Canary::admin());
+
+    // Looser than the form on purpose: it writes first and is then refused by its own stricter rules,
+    // so only a rollback of the page's transaction keeps the table unchanged.
+    app()->bind(SupplierSettings::class, fn (): SupplierSettings => new class extends SupplierSettings
+    {
+        public static function rules(): array
+        {
+            return [...parent::rules(), 'company_name' => ['required', 'string', 'max:5']];
+        }
+
+        public function save(): static
+        {
+            DB::table('settings')
+                ->where('group', 'supplier')
+                ->where('name', 'country')
+                ->update(['payload' => json_encode('DE', JSON_THROW_ON_ERROR)]);
+
+            return parent::save();
+        }
+    });
+
+    $before = SettingsProperty::query()->where('group', 'supplier')->pluck('payload', 'name')->all();
+
+    Livewire::test(SettingsPage::class)
+        ->fillForm(['supplier' => fictionalSupplierState(exampleEmail())])
+        ->call('save')
+        ->assertHasErrors(['data.supplier.company_name']);
+
+    expect(SettingsProperty::query()->where('group', 'supplier')->pluck('payload', 'name')->all())->toBe($before);
+});

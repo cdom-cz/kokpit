@@ -9,6 +9,7 @@ use Filament\Facades\Filament;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
+use Livewire\Livewire;
 use Symfony\Component\Process\Process;
 use Tests\Support\Canary;
 use Tests\Support\CanaryRecord;
@@ -16,6 +17,7 @@ use Tests\Support\Filament\CanaryRecordResource;
 use Tests\Support\Filament\CanaryRecordResource\Pages\ListCanaryRecords;
 use Tests\Support\Filament\Fixtures\AdminOnlyRelationManager;
 use Tests\Support\Filament\Fixtures\AdminOnlyWidget;
+use Tests\Support\Filament\Fixtures\MountProbePage;
 use Tests\Support\Filament\Fixtures\PartnerAllowedWidget;
 use Tests\Support\Filament\Fixtures\PolicyDeniedRelationManager;
 use Tests\Support\Filament\Fixtures\PolicyDeniedResource;
@@ -209,6 +211,26 @@ it('leaves a page without the trait open, which is why the registry test exists'
     $this->actingAs(Canary::partnerFor(null));
 
     expect(UndeclaredPage::canAccess())->toBeTrue();
+});
+
+it('refuses a Partner before the page mount() runs and runs it for an Admin', function (): void {
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+    foreach (['partner with a client' => fn () => Canary::partnerFor(Canary::twoClients()[0]), 'partner without a client' => fn () => Canary::partnerFor(null), 'user without a role' => fn () => Canary::userWithoutRole(null)] as $state => $make) {
+        MountProbePage::$mounted = false;
+        $this->actingAs($make());
+
+        Livewire::test(MountProbePage::class)->assertForbidden();
+
+        expect(MountProbePage::$mounted)->toBeFalse($state);
+    }
+
+    MountProbePage::$mounted = false;
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(MountProbePage::class)->assertOk();
+
+    expect(MountProbePage::$mounted)->toBeTrue();
 });
 
 it('registers the canary resource and its routes while the harness is on', function (): void {
