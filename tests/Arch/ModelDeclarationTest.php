@@ -11,6 +11,7 @@ use App\Domain\Shared\Auth\NotPartnerScoped;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
+use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Shared\Policies\AdminOnlyPolicy;
@@ -33,6 +34,7 @@ it('finds every model of the application, so the scan cannot pass vacuously', fu
         Permission::class,
         PersonalAccessToken::class,
         Role::class,
+        SettingsProperty::class,
         Tag::class,
         User::class,
         WebhookCall::class,
@@ -75,15 +77,15 @@ it('gives every PartnerIsolated model a policy that extends KokpitPolicy', funct
         static fn (string $class): bool => is_subclass_of($class, PartnerIsolated::class),
     ));
 
-    expect($isolated)->toContain(CanaryRecord::class, Media::class, Tag::class, Activity::class, WebhookCall::class);
+    expect($isolated)->toContain(CanaryRecord::class, Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class);
 
     foreach ($isolated as $class) {
         expect(Gate::getPolicyFor($class))->toBeInstanceOf(KokpitPolicy::class, "no KokpitPolicy for {$class}");
     }
 });
 
-it('closes the four package models to Partners with the admin-only policy', function (): void {
-    foreach ([Media::class, Tag::class, Activity::class, WebhookCall::class] as $class) {
+it('closes the five package models to Partners with the admin-only policy', function (): void {
+    foreach ([Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class] as $class) {
         expect(Gate::getPolicyFor($class))->toBeInstanceOf(AdminOnlyPolicy::class);
     }
 });

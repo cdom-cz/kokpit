@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
+use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Shared\Policies\AdminOnlyPolicy;
@@ -31,7 +32,7 @@ final class AccessServiceProvider extends ServiceProvider
     {
         // The package models have no policy attribute of their own: Phase 2 closes
         // them to Partners. Later phases replace the registration deliberately.
-        foreach ([Media::class, Tag::class, Activity::class, WebhookCall::class] as $model) {
+        foreach ([Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class] as $model) {
             Gate::policy($model, AdminOnlyPolicy::class);
         }
     }

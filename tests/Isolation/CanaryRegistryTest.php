@@ -6,6 +6,7 @@ use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
+use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use Illuminate\Database\Eloquent\Builder;
@@ -83,6 +84,7 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         Activity::class,
         CanaryRecord::class,
         Media::class,
+        SettingsProperty::class,
         Tag::class,
         WebhookCall::class,
     ]);

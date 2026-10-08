@@ -7,6 +7,7 @@ namespace Tests\Support;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
+use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use Closure;
@@ -91,6 +92,16 @@ final class CanaryRegistry
                         'name' => 'default',
                         'url' => 'https://'.implode('.', ['example', 'com']).'/hook',
                         'payload' => ['client_id' => $clientId, 'note' => $canary],
+                    ]);
+                });
+            },
+
+            SettingsProperty::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    SettingsProperty::query()->create([
+                        'group' => 'canary',
+                        'name' => $canary,
+                        'payload' => json_encode(['client_id' => $clientId, 'note' => $canary], JSON_THROW_ON_ERROR),
                     ]);
                 });
             },
