@@ -4,10 +4,10 @@ current_phase: 4
 current_phase_name: Clients and Projects
 status: planning
 stopped_at: Phase 03 complete, ready to plan Phase 4
-last_updated: "2026-10-08T06:44:10.485Z"
+last_updated: "2026-10-08T07:08:07.987Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 03 complete, transitioned to Phase 4
-state_head: 66bb759e37a3fae93819dfd7f388f006c850545c
+state_head: 9948a8016af68017586e5c9bbeb219a968d77dd5
 progress:
   total_phases: 12
   completed_phases: 3
@@ -224,6 +224,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261008-28i | Remove the hosted product name from all tracked documentation | 2026-10-08 | e943790 | [261008-28i-remove-the-product-name-from-all-tracked](./quick/261008-28i-remove-the-product-name-from-all-tracked/) |
 | 261008-bec | Install and configure laravel/horizon | 2026-10-08 | 8f37d5c | [261008-bec-install-and-configure-laravel-horizon](./quick/261008-bec-install-and-configure-laravel-horizon/) |
 | 261008-bp0 | Adapt Zerops tests and deploy workflow to the single backend setup | 2026-10-08 | 66bb759 | [261008-bp0-adapt-zerops-tests-and-deploy-workflow-t](./quick/261008-bp0-adapt-zerops-tests-and-deploy-workflow-t/) |
+| 261008-c7i | Wire kokpit:deploy:verify into zerops initCommands, onOneServer schedules, drop pnpm build | 2026-10-08 | 9948a80 | [261008-c7i-wire-kokpit-deploy-verify-into-zerops-in](./quick/261008-c7i-wire-kokpit-deploy-verify-into-zerops-in/) |
 
 ## Deferred Items
 
