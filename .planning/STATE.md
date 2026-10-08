@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: Operations Foundation
 status: executing
-stopped_at: Completed 03-05-PLAN.md
-last_updated: "2026-10-08T02:53:33.264Z"
+stopped_at: Completed 03-06-PLAN.md
+last_updated: "2026-10-08T03:01:29.070Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 03 execution started
-state_head: 1e914342ec1f08d24afa50d77c72400951d7d092
+state_head: 0294ac91733f4617331a93b237dbd6b27fe158d8
 progress:
   total_phases: 12
   completed_phases: 2
   total_plans: 43
-  completed_plans: 29
+  completed_plans: 30
   percent: 17
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 03 (Operations Foundation) — EXECUTING
-Plan: 6 of 19
+Plan: 7 of 19
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 03 execution started
 
@@ -86,6 +86,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 03 P03 | 8 min | 2 tasks | 14 files |
 | Phase 03 P04 | 8 min | 2 tasks | 9 files |
 | Phase 03 P05 | 12min | 2 tasks | 11 files |
+| Phase 03 P06 | 6 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -161,6 +162,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-05: Money::fromMajor refuses excess decimals via BigDecimal::toScale default no-rounding (RoundingNecessaryException mapped to InvalidArgumentException); fromExactMinor stays the single rounding point
 - [Phase 03]: 03-05: DefaultsSettings::save() enforces rate currency equals default_currency (error on default_hourly_rate); form shows the rate as text with a decimal comma so the data-layer regex also rejects negatives
 - [Phase 03]: 03-05: data-layer rules shared with Filament fields must be ValidationRule classes, not bare closures (Filament injects closure parameters)
+- [Phase 03]: 03-06: InvoicingSettings refuses every VAT mode but non_payer and due days outside 0..365 at the data layer; the form shows the payer option disabled
+- [Phase 03]: 03-06: enum settings properties must carry no docblock without @var (the cast factory loses the type); Filament enum selects return the case in form state
 
 ### Pending Todos
 
@@ -196,6 +199,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T02:53:33.197Z
-Stopped at: Completed 03-05-PLAN.md
+Last session: 2026-10-08T03:01:28.999Z
+Stopped at: Completed 03-06-PLAN.md
 Resume file: None
