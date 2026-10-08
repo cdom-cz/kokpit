@@ -144,8 +144,64 @@ Plans:
   4. Configuring S3-compatible private storage through environment variables only, a smoke test uploads a file and fetches it through a temporary URL
   5. Spike results are recorded as decisions: PDF engine (multi-page report with Czech diacritics and QR), kanban library versus custom board (queue driver Redis, PostgreSQL 18 and RustFS S3 storage are already decided)
 
-**Plans**: TBD
+**Plans:** 19 plans (the two spikes run in parallel in wave 1; every application plan after them is serialized because each runs Pest in the single DDEV project against the shared `kokpit_test` database)
 **UI hint**: yes
+
+Plans:
+**Wave 1**
+- [ ] 03-01-PLAN.md — PDF engine spike outside the repository: Dompdf versus the Chromium engine behind spatie/laravel-pdf, decision record (FND-19, D-14, D-16)
+- [ ] 03-02-PLAN.md — Kanban spike outside the repository: custom wire:sort board versus Flowforge, build-or-buy decision record (FND-19, D-15, D-16)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 03-03-PLAN.md — Tracer: UUID v7 settings storage with fail-closed Partner scope, system-context settings migrations, supplier settings (FND-07, D-01)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 03-04-PLAN.md — Admin-only Czech settings page with the supplier tab, data-layer validation, boot-time 403 before mount() (FND-07, D-02)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 03-05-PLAN.md — Default rate and currency via a no-rounding Money::fromMajor (FND-07, D-02)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 03-06-PLAN.md — VAT mode, payment terms and online-payment toggle, one-transaction save across tabs (FND-07, D-02)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 03-07-PLAN.md — Bank accounts per currency with format-driven fields and an own IBAN rule (FND-07, D-03, D-04)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 03-08-PLAN.md — Numbering engine: token grammar, SequenceAllocator::peek preview, fixed KEY-N task numbers (FND-07, D-05)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 03-09-PLAN.md — Numbering patterns on the settings page with live previews and the locked task pattern (FND-07, D-05)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 03-10-PLAN.md — Activity log allowlist attribute and source labels with null causer (FND-08, D-06, D-08)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 03-11-PLAN.md — Allowlist architecture test, refused pruning, production guard for the activity log (FND-08, D-06, D-09)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [ ] 03-12-PLAN.md — Admin activity overview and reusable history relation manager, boot-time denial for relation managers and widgets (FND-08, D-07)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [ ] 03-13-PLAN.md — Job base with retries, backoff and idempotence declaration; queue-independent throttled Admin alerts (FND-09, D-10, D-11)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [ ] 03-14-PLAN.md — Job contract: after-commit dispatch, system-context reads, architecture test, production queue guard (FND-09, D-10)
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [ ] 03-15-PLAN.md — Health indicator registry with six slots and the Admin System page (FND-10, D-12, D-13)
+
+**Wave 15** *(blocked on Wave 14 completion)*
+- [ ] 03-16-PLAN.md — Real failed-jobs, oldest-pending and scheduler indicators, scheduler and worker heartbeats (FND-10, FND-09, D-12, D-13)
+
+**Wave 16** *(blocked on Wave 15 completion)*
+- [ ] 03-17-PLAN.md — Private S3 storage check command and s3 test group against RustFS locally and in CI (FND-16, D-17)
+
+**Wave 17** *(blocked on Wave 16 completion)*
+- [ ] 03-18-PLAN.md — zerops.yml with once-per-deploy migrations, protected release deploy workflow, settings checklist, Zerops rehearsal checklist (FND-15, D-18)
+
+**Wave 18** *(blocked on Wave 17 completion)*
+- [ ] 03-19-PLAN.md — Conventions and operations documentation, per-phase .gitignore review and the phase gate
 
 ### Phase 4: Clients and Projects
 
@@ -289,7 +345,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Repository Hygiene | 11/11 | Complete    | 2026-10-08 |
 | 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
-| 3. Operations Foundation | 0/0 | Not started | - |
+| 3. Operations Foundation | 0/19 | Not started | - |
 | 4. Clients and Projects | 0/0 | Not started | - |
 | 5. Tasks and Kanban | 0/0 | Not started | - |
 | 6. Time Tracking | 0/0 | Not started | - |
