@@ -223,7 +223,7 @@ GitHub:
 - [ ] environment `production` exists with a required reviewer (the maintainer). A solo maintainer leaves "prevent self-review" off and accepts the approval as a deliberate pause and audit trail. "Allow administrators to bypass" is off.
 - [ ] environment deployment branches and tags: the tag pattern `v*` plus the default branch (for a manual dispatch). This is the control that holds even if a branch carries a modified `deploy.yml`; the `verify` job guard repeats it inside the workflow.
 - [ ] a tag ruleset protects `v*`, so only the maintainer can create such a tag
-- [ ] `ZEROPS_TOKEN` is stored as an environment secret of `production`, and the three Zerops service ids as environment variables `ZEROPS_APP_SERVICE_ID`, `ZEROPS_WORKER_SERVICE_ID` and `ZEROPS_SCHEDULER_SERVICE_ID`. They are never repository secrets or repository variables.
+- [ ] `ZEROPS_TOKEN` is stored as an environment secret of `production`, and the Zerops service id of the `backend` service as the environment variable `ZEROPS_SERVICE_ID` of `production`. Neither is ever a repository secret or a repository variable.
 - [ ] no other workflow references the `production` environment, and "Require actions to be pinned to a full-length commit SHA" stays enabled
 
 Zerops:

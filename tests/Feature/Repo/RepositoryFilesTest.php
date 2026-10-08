@@ -312,15 +312,14 @@ it('documents the audit step in the add-a-model checklist and the operations sec
         ->and(repoCodeBlockLines($readme))->toContain('ddev artisan kokpit:storage:check');
 });
 
-it('documents the service id variables the deploy workflow reads', function () {
+it('documents the service id variable the deploy workflow reads', function () {
     $workflow = repoFile('.github/workflows/deploy.yml');
     $contributing = repoFile('CONTRIBUTING.md');
 
     preg_match_all('/vars\.(ZEROPS_[A-Z_]+)/', $workflow, $matches);
 
-    expect($matches[1])->toHaveCount(3);
-
-    foreach ($matches[1] as $variable) {
-        expect($contributing)->toContain($variable);
-    }
+    // One backend service, one push, one variable; the per-setup variables of the earlier three-service layout are gone.
+    expect(array_values(array_unique($matches[1])))->toBe(['ZEROPS_SERVICE_ID'])
+        ->and($contributing)->toContain('ZEROPS_SERVICE_ID')
+        ->and($contributing)->not->toMatch('/ZEROPS_('.implode('|', ['APP', 'WORKER', 'SCHEDULER']).')_SERVICE_ID/');
 });

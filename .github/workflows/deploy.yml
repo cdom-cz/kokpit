@@ -11,8 +11,8 @@ name: Deploy
 #           that is not an ancestor of origin/main, and a commit without a successful "CI Passed" check. Its token
 #           is the job's own GITHUB_TOKEN with contents: read and checks: read; nothing else.
 #   deploy  runs in the protected "production" environment (required reviewer, see CONTRIBUTING.md). The Zerops
-#           token is an environment secret and the three service ids are environment variables; they exist
-#           only there and reach the steps through env, never through a script.
+#           token is an environment secret and the service id (ZEROPS_SERVICE_ID) an environment variable of
+#           `production`; both reach the steps through env, never through a script.
 on:
   release:
     types: [published]
@@ -20,6 +20,8 @@ on:
 
 permissions: {}
 
+# One production deploy at a time, and a running one is never cancelled: an interrupted
+# `php artisan migrate --force` is worse than waiting for it to finish.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -139,19 +141,32 @@ jobs:
           ZEROPS_TOKEN: ${{ secrets.ZEROPS_TOKEN }}
         run: zcli login "${ZEROPS_TOKEN}"
 
-      # One push per service, each waiting for its pipeline. The app goes first because only its setup
-      # migrates the database; the worker and the scheduler follow once it is live.
-      - name: Push the app
+      # A single push of the `backend` setup deploys the whole application: web (nginx and PHP-FPM), Horizon
+      # under supervisord and the scheduler cron. The version name is the release tag (also for a dispatch from a
+      # tag) or main plus the short commit sha. It is derived from the runner-provided GITHUB_REF and GITHUB_SHA
+      # only, so no event data and no expression enters the script.
+      - name: Push the backend setup
         env:
-          SERVICE_ID: ${{ vars.ZEROPS_APP_SERVICE_ID }}
-        run: zcli service push --service-id "${SERVICE_ID}" --setup app --workspace-state clean --zerops-yaml-path zerops.yml
-
-      - name: Push the worker
-        env:
-          SERVICE_ID: ${{ vars.ZEROPS_WORKER_SERVICE_ID }}
-        run: zcli service push --service-id "${SERVICE_ID}" --setup worker --workspace-state clean --zerops-yaml-path zerops.yml
-
-      - name: Push the scheduler
-        env:
-          SERVICE_ID: ${{ vars.ZEROPS_SCHEDULER_SERVICE_ID }}
-        run: zcli service push --service-id "${SERVICE_ID}" --setup scheduler --workspace-state clean --zerops-yaml-path zerops.yml
+          SERVICE_ID: ${{ vars.ZEROPS_SERVICE_ID }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          case "${GITHUB_REF}" in
+            refs/tags/v*)
+              VERSION="${GITHUB_REF#refs/tags/}"
+              ;;
+            refs/heads/main)
+              VERSION="main-${GITHUB_SHA:0:12}"
+              ;;
+            *)
+              echo "::error::Only refs/heads/main and tags matching v* are deployed."
+              exit 1
+              ;;
+          esac
+          case "${VERSION}" in
+            "" | *[!0-9A-Za-z._-]*)
+              echo "::error::The version name is empty or has a character outside [0-9A-Za-z._-]."
+              exit 1
+              ;;
+          esac
+          zcli service push --service-id "${SERVICE_ID}" --setup backend --version-name "${VERSION}" --workspace-state clean --zerops-yaml-path zerops.yml

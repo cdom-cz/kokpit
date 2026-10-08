@@ -349,6 +349,9 @@ function deployInstallProblems(array $workflow): array
 }
 
 /**
+ * One push of the backend setup, after the login: the whole application (web, Horizon, scheduler cron) deploys
+ * from one setup, so there is exactly one push step, one service-id variable and a version name derived from the ref.
+ *
  * @param  array<string|int, mixed>  $workflow
  * @return list<string>
  */
@@ -356,7 +359,7 @@ function deployPushProblems(array $workflow): array
 {
     $job = deployJobs($workflow)['deploy'] ?? [];
     $problems = [];
-    $pushed = [];
+    $pushes = [];
     $login = null;
 
     foreach (deploySteps($job) as $index => $step) {
@@ -371,20 +374,7 @@ function deployPushProblems(array $workflow): array
         }
 
         if (str_contains($run, 'zcli service push')) {
-            if ($login === null) {
-                $problems[] = 'a push step runs before the login step';
-            }
-
-            if (! str_contains($run, '--zerops-yaml-path zerops.yml')) {
-                $problems[] = "push step {$index} does not pass --zerops-yaml-path zerops.yml";
-            }
-
-            preg_match('/--setup (\w+)/', $run, $match);
-            $pushed[] = $match[1] ?? '';
-
-            if (! str_contains((string) json_encode($step['env'] ?? []), 'vars.')) {
-                $problems[] = "push step {$index} must receive its service id from vars through its env";
-            }
+            $pushes[$index] = $step;
         }
     }
 
@@ -392,8 +382,34 @@ function deployPushProblems(array $workflow): array
         $problems[] = 'no zcli login step';
     }
 
-    if ($pushed !== ['app', 'worker', 'scheduler']) {
-        $problems[] = 'push order is ['.implode(', ', $pushed).'], expected app, worker, scheduler';
+    if (count($pushes) !== 1) {
+        $problems[] = 'the deploy job must have exactly one push step, found '.count($pushes);
+    }
+
+    foreach ($pushes as $index => $step) {
+        $run = (string) $step['run'];
+
+        if ($login === null || $index < $login) {
+            $problems[] = "push step {$index} runs before the login step";
+        }
+
+        foreach (['--service-id "${SERVICE_ID}"', '--setup backend', '--version-name "${VERSION}"', '--workspace-state clean', '--zerops-yaml-path zerops.yml', 'refs/tags/v*', 'refs/heads/main', 'GITHUB_SHA'] as $needle) {
+            if (! str_contains($run, $needle)) {
+                $problems[] = "push step {$index} does not contain {$needle}";
+            }
+        }
+
+        if (($step['env']['SERVICE_ID'] ?? null) !== '${{ vars.ZEROPS_SERVICE_ID }}') {
+            $problems[] = "push step {$index} must receive SERVICE_ID from vars.ZEROPS_SERVICE_ID through its env";
+        }
+    }
+
+    preg_match_all('/vars\.([A-Za-z0-9_]+)/', (string) json_encode($workflow), $matches);
+
+    foreach (array_unique($matches[1]) as $name) {
+        if ($name !== 'ZEROPS_SERVICE_ID') {
+            $problems[] = "the workflow reads vars.{$name}, only vars.ZEROPS_SERVICE_ID is allowed";
+        }
     }
 
     return $problems;
@@ -455,7 +471,7 @@ it('installs zcli by version against a hard-coded digest', function (): void {
     expect(deployInstallProblems(deployWorkflow()))->toBe([]);
 });
 
-it('logs in with the environment secret and pushes app, then worker, then scheduler', function (): void {
+it('logs in with the environment secret and pushes the backend setup once', function (): void {
     expect(deployPushProblems(deployWorkflow()))->toBe([]);
 });
 
@@ -602,11 +618,36 @@ it('reports every weakening of the workflow', function (): void {
 
             return $w;
         }],
-        'a push in the wrong order' => ['push', function (array $w): array {
+        'a push before the login' => ['push', function (array $w): array {
             $steps = $w['jobs']['deploy']['steps'];
             $last = count($steps) - 1;
             [$steps[$last], $steps[$last - 1]] = [$steps[$last - 1], $steps[$last]];
             $w['jobs']['deploy']['steps'] = $steps;
+
+            return $w;
+        }],
+        'a second push' => ['push', function (array $w): array {
+            $steps = $w['jobs']['deploy']['steps'];
+            $steps[] = $steps[count($steps) - 1];
+            $w['jobs']['deploy']['steps'] = $steps;
+
+            return $w;
+        }],
+        'another setup name' => ['push', function (array $w): array {
+            $last = count($w['jobs']['deploy']['steps']) - 1;
+            $w['jobs']['deploy']['steps'][$last]['run'] = str_replace('--setup backend', '--setup other', $w['jobs']['deploy']['steps'][$last]['run']);
+
+            return $w;
+        }],
+        'a push without a version name' => ['push', function (array $w): array {
+            $last = count($w['jobs']['deploy']['steps']) - 1;
+            $w['jobs']['deploy']['steps'][$last]['run'] = str_replace(' --version-name "${VERSION}"', '', $w['jobs']['deploy']['steps'][$last]['run']);
+
+            return $w;
+        }],
+        'a service id from another variable' => ['push', function (array $w): array {
+            $last = count($w['jobs']['deploy']['steps']) - 1;
+            $w['jobs']['deploy']['steps'][$last]['env']['SERVICE_ID'] = '${{ vars.ZEROPS_OTHER_SERVICE_ID }}';
 
             return $w;
         }],
@@ -867,3 +908,84 @@ it('asks the check runs of exactly the deployed commit', function (): void {
         ->and($calls[0])->toContain('api --paginate --jq')
         ->and($calls[0])->toContain("repos/example/kokpit/commits/{$mainSha}/check-runs");
 });
+
+/**
+ * Runs the push step of the deploy job with a fake zcli that only logs its arguments, and returns the process and
+ * the zcli calls. The runner variables the script reads are set explicitly, the service id is fictional.
+ *
+ * @return array{Process, list<string>}
+ */
+function deployRunPushScript(string $ref, string $sha): array
+{
+    $script = '';
+
+    foreach (deploySteps(deployJobs(deployWorkflow())['deploy']) as $step) {
+        if (str_contains((string) ($step['run'] ?? ''), 'zcli service push')) {
+            $script = (string) $step['run'];
+        }
+    }
+
+    $base = sys_get_temp_dir().'/kokpit-push-'.bin2hex(random_bytes(6));
+    $bin = $base.'/bin';
+    $work = $base.'/work';
+    $log = $base.'/zcli.log';
+    mkdir($bin, 0700, true);
+    mkdir($work, 0700);
+
+    file_put_contents($bin.'/zcli', <<<'SH'
+        #!/usr/bin/env bash
+        printf '%s\n' "$*" >> "${FAKE_ZCLI_LOG}"
+        SH);
+    chmod($bin.'/zcli', 0755);
+
+    $process = new Process(['bash', '-c', $script], $work, [
+        'PATH' => $bin.':'.(string) getenv('PATH'),
+        'SERVICE_ID' => 'example-service-id',
+        'GITHUB_REF' => $ref,
+        'GITHUB_SHA' => $sha,
+        'FAKE_ZCLI_LOG' => $log,
+    ]);
+    $process->run();
+
+    $calls = is_file($log) ? array_values(array_filter(explode("\n", (string) file_get_contents($log)))) : [];
+
+    return [$process, $calls];
+}
+
+function deployFictionalSha(): string
+{
+    return str_repeat('0123456789abcdef', 2).str_repeat('ab', 4);
+}
+
+it('pushes the backend setup once with the release tag as the version name', function (): void {
+    [$process, $calls] = deployRunPushScript('refs/tags/v1.2.0', deployFictionalSha());
+
+    expect($process->getExitCode())->toBe(0)
+        ->and($calls)->toBe(['service push --service-id example-service-id --setup backend --version-name v1.2.0 --workspace-state clean --zerops-yaml-path zerops.yml']);
+});
+
+it('pushes a dispatch from main with main and the first 12 characters of the commit as the version name', function (): void {
+    $sha = deployFictionalSha();
+    [$process, $calls] = deployRunPushScript('refs/heads/main', $sha);
+
+    expect($process->getExitCode())->toBe(0)
+        ->and($calls)->toBe(['service push --service-id example-service-id --setup backend --version-name main-'.substr($sha, 0, 12).' --workspace-state clean --zerops-yaml-path zerops.yml']);
+});
+
+it('refuses to push from any other ref or with a version name outside the allowed characters', function (string $ref): void {
+    [$process, $calls] = deployRunPushScript($ref, deployFictionalSha());
+
+    expect($process->getExitCode())->not->toBe(0)
+        ->and($process->getErrorOutput().$process->getOutput())->toContain('::error::')
+        ->and($calls)->toBe([]);
+})->with([
+    'a feature branch' => ['refs/heads/side'],
+    'a branch that starts like main' => ['refs/heads/main-evil'],
+    'a foreign tag' => ['refs/tags/nightly-1'],
+    'a pull request ref' => ['refs/pull/7/merge'],
+    'an empty ref' => [''],
+    'a tag with a plus sign' => ['refs/tags/v1.0.0+build'],
+    'a tag with a space' => ['refs/tags/v1.0 0'],
+    'a tag with a shell metacharacter' => ['refs/tags/v1;touch-x'],
+    'a tag with a quote' => ['refs/tags/v1"x'],
+]);
