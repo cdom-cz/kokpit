@@ -19,6 +19,8 @@ use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Shared\Policies\AdminOnlyPolicy;
+use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Policies\TaskPolicy;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -62,5 +64,8 @@ final class AccessServiceProvider extends ServiceProvider
 
         // Billing terms (rates, prices, estimate, internal note) are Admin-only (D-05).
         Gate::policy(ProjectBilling::class, AdminOnlyPolicy::class);
+
+        // Tasks are Partner-readable through their project; explicit grants only.
+        Gate::policy(Task::class, TaskPolicy::class);
     }
 }

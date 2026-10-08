@@ -20,6 +20,7 @@ use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Shared\Policies\AdminOnlyPolicy;
+use App\Domain\Tasks\Models\Task;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
@@ -46,6 +47,7 @@ it('finds every model of the application, so the scan cannot pass vacuously', fu
         Role::class,
         SettingsProperty::class,
         Tag::class,
+        Task::class,
         User::class,
         WebhookCall::class,
     ]);
@@ -87,7 +89,7 @@ it('gives every PartnerIsolated model a policy that extends KokpitPolicy', funct
         static fn (string $class): bool => is_subclass_of($class, PartnerIsolated::class),
     ));
 
-    expect($isolated)->toContain(CanaryRecord::class, Client::class, ClientInvitation::class, Contact::class, Project::class, ProjectBilling::class, Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class);
+    expect($isolated)->toContain(CanaryRecord::class, Client::class, ClientInvitation::class, Contact::class, Project::class, ProjectBilling::class, Task::class, Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class);
 
     foreach ($isolated as $class) {
         expect(Gate::getPolicyFor($class))->toBeInstanceOf(KokpitPolicy::class, "no KokpitPolicy for {$class}");

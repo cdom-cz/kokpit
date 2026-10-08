@@ -14,6 +14,7 @@ use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
+use App\Domain\Tasks\Models\Task;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Tests\Support\Canary;
@@ -96,6 +97,7 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         ProjectBilling::class,
         SettingsProperty::class,
         Tag::class,
+        Task::class,
         WebhookCall::class,
     ]);
 });

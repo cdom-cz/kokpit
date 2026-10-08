@@ -415,6 +415,17 @@ return [
         'empty_description' => 'První přidaný kontakt se stane hlavním.',
     ],
 
+    'tasks' => [
+        'errors' => [
+            'project_unavailable' => 'Vyberte dostupný projekt.',
+            'person_not_allowed' => 'Tuto osobu nelze vybrat. Vyberte správce nebo účet klienta tohoto projektu.',
+            'no_admin' => 'V systému není aktivní správce, úkol nelze vytvořit.',
+            'title_required' => 'Zadejte název úkolu.',
+            'status_invalid' => 'Vyberte platný stav úkolu.',
+            'priority_invalid' => 'Vyberte platnou prioritu úkolu.',
+        ],
+    ],
+
     'projects' => [
         'empty_value' => '—',
         'errors' => [

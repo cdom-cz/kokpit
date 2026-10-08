@@ -18,6 +18,8 @@ use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Shared\Tags\TagType;
+use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Models\Task;
 use Closure;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\Probes\PackageProbe;
@@ -122,6 +124,17 @@ final class CanaryRegistry
                         'hourly_rate' => Money::ofMinor(85000, $client->currency),
                         'internal_note' => $canary,
                     ]);
+                });
+            },
+
+            // One task in the canary project of that client (found by name; the Project
+            // fixture runs before this one), created through the real Action by an
+            // Admin. The canary is the title, so a Partner reading it would be caught.
+            Task::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+
+                    app(CreateTask::class)->handle(Canary::admin(), $project, ['title' => $canary]);
                 });
             },
 

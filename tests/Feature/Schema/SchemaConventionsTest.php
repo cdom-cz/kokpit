@@ -135,12 +135,13 @@ it('R6 self-check: reports a uuid primary key without the uuidv7() default', fun
     expect(PgSchema::missingUuidv7Default($columns))->toBe(['gadgets.id', 'widgets.id']);
 });
 
-it('keeps the exempt map to the four documented framework columns with reasons', function () {
+it('keeps the exempt map to the four framework columns and the task parent discriminator, each with a reason', function () {
     expect(array_keys(PgSchema::EXEMPT))->toBe([
         'migrations.id',
         'failed_jobs.id',
         'sessions.id',
         'password_reset_tokens.email',
+        'tasks.parent_depth',
     ])->and(array_filter(PgSchema::EXEMPT, fn (string $reason): bool => trim($reason) === ''))->toBe([]);
 });
 

@@ -17,6 +17,7 @@ use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
+use App\Domain\Tasks\Models\Task;
 
 /**
  * The single source of morph aliases.
@@ -42,5 +43,6 @@ final class MorphMap
         'contact' => Contact::class,
         'project' => Project::class,
         'project_billing' => ProjectBilling::class,
+        'task' => Task::class,
     ];
 }
