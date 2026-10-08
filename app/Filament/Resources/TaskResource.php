@@ -15,6 +15,7 @@ use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\TaskPeople;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\RelationManagers\TaskHistoryRelationManager;
 use App\Filament\Resources\TaskResource\Pages\EditTask;
@@ -28,6 +29,7 @@ use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\SpatieTagsInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
@@ -153,6 +155,10 @@ final class TaskResource extends Resource
                         ->columnSpanFull(),
                     Textarea::make('description')
                         ->label(__('kokpit.tasks.fields.description'))
+                        // The Partner accounts of the client read the description of a client-visible project (Pitfall 6).
+                        ->helperText(static fn (?Task $record): ?string => self::projectOf($record)?->client_visible === true
+                            ? (string) __('kokpit.tasks.hints.description_shared')
+                            : null)
                         ->rows(6)
                         ->columnSpanFull(),
                 ]),
@@ -176,7 +182,31 @@ final class TaskResource extends Resource
                     DatePicker::make('start_date')
                         ->label(__('kokpit.tasks.fields.start_date')),
                     DatePicker::make('due_date')
-                        ->label(__('kokpit.tasks.fields.due_date')),
+                        ->label(__('kokpit.tasks.fields.due_date'))
+                        ->afterOrEqual('start_date'),
+                ]),
+            Section::make(__('kokpit.tasks.sections.people'))
+                ->columns(2)
+                ->schema([
+                    // Only the active Admin and the active Partners of the project's client (D-05).
+                    Select::make('assignee_id')
+                        ->label(__('kokpit.tasks.fields.assignee'))
+                        ->options(static fn (?Task $record): array => self::peopleOptions($record))
+                        ->required()
+                        ->native(false),
+                    Select::make('requester_id')
+                        ->label(__('kokpit.tasks.fields.requester'))
+                        ->options(static fn (?Task $record): array => self::peopleOptions($record))
+                        ->required()
+                        ->native(false),
+                ]),
+            Section::make(__('kokpit.tasks.sections.tags'))
+                ->schema([
+                    // Dehydrated, so UpdateTask receives the names and stays the one writer.
+                    SpatieTagsInput::make('tags')
+                        ->label(__('kokpit.tasks.fields.tags'))
+                        ->type(TagType::Task->value)
+                        ->dehydrated(),
                 ]),
         ]);
     }
@@ -214,8 +244,8 @@ final class TaskResource extends Resource
     /**
      * The quick creation modal (D-09): the project and the title, nothing else.
      * It is a static builder so the boards reuse it. On success it opens the new
-     * task's page; the detail page is where the description, people and dates are
-     * filled in.
+     * task's edit page, where the description, people, dates and tags are filled
+     * in (D-09).
      */
     public static function quickCreateAction(?Project $project = null): Action
     {
@@ -255,7 +285,7 @@ final class TaskResource extends Resource
                     throw self::underModal($e);
                 }
 
-                $action->redirect(self::getUrl('view', ['record' => $task]));
+                $action->redirect(self::getUrl('edit', ['record' => $task]));
             });
     }
 
@@ -284,6 +314,8 @@ final class TaskResource extends Resource
      */
     public static function fillData(Task $task, array $data): array
     {
+        $data['tags'] = $task->tagsWithType(TagType::Task->value)->pluck('name')->all();
+
         return $data;
     }
 
@@ -304,6 +336,9 @@ final class TaskResource extends Resource
             'priority' => self::enumValue($data['priority'] ?? null),
             'start_date' => self::text($data['start_date'] ?? null),
             'due_date' => self::text($data['due_date'] ?? null),
+            'assignee_id' => self::text($data['assignee_id'] ?? null),
+            'requester_id' => self::text($data['requester_id'] ?? null),
+            'tags' => is_array($data['tags'] ?? null) ? array_values(array_filter($data['tags'], 'is_string')) : null,
         ];
     }
 
@@ -317,6 +352,27 @@ final class TaskResource extends Resource
         }
 
         return is_string($state) && $state !== '' ? $state : null;
+    }
+
+    /**
+     * The project of a task, an archived one included.
+     */
+    private static function projectOf(?Task $task): ?Project
+    {
+        return $task === null ? null : Project::query()->withTrashed()->find($task->project_id);
+    }
+
+    /**
+     * The people a task of the record's project may be assigned to or requested by:
+     * TaskPeople::options of the project, the same set UpdateTask enforces (D-05).
+     *
+     * @return array<string, string>
+     */
+    private static function peopleOptions(?Task $task): array
+    {
+        $project = self::projectOf($task);
+
+        return $project === null ? [] : app(TaskPeople::class)->options($project);
     }
 
     private static function text(mixed $state): ?string

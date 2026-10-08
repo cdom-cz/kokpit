@@ -8,6 +8,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Settings\Numbering\DocumentNumbering;
+use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Board\TaskBoard;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\TaskInput;
@@ -36,6 +37,9 @@ use Illuminate\Validation\ValidationException;
  * with the Admin as assignee, and their status, priority and people inputs are
  * ignored. With no active Admin a Partner creation is a DomainException.
  *
+ * Dates must be calendar days and the due date may not precede the start date
+ * (field error `due_date`). Tags are a list of names stored as task tags.
+ *
  * Errors are ValidationExceptions keyed by the data key.
  *
  * @phpstan-type TaskData array{
@@ -47,6 +51,7 @@ use Illuminate\Validation\ValidationException;
  *     due_date?: string|null,
  *     assignee_id?: string|null,
  *     requester_id?: string|null,
+ *     tags?: list<string>|null,
  * }
  */
 final class CreateTask
@@ -78,8 +83,13 @@ final class CreateTask
 
         $status = TaskInput::status($data['status'] ?? null) ?? ProjectStatus::Planned;
         $priority = TaskInput::priority($data['priority'] ?? null);
+        $startDate = TaskInput::day($data['start_date'] ?? null, 'start_date');
+        $dueDate = TaskInput::day($data['due_date'] ?? null, 'due_date');
+        $tags = TaskInput::tags($data['tags'] ?? null);
 
-        return DB::transaction(function () use ($actor, $project, $data, $title, $status, $priority, $isPartner): Task {
+        TaskInput::assertDatesInOrder($startDate, $dueDate);
+
+        return DB::transaction(function () use ($actor, $project, $data, $title, $status, $priority, $isPartner, $startDate, $dueDate, $tags): Task {
             $this->board->lockBoard();
 
             // The scoped lookup: a Partner only finds a visible project of the own client.
@@ -97,8 +107,8 @@ final class CreateTask
             $attributes = [
                 'title' => $title,
                 'description' => $data['description'] ?? null,
-                'start_date' => $data['start_date'] ?? null,
-                'due_date' => $data['due_date'] ?? null,
+                'start_date' => $startDate,
+                'due_date' => $dueDate,
             ];
 
             // Status and priority are NOT NULL with database defaults: omit them when not given.
@@ -122,6 +132,10 @@ final class CreateTask
                 'requester_id' => $people['requester_id'],
                 'assignee_id' => $people['assignee_id'],
             ])->save();
+
+            if ($tags !== null) {
+                $task->syncTagsWithType($tags, TagType::Task->value);
+            }
 
             // Load the database defaults, so the returned model is complete.
             return $task->refresh();

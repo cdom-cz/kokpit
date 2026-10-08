@@ -6,7 +6,9 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
+use Carbon\CarbonImmutable;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
  * The input rules CreateTask and UpdateTask share, so the two Actions answer
@@ -38,5 +40,67 @@ final class TaskInput
 
         return (is_string($value) ? ProjectPriority::tryFrom($value) : null)
             ?? throw ValidationException::withMessages(['priority' => __('kokpit.tasks.errors.priority_invalid')]);
+    }
+
+    /**
+     * A real calendar day as `Y-m-d`, null for an empty value.
+     *
+     * @throws ValidationException a field error on `$field` for anything that is not a calendar day
+     */
+    public static function day(mixed $value, string $field): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_string($value)) {
+            try {
+                $day = CarbonImmutable::createFromFormat('!Y-m-d', $value);
+            } catch (Throwable) {
+                $day = null;
+            }
+
+            if ($day !== null && $day->format('Y-m-d') === $value) {
+                return $value;
+            }
+        }
+
+        throw ValidationException::withMessages([$field => __('kokpit.tasks.errors.date_invalid')]);
+    }
+
+    /**
+     * The due date may equal the start date but not precede it. Both are `Y-m-d`
+     * strings or null; a missing bound never fails.
+     *
+     * @throws ValidationException a field error on `due_date`
+     */
+    public static function assertDatesInOrder(?string $start, ?string $due): void
+    {
+        if ($start !== null && $due !== null && $due < $start) {
+            throw ValidationException::withMessages(['due_date' => __('kokpit.tasks.errors.dates_order')]);
+        }
+    }
+
+    /**
+     * The tag names of the input as a clean list: trimmed, without empty names
+     * and duplicates. Null means the input names no tags at all (leave them be).
+     *
+     * @return list<string>|null
+     */
+    public static function tags(mixed $value): ?array
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $names = [];
+
+        foreach ($value as $name) {
+            if (is_string($name) && trim($name) !== '') {
+                $names[] = trim($name);
+            }
+        }
+
+        return array_values(array_unique($names));
     }
 }
