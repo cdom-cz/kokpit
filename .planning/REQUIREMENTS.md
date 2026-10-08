@@ -73,8 +73,8 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Kanban
 
-- [ ] **KB-01**: Kanban per project and global with columns by status and card order by position
-- [ ] **KB-02**: Drag and drop changes status and position synchronously; global view filters by client, assignee, tag, priority
+- [x] **KB-01**: Kanban per project and global with columns by status and card order by position
+- [x] **KB-02**: Drag and drop changes status and position synchronously; global view filters by client, assignee, tag, priority
 - [ ] **KB-03**: Partner has no board manipulation and sees a read-only task list
 
 ### Time Tracking
@@ -243,8 +243,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TA-05 | Phase 5 | Pending |
 | TA-06 | Phase 5 | Pending |
 | TA-07 | Phase 5 | Pending |
-| KB-01 | Phase 5 | Pending |
-| KB-02 | Phase 5 | Pending |
+| KB-01 | Phase 5 | Complete |
+| KB-02 | Phase 5 | Complete |
 | KB-03 | Phase 5 | Pending |
 | TI-01 | Phase 6 | Pending |
 | TI-02 | Phase 6 | Pending |

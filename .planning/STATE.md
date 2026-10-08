@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Completed 05-10-PLAN.md
-last_updated: "2026-10-08T22:45:29.776Z"
+stopped_at: Completed 05-11-PLAN.md
+last_updated: "2026-10-08T23:23:59.221Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 05 execution started
-state_head: 8eca7c546cdeb340e229557d5551291216dda8c5
+state_head: 26c0114ebef143ca366db17138fe9edebf1166fc
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 81
-  completed_plans: 74
+  completed_plans: 75
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 05 (Tasks and Kanban) — EXECUTING
-Plan: 11 of 17
+Plan: 12 of 17
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 05 execution started
 
@@ -132,6 +132,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 05 P08 | 25 min | 3 tasks | 10 files |
 | Phase 05 P09 | 25 min | 2 tasks | 14 files |
 | Phase 05 P10 | 28 min | 3 tasks | 13 files |
+| Phase 05 P11 | 18 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -281,6 +282,9 @@ Recent decisions affecting current work:
 - [Phase 05]: Board drop lands directly before the visible card at the drop index; hidden cards keep their relative place (plan behaviour list over the Pattern 5 formula)
 - [Phase 05]: eloquent-sortable global config keeps package defaults (order_column, sort_when_creating true) for tags and media; Task opts in with position and false through its own sortable property
 - [Phase 05]: Board status changes go through TaskBoard::appendToColumn; MoveTask re-reads the task under the board lock with lockForUpdate through the scoped query; BoardFilters::fromInput validates URL filters
+- [Phase 05]: 05-11: project board is a resource page of ProjectResource with a boardProject() hook; ProjectBoard overrides canAccess(array) to match the resource Page signature
+- [Phase 05]: 05-11: card preview is a Filament slideOver action; the lookup runs while the modal renders so a forged id ends the mounting request with 404
+- [Phase 05]: 05-11: board lock proven by two-process move test with UnlockedTaskBoard mutation run (exclusion violations and deadlocks without the lock); F-8, F-9 and E-5 left open
 
 ### Pending Todos
 
@@ -320,6 +324,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T22:45:22.939Z
-Stopped at: Completed 05-10-PLAN.md
+Last session: 2026-10-08T23:23:59.110Z
+Stopped at: Completed 05-11-PLAN.md
 Resume file: None
