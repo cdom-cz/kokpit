@@ -6,12 +6,14 @@ namespace App\Domain\Clients\Models;
 
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Auth\DeniesPartners;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
 
 /**
  * An invitation of a person to become the Partner account of a client (US-02,
@@ -60,6 +62,37 @@ final class ClientInvitation extends KokpitModel implements PartnerIsolated
             'revoked_at' => 'datetime',
             'send_count' => 'integer',
         ];
+    }
+
+    /**
+     * The invitation a link points at, or null when the link is not acceptable.
+     *
+     * This is the one sanctioned read of the guest page: a guest has no user, so
+     * every scope is fail-closed and the lookup runs as an explicit system run. A
+     * malformed id never reaches PostgreSQL (a uuid comparison would throw), and
+     * an unknown row, a wrong token, an expired, revoked or accepted invitation
+     * all answer null, so the caller cannot tell the cases apart. At `expires_at`
+     * or later the invitation counts as expired.
+     */
+    public static function findAcceptable(string $id, string $plainToken): ?self
+    {
+        if (! Str::isUuid($id)) {
+            return null;
+        }
+
+        $invitation = app(PartnerContext::class)->runAsSystem(
+            static fn (): ?self => self::query()->whereKey($id)->first(),
+        );
+
+        if ($invitation === null || ! hash_equals($invitation->token_hash, hash('sha256', $plainToken))) {
+            return null;
+        }
+
+        if ($invitation->accepted_at !== null || $invitation->revoked_at !== null || ! $invitation->expires_at->isFuture()) {
+            return null;
+        }
+
+        return $invitation;
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Clients\Actions;
 
+use App\Domain\Clients\InvitationMail;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Rules\EmailHasNoAccount;
@@ -21,8 +22,9 @@ use Illuminate\Validation\ValidationException;
  * Only an invitation row is written; no users row exists until the invited
  * person sets a password through the link. The token is 256 random bits and only
  * its SHA-256 hash is stored (SHA-256 is right for a high-entropy token, a slow
- * password hash would add nothing). The plain token is not returned or logged
- * here; the delivery of the signed link is added by the invitation e-mail.
+ * password hash would add nothing). The plain token is neither returned nor
+ * logged: it leaves this Action only through InvitationMail, which mails the
+ * signed link.
  *
  * The e-mail is trimmed and lower-cased, as the database check requires.
  */
@@ -73,6 +75,9 @@ final class InvitePartner
                 // Two invitations for one e-mail at the same moment: the index decided.
                 throw ValidationException::withMessages(['email' => __('kokpit.invitations.errors.email_has_open_invitation')]);
             }
+
+            // Queued only after this transaction commits; the plain token leaves the Action here.
+            app(InvitationMail::class)->send($invitation, $token);
 
             return $invitation->refresh();
         });

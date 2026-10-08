@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers\Filament;
 
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Filament\Pages\Auth\AcceptInvitation;
 use App\Filament\Pages\Dashboard;
 use App\Http\Middleware\EnsureAdminHasTwoFactor;
 use App\Support\InitialsAvatarProvider;
@@ -21,6 +22,7 @@ use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Route;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Tests\Support\Filament\CanaryRecordResource;
 
@@ -48,6 +50,13 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login()
             ->profile()
+            // The invitation link (US-02): a guest page on a signed route, named
+            // filament.admin.invitation.accept. It has no path parameters; the invitation id and the
+            // token travel as query parameters under the signature. The page is not registered as a
+            // panel page and does not enable registration.
+            ->routes(fn () => Route::get('/invitation', AcceptInvitation::class)
+                ->middleware(['signed'])
+                ->name('invitation.accept'))
             ->spa()
             // The bell shows the Admin alerts of failed background jobs (D-11). The condition is
             // evaluated per request, so a Partner never gets the bell.

@@ -3,11 +3,19 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Actions\InvitePartner;
+use App\Domain\Clients\InvitationMail;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
+use App\Domain\Clients\Notifications\PartnerInvitation;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Auth\PartnerContext;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Http\Request;
+use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
@@ -222,4 +230,249 @@ it('refuses a missing name and a malformed e-mail on the matching field', functi
     }
 
     expect(invitationCount())->toBe(0);
+});
+
+/**
+ * The signed links mailed to one address so far, oldest first. Asserts that at least
+ * one invitation was sent on demand to that address.
+ *
+ * @return list<string>
+ */
+function sentLinks(string $email): array
+{
+    $urls = [];
+
+    Notification::assertSentOnDemand(
+        PartnerInvitation::class,
+        static function (PartnerInvitation $notification, array $channels, AnonymousNotifiable $notifiable) use ($email, &$urls): bool {
+            if ($notifiable->routes['mail'] !== $email) {
+                return false;
+            }
+
+            $urls[] = $notification->acceptUrl;
+
+            return true;
+        },
+    );
+
+    return $urls;
+}
+
+/**
+ * The query parameters of a signed link.
+ *
+ * @return array<string, string>
+ */
+function linkQuery(string $url): array
+{
+    parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+
+    return array_map('strval', $query);
+}
+
+/**
+ * A freshly signed link for the given invitation id and token, valid for a day.
+ */
+function signedLink(?string $id, ?string $token): string
+{
+    return URL::temporarySignedRoute(InvitationMail::ACCEPT_ROUTE, now()->addDay(), array_filter(
+        ['invitation' => $id, 'token' => $token],
+        static fn (?string $value): bool => $value !== null,
+    ));
+}
+
+/**
+ * Forgets the signed-in user: the link is opened by a guest.
+ */
+function asGuest(): void
+{
+    auth()->forgetGuards();
+}
+
+/**
+ * The visible text of a response body: tags, scripts and attributes removed.
+ */
+function visibleText(string $html): string
+{
+    $html = (string) preg_replace('~<(script|style)\b.*?</\1>~si', ' ', $html);
+
+    return trim((string) preg_replace('/\s+/', ' ', html_entity_decode(strip_tags($html))));
+}
+
+/**
+ * Invites one fictional person with the mail faked and returns [invitation, plain token, url].
+ *
+ * @return array{0: ClientInvitation, 1: string, 2: string}
+ */
+function inviteWithLink(?string $email = null): array
+{
+    Notification::fake();
+    $invitation = invite($email ?? exampleEmail());
+    $url = sentLinks($invitation->email)[0];
+
+    return [$invitation, linkQuery($url)['token'], $url];
+}
+
+it('queues one on-demand mail with a signed link to the accept route (D-01, D-02)', function (): void {
+    Notification::fake();
+
+    $invitation = invite(exampleEmail());
+    $clientName = $this->client->name;
+
+    Notification::assertSentOnDemandTimes(PartnerInvitation::class, 1);
+    Notification::assertSentOnDemand(
+        PartnerInvitation::class,
+        static function (PartnerInvitation $notification, array $channels, AnonymousNotifiable $notifiable) use ($invitation, $clientName): bool {
+            $request = Request::create($notification->acceptUrl);
+
+            expect($notification)->toBeInstanceOf(ShouldQueue::class)
+                ->and($notification->afterCommit)->toBeTrue()
+                ->and($channels)->toBe(['mail'])
+                ->and($notifiable->routes['mail'])->toBe($invitation->email)
+                ->and($notification->inviteeName)->toBe('Example Invitee')
+                ->and($notification->clientName)->toBe($clientName)
+                ->and(URL::hasValidSignature($request))->toBeTrue()
+                ->and(Route::getRoutes()->match($request)->getName())->toBe(InvitationMail::ACCEPT_ROUTE)
+                ->and(linkQuery($notification->acceptUrl))->toHaveKeys(['invitation', 'token', 'expires', 'signature'])
+                ->and(linkQuery($notification->acceptUrl)['invitation'])->toBe($invitation->id)
+                ->and((int) linkQuery($notification->acceptUrl)['expires'])->toBe($invitation->expires_at->getTimestamp());
+
+            return true;
+        },
+    );
+});
+
+it('mails the token of which only the hash is stored, and the token is in no column', function (): void {
+    [$invitation, $token, $url] = inviteWithLink();
+    $row = DB::table('client_invitations')->where('id', $invitation->id)->first();
+
+    expect($token)->toMatch('/^[0-9a-f]{64}$/')
+        ->and($row->token_hash)->toBe(hash('sha256', $token))
+        ->and(str_contains((string) json_encode($row), $token))->toBeFalse()
+        ->and($url)->toContain($token);
+});
+
+it('builds the mail from scalars only, in Czech', function (): void {
+    [$invitation, , $url] = inviteWithLink();
+
+    $notification = new PartnerInvitation('Example Invitee', 'Example Client', $url, '1. 1. 2030 12:00');
+    $mail = $notification->toMail(new AnonymousNotifiable);
+
+    expect($mail->subject)->toBe(__('kokpit.invitations.mail.subject'))
+        ->and($mail->greeting)->toBe('Dobrý den, Example Invitee,')
+        ->and($mail->actionUrl)->toBe($url)
+        ->and($mail->actionText)->toBe('Přijmout pozvánku')
+        ->and(implode(' ', $mail->introLines))->toContain('Example Client')
+        ->and(implode(' ', array_map(strval(...), $mail->outroLines)))->toContain('1. 1. 2030 12:00');
+
+    foreach ((new ReflectionClass(PartnerInvitation::class))->getConstructor()?->getParameters() ?? [] as $parameter) {
+        expect((string) $parameter->getType())->toBe('string');
+    }
+});
+
+it('opens a valid link as a guest and shows the e-mail of the invitee', function (): void {
+    [$invitation, , $url] = inviteWithLink();
+    asGuest();
+
+    $this->get($url)
+        ->assertOk()
+        ->assertSee($invitation->email)
+        ->assertSee(__('kokpit.invitations.accept.heading'))
+        ->assertDontSee(__('kokpit.invitations.accept.invalid_message'));
+});
+
+it('answers every bad link with one identical neutral message and the same status (D-02)', function (): void {
+    [$invitation, $token, $url] = inviteWithLink();
+    [$other, $otherToken] = inviteWithLink();
+    $message = __('kokpit.invitations.accept.invalid_message');
+
+    $links = [
+        'wrong token' => signedLink($invitation->id, str_repeat('0', 64)),
+        'token of another invitation' => signedLink($invitation->id, $otherToken),
+        'unknown id' => signedLink((string) Str::uuid7(), $token),
+        'not a uuid' => signedLink('not-a-uuid', $token),
+        'sql-looking id' => signedLink("1' OR '1'='1", $token),
+        'no parameters' => signedLink(null, null),
+        'no token' => signedLink($invitation->id, null),
+        'no id' => signedLink(null, $token),
+    ];
+
+    $revoked = invite(exampleEmail());
+    $revokedToken = linkQuery(sentLinks($revoked->email)[0])['token'];
+    app(PartnerContext::class)->runAsSystem(static fn () => $revoked->forceFill(['revoked_at' => now()])->save());
+    $links['revoked'] = signedLink($revoked->id, $revokedToken);
+
+    $accepted = invite(exampleEmail());
+    $acceptedToken = linkQuery(sentLinks($accepted->email)[0])['token'];
+    $user = Canary::partnerFor($this->client->id);
+    app(PartnerContext::class)->runAsSystem(static fn () => $accepted->forceFill(['accepted_at' => now(), 'accepted_user_id' => $user->id])->save());
+    $links['accepted'] = signedLink($accepted->id, $acceptedToken);
+
+    $expired = invite(exampleEmail());
+    $expiredToken = linkQuery(sentLinks($expired->email)[0])['token'];
+    app(PartnerContext::class)->runAsSystem(static fn () => $expired->forceFill(['expires_at' => now()->subSecond()])->save());
+    $links['expired'] = signedLink($expired->id, $expiredToken);
+
+    asGuest();
+    $texts = [];
+
+    foreach ($links as $case => $link) {
+        $response = $this->get($link);
+        $response->assertOk()->assertSee($message);
+
+        foreach ([$invitation, $other, $revoked, $accepted, $expired] as $known) {
+            $response->assertDontSee($known->email);
+        }
+
+        $texts[$case] = visibleText((string) $response->getContent());
+    }
+
+    expect(array_unique($texts))->toHaveCount(1, 'the neutral page differs between '.implode(', ', array_keys($links)));
+});
+
+it('shows the neutral page for an invitation at exactly its expiry time and later', function (): void {
+    [$invitation, $token] = inviteWithLink();
+    asGuest();
+
+    // A link signed afresh at each moment, so only the invitation decides, not the signature.
+    $this->get(signedLink($invitation->id, $token))->assertOk()->assertSee($invitation->email);
+
+    $this->travelTo($invitation->expires_at->copy()->subSecond());
+    $this->get(signedLink($invitation->id, $token))->assertOk()->assertSee($invitation->email);
+
+    $this->travelTo($invitation->expires_at);
+    $this->get(signedLink($invitation->id, $token))->assertOk()->assertSee(__('kokpit.invitations.accept.invalid_message'))->assertDontSee($invitation->email);
+
+    $this->travelTo($invitation->expires_at->copy()->addMinute());
+    $this->get(signedLink($invitation->id, $token))->assertOk()->assertSee(__('kokpit.invitations.accept.invalid_message'));
+});
+
+it('refuses the mailed link itself once its signature has expired', function (): void {
+    [$invitation, , $url] = inviteWithLink();
+    asGuest();
+
+    $this->travelTo($invitation->expires_at->copy()->addSecond());
+
+    $this->get($url)->assertForbidden();
+});
+
+it('refuses a link without a signature or with a changed query with 403', function (): void {
+    [$invitation, $token, $url] = inviteWithLink();
+    asGuest();
+
+    $this->get(route(InvitationMail::ACCEPT_ROUTE, ['invitation' => $invitation->id, 'token' => $token]))->assertForbidden();
+    $this->get(str_replace($token, str_repeat('a', 64), $url))->assertForbidden();
+    $this->get(str_replace($invitation->id, (string) Str::uuid7(), $url))->assertForbidden();
+});
+
+it('reads the invitation only through findAcceptable, which hides every unacceptable case as null', function (): void {
+    [$invitation, $token] = inviteWithLink();
+    asGuest();
+
+    expect(ClientInvitation::findAcceptable($invitation->id, $token)?->id)->toBe($invitation->id)
+        ->and(ClientInvitation::findAcceptable($invitation->id, 'wrong'))->toBeNull()
+        ->and(ClientInvitation::findAcceptable($invitation->id, ''))->toBeNull()
+        ->and(ClientInvitation::findAcceptable((string) Str::uuid7(), $token))->toBeNull()
+        ->and(ClientInvitation::findAcceptable('not-a-uuid', $token))->toBeNull()
+        ->and(ClientInvitation::findAcceptable('', $token))->toBeNull();
 });

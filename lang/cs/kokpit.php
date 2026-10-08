@@ -493,6 +493,21 @@ return [
             'email_has_open_invitation' => 'Tato adresa už má otevřenou pozvánku. Odešlete ji znovu.',
             'client_archived' => 'Pro archivovaného klienta nelze vytvořit pozvánku.',
         ],
+        'mail' => [
+            'subject' => 'Pozvánka do aplikace Kokpit',
+            'greeting' => 'Dobrý den, :name,',
+            'intro' => 'byli jste pozváni k vytvoření účtu v aplikaci Kokpit pro klienta :client.',
+            'action' => 'Přijmout pozvánku',
+            'expiry' => 'Odkaz platí do :date.',
+            'outro' => 'Pokud jste pozvánku nečekali, tento e-mail ignorujte.',
+        ],
+        'accept' => [
+            'title' => 'Pozvánka',
+            'heading' => 'Pozvánka do aplikace Kokpit',
+            'intro' => 'Pozvánka je určena pro tuto e-mailovou adresu:',
+            'invalid_heading' => 'Odkaz nelze použít',
+            'invalid_message' => 'Tento odkaz je neplatný nebo už nelze použít. Požádejte o novou pozvánku.',
+        ],
     ],
 
     'alerts' => [
