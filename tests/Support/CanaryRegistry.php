@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
@@ -66,6 +67,15 @@ final class CanaryRegistry
             Client::class => static function (string $clientId, string $canary): void {
                 app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
                     Client::query()->whereKey($clientId)->firstOrFail()->forceFill(['name' => $canary])->save();
+                });
+            },
+
+            // One client-visible project per client, directly after the Client
+            // fixture so later fixtures (tags, project billing) can find it.
+            Project::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = new Project(['name' => $canary, 'key' => Canary::projectKey(), 'client_visible' => true]);
+                    $project->forceFill(['client_id' => $clientId])->save();
                 });
             },
 

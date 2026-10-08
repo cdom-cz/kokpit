@@ -1,0 +1,108 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Projects\Models;
+
+use App\Domain\Clients\Models\Client;
+use App\Domain\Shared\Auth\IsolatesPartners;
+use App\Domain\Shared\Auth\PartnerIsolated;
+use App\Domain\Shared\Models\KokpitModel;
+use Carbon\CarbonInterface;
+use Database\Factories\ProjectFactory;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+/**
+ * A project of a client. The only Partner-readable model of Phase 4: a Partner
+ * sees a project only when it belongs to the own client, is flagged
+ * client-visible, is not archived and its client is not archived (D-07, D-11).
+ * Every other state, including a missing flag, is invisible.
+ *
+ * The table holds Partner-safe columns only. Rates, prices, estimates, billing
+ * type and internal notes live in the Admin-only project_billing table (D-05).
+ *
+ * `client_id` is not fillable (a project must not be created under or moved to
+ * another client by mass assignment): creation code sets it through
+ * `$client->projects()` or `forceFill`. `$project->client` is null for a Partner
+ * because Client is closed to Partners (D-06).
+ *
+ * @property string $id
+ * @property string $client_id
+ * @property string $name
+ * @property string $key
+ * @property string|null $description
+ * @property string $status
+ * @property string $priority
+ * @property CarbonInterface|null $start_date
+ * @property CarbonInterface|null $end_date
+ * @property bool $client_visible
+ * @property CarbonInterface|null $deleted_at
+ * @property CarbonInterface|null $created_at
+ * @property CarbonInterface|null $updated_at
+ */
+#[Fillable([
+    'name',
+    'key',
+    'description',
+    'status',
+    'priority',
+    'start_date',
+    'end_date',
+    'client_visible',
+])]
+final class Project extends KokpitModel implements PartnerIsolated
+{
+    /** @use HasFactory<ProjectFactory> */
+    use HasFactory, IsolatesPartners, SoftDeletes;
+
+    /**
+     * Own client AND client-visible AND the client is not archived. The client
+     * row is checked with a plain EXISTS subquery (not through the Client model,
+     * which is closed to Partners), so an archived client hides its projects
+     * even for a session that is still open.
+     *
+     * @param  Builder<covariant Model>  $query
+     */
+    public function constrainForPartner(Builder $query, string $clientId): void
+    {
+        $table = $this->getTable();
+
+        $query
+            ->where("{$table}.client_id", $clientId)
+            ->where("{$table}.client_visible", true)
+            ->whereExists(static fn ($sub) => $sub->selectRaw('1')
+                ->from('clients')
+                ->whereColumn('clients.id', "{$table}.client_id")
+                ->whereNull('clients.deleted_at'));
+    }
+
+    /**
+     * @return BelongsTo<Client, $this>
+     */
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(Client::class);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'start_date' => 'date',
+            'end_date' => 'date',
+            'client_visible' => 'boolean',
+        ];
+    }
+
+    protected static function newFactory(): ProjectFactory
+    {
+        return ProjectFactory::new();
+    }
+}

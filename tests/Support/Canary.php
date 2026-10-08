@@ -57,6 +57,20 @@ final class Canary
         return implode('_', ['CANARY', $label, bin2hex(random_bytes(4))]);
     }
 
+    /**
+     * A project key of six random uppercase letters (the key column accepts 2 to 6).
+     */
+    public static function projectKey(): string
+    {
+        $key = '';
+
+        for ($i = 0; $i < 6; $i++) {
+            $key .= chr(random_int(65, 90));
+        }
+
+        return $key;
+    }
+
     public static function record(string $clientId, string $secret): CanaryRecord
     {
         return CanaryRecord::query()->create(['client_id' => $clientId, 'secret' => $secret]);

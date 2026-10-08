@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Projects\Policies\ProjectPolicy;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
@@ -39,5 +41,9 @@ final class AccessServiceProvider extends ServiceProvider
 
         // Clients are Admin-only (Phase 4 D-06): a Partner is granted nothing.
         Gate::policy(Client::class, AdminOnlyPolicy::class);
+
+        // Projects are the only Partner-readable model of Phase 4: explicit grants
+        // for the own client-visible projects, everything else stays denied.
+        Gate::policy(Project::class, ProjectPolicy::class);
     }
 }

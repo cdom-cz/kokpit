@@ -9,6 +9,7 @@ use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
 use App\Domain\Identity\Models\User;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\Tag;
@@ -34,5 +35,6 @@ final class MorphMap
         'activity' => Activity::class,
         'webhook_call' => WebhookCall::class,
         'client' => Client::class,
+        'project' => Project::class,
     ];
 }

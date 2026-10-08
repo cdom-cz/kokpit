@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Clients\Models;
 
+use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
@@ -13,6 +14,7 @@ use Carbon\CarbonInterface;
 use Database\Factories\ClientFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -80,6 +82,17 @@ final class Client extends KokpitModel implements PartnerIsolated
             'online_payment_enabled' => 'boolean',
             'payment_terms_days' => 'integer',
         ];
+    }
+
+    /**
+     * The only way creation code sets a project's client: `client_id` is not
+     * fillable on Project.
+     *
+     * @return HasMany<Project, $this>
+     */
+    public function projects(): HasMany
+    {
+        return $this->hasMany(Project::class);
     }
 
     protected static function newFactory(): ClientFactory
