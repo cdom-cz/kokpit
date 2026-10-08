@@ -108,8 +108,16 @@ function deployPermissionProblems(array $workflow): array
             $problems[] = "job {$id} must run on ubuntu-24.04";
         }
 
-        if (($job['permissions'] ?? null) !== ['contents' => 'read']) {
-            $problems[] = "job {$id} must have exactly permissions contents: read";
+        // The verify job also reads the check runs of the commit (the CI Passed gate); nothing else is granted.
+        $expected = $id === 'verify' ? ['checks' => 'read', 'contents' => 'read'] : ['contents' => 'read'];
+        $granted = $job['permissions'] ?? null;
+
+        if (is_array($granted)) {
+            ksort($granted);
+        }
+
+        if ($granted !== $expected) {
+            $problems[] = "job {$id} must have exactly the permissions ".json_encode($expected);
         }
     }
 
@@ -250,9 +258,59 @@ function deployVerifyProblems(array $workflow): array
 
     $problems = [];
 
-    foreach (['merge-base --is-ancestor', 'origin/main', 'IS_PRERELEASE', 'REF_NAME', 'v*'] as $needle) {
+    foreach (['merge-base --is-ancestor', 'origin/main', 'IS_PRERELEASE', 'REF_NAME', 'v*', 'GITHUB_REF', 'refs/heads/main', 'refs/tags/v*'] as $needle) {
         if (! str_contains($script, $needle)) {
             $problems[] = "the verify script does not contain {$needle}";
+        }
+    }
+
+    return $problems;
+}
+
+/**
+ * The green-CI gate: a step of the secret-free verify job asks the check runs of GITHUB_SHA through the
+ * preinstalled gh CLI, with the job token passed through env, and refuses unless "CI Passed" succeeded.
+ *
+ * @param  array<string|int, mixed>  $workflow
+ * @return list<string>
+ */
+function deployCiGateProblems(array $workflow): array
+{
+    $jobs = deployJobs($workflow);
+    $problems = [];
+
+    $gates = array_values(array_filter(
+        deploySteps($jobs['verify'] ?? []),
+        fn (array $step): bool => str_contains((string) ($step['run'] ?? ''), 'gh api'),
+    ));
+
+    if (count($gates) !== 1) {
+        $problems[] = 'the verify job must have exactly one step that calls gh api';
+
+        return $problems;
+    }
+
+    $run = (string) $gates[0]['run'];
+
+    foreach (['--paginate', 'check-runs', 'GITHUB_SHA', '"CI Passed"', '.app.slug == "github-actions"', '.status == "completed"', '.conclusion == "success"', '-z "${passed}"', 'exit 1'] as $needle) {
+        if (! str_contains($run, $needle)) {
+            $problems[] = "the CI gate step does not contain {$needle}";
+        }
+    }
+
+    if (($gates[0]['env']['GH_TOKEN'] ?? null) !== '${{ github.token }}') {
+        $problems[] = 'the CI gate step must receive the job token as GH_TOKEN from github.token through its env';
+    }
+
+    foreach ($jobs as $id => $job) {
+        foreach (deploySteps($job) as $index => $step) {
+            if ($step !== $gates[0] && str_contains((string) json_encode($step), 'GH_TOKEN')) {
+                $problems[] = "job {$id} step {$index} receives the job token, only the CI gate step may";
+            }
+        }
+
+        if ($id !== 'verify' && str_contains((string) json_encode($job), 'GH_TOKEN')) {
+            $problems[] = "job {$id} references GH_TOKEN, only the verify job may";
         }
     }
 
@@ -355,6 +413,7 @@ function deployAllProblems(array $workflow): array
         'actions' => deployActionProblems($workflow),
         'environment' => deployEnvironmentProblems($workflow),
         'verify' => deployVerifyProblems($workflow),
+        'ci' => deployCiGateProblems($workflow),
         'install' => deployInstallProblems($workflow),
         'push' => deployPushProblems($workflow),
     ];
@@ -386,6 +445,10 @@ it('deploys only after verify, in the protected production environment, one at a
 
 it('verifies release, tag and ancestry in a secret-free job', function (): void {
     expect(deployVerifyProblems(deployWorkflow()))->toBe([]);
+});
+
+it('requires a successful CI Passed check for the commit with the job token and nothing more', function (): void {
+    expect(deployCiGateProblems(deployWorkflow()))->toBe([]);
 });
 
 it('installs zcli by version against a hard-coded digest', function (): void {
@@ -489,6 +552,51 @@ it('reports every weakening of the workflow', function (): void {
 
             return $w;
         }],
+        'a verify job that can write checks' => ['permissions', function (array $w): array {
+            $w['jobs']['verify']['permissions']['checks'] = 'write';
+
+            return $w;
+        }],
+        'a deploy job that reads checks' => ['permissions', function (array $w): array {
+            $w['jobs']['deploy']['permissions']['checks'] = 'read';
+
+            return $w;
+        }],
+        'a verify script without the ref guard' => ['verify', function (array $w): array {
+            $w['jobs']['verify']['steps'][1]['run'] = str_replace(['refs/heads/main', 'GITHUB_REF'], ['refs/heads/trunk', 'GITHUB_SHA'], $w['jobs']['verify']['steps'][1]['run']);
+
+            return $w;
+        }],
+        'a missing CI gate step' => ['ci', function (array $w): array {
+            unset($w['jobs']['verify']['steps'][2]);
+
+            return $w;
+        }],
+        'a CI gate that accepts any conclusion' => ['ci', function (array $w): array {
+            $w['jobs']['verify']['steps'][2]['run'] = str_replace(' and .conclusion == "success"', '', $w['jobs']['verify']['steps'][2]['run']);
+
+            return $w;
+        }],
+        'a CI gate that trusts any app' => ['ci', function (array $w): array {
+            $w['jobs']['verify']['steps'][2]['run'] = str_replace(' and .app.slug == "github-actions"', '', $w['jobs']['verify']['steps'][2]['run']);
+
+            return $w;
+        }],
+        'a CI gate that ignores an empty result' => ['ci', function (array $w): array {
+            $w['jobs']['verify']['steps'][2]['run'] = str_replace('-z "${passed}"', '-n "${passed}"', $w['jobs']['verify']['steps'][2]['run']);
+
+            return $w;
+        }],
+        'a CI gate with another token' => ['ci', function (array $w): array {
+            $w['jobs']['verify']['steps'][2]['env']['GH_TOKEN'] = '${{ secrets.GITHUB_TOKEN }}';
+
+            return $w;
+        }],
+        'the job token in the deploy job' => ['ci', function (array $w): array {
+            $w['jobs']['deploy']['steps'][0]['env']['GH_TOKEN'] = '${{ github.token }}';
+
+            return $w;
+        }],
         'a malformed digest' => ['install', function (array $w): array {
             $w['jobs']['deploy']['env']['ZCLI_SHA256'] = 'ABC';
 
@@ -512,11 +620,25 @@ it('reports every weakening of the workflow', function (): void {
 });
 
 /**
- * Runs the verify script of the workflow in a throwaway repository.
+ * A check-runs answer of the GitHub API with one run named like the aggregator job.
+ *
+ * @return array<string, mixed>
+ */
+function deployCheckRuns(string $name = 'CI Passed', string $status = 'completed', ?string $conclusion = 'success', string $app = 'github-actions'): array
+{
+    return ['total_count' => 1, 'check_runs' => [['id' => 1, 'name' => $name, 'status' => $status, 'conclusion' => $conclusion, 'app' => ['slug' => $app]]]];
+}
+
+/**
+ * Runs the verify steps of the workflow in a throwaway repository. The gh CLI is a fake that applies the
+ * real --jq filter of the workflow, with the real jq, to a canned check-runs answer, logs its arguments to
+ * the file returned by deployGhLog() and never contacts GitHub. The runner variables the workflow reads
+ * are set explicitly, so the environment this test runs in (which may be a GitHub runner) cannot leak in.
  *
  * @param  array<string, string>  $env
+ * @param  array<string, mixed>|null  $checkRuns  null makes the fake gh fail like an API error
  */
-function runDeployVerifyScript(string $repo, array $env): Process
+function runDeployVerifyScript(string $repo, array $env, ?array $checkRuns = null): Process
 {
     $script = '';
 
@@ -524,10 +646,74 @@ function runDeployVerifyScript(string $repo, array $env): Process
         $script .= (string) ($step['run'] ?? '')."\n";
     }
 
-    $process = new Process(['bash', '-c', $script], $repo, $env + ['GIT_CONFIG_GLOBAL' => '/dev/null', 'GIT_CONFIG_NOSYSTEM' => '1']);
+    $bin = $repo.'-bin';
+    @mkdir($bin);
+    file_put_contents($bin.'/gh', <<<'SH'
+        #!/usr/bin/env bash
+        printf '%s\n' "$*" >> "${FAKE_GH_LOG}"
+        [ -n "${FAKE_GH_FIXTURE}" ] || { echo "HTTP 403: Resource not accessible" >&2; exit 1; }
+        filter=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            --jq) filter="$2"; shift 2 ;;
+            *) shift ;;
+          esac
+        done
+        jq -r "${filter}" "${FAKE_GH_FIXTURE}"
+        SH);
+    chmod($bin.'/gh', 0755);
+
+    $fixture = '';
+
+    if ($checkRuns !== null) {
+        $fixture = $repo.'-check-runs.json';
+        file_put_contents($fixture, (string) json_encode($checkRuns));
+    }
+
+    $ref = ($env['REF_TYPE'] ?? '') === 'tag' ? 'refs/tags/' : 'refs/heads/';
+    $defaults = [
+        'GITHUB_REF' => $ref.($env['REF_NAME'] ?? 'main'),
+        'GITHUB_REPOSITORY' => 'example/kokpit',
+        'GH_TOKEN' => 'fictional-job-token',
+        'PATH' => $bin.':'.(string) getenv('PATH'),
+        'FAKE_GH_LOG' => deployGhLog($repo),
+        'FAKE_GH_FIXTURE' => $fixture,
+        'GIT_CONFIG_GLOBAL' => '/dev/null',
+        'GIT_CONFIG_NOSYSTEM' => '1',
+    ];
+
+    $process = new Process(['bash', '-c', $script], $repo, $env + $defaults);
     $process->run();
 
     return $process;
+}
+
+function deployGhLog(string $repo): string
+{
+    return $repo.'-gh.log';
+}
+
+/**
+ * The arguments of every gh call the fake saw.
+ *
+ * @return list<string>
+ */
+function deployGhCalls(string $repo): array
+{
+    return is_file(deployGhLog($repo)) ? array_values(array_filter(explode("\n", (string) file_get_contents(deployGhLog($repo))))) : [];
+}
+
+function deployJqAvailable(): bool
+{
+    $process = new Process(['jq', '--version']);
+
+    try {
+        $process->run();
+    } catch (Throwable) {
+        return false;
+    }
+
+    return $process->isSuccessful();
 }
 
 /**
@@ -560,21 +746,25 @@ function deployThrowawayRepo(): array
 }
 
 it('lets the verify script pass a stable v* release on a commit of main', function (): void {
+    deployJqAvailable() || test()->markTestSkipped('jq is not installed');
+
     [$repo, $mainSha] = deployThrowawayRepo();
 
     $process = runDeployVerifyScript($repo, [
         'EVENT_NAME' => 'release', 'IS_PRERELEASE' => 'false', 'REF_TYPE' => 'tag', 'REF_NAME' => 'v1.0.0', 'GITHUB_SHA' => $mainSha,
-    ]);
+    ], deployCheckRuns());
 
     expect($process->getExitCode())->toBe(0);
 });
 
 it('lets the verify script pass a manual dispatch on a commit of main', function (): void {
+    deployJqAvailable() || test()->markTestSkipped('jq is not installed');
+
     [$repo, $mainSha] = deployThrowawayRepo();
 
     $process = runDeployVerifyScript($repo, [
         'EVENT_NAME' => 'workflow_dispatch', 'IS_PRERELEASE' => '', 'REF_TYPE' => 'branch', 'REF_NAME' => 'main', 'GITHUB_SHA' => $mainSha,
-    ]);
+    ], deployCheckRuns());
 
     expect($process->getExitCode())->toBe(0);
 });
@@ -607,4 +797,73 @@ it('makes the verify script refuse a commit that is not an ancestor of main', fu
     ]);
 
     expect($process->getExitCode())->not->toBe(0);
+});
+
+it('lets the verify script pass a manual dispatch from a v* tag on a commit of main', function (): void {
+    deployJqAvailable() || test()->markTestSkipped('jq is not installed');
+
+    [$repo, $mainSha] = deployThrowawayRepo();
+
+    $process = runDeployVerifyScript($repo, [
+        'EVENT_NAME' => 'workflow_dispatch', 'IS_PRERELEASE' => '', 'REF_TYPE' => 'tag', 'REF_NAME' => 'v2.1.0', 'GITHUB_SHA' => $mainSha,
+    ], deployCheckRuns());
+
+    expect($process->getExitCode())->toBe(0);
+});
+
+it('makes the verify script refuse a manual dispatch from any ref that is not main or a v* tag', function (string $ref, string $type, string $name): void {
+    [$repo, $mainSha] = deployThrowawayRepo();
+
+    // The commit is an ancestor of main and CI is green, so only the ref can be the reason for the refusal.
+    $process = runDeployVerifyScript($repo, [
+        'EVENT_NAME' => 'workflow_dispatch', 'IS_PRERELEASE' => '', 'REF_TYPE' => $type, 'REF_NAME' => $name, 'GITHUB_REF' => $ref, 'GITHUB_SHA' => $mainSha,
+    ], deployCheckRuns());
+
+    expect($process->getExitCode())->not->toBe(0)
+        ->and($process->getErrorOutput().$process->getOutput())->toContain('Only refs/heads/main and tags matching v* are deployed')
+        ->and(deployGhCalls($repo))->toBe([]);
+})->with([
+    'a feature branch' => ['refs/heads/side', 'branch', 'side'],
+    'a branch that starts like main' => ['refs/heads/main-evil', 'branch', 'main-evil'],
+    'a branch that ends like main' => ['refs/heads/release/main', 'branch', 'release/main'],
+    'a foreign tag' => ['refs/tags/nightly-1', 'tag', 'nightly-1'],
+    'a pull request ref' => ['refs/pull/7/merge', 'branch', '7/merge'],
+    'an empty ref' => ['', 'branch', ''],
+]);
+
+it('makes the verify script refuse a commit without a successful CI Passed check', function (string $label, ?array $checkRuns): void {
+    deployJqAvailable() || test()->markTestSkipped('jq is not installed');
+
+    [$repo, $mainSha] = deployThrowawayRepo();
+
+    $process = runDeployVerifyScript($repo, [
+        'EVENT_NAME' => 'workflow_dispatch', 'IS_PRERELEASE' => '', 'REF_TYPE' => 'branch', 'REF_NAME' => 'main', 'GITHUB_SHA' => $mainSha,
+    ], $checkRuns);
+
+    expect($process->getExitCode())->not->toBe(0, $label);
+})->with([
+    'a failed run' => ['failed', deployCheckRuns(conclusion: 'failure')],
+    'a cancelled run' => ['cancelled', deployCheckRuns(conclusion: 'cancelled')],
+    'a skipped run' => ['skipped', deployCheckRuns(conclusion: 'skipped')],
+    'a run that is still going' => ['in progress', deployCheckRuns(status: 'in_progress', conclusion: null)],
+    'a green run of another name' => ['other name', deployCheckRuns(name: 'Tests (PostgreSQL 18)')],
+    'a green run of another app' => ['other app', deployCheckRuns(app: 'example-app')],
+    'no run at all' => ['none', ['total_count' => 0, 'check_runs' => []]],
+    'an API error' => ['api error', null],
+]);
+
+it('asks the check runs of exactly the deployed commit', function (): void {
+    deployJqAvailable() || test()->markTestSkipped('jq is not installed');
+
+    [$repo, $mainSha] = deployThrowawayRepo();
+
+    runDeployVerifyScript($repo, [
+        'EVENT_NAME' => 'workflow_dispatch', 'IS_PRERELEASE' => '', 'REF_TYPE' => 'branch', 'REF_NAME' => 'main', 'GITHUB_SHA' => $mainSha,
+    ], deployCheckRuns());
+
+    $calls = deployGhCalls($repo);
+
+    expect($calls)->toHaveCount(1)
+        ->and($calls[0])->toContain('api --paginate --jq')
+        ->and($calls[0])->toContain("repos/example/kokpit/commits/{$mainSha}/check-runs");
 });

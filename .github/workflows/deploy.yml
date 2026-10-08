@@ -6,8 +6,10 @@ name: Deploy
 # zizmor (workflow-lint job of hygiene.yml) lint this file as well.
 #
 # Two jobs:
-#   verify  has no environment and no secret. It refuses a prerelease, a release tag outside v*, and a commit
-#           that is not an ancestor of origin/main.
+#   verify  has no environment and no secret. It refuses a prerelease, a release tag outside v*, any ref that is
+#           not refs/heads/main or a v* tag (a manual dispatch from a feature branch or a foreign tag), a commit
+#           that is not an ancestor of origin/main, and a commit without a successful "CI Passed" check. Its token
+#           is the job's own GITHUB_TOKEN with contents: read and checks: read; nothing else.
 #   deploy  runs in the protected "production" environment (required reviewer, see CONTRIBUTING.md). The Zerops
 #           token is an environment secret and the three service ids are environment variables; they exist
 #           only there and reach the steps through env, never through a script.
@@ -29,6 +31,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      checks: read # reads the check runs of the commit to require a successful "CI Passed"; writes nothing
     steps:
       # Full history so origin/main and the ancestry of the commit can be checked.
       - name: Check out full history
@@ -38,7 +41,7 @@ jobs:
           persist-credentials: false
 
       # Event data reaches the script through env only, never through ${{ }} inside the script.
-      - name: Refuse prereleases, foreign tags and commits that are not on main
+      - name: Refuse prereleases, foreign tags, foreign refs and commits that are not on main
         env:
           EVENT_NAME: ${{ github.event_name }}
           IS_PRERELEASE: ${{ github.event.release.prerelease }}
@@ -63,12 +66,38 @@ jobs:
                 ;;
             esac
           fi
+          # Every event, a manual dispatch above all, must run from main itself or from a v* tag. The runner
+          # sets GITHUB_REF; a dispatch from a feature branch or a foreign tag stops here.
+          case "${GITHUB_REF}" in
+            refs/heads/main | refs/tags/v*) ;;
+            *)
+              echo "::error::Only refs/heads/main and tags matching v* are deployed."
+              exit 1
+              ;;
+          esac
           if ! git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null; then
             echo "::error::origin/main is not available in this checkout."
             exit 1
           fi
           if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
             echo "::error::The commit is not an ancestor of main."
+            exit 1
+          fi
+
+      # The check run "CI Passed" is the aggregator job of hygiene.yml and the required status check of the
+      # ruleset on main. Only a completed, successful run of the GitHub Actions app counts, and only the latest
+      # run for the commit (the API default), so a re-run that failed supersedes an earlier green one. The
+      # token is the job token and is visible to this step only; a failing API call refuses the deploy.
+      - name: Require a successful CI Passed check for the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          passed="$(gh api --paginate \
+            --jq '.check_runs[] | select(.name == "CI Passed" and .app.slug == "github-actions" and .status == "completed" and .conclusion == "success") | .id' \
+            "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs?per_page=100")"
+          if [ -z "${passed}" ]; then
+            echo "::error::No successful CI Passed check run exists for this commit."
             exit 1
           fi
 
