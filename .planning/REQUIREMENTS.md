@@ -43,22 +43,22 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 ### Users
 
 - [ ] **US-01**: Roles Admin and Partner behave as specified in the permission matrix of the brief
-- [ ] **US-02**: Admin manages users and creates a client account (Partner) from the client detail with an e-mail invitation
+- [x] **US-02**: Admin manages users and creates a client account (Partner) from the client detail with an e-mail invitation
 
 ### Clients
 
-- [ ] **CL-01**: Admin manages clients with billing data, stage, currency, rate, payment terms, invoice e-mail and language, online-payment flag
-- [ ] **CL-02**: Admin manages multiple contacts per client with primary and billing flags
+- [x] **CL-01**: Admin manages clients with billing data, stage, currency, rate, payment terms, invoice e-mail and language, online-payment flag
+- [x] **CL-02**: Admin manages multiple contacts per client with primary and billing flags
 - [ ] **CL-03**: Client detail shows projects, unbilled time and amount, invoices, documents and client accounts
-- [ ] **CL-04**: Admin loads client data from ARES by company ID via a synchronous button in the form; errors show next to the field and leave the form unchanged
-- [ ] **CL-05**: Clients are archived (soft delete) rather than hard-deleted; tags are available on clients
+- [x] **CL-04**: Admin loads client data from ARES by company ID via a synchronous button in the form; errors show next to the field and leave the form unchanged
+- [x] **CL-05**: Clients are archived (soft delete) rather than hard-deleted; tags are available on clients
 
 ### Projects
 
-- [ ] **PR-01**: Admin manages projects (name, status, description, dates, priority, files, tags)
-- [ ] **PR-02**: Each project has a unique 2-6 letter uppercase key suggested from the name; the key is frozen after the first task
-- [ ] **PR-03**: Projects have billing type, hourly rate, fixed price and time estimate; rates and prices live where Partner cannot read them
-- [ ] **PR-04**: Projects have a client-visibility flag controlling Partner access
+- [x] **PR-01**: Admin manages projects (name, status, description, dates, priority, files, tags)
+- [x] **PR-02**: Each project has a unique 2-6 letter uppercase key suggested from the name; the key is frozen after the first task
+- [x] **PR-03**: Projects have billing type, hourly rate, fixed price and time estimate; rates and prices live where Partner cannot read them
+- [x] **PR-04**: Projects have a client-visibility flag controlling Partner access
 - [ ] **PR-05**: Project detail shows tasks, estimate vs actual, billed vs unbilled (Admin only)
 
 ### Tasks
@@ -225,16 +225,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FND-18 | Phase 2 | Complete |
 | FND-19 | Phase 3 | Complete |
 | US-01 | Phase 12 | Pending |
-| US-02 | Phase 4 | Pending |
-| CL-01 | Phase 4 | Pending |
-| CL-02 | Phase 4 | Pending |
+| US-02 | Phase 4 | Complete |
+| CL-01 | Phase 4 | Complete |
+| CL-02 | Phase 4 | Complete |
 | CL-03 | Phase 10 | Pending |
-| CL-04 | Phase 4 | Pending |
-| CL-05 | Phase 4 | Pending |
-| PR-01 | Phase 4 | Pending |
-| PR-02 | Phase 4 | Pending |
-| PR-03 | Phase 4 | Pending |
-| PR-04 | Phase 4 | Pending |
+| CL-04 | Phase 4 | Complete |
+| CL-05 | Phase 4 | Complete |
+| PR-01 | Phase 4 | Complete |
+| PR-02 | Phase 4 | Complete |
+| PR-03 | Phase 4 | Complete |
+| PR-04 | Phase 4 | Complete |
 | PR-05 | Phase 6 | Pending |
 | TA-01 | Phase 5 | Pending |
 | TA-02 | Phase 5 | Pending |
