@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Tag;
@@ -165,4 +166,98 @@ it('keeps the Tag policy Admin-only so a Partner has no tag screen', function ()
     $this->actingAs(Canary::admin());
 
     expect(Gate::allows('viewAny', Tag::class))->toBeTrue();
+});
+
+it('hides a project-type tag attached only to a hidden project from a Partner', function (): void {
+    $hidden = tagTestProject($this->clientA, ['name' => Canary::canary('hidden_a'), 'client_visible' => false]);
+    $hiddenOnly = tagTestAttach($hidden, 'hidden_only_tag');
+    $own = tagTestAttach($this->projectA, 'own_tag');
+
+    $this->actingAs(Canary::partnerFor($this->clientA));
+
+    expect(visibleTagNames())->toBe([$own])
+        ->and(visibleTagNames())->not->toContain($hiddenOnly);
+
+    $this->actingAs(Canary::admin());
+
+    expect(visibleTagNames())->toContain($hiddenOnly);
+});
+
+it('shows a Partner a tag shared by a hidden and a visible project once, through the visible one', function (): void {
+    $hidden = tagTestProject($this->clientA, ['name' => Canary::canary('hidden_a'), 'client_visible' => false]);
+    $shared = tagTestAttach($hidden, 'shared_tag');
+    app(PartnerContext::class)->runAsSystem(fn () => $this->projectA->attachTag($shared, TagType::Project->value));
+
+    $this->actingAs(Canary::partnerFor($this->clientA));
+
+    expect(visibleTagNames())->toBe([$shared]);
+});
+
+it('hides a project-type tag attached only to an archived project from a Partner and from the project tags', function (): void {
+    $archived = tagTestProject($this->clientA, ['name' => Canary::canary('archived_a')]);
+    $archivedOnly = tagTestAttach($archived, 'archived_only_tag');
+    app(PartnerContext::class)->runAsSystem(static fn () => $archived->delete());
+
+    $this->actingAs(Canary::partnerFor($this->clientA));
+
+    expect(visibleTagNames())->toBe([]);
+
+    $this->actingAs(Canary::admin());
+
+    expect(visibleTagNames())->toBe([$archivedOnly]);
+});
+
+it('hides the tags of every project of an archived client from a Partner', function (): void {
+    tagTestAttach($this->projectA, 'own_tag');
+
+    $this->actingAs(Canary::partnerFor($this->clientA));
+    expect(visibleTagNames())->toHaveCount(1);
+
+    app(PartnerContext::class)->runAsSystem(fn () => Client::query()->whereKey($this->clientA)->firstOrFail()->delete());
+
+    expect(visibleTagNames())->toBe([]);
+});
+
+it('keeps the taggables rows when a project is archived and shows the tags again after the restore', function (): void {
+    $name = tagTestAttach($this->projectA, 'own_tag');
+    $second = tagTestAttach($this->projectA, 'second_tag');
+    $count = static fn (): int => DB::table('taggables')->where('taggable_type', 'project')->where('taggable_id', test()->projectA->id)->count();
+
+    app(PartnerContext::class)->runAsSystem(fn () => $this->projectA->delete());
+
+    expect($count())->toBe(2);
+
+    $this->actingAs(Canary::partnerFor($this->clientA));
+    expect(visibleTagNames())->toBe([]);
+
+    $this->actingAs(Canary::admin());
+    $archived = Project::withTrashed()->findOrFail($this->projectA->id);
+    expect($archived->tags->pluck('name')->sort()->values()->all())->toBe(collect([$name, $second])->sort()->values()->all());
+
+    app(PartnerContext::class)->runAsSystem(fn () => Project::withTrashed()->findOrFail($this->projectA->id)->restore());
+
+    expect($count())->toBe(2)
+        ->and(Project::query()->findOrFail($this->projectA->id)->tags->pluck('name')->sort()->values()->all())->toBe(collect([$name, $second])->sort()->values()->all());
+
+    $this->actingAs(Canary::partnerFor($this->clientA));
+    expect(visibleTagNames())->toBe(collect([$name, $second])->sort()->values()->all());
+});
+
+it('detaches the tags only when a project is force deleted', function (): void {
+    tagTestAttach($this->projectA, 'own_tag');
+    $count = static fn (): int => DB::table('taggables')->where('taggable_type', 'project')->where('taggable_id', test()->projectA->id)->count();
+
+    app(PartnerContext::class)->runAsSystem(fn () => $this->projectA->delete());
+    expect($count())->toBe(1);
+
+    app(PartnerContext::class)->runAsSystem(fn () => Project::withTrashed()->findOrFail($this->projectA->id)->forceDelete());
+    expect($count())->toBe(0);
+});
+
+it('detaches the tags when a project that is not archived is force deleted', function (): void {
+    tagTestAttach($this->projectA, 'own_tag');
+
+    app(PartnerContext::class)->runAsSystem(fn () => $this->projectA->forceDelete());
+
+    expect(DB::table('taggables')->where('taggable_type', 'project')->where('taggable_id', $this->projectA->id)->count())->toBe(0);
 });

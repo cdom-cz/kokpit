@@ -10,6 +10,7 @@ use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Shared\Auth\IsolatesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
+use ArrayAccess;
 use Carbon\CarbonInterface;
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -61,7 +62,11 @@ use Spatie\Tags\HasTags;
 final class Project extends KokpitModel implements PartnerIsolated
 {
     /** @use HasFactory<ProjectFactory> */
-    use HasFactory, HasTags, IsolatesPartners, SoftDeletes;
+    use HasFactory, IsolatesPartners, SoftDeletes;
+
+    use HasTags {
+        detachTags as private detachTagsFromTrait;
+    }
 
     /**
      * Own client AND client-visible AND the client is not archived. The client
@@ -82,6 +87,23 @@ final class Project extends KokpitModel implements PartnerIsolated
                 ->from('clients')
                 ->whereColumn('clients.id', "{$table}.client_id")
                 ->whereNull('clients.deleted_at'));
+    }
+
+    /**
+     * Keeps the tags of an archived project. The tags package calls this from
+     * its `deleted` listener, which also fires for a soft delete, so an archive
+     * would otherwise detach every tag and a restore would not bring them back.
+     * Only a force delete detaches them.
+     *
+     * @param  array<mixed>|ArrayAccess<int|string, mixed>  $tags
+     */
+    public function detachTags(array|ArrayAccess $tags, ?string $type = null): static
+    {
+        if ($this->trashed() && ! $this->isForceDeleting()) {
+            return $this;
+        }
+
+        return $this->detachTagsFromTrait($tags, $type);
     }
 
     /**
