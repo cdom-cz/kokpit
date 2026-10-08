@@ -6,9 +6,11 @@ use App\Domain\Audit\ActivitySource;
 use App\Domain\Shared\Models\Activity;
 use App\Filament\Resources\ActivityResource;
 use App\Filament\Resources\ActivityResource\Pages\ListActivities;
+use App\Filament\Support\ActivityPresenter;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\Probes\ActivityProbe;
@@ -128,4 +130,175 @@ it('does not show the navigation entry to a Partner', function (): void {
     $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]))->get('/admin')
         ->assertOk()
         ->assertDontSee('Historie změn');
+});
+
+/**
+ * Writes one activity row directly. Rows built this way carry exactly the
+ * values a test needs, so a filter or an order is proven without the model
+ * events that normally write them.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function activityViewsRow(array $attributes = []): Activity
+{
+    return Activity::query()->forceCreate(array_merge([
+        'log_name' => ActivityProbe::ALIAS,
+        'description' => 'created',
+        'event' => 'created',
+        'subject_type' => ActivityProbe::ALIAS,
+        'subject_id' => (string) Str::uuid7(),
+        'source' => 'web',
+        'attribute_changes' => ['attributes' => ['title' => 'Row title']],
+    ], $attributes));
+}
+
+/**
+ * An activity row as the presenter reads it, without touching the database.
+ *
+ * @param  array<string, mixed>  $changes
+ */
+function activityViewsChanges(array $changes, string $subjectType = ActivityProbe::ALIAS): string
+{
+    $activity = new Activity;
+    $activity->forceFill(['subject_type' => $subjectType, 'attribute_changes' => $changes]);
+
+    return ActivityPresenter::changes($activity);
+}
+
+it('filters the overview by source', function (): void {
+    $this->actingAs(Canary::admin());
+    $web = activityViewsRow(['source' => 'web']);
+    $console = activityViewsRow(['source' => 'console']);
+    $job = activityViewsRow(['source' => 'job']);
+    $webhook = activityViewsRow(['source' => 'webhook']);
+
+    Livewire::test(ListActivities::class)
+        ->filterTable('source', 'job')
+        ->assertCanSeeTableRecords([$job])
+        ->assertCanNotSeeTableRecords([$web, $console, $webhook]);
+});
+
+it('filters the overview by event', function (): void {
+    $this->actingAs(Canary::admin());
+    $created = activityViewsRow(['event' => 'created']);
+    $updated = activityViewsRow(['event' => 'updated']);
+    $deleted = activityViewsRow(['event' => 'deleted']);
+
+    Livewire::test(ListActivities::class)
+        ->filterTable('event', 'deleted')
+        ->assertCanSeeTableRecords([$deleted])
+        ->assertCanNotSeeTableRecords([$created, $updated]);
+});
+
+it('filters the overview by user, including the no user choice', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $byAdmin = activityViewsRow(['causer_type' => 'user', 'causer_id' => $admin->getKey()]);
+    $byNobody = activityViewsRow(['source' => 'console']);
+
+    Livewire::test(ListActivities::class)
+        ->filterTable('causer', 'none')
+        ->assertCanSeeTableRecords([$byNobody])
+        ->assertCanNotSeeTableRecords([$byAdmin]);
+
+    Livewire::test(ListActivities::class)
+        ->filterTable('causer', $admin->getKey())
+        ->assertCanSeeTableRecords([$byAdmin])
+        ->assertCanNotSeeTableRecords([$byNobody]);
+});
+
+it('offers the user filter every user and the no user choice', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+
+    $options = Livewire::test(ListActivities::class)->instance()->getTable()->getFilter('causer')?->getOptions();
+
+    expect($options)->toHaveKey('none')
+        ->and($options)->toHaveKey($admin->getKey());
+});
+
+it('filters the overview by subject type and offers the merged probe alias only while it is merged', function (): void {
+    $this->actingAs(Canary::admin());
+    $probeRow = activityViewsRow(['subject_type' => ActivityProbe::ALIAS]);
+    $otherRow = activityViewsRow(['subject_type' => 'user']);
+
+    $list = Livewire::test(ListActivities::class);
+
+    expect($list->instance()->getTable()->getFilter('subject_type')?->getOptions())->toHaveKey(ActivityProbe::ALIAS);
+
+    $list->filterTable('subject_type', ActivityProbe::ALIAS)
+        ->assertCanSeeTableRecords([$probeRow])
+        ->assertCanNotSeeTableRecords([$otherRow]);
+
+    ActivityProbe::restoreMorphMap();
+
+    expect(Livewire::test(ListActivities::class)->instance()->getTable()->getFilter('subject_type')?->getOptions())
+        ->not->toHaveKey(ActivityProbe::ALIAS);
+});
+
+it('finds a row by its Europe/Prague day, not by its UTC day', function (): void {
+    $this->actingAs(Canary::admin());
+    // 23:30 UTC on the 8th is 01:30 on the 9th in Prague (summer time); 21:59 UTC on the 8th is still the 8th.
+    $nextPragueDay = activityViewsRow(['created_at' => '2026-10-08 23:30:00+00']);
+    $samePragueDay = activityViewsRow(['created_at' => '2026-10-08 21:59:59+00']);
+
+    Livewire::test(ListActivities::class)
+        ->filterTable('created_at', ['created_from' => '2026-10-09', 'created_until' => '2026-10-09'])
+        ->assertCanSeeTableRecords([$nextPragueDay])
+        ->assertCanNotSeeTableRecords([$samePragueDay]);
+
+    Livewire::test(ListActivities::class)
+        ->filterTable('created_at', ['created_from' => '2026-10-08', 'created_until' => '2026-10-08'])
+        ->assertCanSeeTableRecords([$samePragueDay])
+        ->assertCanNotSeeTableRecords([$nextPragueDay]);
+});
+
+it('lists rows with the same time by id descending, identically across two renders', function (): void {
+    $this->actingAs(Canary::admin());
+    $first = activityViewsRow(['id' => '00000000-0000-7000-8000-000000000001', 'created_at' => '2026-10-08 10:00:00+00']);
+    $second = activityViewsRow(['id' => '00000000-0000-7000-8000-000000000002', 'created_at' => '2026-10-08 10:00:00+00']);
+    $newest = activityViewsRow(['id' => '00000000-0000-7000-8000-000000000000', 'created_at' => '2026-10-08 11:00:00+00']);
+
+    foreach ([1, 2] as $render) {
+        Livewire::test(ListActivities::class)
+            ->assertCanSeeTableRecords([$newest, $second, $first], inOrder: true);
+    }
+});
+
+it('shows a boolean change in Czech words and an empty value as a dash', function (): void {
+    expect(activityViewsChanges(['attributes' => ['is_open' => true], 'old' => ['is_open' => false]]))->toBe('is_open: ne -> ano')
+        ->and(activityViewsChanges(['attributes' => ['note' => 'filled'], 'old' => ['note' => null]]))->toBe('note: — -> filled')
+        ->and(activityViewsChanges(['attributes' => ['note' => null], 'old' => ['note' => 'filled']]))->toBe('note: filled -> —');
+});
+
+it('cuts a long value at 80 characters with an ellipsis', function (): void {
+    $long = str_repeat('a', 200);
+
+    $text = activityViewsChanges(['attributes' => ['note' => $long], 'old' => ['note' => 'short']]);
+
+    expect($text)->toBe('note: short -> '.str_repeat('a', 80).'…');
+});
+
+it('uses a translated attribute name when one exists and the raw name otherwise', function (): void {
+    // Load the group first: adding a line to an unloaded group would hide the rest of the file.
+    trans('kokpit.activity.yes');
+    app('translator')->addLines(['kokpit.activity.attributes.'.ActivityProbe::ALIAS.'.title' => 'Název'], 'cs');
+
+    expect(activityViewsChanges(['attributes' => ['title' => 'New'], 'old' => ['title' => 'Old']]))->toBe('Název: Old -> New')
+        ->and(activityViewsChanges(['attributes' => ['status' => 'done'], 'old' => ['status' => 'open']]))->toBe('status: open -> done')
+        ->and(activityViewsChanges(['attributes' => ['title' => 'New'], 'old' => ['title' => 'Old']], 'task'))->toBe('title: Old -> New');
+});
+
+it('never renders the properties payload of a row', function (): void {
+    $this->actingAs(Canary::admin());
+    $canary = Canary::canary('properties');
+    $row = activityViewsRow([
+        'properties' => ['note' => $canary, 'nested' => ['deep' => $canary]],
+        'attribute_changes' => ['attributes' => ['title' => 'Visible title']],
+    ]);
+
+    Livewire::test(ListActivities::class)
+        ->assertCanSeeTableRecords([$row])
+        ->assertSee('Visible title')
+        ->assertDontSee($canary);
 });
