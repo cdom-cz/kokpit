@@ -26,16 +26,16 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **FND-04**: Money is stored as integer minor units plus ISO 4217 currency, through a single value object with one documented rounding point
 - [x] **FND-05**: One sequence allocator provides gap-free, duplicate-free numbers inside the caller's transaction, proven under real parallel-process tests on PostgreSQL
 - [x] **FND-06**: Roles Admin and Partner via permissions package; Policies and global query scopes enforce access (default-deny for Partner), not only UI hiding
-- [ ] **FND-07**: Typed settings hold company/supplier data, bank accounts per currency, VAT mode, default rate and currency, payment terms, numbering patterns, online-payment toggle
-- [ ] **FND-08**: Activity log with an explicit attribute allowlist; changes to tasks, projects, invoices and time entries are recorded
-- [ ] **FND-09**: Queue (Redis driver) worker and scheduler run; jobs share a base with retries, backoff, idempotence guidance and visible failure (failed jobs plus Admin alert not dependent on the queue)
-- [ ] **FND-10**: Admin health/System page shows failed jobs, oldest pending job, scheduler heartbeat, last rate date, unprocessed webhooks and unsent invoice e-mails
+- [x] **FND-07**: Typed settings hold company/supplier data, bank accounts per currency, VAT mode, default rate and currency, payment terms, numbering patterns, online-payment toggle
+- [x] **FND-08**: Activity log with an explicit attribute allowlist; changes to tasks, projects, invoices and time entries are recorded
+- [x] **FND-09**: Queue (Redis driver) worker and scheduler run; jobs share a base with retries, backoff, idempotence guidance and visible failure (failed jobs plus Admin alert not dependent on the queue)
+- [x] **FND-10**: Admin health/System page shows failed jobs, oldest pending job, scheduler heartbeat, last rate date, unprocessed webhooks and unsent invoice e-mails
 - [x] **FND-11**: All user-facing text is Czech via `lang/cs` (incl. Filament and validation translations, enum labels); default locale `cs`, Czech date/number/currency formats
 - [x] **FND-12**: DB constraints and immutability triggers pattern (FK, unique/partial indexes, CHECK) with a raw-SQL test helper
 - [x] **FND-13**: CI runs tests on PostgreSQL, static analysis, formatting, secret scan and a dependency licence allowlist (AGPL-compatible only)
 - [x] **FND-14**: `LICENSE` AGPL-3.0 with matching `composer.json` license, README, SECURITY.md, CONTRIBUTING.md and `.env.example` kept in sync
 - [x] **FND-15**: `zerops.yml` describes build, deploy, worker, scheduler and migrations without secrets; deploy workflow runs only on release publish or manual dispatch in a protected `production` environment with all hardening rules from the brief; manual GitHub settings checklist documented
-- [ ] **FND-16**: S3-compatible private storage (RustFS in development; any S3-compatible provider in production) configured by environment only, path-style capable, with a smoke test of upload and temporary URL
+- [x] **FND-16**: S3-compatible private storage (RustFS in development; any S3-compatible provider in production) configured by environment only, path-style capable, with a smoke test of upload and temporary URL
 - [x] **FND-17**: Admin account is created by an install command (no default password); Admin two-factor authentication is available
 - [x] **FND-18**: Partner isolation test harness (two fictional clients with canary strings) exists from Foundation and grows each phase; a registry test fails if any Resource, Page, Widget or relation manager lacks an explicit access rule
 - [x] **FND-19**: Spikes resolve PDF engine (multi-page report with Czech diacritics and QR), kanban library vs custom board (queue driver Redis, PostgreSQL 18 and RustFS are already decided)
@@ -210,16 +210,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FND-04 | Phase 2 | Complete |
 | FND-05 | Phase 2 | Complete |
 | FND-06 | Phase 2 | Complete |
-| FND-07 | Phase 3 | Pending |
-| FND-08 | Phase 3 | Pending |
-| FND-09 | Phase 3 | Pending |
-| FND-10 | Phase 3 | Pending |
+| FND-07 | Phase 3 | Complete |
+| FND-08 | Phase 3 | Complete |
+| FND-09 | Phase 3 | Complete |
+| FND-10 | Phase 3 | Complete |
 | FND-11 | Phase 2 | Complete |
 | FND-12 | Phase 2 | Complete |
 | FND-13 | Phase 2 | Complete |
 | FND-14 | Phase 2 | Complete |
 | FND-15 | Phase 3 | Complete |
-| FND-16 | Phase 3 | Pending |
+| FND-16 | Phase 3 | Complete |
 | FND-17 | Phase 2 | Complete |
 | FND-20 | Phase 2 | Complete |
 | FND-18 | Phase 2 | Complete |
