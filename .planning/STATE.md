@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: Clients and Projects
 status: executing
-stopped_at: Completed 04-08-PLAN.md
-last_updated: "2026-10-08T13:45:45.592Z"
+stopped_at: Completed 04-09-PLAN.md
+last_updated: "2026-10-08T13:56:42.196Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 4 execution started
-state_head: 2771c19c84efa24518b64932ec8a372aff8fd5f8
+state_head: f5e9c93d4556a620f3f63622932d12264ff3ddcb
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 64
-  completed_plans: 51
+  completed_plans: 52
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 4 (Clients and Projects) — EXECUTING
-Plan: 9 of 21
+Plan: 10 of 21
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 4 execution started
 
@@ -109,6 +109,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 04 P06 | 6 min | 2 tasks | 13 files |
 | Phase 04 P07 | 11 min | 2 tasks | 12 files |
 | Phase 04 P08 | 14 min | 2 tasks | 13 files |
+| Phase 04 P09 | 10 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -215,6 +216,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-06: CreateProject refuses negative amounts and a fixed-price project without a price as field errors itself; unique key violation is translated outside the transaction; errors keyed by plain data key — Money::fromMajor accepts a minus sign, and a savepoint must roll the insert back before the error is translated; plan 04-08 maps keys to form state paths
 - [Phase 04]: 04-07: estimate capped at the integer column range inside EstimateHours; UpdateProject treats a null client_id as absent; create and update Actions share ProjectInput; CreateProject returns a refreshed model — An oversize estimate must be a field error not a database exception; the activity package compares in-memory old values with the fresh row, so database defaults must be loaded or they log as changes from null
 - [Phase 04]: 04-08: ProjectKeySuggester is a static pure service; clearing a typed key resumes the suggestion; Select over an enum returns the enum case so ProjectResource::actionData normalises it — The suggester must not touch models or the database; the Admin should be able to go back to the suggestion; Action data are plain strings
+- [Phase 04]: 04-09: ClientInput is the single validator for CreateClient and UpdateClient; the form rate rule calls the same ClientInput::rate (Money::fromMajor, no rounding)
+- [Phase 04]: 04-09: Admin-only resource with a deny-all Partner scope refuses in the edit page mount() with 403 (the scope would answer 404 first; withoutGlobalScopes() is a banned escape hatch)
 
 ### Pending Todos
 
@@ -253,6 +256,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T13:45:45.493Z
-Stopped at: Completed 04-08-PLAN.md
+Last session: 2026-10-08T13:56:42.059Z
+Stopped at: Completed 04-09-PLAN.md
 Resume file: None
