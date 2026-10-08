@@ -136,3 +136,48 @@ it('gives every job a pinned runner, least-privilege token and SHA-pinned action
         }
     }
 });
+
+/**
+ * The AWS_* values of .env.example, which the tests job boots from.
+ *
+ * @return array<string, string>
+ */
+function ciEnvExample(): array
+{
+    $parsed = Dotenv\Dotenv::parse((string) file_get_contents(base_path('.env.example')));
+
+    return array_map(static fn (?string $value): string => (string) $value, $parsed);
+}
+
+it('runs a RustFS service in the tests job on the image of the DDEV project', function () {
+    $ddev = ciParseYaml('.ddev/docker-compose.rustfs.yaml');
+    $ddevImage = (string) ($ddev['services']['rustfs']['image'] ?? '');
+    $service = ciJobs()['tests']['services']['rustfs'] ?? [];
+
+    expect($ddevImage)->toMatch('~^rustfs/rustfs:\d+\.\d+\.\d+$~')
+        ->and((string) ($service['image'] ?? ''))->toBe($ddevImage)
+        ->and($service['ports'] ?? [])->toContain('9000:9000')
+        ->and((string) ($service['options'] ?? ''))->toContain('curl --fail http://localhost:9000/health')
+        ->and((string) ($service['env']['RUSTFS_ADDRESS'] ?? ''))->toBe((string) ($ddev['services']['rustfs']['environment']['RUSTFS_ADDRESS'] ?? 'missing'))
+        ->and((string) ($service['env']['RUSTFS_VOLUMES'] ?? ''))->toBe((string) ($ddev['services']['rustfs']['environment']['RUSTFS_VOLUMES'] ?? 'missing'));
+});
+
+it('gives the RustFS service the key pair of .env.example and points the job at it', function () {
+    $env = ciEnvExample();
+    $job = ciJobs()['tests'] ?? [];
+    $service = $job['services']['rustfs']['env'] ?? [];
+    $ddev = ciParseYaml('.ddev/docker-compose.rustfs.yaml')['services']['rustfs']['environment'] ?? [];
+
+    expect((string) ($service['RUSTFS_ACCESS_KEY'] ?? ''))->not->toBe('')
+        ->and($service['RUSTFS_ACCESS_KEY'])->toBe($env['AWS_ACCESS_KEY_ID'])
+        ->and($service['RUSTFS_SECRET_KEY'] ?? null)->toBe($env['AWS_SECRET_ACCESS_KEY'])
+        ->and($ddev['RUSTFS_ACCESS_KEY'] ?? null)->toBe($env['AWS_ACCESS_KEY_ID'])
+        ->and($ddev['RUSTFS_SECRET_KEY'] ?? null)->toBe($env['AWS_SECRET_ACCESS_KEY'])
+        ->and($job['env']['AWS_ENDPOINT'] ?? null)->toBe('http://127.0.0.1:9000')
+        ->and($env['AWS_USE_PATH_STYLE_ENDPOINT'])->toBe('true');
+});
+
+it('keeps the aggregator needs list unchanged because RustFS lives inside the tests job', function () {
+    expect(ciJobs()['ci-passed']['needs'] ?? null)
+        ->toBe(['scan', 'workflow-lint', 'tests', 'static-analysis', 'dependencies']);
+});

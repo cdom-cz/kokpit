@@ -35,6 +35,7 @@ final class S3TestDisk
 
         try {
             $client->headBucket(['Bucket' => $bucket]);
+            self::purge('healthcheck/');
 
             return;
         } catch (AwsException $e) {
@@ -47,6 +48,40 @@ final class S3TestDisk
             $client->createBucket(['Bucket' => $bucket]);
         } catch (AwsException $e) {
             Assert::fail(self::unreachable($host, $e));
+        }
+    }
+
+    /**
+     * Lets anyone read the objects of the bucket without a signature, which is
+     * the misconfiguration the storage check has to catch.
+     */
+    public static function makePublic(string $bucket): void
+    {
+        self::client()->putBucketPolicy([
+            'Bucket' => $bucket,
+            'Policy' => (string) json_encode([
+                'Version' => '2012-10-17',
+                'Statement' => [[
+                    'Effect' => 'Allow',
+                    'Principal' => ['AWS' => ['*']],
+                    'Action' => ['s3:GetObject'],
+                    'Resource' => ['arn:aws:s3:::'.$bucket.'/*'],
+                ]],
+            ]),
+        ]);
+    }
+
+    /**
+     * Removes what an earlier, interrupted run may have left below a prefix, so
+     * "nothing is left behind" is asserted against a known starting point.
+     */
+    private static function purge(string $prefix): void
+    {
+        foreach (self::objects($prefix) as $key) {
+            self::client()->deleteObject([
+                'Bucket' => (string) config('filesystems.disks.s3.bucket'),
+                'Key' => $key,
+            ]);
         }
     }
 
