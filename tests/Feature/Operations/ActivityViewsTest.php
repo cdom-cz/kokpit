@@ -8,11 +8,19 @@ use App\Filament\Resources\ActivityResource;
 use App\Filament\Resources\ActivityResource\Pages\ListActivities;
 use App\Filament\Support\ActivityPresenter;
 use Filament\Facades\Filament;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use Livewire\Component;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
+use Tests\Support\Filament\Fixtures\MountProbeWidget;
+use Tests\Support\Filament\Fixtures\ProbeActivityHistoryRelationManager;
+use Tests\Support\Filament\Fixtures\VisibleOverrideHistoryRelationManager;
+use Tests\Support\Filament\Fixtures\VisibleOverrideWidget;
 use Tests\Support\Probes\ActivityProbe;
 use Tests\Support\Probes\ActivityProbeJob;
 
@@ -301,4 +309,158 @@ it('never renders the properties payload of a row', function (): void {
         ->assertCanSeeTableRecords([$row])
         ->assertSee('Visible title')
         ->assertDontSee($canary);
+});
+
+/**
+ * Mounts a history relation manager for the owner record the way a resource
+ * page does.
+ *
+ * @param  class-string<Component>  $manager
+ */
+function activityViewsMountHistory(string $manager, ActivityProbe $owner): Testable
+{
+    return Livewire::test($manager, ['ownerRecord' => $owner, 'pageClass' => ListActivities::class]);
+}
+
+/**
+ * The users of the refusal matrix: every state that is not the Admin.
+ *
+ * @return array<string, Closure(): Authenticatable>
+ */
+function activityViewsRefusedUsers(): array
+{
+    return [
+        'partner with a client' => fn () => Canary::partnerFor(Canary::twoClients()[0]),
+        'partner without a client' => fn () => Canary::partnerFor(null),
+        'user without a role' => fn () => Canary::userWithoutRole(null),
+    ];
+}
+
+it('lists only the history of its own record, newest first, with no actions', function (): void {
+    $this->actingAs(Canary::admin());
+    $one = ActivityProbe::query()->create(['title' => 'Probe one', 'status' => 'open']);
+    $two = ActivityProbe::query()->create(['title' => 'Probe two', 'status' => 'open']);
+    $this->travel(1)->minutes();
+    $one->update(['status' => 'done']);
+
+    $oneRows = Activity::query()->where('subject_id', $one->getKey())->orderByDesc('created_at')->orderByDesc('id')->get();
+    $twoRows = Activity::query()->where('subject_id', $two->getKey())->get();
+
+    expect($oneRows)->toHaveCount(2)
+        ->and($twoRows)->toHaveCount(1);
+
+    $component = activityViewsMountHistory(ProbeActivityHistoryRelationManager::class, $one)
+        ->assertOk()
+        ->assertCanSeeTableRecords($oneRows, inOrder: true)
+        ->assertCanNotSeeTableRecords($twoRows)
+        ->assertSee('status: open -> done');
+
+    $table = $component->instance()->getTable();
+
+    expect($table->getHeaderActions())->toBe([])
+        ->and($table->getRecordActions())->toBe([])
+        ->and($table->getBulkActions())->toBe([])
+        ->and($component->instance()->isReadOnly())->toBeTrue();
+});
+
+it('does not repeat the subject column in the history of one record', function (): void {
+    $this->actingAs(Canary::admin());
+    $probe = ActivityProbe::query()->create(['title' => 'Probe one', 'status' => 'open']);
+
+    $table = activityViewsMountHistory(ProbeActivityHistoryRelationManager::class, $probe)->instance()->getTable();
+
+    expect(array_keys($table->getColumns()))->not->toContain('subject_type')
+        ->and(array_keys(Livewire::test(ListActivities::class)->instance()->getTable()->getColumns()))->toContain('subject_type');
+});
+
+it('refuses a Partner before the history relation manager loads a row or runs mount()', function (): void {
+    $this->actingAs(Canary::admin());
+    $probe = ActivityProbe::query()->create(['title' => 'Probe one', 'status' => 'open']);
+    auth()->logout();
+
+    foreach (activityViewsRefusedUsers() as $state => $make) {
+        ProbeActivityHistoryRelationManager::$mounted = false;
+        $this->actingAs($make());
+
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        activityViewsMountHistory(ProbeActivityHistoryRelationManager::class, $probe)->assertForbidden();
+
+        expect(array_filter($queries, static fn (string $sql): bool => str_contains($sql, 'activity_log')))->toBe([], $state)
+            ->and(ProbeActivityHistoryRelationManager::$mounted)->toBeFalse($state);
+    }
+});
+
+it('refuses a Partner at boot even when the relation manager visibility check was overridden to pass', function (): void {
+    $this->actingAs(Canary::admin());
+    $probe = ActivityProbe::query()->create(['title' => 'Probe one', 'status' => 'open']);
+    auth()->logout();
+
+    foreach (activityViewsRefusedUsers() as $state => $make) {
+        VisibleOverrideHistoryRelationManager::$mounted = false;
+        $this->actingAs($make());
+
+        activityViewsMountHistory(VisibleOverrideHistoryRelationManager::class, $probe)->assertForbidden();
+
+        expect(VisibleOverrideHistoryRelationManager::$mounted)->toBeFalse($state);
+    }
+
+    VisibleOverrideHistoryRelationManager::$mounted = false;
+    $this->actingAs(Canary::admin());
+
+    activityViewsMountHistory(VisibleOverrideHistoryRelationManager::class, $probe)->assertOk();
+
+    expect(VisibleOverrideHistoryRelationManager::$mounted)->toBeTrue();
+});
+
+it('refuses a Partner before the widget mount() runs and renders the widget for an Admin', function (): void {
+    foreach (activityViewsRefusedUsers() as $state => $make) {
+        MountProbeWidget::$mounted = false;
+        $this->actingAs($make());
+
+        Livewire::test(MountProbeWidget::class)->assertForbidden();
+
+        expect(MountProbeWidget::$mounted)->toBeFalse($state);
+    }
+
+    MountProbeWidget::$mounted = false;
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(MountProbeWidget::class)->assertOk();
+
+    expect(MountProbeWidget::$mounted)->toBeTrue();
+});
+
+it('refuses a Partner at boot even when the widget visibility check was overridden to pass', function (): void {
+    foreach (activityViewsRefusedUsers() as $state => $make) {
+        VisibleOverrideWidget::$mounted = false;
+        $this->actingAs($make());
+
+        Livewire::test(VisibleOverrideWidget::class)->assertForbidden();
+
+        expect(VisibleOverrideWidget::$mounted)->toBeFalse($state);
+    }
+
+    VisibleOverrideWidget::$mounted = false;
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(VisibleOverrideWidget::class)->assertOk();
+
+    expect(VisibleOverrideWidget::$mounted)->toBeTrue();
+});
+
+it('keeps the Activity model closed to every Partner state', function (): void {
+    $this->actingAs(Canary::admin());
+    ActivityProbe::query()->create(['title' => 'Probe one', 'status' => 'open']);
+    auth()->logout();
+
+    foreach (activityViewsRefusedUsers() as $state => $make) {
+        $this->actingAs($make());
+
+        expect(Activity::query()->count())->toBe(0, $state)
+            ->and(Gate::allows('viewAny', Activity::class))->toBeFalse($state);
+    }
 });
