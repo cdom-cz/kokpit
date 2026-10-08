@@ -6,9 +6,12 @@ namespace App\Domain\Operations\Alerts;
 
 use Filament\Facades\Filament;
 use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Queue\TimeoutExceededException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Throwable;
+
+use function Illuminate\Support\defer;
 
 /**
  * Raises the Admin alert when a job has failed for good (D-11).
@@ -16,6 +19,16 @@ use Throwable;
  * Listens to JobFailed, which Laravel dispatches once per final failure for
  * every job, package jobs included. It must never throw: an exception here
  * would stop the listener that writes the failed_jobs row.
+ *
+ * The listener only builds the alert (no I/O). The delivery is deferred with
+ * Laravel's defer(): the worker runs it on JobAttempted, which is raised after
+ * every JobFailed listener, the one that writes the failed_jobs row included.
+ * A slow or hanging mail transport therefore cannot cost the failure record.
+ * It stays queue-independent: defer() runs in the same process, nothing is
+ * pushed to a queue. The one exception is the worker's own timeout kill
+ * (TimeoutExceededException): the process exits right after JobFailed and no
+ * later hook runs, so that alert is delivered inline; the mail transport
+ * timeout (mail.mailers.smtp.timeout) bounds how long that can take.
  *
  * The alert holds the job name, queue, attempts, exception class, the failed
  * job id and a shortened first line of the message. Never the job payload and
@@ -30,7 +43,7 @@ final class ReportFailedJob
             $job = $event->job;
             $name = $job->resolveName();
 
-            app(AdminAlerter::class)->alert('failed-job:'.$name, new OperationalAlert(
+            $alert = new OperationalAlert(
                 __('kokpit.alerts.failed_job.title'),
                 implode("\n", [
                     __('kokpit.alerts.failed_job.job', ['job' => $name]),
@@ -40,16 +53,38 @@ final class ReportFailedJob
                     __('kokpit.alerts.failed_job.failed_job_id', ['id' => (string) $job->uuid()]),
                 ]),
                 $this->systemUrl(),
-            ));
-        } catch (Throwable $e) {
-            try {
-                Log::critical('Failed-job report could not be built', [
-                    'exception' => $e::class,
-                    'error' => $e->getMessage(),
-                ]);
-            } catch (Throwable) {
-                // The log itself is down; the failed_jobs write must still go on.
+            );
+
+            $send = function () use ($name, $alert): void {
+                try {
+                    app(AdminAlerter::class)->alert('failed-job:'.$name, $alert);
+                } catch (Throwable $e) {
+                    $this->logCritical($e);
+                }
+            };
+
+            if ($event->exception instanceof TimeoutExceededException) {
+                $send();
+
+                return;
             }
+
+            // always: the job has failed, so the deferred callback must run although the attempt was not successful.
+            defer($send, always: true);
+        } catch (Throwable $e) {
+            $this->logCritical($e);
+        }
+    }
+
+    private function logCritical(Throwable $e): void
+    {
+        try {
+            Log::critical('Failed-job report could not be built or delivered', [
+                'exception' => $e::class,
+                'error' => $e->getMessage(),
+            ]);
+        } catch (Throwable) {
+            // The log itself is down; the failed_jobs write must still go on.
         }
     }
 

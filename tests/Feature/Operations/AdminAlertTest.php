@@ -19,6 +19,7 @@ use Symfony\Component\Mailer\Envelope;
 use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mailer\Transport\TransportInterface;
 use Symfony\Component\Mime\RawMessage;
+use Illuminate\Queue\TimeoutExceededException;
 use Tests\Support\Canary;
 
 /*
@@ -55,7 +56,7 @@ function caught(string $message): Throwable
  * A JobFailed event for a mocked queue job. The job exposes a payload and a raw
  * body full of a canary so a test can prove that neither leaves the system.
  */
-function failedEvent(string $job = ALERT_JOB, string $message = 'Fictional failure', string $payloadCanary = 'CANARY_PAYLOAD_UNSET'): JobFailed
+function failedEvent(string $job = ALERT_JOB, string $message = 'Fictional failure', string $payloadCanary = 'CANARY_PAYLOAD_UNSET', ?Throwable $exception = null): JobFailed
 {
     $queueJob = Mockery::mock(Job::class);
     $queueJob->shouldReceive('resolveName')->andReturn($job);
@@ -65,7 +66,18 @@ function failedEvent(string $job = ALERT_JOB, string $message = 'Fictional failu
     $queueJob->shouldReceive('payload')->andReturn(['data' => ['command' => $payloadCanary]]);
     $queueJob->shouldReceive('getRawBody')->andReturn(json_encode(['data' => ['command' => $payloadCanary]]));
 
-    return new JobFailed('redis', $queueJob, caught($message));
+    return new JobFailed('redis', $queueJob, $exception ?? caught($message));
+}
+
+/**
+ * Raises the event and then runs what the listener deferred. The worker runs the
+ * deferred alert on JobAttempted, after all JobFailed listeners; a test that raises
+ * JobFailed by hand has to play that second step itself.
+ */
+function raiseFailure(JobFailed $event): void
+{
+    event($event);
+    defer()->invoke();
 }
 
 function sentMails(): Collection
@@ -90,15 +102,15 @@ it('alerts once for two failures of the same job class inside the window and rep
     $admin = Canary::admin();
     Carbon::setTestNow('2026-10-08 10:00:00');
 
-    event(failedEvent());
+    raiseFailure(failedEvent());
     Carbon::setTestNow('2026-10-08 10:05:00');
-    event(failedEvent());
+    raiseFailure(failedEvent());
 
     expect(sentMails())->toHaveCount(1)
         ->and(bellRows($admin))->toHaveCount(1);
 
     Carbon::setTestNow('2026-10-08 10:16:00');
-    event(failedEvent());
+    raiseFailure(failedEvent());
 
     $rows = bellRows($admin);
     expect(sentMails())->toHaveCount(2)
@@ -113,11 +125,11 @@ it('counts every suppressed failure of the window', function (): void {
 
     foreach (range(1, 4) as $minute) {
         Carbon::setTestNow(Carbon::parse('2026-10-08 10:00:00')->addMinutes($minute));
-        event(failedEvent());
+        raiseFailure(failedEvent());
     }
 
     Carbon::setTestNow('2026-10-08 10:20:00');
-    event(failedEvent());
+    raiseFailure(failedEvent());
 
     expect(bellData(bellRows($admin)->last())['body'])->toContain(__('kokpit.alerts.suppressed', ['count' => 3]));
 });
@@ -126,8 +138,8 @@ it('alerts separately for two different job classes inside the window', function
     $admin = Canary::admin();
     Carbon::setTestNow('2026-10-08 10:00:00');
 
-    event(failedEvent('App\\Jobs\\FictionalReportJob'));
-    event(failedEvent('App\\Jobs\\FictionalExportJob'));
+    raiseFailure(failedEvent('App\\Jobs\\FictionalReportJob'));
+    raiseFailure(failedEvent('App\\Jobs\\FictionalExportJob'));
 
     expect(sentMails())->toHaveCount(2)
         ->and(bellRows($admin))->toHaveCount(2);
@@ -137,7 +149,7 @@ it('still sends the alert when the cache fails', function (): void {
     $admin = Canary::admin();
     Cache::partialMock()->shouldReceive('add')->andThrow(new RuntimeException('cache down'));
 
-    event(failedEvent());
+    raiseFailure(failedEvent());
 
     expect(sentMails())->toHaveCount(1)
         ->and(bellRows($admin))->toHaveCount(1);
@@ -147,7 +159,7 @@ it('delivers the mail and the bell row without pushing anything to a queue', fun
     $admin = Canary::admin();
     Queue::fake();
 
-    event(failedEvent());
+    raiseFailure(failedEvent());
 
     expect(sentMails())->toHaveCount(1)
         ->and(bellRows($admin))->toHaveCount(1);
@@ -171,7 +183,7 @@ it('stores the bell row and logs a critical entry when the mail transport throws
     });
     config(['mail.mailers.fictional-broken' => ['transport' => 'fictional-broken'], 'mail.default' => 'fictional-broken']);
 
-    event(failedEvent());
+    raiseFailure(failedEvent());
 
     expect(bellRows($admin))->toHaveCount(1);
     Log::shouldHaveReceived('critical')->withArgs(
@@ -188,7 +200,7 @@ it('sends the mail and logs a critical entry when the bell row cannot be stored'
         }
     });
 
-    event(failedEvent());
+    raiseFailure(failedEvent());
 
     expect(sentMails())->toHaveCount(1)
         ->and(bellRows($admin))->toHaveCount(0);
@@ -208,7 +220,7 @@ it('returns normally and logs critical when the alerter itself throws', function
         }
     });
 
-    event(failedEvent());
+    raiseFailure(failedEvent());
 
     Log::shouldHaveReceived('critical')->once();
 });
@@ -221,7 +233,7 @@ it('puts at most 200 characters of the first message line and no payload or stac
     $payload = Canary::canary('payload');
     $firstLine = str_pad(str_pad($head, 250, 'x').$tail, 300, 'y');
 
-    event(failedEvent(message: $firstLine."\n".$second, payloadCanary: $payload));
+    raiseFailure(failedEvent(message: $firstLine."\n".$second, payloadCanary: $payload));
 
     $kept = mb_substr($firstLine, 0, 200);
     $data = bellData(bellRows($admin)->first());
@@ -247,7 +259,7 @@ it('puts at most 200 characters of the first message line and no payload or stac
 it('links the alert to the System page', function (): void {
     $admin = Canary::admin();
 
-    event(failedEvent());
+    raiseFailure(failedEvent());
 
     $data = bellData(bellRows($admin)->first());
     $url = $data['actions'][0]['url'];
@@ -257,4 +269,36 @@ it('links the alert to the System page', function (): void {
 
     $mail = sentMails()->first()->getOriginalMessage();
     expect((string) $mail->getTextBody().(string) $mail->getHtmlBody())->toContain($url);
+});
+
+it('does not deliver anything while the JobFailed listeners run, only when the deferred step runs', function (): void {
+    $admin = Canary::admin();
+
+    event(failedEvent());
+
+    expect(sentMails())->toHaveCount(0)
+        ->and(bellRows($admin))->toHaveCount(0);
+
+    defer()->invoke();
+
+    expect(sentMails())->toHaveCount(1)
+        ->and(bellRows($admin))->toHaveCount(1);
+});
+
+it('delivers a timeout failure inline, because the worker exits right after JobFailed', function (): void {
+    $admin = Canary::admin();
+    $queueJob = Mockery::mock(Job::class);
+    $queueJob->shouldReceive('resolveName')->andReturn(ALERT_JOB);
+    $timeout = TimeoutExceededException::forJob($queueJob);
+
+    event(failedEvent(exception: $timeout));
+
+    expect(sentMails())->toHaveCount(1)
+        ->and(bellRows($admin))->toHaveCount(1);
+});
+
+it('bounds the SMTP socket timeout well below the job timeout', function (): void {
+    $timeout = config('mail.mailers.smtp.timeout');
+
+    expect($timeout)->toBeInt()->toBeGreaterThan(0)->toBeLessThanOrEqual(15);
 });
