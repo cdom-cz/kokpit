@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: Operations Foundation
 status: executing
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-10-08T02:37:42.108Z"
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-10-08T02:46:36.571Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 03 execution started
-state_head: 114b8d716b8179c09723dd8ef8a95eb390cad007
+state_head: 53d632df967aadd92acbf3df6c3121d25322d124
 progress:
   total_phases: 12
   completed_phases: 2
   total_plans: 43
-  completed_plans: 27
+  completed_plans: 28
   percent: 17
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 03 (Operations Foundation) — EXECUTING
-Plan: 4 of 19
+Plan: 5 of 19
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 03 execution started
 
@@ -84,6 +84,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 03 P01 | 25 min | 2 tasks | 1 files |
 | Phase 03 P02 | 37 min | 3 tasks | 1 files |
 | Phase 03 P03 | 8 min | 2 tasks | 14 files |
+| Phase 03 P04 | 8 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -153,6 +154,9 @@ Recent decisions affecting current work:
 - [Phase 03]: LGPL-2.1 SPDX alias of dompdf/dompdf fails scripts/check-licenses.php; maintainer decision (normalise to LGPL-2.1-only in a reviewed commit) needed in the phase that adds Dompdf
 - [Phase 03]: Custom Livewire wire:sort board chosen over Flowforge for the Phase 5 kanban (D-15): passes persistence, model event, isolation and concurrency criteria; Flowforge has no policy hook and needs a Filament theme and Node build — Measured: no lock corrupts a column in every round; one advisory lock per move kept 60 of 60 rounds clean; column row locks deadlocked in 12 of 70 empty-column rounds. Conditional on a human touch check at 375 px (fallback is a drag handle).
 - [Phase 03]: 03-03: SettingsProperty stays on DeniesPartners with an empty PARTNER_VISIBLE_GROUPS allowlist; settings cache is a literal false; SettingsMigration::up() is final and runs migrate() in runAsSystem — A cached read bypasses the Partner scope; package migrator add/update read through the scoped model and see no rows without the system context; a later Partner-visible group must fail the canary test until chosen on purpose
+- [Phase 03]: SupplierSettings is no longer final so a test double can subclass and be bound in the container
+- [Phase 03]: SettingsPage overrides hasDatabaseTransactions() to true because the Filament transaction helpers are no-ops unless the panel enables them
+- [Phase 03]: ValidatedSettings::fillFromFormState() normalises empty text by property nullability and ignores undeclared keys
 
 ### Pending Todos
 
@@ -188,6 +192,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T02:37:42.040Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-10-08T02:46:36.502Z
+Stopped at: Completed 03-04-PLAN.md
 Resume file: None
