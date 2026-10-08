@@ -5,12 +5,15 @@ declare(strict_types=1);
 use App\Support\ProductionConfigGuard;
 use Illuminate\Config\Repository;
 
-function guardConfig(bool $requireAdminTwoFactor, bool $canaryHarness = false): Repository
+function guardConfig(bool $requireAdminTwoFactor, bool $canaryHarness = false, mixed $activityLog = true): Repository
 {
-    return new Repository(['kokpit' => [
-        'require_admin_two_factor' => $requireAdminTwoFactor,
-        'canary_harness' => $canaryHarness,
-    ]]);
+    return new Repository([
+        'kokpit' => [
+            'require_admin_two_factor' => $requireAdminTwoFactor,
+            'canary_harness' => $canaryHarness,
+        ],
+        'activitylog' => ['enabled' => $activityLog],
+    ]);
 }
 
 it('throws in production when Admin two-factor enforcement is off', function (): void {
@@ -50,11 +53,35 @@ it('allows the canary harness outside production', function (): void {
 });
 
 it('treats a missing canary setting as off in production', function (): void {
-    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true]]));
+    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true], 'activitylog' => ['enabled' => true]]));
 
     expect(true)->toBeTrue();
 });
 
 it('refuses a canary harness that is not strictly false, even a truthy string', function (): void {
-    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true, 'canary_harness' => 'yes']]));
+    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true, 'canary_harness' => 'yes'], 'activitylog' => ['enabled' => true]]));
 })->throws(RuntimeException::class, 'KOKPIT_CANARY_HARNESS');
+
+it('throws in production when the activity log is switched off', function (): void {
+    ProductionConfigGuard::check(true, guardConfig(true, activityLog: false));
+})->throws(RuntimeException::class, 'ACTIVITYLOG_ENABLED');
+
+it('allows production with the activity log on', function (): void {
+    ProductionConfigGuard::check(true, guardConfig(true, activityLog: true));
+
+    expect(true)->toBeTrue();
+});
+
+it('allows the activity log off outside production', function (): void {
+    ProductionConfigGuard::check(false, guardConfig(true, activityLog: false));
+
+    expect(true)->toBeTrue();
+});
+
+it('treats a missing activity log setting as off in production', function (): void {
+    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true]]));
+})->throws(RuntimeException::class, 'ACTIVITYLOG_ENABLED');
+
+it('refuses an activity log setting that is not strictly true, even a truthy string', function (): void {
+    ProductionConfigGuard::check(true, guardConfig(true, activityLog: 'yes'));
+})->throws(RuntimeException::class, 'ACTIVITYLOG_ENABLED');
