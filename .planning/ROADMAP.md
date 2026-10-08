@@ -215,8 +215,72 @@ Plans:
   4. From the client detail Admin invites a Partner account by e-mail, and the invited person sets a password and logs in
   5. A Partner sees only projects of their own client that are flagged client-visible, never sees rates, prices or estimates in lists, details, selects or search, and never sees another client's canary data
 
-**Plans**: TBD
+**Plans:** 21 plans (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
 **UI hint**: yes
+
+Plans:
+**Wave 1**
+- [ ] 04-01-PLAN.md — Tracer: clients table, Admin-only Client, real canary clients, users FK with deactivation and archived-client lockout (CL-01, CL-05, US-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 04-02-PLAN.md — Projects table, fail-closed Project Partner scope and policy, Project canary fixture, projects column allowlist (PR-04, PR-01, PR-02, CL-05)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 04-03-PLAN.md — Read-only Partner project list and detail with Partner-safe columns and the route-walk resource map (PR-04, PR-01)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 04-04-PLAN.md — Partner-visible project tags through a real Tag constraint, with the soft-delete detach guard (PR-04, PR-01)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 04-05-PLAN.md — Access primitives: fail-closed Audience::Guest with the SimplePage registry rule, and the PartnerScope escape-hatch rule (PR-04)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 04-06-PLAN.md — Admin-only project_billing table and the CreateProject Action with money, key and archive guards (PR-03, PR-02, PR-01)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 04-07-PLAN.md — UpdateProject, exact estimate conversion, selectable scope, project auditing and billing constraint tests (PR-03, PR-02, PR-01)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 04-08-PLAN.md — Admin project resource with billing section, archive, history and the deterministic key suggester (PR-01, PR-02, PR-03, PR-04)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 04-09-PLAN.md — Admin client resource with billing data and terms, exact money and field validation (CL-01)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 04-10-PLAN.md — Typed default invoice language and the one-time defaults prefill of new clients (CL-01)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [ ] 04-11-PLAN.md — Client archive and restore, client tags, client history, currency lock and per-country company number uniqueness (CL-05, CL-01)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [ ] 04-12-PLAN.md — Contacts in the client detail: first contact primary, make-primary on creation, Partner isolation (CL-02)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [ ] 04-13-PLAN.md — Contact edit, primary switch, protected delete, primary contact column and contact auditing (CL-02)
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [ ] 04-14-PLAN.md — Czech company number checksum in the client form and Actions, fictional number generator for tests (CL-04)
+
+**Wave 15** *(blocked on Wave 14 completion)*
+- [ ] 04-15-PLAN.md — ARES lookup button for Czech clients with field-level errors and an unchanged form on failure (CL-04)
+
+**Wave 16** *(blocked on Wave 15 completion)*
+- [ ] 04-16-PLAN.md — Hashed-token invitation records, InvitePartner and the D-03 duplicate rules (US-02)
+
+**Wave 17** *(blocked on Wave 16 completion)*
+- [ ] 04-17-PLAN.md — Queued invitation mail with a signed link, guest landing page, derived state, resend and revoke (US-02)
+
+**Wave 18** *(blocked on Wave 17 completion)*
+- [ ] 04-18-PLAN.md — Guest accept flow: password, single-use Partner account, login, neutral failures and throttling (US-02)
+
+**Wave 19** *(blocked on Wave 18 completion)*
+- [ ] 04-19-PLAN.md — Invitations in the client detail: invite action and the Pozvánky tab with resend and revoke (US-02)
+
+**Wave 20** *(blocked on Wave 19 completion)*
+- [ ] 04-20-PLAN.md — Partner accounts in the client detail: deactivate, reactivate and password reset (US-02)
+
+**Wave 21** *(blocked on Wave 20 completion)*
+- [ ] 04-21-PLAN.md — Conventions and operator documentation, per-phase .gitignore review and the phase gate
 
 ### Phase 5: Tasks and Kanban
 

@@ -39,25 +39,39 @@ created: "2026-10-08"
 
 ## Per-Task Verification Map
 
-Requirement coverage the plans must preserve (task IDs are assigned by the planner):
+Requirement coverage the plans must preserve (plan and task that create each test file; every test file is created inside the task that needs it, so no separate Wave 0 plan exists). Column names: the Czech company ID is stored as `company_number` and the tax ID as `tax_number` (schema rule R1 reserves `*_id` for uuid columns).
 
-| Requirement | Behavior | Test Type | Automated Command | File Exists |
-|-------------|----------|-----------|-------------------|-------------|
-| CL-01 | Create / edit client; defaults copied once; Money pair stored | feature (Livewire) | `ddev exec vendor/bin/pest tests/Feature/Clients/ClientResourceTest.php` | ❌ W0 |
-| CL-01 | clients constraints: stage / currency CHECKs, rate currency = currency, unique `(country, company_id)` incl. archived | feature (schema, raw SQL) | `ddev exec vendor/bin/pest tests/Feature/Schema/ClientTablesTest.php` | ❌ W0 |
-| CL-02 | Contacts: one primary (partial unique index), primary promotion, billing flags | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/ContactsTest.php` | ❌ W0 |
-| CL-04 | `CompanyId` mod-11 checksum | unit | `ddev exec vendor/bin/pest tests/Unit/Ares/CompanyIdTest.php` | ❌ W0 |
-| CL-04 | `AresClient` with `Http::fake`: 200 mapping, 404, 400, 5xx, 429, timeout, malformed JSON, 404 not retried | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/AresClientTest.php` | ❌ W0 |
-| CL-04 | Form action fills only ARES fields; every failure sets an error on `company_id`, form unchanged; hidden for non-CZ | feature (Livewire) | `ddev exec vendor/bin/pest tests/Feature/Clients/AresFormActionTest.php` | ❌ W0 |
-| CL-05 | Archive hides from lists and pickers; restore returns; no force delete; tags survive archive and restore | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/ClientArchiveTest.php` | ❌ W0 |
-| PR-01 | Create / edit project with tags (type `project`) | feature (Livewire) | `ddev exec vendor/bin/pest tests/Feature/Projects/ProjectResourceTest.php` | ❌ W0 |
-| PR-02 | Key suggester (diacritics, one word, digits, collisions incl. archived); duplicate key rejected; CHECK `^[A-Z]{2,6}$` | unit + feature | `ddev exec vendor/bin/pest tests/Unit/Projects/ProjectKeySuggesterTest.php tests/Feature/Projects/ProjectKeyTest.php` | ❌ W0 |
-| PR-03 | `project_billing` 1:1, money pairs, estimate, currency = client currency | feature | `ddev exec vendor/bin/pest tests/Feature/Projects/ProjectBillingTest.php` | ❌ W0 |
-| PR-04 | Partner sees only own, visible, non-archived projects of a non-archived client; policy denies writes | isolation | `ddev exec vendor/bin/pest tests/Isolation/PartnerProjectVisibilityTest.php` | ❌ W0 |
-| US-02 | Invite: record plus queued notification; existing e-mail rejected; resend invalidates old link; revoke | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/PartnerInvitationTest.php` | ❌ W0 |
-| US-02 | Accept (guest): password set, Partner created with `client_id`, single use, neutral page for every invalid state, throttled, no self-registration | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/AcceptInvitationTest.php` | ❌ W0 |
-| US-02 | Deactivate / reactivate / reset; archived client blocks login and restore reopens | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/PartnerAccountLifecycleTest.php` | ❌ W0 |
-| PR-03 / PR-04 | `projects` column list pinned to a Partner-safe allowlist | isolation | `ddev exec vendor/bin/pest tests/Isolation/PartnerSafeColumnsTest.php` | ❌ W0 |
+| Requirement | Behavior | Test Type | Automated Command | Plan / Task | File Exists |
+|-------------|----------|-----------|-------------------|-------------|-------------|
+| US-02 / CL-05 | Deactivated user and Partner of an archived or missing client refused at login and on the next request | isolation | `ddev exec vendor/bin/pest tests/Isolation/PartnerLockoutTest.php` | 04-01 T2 | ❌ W0 |
+| CL-01 / PR-02 | clients, projects and users constraints: CHECKs, rate currency = currency, unique `(country, company_number)` incl. archived, key CHECK and unique incl. archived, FK 23503 / 23001 | feature (schema, raw SQL) | `ddev exec vendor/bin/pest tests/Feature/Schema/ClientTablesTest.php` | 04-01 T3 (clients, users), 04-02 T2 (projects) | ❌ W0 |
+| PR-04 | Partner sees only own, visible, non-archived projects of a non-archived client; policy denies writes | isolation | `ddev exec vendor/bin/pest tests/Isolation/PartnerProjectVisibilityTest.php` | 04-02 T1 | ❌ W0 |
+| PR-03 / PR-04 | `projects` column list pinned to a Partner-safe allowlist | isolation | `ddev exec vendor/bin/pest tests/Isolation/PartnerSafeColumnsTest.php` | 04-02 T2 | ❌ W0 |
+| PR-04 | Partner list and detail: Partner-safe columns only, search, URL refusals, no global search | feature (HTTP, Livewire) | `ddev exec vendor/bin/pest tests/Feature/Projects/PartnerProjectResourceTest.php` | 04-03 T1, T2 | ❌ W0 |
+| PR-04 | Partner sees project tags of visible own projects only; archive keeps tags | isolation | `ddev exec vendor/bin/pest tests/Isolation/PartnerTagVisibilityTest.php` | 04-04 T1, T2 | ❌ W0 |
+| PR-04 | `Audience::Guest` always denied; registry governs SimplePage; scanner reports PartnerScope removal | arch + isolation | `ddev exec vendor/bin/pest tests/Arch/PanelRegistryTest.php tests/Isolation/PanelAccessTest.php tests/Arch/QueryEscapeHatchTest.php` | 04-05 T1, T2 | ❌ W0 |
+| PR-03 | `project_billing` 1:1, money pairs, currency = client currency, Partner reads nothing, key race | feature | `ddev exec vendor/bin/pest tests/Feature/Projects/ProjectBillingTest.php` | 04-06 T1, T2 | ❌ W0 |
+| PR-03 | Estimate hours to whole seconds without rounding | unit | `ddev exec vendor/bin/pest tests/Unit/Projects/EstimateHoursTest.php` | 04-07 T1 | ❌ W0 |
+| PR-01 / PR-03 | UpdateProject: client immutable, free status switching, fixed price rule, selectable scope | feature | `ddev exec vendor/bin/pest tests/Feature/Projects/ProjectActionsTest.php` | 04-07 T1 | ❌ W0 |
+| PR-03 | project_billing constraints and audit allowlist | feature (schema, raw SQL) | `ddev exec vendor/bin/pest tests/Feature/Schema/ProjectBillingTableTest.php` | 04-07 T2 | ❌ W0 |
+| PR-01 | Create / edit / archive project with tags (type `project`) and billing section | feature (Livewire) | `ddev exec vendor/bin/pest tests/Feature/Projects/ProjectResourceTest.php` | 04-08 T1 | ❌ W0 |
+| PR-02 | Key suggester (diacritics, one word, digits, collisions incl. archived); duplicate key rejected; CHECK `^[A-Z]{2,6}$` | unit + feature | `ddev exec vendor/bin/pest tests/Unit/Projects/ProjectKeySuggesterTest.php tests/Feature/Projects/ProjectKeyTest.php` | 04-08 T2 | ❌ W0 |
+| CL-01 | Create / edit client; Money pair stored; rate precision and terms boundary | feature (Livewire) | `ddev exec vendor/bin/pest tests/Feature/Clients/ClientResourceTest.php` | 04-09 T1, T2 | ❌ W0 |
+| CL-01 | Defaults prefill and one-time copy incl. the new default invoice language | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/ClientDefaultsTest.php` | 04-10 T1, T2 | ❌ W0 |
+| CL-05 | Archive hides from lists and pickers; restore returns; no force delete; tags survive archive and restore; idempotent | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/ClientArchiveTest.php` | 04-11 T1 | ❌ W0 |
+| CL-05 | Client tags typed `client`, client history | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/ClientTagsAndHistoryTest.php` | 04-11 T2 | ❌ W0 |
+| CL-01 | Currency lock while project money exists; company number unique per country | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/ClientRulesTest.php` | 04-11 T3 | ❌ W0 |
+| CL-02 | Contacts: one primary (partial unique index), primary switch, protected delete, billing flags | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/ContactsTest.php` | 04-12 T1, T2; 04-13 T1, T2 | ❌ W0 |
+| CL-04 | `CompanyId` mod-11 checksum | unit | `ddev exec vendor/bin/pest tests/Unit/Ares/CompanyIdTest.php` | 04-14 T2 | ❌ W0 |
+| CL-04 | CZ-only company number checksum as a field error in the form and in CreateClient / UpdateClient; foreign numbers free | feature (Livewire) | `ddev exec vendor/bin/pest tests/Feature/Clients/ClientResourceTest.php tests/Feature/Clients/ClientRulesTest.php` | 04-14 T1, T2 | ❌ W0 |
+| CL-04 | Form action fills only ARES fields; every failure sets an error on `company_number`, form unchanged; hidden for non-CZ | feature (Livewire) | `ddev exec vendor/bin/pest tests/Feature/Clients/AresFormActionTest.php` | 04-15 T1, T2 | ❌ W0 |
+| CL-04 | `AresClient` with `Http::fake`: 200 mapping, 404, 400, 5xx, 429, timeout, malformed JSON, 404 not retried, cache, limiter | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/AresClientTest.php` | 04-15 T2 | ❌ W0 |
+| US-02 | Invite: record plus queued notification; existing e-mail rejected; resend invalidates old link; revoke | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/PartnerInvitationTest.php` | 04-16 T1, T2; 04-17 T1, T2 | ❌ W0 |
+| US-02 | Accept (guest): password set, Partner created with `client_id`, single use, neutral page for every invalid state, throttled, no self-registration, login and visible projects | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/AcceptInvitationTest.php` | 04-18 T1, T2 | ❌ W0 |
+| US-02 | Invite, resend, revoke from the client detail | feature (Livewire) | `ddev exec vendor/bin/pest tests/Feature/Clients/InvitationManagementTest.php` | 04-19 T1, T2 | ❌ W0 |
+| US-02 | Deactivate / reactivate, tokens deleted, no delete action | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/PartnerAccountLifecycleTest.php` | 04-20 T1 | ❌ W0 |
+| US-02 | Password reset from the client detail, generic public reset page | feature | `ddev exec vendor/bin/pest tests/Feature/Clients/PartnerPasswordResetTest.php` | 04-20 T2 | ❌ W0 |
+| all | Gate-only plan: CONTRIBUTING and README name every Phase 4 mechanism (documentation test), then the full phase gate (CI suite, S3 group, hygiene scan, fresh-clone install) | feature + gate | `ddev exec vendor/bin/pest tests/Feature/Repo/RepositoryFilesTest.php` and `ddev composer ci` | 04-21 T1, T2 | ❌ W0 |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -65,13 +79,13 @@ Requirement coverage the plans must preserve (task IDs are assigned by the plann
 
 ## Wave 0 Requirements
 
-- [ ] `tests/Support/Canary.php` — `twoClients()` creates real fictional clients; add `Canary::projectKey()`; `Client` / `Project` factories under `database/factories/`
-- [ ] `tests/Support/CanaryRegistry.php` — new fixture lines for the new models; `Tag` fixture re-pointed at a visible `Project` (fixture order matters)
-- [ ] Update hard-coded model lists in `tests/Arch/ModelDeclarationTest.php`, `tests/Isolation/CanaryRegistryTest.php`, `tests/Arch/ActivityAllowlistTest.php`; extend `RouteWalkTest`; update `DeniedModelsTest` wording
-- [ ] `Http::preventStrayRequests()` in the Feature bootstrap so no test can call ARES
-- [ ] `tests/Isolation/PartnerSafeColumnsTest.php` pinning `Schema::getColumnListing('projects')` to an explicit allowlist
-- [ ] Optional: `EscapeHatchScanner` extension for `withoutGlobalScope(PartnerScope::class)`
-- [ ] `composer require filament/spatie-laravel-tags-plugin` (and optionally `symfony/intl`) behind a human verify of package legitimacy
+- [ ] `tests/Support/Canary.php` — `twoClients()` creates real fictional clients and the `Client` factory under `database/factories/` (plan 04-01 Task 1); `Canary::projectKey()` and the `Project` factory (plan 04-02 Task 1)
+- [ ] `tests/Support/CanaryRegistry.php` — new fixture lines for the new models (04-01 Client, 04-02 Project, 04-06 ProjectBilling, 04-12 Contact, 04-16 ClientInvitation); `Tag` fixture re-pointed at a visible `Project` (04-04 Task 1; fixture order matters)
+- [ ] Update hard-coded model lists in `tests/Arch/ModelDeclarationTest.php`, `tests/Isolation/CanaryRegistryTest.php` (with every new model), `tests/Arch/ActivityAllowlistTest.php` (04-07, 04-11, 04-13); teach `RouteWalkTest` the resources with record routes (04-03, then 04-08 and 04-09); update `DeniedModelsTest` wording (04-04)
+- [ ] `Http::preventStrayRequests()` in `tests/TestCase.php::setUp()` so no booted test can call ARES (04-15 Task 1)
+- [ ] `tests/Isolation/PartnerSafeColumnsTest.php` pinning `Schema::getColumnListing('projects')` to an explicit allowlist (04-02 Task 2)
+- [ ] `EscapeHatchScanner` extension for `withoutGlobalScope(PartnerScope::class)` (04-05 Task 2)
+- [ ] `composer require filament/spatie-laravel-tags-plugin:^5.10` (04-04 Task 1): Approved in the research Package Legitimacy Audit (not `[ASSUMED]` or `[SUS]`), so no human checkpoint; `symfony/intl` (`[ASSUMED]`) is not installed, the country stays a two-letter ISO input
 
 ---
 
