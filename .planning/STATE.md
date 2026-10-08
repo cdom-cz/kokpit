@@ -265,6 +265,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
+- [2026-10-08] [tooling] Install and configure Laravel Debugbar for development — [todo file](.planning/todos/pending/2026-10-08-install-and-configure-laravel-debugbar-for-development.md)
 - [2026-10-08] [general] Sort tasks by priority then nearest due date by default — [todo file](.planning/todos/pending/2026-10-08-sort-tasks-by-priority-then-nearest-due-date-by-default.md)
 
 ### Blockers/Concerns
