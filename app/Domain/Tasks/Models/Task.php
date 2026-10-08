@@ -85,6 +85,14 @@ final class Task extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * A task is addressed by its reference: /admin/tasks/KEY-N.
+     */
+    public function getRouteKeyName(): string
+    {
+        return 'reference';
+    }
+
+    /**
      * @return BelongsTo<Project, $this>
      */
     public function project(): BelongsTo

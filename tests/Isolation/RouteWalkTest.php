@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Tasks\Models\Task;
 use Filament\Facades\Filament;
 use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Route;
@@ -94,8 +95,7 @@ function walkedUrl(LaravelRoute $route, string $recordId): string
  * Every resource that has record routes: who may open its record routes and the
  * record id to request for each side (client A is the signed-in Partner, client B
  * the other client). The walk fails on a resource that is not listed, so a new
- * resource is looked at on purpose. Admin-only resources (plans 04-08 and 04-09
- * add `projects` and `clients`) are listed with `partner => false`: a Partner
+ * resource is looked at on purpose. Admin-only resources (`projects`, `clients` and `tasks`) are listed with `partner => false`: a Partner
  * must get 403 on all their routes, whatever record is requested.
  *
  * @return array<string, array{partner: bool, a: string, b: string}>
@@ -110,11 +110,17 @@ function walkedResourceMap(string $canaryRecordA, string $canaryRecordB, string 
         static fn (): string => Project::query()->where('name', $canary)->firstOrFail()->client_id,
     );
 
+    // The task canary is the title; a task is addressed by its reference (KEY-N).
+    $taskReference = static fn (string $canary): string => app(PartnerContext::class)->runAsSystem(
+        static fn (): string => Task::query()->where('title', $canary)->firstOrFail()->reference,
+    );
+
     return [
         'canary-records' => ['partner' => true, 'a' => $canaryRecordA, 'b' => $canaryRecordB],
         'my-projects' => ['partner' => true, 'a' => $projectId($canaryA), 'b' => $projectId($canaryB)],
         'projects' => ['partner' => false, 'a' => $projectId($canaryA), 'b' => $projectId($canaryB)],
         'clients' => ['partner' => false, 'a' => $clientId($canaryA), 'b' => $clientId($canaryB)],
+        'tasks' => ['partner' => false, 'a' => $taskReference($canaryA), 'b' => $taskReference($canaryB)],
     ];
 }
 
