@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\ClientInvitation;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Shared\Auth\Audience;
 use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Yaml\Yaml;
 
@@ -302,6 +305,61 @@ it('only names Phase 3 classes in CONTRIBUTING.md that exist in app/', function 
 
     expect(defined('App\Domain\Shared\Models\SettingsProperty::PARTNER_VISIBLE_GROUPS'))->toBeTrue()
         ->and($contributing)->toContain('PARTNER_VISIBLE_GROUPS');
+});
+
+it('only names Phase 4 classes in CONTRIBUTING.md that exist in app/', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    // The documentation must not name a Phase 4 mechanism that is gone (T-04-50).
+    $names = [
+        'Project' => 'App\Domain\Projects\Models\Project',
+        'ProjectBilling' => 'App\Domain\Projects\Models\ProjectBilling',
+        'TagType' => 'App\Domain\Shared\Tags\TagType',
+        'ProjectColumns' => 'App\Filament\Support\ProjectColumns',
+        'RethrowsDomainValidation' => 'App\Filament\Concerns\RethrowsDomainValidation',
+        'ClientInvitation' => 'App\Domain\Clients\Models\ClientInvitation',
+        'AresClient' => 'App\Domain\Clients\Ares\AresClient',
+        'ProjectKeySuggester' => 'App\Domain\Projects\ProjectKeySuggester',
+        'AcceptInvitation' => 'App\Domain\Clients\Actions\AcceptInvitation',
+        'FictionalCompanyId' => 'Tests\Support\FictionalCompanyId',
+    ];
+
+    foreach ($names as $short => $class) {
+        expect($contributing)->toContain($short);
+        expect(class_exists($class) || trait_exists($class) || interface_exists($class) || enum_exists($class))
+            ->toBeTrue("CONTRIBUTING.md names {$short} but {$class} does not exist");
+    }
+
+    expect(method_exists(ClientInvitation::class, 'findAcceptable'))->toBeTrue()
+        ->and($contributing)->toContain('findAcceptable')
+        ->and(method_exists(Project::class, 'scopeSelectable'))->toBeTrue()
+        ->and($contributing)->toContain('Project::selectable')
+        ->and($contributing)->toContain('Audience::Guest')
+        ->and(enum_exists(Audience::class))->toBeTrue()
+        ->and(constant('App\Domain\Shared\Auth\Audience::Guest'))->not->toBeNull();
+});
+
+it('only names Phase 4 tests in CONTRIBUTING.md that exist', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    preg_match_all('#`(tests/[A-Za-z0-9_/]+\.php)`#', $contributing, $matches);
+
+    expect($matches[1])->not->toBeEmpty();
+
+    foreach (array_unique($matches[1]) as $path) {
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$path} but the file does not exist");
+    }
+});
+
+it('documents the Phase 4 hand-over notes and the password reset path', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+    $readme = repoFile('README.md');
+
+    expect($contributing)->toContain('task:<project uuid>')
+        ->and($contributing)->toContain('PartnerSafeColumnsTest')
+        ->and($contributing)->toContain('### Hand-over notes for later phases')
+        ->and($readme)->not->toContain('There is no password recovery path for the Admin yet')
+        ->and($readme)->toContain('forgot password');
 });
 
 it('documents the audit step in the add-a-model checklist and the operations section of the README', function () {

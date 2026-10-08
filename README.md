@@ -46,7 +46,7 @@ Open the panel URL, sign in as the Admin and set up an authenticator app (TOTP) 
 
 - Lost device or lost recovery codes: run `ddev artisan kokpit:admin:reset-2fa <e-mail>` (without DDEV: `php artisan kokpit:admin:reset-2fa <e-mail>`). It clears the stored TOTP secret and recovery codes of that user, after a confirmation (`--force` skips it), and the user sets two-factor authentication up again at the next sign-in. It needs shell access to the server; there is deliberately no web equivalent.
 - After an `APP_KEY` rotation the stored TOTP secrets can no longer be decrypted. Keep the previous key in `APP_PREVIOUS_KEYS` (a comma-separated list in `.env`) so they stay readable, or reset the two-factor authentication with the command above.
-- There is no password recovery path for the Admin yet. Keep access to the server shell.
+- Forgotten password: the sign-in page links to "forgot password" (`/admin/password-reset/request`), which works for the Admin as well as for a Partner. It always shows the same notice, whether or not the address has an account, and mails a link only to an account that can sign in. After the reset the Admin still has to pass two-factor authentication, so a lost device is handled with the command above. The new password has at least 12 characters.
 
 ## Deploy
 
@@ -73,6 +73,8 @@ The queue worker is Laravel Horizon (`php artisan horizon`). Its dashboard is at
 The Admin finds the state of both on the System page (menu "Systém", `/admin/system`, `https://kokpit.ddev.site/admin/system` in DDEV). It lists the failed jobs, the age of the oldest waiting job and the scheduler heartbeat as OK, Warning or Error, and refreshes itself every 30 seconds. A Partner cannot open it.
 
 When a background job fails for good, the Admin gets an alert by e-mail and in the bell of the panel. The e-mail needs working mail settings (the `MAIL_*` values in `.env`; DDEV delivers to Mailpit, a production instance needs a real mail service). The bell works without mail, so with broken mail settings the failure is still visible in the panel, and the System page shows it too.
+
+Invitations to a client (Partner) account and password reset links are e-mails sent through the queue, after the database transaction commits. They need working mail settings (the `MAIL_*` values in `.env`) and a running queue worker; in DDEV they arrive in Mailpit (`ddev launch -m`). If the mail settings are wrong or the worker is stopped, the invitation is created but the e-mail is not delivered, and the Admin can resend it from the client's "Pozvánky" tab.
 
 To prove that the private object storage works from the current configuration, run the storage check. It writes a throwaway object, reads it through a temporary URL, confirms that an unsigned read is refused, deletes the object and prints the result of each step:
 
