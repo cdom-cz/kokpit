@@ -15,6 +15,7 @@ use App\Domain\Tasks\Board\BoardFilters;
 use App\Domain\Tasks\Board\TaskBoard;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Pages\TaskBoardPage;
+use App\Filament\Resources\ProjectResource\Pages\ProjectBoard;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -566,3 +567,91 @@ function taskBoardColumnHtml(string $html, string $status): string
 
     return $match[0] ?? '';
 }
+
+/*
+ * The per-project board (KB-01): the board page of the Admin project resource.
+ */
+
+it('lists only the tasks of the project on the project board and fixes the project in the heading', function (): void {
+    $client = Client::factory()->create();
+    $projectA = taskBoardProject($client, 'PBA');
+    $projectB = taskBoardProject($client, 'PBB');
+    taskBoardTask($projectA, 'Example own card');
+    taskBoardTask($projectB, 'Example foreign card');
+
+    $html = (string) $this->get('/admin/projects/'.$projectA->id.'/board')->assertOk()->getContent();
+
+    expect($html)->toContain('Example own card')
+        ->and($html)->not->toContain('Example foreign card')
+        ->and($html)->toContain('Nástěnka projektu PBA')
+        ->and(substr_count($html, 'wire:sort="moveCard"'))->toBe(6);
+
+    Livewire::test(ProjectBoard::class, ['record' => $projectA->id])
+        ->assertSee('Example own card')
+        ->assertDontSee('Example foreign card');
+});
+
+it('hides the client filter on the project board and keeps the other three', function (): void {
+    $project = taskBoardProject(key: 'PBF');
+
+    $html = (string) $this->get('/admin/projects/'.$project->id.'/board')->assertOk()->getContent();
+
+    expect($html)->not->toContain('wire:key="filter-clientFilter"')
+        ->and($html)->toContain('wire:key="filter-assigneeFilter"')
+        ->and($html)->toContain('wire:key="filter-tagFilter"')
+        ->and($html)->toContain('wire:key="filter-priorityFilter"');
+
+    expect((string) $this->get('/admin/task-board')->assertOk()->getContent())->toContain('wire:key="filter-clientFilter"');
+});
+
+it('moves a card of the project to another column and keeps it there after a fresh mount', function (): void {
+    $project = taskBoardProject(key: 'PBM');
+    $moved = taskBoardTask($project, 'Example project moved card');
+    taskBoardTask($project, 'Example project review card', 'in_review');
+
+    Livewire::test(ProjectBoard::class, ['record' => $project->id])->call('moveCard', $moved->id, 0, 'in_review');
+
+    expect($moved->fresh()->status)->toBe(ProjectStatus::InReview)
+        ->and(taskBoardColumn('in_review'))->toBe(['Example project moved card', 'Example project review card']);
+
+    Livewire::test(ProjectBoard::class, ['record' => $project->id])
+        ->assertSeeInOrder(['Example project moved card', 'Example project review card']);
+});
+
+it('keeps the cards of other projects in their relative order when a card is dropped on a project board', function (): void {
+    $client = Client::factory()->create();
+    $projectA = taskBoardProject($client, 'PCA');
+    $projectB = taskBoardProject($client, 'PCB');
+
+    // The global in_review column: A1, B1, A2, B2, with the mover between A1 and A2 on A's board.
+    taskBoardTask($projectA, 'Example a one', 'in_review');
+    taskBoardTask($projectB, 'Example b one', 'in_review');
+    taskBoardTask($projectA, 'Example a two', 'in_review');
+    taskBoardTask($projectB, 'Example b two', 'in_review');
+    $moved = taskBoardTask($projectA, 'Example a mover');
+
+    // Visible on A's board: [a one, a two]. Index 1 means directly before "a two".
+    Livewire::test(ProjectBoard::class, ['record' => $projectA->id])->call('moveCard', $moved->id, 1, 'in_review');
+
+    DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
+
+    expect(taskBoardColumn('in_review'))->toBe([
+        'Example a one',
+        'Example b one',
+        'Example a mover',
+        'Example a two',
+        'Example b two',
+    ])
+        ->and(taskBoardPositions('in_review'))->toBe([0, 1, 2, 3, 4]);
+});
+
+it('refuses the project board to a Partner as a request and as a component', function (): void {
+    [$clientId] = Canary::twoClients();
+    $project = taskBoardProject(Client::query()->findOrFail($clientId), 'PBP');
+    Project::query()->whereKey($project->id)->update(['client_visible' => true]);
+    $partner = Canary::partnerFor($clientId);
+
+    $this->actingAs($partner)->get('/admin/projects/'.$project->id.'/board')->assertForbidden();
+
+    Livewire::actingAs($partner)->test(ProjectBoard::class, ['record' => $project->id])->assertForbidden();
+});

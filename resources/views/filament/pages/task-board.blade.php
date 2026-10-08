@@ -1,11 +1,11 @@
 <x-filament-panels::page>
     <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end;">
-        @foreach ([
-            'clientFilter' => ['client', $this->filterOptions['clients']],
+        @foreach (array_filter([
+            'clientFilter' => $this->hasFixedProject ? null : ['client', $this->filterOptions['clients']],
             'assigneeFilter' => ['assignee', $this->filterOptions['assignees']],
             'tagFilter' => ['tag', $this->filterOptions['tags']],
             'priorityFilter' => ['priority', $this->filterOptions['priorities']],
-        ] as $property => [$name, $options])
+        ]) as $property => [$name, $options])
             <label wire:key="filter-{{ $property }}" style="display: grid; gap: 0.25rem; min-width: 12rem;">
                 <span style="font-size: 0.8rem; font-weight: 600;">{{ __('kokpit.task_board.filters.'.$name) }}</span>
                 <x-filament::input.wrapper>

@@ -11,6 +11,7 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\RestoreAction;
 use Filament\Resources\Pages\ViewRecord;
+use Filament\Support\Icons\Heroicon;
 
 final class ViewProject extends ViewRecord
 {
@@ -22,6 +23,11 @@ final class ViewProject extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('board')
+                ->label(__('kokpit.task_board.project_action'))
+                ->icon(Heroicon::OutlinedViewColumns)
+                ->color('gray')
+                ->url(fn (): string => ProjectResource::getUrl('board', ['record' => $this->getRecord()])),
             EditAction::make(),
             ProjectResource::archiveAction(DeleteAction::make()),
             ProjectResource::restoreAction(RestoreAction::make()),

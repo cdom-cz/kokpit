@@ -8,12 +8,14 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Actions\MoveTask;
 use App\Domain\Tasks\Board\BoardFilters;
 use App\Domain\Tasks\Board\TaskBoard;
 use App\Filament\Resources\TaskResource;
+use Filament\Support\Enums\Width;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
@@ -46,6 +48,14 @@ trait ManagesTaskBoard
     /** The priority value the board is narrowed to. */
     #[Url]
     public ?string $priorityFilter = null;
+
+    /**
+     * Six columns of 17rem do not fit the stock content width, so a board uses the full width.
+     */
+    public function getMaxContentWidth(): Width
+    {
+        return Width::Full;
+    }
 
     /**
      * The cards of every status column, with the link to the task page.
@@ -116,12 +126,29 @@ trait ManagesTaskBoard
     }
 
     /**
-     * Whether any filter is set.
+     * Whether any filter is set. The client filter does not count on a board
+     * of one project: the client is fixed with the project.
      */
     #[Computed]
     public function hasFilters(): bool
     {
-        return array_filter([$this->clientFilter, $this->assigneeFilter, $this->tagFilter, $this->priorityFilter], static fn (?string $value): bool => $value !== null && $value !== '') !== [];
+        $filters = [$this->assigneeFilter, $this->tagFilter, $this->priorityFilter];
+
+        if ($this->boardProject() === null) {
+            $filters[] = $this->clientFilter;
+        }
+
+        return array_filter($filters, static fn (?string $value): bool => $value !== null && $value !== '') !== [];
+    }
+
+    /**
+     * Whether the board shows the tasks of one project only. The view hides the
+     * client filter then.
+     */
+    #[Computed]
+    public function hasFixedProject(): bool
+    {
+        return $this->boardProject() !== null;
     }
 
     public function resetFilters(): void
@@ -133,13 +160,27 @@ trait ManagesTaskBoard
     }
 
     /**
+     * The project a board page is fixed to, or null for the global board. A
+     * project board overrides it; the project is then part of every filter and
+     * preset in the quick creation.
+     */
+    protected function boardProject(): ?Project
+    {
+        return null;
+    }
+
+    /**
      * The filters from the page state. The values come from the URL, so they are
-     * validated, never trusted.
+     * validated, never trusted. On a project board the project is fixed and the
+     * client filter is ignored.
      */
     protected function boardFilters(): BoardFilters
     {
+        $project = $this->boardProject();
+
         return BoardFilters::fromInput(
-            clientId: $this->clientFilter,
+            projectId: $project?->getKey(),
+            clientId: $project === null ? $this->clientFilter : null,
             assigneeId: $this->assigneeFilter,
             tag: $this->tagFilter,
             priority: $this->priorityFilter,

@@ -442,6 +442,8 @@ return [
     'task_board' => [
         'navigation_label' => 'Nástěnka úkolů',
         'title' => 'Nástěnka úkolů',
+        'project_action' => 'Nástěnka projektu',
+        'project_title' => 'Nástěnka projektu :key · :name',
         'filters' => [
             'client' => 'Klient',
             'assignee' => 'Řešitel',

@@ -20,6 +20,7 @@ use App\Filament\RelationManagers\ProjectHistoryRelationManager;
 use App\Filament\Resources\ProjectResource\Pages\CreateProject;
 use App\Filament\Resources\ProjectResource\Pages\EditProject;
 use App\Filament\Resources\ProjectResource\Pages\ListProjects;
+use App\Filament\Resources\ProjectResource\Pages\ProjectBoard;
 use App\Filament\Resources\ProjectResource\Pages\ViewProject;
 use App\Filament\Support\ProjectColumns;
 use BackedEnum;
@@ -341,6 +342,7 @@ final class ProjectResource extends Resource
             'create' => CreateProject::route('/create'),
             'view' => ViewProject::route('/{record}'),
             'edit' => EditProject::route('/{record}/edit'),
+            'board' => ProjectBoard::route('/{record}/board'),
         ];
     }
 
