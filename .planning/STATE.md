@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 05
-current_phase_name: tasks-and-kanban
+current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Phase 5 context gathered
-last_updated: "2026-10-08T19:33:31.574Z"
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-10-08T19:49:57.005Z"
 last_activity: 2026-10-08
-last_activity_desc: Phase 4 execution started
-state_head: 9744539213bf5177f8c9e152bbfffe813fe6cd2d
+last_activity_desc: Phase 05 execution started
+state_head: 29d17e8487564385a6825e0c304ed7ae6cd7755a
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 81
-  completed_plans: 64
+  completed_plans: 65
   percent: 25
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 4 — Clients and Projects
+**Current focus:** Phase 05 — Tasks and Kanban
 
 ## Current Position
 
-Phase: 05 (tasks-and-kanban) — READY TO EXECUTE
-Plan: 21 of 21
+Phase: 05 (Tasks and Kanban) — EXECUTING
+Plan: 2 of 17
 Status: Ready to execute
-Last activity: 2026-10-08 — Phase 4 execution started
+Last activity: 2026-10-08 — Phase 05 execution started
 
 Progress: [███░░░░░░░] 25%
 
@@ -122,6 +122,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 04 P19 | 7 min | 2 tasks | 7 files |
 | Phase 04 P20 | 13 min | 2 tasks | 14 files |
 | Phase 04 P21 | 35 min | 2 tasks | 3 files |
+| Phase 05 P01 | 15 min | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -247,6 +248,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-20: public forgot-password page is an own subclass (Audience::Guest) answering every address alike, because Filament's default reveals which addresses have an account; Password::defaults min 12 set globally
 - [Phase 04]: 04-20: Admin-sent reset within the broker 60 s throttle raises DomainException (danger notification) instead of a false success
 - [Phase 04]: 04-21: .gitignore needed no change in Phase 4; fresh-clone install requires .env (copy .env.example) because ProductionConfigGuard refuses a default production boot
+- [Phase 05]: 05-01: tasks counter is the number_sequences row task:<project uuid>; Task Partner scope delegates to the scoped Project query; CreateTask lock order is board lock, project FOR SHARE, counter row
+- [Phase 05]: 05-01: schema rule R1 exempts tasks.parent_depth (generated discriminator of the composite parent key); TaskPeople uses whereHas roles instead of the package role scope; an empty assignee_id or requester_id is refused, only null takes the default
 
 ### Pending Todos
 
@@ -285,6 +288,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T18:18:44.052Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-tasks-and-kanban/05-CONTEXT.md
+Last session: 2026-10-08T19:49:56.895Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: None
