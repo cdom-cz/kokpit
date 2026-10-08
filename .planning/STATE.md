@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-10-08T19:49:57.005Z"
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-10-08T20:18:08.324Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 05 execution started
-state_head: 29d17e8487564385a6825e0c304ed7ae6cd7755a
+state_head: 02c8bde2ad9eae178486cdef8f59665538ef33a3
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 81
-  completed_plans: 65
+  completed_plans: 66
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 05 (Tasks and Kanban) — EXECUTING
-Plan: 2 of 17
+Plan: 3 of 17
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 05 execution started
 
@@ -123,6 +123,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 04 P20 | 13 min | 2 tasks | 14 files |
 | Phase 04 P21 | 35 min | 2 tasks | 3 files |
 | Phase 05 P01 | 15 min | 2 tasks | 16 files |
+| Phase 05 P02 | 40min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -250,6 +251,9 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-21: .gitignore needed no change in Phase 4; fresh-clone install requires .env (copy .env.example) because ProductionConfigGuard refuses a default production boot
 - [Phase 05]: 05-01: tasks counter is the number_sequences row task:<project uuid>; Task Partner scope delegates to the scoped Project query; CreateTask lock order is board lock, project FOR SHARE, counter row
 - [Phase 05]: 05-01: schema rule R1 exempts tasks.parent_depth (generated discriminator of the composite parent key); TaskPeople uses whereHas roles instead of the package role scope; an empty assignee_id or requester_id is refused, only null takes the default
+- [Phase 05]: Project key frozen by KP002 trigger once any task exists (archived included), mirrored by UpdateProject field error and disabled form field
+- [Phase 05]: Mutation run of the task number concurrency test removes the board advisory lock as well, since that lock alone serializes creation and would hide a missing counter lock
+- [Phase 05]: A frozen key field is disabled and not dehydrated, so EditProject passes the stored key to UpdateProject
 
 ### Pending Todos
 
@@ -288,6 +292,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T19:49:56.895Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-10-08T20:18:08.126Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None
