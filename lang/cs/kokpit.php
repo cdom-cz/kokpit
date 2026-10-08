@@ -290,6 +290,9 @@ return [
             'terms_invalid' => 'Zadejte splatnost jako celé číslo dnů od 0 do 365.',
             'email_invalid' => 'Zadejte platnou e-mailovou adresu.',
             'rate_invalid' => 'Zadejte nezáporné číslo bez oddělovače tisíců a nejvýše s tolika desetinnými místy, kolik dovoluje měna klienta.',
+            'currency_locked' => 'Měnu klienta nelze změnit, dokud některý jeho projekt, i archivovaný, má hodinovou sazbu nebo pevnou cenu.',
+            'company_number_taken' => 'Toto IČO už v téže zemi používá jiný klient.',
+            'company_number_archived' => 'Toto IČO v téže zemi patří archivovanému klientovi :name. Obnovte ho místo založení nového.',
         ],
         'fields' => [
             'name' => 'Název',

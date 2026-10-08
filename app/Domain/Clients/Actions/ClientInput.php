@@ -6,6 +6,7 @@ namespace App\Domain\Clients\Actions;
 
 use App\Domain\Clients\Enums\ClientStage;
 use App\Domain\Clients\Enums\InvoiceLanguage;
+use App\Domain\Clients\Models\Client;
 use App\Domain\Shared\Money\Money;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -135,6 +136,33 @@ final class ClientInput
             'invoice_language' => $language,
             'online_payment_enabled' => (bool) ($data['online_payment_enabled'] ?? false),
         ];
+    }
+
+    /**
+     * Raises the field error for a company number that the per-country unique
+     * index (clients_country_company_number_unique) refused: a ValidationException
+     * on `company_number`. When the holder of the number is archived, the message
+     * says so and points to restoring it (D-09). Call it outside the transaction,
+     * so the failed statement is already rolled back and the holder can be read.
+     *
+     * @param  array<string, mixed>  $attributes  the validated attributes of ClientInput::attributes()
+     * @param  string|null  $exceptId  the client that is being updated, never its own holder
+     *
+     * @throws ValidationException
+     */
+    public static function refuseCompanyNumber(array $attributes, ?string $exceptId = null): never
+    {
+        $holder = Client::query()->withTrashed()
+            ->where('country', $attributes['country'])
+            ->where('company_number', $attributes['company_number'])
+            ->when($exceptId !== null, static fn ($query) => $query->whereKeyNot($exceptId))
+            ->first();
+
+        $message = $holder?->trashed() === true
+            ? __('kokpit.clients.errors.company_number_archived', ['name' => $holder->name])
+            : __('kokpit.clients.errors.company_number_taken');
+
+        throw ValidationException::withMessages(['company_number' => $message]);
     }
 
     /**

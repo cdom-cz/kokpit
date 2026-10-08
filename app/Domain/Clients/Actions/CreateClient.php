@@ -10,6 +10,7 @@ use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\PaymentSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -27,6 +28,11 @@ use Illuminate\Support\Facades\DB;
  * client row here and never read again: UpdateClient does not touch the settings,
  * so a later change of a default reaches only clients created afterwards. A key
  * that is present, even empty, is the caller's value and is validated as such.
+ *
+ * A company number already held by another client in the same country is a field
+ * error on `company_number`, raised from the database unique index so it also
+ * covers a number taken between the form check and the save; when the holder is
+ * archived the message says so (D-09).
  *
  * @phpstan-type ClientData array{
  *     name: string,
@@ -54,7 +60,18 @@ final class CreateClient
     {
         $attributes = ClientInput::attributes($this->withDefaults($data));
 
-        return DB::transaction(static fn (): Client => Client::query()->create($attributes)->refresh());
+        // The transaction is caught from the outside: a unique violation inside it has
+        // already rolled the insert back (savepoint when nested) before it is translated.
+        try {
+            return DB::transaction(static fn (): Client => Client::query()->create($attributes)->refresh());
+        } catch (UniqueConstraintViolationException $e) {
+            // The company number index is the only unique index a client can violate besides its key.
+            if (! str_contains($e->getMessage(), 'clients_country_company_number_unique')) {
+                throw $e;
+            }
+
+            ClientInput::refuseCompanyNumber($attributes);
+        }
     }
 
     /**
