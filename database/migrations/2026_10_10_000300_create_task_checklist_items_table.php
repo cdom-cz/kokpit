@@ -38,7 +38,7 @@ return new class extends Migration
             $table->index(['task_id', 'position'], 'task_checklist_items_task_id_position_index');
         });
 
-        DB::statement('ALTER TABLE task_checklist_items ADD CONSTRAINT task_checklist_items_text_check CHECK (length(btrim(text)) > 0)');
+        DB::statement('ALTER TABLE task_checklist_items ADD CONSTRAINT task_checklist_items_text_check CHECK (length(btrim(text, E\' \\t\\r\\n\')) > 0)');
         DB::statement('ALTER TABLE task_checklist_items ADD CONSTRAINT task_checklist_items_position_check CHECK (position >= 0)');
     }
 };

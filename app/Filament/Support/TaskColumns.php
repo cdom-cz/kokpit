@@ -6,10 +6,14 @@ namespace App\Filament\Support;
 
 use App\Domain\Shared\Tags\TagType;
 use App\Domain\Shared\Text\RichText;
+use App\Domain\Tasks\Models\Task;
+use Closure;
 use Filament\Infolists\Components\SpatieTagsEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Tables\Columns\SpatieTagsColumn;
 use Filament\Tables\Columns\TextColumn;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\HtmlString;
 
 /**
@@ -52,6 +56,10 @@ final class TaskColumns
             TextColumn::make('assignee.name')
                 ->label(__('kokpit.tasks.fields.assignee'))
                 ->placeholder(__('kokpit.tasks.empty_value')),
+            // done/total of the private checklist, read from the counts the list query adds.
+            TextColumn::make('checklist_progress')
+                ->label(__('kokpit.tasks.checklist.progress'))
+                ->state(static fn (Task $record): ?string => self::checklistProgress($record)),
             TextColumn::make('due_date')
                 ->label(__('kokpit.tasks.fields.due_date'))
                 ->date()
@@ -107,10 +115,45 @@ final class TaskColumns
                 ->formatStateUsing(static fn (?string $state): HtmlString => RichText::render($state))
                 ->placeholder(__('kokpit.tasks.empty_value'))
                 ->columnSpanFull(),
+            // Shown only when the task has a checklist.
+            TextEntry::make('checklist_progress')
+                ->label(__('kokpit.tasks.checklist.progress'))
+                ->state(static fn (Task $record): ?string => self::checklistProgress($record))
+                ->visible(static fn (Task $record): bool => self::checklistProgress($record) !== null),
             SpatieTagsEntry::make('tags')
                 ->label(__('kokpit.tasks.fields.tags'))
                 ->type(TagType::Task->value)
                 ->placeholder(__('kokpit.tasks.empty_value')),
         ];
+    }
+
+    /**
+     * The checklist counts (all items as `checklist_items_count`, done items as
+     * `checklist_done_count`) for `withCount`: two subselects in the list query, so
+     * a page of tasks needs no query per row.
+     *
+     * @return array<int|string, string|Closure(Builder<covariant Model>): Builder<covariant Model>>
+     */
+    public static function checklistCounts(): array
+    {
+        return [
+            'checklistItems',
+            'checklistItems as checklist_done_count' => static fn (Builder $items): Builder => $items->where('is_done', true),
+        ];
+    }
+
+    /**
+     * `done/total` of the checklist, or null when the task has no item. A row that
+     * did not come from a query with the counts gets them with one count query.
+     */
+    public static function checklistProgress(Task $task): ?string
+    {
+        if (! array_key_exists('checklist_items_count', $task->getAttributes())) {
+            $task->loadCount(self::checklistCounts());
+        }
+
+        $total = (int) $task->getAttribute('checklist_items_count');
+
+        return $total === 0 ? null : (int) $task->getAttribute('checklist_done_count').'/'.$total;
     }
 }

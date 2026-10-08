@@ -301,7 +301,7 @@ final class TaskResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(static fn (Builder $query): Builder => $query->with([
+            ->modifyQueryUsing(static fn (Builder $query): Builder => $query->withCount(TaskColumns::checklistCounts())->with([
                 // An archived project still names its tasks.
                 'project' => static fn ($project) => $project->withoutGlobalScopes([SoftDeletingScope::class]),
                 'parent' => static fn ($parent) => $parent->withoutGlobalScopes([SoftDeletingScope::class]),
