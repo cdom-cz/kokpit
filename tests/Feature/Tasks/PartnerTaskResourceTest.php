@@ -266,3 +266,21 @@ it('cleans a description that was written around the Action again when the Partn
         expect($page)->not->toContain($marker);
     }
 });
+
+it('shows the escalation entry with the name and the time only while the task is escalated', function (): void {
+    $task = partnerTaskResTask($this->admin, $this->projectA);
+    $this->actingAs($this->partnerA);
+
+    expect((string) $this->get('/admin/my-tasks/'.$task->reference)->assertOk()->getContent())->not->toContain('Eskalace');
+
+    app(PartnerContext::class)->runAsSystem(static fn () => DB::table('tasks')->where('id', $task->id)->update([
+        'escalated_at' => '2026-01-05 09:30:00+00',
+        'escalated_by_id' => test()->partnerA->id,
+    ]));
+
+    $page = (string) $this->get('/admin/my-tasks/'.$task->reference)->assertOk()->getContent();
+
+    expect($page)->toContain('Eskalace')
+        ->toContain('Eskalováno (')
+        ->toContain($this->partnerA->name);
+});
