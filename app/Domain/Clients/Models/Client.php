@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Clients\Models;
 
+use App\Domain\Audit\LoggedAttributes;
+use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Clients\Enums\ClientStage;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Projects\Models\Project;
@@ -29,7 +31,11 @@ use Spatie\Tags\HasTags;
  * as a system run on every request (see User::canAccessPanel()).
  *
  * Clients are archived (soft deleted), never hard deleted: every foreign key
- * that points here uses ON DELETE RESTRICT.
+ * that points here uses ON DELETE RESTRICT. Client tags are stored with the tag
+ * type `client` and survive an archive (see detachTags()).
+ *
+ * Changes to the billing data and terms are written to the activity log through
+ * an allowlist (D-06); the log itself is Admin-only.
  *
  * The hourly rate is the virtual `hourly_rate` Money attribute over the
  * `hourly_rate_minor` and `hourly_rate_currency` column pair.
@@ -71,10 +77,27 @@ use Spatie\Tags\HasTags;
     'invoice_language',
     'online_payment_enabled',
 ])]
+#[LoggedAttributes([
+    'name',
+    'company_number',
+    'tax_number',
+    'country',
+    'street',
+    'city',
+    'postal_code',
+    'stage',
+    'currency',
+    'hourly_rate_minor',
+    'hourly_rate_currency',
+    'payment_terms_days',
+    'invoice_email',
+    'invoice_language',
+    'online_payment_enabled',
+])]
 final class Client extends KokpitModel implements PartnerIsolated
 {
     /** @use HasFactory<ClientFactory> */
-    use DeniesPartners, HasFactory, SoftDeletes;
+    use DeniesPartners, HasFactory, LogsAllowlistedActivity, SoftDeletes;
 
     use HasTags {
         detachTags as private detachTagsFromTrait;

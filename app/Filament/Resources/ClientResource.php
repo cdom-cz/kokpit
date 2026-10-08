@@ -18,7 +18,9 @@ use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Money\Money;
+use App\Domain\Shared\Tags\TagType;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
+use App\Filament\RelationManagers\ClientHistoryRelationManager;
 use App\Filament\Resources\ClientResource\Pages\CreateClient;
 use App\Filament\Resources\ClientResource\Pages\EditClient;
 use App\Filament\Resources\ClientResource\Pages\ListClients;
@@ -33,15 +35,18 @@ use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\SpatieTagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\IconEntry;
+use Filament\Infolists\Components\SpatieTagsEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\SpatieTagsColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TrashedFilter;
@@ -216,6 +221,14 @@ final class ClientResource extends Resource
                         ->default(static fn (): bool => app(PaymentSettings::class)->online_payments_enabled)
                         ->columnSpanFull(),
                 ]),
+            Section::make(__('kokpit.clients.sections.tags'))
+                ->schema([
+                    // Always typed: without a type the plugin reads and syncs the tags of every type.
+                    SpatieTagsInput::make('tags')
+                        ->label(__('kokpit.clients.fields.tags'))
+                        ->helperText(__('kokpit.clients.hints.tags'))
+                        ->type(TagType::Client->value),
+                ]),
         ]);
     }
 
@@ -255,6 +268,13 @@ final class ClientResource extends Resource
                         ->label(__('kokpit.clients.fields.online_payment_enabled'))
                         ->boolean(),
                 ]),
+            Section::make(__('kokpit.clients.sections.tags'))
+                ->schema([
+                    SpatieTagsEntry::make('tags')
+                        ->label(__('kokpit.clients.fields.tags'))
+                        ->type(TagType::Client->value)
+                        ->placeholder($empty),
+                ]),
         ]);
     }
 
@@ -281,6 +301,9 @@ final class ClientResource extends Resource
                 TextColumn::make('currency')
                     ->label(__('kokpit.clients.fields.currency'))
                     ->sortable(),
+                SpatieTagsColumn::make('tags')
+                    ->label(__('kokpit.clients.fields.tags'))
+                    ->type(TagType::Client->value),
             ])
             ->filters([
                 SelectFilter::make('stage')
@@ -363,6 +386,13 @@ final class ClientResource extends Resource
             ->modalSubmitActionLabel(__('kokpit.clients.actions.restore'))
             ->successNotificationTitle(__('kokpit.clients.notifications.restored_many'))
             ->using(static fn (EloquentCollection $records) => self::eachClient($records, RestoreClient::class));
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            ClientHistoryRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

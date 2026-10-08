@@ -204,10 +204,28 @@ return [
         'empty_heading' => 'Zatím tu nejsou žádné změny',
         'empty_description' => 'Změny sledovaných údajů se objeví, jakmile k nějaké dojde.',
         'subjects' => [
+            'client' => 'Klient',
             'project' => 'Projekt',
             'project_billing' => 'Fakturace projektu',
         ],
         'attributes' => [
+            'client' => [
+                'name' => 'Název',
+                'company_number' => 'IČO / identifikační číslo',
+                'tax_number' => 'DIČ / daňové číslo',
+                'country' => 'Země',
+                'street' => 'Ulice',
+                'city' => 'Město',
+                'postal_code' => 'PSČ',
+                'stage' => 'Stav',
+                'currency' => 'Měna',
+                'hourly_rate_minor' => 'Hodinová sazba (v nejmenších jednotkách měny)',
+                'hourly_rate_currency' => 'Měna hodinové sazby',
+                'payment_terms_days' => 'Splatnost (dny)',
+                'invoice_email' => 'E-mail pro faktury',
+                'invoice_language' => 'Jazyk faktur',
+                'online_payment_enabled' => 'Online platba',
+            ],
             'project' => [
                 'client_id' => 'Klient',
                 'name' => 'Název',
@@ -288,6 +306,7 @@ return [
             'invoice_email' => 'E-mail pro faktury',
             'invoice_language' => 'Jazyk faktur',
             'online_payment_enabled' => 'Online platba',
+            'tags' => 'Štítky',
         ],
         'navigation_label' => 'Klienti',
         'model_label' => 'Klient',
@@ -295,6 +314,7 @@ return [
         'sections' => [
             'billing_data' => 'Fakturační údaje',
             'terms' => 'Obchodní podmínky',
+            'tags' => 'Štítky',
         ],
         'hints' => [
             'country' => 'Dvoupísmenný kód velkými písmeny, například CZ.',
@@ -302,6 +322,7 @@ return [
             'hourly_rate' => 'Částka v měně klienta, s desetinnou čárkou a bez oddělovače tisíců, například 1500,50.',
             'payment_terms_days' => 'Počet dní od 0 do 365.',
             'online_payment_enabled' => 'Zapnuto: faktury tohoto klienta půjde zaplatit online.',
+            'tags' => 'Interní štítky klienta. Nesdílejí se s projekty a klient je nikdy nevidí.',
         ],
         'filters' => [
             'stage' => 'Stav',
