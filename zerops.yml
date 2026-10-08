@@ -1,192 +1,56 @@
-# Zerops deploy manifest. Three setups, one per service, each built from this
-# file separately:
-#
-#   app        web container (nginx + PHP-FPM). The only setup that migrates the
-#              database, once per deploy; its readiness check gates the switch.
-#   worker     queue worker (queue:work). Never migrates.
-#   scheduler  scheduler (schedule:work). Never migrates. Run it as exactly one
-#              container in the Zerops service settings.
-#
-# This file holds no secret value. Values written as ${...} are references that
-# Zerops resolves from the other services of the project; APP_KEY, the mail
-# credentials and every other secret live in the Zerops project or service
-# secrets and are set in the Zerops GUI, never here. The reference names below
-# (db_*, redis_*, storage_*) assume the services are named db, redis and storage
-# in the Zerops project; the rehearsal checklist confirms them.
-#
-# The previous version keeps serving while a new one starts and after a failed
-# deploy, so every migration must stay backward compatible with the previous
-# release (expand, deploy, contract).
 zerops:
-  - setup: app
+  - setup: backend
     build:
-      base: php@8.5
+      base:
+        - alpine/php@8.5
+        - alpine/nodejs@24
+      os: alpine
       buildCommands:
-        - composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
-      deployFiles:
-        - app
-        - bootstrap
-        - config
-        - database
-        - lang
-        - public
-        - resources
-        - routes
-        - storage
+        - composer install --optimize-autoloader --no-dev --ignore-platform-reqs
+        - pnpm install
+        - pnpm run build
+      envVariables:
+        VITE_APP_NAME: ${RUNTIME_VITE_APP_NAME}
+      deployFiles: ./
+      cache:
         - vendor
-        - artisan
-        - composer.json
-      cache: vendor
-    deploy:
-      # A new version takes traffic only after this command succeeds: a failed
-      # or missing migration, an unreachable database or Redis keeps the old
-      # version serving.
-      readinessCheck:
-        exec:
-          command: php artisan kokpit:deploy:verify
-        failureTimeout: 120s
-        retryPeriod: 10s
+        - composer.lock
+        - node_modules
+        - pnpm-lock.yaml
     run:
-      base: php-nginx@8.5
-      documentRoot: public
+      base: alpine/php-nginx@8.5
+      os: alpine
+      siteConfigPath: site.conf.tmpl
+      prepareCommands:
+        - sudo apk update
+        - sudo apk add --no-cache supervisor
+        - sudo rc-update add supervisord default
+        - sudo mkdir -p /etc/supervisor.d
+        - sudo mkdir -p /var/log/supervisor
+        - sudo rc-service supervisord start
+        - sudo rc-service supervisord status
+        - sudo supervisorctl status
       initCommands:
-        # Exactly once per deploy across all containers of the service. It is
-        # deliberately not retried: a failing migration fails the deploy.
-        - zsc execOnce ${ZEROPS_appVersionId} -- php artisan migrate --force
-        # The caches depend on runtime paths, so they are built at container start, not in the build.
-        - php artisan config:cache
-        - php artisan route:cache
-        - php artisan view:cache
+        - php artisan optimize:clear
+        - php artisan optimize
+        - php artisan icons:cache
+        - sudo -E -u zerops -- zsc execOnce ${appVersionId} -- php artisan migrate --force
         - php artisan filament:optimize
-      healthCheck:
-        httpGet:
-          port: 80
-          path: /up
-      envVariables:
-        APP_NAME: Kokpit
-        APP_ENV: production
-        APP_DEBUG: "false"
-        LOG_CHANNEL: syslog
-        DB_CONNECTION: pgsql
-        DB_HOST: ${db_hostname}
-        DB_PORT: ${db_port}
-        DB_DATABASE: ${db_dbName}
-        DB_USERNAME: ${db_user}
-        DB_PASSWORD: ${db_password}
-        REDIS_CLIENT: phpredis
-        REDIS_HOST: ${redis_hostname}
-        REDIS_PORT: ${redis_port}
-        QUEUE_CONNECTION: redis
-        CACHE_STORE: redis
-        SESSION_DRIVER: redis
-        FILESYSTEM_DISK: s3
-        AWS_ACCESS_KEY_ID: ${storage_accessKeyId}
-        AWS_SECRET_ACCESS_KEY: ${storage_secretAccessKey}
-        AWS_DEFAULT_REGION: us-east-1
-        AWS_BUCKET: ${storage_bucketName}
-        AWS_ENDPOINT: ${storage_apiUrl}
-        AWS_USE_PATH_STYLE_ENDPOINT: "true"
-        KOKPIT_REQUIRE_ADMIN_2FA: "true"
-        KOKPIT_CANARY_HARNESS: "false"
+        # Runs per container, deliberately WITHOUT execOnce: horizon:terminate only
+        # signals Horizon masters on the same hostname, so an execOnce run on one
+        # container could never reach the masters of the other containers. On a
+        # fresh container it is a no-op; if a container is ever reused in place it
+        # gracefully restarts the old-code master.
+        - php artisan horizon:terminate
+        - sudo cp supervisor-horizon.ini /etc/supervisor.d/
+        # Clean up the pre-Horizon worker program if the container is reused.
+        - sudo rm -f /etc/supervisor.d/supervisor-laravel.ini
+        - sudo supervisorctl reread
+        - sudo supervisorctl update
+        - sudo supervisorctl start horizon
 
-  - setup: worker
-    build:
-      base: php@8.5
-      buildCommands:
-        - composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
-      deployFiles:
-        - app
-        - bootstrap
-        - config
-        - database
-        - lang
-        - public
-        - resources
-        - routes
-        - storage
-        - vendor
-        - artisan
-        - composer.json
-      cache: vendor
-    run:
-      base: php-nginx@8.5
-      initCommands:
-        - php artisan config:cache
-      start: php artisan queue:work --sleep=3 --max-time=3600
-      envVariables:
-        APP_NAME: Kokpit
-        APP_ENV: production
-        APP_DEBUG: "false"
-        LOG_CHANNEL: syslog
-        DB_CONNECTION: pgsql
-        DB_HOST: ${db_hostname}
-        DB_PORT: ${db_port}
-        DB_DATABASE: ${db_dbName}
-        DB_USERNAME: ${db_user}
-        DB_PASSWORD: ${db_password}
-        REDIS_CLIENT: phpredis
-        REDIS_HOST: ${redis_hostname}
-        REDIS_PORT: ${redis_port}
-        QUEUE_CONNECTION: redis
-        CACHE_STORE: redis
-        SESSION_DRIVER: redis
-        FILESYSTEM_DISK: s3
-        AWS_ACCESS_KEY_ID: ${storage_accessKeyId}
-        AWS_SECRET_ACCESS_KEY: ${storage_secretAccessKey}
-        AWS_DEFAULT_REGION: us-east-1
-        AWS_BUCKET: ${storage_bucketName}
-        AWS_ENDPOINT: ${storage_apiUrl}
-        AWS_USE_PATH_STYLE_ENDPOINT: "true"
-        KOKPIT_REQUIRE_ADMIN_2FA: "true"
-        KOKPIT_CANARY_HARNESS: "false"
-
-  - setup: scheduler
-    build:
-      base: php@8.5
-      buildCommands:
-        - composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
-      deployFiles:
-        - app
-        - bootstrap
-        - config
-        - database
-        - lang
-        - public
-        - resources
-        - routes
-        - storage
-        - vendor
-        - artisan
-        - composer.json
-      cache: vendor
-    run:
-      base: php-nginx@8.5
-      initCommands:
-        - php artisan config:cache
-      start: php artisan schedule:work
-      envVariables:
-        APP_NAME: Kokpit
-        APP_ENV: production
-        APP_DEBUG: "false"
-        LOG_CHANNEL: syslog
-        DB_CONNECTION: pgsql
-        DB_HOST: ${db_hostname}
-        DB_PORT: ${db_port}
-        DB_DATABASE: ${db_dbName}
-        DB_USERNAME: ${db_user}
-        DB_PASSWORD: ${db_password}
-        REDIS_CLIENT: phpredis
-        REDIS_HOST: ${redis_hostname}
-        REDIS_PORT: ${redis_port}
-        QUEUE_CONNECTION: redis
-        CACHE_STORE: redis
-        SESSION_DRIVER: redis
-        FILESYSTEM_DISK: s3
-        AWS_ACCESS_KEY_ID: ${storage_accessKeyId}
-        AWS_SECRET_ACCESS_KEY: ${storage_secretAccessKey}
-        AWS_DEFAULT_REGION: us-east-1
-        AWS_BUCKET: ${storage_bucketName}
-        AWS_ENDPOINT: ${storage_apiUrl}
-        AWS_USE_PATH_STYLE_ENDPOINT: "true"
-        KOKPIT_REQUIRE_ADMIN_2FA: "true"
-        KOKPIT_CANARY_HARNESS: "false"
+      crontab:
+        - command: "php artisan schedule:run"
+          timing: "* * * * *"
+          workingDir: /var/www
+          allContainers: true
