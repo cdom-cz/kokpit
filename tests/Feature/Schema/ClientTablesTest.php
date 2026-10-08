@@ -10,7 +10,7 @@ use Tests\Support\RawSql;
  * Database-level invariants of the client tables (Phase 4 D-01, D-03, D-04, D-09
  * and the CL-01 boundaries). Every statement is raw SQL so that no model, cast
  * or form rule can stand between the value and the constraint. Values are
- * fictional and assembled at runtime. Plan 04-02 adds a projects section.
+ * fictional and assembled at runtime. The projects section follows the users one.
  */
 
 /**
@@ -79,6 +79,41 @@ function insertUserRow(array $overrides = []): string
     );
 
     return (string) $row['id'];
+}
+
+/**
+ * Inserts one project row with valid defaults; overrides replace single columns.
+ * A client row is created unless `client_id` is given.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function insertProjectRow(array $overrides = []): string
+{
+    $row = [
+        'id' => (string) Str::uuid7(),
+        'client_id' => $overrides['client_id'] ?? insertClientRow(),
+        'name' => 'Example project '.Str::lower(Str::random(8)),
+        'key' => projectRowKey(),
+        'created_at' => now(),
+        'updated_at' => now(),
+        ...$overrides,
+    ];
+
+    $columns = array_keys($row);
+    DB::insert(
+        sprintf('INSERT INTO projects (%s) VALUES (%s)', implode(', ', $columns), implode(', ', array_fill(0, count($columns), '?'))),
+        array_values($row),
+    );
+
+    return (string) $row['id'];
+}
+
+/**
+ * Six random uppercase letters, a valid project key.
+ */
+function projectRowKey(): string
+{
+    return implode('', array_map(static fn (): string => chr(random_int(65, 90)), range(1, 6)));
 }
 
 describe('clients', function (): void {
@@ -187,5 +222,77 @@ describe('users', function (): void {
         expect(DB::scalar('SELECT deactivated_at FROM users WHERE id = ?', [$id]))->not->toBeNull()
             ->and(DB::scalar("SELECT data_type FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'deactivated_at'"))
             ->toBe('timestamp with time zone');
+    });
+});
+
+describe('projects', function (): void {
+    it('accepts keys of 2 to 6 uppercase letters and refuses anything else', function (): void {
+        RawSql::expectAllowed(fn () => insertProjectRow(['key' => 'AB']));
+        RawSql::expectAllowed(fn () => insertProjectRow(['key' => 'ABCDEF']));
+
+        foreach (['A', 'ab', 'A1', 'Ab', 'AB-', 'A B', 'ÁB'] as $key) {
+            RawSql::expectSqlState('23514', fn () => insertProjectRow(['key' => $key]));
+        }
+
+        RawSql::expectSqlState('22001', fn () => insertProjectRow(['key' => 'ABCDEFG']));
+    });
+
+    it('refuses a duplicate key, also against an archived project', function (): void {
+        $key = projectRowKey();
+
+        RawSql::expectAllowed(fn () => insertProjectRow(['key' => $key]));
+        RawSql::expectSqlState('23505', fn () => insertProjectRow(['key' => $key]));
+
+        $archivedKey = projectRowKey();
+
+        RawSql::expectAllowed(fn () => insertProjectRow(['key' => $archivedKey, 'deleted_at' => now()]));
+        RawSql::expectSqlState('23505', fn () => insertProjectRow(['key' => $archivedKey]));
+    });
+
+    it('refuses an end date before the start date and allows equal or missing dates', function (): void {
+        RawSql::expectSqlState('23514', fn () => insertProjectRow(['start_date' => '2026-03-10', 'end_date' => '2026-03-09']));
+        RawSql::expectAllowed(fn () => insertProjectRow(['start_date' => '2026-03-10', 'end_date' => '2026-03-10']));
+        RawSql::expectAllowed(fn () => insertProjectRow(['start_date' => '2026-03-10', 'end_date' => '2026-04-10']));
+        RawSql::expectAllowed(fn () => insertProjectRow(['start_date' => '2026-03-10', 'end_date' => null]));
+        RawSql::expectAllowed(fn () => insertProjectRow(['start_date' => null, 'end_date' => '2026-03-10']));
+        RawSql::expectAllowed(fn () => insertProjectRow(['start_date' => null, 'end_date' => null]));
+    });
+
+    it('accepts the six statuses and the four priorities and refuses unknown ones', function (): void {
+        foreach (['planned', 'to_clarify', 'in_progress', 'in_review', 'ready_to_release', 'done'] as $status) {
+            RawSql::expectAllowed(fn () => insertProjectRow(['status' => $status]));
+        }
+
+        foreach (['low', 'normal', 'high', 'urgent'] as $priority) {
+            RawSql::expectAllowed(fn () => insertProjectRow(['priority' => $priority]));
+        }
+
+        RawSql::expectSqlState('23514', fn () => insertProjectRow(['status' => 'archived']));
+        RawSql::expectSqlState('23514', fn () => insertProjectRow(['priority' => 'critical']));
+    });
+
+    it('defaults to planned, normal priority and hidden from the client', function (): void {
+        $id = insertProjectRow();
+
+        expect(DB::scalar('SELECT status FROM projects WHERE id = ?', [$id]))->toBe('planned')
+            ->and(DB::scalar('SELECT priority FROM projects WHERE id = ?', [$id]))->toBe('normal')
+            ->and(DB::scalar('SELECT client_visible FROM projects WHERE id = ?', [$id]))->toBeFalse();
+    });
+
+    it('requires a client, a name, a key and a visibility flag', function (): void {
+        foreach (['client_id', 'name', 'key', 'client_visible', 'status', 'priority'] as $column) {
+            RawSql::expectSqlState('23502', fn () => insertProjectRow([$column => null]));
+        }
+    });
+
+    it('refuses a project of an unknown client with SQLSTATE 23503', function (): void {
+        RawSql::expectSqlState('23503', fn () => insertProjectRow(['client_id' => (string) Str::uuid7()]));
+    });
+
+    it('refuses a hard delete of a client that has a project with SQLSTATE 23001', function (): void {
+        $clientId = insertClientRow();
+        insertProjectRow(['client_id' => $clientId]);
+
+        RawSql::expectSqlState('23001', fn () => DB::delete('DELETE FROM clients WHERE id = ?', [$clientId]));
     });
 });
