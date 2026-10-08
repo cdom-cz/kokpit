@@ -186,14 +186,14 @@ it('refuses the Actions for a user without any role', function (): void {
         ->and(accountFresh($nobody)->deactivated_at)->toBeNull();
 });
 
-it('offers deactivate and reactivate in the tab and no create, edit, delete, attach or detach (D-04)', function (): void {
+it('offers deactivate, reactivate and the reset in the tab and no create, edit, delete, attach or detach (D-04)', function (): void {
     Canary::partnerFor($this->client->id);
     $table = accountsTab($this->client)->instance()->getTable();
 
     expect($table->getHeaderActions())->toBe([])
         ->and($table->getToolbarActions())->toBe([])
         ->and($table->getFlatBulkActions())->toBe([])
-        ->and(array_keys($table->getFlatRecordActions()))->toBe(['deactivate', 'reactivate']);
+        ->and(array_keys($table->getFlatRecordActions()))->toBe(['deactivate', 'reactivate', 'sendPasswordReset']);
 });
 
 it('never deletes an account: the policy path stays closed for a Partner and the tab has no delete action', function (): void {
