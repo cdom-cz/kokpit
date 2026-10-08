@@ -294,7 +294,7 @@ Plans:
   4. Admin drags cards on the per-project and the global kanban board; status and position persist immediately and survive a reload, and the global board filters by client, assignee, tag and priority
   5. A Partner creates tasks and comments in visible projects but cannot change status or priority or move cards, sees a read-only task list, never sees internal comments or another client's tasks, and Admin is notified of Partner tasks and comments
 
-**Plans:** 8/17 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 4 rule; each plan modifies at most 14 files)
+**Plans:** 9/17 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 4 rule; each plan modifies at most 14 files)
 **UI hint**: yes
 
 Plans:
@@ -323,7 +323,7 @@ Plans:
 - [x] 05-08-PLAN.md — Read-time TaskBillingResolver with sources on the task page, billing constraints and audit (TA-06)
 
 **Wave 9** *(blocked on Wave 8 completion)*
-- [ ] 05-09-PLAN.md — Comments with the internal flag, Partner scope hiding internal rows, server-side forcing (TA-04)
+- [x] 05-09-PLAN.md — Comments with the internal flag, Partner scope hiding internal rows, server-side forcing (TA-04)
 
 **Wave 10** *(blocked on Wave 9 completion)*
 - [ ] 05-10-PLAN.md — Global drag-and-drop board: status columns, Done cap, filters, guarded locked mover (KB-01, KB-02, KB-03)
@@ -463,7 +463,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
 | 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
 | 4. Clients and Projects | 21/21 | In Progress | - |
-| 5. Tasks and Kanban | 8/17 | In Progress | - |
+| 5. Tasks and Kanban | 9/17 | In Progress | - |
 | 6. Time Tracking | 0/0 | Not started | - |
 | 7. REST API | 0/0 | Not started | - |
 | 8. Exchange Rates and Reports | 0/0 | Not started | - |
