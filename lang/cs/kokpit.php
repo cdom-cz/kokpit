@@ -207,6 +207,7 @@ return [
             'client' => 'Klient',
             'project' => 'Projekt',
             'project_billing' => 'Fakturace projektu',
+            'task_billing' => 'Fakturace úkolu',
             'contact' => 'Kontakt',
             'task' => 'Úkol',
         ],
@@ -470,6 +471,20 @@ return [
             'people' => 'Lidé',
             'tags' => 'Štítky',
             'billing' => 'Fakturace úkolu',
+        ],
+        'billing' => [
+            'effective' => [
+                'heading' => 'Platná fakturace',
+                'description' => 'Co se pro tento úkol opravdu použije: vlastní hodnota úkolu, jinak hodnota nadřazeného úkolu, projektu a u hodinové sazby klienta.',
+                'type' => 'Typ fakturace',
+                'hourly_rate' => 'Hodinová sazba',
+                'fixed_price' => 'Pevná cena',
+                'estimate' => 'Odhad',
+                'per_hour' => 'za hodinu',
+                'hours' => 'hod.',
+                'source' => 'zdroj: :source',
+                'none' => 'Nezadáno',
+            ],
         ],
         'checklist' => [
             'heading' => 'Kontrolní seznam',

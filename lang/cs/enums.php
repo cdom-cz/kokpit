@@ -74,6 +74,13 @@ return [
         'non_billable' => 'Nefakturovat',
     ],
 
+    'billing_source' => [
+        'task' => 'Tento úkol',
+        'parent_task' => 'Nadřazený úkol',
+        'project' => 'Projekt',
+        'client' => 'Klient',
+    ],
+
     'activity_source_label' => [
         'web' => 'Web',
         'console' => 'Konzole',
