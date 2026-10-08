@@ -47,6 +47,7 @@ return [
             'supplier' => 'Dodavatel',
             'invoicing' => 'Fakturace',
             'defaults' => 'Výchozí hodnoty',
+            'payments' => 'Online platby',
         ],
         'supplier' => [
             'company_name' => 'Název společnosti',
@@ -79,6 +80,10 @@ return [
             'currency_invalid' => 'Vyberte platný kód měny podle ISO 4217.',
             'rate_invalid' => 'Zadejte nezáporné číslo s nejvýše tolika desetinnými místy, kolik měna dovoluje.',
             'rate_currency_mismatch' => 'Měna výchozí sazby musí být stejná jako výchozí měna.',
+        ],
+        'payments' => [
+            'online_payments_enabled' => 'Nabízet online platbu kartou',
+            'online_payments_enabled_hint' => 'Odkazy na platbu kartou přibudou spolu s napojením na Stripe; zatím se jen ukládá, zda je chcete používat.',
         ],
     ],
 

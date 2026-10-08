@@ -6,6 +6,7 @@ namespace App\Filament\Pages;
 
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
+use App\Domain\Settings\Settings\PaymentSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Settings\Settings\ValidatedSettings;
 use App\Domain\Settings\VatMode;
@@ -17,6 +18,7 @@ use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Pages\Concerns\CanUseDatabaseTransactions;
 use Filament\Pages\Concerns\HasUnsavedDataChangesAlert;
@@ -62,6 +64,7 @@ class SettingsPage extends Page
         SupplierSettings::class,
         InvoicingSettings::class,
         DefaultsSettings::class,
+        PaymentSettings::class,
     ];
 
     protected static ?string $slug = 'settings';
@@ -121,6 +124,7 @@ class SettingsPage extends Page
                     $this->supplierTab(),
                     $this->invoicingTab(),
                     $this->defaultsTab(),
+                    $this->paymentsTab(),
                 ]),
             ]);
     }
@@ -211,6 +215,7 @@ class SettingsPage extends Page
                     ->label(__('kokpit.settings.invoicing.vat_mode'))
                     ->helperText(__('kokpit.settings.invoicing.vat_mode_hint'))
                     ->options(VatMode::class)
+                    ->disableOptionWhen(fn (string $value): bool => $value !== VatMode::NonPayer->value)
                     ->native(false)
                     ->required()
                     ->rules($rules['vat_mode']),
@@ -223,6 +228,20 @@ class SettingsPage extends Page
                     ->required()
                     ->rules($rules['payment_due_days']),
             ])->statePath(InvoicingSettings::group()),
+        ]);
+    }
+
+    private function paymentsTab(): Tab
+    {
+        $rules = PaymentSettings::rules();
+
+        return Tab::make(__('kokpit.settings.tabs.payments'))->schema([
+            Group::make([
+                Toggle::make('online_payments_enabled')
+                    ->label(__('kokpit.settings.payments.online_payments_enabled'))
+                    ->helperText(__('kokpit.settings.payments.online_payments_enabled_hint'))
+                    ->rules($rules['online_payments_enabled']),
+            ])->statePath(PaymentSettings::group()),
         ]);
     }
 

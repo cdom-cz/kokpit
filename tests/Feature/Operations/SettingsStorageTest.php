@@ -110,14 +110,14 @@ it('returns the stored supplier settings inside the system context without a use
 it('shows a Partner only the rows of the groups on the allowlist and nothing else', function (): void {
     $system = app(PartnerContext::class);
     $system->runAsSystem(static function (): void {
-        foreach (['payments' => 'bank', 'ledger' => 'books'] as $group => $name) {
+        foreach (['visibility_probe' => 'bank', 'ledger' => 'books'] as $group => $name) {
             SettingsProperty::query()->create(['group' => $group, 'name' => $name, 'payload' => json_encode('fictional', JSON_THROW_ON_ERROR)]);
         }
     });
 
     $widened = new class extends SettingsProperty
     {
-        public const array PARTNER_VISIBLE_GROUPS = ['payments'];
+        public const array PARTNER_VISIBLE_GROUPS = ['visibility_probe'];
     };
 
     [$clientA] = Canary::twoClients();
@@ -128,7 +128,7 @@ it('shows a Partner only the rows of the groups on the allowlist and nothing els
 
     expect(SettingsProperty::PARTNER_VISIBLE_GROUPS)->toBe([])
         ->and(SettingsProperty::query()->count())->toBe(0)
-        ->and($query->pluck('group')->all())->toBe(['payments']);
+        ->and($query->pluck('group')->all())->toBe(['visibility_probe']);
 });
 
 it('keeps the settings cache off by a literal value and reads no environment variable', function (): void {

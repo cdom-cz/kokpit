@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
+use App\Domain\Settings\Settings\PaymentSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Shared\Models\SettingsProperty;
 use Spatie\LaravelSettings\SettingsCasts\DateTimeInterfaceCast;
@@ -25,6 +26,7 @@ return [
         SupplierSettings::class,
         InvoicingSettings::class,
         DefaultsSettings::class,
+        PaymentSettings::class,
     ],
 
     'setting_class_path' => app_path('Domain/Settings/Settings'),

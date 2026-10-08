@@ -31,8 +31,8 @@ class InvoicingSettings extends ValidatedSettings
     public static function rules(): array
     {
         return [
-            'vat_mode' => ['required'],
-            'payment_due_days' => ['required', 'integer'],
+            'vat_mode' => ['required', 'in:non_payer'],
+            'payment_due_days' => ['required', 'integer', 'between:0,365'],
         ];
     }
 

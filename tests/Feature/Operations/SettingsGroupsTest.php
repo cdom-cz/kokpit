@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\PaymentSettings;
-use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Settings\VatMode;
 use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Money\Money;
