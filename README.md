@@ -50,9 +50,9 @@ Open the panel URL, sign in as the Admin and set up an authenticator app (TOTP) 
 
 ## Deploy
 
-Production runs on Zerops as three services built from `zerops.yml`: `app` (the web container), `worker` (the queue worker) and `scheduler` (the scheduler, exactly one container), next to PostgreSQL, Valkey (Redis) and private object storage. Nothing in the repository holds a secret: `APP_KEY`, the mail credentials and the access token live in the Zerops project and in the GitHub `production` environment.
+Production runs on Zerops as one service, `backend`, built from the single setup in `zerops.yml`: nginx and PHP-FPM serve the panel, supervisord runs the Horizon queue worker (`supervisor-horizon.ini`) and a crontab runs the scheduler every minute, next to PostgreSQL, Valkey (Redis) and private object storage. Nothing in the repository holds a secret or an environment value: every environment variable is set in the Zerops UI, and the access token lives in the GitHub `production` environment.
 
-A deploy starts only from a published release tagged `v*` (never a prerelease) or from a manual run of the `Deploy` workflow, and it waits for the approval of the `production` environment. The app service migrates the database once per deploy and goes live only after its readiness check passes. Two commands check a running instance from its shell:
+A deploy starts only from a published release tagged `v*` (never a prerelease) or from a manual run of the `Deploy` workflow, and it waits for the approval of the `production` environment. The database is migrated once per deploy through `zsc execOnce`. Two commands check a running instance from its shell:
 
     php artisan kokpit:deploy:verify
     php artisan kokpit:storage:check

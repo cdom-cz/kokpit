@@ -235,6 +235,9 @@ it('documents the manual GitHub and Zerops deploy settings in CONTRIBUTING.md', 
         'volatile-lru',
         'backward compatible',
         'rollback',
+        'ZEROPS_SERVICE_ID',
+        'backend',
+        'Zerops UI',
     ] as $phrase) {
         expect($contributing)->toContain($phrase);
     }
@@ -322,4 +325,20 @@ it('documents the service id variable the deploy workflow reads', function () {
     expect(array_values(array_unique($matches[1])))->toBe(['ZEROPS_SERVICE_ID'])
         ->and($contributing)->toContain('ZEROPS_SERVICE_ID')
         ->and($contributing)->not->toMatch('/ZEROPS_('.implode('|', ['APP', 'WORKER', 'SCHEDULER']).')_SERVICE_ID/');
+});
+
+it('names the production environment variables for the Zerops UI and each is a documented key', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    preg_match_all('/^#?\s*([A-Z][A-Z0-9_]*)=/m', repoFile('.env.example'), $matches);
+    $documented = array_unique($matches[1]);
+
+    foreach ([
+        'APP_KEY', 'APP_URL', 'APP_ENV', 'APP_DEBUG', 'DB_HOST', 'DB_PASSWORD', 'REDIS_HOST', 'QUEUE_CONNECTION',
+        'CACHE_STORE', 'SESSION_DRIVER', 'MAIL_MAILER', 'FILESYSTEM_DISK', 'AWS_BUCKET', 'AWS_ENDPOINT',
+        'KOKPIT_REQUIRE_ADMIN_2FA', 'KOKPIT_CANARY_HARNESS',
+    ] as $name) {
+        expect($contributing)->toContain("`{$name}`")
+            ->and($documented)->toContain($name);
+    }
 });
