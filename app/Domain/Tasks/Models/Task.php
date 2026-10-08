@@ -158,6 +158,17 @@ final class Task extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * The comments of the task, oldest first. A Partner reads only the
+     * non-internal ones: TaskComment is Partner-scoped.
+     *
+     * @return HasMany<TaskComment, $this>
+     */
+    public function comments(): HasMany
+    {
+        return $this->hasMany(TaskComment::class)->orderBy('created_at')->orderBy('id');
+    }
+
+    /**
      * The private todo checklist of the task, in the order the Admin left it.
      * Admin-only: a Partner reads no item.
      *

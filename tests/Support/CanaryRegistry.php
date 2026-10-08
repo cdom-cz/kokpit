@@ -18,11 +18,13 @@ use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Shared\Tags\TagType;
+use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskBilling;
 use App\Domain\Tasks\Models\TaskChecklistItem;
+use App\Domain\Tasks\Models\TaskComment;
 use Closure;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\Probes\PackageProbe;
@@ -167,6 +169,21 @@ final class CanaryRegistry
                         'hourly_rate' => Money::ofMinor(95000, $client->currency),
                         'internal_note' => $canary,
                     ]);
+                });
+            },
+
+            // Two comments on the canary task of that client (found by its project name; the
+            // Task fixture runs before this one): a visible one and an internal twin, both
+            // carrying the canary. A Partner must read exactly the visible one, so the
+            // exact-one-row check fails if the internal comment is ever returned.
+            TaskComment::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+                    $task = Task::query()->where('project_id', $project->getKey())->firstOrFail();
+                    $admin = Canary::admin();
+
+                    app(AddTaskComment::class)->handle($admin, $task, '<p>'.$canary.'</p>');
+                    app(AddTaskComment::class)->handle($admin, $task, '<p>'.$canary.'</p>', internal: true);
                 });
             },
 

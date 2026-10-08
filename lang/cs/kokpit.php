@@ -457,8 +457,35 @@ return [
             'parent_not_allowed' => 'Podúkol může vytvořit jen správce.',
             'has_active_subtasks' => 'Úkol má aktivní podúkoly. Nejdřív archivujte je.',
             'billing_type_invalid' => 'Vyberte platný typ fakturace úkolu.',
+            'body_empty' => 'Napište text komentáře.',
+            'body_too_long' => 'Komentář je příliš dlouhý. Zkraťte ho, vejde se nejvýše 100 000 bajtů textu včetně značek.',
         ],
         'empty_value' => '—',
+        'comments' => [
+            'relation_title' => 'Komentáře',
+            'fields' => [
+                'author' => 'Autor',
+                'created_at' => 'Napsáno',
+                'body' => 'Komentář',
+                'is_internal' => 'Interní komentář',
+                'visibility' => 'Viditelnost',
+                'kind' => 'Druh',
+            ],
+            'hints' => [
+                'is_internal' => 'Interní komentář vidí jen správce, klient ho nikdy neuvidí.',
+            ],
+            'badges' => [
+                'internal' => 'Interní',
+                'escalation' => 'Eskalace',
+            ],
+            'actions' => [
+                'create' => 'Přidat komentář',
+                'create_heading' => 'Nový komentář',
+                'create_submit' => 'Přidat komentář',
+            ],
+            'empty_heading' => 'Úkol zatím nemá žádné komentáře',
+            'empty_description' => 'Přidejte první komentář tlačítkem Přidat komentář.',
+        ],
         'subtasks' => [
             'relation_title' => 'Podúkoly',
             'actions' => [

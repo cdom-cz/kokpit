@@ -22,6 +22,8 @@ use App\Domain\Shared\Policies\AdminOnlyPolicy;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskBilling;
 use App\Domain\Tasks\Models\TaskChecklistItem;
+use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\Tasks\Policies\TaskCommentPolicy;
 use App\Domain\Tasks\Policies\TaskPolicy;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -73,5 +75,9 @@ final class AccessServiceProvider extends ServiceProvider
         // The private todo checklist of a task is the Admin's working note (TA-03, A1).
         Gate::policy(TaskChecklistItem::class, AdminOnlyPolicy::class);
         Gate::policy(TaskBilling::class, AdminOnlyPolicy::class);
+
+        // Comments: a Partner reads the non-internal comments of the visible tasks and
+        // writes new ones; nobody edits or deletes a comment (TA-04, D-08, A6).
+        Gate::policy(TaskComment::class, TaskCommentPolicy::class);
     }
 }

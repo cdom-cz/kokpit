@@ -26,6 +26,7 @@ use App\Filament\Resources\TaskResource\Pages\EditTask;
 use App\Filament\Resources\TaskResource\Pages\ListTasks;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use App\Filament\Resources\TaskResource\RelationManagers\SubtasksRelationManager;
+use App\Filament\Resources\TaskResource\RelationManagers\TaskCommentsRelationManager;
 use App\Filament\Support\TaskColumns;
 use BackedEnum;
 use Carbon\CarbonImmutable;
@@ -513,6 +514,7 @@ final class TaskResource extends Resource
     public static function getRelations(): array
     {
         return [
+            TaskCommentsRelationManager::class,
             SubtasksRelationManager::class,
             TaskHistoryRelationManager::class,
         ];
