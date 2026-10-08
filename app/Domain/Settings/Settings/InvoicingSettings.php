@@ -15,7 +15,7 @@ use Illuminate\Validation\ValidationException;
  */
 class InvoicingSettings extends ValidatedSettings
 {
-    /** Only `non_payer` is supported in this milestone. */
+    // Only `non_payer` is supported in this milestone.
     public VatMode $vat_mode;
 
     public int $payment_due_days;
