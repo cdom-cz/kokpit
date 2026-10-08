@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Completed 05-12-PLAN.md
-last_updated: "2026-10-08T23:39:17.379Z"
+stopped_at: Completed 05-13-PLAN.md
+last_updated: "2026-10-08T23:55:30.599Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 05 execution started
-state_head: e67378d3e5a2f70250c832f032e5905585f02bb6
+state_head: 38e716fd2047222ecd9597d58f341ac0731cbf07
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 81
-  completed_plans: 76
+  completed_plans: 77
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 05 (Tasks and Kanban) — EXECUTING
-Plan: 13 of 17
+Plan: 14 of 17
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 05 execution started
 
@@ -134,6 +134,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 05 P10 | 28 min | 3 tasks | 13 files |
 | Phase 05 P11 | 18 min | 3 tasks | 11 files |
 | Phase 05 P12 | 10 min | 3 tasks | 9 files |
+| Phase 05 P13 | 45min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -288,6 +289,8 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-11: board lock proven by two-process move test with UnlockedTaskBoard mutation run (exclusion violations and deadlocks without the lock); F-8, F-9 and E-5 left open
 - [Phase 05]: 05-12: PartnerTaskResource builds its list and page only from the pinned TaskColumns Partner builders (names are public constants compared by a test); the create page reads only project, title and description and calls CreateTask
 - [Phase 05]: 05-12: the Partner escalated_at entry is built in this plan (hidden while not escalated); escalate and clear actions stay in 05-13
+- [Phase 05]: 05-13: clearEscalation granted to a Partner only on an own-client task they are assigned to (D-06); ClearEscalation and EscalateTask check the right and the flag on the row re-read under lockForUpdate
+- [Phase 05]: 05-13: the Partner comments tab hands only the body to AddTaskComment; the server-side forcing keeps a Partner comment non-internal
 
 ### Pending Todos
 
@@ -327,6 +330,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T23:39:17.264Z
-Stopped at: Completed 05-12-PLAN.md
+Last session: 2026-10-08T23:55:30.471Z
+Stopped at: Completed 05-13-PLAN.md
 Resume file: None
