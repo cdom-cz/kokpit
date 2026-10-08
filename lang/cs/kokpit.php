@@ -105,6 +105,21 @@ return [
             'rate_invalid' => 'Zadejte nezáporné číslo s nejvýše tolika desetinnými místy, kolik měna dovoluje.',
             'rate_currency_mismatch' => 'Měna výchozí sazby musí být stejná jako výchozí měna.',
         ],
+        'numbering' => [
+            'errors' => [
+                'not_text' => 'Vzor čísla musí být text.',
+                'unknown_token' => 'Vzor obsahuje neznámou značku. Povolené jsou {YYYY}, {YY}, {MM} a čítač {N} až {NNNNNNNNNN}.',
+                'counter_count' => 'Vzor musí obsahovat právě jednu značku čítače, například {NNNN}.',
+                'month_without_year' => 'Značku měsíce {MM} lze použít jen společně s rokem {YYYY} nebo {YY}.',
+                'literal' => 'Mimo značky smí vzor obsahovat jen písmena bez diakritiky, číslice a znaky . _ / -',
+                'too_long' => 'Vzor smí mít nejvýše 32 znaků.',
+                'invoice_digits' => 'Číslo faktury smí obsahovat jen číslice, protože slouží jako variabilní symbol.',
+                'invoice_length' => 'Číslo faktury smí mít nejvýše 10 číslic, ale tento vzor dává už nejkratší číslo delší.',
+                'task_fixed' => 'Číslo úkolu má pevný tvar {KEY}-{N} a nelze ho měnit.',
+                'duplicate_token' => 'Značka roku a značka měsíce smí být ve vzoru každá nejvýše jednou.',
+                'unclosed_token' => 'Ve vzoru chybí uzavírací složená závorka }.',
+            ],
+        ],
         'payments' => [
             'online_payments_enabled' => 'Nabízet online platbu kartou',
             'online_payments_enabled_hint' => 'Odkazy na platbu kartou přibudou spolu s napojením na Stripe; zatím se jen ukládá, zda je chcete používat.',

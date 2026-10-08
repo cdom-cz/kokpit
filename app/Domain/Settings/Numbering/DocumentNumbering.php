@@ -57,6 +57,26 @@ final class DocumentNumbering
         return $parsed->format($this->allocator->peek($parsed->scopeKey($at)), $at);
     }
 
+    /**
+     * Allocates the next task number of a project, written as KEY-N. The
+     * counter is per project (scope key task:<project id>) and never resets.
+     * The task pattern is fixed, so it is not read from the settings.
+     *
+     * @throws InvalidArgumentException when the project key is not two to six capital letters
+     * @throws \LogicException outside a transaction
+     */
+    public function nextTaskNumber(string $projectId, string $projectKey): string
+    {
+        if (preg_match(NumberPattern::PROJECT_KEY_PATTERN, $projectKey) !== 1) {
+            throw new InvalidArgumentException('A project key is two to six capital letters.');
+        }
+
+        $number = $this->allocator->next(DocumentKind::Task->sequenceKind().':'.$projectId);
+
+        return NumberPattern::parse(DocumentKind::Task->defaultPattern(), DocumentKind::Task)
+            ->format($number, now(), $projectKey);
+    }
+
     private static function assertDocumentKind(DocumentKind $kind): void
     {
         if ($kind === DocumentKind::Task) {

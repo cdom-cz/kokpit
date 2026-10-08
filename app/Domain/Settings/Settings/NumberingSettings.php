@@ -7,6 +7,7 @@ namespace App\Domain\Settings\Settings;
 use App\Domain\Settings\Numbering\DocumentKind;
 use App\Domain\Settings\Numbering\InvalidNumberPattern;
 use App\Domain\Settings\Numbering\NumberPattern;
+use App\Domain\Settings\Rules\NumberPatternRule;
 
 /**
  * The stored number patterns (group `numbering`, D-05): one per document kind
@@ -36,10 +37,10 @@ class NumberingSettings extends ValidatedSettings
     public static function rules(): array
     {
         return [
-            'invoice_pattern' => ['required', 'string', 'max:32'],
-            'proforma_pattern' => ['required', 'string', 'max:32'],
-            'credit_note_pattern' => ['required', 'string', 'max:32'],
-            'task_pattern' => ['required', 'string', 'max:32'],
+            'invoice_pattern' => ['bail', 'required', 'string', new NumberPatternRule(DocumentKind::Invoice)],
+            'proforma_pattern' => ['bail', 'required', 'string', new NumberPatternRule(DocumentKind::Proforma)],
+            'credit_note_pattern' => ['bail', 'required', 'string', new NumberPatternRule(DocumentKind::CreditNote)],
+            'task_pattern' => ['bail', 'required', 'string', new NumberPatternRule(DocumentKind::Task)],
         ];
     }
 
