@@ -63,6 +63,8 @@ function failedEvent(string $job = ALERT_JOB, string $message = 'Fictional failu
     $queueJob->shouldReceive('getQueue')->andReturn('fictional-queue');
     $queueJob->shouldReceive('attempts')->andReturn(3);
     $queueJob->shouldReceive('uuid')->andReturn('0190aaaa-bbbb-7ccc-8ddd-eeeeffff0001');
+    // Horizon's own JobFailed listeners read the job id.
+    $queueJob->shouldReceive('getJobId')->andReturn('0190aaaa-bbbb-7ccc-8ddd-eeeeffff0001');
     $queueJob->shouldReceive('payload')->andReturn(['data' => ['command' => $payloadCanary]]);
     $queueJob->shouldReceive('getRawBody')->andReturn(json_encode(['data' => ['command' => $payloadCanary]]));
 
