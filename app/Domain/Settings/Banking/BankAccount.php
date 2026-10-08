@@ -42,17 +42,44 @@ final readonly class BankAccount
             throw new InvalidArgumentException('A bank account needs a known format.');
         }
 
+        $shown = static fn (string $field): ?string => in_array($field, $format->visibleFields(), true)
+            ? self::text($data[$field] ?? null)
+            : null;
+
         return new self(
             format: $format,
             label: self::text($data['label'] ?? null) ?? '',
             currency: self::text($data['currency'] ?? null) ?? '',
             bic: self::text($data['bic'] ?? null),
-            accountNumber: self::text($data['account_number'] ?? null),
-            bankCode: self::text($data['bank_code'] ?? null),
-            bankName: self::text($data['bank_name'] ?? null),
-            iban: self::text($data['iban'] ?? null),
-            recipientName: self::text($data['recipient_name'] ?? null),
-            bankAddress: self::text($data['bank_address'] ?? null),
+            accountNumber: $shown('account_number'),
+            bankCode: $shown('bank_code'),
+            bankName: $shown('bank_name'),
+            iban: $shown('iban'),
+            recipientName: $shown('recipient_name'),
+            bankAddress: $shown('bank_address'),
+        );
+    }
+
+    /**
+     * The same account in its stored form: text trimmed, empty text as null,
+     * the currency and BIC/SWIFT upper case, the IBAN without spaces.
+     */
+    public function normalised(): self
+    {
+        $clean = static fn (?string $value): ?string => ($value === null || trim($value) === '') ? null : trim($value);
+        $upper = static fn (?string $value): ?string => ($value = $clean($value)) === null ? null : mb_strtoupper($value);
+
+        return new self(
+            format: $this->format,
+            label: trim($this->label),
+            currency: mb_strtoupper(trim($this->currency)),
+            bic: $upper($this->bic),
+            accountNumber: $clean($this->accountNumber),
+            bankCode: $clean($this->bankCode),
+            bankName: $clean($this->bankName),
+            iban: ($iban = $clean($this->iban)) === null ? null : Iban::normalise($iban),
+            recipientName: $clean($this->recipientName),
+            bankAddress: $clean($this->bankAddress),
         );
     }
 
@@ -61,17 +88,19 @@ final readonly class BankAccount
      */
     public function toArray(): array
     {
+        $shown = fn (string $field, ?string $value): ?string => in_array($field, $this->format->visibleFields(), true) ? $value : null;
+
         return [
             'format' => $this->format->value,
             'label' => $this->label,
             'currency' => $this->currency,
             'bic' => $this->bic,
-            'account_number' => $this->accountNumber,
-            'bank_code' => $this->bankCode,
-            'bank_name' => $this->bankName,
-            'iban' => $this->iban,
-            'recipient_name' => $this->recipientName,
-            'bank_address' => $this->bankAddress,
+            'account_number' => $shown('account_number', $this->accountNumber),
+            'bank_code' => $shown('bank_code', $this->bankCode),
+            'bank_name' => $shown('bank_name', $this->bankName),
+            'iban' => $shown('iban', $this->iban),
+            'recipient_name' => $shown('recipient_name', $this->recipientName),
+            'bank_address' => $shown('bank_address', $this->bankAddress),
         ];
     }
 

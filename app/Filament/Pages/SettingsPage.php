@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Filament\Pages;
 
 use App\Domain\Settings\Banking\BankAccountFormat;
-use App\Domain\Settings\Rules\IbanRule;
 use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
@@ -214,12 +213,9 @@ class SettingsPage extends Page
     private function bankTab(): Tab
     {
         $currencies = array_combine(Money::isoCurrencyCodes(), Money::isoCurrencyCodes());
-        $shows = static fn (string $field): Closure => static fn (Get $get): bool => in_array(
-            $field,
-            self::accountFormat($get('format'))?->visibleFields() ?? [],
-            true,
-        );
 
+        // Rules go in as closures returning the list: Filament evaluates a closure rule placed directly in
+        // the list and cannot resolve its $attribute parameter.
         return Tab::make(__('kokpit.settings.tabs.bank'))->schema([
             Group::make([
                 Repeater::make('accounts')
@@ -229,32 +225,64 @@ class SettingsPage extends Page
                         ? $state['label'].' ('.($state['currency'] ?? '').')'
                         : null)
                     ->defaultItems(0)
+                    ->columns(2)
                     ->schema([
                         TextInput::make('label')
                             ->label(__('kokpit.settings.bank.label'))
                             ->required()
-                            ->maxLength(100),
+                            ->rules(fn (): array => BankAccountSettings::commonRules('label')),
                         Select::make('format')
                             ->label(__('kokpit.settings.bank.format'))
                             ->options(BankAccountFormat::class)
                             ->native(false)
                             ->live()
                             ->required(),
+                        // Canonical upper-case codes, so distinct() also catches duplicates (D-04).
                         Select::make('currency')
                             ->label(__('kokpit.settings.bank.currency'))
                             ->options($currencies)
                             ->searchable()
                             ->required()
-                            ->distinct(),
-                        TextInput::make('iban')
-                            ->label(__('kokpit.settings.bank.iban'))
+                            ->distinct()
+                            ->rules(fn (): array => BankAccountSettings::commonRules('currency')),
+                        TextInput::make('bic')
+                            ->label(__('kokpit.settings.bank.bic'))
+                            ->helperText(__('kokpit.settings.bank.bic_hint'))
+                            ->rules(fn (): array => BankAccountSettings::commonRules('bic')),
+                        $this->accountInput('account_number'),
+                        $this->accountInput('bank_code'),
+                        $this->accountInput('recipient_name'),
+                        $this->accountInput('bank_name'),
+                        $this->accountInput('bank_address')->columnSpanFull(),
+                        $this->accountInput('iban')
                             ->helperText(__('kokpit.settings.bank.iban_hint'))
-                            ->visible($shows('iban'))
-                            ->required($shows('iban'))
-                            ->rule(new IbanRule),
+                            ->columnSpanFull(),
                     ]),
             ])->statePath(BankAccountSettings::group()),
         ]);
+    }
+
+    /**
+     * A bank account field that only the formats showing it display; its rules
+     * are those of the data layer for the chosen format.
+     */
+    private function accountInput(string $field): TextInput
+    {
+        $rulesFor = static function (Get $get) use ($field): array {
+            $format = self::accountFormat($get('format'));
+
+            return $format === null ? [] : BankAccountSettings::fieldRules($field, $format);
+        };
+
+        return TextInput::make($field)
+            ->label(__("kokpit.settings.bank.{$field}"))
+            ->visible(static fn (Get $get): bool => in_array(
+                $field,
+                self::accountFormat($get('format'))?->visibleFields() ?? [],
+                true,
+            ))
+            ->required(static fn (Get $get): bool => in_array('required', $rulesFor($get), true))
+            ->rules($rulesFor);
     }
 
     private function invoicingTab(): Tab
