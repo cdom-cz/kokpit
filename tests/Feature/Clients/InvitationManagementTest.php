@@ -2,12 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Actions\AcceptInvitation;
 use App\Domain\Clients\Actions\CreateContact;
+use App\Domain\Clients\Actions\InvitePartner;
+use App\Domain\Clients\Actions\ResendInvitation;
+use App\Domain\Clients\Enums\InvitationState;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Notifications\PartnerInvitation;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\ClientResource\Pages\ViewClient;
+use App\Filament\Resources\ClientResource\RelationManagers\InvitationsRelationManager;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\Notification;
@@ -168,4 +175,158 @@ it('refuses a Partner the client detail, so the invite action cannot be mounted'
         ->assertForbidden();
 
     expect(manageInvitationCount())->toBe(0);
+});
+
+/**
+ * The invitations tab of a client as the Admin sees it on the detail page.
+ */
+function manageTab(Client $client): Testable
+{
+    return Livewire::test(InvitationsRelationManager::class, ['ownerRecord' => $client, 'pageClass' => ViewClient::class]);
+}
+
+/**
+ * Invites a fictional person for the client of the test through the domain Action.
+ */
+function manageInvite(?Client $client = null, ?string $email = null): ClientInvitation
+{
+    return app(InvitePartner::class)->handle($client ?? test()->client, 'Example Invitee', $email ?? exampleEmail(), test()->admin);
+}
+
+/**
+ * Reads the stored row again, as a system run so no scope hides it.
+ */
+function manageFresh(ClientInvitation $invitation): ClientInvitation
+{
+    return app(PartnerContext::class)->runAsSystem(static fn (): ClientInvitation => ClientInvitation::query()->findOrFail($invitation->getKey()));
+}
+
+/**
+ * The plain token of the last mail sent to the invitation's address.
+ */
+function manageTokenOf(ClientInvitation $invitation): string
+{
+    $links = manageLinksTo($invitation->email);
+    parse_str((string) parse_url($links[array_key_last($links)], PHP_URL_QUERY), $query);
+
+    return (string) $query['token'];
+}
+
+it('lists the invitations of the client with the Czech state label and none of another client (D-02)', function (): void {
+    Notification::fake();
+    $own = manageInvite();
+    $foreign = manageInvite(Client::factory()->create());
+
+    manageTab($this->client)
+        ->assertCanSeeTableRecords([$own])
+        ->assertCanNotSeeTableRecords([$foreign])
+        ->assertSee(InvitationState::Pending->getLabel())
+        ->assertSee($own->email)
+        ->assertSee('Example Invitee');
+});
+
+it('resends a pending invitation from the tab: a second mail, a bumped send count', function (): void {
+    Notification::fake();
+    $invitation = manageInvite();
+
+    manageTab($this->client)
+        ->assertActionVisible(TestAction::make('resend')->table($invitation))
+        ->callAction(TestAction::make('resend')->table($invitation))
+        ->assertNotified(__('kokpit.invitations.admin.notifications.resent'));
+
+    Notification::assertSentOnDemandTimes(PartnerInvitation::class, 2);
+    expect(manageFresh($invitation)->send_count)->toBe(2)
+        ->and(manageFresh($invitation)->state())->toBe(InvitationState::Pending);
+});
+
+it('resends an expired invitation and shows it as pending again', function (): void {
+    Notification::fake();
+    $invitation = manageInvite();
+    $invitation->forceFill(['expires_at' => now()->subHour()])->save();
+
+    manageTab($this->client)
+        ->assertSee(InvitationState::Expired->getLabel())
+        ->assertActionVisible(TestAction::make('resend')->table($invitation))
+        ->assertActionVisible(TestAction::make('revoke')->table($invitation))
+        ->callAction(TestAction::make('resend')->table($invitation));
+
+    expect(manageFresh($invitation)->state())->toBe(InvitationState::Pending)
+        ->and(manageFresh($invitation)->send_count)->toBe(2);
+});
+
+it('revokes an invitation from the tab, shows Zrušena and offers no action any more', function (): void {
+    Notification::fake();
+    $invitation = manageInvite();
+
+    manageTab($this->client)
+        ->callAction(TestAction::make('revoke')->table($invitation))
+        ->assertNotified(__('kokpit.invitations.admin.notifications.revoked'))
+        ->assertSee(InvitationState::Revoked->getLabel())
+        ->assertActionHidden(TestAction::make('resend')->table($invitation))
+        ->assertActionHidden(TestAction::make('revoke')->table($invitation));
+
+    expect(manageFresh($invitation)->state())->toBe(InvitationState::Revoked);
+    Notification::assertSentOnDemandTimes(PartnerInvitation::class, 1);
+});
+
+it('offers neither action on an accepted invitation', function (): void {
+    Notification::fake();
+    $invitation = manageInvite();
+    app(AcceptInvitation::class)->handle($invitation->getKey(), manageTokenOf($invitation), 'Example Person', Str::password(20, symbols: false));
+
+    manageTab($this->client)
+        ->assertSee(InvitationState::Accepted->getLabel())
+        ->assertActionHidden(TestAction::make('resend')->table($invitation))
+        ->assertActionHidden(TestAction::make('revoke')->table($invitation));
+});
+
+it('shows a failed resend or revoke of a stale row as a notification instead of an error page', function (): void {
+    Notification::fake();
+    $invitation = manageInvite();
+    $tab = manageTab($this->client);
+
+    // Revoked in another tab of the browser after this list was rendered.
+    app(PartnerContext::class)->runAsSystem(static fn () => ClientInvitation::query()->whereKey($invitation->getKey())->update(['revoked_at' => now()]));
+
+    $tab->callAction(TestAction::make('resend')->table($invitation))
+        ->assertNotified(__('kokpit.invitations.admin.notifications.failed'));
+
+    expect(manageFresh($invitation)->send_count)->toBe(1);
+    Notification::assertSentOnDemandTimes(PartnerInvitation::class, 1);
+});
+
+it('refuses the Action to resend an invitation of an archived client and the tab hides the actions', function (): void {
+    Notification::fake();
+    $invitation = manageInvite();
+    $this->client->delete();
+
+    manageTab($this->client)
+        ->assertSee(InvitationState::Pending->getLabel())
+        ->assertActionHidden(TestAction::make('resend')->table($invitation));
+
+    expect(static fn () => app(ResendInvitation::class)->handle($invitation))
+        ->toThrow(DomainException::class, __('kokpit.invitations.errors.client_archived'))
+        ->and(manageFresh($invitation)->send_count)->toBe(1);
+    Notification::assertSentOnDemandTimes(PartnerInvitation::class, 1);
+});
+
+it('offers no create, edit or delete of an invitation in the tab (invitations change only through the Actions)', function (): void {
+    $table = manageTab($this->client)->instance()->getTable();
+
+    expect($table->getHeaderActions())->toBe([])
+        ->and($table->getToolbarActions())->toBe([])
+        ->and($table->getFlatBulkActions())->toBe([])
+        ->and(array_keys($table->getFlatRecordActions()))->toBe(['resend', 'revoke']);
+});
+
+it('refuses a Partner the invitations tab at boot and lists the tab in the client resource', function (): void {
+    $invitation = manageInvite();
+    $this->actingAs(Canary::partnerFor($this->client->id));
+
+    expect(app(PartnerContext::class)->runAsSystem(static fn (): bool => InvitationsRelationManager::canViewForRecord(test()->client, ViewClient::class)))->toBeFalse()
+        ->and(ClientInvitation::query()->count())->toBe(0)
+        ->and(ClientResource::getRelations())->toContain(InvitationsRelationManager::class);
+
+    manageTab($this->client)->assertForbidden();
+    expect(manageFresh($invitation)->state())->toBe(InvitationState::Pending);
 });
