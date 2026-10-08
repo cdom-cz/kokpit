@@ -469,6 +469,12 @@ return [
             'people' => 'Lidé',
             'tags' => 'Štítky',
         ],
+        'checklist' => [
+            'heading' => 'Kontrolní seznam',
+            'add' => 'Přidat položku',
+            'text' => 'Položka',
+            'is_done' => 'Hotovo',
+        ],
         'hints' => [
             'description_shared' => 'Projekt je viditelný pro klienta: popis úkolu uvidí i účty klienta. Nepište do něj nic interního.',
         ],

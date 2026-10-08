@@ -15,6 +15,7 @@ use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskChecklistItem;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Tests\Support\Canary;
@@ -98,6 +99,7 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         SettingsProperty::class,
         Tag::class,
         Task::class,
+        TaskChecklistItem::class,
         WebhookCall::class,
     ]);
 });

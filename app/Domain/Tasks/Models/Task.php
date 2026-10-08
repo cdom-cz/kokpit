@@ -157,6 +157,17 @@ final class Task extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * The private todo checklist of the task, in the order the Admin left it.
+     * Admin-only: a Partner reads no item.
+     *
+     * @return HasMany<TaskChecklistItem, $this>
+     */
+    public function checklistItems(): HasMany
+    {
+        return $this->hasMany(TaskChecklistItem::class)->orderBy('position')->orderBy('id');
+    }
+
+    /**
      * @return BelongsTo<User, $this>
      */
     public function assignee(): BelongsTo

@@ -31,10 +31,12 @@ use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\SpatieTagsInput;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
@@ -238,6 +240,28 @@ final class TaskResource extends Resource
                         ->options(static fn (?Task $record): array => self::peopleOptions($record))
                         ->required()
                         ->native(false),
+                ]),
+            // The private todo list of the Admin (TA-03). The repeater is bound to the Admin-only
+            // relationship and keeps the order in `position`; a subtask has the same list (D-11).
+            Section::make(__('kokpit.tasks.checklist.heading'))
+                ->schema([
+                    Repeater::make('checklistItems')
+                        ->relationship()
+                        ->orderColumn('position')
+                        ->reorderable()
+                        ->hiddenLabel()
+                        ->defaultItems(0)
+                        ->addActionLabel(__('kokpit.tasks.checklist.add'))
+                        ->schema([
+                            TextInput::make('text')
+                                ->label(__('kokpit.tasks.checklist.text'))
+                                ->required()
+                                ->maxLength(500),
+                            Toggle::make('is_done')
+                                ->label(__('kokpit.tasks.checklist.is_done'))
+                                ->default(false),
+                        ])
+                        ->columns(2),
                 ]),
             Section::make(__('kokpit.tasks.sections.tags'))
                 ->schema([

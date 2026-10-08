@@ -20,6 +20,7 @@ use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Shared\Policies\AdminOnlyPolicy;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskChecklistItem;
 use App\Domain\Tasks\Policies\TaskPolicy;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -67,5 +68,8 @@ final class AccessServiceProvider extends ServiceProvider
 
         // Tasks are Partner-readable through their project; explicit grants only.
         Gate::policy(Task::class, TaskPolicy::class);
+
+        // The private todo checklist of a task is the Admin's working note (TA-03, A1).
+        Gate::policy(TaskChecklistItem::class, AdminOnlyPolicy::class);
     }
 }

@@ -20,6 +20,7 @@ use App\Domain\Shared\Money\Money;
 use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskChecklistItem;
 use Closure;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\Probes\PackageProbe;
@@ -135,6 +136,18 @@ final class CanaryRegistry
                     $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
 
                     app(CreateTask::class)->handle(Canary::admin(), $project, ['title' => $canary]);
+                });
+            },
+
+            // One checklist item on the canary task of that client (found by its project
+            // name; the Task fixture runs before this one). The canary is the item text,
+            // so a Partner reading it would be caught.
+            TaskChecklistItem::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+                    $task = Task::query()->where('project_id', $project->getKey())->firstOrFail();
+
+                    $task->checklistItems()->create(['text' => $canary, 'position' => 1]);
                 });
             },
 
