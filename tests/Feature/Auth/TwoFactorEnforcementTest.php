@@ -188,7 +188,7 @@ it('refuses to boot the application provider in production with enforcement off'
 
 it('boots the application provider in production with enforcement on', function (): void {
     // The test suite runs with the canary harness on; production must not (D-04).
-    config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'redis']);
+    config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'redis', 'mail.default' => 'smtp', 'app.url' => 'https://kokpit.example.com']);
     $this->app['env'] = 'production';
 
     (new AppServiceProvider($this->app))->boot();
@@ -203,12 +203,26 @@ it('refuses to boot the application provider in production with the sync queue',
     (new AppServiceProvider($this->app))->boot();
 })->throws(RuntimeException::class, 'QUEUE_CONNECTION');
 
+it('refuses to boot the application provider in production with a log mailer', function (): void {
+    config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'redis', 'mail.default' => 'log', 'app.url' => 'https://kokpit.example.com']);
+    $this->app['env'] = 'production';
+
+    (new AppServiceProvider($this->app))->boot();
+})->throws(RuntimeException::class, 'MAIL_MAILER');
+
+it('refuses to boot the application provider in production with a localhost APP_URL', function (): void {
+    config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'redis', 'mail.default' => 'smtp', 'app.url' => 'http://localhost']);
+    $this->app['env'] = 'production';
+
+    (new AppServiceProvider($this->app))->boot();
+})->throws(RuntimeException::class, 'APP_URL');
+
 it('refuses to start a real production process with enforcement off and starts with it on', function (): void {
     $run = function (string $enforcement): Process {
         $process = new Process(
             [PHP_BINARY, 'artisan', '--version'],
             base_path(),
-            ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => $enforcement, 'KOKPIT_CANARY_HARNESS' => 'false', 'QUEUE_CONNECTION' => 'redis'],
+            ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => $enforcement, 'KOKPIT_CANARY_HARNESS' => 'false', 'QUEUE_CONNECTION' => 'redis', 'MAIL_MAILER' => 'smtp', 'APP_URL' => 'https://kokpit.example.com'],
         );
         $process->run();
 

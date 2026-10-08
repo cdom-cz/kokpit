@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Support\ProductionConfigGuard;
 use Illuminate\Config\Repository;
 
-function guardConfig(bool $requireAdminTwoFactor, bool $canaryHarness = false, mixed $activityLog = true, mixed $queueDefault = 'redis'): Repository
+function guardConfig(bool $requireAdminTwoFactor, bool $canaryHarness = false, mixed $activityLog = true, mixed $queueDefault = 'redis', mixed $mailDefault = 'smtp', mixed $appUrl = 'https://kokpit.example.com'): Repository
 {
     return new Repository([
         'kokpit' => [
@@ -14,6 +14,8 @@ function guardConfig(bool $requireAdminTwoFactor, bool $canaryHarness = false, m
         ],
         'activitylog' => ['enabled' => $activityLog],
         'queue' => ['default' => $queueDefault],
+        'mail' => ['default' => $mailDefault],
+        'app' => ['url' => $appUrl],
     ]);
 }
 
@@ -54,7 +56,7 @@ it('allows the canary harness outside production', function (): void {
 });
 
 it('treats a missing canary setting as off in production', function (): void {
-    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true], 'activitylog' => ['enabled' => true], 'queue' => ['default' => 'redis']]));
+    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true], 'activitylog' => ['enabled' => true], 'queue' => ['default' => 'redis'], 'mail' => ['default' => 'smtp'], 'app' => ['url' => 'https://kokpit.example.com']]));
 
     expect(true)->toBeTrue();
 });
@@ -114,3 +116,51 @@ it('refuses a queue connection that is only similar to redis', function (): void
 it('still refuses a switched-off activity log when the queue is redis', function (): void {
     ProductionConfigGuard::check(true, guardConfig(true, activityLog: false, queueDefault: 'redis'));
 })->throws(RuntimeException::class, 'ACTIVITYLOG_ENABLED');
+
+it('throws in production when the mailer only logs or drops mail', function (mixed $mailer): void {
+    ProductionConfigGuard::check(true, guardConfig(true, mailDefault: $mailer));
+})->with(['log', 'array', '', null, 5])->throws(RuntimeException::class, 'MAIL_MAILER');
+
+it('allows production with a real mail transport', function (string $mailer): void {
+    ProductionConfigGuard::check(true, guardConfig(true, mailDefault: $mailer));
+
+    expect(true)->toBeTrue();
+})->with(['smtp', 'ses', 'postmark', 'resend', 'sendmail']);
+
+it('allows the log and array mailers outside production', function (): void {
+    ProductionConfigGuard::check(false, guardConfig(true, mailDefault: 'log'));
+    ProductionConfigGuard::check(false, guardConfig(true, mailDefault: 'array'));
+
+    expect(true)->toBeTrue();
+});
+
+it('treats a missing mail setting as not a real transport in production', function (): void {
+    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true], 'activitylog' => ['enabled' => true], 'queue' => ['default' => 'redis'], 'app' => ['url' => 'https://kokpit.example.com']]));
+})->throws(RuntimeException::class, 'MAIL_MAILER');
+
+it('throws in production when APP_URL is not a public https URL', function (mixed $url): void {
+    ProductionConfigGuard::check(true, guardConfig(true, appUrl: $url));
+})->with([
+    'default localhost' => 'http://localhost',
+    'localhost over https' => 'https://localhost',
+    'loopback address' => 'https://127.0.0.1',
+    'ipv6 loopback' => 'https://[::1]',
+    'localhost subdomain' => 'https://kokpit.localhost',
+    'test tld' => 'https://kokpit.test',
+    'plain http' => 'http://kokpit.example.com',
+    'no scheme' => 'kokpit.example.com',
+    'empty' => '',
+    'null' => null,
+])->throws(RuntimeException::class, 'APP_URL');
+
+it('allows production with a public https APP_URL', function (string $url): void {
+    ProductionConfigGuard::check(true, guardConfig(true, appUrl: $url));
+
+    expect(true)->toBeTrue();
+})->with(['https://kokpit.example.com', 'https://kokpit.example.com/', 'https://crm.example.org:8443']);
+
+it('allows a localhost APP_URL outside production', function (): void {
+    ProductionConfigGuard::check(false, guardConfig(true, appUrl: 'http://localhost'));
+
+    expect(true)->toBeTrue();
+});
