@@ -8,6 +8,7 @@ use App\Domain\Audit\LoggedAttributes;
 use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Clients\Enums\ClientStage;
 use App\Domain\Clients\Enums\InvoiceLanguage;
+use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
@@ -165,6 +166,17 @@ final class Client extends KokpitModel implements PartnerIsolated
     public function invitations(): HasMany
     {
         return $this->hasMany(ClientInvitation::class);
+    }
+
+    /**
+     * The Partner accounts of the client (US-02, D-04), linked by `users.client_id`.
+     * Admin-only: the accounts tab is the only place that lists them.
+     *
+     * @return HasMany<User, $this>
+     */
+    public function users(): HasMany
+    {
+        return $this->hasMany(User::class);
     }
 
     /**

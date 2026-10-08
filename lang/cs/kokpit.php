@@ -561,6 +561,36 @@ return [
         ],
     ],
 
+    'partner_accounts' => [
+        'relation_title' => 'Účty',
+        'states' => [
+            'active' => 'Aktivní',
+            'deactivated' => 'Deaktivován',
+        ],
+        'fields' => [
+            'name' => 'Jméno',
+            'email' => 'E-mail',
+            'state' => 'Stav',
+            'created_at' => 'Vytvořen',
+        ],
+        'actions' => [
+            'deactivate' => 'Deaktivovat',
+            'deactivate_heading' => 'Deaktivovat účet?',
+            'deactivate_description' => 'Účet se okamžitě odhlásí, nepůjde se přihlásit a jeho přístupové tokeny se smažou. Účet se nemaže a lze ho znovu aktivovat.',
+            'reactivate' => 'Aktivovat znovu',
+        ],
+        'notifications' => [
+            'deactivated' => 'Účet byl deaktivován',
+            'reactivated' => 'Účet byl znovu aktivován',
+            'failed' => 'Účet se nepodařilo změnit',
+        ],
+        'errors' => [
+            'not_a_partner' => 'Spravovat lze jen účty partnerů.',
+        ],
+        'empty_heading' => 'Zatím tu nejsou žádné účty',
+        'empty_description' => 'Účet vznikne, když pozvaný partner přijme pozvánku.',
+    ],
+
     'alerts' => [
         'link_label' => 'Otevřít stránku Systém',
         'suppressed' => 'Od posledního upozornění selhalo stejným způsobem dalších úloh: :count',
