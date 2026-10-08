@@ -34,7 +34,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **FND-12**: DB constraints and immutability triggers pattern (FK, unique/partial indexes, CHECK) with a raw-SQL test helper
 - [x] **FND-13**: CI runs tests on PostgreSQL, static analysis, formatting, secret scan and a dependency licence allowlist (AGPL-compatible only)
 - [x] **FND-14**: `LICENSE` AGPL-3.0 with matching `composer.json` license, README, SECURITY.md, CONTRIBUTING.md and `.env.example` kept in sync
-- [ ] **FND-15**: `zerops.yml` describes build, deploy, worker, scheduler and migrations without secrets; deploy workflow runs only on release publish or manual dispatch in a protected `production` environment with all hardening rules from the brief; manual GitHub settings checklist documented
+- [x] **FND-15**: `zerops.yml` describes build, deploy, worker, scheduler and migrations without secrets; deploy workflow runs only on release publish or manual dispatch in a protected `production` environment with all hardening rules from the brief; manual GitHub settings checklist documented
 - [ ] **FND-16**: S3-compatible private storage (RustFS in development; any S3-compatible provider in production) configured by environment only, path-style capable, with a smoke test of upload and temporary URL
 - [x] **FND-17**: Admin account is created by an install command (no default password); Admin two-factor authentication is available
 - [x] **FND-18**: Partner isolation test harness (two fictional clients with canary strings) exists from Foundation and grows each phase; a registry test fails if any Resource, Page, Widget or relation manager lacks an explicit access rule
@@ -218,7 +218,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FND-12 | Phase 2 | Complete |
 | FND-13 | Phase 2 | Complete |
 | FND-14 | Phase 2 | Complete |
-| FND-15 | Phase 3 | Pending |
+| FND-15 | Phase 3 | Complete |
 | FND-16 | Phase 3 | Pending |
 | FND-17 | Phase 2 | Complete |
 | FND-20 | Phase 2 | Complete |

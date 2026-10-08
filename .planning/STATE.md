@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: Operations Foundation
 status: executing
-stopped_at: Completed 03-17-PLAN.md
-last_updated: "2026-10-08T04:51:34.764Z"
+stopped_at: Completed 03-18-PLAN.md
+last_updated: "2026-10-08T05:09:37.522Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 03 execution started
-state_head: 07c258675828399706330e853c702436b8b75978
+state_head: 0cb42458e017dbcb4782e4779e34995ac31351f5
 progress:
   total_phases: 12
   completed_phases: 2
   total_plans: 43
-  completed_plans: 41
+  completed_plans: 42
   percent: 17
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 03 (Operations Foundation) — EXECUTING
-Plan: 18 of 19
+Plan: 19 of 19
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 03 execution started
 
@@ -98,6 +98,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 03 P15 | 6 min | 2 tasks | 14 files |
 | Phase 03 P16 | 9 min | 3 tasks | 14 files |
 | Phase 03 P17 | 40 min | 2 tasks | 11 files |
+| Phase 03 P18 | 13 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -191,6 +192,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-16: registry binding registers real indicators first and placeholders only for uncovered slots (missingSlots), so register() never sees a duplicate
 - [Phase 03]: 03-16: scheduled RecordWorkerHeartbeat job makes a dead worker visible as a growing oldest-pending age; thresholds 180/600/1800 s and 1 failed job live in config/kokpit.php health
 - [Phase 03]: 03-17: public-object storage-check failure path is produced with a real RustFS bucket policy; check errors carry exception class and provider error code only; s3 disk throws on failed writes
+- [Phase 03]: 03-18: zerops.yml has three full setups and migrates only in app through zsc execOnce; kokpit:deploy:verify (database, pending migrations incl. package paths, Redis) is the app readiness gate — A failed migration must not go live and the previous version keeps serving (D-18); Zerops docs do not state what an initCommand failure does, so the readiness command is the guarantee; rehearsal item 8 confirms it
+- [Phase 03]: 03-18: deploy.yml starts only on release published or workflow_dispatch; verify job refuses prereleases, non-v* tags and non-main commits; zcli 1.1.2 pinned with a hard-coded SHA-256 — FND-15 hardening: no other trigger, no expression in run scripts, token only through step env in the protected production environment; DeployWorkflowTest mutation self-check and a behavioural run of the verify script guard it
 
 ### Pending Todos
 
@@ -226,6 +229,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T04:51:34.687Z
-Stopped at: Completed 03-17-PLAN.md
+Last session: 2026-10-08T05:09:31.801Z
+Stopped at: Completed 03-18-PLAN.md
 Resume file: None
