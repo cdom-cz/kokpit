@@ -38,7 +38,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [ ] **FND-16**: S3-compatible private storage (RustFS in development; any S3-compatible provider in production) configured by environment only, path-style capable, with a smoke test of upload and temporary URL
 - [x] **FND-17**: Admin account is created by an install command (no default password); Admin two-factor authentication is available
 - [x] **FND-18**: Partner isolation test harness (two fictional clients with canary strings) exists from Foundation and grows each phase; a registry test fails if any Resource, Page, Widget or relation manager lacks an explicit access rule
-- [ ] **FND-19**: Spikes resolve PDF engine (multi-page report with Czech diacritics and QR), kanban library vs custom board (queue driver Redis, PostgreSQL 18 and RustFS are already decided)
+- [x] **FND-19**: Spikes resolve PDF engine (multi-page report with Czech diacritics and QR), kanban library vs custom board (queue driver Redis, PostgreSQL 18 and RustFS are already decided)
 
 ### Users
 
@@ -223,7 +223,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FND-17 | Phase 2 | Complete |
 | FND-20 | Phase 2 | Complete |
 | FND-18 | Phase 2 | Complete |
-| FND-19 | Phase 3 | Pending |
+| FND-19 | Phase 3 | Complete |
 | US-01 | Phase 12 | Pending |
 | US-02 | Phase 4 | Pending |
 | CL-01 | Phase 4 | Pending |

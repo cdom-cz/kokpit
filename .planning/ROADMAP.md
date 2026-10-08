@@ -144,13 +144,13 @@ Plans:
   4. Configuring S3-compatible private storage through environment variables only, a smoke test uploads a file and fetches it through a temporary URL
   5. Spike results are recorded as decisions: PDF engine (multi-page report with Czech diacritics and QR), kanban library versus custom board (queue driver Redis, PostgreSQL 18 and RustFS S3 storage are already decided)
 
-**Plans:** 1/19 plans executed (the two spikes run in parallel in wave 1; every application plan after them is serialized because each runs Pest in the single DDEV project against the shared `kokpit_test` database)
+**Plans:** 2/19 plans executed (the two spikes run in parallel in wave 1; every application plan after them is serialized because each runs Pest in the single DDEV project against the shared `kokpit_test` database)
 **UI hint**: yes
 
 Plans:
 **Wave 1**
 - [x] 03-01-PLAN.md — PDF engine spike outside the repository: Dompdf versus the Chromium engine behind spatie/laravel-pdf, decision record (FND-19, D-14, D-16)
-- [ ] 03-02-PLAN.md — Kanban spike outside the repository: custom wire:sort board versus Flowforge, build-or-buy decision record (FND-19, D-15, D-16)
+- [x] 03-02-PLAN.md — Kanban spike outside the repository: custom wire:sort board versus Flowforge, build-or-buy decision record (FND-19, D-15, D-16)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 03-03-PLAN.md — Tracer: UUID v7 settings storage with fail-closed Partner scope, system-context settings migrations, supplier settings (FND-07, D-01)
@@ -345,7 +345,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Repository Hygiene | 11/11 | Complete    | 2026-10-08 |
 | 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
-| 3. Operations Foundation | 1/19 | In Progress | - |
+| 3. Operations Foundation | 2/19 | In Progress | - |
 | 4. Clients and Projects | 0/0 | Not started | - |
 | 5. Tasks and Kanban | 0/0 | Not started | - |
 | 6. Time Tracking | 0/0 | Not started | - |

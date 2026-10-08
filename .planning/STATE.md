@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: Operations Foundation
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-10-08T01:51:29.402Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-10-08T02:30:24.879Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 03 execution started
-state_head: ee043db8855ee50db16aa6eb6f2b0f3f442a866d
+state_head: 5a8ff290d32ca99d5dd4e04b4ae88a573b035a1d
 progress:
   total_phases: 12
   completed_phases: 2
   total_plans: 43
-  completed_plans: 25
+  completed_plans: 26
   percent: 17
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 03 (Operations Foundation) — EXECUTING
-Plan: 2 of 19
+Plan: 3 of 19
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 03 execution started
 
@@ -82,6 +82,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 02 P12 | 10 min | 2 tasks | 9 files |
 | Phase 02 P13 | 7 min | 2 tasks | 5 files |
 | Phase 03 P01 | 25 min | 2 tasks | 1 files |
+| Phase 03 P02 | 37 min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -149,6 +150,7 @@ Recent decisions affecting current work:
 - [Phase 02]: 02-13: Gate::before limit of the permission package and the missing Admin password recovery are documented (CONTRIBUTING, README), not fixed
 - [Phase 03]: Dompdf chosen as PDF engine for Phase 8 work report and Phase 10 invoice PDF (passed every criterion; Chromium 3x slower, 6x larger, needs Node/Chromium in container); owner confirms before Phase 8 adds the dependency
 - [Phase 03]: LGPL-2.1 SPDX alias of dompdf/dompdf fails scripts/check-licenses.php; maintainer decision (normalise to LGPL-2.1-only in a reviewed commit) needed in the phase that adds Dompdf
+- [Phase 03]: Custom Livewire wire:sort board chosen over Flowforge for the Phase 5 kanban (D-15): passes persistence, model event, isolation and concurrency criteria; Flowforge has no policy hook and needs a Filament theme and Node build — Measured: no lock corrupts a column in every round; one advisory lock per move kept 60 of 60 rounds clean; column row locks deadlocked in 12 of 70 empty-column rounds. Conditional on a human touch check at 375 px (fallback is a drag handle).
 
 ### Pending Todos
 
@@ -184,6 +186,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T01:51:25.111Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-10-08T02:30:19.064Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
