@@ -362,7 +362,8 @@ class SettingsPage extends Page
     }
 
     /**
-     * A pattern input with the rules of the data layer and a preview line under
+     * A pattern input with the rules of the data layer (the NumberPatternRule of
+     * its kind, taken from NumberingSettings::rules()) and a preview line under
      * it. It updates on blur, not on every keystroke, and the preview is one
      * indexed read of the counter.
      */
