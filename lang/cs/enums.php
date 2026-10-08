@@ -15,6 +15,13 @@ return [
         'world' => 'Svět',
     ],
 
+    'document_kind' => [
+        'invoice' => 'Faktura',
+        'proforma' => 'Zálohová faktura',
+        'credit_note' => 'Dobropis',
+        'task' => 'Úkol',
+    ],
+
     'vat_mode' => [
         'non_payer' => 'Neplátce DPH',
         'payer' => 'Plátce DPH',

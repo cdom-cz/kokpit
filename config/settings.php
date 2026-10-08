@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
+use App\Domain\Settings\Settings\NumberingSettings;
 use App\Domain\Settings\Settings\PaymentSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Shared\Models\SettingsProperty;
@@ -28,6 +29,7 @@ return [
         BankAccountSettings::class,
         InvoicingSettings::class,
         DefaultsSettings::class,
+        NumberingSettings::class,
         PaymentSettings::class,
     ],
 
