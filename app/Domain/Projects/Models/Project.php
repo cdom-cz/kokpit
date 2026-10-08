@@ -93,6 +93,29 @@ final class Project extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * Projects a picker may offer: not archived and belonging to a client that is
+     * not archived (D-11). Every project picker from Phase 5 on (tasks, time
+     * entries, invoices) uses this scope instead of repeating the rule.
+     *
+     * The client row is checked with a plain EXISTS subquery, not through the
+     * Client model, which is closed to Partners. The Partner scope still applies
+     * on top of this one.
+     *
+     * @param  Builder<Project>  $query
+     */
+    public function scopeSelectable(Builder $query): void
+    {
+        $table = $this->getTable();
+
+        $query
+            ->whereNull("{$table}.deleted_at")
+            ->whereExists(static fn ($sub) => $sub->selectRaw('1')
+                ->from('clients')
+                ->whereColumn('clients.id', "{$table}.client_id")
+                ->whereNull('clients.deleted_at'));
+    }
+
+    /**
      * Keeps the tags of an archived project. The tags package calls this from
      * its `deleted` listener, which also fires for a soft delete, so an archive
      * would otherwise detach every tag and a restore would not bring them back.

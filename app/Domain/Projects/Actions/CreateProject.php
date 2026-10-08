@@ -7,14 +7,11 @@ namespace App\Domain\Projects\Actions;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Models\Project;
-use App\Domain\Shared\Money\Money;
 use App\Domain\Shared\Tags\TagType;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use InvalidArgumentException;
-use OverflowException;
 
 /**
  * Creates a project and its Admin-only billing row in one transaction (D-05).
@@ -30,7 +27,9 @@ use OverflowException;
  * also covers a key taken between the form check and the save (D-14).
  * Every error is keyed by the data key; the Admin form maps it to its state path.
  *
- * `estimate_hours` is accepted in the data shape but not converted yet.
+ * `estimate_hours` is converted to whole seconds with EstimateHours; an empty
+ * value stores null and an invalid one is a field error on `estimate_hours`.
+ * The input rules are shared with UpdateProject through ProjectInput.
  *
  * @phpstan-type ProjectData array{
  *     name: string,
@@ -60,17 +59,16 @@ final class CreateProject
             throw ValidationException::withMessages(['client_id' => __('kokpit.projects.errors.client_archived')]);
         }
 
-        $hourlyRate = $this->money($data['hourly_rate'] ?? null, $client, 'hourly_rate');
-        $fixedPrice = $this->money($data['fixed_price'] ?? null, $client, 'fixed_price');
+        $hourlyRate = ProjectInput::money($data['hourly_rate'] ?? null, $client, 'hourly_rate');
+        $fixedPrice = ProjectInput::money($data['fixed_price'] ?? null, $client, 'fixed_price');
+        $estimateSeconds = ProjectInput::estimateSeconds($data['estimate_hours'] ?? null);
 
-        if ($data['billing_type'] === BillingType::FixedPrice->value && $fixedPrice === null) {
-            throw ValidationException::withMessages(['fixed_price' => __('kokpit.projects.errors.fixed_price_required')]);
-        }
+        ProjectInput::requireFixedPrice($data['billing_type'], $fixedPrice);
 
         // The transaction is caught from the outside: a unique violation inside it has
         // already rolled the project insert back (savepoint when nested) before it is translated.
         try {
-            return DB::transaction(function () use ($client, $data, $hourlyRate, $fixedPrice): Project {
+            return DB::transaction(function () use ($client, $data, $hourlyRate, $fixedPrice, $estimateSeconds): Project {
                 $attributes = [
                     'name' => $data['name'],
                     'key' => Str::upper($data['key']),
@@ -99,41 +97,14 @@ final class CreateProject
                     'billing_type' => BillingType::from($data['billing_type']),
                     'hourly_rate' => $hourlyRate,
                     'fixed_price' => $fixedPrice,
+                    'estimate_seconds' => $estimateSeconds,
                     'internal_note' => $data['internal_note'] ?? null,
                 ]);
 
                 return $project;
             });
         } catch (UniqueConstraintViolationException $e) {
-            if (str_contains($e->getMessage(), 'projects_key_unique')) {
-                throw ValidationException::withMessages(['key' => __('kokpit.projects.errors.key_taken')]);
-            }
-
-            throw $e;
+            ProjectInput::translateKeyViolation($e);
         }
-    }
-
-    /**
-     * Parses an amount typed in major units in the client's currency. Nothing is
-     * rounded: more decimals than the currency allows, a grouping character, a
-     * negative sign or an amount beyond the integer range is a field error.
-     */
-    private function money(?string $text, Client $client, string $field): ?Money
-    {
-        if ($text === null || trim($text) === '') {
-            return null;
-        }
-
-        try {
-            $money = Money::fromMajor($text, $client->currency);
-        } catch (InvalidArgumentException|OverflowException) {
-            throw ValidationException::withMessages([$field => __('kokpit.projects.errors.amount_invalid')]);
-        }
-
-        if ($money->minor < 0) {
-            throw ValidationException::withMessages([$field => __('kokpit.projects.errors.amount_invalid')]);
-        }
-
-        return $money;
     }
 }

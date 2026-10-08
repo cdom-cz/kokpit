@@ -241,6 +241,8 @@ return [
             'client_archived' => 'Pro archivovaného klienta nelze vytvořit projekt.',
             'amount_invalid' => 'Zadejte nezáporné číslo bez oddělovače tisíců a nejvýše s tolika desetinnými místy, kolik dovoluje měna klienta.',
             'fixed_price_required' => 'U pevné ceny zadejte částku.',
+            'client_immutable' => 'Klienta projektu nelze po vytvoření změnit.',
+            'estimate_invalid' => 'Zadejte odhad v hodinách jako nezáporné číslo nejvýše se dvěma desetinnými místy, například 1,5.',
         ],
         'fields' => [
             'name' => 'Název',

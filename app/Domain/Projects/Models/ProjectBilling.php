@@ -55,6 +55,25 @@ final class ProjectBilling extends KokpitModel implements PartnerIsolated
     protected $table = 'project_billing';
 
     /**
+     * Whether any project of the client, archived ones included, holds a rate or
+     * a fixed price. The client currency cannot change once this is true (the
+     * lock lives with UpdateClient). A stored zero counts as held. Read by the
+     * Admin or inside a system run, like the model itself.
+     */
+    public static function clientHoldsMoney(string $clientId): bool
+    {
+        return self::query()
+            ->whereExists(static fn ($sub) => $sub->selectRaw('1')
+                ->from('projects')
+                ->whereColumn('projects.id', 'project_billing.project_id')
+                ->where('projects.client_id', $clientId))
+            ->where(static fn ($query) => $query
+                ->whereNotNull('hourly_rate_minor')
+                ->orWhereNotNull('fixed_price_minor'))
+            ->exists();
+    }
+
+    /**
      * @return BelongsTo<Project, $this>
      */
     public function project(): BelongsTo
