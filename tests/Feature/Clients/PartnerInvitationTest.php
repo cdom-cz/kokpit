@@ -552,11 +552,11 @@ it('resends a pending invitation with a new token, a new expiry and a new mail',
         ->and($row['token_hash'])->toBe(hash('sha256', $newToken))
         ->and($row['token_hash'])->not->toBe($oldHash)
         ->and($row['send_count'])->toBe(2)
-        ->and(Carbon::parse($row['expires_at'])->equalTo(now()->addDays(7)))->toBeTrue()
-        ->and(Carbon::parse($row['last_sent_at'])->equalTo(now()))->toBeTrue()
+        ->and(Carbon::parse($row['expires_at'])->getTimestamp())->toBe(now()->addDays(7)->getTimestamp())
+        ->and(Carbon::parse($row['last_sent_at'])->getTimestamp())->toBe(now()->getTimestamp())
         ->and($invitation->send_count)->toBe(2)
         ->and($invitation->state())->toBe(InvitationState::Pending)
-        ->and(Carbon::createFromTimestamp((int) linkQuery($urls[1])['expires'])->equalTo(now()->addDays(7)))->toBeTrue();
+        ->and((int) linkQuery($urls[1])['expires'])->toBe(now()->addDays(7)->getTimestamp());
 
     asGuest();
     expect(ClientInvitation::findAcceptable($invitation->id, $oldToken))->toBeNull()

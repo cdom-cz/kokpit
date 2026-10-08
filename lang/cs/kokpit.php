@@ -492,6 +492,8 @@ return [
             'email_has_account' => 'Tato e-mailová adresa už patří k existujícímu účtu, pozvat ji nelze.',
             'email_has_open_invitation' => 'Tato adresa už má otevřenou pozvánku. Odešlete ji znovu.',
             'client_archived' => 'Pro archivovaného klienta nelze vytvořit pozvánku.',
+            'not_resendable' => 'Přijatou nebo zrušenou pozvánku nelze odeslat znovu.',
+            'not_revocable' => 'Přijatou nebo již zrušenou pozvánku nelze zrušit.',
         ],
         'mail' => [
             'subject' => 'Pozvánka do aplikace Kokpit',

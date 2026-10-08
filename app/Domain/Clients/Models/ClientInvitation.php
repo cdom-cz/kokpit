@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Clients\Models;
 
+use App\Domain\Clients\Enums\InvitationState;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -88,11 +89,23 @@ final class ClientInvitation extends KokpitModel implements PartnerIsolated
             return null;
         }
 
-        if ($invitation->accepted_at !== null || $invitation->revoked_at !== null || ! $invitation->expires_at->isFuture()) {
-            return null;
-        }
+        return $invitation->state() === InvitationState::Pending ? $invitation : null;
+    }
 
-        return $invitation;
+    /**
+     * Where the invitation stands now, derived from the timestamps and the
+     * current time and never stored. Accepted and revoked outrank expired, so
+     * they keep their state after the expiry date has passed; at `expires_at`
+     * or later a pending invitation counts as expired.
+     */
+    public function state(): InvitationState
+    {
+        return match (true) {
+            $this->accepted_at !== null => InvitationState::Accepted,
+            $this->revoked_at !== null => InvitationState::Revoked,
+            ! $this->expires_at->isFuture() => InvitationState::Expired,
+            default => InvitationState::Pending,
+        };
     }
 
     /**

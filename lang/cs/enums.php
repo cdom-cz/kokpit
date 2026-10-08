@@ -27,6 +27,13 @@ return [
         'payer' => 'Plátce DPH',
     ],
 
+    'invitation_state' => [
+        'pending' => 'Čeká',
+        'accepted' => 'Přijata',
+        'revoked' => 'Zrušena',
+        'expired' => 'Vypršela',
+    ],
+
     'client_stage' => [
         'lead' => 'Zájemce',
         'active' => 'Aktivní',
