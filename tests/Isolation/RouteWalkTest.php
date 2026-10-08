@@ -109,6 +109,7 @@ function walkedResourceMap(string $canaryRecordA, string $canaryRecordB, string 
     return [
         'canary-records' => ['partner' => true, 'a' => $canaryRecordA, 'b' => $canaryRecordB],
         'my-projects' => ['partner' => true, 'a' => $projectId($canaryA), 'b' => $projectId($canaryB)],
+        'projects' => ['partner' => false, 'a' => $projectId($canaryA), 'b' => $projectId($canaryB)],
     ];
 }
 
