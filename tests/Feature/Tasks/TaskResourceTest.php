@@ -134,7 +134,7 @@ it('finds a task by its key in the global search with the project key and status
     expect(array_keys($categories))->toBe(['Úkoly'])
         ->and($categories['Úkoly'])->toHaveCount(1)
         ->and($categories['Úkoly'][0]['title'])->toBe('ABC-1 · Example searchable task')
-        ->and(array_values($categories['Úkoly'][0]['details']))->toBe(['ABC', 'Plánováno']);
+        ->and(array_values($categories['Úkoly'][0]['details']))->toBe(['ABC', 'Plánovaný']);
 });
 
 it('finds a task by a word of its title in the global search', function (): void {
@@ -169,4 +169,20 @@ it('returns a Partner no global search result for the reference of an own-client
 
     expect(taskResSearch($task->reference))->toBe([])
         ->and(taskResSearch('Example'))->toBe([]);
+});
+
+it('lets exactly one resource of the panel be globally searchable, the Admin-only TaskResource', function (): void {
+    $searchable = array_values(array_filter(
+        Filament::getResources(),
+        static fn (string $resource): bool => $resource::canGloballySearch(),
+    ));
+
+    expect($searchable)->toBe([TaskResource::class]);
+
+    $this->actingAs(Canary::partnerFor(Client::factory()->create()->id));
+
+    expect(array_values(array_filter(
+        Filament::getResources(),
+        static fn (string $resource): bool => $resource::canGloballySearch(),
+    )))->toBe([]);
 });

@@ -75,9 +75,13 @@ class AdminPanelProvider extends PanelProvider
             // A Resource without a policy method throws instead of being allowed (D-03). Pages and
             // widgets are covered by #[AccessRule], which strict authorization does not reach.
             ->strictAuthorization()
-            // Global search is a Partner leakage surface; it comes back per resource together with
-            // an explicit rule (UI-SPEC A-6).
-            ->globalSearch(false)
+            // Global search is a Partner leakage surface, so it is opt-in per resource: only a
+            // resource that declares $isGloballySearchable on its own class is searchable, and a
+            // resource that inherits the default is not. TaskResource is the only one (an
+            // Admin-only resource, found by KEY-N or title). A Partner sees no result at all,
+            // because every searchable resource is closed to Partners (UI-SPEC A-6).
+            ->globalSearch()
+            ->globalSearchResourceOptIn()
             // Built-in TOTP with one-time recovery codes (D-07). Enforcement is per request in
             // the middleware below, because Filament evaluates isRequired once at route build.
             ->multiFactorAuthentication([AppAuthentication::make()->recoverable()], isRequired: true)

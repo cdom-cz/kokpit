@@ -23,6 +23,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -52,6 +53,9 @@ final class TaskResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'title';
 
+    /** The only searchable resource of the panel (panel resource opt-in); `id` is never searchable. */
+    protected static bool $isGloballySearchable = true;
+
     protected static ?int $navigationSort = 30;
 
     public static function getNavigationLabel(): string
@@ -80,6 +84,45 @@ final class TaskResource extends Resource
     public static function resolveRecordRouteBinding(int|string $key, ?Closure $modifyQuery = null): ?Model
     {
         return parent::resolveRecordRouteBinding(is_string($key) ? Str::upper($key) : $key, $modifyQuery);
+    }
+
+    /**
+     * Searchable by the key and the title, never by the id.
+     *
+     * @return array<string>
+     */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['reference', 'title'];
+    }
+
+    public static function getGlobalSearchResultTitle(Model $record): string|Htmlable
+    {
+        return $record instanceof Task ? $record->reference.' · '.$record->title : parent::getGlobalSearchResultTitle($record);
+    }
+
+    /**
+     * The project key and the status; never a rate, a price or any money.
+     *
+     * @return array<string, string>
+     */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        if (! $record instanceof Task) {
+            return [];
+        }
+
+        return [
+            __('kokpit.tasks.fields.project') => (string) $record->project?->key,
+            __('kokpit.tasks.fields.status') => $record->status->getLabel(),
+        ];
+    }
+
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        return parent::getGlobalSearchEloquentQuery()->with([
+            'project' => static fn ($project) => $project->withoutGlobalScopes([SoftDeletingScope::class]),
+        ]);
     }
 
     public static function infolist(Schema $schema): Schema
