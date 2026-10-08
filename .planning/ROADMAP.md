@@ -215,7 +215,7 @@ Plans:
   4. From the client detail Admin invites a Partner account by e-mail, and the invited person sets a password and logs in
   5. A Partner sees only projects of their own client that are flagged client-visible, never sees rates, prices or estimates in lists, details, selects or search, and never sees another client's canary data
 
-**Plans:** 3/21 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
+**Plans:** 4/21 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
 **UI hint**: yes
 
 Plans:
@@ -229,7 +229,7 @@ Plans:
 - [x] 04-03-PLAN.md — Read-only Partner project list and detail with Partner-safe columns and the route-walk resource map (PR-04, PR-01)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 04-04-PLAN.md — Partner-visible project tags through a real Tag constraint, with the soft-delete detach guard (PR-04, PR-01)
+- [x] 04-04-PLAN.md — Partner-visible project tags through a real Tag constraint, with the soft-delete detach guard (PR-04, PR-01)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 04-05-PLAN.md — Access primitives: fail-closed Audience::Guest with the SimplePage registry rule, and the PartnerScope escape-hatch rule (PR-04)
@@ -410,7 +410,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Repository Hygiene | 11/11 | Complete    | 2026-10-08 |
 | 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
 | 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
-| 4. Clients and Projects | 3/21 | In Progress | - |
+| 4. Clients and Projects | 4/21 | In Progress | - |
 | 5. Tasks and Kanban | 0/0 | Not started | - |
 | 6. Time Tracking | 0/0 | Not started | - |
 | 7. REST API | 0/0 | Not started | - |
