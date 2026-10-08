@@ -35,7 +35,7 @@ it('shows the Admin the six Czech slot labels, a status label for each and the p
         ->assertSee('wire:poll', false);
 
     expect(substr_count((string) $response->getContent(), __('enums.health_status.not_available')))
-        ->toBeGreaterThanOrEqual(count(HealthSlot::cases()));
+        ->toBeGreaterThanOrEqual(3);
 });
 
 it('is reachable under the route name the failed-job alert links to', function (): void {

@@ -51,4 +51,37 @@ return [
         'message_max_length' => 200,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | System page health thresholds
+    |--------------------------------------------------------------------------
+    |
+    | Fixed thresholds of the health indicators on the System page (D-12).
+    | Starting points, not editable in the UI, kept as literals because no
+    | deployment needs a different value.
+    |
+    | failed_jobs_warning_at: this many failed jobs or more is a Warning.
+    | oldest_pending_warning_after / oldest_pending_error_after: seconds the
+    |   oldest job may wait in the queue before the slot turns Warning, then Error.
+    | scheduler_heartbeat_error_after: seconds without a scheduler heartbeat
+    |   before the slot turns Error; the scheduler writes one every minute.
+    |
+    | Caveat, delayed jobs: the age of a pending job runs from the creation of
+    |   the job, not from the moment it became ready. A job dispatched with a
+    |   delay shows its whole delay as age once it is ready. The base job's
+    |   backoff tops out at 300 s, below the warning; a later job with a longer
+    |   delay or backoff must account for this.
+    | Caveat, heartbeat flush: both heartbeats live in the cache (Cache::forever).
+    |   A cache flush or a cache server restart wipes them, so the slots show
+    |   Error for up to one minute until the next scheduler run writes them again.
+    |
+    */
+
+    'health' => [
+        'failed_jobs_warning_at' => 1,
+        'oldest_pending_warning_after' => 600,
+        'oldest_pending_error_after' => 1800,
+        'scheduler_heartbeat_error_after' => 180,
+    ],
+
 ];

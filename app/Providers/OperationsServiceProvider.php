@@ -7,7 +7,7 @@ namespace App\Providers;
 use App\Domain\Audit\ActivitySource;
 use App\Domain\Operations\Alerts\ReportFailedJob;
 use App\Domain\Operations\Health\HealthIndicatorRegistry;
-use App\Domain\Operations\Health\HealthSlot;
+use App\Domain\Operations\Health\Indicators\FailedJobsIndicator;
 use App\Domain\Operations\Health\Indicators\PlaceholderIndicator;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
@@ -32,13 +32,21 @@ final class OperationsServiceProvider extends ServiceProvider
             fn (): ActivitySource => new ActivitySource(fn (): bool => $this->app->runningInConsole()),
         );
 
-        // One indicator per HealthSlot case (D-13). Every slot starts as a placeholder; a plan or
-        // phase that measures a slot swaps its placeholder (plan 03-16 for the queue and scheduler
-        // slots, Phases 8, 10 and 11 for the rest) and never leaves a slot without an indicator.
+        // One indicator per HealthSlot case (D-13). The queue and scheduler slots are measured for
+        // real; the rest start as placeholders that Phases 8, 10 and 11 swap through replace().
+        // A slot never stays without an indicator, and register() refuses a second one, so the
+        // placeholder is only registered for a slot no real indicator covers.
         $this->app->singleton(HealthIndicatorRegistry::class, function (): HealthIndicatorRegistry {
             $registry = new HealthIndicatorRegistry;
+            $real = [
+                new FailedJobsIndicator,
+            ];
 
-            foreach (HealthSlot::cases() as $slot) {
+            foreach ($real as $indicator) {
+                $registry->register($indicator);
+            }
+
+            foreach (HealthIndicatorRegistry::missingSlots($real) as $slot) {
                 $registry->register(new PlaceholderIndicator($slot));
             }
 

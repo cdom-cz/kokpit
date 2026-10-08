@@ -42,12 +42,12 @@ it('has the six slots of the System page', function (): void {
     ]);
 });
 
-it('reports every slot as not available yet until the owning plan or phase replaces its placeholder', function (): void {
+it('keeps the placeholder, not available yet, for the slots no plan measures yet', function (): void {
     $results = app(HealthIndicatorRegistry::class)->results();
 
     expect($results)->toHaveCount(count(HealthSlot::cases()));
 
-    foreach (HealthSlot::cases() as $slot) {
+    foreach ([HealthSlot::LastRateDate, HealthSlot::UnprocessedWebhooks, HealthSlot::UnsentInvoiceEmails] as $slot) {
         expect($results[$slot->value]->status)->toBe(HealthStatus::NotAvailable)
             ->and($results[$slot->value]->detail)->toBe(__('kokpit.system.not_available_yet'));
     }
@@ -89,7 +89,7 @@ it('swaps the indicator of one slot and leaves the others alone', function (): v
 
     expect($results[HealthSlot::LastRateDate->value]->status)->toBe(HealthStatus::Ok)
         ->and($results[HealthSlot::LastRateDate->value]->value)->toBe('fresh')
-        ->and($results[HealthSlot::FailedJobs->value]->status)->toBe(HealthStatus::NotAvailable);
+        ->and($results[HealthSlot::FailedJobs->value]->status)->toBe(HealthStatus::Ok);
 });
 
 it('refuses to register a second indicator for a slot', function (): void {

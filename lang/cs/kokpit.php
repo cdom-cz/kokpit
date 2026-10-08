@@ -179,6 +179,11 @@ return [
         'checked_at' => 'Zkontrolováno: :time',
         'not_available_yet' => 'Zatím není k dispozici',
         'no_indicator' => 'Pro tuto položku není zaregistrována žádná kontrola',
+        'failed_jobs' => [
+            'none' => 'Žádná selhaná úloha',
+            'some' => 'Selhané úlohy čekají na prověření',
+            'not_countable' => 'Úložiště selhaných úloh neumí počítat',
+        ],
     ],
 
     'alerts' => [
