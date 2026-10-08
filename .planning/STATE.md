@@ -4,10 +4,10 @@ current_phase: 4
 current_phase_name: Clients and Projects
 status: planning
 stopped_at: Phase 03 complete, ready to plan Phase 4
-last_updated: "2026-10-08T06:31:24.549Z"
+last_updated: "2026-10-08T06:44:10.485Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 03 complete, transitioned to Phase 4
-state_head: 8f37d5c66552f4e49396cd179fc9445195354dab
+state_head: 66bb759e37a3fae93819dfd7f388f006c850545c
 progress:
   total_phases: 12
   completed_phases: 3
@@ -223,6 +223,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 |---|-------------|------|--------|-----------|
 | 261008-28i | Remove the hosted product name from all tracked documentation | 2026-10-08 | e943790 | [261008-28i-remove-the-product-name-from-all-tracked](./quick/261008-28i-remove-the-product-name-from-all-tracked/) |
 | 261008-bec | Install and configure laravel/horizon | 2026-10-08 | 8f37d5c | [261008-bec-install-and-configure-laravel-horizon](./quick/261008-bec-install-and-configure-laravel-horizon/) |
+| 261008-bp0 | Adapt Zerops tests and deploy workflow to the single backend setup | 2026-10-08 | 66bb759 | [261008-bp0-adapt-zerops-tests-and-deploy-workflow-t](./quick/261008-bp0-adapt-zerops-tests-and-deploy-workflow-t/) |
 
 ## Deferred Items
 
