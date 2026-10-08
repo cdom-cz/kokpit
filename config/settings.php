@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Shared\Models\SettingsProperty;
 use Spatie\LaravelSettings\SettingsCasts\DateTimeInterfaceCast;
@@ -21,6 +22,7 @@ return [
      */
     'settings' => [
         SupplierSettings::class,
+        DefaultsSettings::class,
     ],
 
     'setting_class_path' => app_path('Domain/Settings/Settings'),

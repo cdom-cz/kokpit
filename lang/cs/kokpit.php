@@ -45,6 +45,7 @@ return [
         'saved' => 'Nastavení bylo uloženo.',
         'tabs' => [
             'supplier' => 'Dodavatel',
+            'defaults' => 'Výchozí hodnoty',
         ],
         'supplier' => [
             'company_name' => 'Název společnosti',
@@ -59,6 +60,14 @@ return [
             'phone' => 'Telefon',
             'website' => 'Web',
             'registration_note' => 'Poznámka o registraci',
+        ],
+        'defaults' => [
+            'default_currency' => 'Výchozí měna',
+            'default_hourly_rate' => 'Výchozí hodinová sazba',
+            'default_hourly_rate_hint' => 'Částka s desetinnou čárkou nebo tečkou, například 1250,50.',
+            'per_hour' => 'hod.',
+            'rate_invalid' => 'Zadejte nezáporné číslo s nejvýše tolika desetinnými místy, kolik měna dovoluje.',
+            'rate_currency_mismatch' => 'Měna výchozí sazby musí být stejná jako výchozí měna.',
         ],
     ],
 

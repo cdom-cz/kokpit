@@ -9,10 +9,12 @@ use Brick\Math\BigInteger;
 use Brick\Math\BigNumber;
 use Brick\Math\BigRational;
 use Brick\Math\Exception\MathException;
+use Brick\Math\Exception\RoundingNecessaryException;
 use Brick\Math\RoundingMode;
 use Brick\Money\Currency;
 use Brick\Money\Exception\MoneyException;
 use Brick\Money\Exception\UnknownCurrencyException;
+use Brick\Money\IsoCurrencyProvider;
 use Brick\Money\Money as BrickMoney;
 use InvalidArgumentException;
 use JsonSerializable;
@@ -109,6 +111,63 @@ final readonly class Money implements JsonSerializable
         }
 
         return new self(self::toInt($rounded), $currency);
+    }
+
+    /**
+     * Parses an amount typed by a person in major units ("1250,50" or "1250.5").
+     *
+     * This constructor never rounds. The accepted shape is an optional minus
+     * sign, digits and an optional fraction separated by a comma or a dot;
+     * grouping characters, spaces, exponents and the empty string are refused.
+     * A fraction longer than the currency's ISO 4217 minor unit is an error, not
+     * a rounding: {@see Money::fromExactMinor()} stays the single rounding point.
+     *
+     * @throws InvalidArgumentException when the text is malformed, has more fraction digits than the currency allows, or the currency is invalid
+     * @throws OverflowException when the amount in minor units does not fit into an integer
+     */
+    public static function fromMajor(string $amount, string $currency): self
+    {
+        $currency = self::validCurrency($currency);
+        $amount = trim($amount);
+
+        if (preg_match('/^-?\d+([.,]\d+)?$/D', $amount) !== 1) {
+            throw new InvalidArgumentException('The amount must be digits with an optional decimal comma or point.');
+        }
+
+        try {
+            $minor = BigDecimal::of(str_replace(',', '.', $amount))
+                ->toScale(Currency::of($currency)->getDefaultFractionDigits())
+                ->getUnscaledValue();
+        } catch (RoundingNecessaryException $e) {
+            throw new InvalidArgumentException('The amount has more decimals than the currency allows.', 0, $e);
+        }
+
+        return new self(self::toInt($minor), $currency);
+    }
+
+    /**
+     * The amount in major units as a decimal string with a point and exactly the
+     * currency's fraction digits: "1250.50", "-3.00", "1500" for a currency without fraction.
+     */
+    public function toMajor(): string
+    {
+        return BigDecimal::ofUnscaledValue($this->minor, Currency::of($this->currency)->getDefaultFractionDigits())->toString();
+    }
+
+    /**
+     * Every ISO 4217 code known to the money library, sorted.
+     *
+     * @return list<string>
+     */
+    public static function isoCurrencyCodes(): array
+    {
+        $codes = array_map(
+            static fn (Currency $currency): string => $currency->getCurrencyCode(),
+            array_values(IsoCurrencyProvider::getInstance()->getAvailableCurrencies()),
+        );
+        sort($codes);
+
+        return $codes;
     }
 
     /**

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Shared\Models\SettingsProperty;
 use App\Filament\Pages\SettingsPage;
@@ -165,4 +166,29 @@ it('rolls the save back and shows a data-layer error on the field when the class
         ->assertHasErrors(['data.supplier.company_name']);
 
     expect(SettingsProperty::query()->where('group', 'supplier')->pluck('payload', 'name')->all())->toBe($before);
+});
+
+it('saves the default currency and a default rate typed with a decimal comma and shows it after a reload', function (): void {
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(SettingsPage::class)
+        ->fillForm([
+            'supplier' => fictionalSupplierState(exampleEmail()),
+            'defaults' => ['default_currency' => 'CZK', 'default_hourly_rate' => '1250,50'],
+        ])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    app()->forgetScopedInstances();
+    $fresh = app(DefaultsSettings::class);
+
+    expect($fresh->default_currency)->toBe('CZK')
+        ->and($fresh->default_hourly_rate->minor)->toBe(125050)
+        ->and($fresh->default_hourly_rate->currency)->toBe('CZK');
+
+    app()->forgetScopedInstances();
+
+    Livewire::test(SettingsPage::class)
+        ->assertSet('data.defaults.default_currency', 'CZK')
+        ->assertSet('data.defaults.default_hourly_rate', '1250,50');
 });

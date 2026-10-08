@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages;
 
+use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Settings\Settings\ValidatedSettings;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
+use App\Domain\Shared\Money\Money;
 use App\Filament\Concerns\EnforcesPageAccessRule;
+use Closure;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Concerns\CanUseDatabaseTransactions;
@@ -21,9 +25,12 @@ use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
+use OverflowException;
 use Throwable;
 use UnitEnum;
 
@@ -51,6 +58,7 @@ class SettingsPage extends Page
      */
     private const SETTINGS = [
         SupplierSettings::class,
+        DefaultsSettings::class,
     ];
 
     protected static ?string $slug = 'settings';
@@ -108,6 +116,7 @@ class SettingsPage extends Page
             ->components([
                 Tabs::make()->tabs([
                     $this->supplierTab(),
+                    $this->defaultsTab(),
                 ]),
             ]);
     }
@@ -185,6 +194,40 @@ class SettingsPage extends Page
                 $this->supplierInput('website')->url(),
                 $this->supplierInput('registration_note'),
             ])->statePath(SupplierSettings::group()),
+        ]);
+    }
+
+    private function defaultsTab(): Tab
+    {
+        $rules = DefaultsSettings::rules();
+
+        return Tab::make(__('kokpit.settings.tabs.defaults'))->schema([
+            Group::make([
+                Select::make('default_currency')
+                    ->label(__('kokpit.settings.defaults.default_currency'))
+                    ->options(array_combine(Money::isoCurrencyCodes(), Money::isoCurrencyCodes()))
+                    ->searchable()
+                    ->live()
+                    ->required()
+                    ->rules($rules['default_currency']),
+                TextInput::make('default_hourly_rate')
+                    ->label(__('kokpit.settings.defaults.default_hourly_rate'))
+                    ->helperText(__('kokpit.settings.defaults.default_hourly_rate_hint'))
+                    ->inputMode('decimal')
+                    ->suffix(fn (Get $get): string => (string) $get('default_currency').' / '.__('kokpit.settings.defaults.per_hour'))
+                    ->required()
+                    ->rules(fn (Get $get): array => [
+                        ...$rules['default_hourly_rate'],
+                        // Money::fromMajor is the one parser: it refuses excess decimals instead of rounding them.
+                        static function (string $attribute, mixed $value, Closure $fail) use ($get): void {
+                            try {
+                                Money::fromMajor(is_string($value) ? $value : '', (string) $get('default_currency'));
+                            } catch (InvalidArgumentException|OverflowException) {
+                                $fail(__('kokpit.settings.defaults.rate_invalid'));
+                            }
+                        },
+                    ]),
+            ])->statePath(DefaultsSettings::group()),
         ]);
     }
 
