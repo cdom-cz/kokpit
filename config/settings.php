@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\PaymentSettings;
@@ -24,6 +25,7 @@ return [
      */
     'settings' => [
         SupplierSettings::class,
+        BankAccountSettings::class,
         InvoicingSettings::class,
         DefaultsSettings::class,
         PaymentSettings::class,

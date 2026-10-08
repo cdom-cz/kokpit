@@ -45,6 +45,7 @@ return [
         'saved' => 'Nastavení bylo uloženo.',
         'tabs' => [
             'supplier' => 'Dodavatel',
+            'bank' => 'Bankovní účty',
             'invoicing' => 'Fakturace',
             'defaults' => 'Výchozí hodnoty',
             'payments' => 'Online platby',
@@ -62,6 +63,17 @@ return [
             'phone' => 'Telefon',
             'website' => 'Web',
             'registration_note' => 'Poznámka o registraci',
+        ],
+        'bank' => [
+            'accounts' => 'Bankovní účty',
+            'add_account' => 'Přidat bankovní účet',
+            'label' => 'Název účtu',
+            'format' => 'Formát účtu',
+            'currency' => 'Měna',
+            'iban' => 'IBAN',
+            'iban_hint' => 'Potřebujeme ho pro QR platbu na fakturách.',
+            'iban_invalid' => 'Zadejte platný IBAN včetně kontrolních číslic.',
+            'format_invalid' => 'Vyberte podporovaný formát účtu.',
         ],
         'invoicing' => [
             'vat_mode' => 'Režim DPH',

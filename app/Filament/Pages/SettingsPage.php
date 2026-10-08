@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages;
 
+use App\Domain\Settings\Banking\BankAccountFormat;
+use App\Domain\Settings\Rules\IbanRule;
+use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\PaymentSettings;
@@ -16,6 +19,7 @@ use App\Domain\Shared\Money\Money;
 use App\Filament\Concerns\EnforcesPageAccessRule;
 use Closure;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -62,6 +66,7 @@ class SettingsPage extends Page
      */
     private const SETTINGS = [
         SupplierSettings::class,
+        BankAccountSettings::class,
         InvoicingSettings::class,
         DefaultsSettings::class,
         PaymentSettings::class,
@@ -122,6 +127,7 @@ class SettingsPage extends Page
             ->components([
                 Tabs::make()->tabs([
                     $this->supplierTab(),
+                    $this->bankTab(),
                     $this->invoicingTab(),
                     $this->defaultsTab(),
                     $this->paymentsTab(),
@@ -202,6 +208,52 @@ class SettingsPage extends Page
                 $this->supplierInput('website')->url(),
                 $this->supplierInput('registration_note'),
             ])->statePath(SupplierSettings::group()),
+        ]);
+    }
+
+    private function bankTab(): Tab
+    {
+        $currencies = array_combine(Money::isoCurrencyCodes(), Money::isoCurrencyCodes());
+        $shows = static fn (string $field): Closure => static fn (Get $get): bool => in_array(
+            $field,
+            self::accountFormat($get('format'))?->visibleFields() ?? [],
+            true,
+        );
+
+        return Tab::make(__('kokpit.settings.tabs.bank'))->schema([
+            Group::make([
+                Repeater::make('accounts')
+                    ->label(__('kokpit.settings.bank.accounts'))
+                    ->addActionLabel(__('kokpit.settings.bank.add_account'))
+                    ->itemLabel(static fn (array $state): ?string => filled($state['label'] ?? null)
+                        ? $state['label'].' ('.($state['currency'] ?? '').')'
+                        : null)
+                    ->defaultItems(0)
+                    ->schema([
+                        TextInput::make('label')
+                            ->label(__('kokpit.settings.bank.label'))
+                            ->required()
+                            ->maxLength(100),
+                        Select::make('format')
+                            ->label(__('kokpit.settings.bank.format'))
+                            ->options(BankAccountFormat::class)
+                            ->native(false)
+                            ->live()
+                            ->required(),
+                        Select::make('currency')
+                            ->label(__('kokpit.settings.bank.currency'))
+                            ->options($currencies)
+                            ->searchable()
+                            ->required()
+                            ->distinct(),
+                        TextInput::make('iban')
+                            ->label(__('kokpit.settings.bank.iban'))
+                            ->helperText(__('kokpit.settings.bank.iban_hint'))
+                            ->visible($shows('iban'))
+                            ->required($shows('iban'))
+                            ->rule(new IbanRule),
+                    ]),
+            ])->statePath(BankAccountSettings::group()),
         ]);
     }
 
@@ -291,6 +343,19 @@ class SettingsPage extends Page
             ->label(__("kokpit.settings.supplier.{$key}"))
             ->required(in_array('required', $rules, true))
             ->rules($rules);
+    }
+
+    /**
+     * The format of a bank account item. A Filament select over an enum hands
+     * the case itself back, a crafted payload hands a string or nothing.
+     */
+    private static function accountFormat(mixed $state): ?BankAccountFormat
+    {
+        return match (true) {
+            $state instanceof BankAccountFormat => $state,
+            is_string($state) => BankAccountFormat::tryFrom($state),
+            default => null,
+        };
     }
 
     /**
