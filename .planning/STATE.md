@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: Operations Foundation
 status: executing
-stopped_at: Completed 03-09-PLAN.md
-last_updated: "2026-10-08T03:31:19.428Z"
+stopped_at: Completed 03-10-PLAN.md
+last_updated: "2026-10-08T03:40:03.786Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 03 execution started
-state_head: bcfb705ebfc00b0f71cfca05ed55237f5348c512
+state_head: 0c70eee17f56d74280ac559aa17e9ab8fe7a5f1d
 progress:
   total_phases: 12
   completed_phases: 2
   total_plans: 43
-  completed_plans: 33
+  completed_plans: 34
   percent: 17
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 03 (Operations Foundation) — EXECUTING
-Plan: 10 of 19
+Plan: 11 of 19
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 03 execution started
 
@@ -90,6 +90,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 03 P07 | 7 min | 2 tasks | 14 files |
 | Phase 03 P08 | 9 min | 2 tasks | 14 files |
 | Phase 03 P09 | 25 min | 2 tasks | 3 files |
+| Phase 03 P10 | 6 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -171,6 +172,7 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-08: pattern drives allocator scope key (kind:YYYY, kind:YYYY-MM, kind:all); task number is fixed KEY-N from task:<project id> without reading settings; two year tokens are duplicate_token; NumberPatternRule carries the 32-character cap with a Czech reason
 - [Phase 03]: 03-08: SequenceAllocator::peek() is the only preview path (plain SELECT, no lock, no insert); Phase 10 open items: digits-only proforma and credit-note numbers, unique constraint on the issued number string
 - [Phase 03]: 03-09: numbering reset warning compares against the stored settings row (not the in-memory settings object); task pattern field is disabled but still validated so a crafted payload gets the Czech task_fixed error
+- [Phase 03]: 03-10: activity log is allowlist-only via #[LoggedAttributes] plus LogsAllowlistedActivity (missing or empty list throws); source label web/console/job/webhook set in KokpitLogActivityAction, CHECK-constrained; queue job depth entered on JobProcessing, left on JobProcessed and JobExceptionOccurred — D-06/D-08: fixed options leave no way to widen the list; JobFailed not listened to because JobExceptionOccurred always precedes it
 
 ### Pending Todos
 
@@ -206,6 +208,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T03:31:19.346Z
-Stopped at: Completed 03-09-PLAN.md
+Last session: 2026-10-08T03:40:03.714Z
+Stopped at: Completed 03-10-PLAN.md
 Resume file: None
