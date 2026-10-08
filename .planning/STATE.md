@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Completed 05-04-PLAN.md
-last_updated: "2026-10-08T21:10:34.849Z"
+stopped_at: Completed 05-05-PLAN.md
+last_updated: "2026-10-08T21:26:15.283Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 05 execution started
-state_head: 305b43cad502894ec5c15c7588eb46d73598c8d7
+state_head: 785b9fe90461a63b3528bd11fcebf3856a4380d7
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 81
-  completed_plans: 68
+  completed_plans: 69
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 05 (Tasks and Kanban) — EXECUTING
-Plan: 5 of 17
+Plan: 6 of 17
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 05 execution started
 
@@ -126,6 +126,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 05 P02 | 40min | 3 tasks | 11 files |
 | Phase 05 P03 | 50 min | 3 tasks | 12 files |
 | Phase 05 P04 | 35 min | 3 tasks | 17 files |
+| Phase 05 P05 | 11 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -262,6 +263,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-04: the description size limit counts bytes (RichText::MAX_LENGTH 100000), the unit the sanitiser cuts at, and clean() refuses longer input so nothing is cut silently
 - [Phase 05]: 05-04: UpdateTask changes status only through TaskBoard::appendToColumn under the board lock and writes status plus other edits in one save (one activity row); an unchanged person is not re-checked
 - [Phase 05]: 05-04: RichText owns a strict Symfony sanitiser and never rebinds Filament's global config; the editor has no attachments and a forged upload stores nothing
+- [Phase 05]: TaskBoard::appendToColumn keeps the completed_at of a task that is already Done, so a restored Done task keeps its completion time
+- [Phase 05]: RestoreTask appends the card while it is still archived and restores it afterwards, under the board lock, so no position collides at commit
+- [Phase 05]: Archive is the only deletion of a task (A9): a parent with active subtasks is refused, a subtask of an archived parent cannot be restored; an archived task is read-only
 
 ### Pending Todos
 
@@ -301,6 +305,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T21:10:34.725Z
-Stopped at: Completed 05-04-PLAN.md
+Last session: 2026-10-08T21:26:15.149Z
+Stopped at: Completed 05-05-PLAN.md
 Resume file: None
