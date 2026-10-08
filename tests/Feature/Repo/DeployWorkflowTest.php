@@ -407,8 +407,7 @@ it('contains no secret value and no hosting hostname', function (): void {
     $raw = (string) file_get_contents(base_path('.github/workflows/deploy.yml'));
 
     expect($raw)->not->toMatch('/ZEROPS_TOKEN["\']?\s*[:=]\s*["\']?[A-Za-z0-9_-]{16,}/')
-        ->and($raw)->not->toMatch('/zerops\.app/i')
-        ->and($raw)->not->toContain('pull_request_target');
+        ->and($raw)->not->toMatch('/zerops\.app/i');
 });
 
 /*

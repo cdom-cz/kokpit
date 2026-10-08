@@ -1,0 +1,128 @@
+name: Deploy
+
+# Production deploy to Zerops. It starts only from a published release or a manual dispatch; never from a
+# push, a pull request, a schedule, pull_request_target, workflow_run or issue_comment. tests/Feature/Repo/
+# DeployWorkflowTest.php fails on any other trigger and on the other weakenings listed there; actionlint and
+# zizmor (workflow-lint job of hygiene.yml) lint this file as well.
+#
+# Two jobs:
+#   verify  has no environment and no secret. It refuses a prerelease, a release tag outside v*, and a commit
+#           that is not an ancestor of origin/main.
+#   deploy  runs in the protected "production" environment (required reviewer, see CONTRIBUTING.md). The Zerops
+#           token is an environment secret and the three service ids are environment variables; they exist
+#           only there and reach the steps through env, never through a script.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify the release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Full history so origin/main and the ancestry of the commit can be checked.
+      - name: Check out full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Event data reaches the script through env only, never through ${{ }} inside the script.
+      - name: Refuse prereleases, foreign tags and commits that are not on main
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "${EVENT_NAME}" = "release" ]; then
+            if [ "${IS_PRERELEASE}" != "false" ]; then
+              echo "::error::A prerelease is never deployed."
+              exit 1
+            fi
+            if [ "${REF_TYPE}" != "tag" ]; then
+              echo "::error::A release must point at a tag."
+              exit 1
+            fi
+            case "${REF_NAME}" in
+              v*) ;;
+              *)
+                echo "::error::Only tags matching v* are deployed."
+                exit 1
+                ;;
+            esac
+          fi
+          if ! git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null; then
+            echo "::error::origin/main is not available in this checkout."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::The commit is not an ancestor of main."
+            exit 1
+          fi
+
+  deploy:
+    name: Deploy to Zerops
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # Required reviewer, no administrator bypass, deployment tags v* and the default branch.
+    environment: production
+    permissions:
+      contents: read
+    env:
+      ZCLI_VERSION: "1.1.2"
+      ZCLI_SHA256: "b85d5cda8158d2be2e4eb42f4ed27ed0896f5d03ad31366c0da8fba48f49ffd7"
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # The digest is hard-coded here on purpose, for the same reason as the gitleaks one in hygiene.yml: a
+      # checksum file fetched from the same release would verify nothing if that release were tampered with.
+      # The Zerops-provided GitHub Action is not used. Bump version and digest together, by hand, see
+      # CONTRIBUTING.md.
+      - name: Install zcli (pinned version, pinned checksum)
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/bin"
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/bin/zcli" \
+            "https://github.com/zeropsio/zcli/releases/download/v${ZCLI_VERSION}/zcli-linux-amd64"
+          echo "${ZCLI_SHA256}  ${RUNNER_TEMP}/bin/zcli" | sha256sum --check --strict -
+          chmod +x "${RUNNER_TEMP}/bin/zcli"
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+
+      - name: Log in to Zerops
+        env:
+          ZEROPS_TOKEN: ${{ secrets.ZEROPS_TOKEN }}
+        run: zcli login "${ZEROPS_TOKEN}"
+
+      # One push per service, each waiting for its pipeline. The app goes first because only its setup
+      # migrates the database; the worker and the scheduler follow once it is live.
+      - name: Push the app
+        env:
+          SERVICE_ID: ${{ vars.ZEROPS_APP_SERVICE_ID }}
+        run: zcli service push --service-id "${SERVICE_ID}" --setup app --workspace-state clean --zerops-yaml-path zerops.yml
+
+      - name: Push the worker
+        env:
+          SERVICE_ID: ${{ vars.ZEROPS_WORKER_SERVICE_ID }}
+        run: zcli service push --service-id "${SERVICE_ID}" --setup worker --workspace-state clean --zerops-yaml-path zerops.yml
+
+      - name: Push the scheduler
+        env:
+          SERVICE_ID: ${{ vars.ZEROPS_SCHEDULER_SERVICE_ID }}
+        run: zcli service push --service-id "${SERVICE_ID}" --setup scheduler --workspace-state clean --zerops-yaml-path zerops.yml
