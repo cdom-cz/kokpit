@@ -1,6 +1,6 @@
 # Phase 3 Spike: Kanban board, build or buy
 
-Status: in progress (Task 1 tracer written; later sections are filled by the following tasks of plan 03-02).
+Status: in progress (custom board measured; Flowforge, build cost and decision are filled by the last task of plan 03-02).
 Decision records: D-15 (compare custom `wire:sort` board against Flowforge), D-16 (spike code stays out of the application).
 
 ## Context
@@ -58,11 +58,67 @@ Decision rule: custom board unless it fails criteria 1 to 4, or cannot be made t
 | Card id format | UUID version 7 |
 | A freshly mounted page shows the same order | pass (`assertSeeInOrder`) |
 
-Later tasks add the model-event, isolation, concurrency, render-time and layout measurements, then the Flowforge row for each of them.
+### Custom board: criteria 1, 2, 3 and 6 (spike tests in `~/kokpit-spikes/kanban/app/tests/Spike`)
+
+| Check | Result |
+|---|---|
+| 1. UUID v7 keys and a mid-column drop persist across a fresh query and a freshly mounted page | pass (tracer above) |
+| 2. Status move fires the model `updated` event | pass: exactly 1 event for a cross-column move, `isDirty('status')` and `wasChanged('status')` both true inside the event, `getChanges()` contains `status` |
+| 2. A pure reorder inside one column fires no model event | pass: `setNewOrder` writes through the query builder, 0 events (positions are not activity-logged, which is wanted) |
+| Rendered markup | `wire:sort="moveCard"`, `wire:sort:group="board"` and one `wire:sort:group-id` per status (`todo`, `doing`, `review`, `done`) are present; with 200 cards the page has 200 `wire:sort:item` attributes |
+| Forged target status (`archived`) | HTTP 422 from the handler, card unchanged; the CHECK constraint on `status` also rejects it in the database |
+
+The spatie activity log (`LogsActivity`) listens on `updating` and `updated` and reads `getDirty()` (source read, `vendor/spatie/laravel-activitylog/.../LogsActivity.php`), so a status written through `$card->update()` reaches the plan 03-10 allowlist. Whether a real allowlisted row is written is not measured here (the wrapper trait of plan 03-10 does not exist yet).
+
+### Custom board: criterion 5 and 6 (layout, render time, size)
+
+| Check | Result |
+|---|---|
+| Median render of the board component, 200 cards over 4 columns and 2 clients, 5 Livewire test renders | 9.4 ms (min 7.8, max 10.1) |
+| Median full HTTP response of `/admin/kanban-board` with 200 cards (`php artisan serve` with 4 workers, 6 requests, signed-in admin) | about 45 ms median (37 to 91 ms), 114 KB HTML |
+| Layout at 1280 x 800 (headless Chrome screenshot) | sidebar plus three full columns and a fourth partly visible; the column row scrolls horizontally inside its own container |
+| Layout at 375 x 812 (headless Chrome screenshot) | one column and part of the second are visible; the four 16 rem columns are about 1070 px wide, so the row scrolls horizontally inside its container instead of overflowing the page |
+| Touch drag at 375 px | not automatable here, left as a human check (see Open items); `wire:sort` uses the bundled SortableJS, which supports touch (`[ASSUMED]` until the human check) |
+| Lines of code of the board | 124: mover 60, page trait 24, page class 22, Blade view 18 (model 48 and policy 23 are needed by every option) |
+| Extra assets, packages, Node build | none: SortableJS ships inside `livewire.js`; the view uses inline styles, because Tailwind utility classes outside Filament's compiled stylesheet would need a theme build |
+
+Test suite status when the measurements were taken: `vendor/bin/pest tests/Spike` in the copy, 15 passed, 98 assertions.
 
 ## Isolation and concurrency
 
-Pending (Task 2 for the custom board, Task 3 for Flowforge).
+### Isolation (criterion 3), custom board
+
+Two pages share one handler. `KanbanBoard` is `#[AccessRule(Audience::AdminOnly)]`. `PartnerKanbanBoard` is `#[AccessRule(Audience::PartnerAllowed)]` and exists only so a Partner can reach the handler, which is the situation of Phase 5 (KB-03, read-only list for a Partner). Client names are `Example Client A` and `Example Client B`; the client B card title is a runtime canary.
+
+| Probe | Result |
+|---|---|
+| Partner A requests `/admin/kanban-board` (Admin only page) | 403; a Livewire mount of that page as Partner A is also 403; the Admin gets 200 |
+| Partner A opens the Partner reachable board | sees the client A card, neither the client B canary nor the other client B card |
+| Forged move: Partner A calls `moveCard` with the id of a client B card (target `done`) | 404 (the scoped lookup finds nothing, `ModelNotFoundException`); every row of the table is byte-for-byte unchanged (id, status, position, `updated_at`) |
+| Partner A calls `moveCard` for a card of the own client | 403 from `Gate::authorize('update')` (the policy grants a Partner no update); table unchanged |
+| Mutation run: scoped lookup replaced by an unscoped one and the policy call removed | 2 of 6 isolation tests fail (the forged move and the own client move now succeed), so the tests do detect a missing guard; the guard was restored and the 6 tests pass again |
+
+Defence in depth observed: page access rule at mount, global `PartnerScope` on the lookup, policy `update`, status whitelist in the handler, CHECK constraint in the database.
+
+### Concurrency (criterion 4), custom board
+
+Setup: two parallel PHP worker processes (same barrier and process pattern as `tests/Concurrency/`, real committed rows, no wrapping transaction). Each worker moves 25 cards from its own source column (`todo` or `review`, 50 cards each) into the same target column `doing` (5 cards) at position 1, one guarded move per card. After every round the verdict reads every column and requires positions exactly 0..n-1 (n = 25, 55, 25, 0). Window widening uses the same idea as the existing worker: a 2 ms `pg_sleep` between reading the column order and writing it.
+
+| Lock variant | Rounds | Result |
+|---|---|---|
+| Row lock (plan variant): `SELECT id ... WHERE status IN (source, target) ORDER BY id FOR UPDATE` in its own statement, then fresh reads | 5 at natural timing + 5 widened | 10 of 10 rounds clean: 55 cards in `doing`, positions 0..54, source columns 0..24, no error |
+| Transaction advisory lock (`pg_advisory_xact_lock` on one board key) | 5 natural + 5 widened | 10 of 10 rounds clean |
+| No lock (mutation run) | 10 widened + 10 natural | corrupted in 10 of 10 widened rounds and 10 of 10 natural rounds; in the widened rounds the target column `doing` carried exactly 1 duplicated position (two cards at the same index), counts per column stayed correct |
+| Row lock, target column initially empty (two workers into `done`, position 0), widened | 20 rounds | 17 clean, 3 rounds with a PostgreSQL deadlock (`SQLSTATE 40P01`) that rolled one move back (card stayed in its source column, no corruption); in a first 10-round run 1 deadlock |
+| Advisory lock, target column initially empty, widened | 10 rounds | 10 of 10 clean, no deadlock |
+
+Findings:
+
+- Without any lock the board corrupts reliably, even at natural timing, so the lock is required, not optional.
+- Locking the existing rows of the source and target columns works when the target column has rows, provided the order is read in a statement that starts after the lock is held (a `FOR UPDATE` and a read in the same statement would use a stale snapshot under READ COMMITTED and miss a card moved in by the other process).
+- Row locks do not cover an empty column (nothing to lock), and when rows appear while two moves overlap, the per-id position updates of two transactions can deadlock. The result is a failed move, not corruption, and it was seen in 3 of 20 widened rounds.
+- A single transaction advisory lock around the whole move had no failure in 20 rounds. For a CRM board with one Admin writer and a few Partners it costs nothing measurable, and it also covers the empty column. Per-column row locks stay a valid alternative if the move is wrapped in a retry on `40P01`.
+- Not measured: two moves of the same card at the same time, and eight or more workers.
 
 ## Build cost and upgrade risk
 
