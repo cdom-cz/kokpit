@@ -7,6 +7,8 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Activity;
+use App\Domain\Shared\Text\RichText;
 use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
@@ -15,6 +17,8 @@ use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use App\Filament\Resources\TaskResource\RelationManagers\TaskCommentsRelationManager;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -152,4 +156,124 @@ it('shows a Partner of another client no comment at all', function (): void {
     $this->actingAs(Canary::partnerFor(Client::factory()->create()->id));
 
     expect(TaskComment::query()->count())->toBe(0);
+});
+
+it('stores a Partner comment as not internal whatever the payload says', function (): void {
+    $client = Client::factory()->create();
+    $task = commentTask($this->admin, $client);
+    $partner = Canary::partnerFor($client->id);
+
+    $this->actingAs($partner);
+    $seen = Task::query()->where('reference', 'ABC-1')->firstOrFail();
+
+    $comment = app(AddTaskComment::class)->handle($partner, $seen, '<p>Example forged remark</p>', internal: true);
+
+    expect($comment->refresh()->is_internal)->toBeFalse()
+        ->and($comment->is_escalation)->toBeFalse()
+        ->and($comment->author_id)->toBe($partner->id)
+        ->and($task->comments()->count())->toBe(1);
+
+    // The comment is visible to the Partner, as a non-internal one must be.
+    expect(TaskComment::query()->count())->toBe(1);
+});
+
+it('refuses a Partner a comment on a task of another client and stores nothing', function (): void {
+    $other = commentTask($this->admin);
+    $partner = Canary::partnerFor(Client::factory()->create()->id);
+
+    $this->actingAs($partner);
+
+    expect(fn () => app(AddTaskComment::class)->handle($partner, $other, '<p>Example foreign remark</p>'))
+        ->toThrow(AuthorizationException::class);
+
+    expect(app(PartnerContext::class)->runAsSystem(static fn (): int => TaskComment::query()->count()))->toBe(0);
+});
+
+it('stores an escalation comment as visible even when it is asked to be internal', function (): void {
+    $task = commentTask($this->admin);
+
+    $comment = app(AddTaskComment::class)->handle($this->admin, $task, '<p>Example escalation remark</p>', internal: true, escalation: true);
+
+    expect($comment->refresh()->is_internal)->toBeFalse()
+        ->and($comment->is_escalation)->toBeTrue();
+});
+
+it('refuses a body with no text left as a field error on body and stores nothing', function (string $body): void {
+    $task = commentTask($this->admin);
+
+    try {
+        app(AddTaskComment::class)->handle($this->admin, $task, $body);
+        $this->fail('The empty body was accepted.');
+    } catch (ValidationException $e) {
+        expect(array_keys($e->errors()))->toBe(['body'])
+            ->and($e->errors()['body'][0])->toBe(__('kokpit.tasks.errors.body_empty'));
+    }
+
+    expect(TaskComment::query()->count())->toBe(0);
+})->with([
+    'whitespace only' => ["   \n\t  "],
+    'empty editor' => ['<p></p>'],
+    'script only' => ['<script>alert(1)</script>'],
+]);
+
+it('refuses a body over the length limit as a field error on body', function (): void {
+    $task = commentTask($this->admin);
+
+    expect(fn () => app(AddTaskComment::class)->handle($this->admin, $task, '<p>'.str_repeat('a', RichText::MAX_LENGTH).'</p>'))
+        ->toThrow(ValidationException::class);
+
+    expect(TaskComment::query()->count())->toBe(0);
+});
+
+it('shows the Admin the empty body error under the editor of the modal', function (): void {
+    $task = commentTask($this->admin);
+
+    Livewire::test(TaskCommentsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => ViewTask::class])
+        ->callAction(TestAction::make('create')->table(), ['body' => '<p></p>'])
+        ->assertHasActionErrors(['body']);
+
+    expect(TaskComment::query()->count())->toBe(0);
+});
+
+it('denies a Partner to edit or delete a comment and to read an internal one', function (): void {
+    $client = Client::factory()->create();
+    $task = commentTask($this->admin, $client);
+    $visible = app(AddTaskComment::class)->handle($this->admin, $task, '<p>Example visible remark</p>');
+    $internal = app(AddTaskComment::class)->handle($this->admin, $task, '<p>Example secret remark</p>', internal: true);
+    $partner = Canary::partnerFor($client->id);
+
+    expect($partner->can('view', $visible))->toBeTrue()
+        ->and($partner->can('create', TaskComment::class))->toBeTrue()
+        ->and($partner->can('update', $visible))->toBeFalse()
+        ->and($partner->can('delete', $visible))->toBeFalse()
+        ->and($partner->can('view', $internal))->toBeFalse()
+        ->and($partner->can('update', $internal))->toBeFalse()
+        ->and($partner->can('delete', $internal))->toBeFalse();
+
+    // The Admin is admitted by the base policy, but no action offers an edit or a delete.
+    expect($this->admin->can('view', $internal))->toBeTrue();
+});
+
+it('writes no activity row for a comment, so an internal text never reaches a history', function (): void {
+    $task = commentTask($this->admin);
+    $before = Activity::query()->count();
+
+    app(AddTaskComment::class)->handle($this->admin, $task, '<p>Example internal history probe</p>', internal: true);
+
+    expect(Activity::query()->count())->toBe($before)
+        ->and(Activity::query()->where('properties', 'like', '%history probe%')->count())->toBe(0)
+        ->and(Activity::query()->where('subject_type', 'task_comment')->count())->toBe(0);
+});
+
+it('offers no edit, delete or bulk action on the comments tab', function (): void {
+    $task = commentTask($this->admin);
+    app(AddTaskComment::class)->handle($this->admin, $task, '<p>Example append-only remark</p>');
+
+    $table = Livewire::test(TaskCommentsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => ViewTask::class])
+        ->instance()
+        ->getTable();
+
+    expect($table->getRecordActions())->toBe([])
+        ->and($table->getFlatBulkActions())->toBe([])
+        ->and(array_map(static fn ($action): string => (string) $action->getName(), $table->getHeaderActions()))->toBe(['create']);
 });
