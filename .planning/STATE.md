@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-10-08T20:18:08.324Z"
+stopped_at: Completed 05-03-PLAN.md
+last_updated: "2026-10-08T20:46:45.360Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 05 execution started
-state_head: 02c8bde2ad9eae178486cdef8f59665538ef33a3
+state_head: a92f8f00e5c1826930a1289ebdbad9903fa3eee8
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 81
-  completed_plans: 66
+  completed_plans: 67
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 05 (Tasks and Kanban) — EXECUTING
-Plan: 3 of 17
+Plan: 4 of 17
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 05 execution started
 
@@ -124,6 +124,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 04 P21 | 35 min | 2 tasks | 3 files |
 | Phase 05 P01 | 15 min | 2 tasks | 16 files |
 | Phase 05 P02 | 40min | 3 tasks | 11 files |
+| Phase 05 P03 | 50 min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -254,6 +255,9 @@ Recent decisions affecting current work:
 - [Phase 05]: Project key frozen by KP002 trigger once any task exists (archived included), mirrored by UpdateProject field error and disabled form field
 - [Phase 05]: Mutation run of the task number concurrency test removes the board advisory lock as well, since that lock alone serializes creation and would hide a missing counter lock
 - [Phase 05]: A frozen key field is disabled and not dehydrated, so EditProject passes the stored key to UpdateProject
+- [Phase 05]: 05-03: global search is a per-resource opt-in; only the Admin-only TaskResource is searchable (key and title, never id)
+- [Phase 05]: 05-03: task address is /admin/tasks/KEY-N (assumption A2); the quick create modal redirects to the view page until 05-04 switches it to the edit page
+- [Phase 05]: 05-03: task tags are Admin-only (TagType::Task); due date range filter is inclusive and a null due date matches neither bound
 
 ### Pending Todos
 
@@ -292,6 +296,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T20:18:08.126Z
-Stopped at: Completed 05-02-PLAN.md
+Last session: 2026-10-08T20:46:45.244Z
+Stopped at: Completed 05-03-PLAN.md
 Resume file: None
