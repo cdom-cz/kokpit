@@ -31,6 +31,25 @@ return [
         'done' => 'Dvoufázové ověření bylo zrušeno. Uživatel ho nastaví znovu při příštím přihlášení.',
     ],
 
+    'storage_check' => [
+        'heading' => 'Kontrola soukromého úložiště',
+        'endpoint' => 'Koncový bod: :host',
+        'object' => 'Zkušební objekt: :path',
+        'default_endpoint' => 'výchozí koncový bod poskytovatele (region :region)',
+        'not_s3' => 'Disk „:disk“ není nastavený jako úložiště S3.',
+        'steps' => [
+            'write' => 'Zápis objektu',
+            'signed_read' => 'Čtení přes dočasný odkaz',
+            'private' => 'Odmítnutí čtení bez podpisu',
+            'delete' => 'Smazání objektu',
+            'gone' => 'Ověření, že objekt zmizel',
+        ],
+        'step_ok' => ':step: v pořádku (:ms ms)',
+        'step_failed' => ':step: selhalo (:ms ms), příčina: :error',
+        'failed' => 'Kontrola úložiště selhala v kroku „:step“.',
+        'passed' => 'Úložiště je soukromé a funguje, všech pět kroků prošlo.',
+    ],
+
     'dashboard' => [
         'empty_heading' => 'Zatím tu nic není',
         'empty_description_admin' => 'Nástěnka se naplní, jakmile v Kokpitu přibudou klienti, projekty a odpracovaný čas.',
