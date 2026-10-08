@@ -438,6 +438,7 @@ return [
             'status_invalid' => 'Vyberte platný stav úkolu.',
             'priority_invalid' => 'Vyberte platnou prioritu úkolu.',
             'dates_order' => 'Termín nesmí být dříve než začátek.',
+            'description_too_long' => 'Popis je příliš dlouhý. Zkraťte ho, vejde se nejvýše 100 000 bajtů textu včetně značek.',
             'date_invalid' => 'Zadejte platné datum.',
         ],
         'empty_value' => '—',

@@ -32,7 +32,9 @@ use Illuminate\Validation\ValidationException;
  * or `requester_id` and nothing is written. An unchanged person is not checked
  * again, so a task keeps a person who was deactivated since.
  *
- * Dates must be calendar days and the due date may not precede the start date,
+ * The description is cleaned with RichText::clean (through TaskInput::description)
+ * before it is stored, whoever wrote it (D-10); text over the length limit is a
+ * field error on `description`. Dates must be calendar days and the due date may not precede the start date,
  * checked against the stored value of the date the data does not name. Tags are
  * a list of names synced as task tags.
  *
@@ -53,9 +55,6 @@ use Illuminate\Validation\ValidationException;
  */
 final class UpdateTask
 {
-    /** Task columns copied from the data as given when the data names them. */
-    private const array PLAIN_COLUMNS = ['description'];
-
     /** The two people columns, validated against the allowed set when they change. */
     private const array PEOPLE_COLUMNS = ['assignee_id', 'requester_id'];
 
@@ -81,6 +80,12 @@ final class UpdateTask
         $priority = TaskInput::priority($data['priority'] ?? null);
         $tags = TaskInput::tags($data['tags'] ?? null);
 
+        $plain = [];
+
+        if (array_key_exists('description', $data)) {
+            $plain['description'] = TaskInput::description($data['description']);
+        }
+
         $dates = [];
 
         foreach (['start_date', 'due_date'] as $column) {
@@ -89,12 +94,12 @@ final class UpdateTask
             }
         }
 
-        return DB::transaction(function () use ($task, $data, $title, $status, $priority, $tags, $dates): Task {
+        return DB::transaction(function () use ($task, $data, $title, $status, $priority, $tags, $plain, $dates): Task {
             $this->board->lockBoard();
 
             $locked = Task::query()->whereKey($task->getKey())->lockForUpdate()->firstOrFail();
 
-            $attributes = [...$dates];
+            $attributes = [...$plain, ...$dates];
 
             TaskInput::assertDatesInOrder(
                 array_key_exists('start_date', $dates) ? $dates['start_date'] : $locked->start_date?->toDateString(),
@@ -105,12 +110,6 @@ final class UpdateTask
 
             if ($title !== null) {
                 $attributes['title'] = $title;
-            }
-
-            foreach (self::PLAIN_COLUMNS as $column) {
-                if (array_key_exists($column, $data)) {
-                    $attributes[$column] = $data[$column];
-                }
             }
 
             // Priority is NOT NULL, so a null value leaves it unchanged.

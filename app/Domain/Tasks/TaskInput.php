@@ -6,8 +6,10 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
+use App\Domain\Shared\Text\RichText;
 use Carbon\CarbonImmutable;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Throwable;
 
 /**
@@ -40,6 +42,20 @@ final class TaskInput
 
         return (is_string($value) ? ProjectPriority::tryFrom($value) : null)
             ?? throw ValidationException::withMessages(['priority' => __('kokpit.tasks.errors.priority_invalid')]);
+    }
+
+    /**
+     * The description as stored: cleaned by RichText, null when no text is left (D-10).
+     *
+     * @throws ValidationException a field error on `description` for text over the length limit
+     */
+    public static function description(?string $html): ?string
+    {
+        try {
+            return RichText::clean($html);
+        } catch (InvalidArgumentException) {
+            throw ValidationException::withMessages(['description' => __('kokpit.tasks.errors.description_too_long')]);
+        }
     }
 
     /**

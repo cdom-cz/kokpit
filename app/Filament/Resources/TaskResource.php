@@ -28,9 +28,9 @@ use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\SpatieTagsInput;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
@@ -153,13 +153,22 @@ final class TaskResource extends Resource
                         ->required()
                         ->maxLength(255)
                         ->columnSpanFull(),
-                    Textarea::make('description')
+                    // No file attachments and no attach button: nothing an upload could land on (A10).
+                    // The server cleans the value again (UpdateTask), so the editor is only a convenience.
+                    RichEditor::make('description')
                         ->label(__('kokpit.tasks.fields.description'))
+                        ->fileAttachments(false)
+                        ->toolbarButtons([
+                            ['bold', 'italic', 'underline', 'strike', 'link'],
+                            ['h2', 'h3'],
+                            ['blockquote', 'bulletList', 'orderedList'],
+                            ['table'],
+                            ['undo', 'redo'],
+                        ])
                         // The Partner accounts of the client read the description of a client-visible project (Pitfall 6).
                         ->helperText(static fn (?Task $record): ?string => self::projectOf($record)?->client_visible === true
                             ? (string) __('kokpit.tasks.hints.description_shared')
                             : null)
-                        ->rows(6)
                         ->columnSpanFull(),
                 ]),
             Section::make(__('kokpit.tasks.sections.status'))

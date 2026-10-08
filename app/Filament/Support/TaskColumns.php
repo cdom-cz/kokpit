@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Filament\Support;
 
 use App\Domain\Shared\Tags\TagType;
+use App\Domain\Shared\Text\RichText;
 use Filament\Infolists\Components\SpatieTagsEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Tables\Columns\SpatieTagsColumn;
 use Filament\Tables\Columns\TextColumn;
+use Illuminate\Support\HtmlString;
 
 /**
  * The Admin task columns and entries (TA-05, D-09).
@@ -69,8 +71,8 @@ final class TaskColumns
     /**
      * Detail entries of the Admin task page.
      *
-     * The description is shown as escaped text: it is stored as given until the
-     * rich text sanitiser lands, and unsanitised HTML must not be rendered.
+     * The description is stored as clean HTML and cleaned again on output through
+     * RichText::render, so text written around the Action is harmless too (D-10).
      *
      * @return list<TextEntry>
      */
@@ -102,6 +104,7 @@ final class TaskColumns
                 ->placeholder(__('kokpit.tasks.empty_value')),
             TextEntry::make('description')
                 ->label(__('kokpit.tasks.fields.description'))
+                ->formatStateUsing(static fn (?string $state): HtmlString => RichText::render($state))
                 ->placeholder(__('kokpit.tasks.empty_value'))
                 ->columnSpanFull(),
             SpatieTagsEntry::make('tags')

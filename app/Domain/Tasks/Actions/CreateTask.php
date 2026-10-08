@@ -37,7 +37,9 @@ use Illuminate\Validation\ValidationException;
  * with the Admin as assignee, and their status, priority and people inputs are
  * ignored. With no active Admin a Partner creation is a DomainException.
  *
- * Dates must be calendar days and the due date may not precede the start date
+ * The description is cleaned with RichText::clean (through TaskInput::description)
+ * before it is stored, whoever wrote it (D-10); text over the length limit is a
+ * field error on `description`. Dates must be calendar days and the due date may not precede the start date
  * (field error `due_date`). Tags are a list of names stored as task tags.
  *
  * Errors are ValidationExceptions keyed by the data key.
@@ -86,10 +88,11 @@ final class CreateTask
         $startDate = TaskInput::day($data['start_date'] ?? null, 'start_date');
         $dueDate = TaskInput::day($data['due_date'] ?? null, 'due_date');
         $tags = TaskInput::tags($data['tags'] ?? null);
+        $description = TaskInput::description($data['description'] ?? null);
 
         TaskInput::assertDatesInOrder($startDate, $dueDate);
 
-        return DB::transaction(function () use ($actor, $project, $data, $title, $status, $priority, $isPartner, $startDate, $dueDate, $tags): Task {
+        return DB::transaction(function () use ($actor, $project, $data, $title, $status, $priority, $isPartner, $description, $startDate, $dueDate, $tags): Task {
             $this->board->lockBoard();
 
             // The scoped lookup: a Partner only finds a visible project of the own client.
@@ -106,7 +109,7 @@ final class CreateTask
 
             $attributes = [
                 'title' => $title,
-                'description' => $data['description'] ?? null,
+                'description' => $description,
                 'start_date' => $startDate,
                 'due_date' => $dueDate,
             ];

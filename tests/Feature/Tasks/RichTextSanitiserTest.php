@@ -96,7 +96,8 @@ it('keeps paragraphs, emphasis, lists, headings, tables and safe links, and forc
         ->toContain('<ol><li>Two</li></ol>')
         ->toContain('<td>Cell</td>')
         ->toContain('href="https://example.com/a"')
-        ->toContain('href="mailto:jane@example.com"')
+        // The sanitiser writes the at sign as a character reference, which a browser reads back as the same address.
+        ->toContain('href="mailto:jane&#64;example.com"')
         ->toContain('rel="noopener noreferrer nofollow"')
         ->toContain('target="_blank"');
 });
@@ -277,10 +278,20 @@ it('stores no file when an upload is forged against the description editor', fun
     $task = richTask();
 
     $component = Livewire::test(EditTask::class, ['record' => $task->reference])
-        ->set('componentFileAttachments.data.description', UploadedFile::fake()->image('example.png'))
-        ->call('callSchemaComponentMethod', 'data.description', 'saveUploadedFileAttachmentAndGetUrl');
+        ->set('componentFileAttachments.data.description', UploadedFile::fake()->image('example.png'));
 
-    $component->assertHasNoErrors();
+    // The call a forged browser request makes: the exposed upload method of the editor, by its component key.
+    $key = $component->instance()->form->getFlatFields(withHidden: true)['description']->getKey();
+
+    expect($key)->toBe('form.description');
+
+    // With attachments off Filament refuses to store and then fails on the missing path (a TypeError in
+    // the URL lookup), so a forged request ends in an error; what counts is that nothing is stored.
+    try {
+        $component->call('callSchemaComponentMethod', $key, 'saveUploadedFileAttachmentAndGetUrl');
+    } catch (TypeError) {
+        // Expected: see above.
+    }
 
     foreach ($disks as $disk) {
         if (config("filesystems.disks.{$disk}.driver") !== 'local') {

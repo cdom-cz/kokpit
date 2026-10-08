@@ -294,7 +294,7 @@ it('uses a translated attribute name when one exists and the raw name otherwise'
 
     expect(activityViewsChanges(['attributes' => ['title' => 'New'], 'old' => ['title' => 'Old']]))->toBe('Název: Old -> New')
         ->and(activityViewsChanges(['attributes' => ['status' => 'done'], 'old' => ['status' => 'open']]))->toBe('status: open -> done')
-        ->and(activityViewsChanges(['attributes' => ['title' => 'New'], 'old' => ['title' => 'Old']], 'task'))->toBe('title: Old -> New');
+        ->and(activityViewsChanges(['attributes' => ['title' => 'New'], 'old' => ['title' => 'Old']], 'unlabelled'))->toBe('title: Old -> New');
 });
 
 it('never renders the properties payload of a row', function (): void {
