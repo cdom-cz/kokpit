@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Models\Contact;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Projects\Policies\ProjectPolicy;
@@ -42,6 +43,9 @@ final class AccessServiceProvider extends ServiceProvider
 
         // Clients are Admin-only (Phase 4 D-06): a Partner is granted nothing.
         Gate::policy(Client::class, AdminOnlyPolicy::class);
+
+        // Contacts are personal data of the client's people, Admin-only (D-06).
+        Gate::policy(Contact::class, AdminOnlyPolicy::class);
 
         // Projects are the only Partner-readable model of Phase 4: explicit grants
         // for the own client-visible projects, everything else stays denied.

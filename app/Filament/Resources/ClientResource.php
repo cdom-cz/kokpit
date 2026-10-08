@@ -25,6 +25,7 @@ use App\Filament\Resources\ClientResource\Pages\CreateClient;
 use App\Filament\Resources\ClientResource\Pages\EditClient;
 use App\Filament\Resources\ClientResource\Pages\ListClients;
 use App\Filament\Resources\ClientResource\Pages\ViewClient;
+use App\Filament\Resources\ClientResource\RelationManagers\ContactsRelationManager;
 use BackedEnum;
 use Closure;
 use Filament\Actions\BulkActionGroup;
@@ -391,6 +392,7 @@ final class ClientResource extends Resource
     public static function getRelations(): array
     {
         return [
+            ContactsRelationManager::class,
             ClientHistoryRelationManager::class,
         ];
     }

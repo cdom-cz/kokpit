@@ -348,6 +348,37 @@ return [
         'empty_description' => 'Vytvořte prvního klienta.',
     ],
 
+    'contacts' => [
+        'relation_title' => 'Kontakty',
+        'empty_value' => '—',
+        'errors' => [
+            'name_invalid' => 'Zadejte jméno kontaktu, nejvýše 255 znaků.',
+            'email_invalid' => 'Zadejte platnou e-mailovou adresu, nejvýše 255 znaků.',
+            'phone_invalid' => 'Zadejte telefon nejvýše o 50 znacích.',
+            'position_invalid' => 'Zadejte pozici nejvýše o 255 znacích.',
+        ],
+        'fields' => [
+            'name' => 'Jméno',
+            'email' => 'E-mail',
+            'phone' => 'Telefon',
+            'position' => 'Pozice',
+            'is_primary' => 'Hlavní kontakt',
+            'is_billing' => 'Fakturační kontakt',
+        ],
+        'hints' => [
+            'is_billing' => 'Fakturační kontakt dostává faktury. Fakturačních kontaktů může být libovolně mnoho.',
+        ],
+        'actions' => [
+            'create' => 'Přidat kontakt',
+            'create_heading' => 'Nový kontakt',
+        ],
+        'notifications' => [
+            'created' => 'Kontakt byl přidán',
+        ],
+        'empty_heading' => 'Zatím tu nejsou žádné kontakty',
+        'empty_description' => 'První přidaný kontakt se stane hlavním.',
+    ],
+
     'projects' => [
         'empty_value' => '—',
         'errors' => [

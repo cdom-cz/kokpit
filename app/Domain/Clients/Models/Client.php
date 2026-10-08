@@ -20,6 +20,7 @@ use Database\Factories\ClientFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Tags\HasTags;
 
@@ -143,6 +144,26 @@ final class Client extends KokpitModel implements PartnerIsolated
     public function projects(): HasMany
     {
         return $this->hasMany(Project::class);
+    }
+
+    /**
+     * The people of the client (CL-02). Admin-only: a Partner reads none.
+     *
+     * @return HasMany<Contact, $this>
+     */
+    public function contacts(): HasMany
+    {
+        return $this->hasMany(Contact::class);
+    }
+
+    /**
+     * The one primary contact of the client, if it has any contact.
+     *
+     * @return HasOne<Contact, $this>
+     */
+    public function primaryContact(): HasOne
+    {
+        return $this->hasOne(Contact::class)->where('is_primary', true);
     }
 
     protected static function newFactory(): ClientFactory

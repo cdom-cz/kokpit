@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Models\Contact;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
@@ -71,6 +72,16 @@ final class CanaryRegistry
             Client::class => static function (string $clientId, string $canary): void {
                 app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
                     Client::query()->whereKey($clientId)->firstOrFail()->forceFill(['name' => $canary])->save();
+                });
+            },
+
+            // The canary is the name of the contact, so a Partner reading any contact
+            // field would be caught; the e-mail is a fictional example.com address.
+            Contact::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $client = Client::query()->whereKey($clientId)->firstOrFail();
+
+                    $client->contacts()->create(['name' => $canary, 'email' => exampleEmail(), 'is_billing' => true]);
                 });
             },
 
