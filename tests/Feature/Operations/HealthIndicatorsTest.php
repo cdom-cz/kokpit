@@ -10,9 +10,12 @@ use App\Domain\Operations\Health\Indicators\FailedJobsIndicator;
 use App\Domain\Operations\Health\Indicators\OldestPendingJobIndicator;
 use App\Domain\Operations\Health\Indicators\SchedulerHeartbeatIndicator;
 use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Tests\Support\Canary;
 use Tests\Support\RedisTestQueue;
@@ -202,6 +205,8 @@ function useRedisQueueAt(object $test): void
 function pendingHeartbeatJobAged(object $test, int $secondsAgo): void
 {
     RedisTestQueue::flush($test->queue);
+    // The heartbeat job is unique while one waits; the flush above removed the waiting one, so free the lock too.
+    (new UniqueLock(Cache::driver()))->release(new RecordWorkerHeartbeat);
     $now = Carbon::now();
     Carbon::setTestNow($now->copy()->subSeconds($secondsAgo));
     RecordWorkerHeartbeat::dispatch()->onConnection('redis')->onQueue($test->queue);
@@ -317,6 +322,30 @@ it('lets a worker clear the age: the heartbeat job is processed and the worker k
 
     expect(app(Heartbeats::class)->worker())->not->toBeNull()
         ->and((new OldestPendingJobIndicator)->check()->status)->toBe(HealthStatus::Ok);
+});
+
+it('does not pile up heartbeat jobs while no worker takes them, and queues the next one after a worker ran it', function (): void {
+    useRedisQueueAt($this);
+    RedisTestQueue::flush($this->queue);
+    (new UniqueLock(Cache::driver()))->release(new RecordWorkerHeartbeat);
+
+    foreach (range(1, 5) as $minute) {
+        Carbon::setTestNow(Carbon::parse('2026-07-01 10:00:00 UTC')->addMinutes($minute));
+        RecordWorkerHeartbeat::dispatch()->onConnection('redis')->onQueue($this->queue);
+    }
+
+    expect(RedisTestQueue::pending($this->queue))->toBe(1);
+
+    RedisTestQueue::work($this->queue);
+    expect(RedisTestQueue::pending($this->queue))->toBe(0);
+
+    RecordWorkerHeartbeat::dispatch()->onConnection('redis')->onQueue($this->queue);
+    expect(RedisTestQueue::pending($this->queue))->toBe(1);
+});
+
+it('holds the heartbeat uniqueness longer than the oldest-pending warning, so one waiting job covers the outage signal', function (): void {
+    expect(new RecordWorkerHeartbeat)->toBeInstanceOf(ShouldBeUnique::class)
+        ->and((new RecordWorkerHeartbeat)->uniqueFor)->toBeGreaterThan((int) config('kokpit.health.oldest_pending_warning_after'));
 });
 
 it('handles the heartbeat job by writing the worker key and nothing else', function (): void {
