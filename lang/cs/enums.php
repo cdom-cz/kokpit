@@ -27,4 +27,11 @@ return [
         'payer' => 'Plátce DPH',
     ],
 
+    'activity_source_label' => [
+        'web' => 'Web',
+        'console' => 'Konzole',
+        'job' => 'Úloha na pozadí',
+        'webhook' => 'Webhook',
+    ],
+
 ];
