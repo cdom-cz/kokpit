@@ -11,6 +11,7 @@ use App\Domain\Clients\Actions\RestoreClient;
 use App\Domain\Clients\Enums\ClientStage;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Models\Contact;
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\PaymentSettings;
@@ -109,10 +110,23 @@ final class ClientResource extends Resource
     /**
      * Archived clients stay reachable: the trashed filter decides what the list
      * shows. The Partner scope is a different scope and stays on.
+     *
+     * The name of the primary contact comes along as the `primary_contact_name`
+     * subquery column, so the list needs no contact query per row (CL-02, D-12).
      */
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->withoutGlobalScopes([SoftDeletingScope::class]);
+        return parent::getEloquentQuery()
+            ->withoutGlobalScopes([SoftDeletingScope::class])
+            ->select('clients.*')
+            ->selectSub(
+                Contact::query()
+                    ->select('contacts.name')
+                    ->whereColumn('contacts.client_id', 'clients.id')
+                    ->where('contacts.is_primary', true)
+                    ->limit(1),
+                'primary_contact_name',
+            );
     }
 
     /**
@@ -290,6 +304,9 @@ final class ClientResource extends Resource
                 TextColumn::make('company_number')
                     ->label(__('kokpit.clients.fields.company_number'))
                     ->searchable()
+                    ->placeholder(__('kokpit.clients.empty_value')),
+                TextColumn::make('primary_contact_name')
+                    ->label(__('kokpit.clients.fields.primary_contact'))
                     ->placeholder(__('kokpit.clients.empty_value')),
                 TextColumn::make('city')
                     ->label(__('kokpit.clients.fields.city'))

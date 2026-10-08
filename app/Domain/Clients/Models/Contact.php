@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Clients\Models;
 
+use App\Domain\Audit\LoggedAttributes;
+use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
@@ -21,6 +23,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Actions: at most one primary per client is also enforced by the partial unique
  * index `contacts_one_primary_per_client`. Any number of contacts can be billing
  * contacts.
+ *
+ * Changes to the allowlisted attributes are written to the activity log (D-06);
+ * the log itself is Admin-only.
  *
  * @property string $id
  * @property string $client_id
@@ -40,9 +45,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'position',
     'is_billing',
 ])]
+#[LoggedAttributes([
+    'client_id',
+    'name',
+    'email',
+    'phone',
+    'position',
+    'is_primary',
+    'is_billing',
+])]
 final class Contact extends KokpitModel implements PartnerIsolated
 {
-    use DeniesPartners;
+    use DeniesPartners, LogsAllowlistedActivity;
 
     /**
      * @return BelongsTo<Client, $this>

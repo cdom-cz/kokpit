@@ -207,6 +207,7 @@ return [
             'client' => 'Klient',
             'project' => 'Projekt',
             'project_billing' => 'Fakturace projektu',
+            'contact' => 'Kontakt',
         ],
         'attributes' => [
             'client' => [
@@ -225,6 +226,15 @@ return [
                 'invoice_email' => 'E-mail pro faktury',
                 'invoice_language' => 'Jazyk faktur',
                 'online_payment_enabled' => 'Online platba',
+            ],
+            'contact' => [
+                'client_id' => 'Klient',
+                'name' => 'Jméno',
+                'email' => 'E-mail',
+                'phone' => 'Telefon',
+                'position' => 'Pozice',
+                'is_primary' => 'Hlavní kontakt',
+                'is_billing' => 'Fakturační kontakt',
             ],
             'project' => [
                 'client_id' => 'Klient',
@@ -307,6 +317,7 @@ return [
             'hourly_rate' => 'Hodinová sazba',
             'payment_terms_days' => 'Splatnost',
             'invoice_email' => 'E-mail pro faktury',
+            'primary_contact' => 'Hlavní kontakt',
             'invoice_language' => 'Jazyk faktur',
             'online_payment_enabled' => 'Online platba',
             'tags' => 'Štítky',
