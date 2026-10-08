@@ -41,8 +41,9 @@ return [
     |   same class inside this window are only counted; the count is reported
     |   with the next alert.
     | message_max_length: characters kept from the first line of the exception
-    |   message. Messages can carry SQL values or connection details, so the
-    |   alert never holds more.
+    |   message after it was sanitised (hosts, IPs, ports, DSN fragments, quoted
+    |   values and SQL tails removed, see AlertMessageSanitiser). The sanitising
+    |   is best effort; the unfiltered message stays in failed_jobs and the log.
     |
     */
 

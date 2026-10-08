@@ -31,9 +31,11 @@ use function Illuminate\Support\defer;
  * timeout (mail.mailers.smtp.timeout) bounds how long that can take.
  *
  * The alert holds the job name, queue, attempts, exception class, the failed
- * job id and a shortened first line of the message. Never the job payload and
- * never a stack trace: messages and payloads can carry SQL values, connection
- * details or personal data, and the full detail stays in failed_jobs and the log.
+ * job id and a sanitised, shortened first line of the message (AlertMessageSanitiser
+ * removes hosts, IPs, ports, DSN fragments, quoted values and SQL tails). Never
+ * the job payload and never a stack trace: messages and payloads can carry SQL
+ * values, connection details or personal data, and the full detail stays in
+ * failed_jobs and the log.
  */
 final class ReportFailedJob
 {
@@ -89,14 +91,12 @@ final class ReportFailedJob
     }
 
     /**
-     * The first line of the message, cut to the configured length.
+     * The first line of the message, sanitised (hosts, IPs, DSN fragments, SQL
+     * and quoted values removed) and cut to the configured length.
      */
     private function firstLine(Throwable $e): string
     {
-        $lines = preg_split('/\R/u', $e->getMessage());
-        $first = is_array($lines) ? ($lines[0] ?? '') : '';
-
-        return mb_substr($first, 0, max(0, (int) config('kokpit.alerts.message_max_length')));
+        return AlertMessageSanitiser::firstLine($e->getMessage(), (int) config('kokpit.alerts.message_max_length'));
     }
 
     /**

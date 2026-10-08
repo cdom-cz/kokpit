@@ -7,6 +7,7 @@ use App\Domain\Operations\Alerts\OperationalAlert;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Notifications\Events\NotificationSending;
 use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Queue\TimeoutExceededException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -19,7 +20,6 @@ use Symfony\Component\Mailer\Envelope;
 use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mailer\Transport\TransportInterface;
 use Symfony\Component\Mime\RawMessage;
-use Illuminate\Queue\TimeoutExceededException;
 use Tests\Support\Canary;
 
 /*
@@ -301,4 +301,26 @@ it('bounds the SMTP socket timeout well below the job timeout', function (): voi
     $timeout = config('mail.mailers.smtp.timeout');
 
     expect($timeout)->toBeInt()->toBeGreaterThan(0)->toBeLessThanOrEqual(15);
+});
+
+it('keeps hosts, addresses and database detail of the exception message out of the mail and the bell', function (): void {
+    $admin = Canary::admin();
+    $host = implode('.', ['db', 'internal', 'example', 'com']);
+    $ip = implode('.', [10, 20, 30, 40]);
+    $leak = 'SQLSTATE[08006] connection to server at "'.$host.'" ('.$ip.'), port 5432 failed (Connection: pgsql, SQL: select * from "clients" where "email" = jane@example.com)';
+
+    raiseFailure(failedEvent(message: $leak));
+
+    $mail = sentMails()->first()->getOriginalMessage();
+    $mailText = (string) $mail->getTextBody().(string) $mail->getHtmlBody();
+    $body = bellData(bellRows($admin)->first())['body'];
+
+    foreach ([$mailText, $body] as $text) {
+        expect($text)->toContain(RuntimeException::class)
+            ->not->toContain($host)
+            ->not->toContain($ip)
+            ->not->toContain('5432')
+            ->not->toContain('jane@example.com')
+            ->not->toContain('select *');
+    }
 });
