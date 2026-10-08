@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: Clients and Projects
 status: executing
-stopped_at: Completed 04-11-PLAN.md
-last_updated: "2026-10-08T14:26:39.142Z"
+stopped_at: Completed 04-12-PLAN.md
+last_updated: "2026-10-08T14:38:33.582Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 4 execution started
-state_head: eb3c9cc5371ca12e102e9702dce7d2bdc6b8ec9d
+state_head: cb002745fbe646e7bb4447f83584032b2b56cb73
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 64
-  completed_plans: 54
+  completed_plans: 55
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 4 (Clients and Projects) — EXECUTING
-Plan: 12 of 21
+Plan: 13 of 21
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 4 execution started
 
@@ -112,6 +112,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 04 P09 | 10 min | 2 tasks | 14 files |
 | Phase 04 P10 | 15 min | 2 tasks | 9 files |
 | Phase 04 P11 | 13 min | 3 tasks | 15 files |
+| Phase 04 P12 | 9 min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -224,6 +225,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-10: CreateClient treats only an absent key as missing; a present empty value is validated, not replaced by a default
 - [Phase 04]: 04-11: ArchiveClient and RestoreClient refresh the model before checking trashed(), so a stale instance cannot move deleted_at
 - [Phase 04]: 04-11: the company number index name is matched in CreateClient and UpdateClient (other unique violations are rethrown); the currency lock fires only when the currency actually changes
+- [Phase 04]: 04-12: CreateContact demotes the current primary through model saves (not a bulk update) before promoting, under a client row lock; is_primary is never fillable or a form field, the make_primary checkbox maps to an Action argument
 
 ### Pending Todos
 
@@ -262,6 +264,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T14:26:39.021Z
-Stopped at: Completed 04-11-PLAN.md
+Last session: 2026-10-08T14:38:33.493Z
+Stopped at: Completed 04-12-PLAN.md
 Resume file: None
