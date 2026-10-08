@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\AccessRules;
+use App\Domain\Shared\Auth\Audience;
 use App\Filament\Pages\Dashboard;
 use Filament\Clusters\Cluster;
 use Filament\Facades\Filament;
 use Filament\Pages\Page;
+use Filament\Pages\SimplePage;
 use Filament\Resources\Pages\Page as ResourcePage;
 use Filament\Resources\RelationManagers\RelationGroup;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -14,10 +17,11 @@ use Filament\Resources\RelationManagers\RelationManagerConfiguration;
 use Filament\Resources\Resource;
 use Filament\Widgets\Widget;
 use Filament\Widgets\WidgetConfiguration;
+use Tests\Support\Filament\Fixtures\GuestSimplePageFixture;
 use Tests\Support\Filament\Fixtures\UndeclaredPage;
 
 /*
- * D-03: every Filament Resource, Page, Widget, cluster and relation manager declares
+ * D-03: every Filament Resource, Page, SimplePage, Widget, cluster and relation manager declares
  * #[AccessRule] on the class itself. The classes come from the admin panel's registry
  * and from a scan of app/Filament, so a class that is not yet registered cannot hide
  * and there is no hand-kept list.
@@ -109,7 +113,7 @@ function panelRegistryIsGoverned(string $class): bool
         return false;
     }
 
-    foreach ([Resource::class, Page::class, Widget::class, RelationManager::class, Cluster::class] as $base) {
+    foreach ([Resource::class, Page::class, SimplePage::class, Widget::class, RelationManager::class, Cluster::class] as $base) {
         if (is_subclass_of($class, $base)) {
             return true;
         }
@@ -119,9 +123,11 @@ function panelRegistryIsGoverned(string $class): bool
 }
 
 /**
+ * Every class that exists under app/Filament, governed by the registry or not.
+ *
  * @return list<class-string>
  */
-function panelRegistryAppClasses(): array
+function panelRegistryAppFiles(): array
 {
     $root = app_path('Filament');
 
@@ -141,12 +147,44 @@ function panelRegistryAppClasses(): array
         $relative = substr($path, strlen(str_replace(DIRECTORY_SEPARATOR, '/', app_path())) + 1, -4);
         $class = 'App\\'.str_replace('/', '\\', $relative);
 
-        if (panelRegistryIsGoverned($class)) {
+        if (class_exists($class)) {
             $classes[] = $class;
         }
     }
 
     return panelRegistryUnique($classes);
+}
+
+/**
+ * @return list<class-string>
+ */
+function panelRegistryAppClasses(): array
+{
+    return panelRegistryUnique(array_filter(panelRegistryAppFiles(), 'panelRegistryIsGoverned'));
+}
+
+/**
+ * The classes among the given ones that declare Audience::Guest although they may not:
+ * a guest page reaches the application only through its own signed route, so it must be
+ * a SimplePage subclass (outside the panel's Page machinery) that the panel does not
+ * register. Sorted by class name so the failure output is identical across runs.
+ *
+ * @param  list<string>  $classes
+ * @param  list<string>  $registered  every class the panel registers
+ * @return list<string>
+ */
+function panelRegistryMisplacedGuests(array $classes, array $registered): array
+{
+    return panelRegistryUnique(array_filter(
+        $classes,
+        static function (string $class) use ($registered): bool {
+            if (AccessRules::for($class)?->audience !== Audience::Guest) {
+                return false;
+            }
+
+            return ! is_subclass_of($class, SimplePage::class) || in_array($class, $registered, true);
+        },
+    ));
 }
 
 /**
@@ -196,4 +234,29 @@ it('sorts the offenders by class name whatever the input order', function (): vo
     expect($forward)->toBe($sorted)
         ->and(panelRegistryUndeclared(array_reverse($input)))->toBe($forward)
         ->and($forward)->toHaveCount(2);
+});
+
+it('governs SimplePage subclasses: an undeclared one is reported and a declared one is not', function (): void {
+    $undeclared = new class extends SimplePage {};
+
+    expect(panelRegistryIsGoverned($undeclared::class))->toBeTrue()
+        ->and(panelRegistryIsGoverned(GuestSimplePageFixture::class))->toBeTrue()
+        ->and(panelRegistryUndeclared([$undeclared::class, GuestSimplePageFixture::class]))->toBe([$undeclared::class]);
+});
+
+it('lets Audience::Guest stand only on an unregistered SimplePage subclass', function (): void {
+    $registered = panelRegistryPanelClasses();
+    $guestPage = new #[AccessRule(Audience::Guest, reason: 'Misplaced on a Dashboard subclass.')] class extends Dashboard {};
+    $guestSimplePage = new #[AccessRule(Audience::Guest, reason: 'Anonymous SimplePage stand-in.')] class extends SimplePage {};
+
+    expect(panelRegistryMisplacedGuests([GuestSimplePageFixture::class, $guestSimplePage::class], $registered))->toBe([])
+        ->and(panelRegistryMisplacedGuests([GuestSimplePageFixture::class, $guestPage::class], $registered))->toBe([$guestPage::class])
+        ->and(panelRegistryMisplacedGuests([GuestSimplePageFixture::class], [GuestSimplePageFixture::class]))->toBe([GuestSimplePageFixture::class])
+        ->and(panelRegistryMisplacedGuests([Dashboard::class], $registered))->toBe([]);
+});
+
+it('keeps Audience::Guest off every non-SimplePage and every registered class under app/Filament', function (): void {
+    $misplaced = panelRegistryMisplacedGuests(panelRegistryAppFiles(), panelRegistryPanelClasses());
+
+    expect($misplaced)->toBe([], "Classes declaring Audience::Guest outside an unregistered SimplePage:\n".implode("\n", $misplaced));
 });

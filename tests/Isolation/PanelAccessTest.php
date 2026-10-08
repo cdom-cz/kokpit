@@ -18,6 +18,7 @@ use Tests\Support\Filament\CanaryRecordResource\Pages\ListCanaryRecords;
 use Tests\Support\Filament\Fixtures\AccessOverrideMountProbePage;
 use Tests\Support\Filament\Fixtures\AdminOnlyRelationManager;
 use Tests\Support\Filament\Fixtures\AdminOnlyWidget;
+use Tests\Support\Filament\Fixtures\GuestSimplePageFixture;
 use Tests\Support\Filament\Fixtures\MountProbePage;
 use Tests\Support\Filament\Fixtures\PartnerAllowedWidget;
 use Tests\Support\Filament\Fixtures\PolicyDeniedRelationManager;
@@ -125,6 +126,23 @@ it('denies a class without the attribute in every state, even to the Admin', fun
 
         expect(AccessRules::allows(UndeclaredPage::class))->toBeFalse($state);
     }
+});
+
+it('denies a class declaring Audience::Guest to a guest, a Partner with or without a client and the Admin', function (): void {
+    expect(AccessRules::for(GuestSimplePageFixture::class)?->audience)->toBe(Audience::Guest);
+
+    $expectedStates = ['guest', 'admin', 'partner with a client', 'partner without a client'];
+    $checked = [];
+
+    foreach (accessStates() as $state => $make) {
+        $user = $make();
+        $user !== null ? $this->actingAs($user) : auth()->logout();
+
+        expect(AccessRules::allows(GuestSimplePageFixture::class))->toBeFalse($state);
+        $checked[] = $state;
+    }
+
+    expect($checked)->toContain(...$expectedStates);
 });
 
 it('denies a class that does not exist and a subclass of a declared class', function (): void {
