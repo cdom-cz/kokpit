@@ -18,6 +18,11 @@ final class AlertMessageSanitiser
     public const string REDACTED = '[…]';
 
     /**
+     * Characters of a line that are looked at; the rest is dropped before the patterns run (bounds the work).
+     */
+    public const int MAX_INPUT_LENGTH = 2000;
+
+    /**
      * The first line of the message, sanitised and cut to $maxLength characters.
      */
     public static function firstLine(string $message, int $maxLength): string
@@ -30,6 +35,15 @@ final class AlertMessageSanitiser
 
     public static function sanitise(string $line): string
     {
+        // The host-name pattern backtracks quadratically on a very long run of hyphenated tokens, so the
+        // line is cut before any pattern runs. Redaction only shortens text, so the part dropped here can
+        // never have reached the (much shorter) alert output.
+        $truncated = mb_strlen($line) > self::MAX_INPUT_LENGTH;
+
+        if ($truncated) {
+            $line = mb_substr($line, 0, self::MAX_INPUT_LENGTH);
+        }
+
         $redacted = preg_quote(self::REDACTED, '/');
 
         // Everything after a SQL, detail, binding or connection marker: the driver puts the statement and values there.
@@ -60,6 +74,12 @@ final class AlertMessageSanitiser
 
         foreach ($patterns as $pattern) {
             $line = self::replace($pattern, self::REDACTED, $line);
+        }
+
+        // A quote left over after the quoted-value pass has lost its partner. On a cut line the partner may
+        // have been in the dropped part, so everything from that quote on is treated as quoted as well.
+        if ($truncated) {
+            $line = self::replace('/["\'`].*$/su', self::REDACTED, $line);
         }
 
         // Collapse runs of redactions left by neighbouring matches.

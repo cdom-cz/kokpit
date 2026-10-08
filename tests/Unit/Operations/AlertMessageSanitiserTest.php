@@ -85,3 +85,29 @@ it('keeps only the first line and cuts after sanitising', function (): void {
 it('never returns a longer line than the limit', function (): void {
     expect(mb_strlen(AlertMessageSanitiser::firstLine(str_repeat('a ', 300), 200)))->toBeLessThanOrEqual(200);
 });
+
+it('sanitises a 300 000 character hyphenated first line in well under a second', function (): void {
+    $line = 'Fictional failure '.str_repeat('abc-', 75_000);
+
+    $start = hrtime(true);
+    $clean = AlertMessageSanitiser::firstLine($line, 200);
+    $elapsedMs = (hrtime(true) - $start) / 1_000_000;
+
+    expect($elapsedMs)->toBeLessThan(500.0)
+        ->and(mb_strlen($clean))->toBeLessThanOrEqual(200)
+        ->and($clean)->toStartWith('Fictional failure');
+});
+
+it('looks at no more than the input cap of a line', function (): void {
+    $tail = leakSecret();
+    $line = str_repeat('x ', AlertMessageSanitiser::MAX_INPUT_LENGTH).$tail;
+
+    expect(AlertMessageSanitiser::sanitise($line))->not->toContain($tail);
+});
+
+it('does not show the start of a quoted value whose closing quote lies beyond the input cap', function (): void {
+    $secret = leakSecret();
+    $line = 'Lookup failed for "'.$secret.str_repeat(' padding', 1_000).'"';
+
+    expect(AlertMessageSanitiser::firstLine($line, 200))->not->toContain($secret);
+});
