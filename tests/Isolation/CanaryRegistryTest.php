@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
@@ -88,6 +89,7 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         Activity::class,
         CanaryRecord::class,
         Client::class,
+        ClientInvitation::class,
         Contact::class,
         Media::class,
         Project::class,

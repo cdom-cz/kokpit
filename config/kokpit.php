@@ -54,6 +54,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Partner invitations
+    |--------------------------------------------------------------------------
+    |
+    | ttl_days: how many days an invitation link stays valid after it was issued
+    |   or resent (D-02). A literal starting point, not editable in the UI.
+    |
+    */
+
+    'invitations' => [
+        'ttl_days' => 7,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | System page health thresholds
     |--------------------------------------------------------------------------
     |

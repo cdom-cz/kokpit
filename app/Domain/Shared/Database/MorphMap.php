@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Shared\Database;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
 use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
@@ -37,6 +38,7 @@ final class MorphMap
         'activity' => Activity::class,
         'webhook_call' => WebhookCall::class,
         'client' => Client::class,
+        'client_invitation' => ClientInvitation::class,
         'contact' => Contact::class,
         'project' => Project::class,
         'project_billing' => ProjectBilling::class,

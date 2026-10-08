@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Models\Project;
@@ -82,6 +83,20 @@ final class CanaryRegistry
                     $client = Client::query()->whereKey($clientId)->firstOrFail();
 
                     $client->contacts()->create(['name' => $canary, 'email' => exampleEmail(), 'is_billing' => true]);
+                });
+            },
+
+            // The canary is the invitee's name, so a Partner reading any invitation
+            // field would be caught. The token hash is that of a random token.
+            ClientInvitation::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $invitation = new ClientInvitation(['name' => $canary, 'email' => exampleEmail()]);
+                    $invitation->forceFill([
+                        'client_id' => $clientId,
+                        'token_hash' => hash('sha256', bin2hex(random_bytes(32))),
+                        'expires_at' => now()->addDays(7),
+                        'last_sent_at' => now(),
+                    ])->save();
                 });
             },
 
