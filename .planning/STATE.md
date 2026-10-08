@@ -265,7 +265,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- [2026-10-08] [general] Sort tasks by priority then nearest due date by default — [todo file](.planning/todos/pending/2026-10-08-sort-tasks-by-priority-then-nearest-due-date-by-default.md)
 
 ### Blockers/Concerns
 
