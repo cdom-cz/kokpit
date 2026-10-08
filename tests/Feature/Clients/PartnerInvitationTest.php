@@ -3,12 +3,16 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Actions\InvitePartner;
+use App\Domain\Clients\Actions\ResendInvitation;
+use App\Domain\Clients\Actions\RevokeInvitation;
+use App\Domain\Clients\Enums\InvitationState;
 use App\Domain\Clients\InvitationMail;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Notifications\PartnerInvitation;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Auth\PartnerContext;
+use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\AnonymousNotifiable;
@@ -475,4 +479,168 @@ it('reads the invitation only through findAcceptable, which hides every unaccept
         ->and(ClientInvitation::findAcceptable((string) Str::uuid7(), $token))->toBeNull()
         ->and(ClientInvitation::findAcceptable('not-a-uuid', $token))->toBeNull()
         ->and(ClientInvitation::findAcceptable('', $token))->toBeNull();
+});
+
+/**
+ * Changes columns of an invitation the way a lifecycle step would, as a system run.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function forceInvitation(ClientInvitation $invitation, array $attributes): void
+{
+    app(PartnerContext::class)->runAsSystem(static fn () => $invitation->forceFill($attributes)->save());
+}
+
+/**
+ * The stored lifecycle columns of an invitation, read raw.
+ *
+ * @return array<string, mixed>
+ */
+function storedInvitation(ClientInvitation $invitation): array
+{
+    return (array) DB::table('client_invitations')->where('id', $invitation->id)->first();
+}
+
+it('derives the state from the timestamps and the current time, never from a stored column', function (): void {
+    $invitation = invite(exampleEmail());
+
+    expect($invitation->state())->toBe(InvitationState::Pending)
+        ->and(array_key_exists('state', storedInvitation($invitation)))->toBeFalse();
+
+    $this->travelTo($invitation->expires_at->copy()->subSecond());
+    expect($invitation->state())->toBe(InvitationState::Pending);
+
+    $this->travelTo($invitation->expires_at);
+    expect($invitation->state())->toBe(InvitationState::Expired);
+
+    $this->travelTo($invitation->expires_at->copy()->addDay());
+    expect($invitation->state())->toBe(InvitationState::Expired);
+
+    $this->travelBack();
+    $revoked = invite(exampleEmail());
+    forceInvitation($revoked, ['revoked_at' => now()]);
+    $accepted = invite(exampleEmail());
+    forceInvitation($accepted, ['accepted_at' => now(), 'accepted_user_id' => Canary::partnerFor($this->client->id)->id]);
+
+    // A revoked or accepted invitation keeps its state after its expiry date has passed.
+    $this->travelTo(now()->addDays(30));
+    expect($revoked->state())->toBe(InvitationState::Revoked)
+        ->and($accepted->state())->toBe(InvitationState::Accepted);
+});
+
+it('labels the four states in Czech', function (): void {
+    expect(InvitationState::Pending->getLabel())->toBe('Čeká')
+        ->and(InvitationState::Accepted->getLabel())->toBe('Přijata')
+        ->and(InvitationState::Revoked->getLabel())->toBe('Zrušena')
+        ->and(InvitationState::Expired->getLabel())->toBe('Vypršela')
+        ->and(InvitationState::cases())->toHaveCount(4);
+});
+
+it('resends a pending invitation with a new token, a new expiry and a new mail', function (): void {
+    [$invitation, $oldToken] = inviteWithLink();
+    $oldHash = $invitation->token_hash;
+
+    $this->travelTo(now()->addDays(3));
+    app(ResendInvitation::class)->handle($invitation);
+
+    $row = storedInvitation($invitation);
+    $urls = sentLinks($invitation->email);
+    $newToken = linkQuery($urls[1])['token'];
+
+    expect($urls)->toHaveCount(2)
+        ->and($newToken)->not->toBe($oldToken)
+        ->and($row['token_hash'])->toBe(hash('sha256', $newToken))
+        ->and($row['token_hash'])->not->toBe($oldHash)
+        ->and($row['send_count'])->toBe(2)
+        ->and(Carbon::parse($row['expires_at'])->equalTo(now()->addDays(7)))->toBeTrue()
+        ->and(Carbon::parse($row['last_sent_at'])->equalTo(now()))->toBeTrue()
+        ->and($invitation->send_count)->toBe(2)
+        ->and($invitation->state())->toBe(InvitationState::Pending)
+        ->and(Carbon::createFromTimestamp((int) linkQuery($urls[1])['expires'])->equalTo(now()->addDays(7)))->toBeTrue();
+
+    asGuest();
+    expect(ClientInvitation::findAcceptable($invitation->id, $oldToken))->toBeNull()
+        ->and(ClientInvitation::findAcceptable($invitation->id, $newToken)?->id)->toBe($invitation->id);
+});
+
+it('shows the neutral message for the old link after a resend although its signature is still valid', function (): void {
+    [$invitation, , $oldUrl] = inviteWithLink();
+
+    app(ResendInvitation::class)->handle($invitation);
+    $newUrl = sentLinks($invitation->email)[1];
+    asGuest();
+
+    $this->get($oldUrl)->assertOk()->assertSee(__('kokpit.invitations.accept.invalid_message'))->assertDontSee($invitation->email);
+    $this->get($newUrl)->assertOk()->assertSee($invitation->email);
+});
+
+it('makes an expired invitation pending again when it is resent', function (): void {
+    [$invitation] = inviteWithLink();
+    forceInvitation($invitation, ['expires_at' => now()->subHour()]);
+    expect($invitation->state())->toBe(InvitationState::Expired);
+
+    app(ResendInvitation::class)->handle($invitation);
+
+    $newToken = linkQuery(sentLinks($invitation->email)[1])['token'];
+    asGuest();
+
+    expect($invitation->state())->toBe(InvitationState::Pending)
+        ->and($invitation->send_count)->toBe(2)
+        ->and(ClientInvitation::findAcceptable($invitation->id, $newToken)?->id)->toBe($invitation->id);
+});
+
+it('revokes a pending or expired invitation and its link becomes invalid', function (): void {
+    [$pending, $pendingToken] = inviteWithLink();
+    [$expired, $expiredToken] = inviteWithLink();
+    forceInvitation($expired, ['expires_at' => now()->subHour()]);
+
+    app(RevokeInvitation::class)->handle($pending);
+    app(RevokeInvitation::class)->handle($expired);
+
+    expect($pending->state())->toBe(InvitationState::Revoked)
+        ->and($expired->state())->toBe(InvitationState::Revoked)
+        ->and(storedInvitation($pending)['revoked_at'])->not->toBeNull();
+
+    asGuest();
+    expect(ClientInvitation::findAcceptable($pending->id, $pendingToken))->toBeNull()
+        ->and(ClientInvitation::findAcceptable($expired->id, $expiredToken))->toBeNull();
+
+    $this->get(signedLink($pending->id, $pendingToken))->assertOk()->assertSee(__('kokpit.invitations.accept.invalid_message'));
+});
+
+it('refuses to resend or revoke an accepted or a revoked invitation and changes nothing', function (): void {
+    $accepted = invite(exampleEmail());
+    forceInvitation($accepted, ['accepted_at' => now(), 'accepted_user_id' => Canary::partnerFor($this->client->id)->id]);
+    $revoked = invite(exampleEmail());
+    forceInvitation($revoked, ['revoked_at' => now()]);
+
+    Notification::fake();
+
+    foreach ([$accepted, $revoked] as $invitation) {
+        $before = storedInvitation($invitation);
+
+        expect(fn () => app(ResendInvitation::class)->handle($invitation))->toThrow(DomainException::class, __('kokpit.invitations.errors.not_resendable'))
+            ->and(fn () => app(RevokeInvitation::class)->handle($invitation))->toThrow(DomainException::class, __('kokpit.invitations.errors.not_revocable'))
+            ->and(storedInvitation($invitation))->toBe($before);
+    }
+
+    Notification::assertNothingSent();
+});
+
+it('decides on the locked row, so a stale instance cannot resend or revoke what was accepted meanwhile', function (): void {
+    $invitation = invite(exampleEmail());
+    $stale = ClientInvitation::query()->whereKey($invitation->id)->firstOrFail();
+    forceInvitation($invitation, ['revoked_at' => now()]);
+
+    expect($stale->state())->toBe(InvitationState::Pending)
+        ->and(fn () => app(ResendInvitation::class)->handle($stale))->toThrow(DomainException::class)
+        ->and(fn () => app(RevokeInvitation::class)->handle($stale))->toThrow(DomainException::class);
+});
+
+it('locks the invitation row inside a transaction for both lifecycle steps', function (): void {
+    foreach ([ResendInvitation::class, RevokeInvitation::class] as $action) {
+        $source = (string) file_get_contents((string) (new ReflectionClass($action))->getFileName());
+
+        expect($source)->toContain('lockForUpdate')->and($source)->toContain('DB::transaction');
+    }
 });
