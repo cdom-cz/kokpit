@@ -90,7 +90,12 @@ beforeEach(function (): void {
         'billing_type' => 'hourly',
         'client_visible' => true,
     ]));
-    $this->task = escalationSystem(fn (): Task => app(CreateTask::class)->handle($this->admin, $this->project, ['title' => Canary::canary('task')]));
+    // Priority and status differ from the defaults, so a write to either would show.
+    $this->task = escalationSystem(function (): Task {
+        $task = app(CreateTask::class)->handle($this->admin, $this->project, ['title' => Canary::canary('task')]);
+
+        return app(UpdateTask::class)->handle($this->admin, $task, ['priority' => 'high', 'status' => 'in_progress']);
+    });
 });
 
 it('lets a Partner escalate an own task with a comment and leaves priority and status alone', function (): void {
@@ -166,17 +171,20 @@ it('refuses a second escalation as a field error on the comment and creates no s
         ->and($row->escalated_by_id)->toBe($this->partnerA->id);
 });
 
-it('shows the same refusal in the modal of a task that is already escalated', function (): void {
+it('creates no second comment when a modal opened before another session escalated is submitted', function (): void {
     $this->actingAs($this->partnerA);
     $page = Livewire::test(ViewPartnerTask::class, ['record' => $this->task->reference]);
 
-    // Another session escalates between the page load and the submit.
+    // Another session escalates between the page load and the submit; the action is hidden on the next request.
     app(EscalateTask::class)->handle($this->partnerA2, escalationSeen($this->task), '<p>Example first reason</p>');
 
-    $page->callAction('escalate', ['comment' => '<p>Example late reason</p>'])
-        ->assertHasActionErrors(['comment']);
+    $page->callAction('escalate', ['comment' => '<p>Example late reason</p>']);
 
-    expect(escalationComments($this->task))->toHaveCount(1);
+    $comments = escalationComments($this->task);
+
+    expect($comments)->toHaveCount(1)
+        ->and($comments[0]->author_id)->toBe($this->partnerA2->id)
+        ->and(escalationRow($this->task)->escalated_by_id)->toBe($this->partnerA2->id);
 });
 
 it('hides the escalate action on the Partner page while the task is escalated', function (): void {

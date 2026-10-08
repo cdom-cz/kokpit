@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\TaskResource\Pages;
 
+use App\Domain\Identity\Models\User;
 use App\Domain\Projects\EstimateHours;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
+use App\Domain\Tasks\Actions\ClearEscalation;
 use App\Domain\Tasks\Billing\BillingSource;
 use App\Domain\Tasks\Billing\EffectiveBilling;
 use App\Domain\Tasks\Billing\TaskBillingResolver;
@@ -17,9 +19,12 @@ use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
+use Illuminate\Validation\ValidationException;
 
 /**
  * The full task page at /admin/tasks/KEY-N (D-09).
@@ -43,10 +48,39 @@ final class ViewTask extends ViewRecord
     {
         $schema = parent::infolist($schema);
 
+        $components = [];
+
+        foreach ($schema->getComponents(withHidden: true) as $component) {
+            $components[] = $component;
+
+            // The escalation reads next to the priority (UI-SPEC U-12).
+            if ($component instanceof TextEntry && $component->getName() === 'priority') {
+                $components[] = $this->escalationEntry();
+            }
+        }
+
         return $schema->components([
-            ...$schema->getComponents(withHidden: true),
+            ...$components,
             $this->effectiveBillingSection(),
         ]);
+    }
+
+    /**
+     * Who escalated the task and when; shown only while the task is escalated (D-06).
+     */
+    private function escalationEntry(): TextEntry
+    {
+        return TextEntry::make('escalated_at')
+            ->label(__('kokpit.tasks.escalation.label'))
+            ->badge()
+            ->color('danger')
+            ->state(static fn (Task $record): ?string => $record->escalated_at === null
+                ? null
+                : (string) __('kokpit.tasks.escalation.value', [
+                    'name' => (string) $record->escalatedBy?->name,
+                    'datetime' => $record->escalated_at->format('j. n. Y H:i'),
+                ]))
+            ->visible(static fn (Task $record): bool => $record->escalated_at !== null);
     }
 
     /**
@@ -103,6 +137,47 @@ final class ViewTask extends ViewRecord
                 ->hidden(fn (): bool => $this->getRecord() instanceof Task && $this->getRecord()->trashed()),
             TaskResource::archiveAction()->record($this->getRecord()),
             TaskResource::restoreAction()->record($this->getRecord()),
+            $this->clearEscalationAction(),
         ];
+    }
+
+    /**
+     * Clears the escalation flag through the domain Action (D-06); visible only
+     * while the task is escalated and not archived. A confirmation, not a
+     * destructive colour: no data is deleted.
+     */
+    private function clearEscalationAction(): Action
+    {
+        return Action::make('clearEscalation')
+            ->label(__('kokpit.tasks.actions.clear_escalation'))
+            ->icon(Heroicon::OutlinedFlag)
+            ->color('gray')
+            ->requiresConfirmation()
+            ->modalHeading(__('kokpit.tasks.escalation.clear_heading'))
+            ->modalDescription(__('kokpit.tasks.escalation.clear_description'))
+            ->modalSubmitActionLabel(__('kokpit.tasks.actions.clear_escalation'))
+            ->successNotificationTitle(__('kokpit.tasks.escalation.cleared'))
+            ->visible(fn (): bool => $this->getRecord() instanceof Task
+                && $this->getRecord()->escalated_at !== null
+                && ! $this->getRecord()->trashed())
+            ->action(function (Action $action): void {
+                abort_unless(TaskResource::canAccess(), 403);
+
+                $task = $this->getRecord();
+                assert($task instanceof Task);
+
+                $actor = auth()->user();
+                assert($actor instanceof User);
+
+                try {
+                    app(ClearEscalation::class)->handle($actor, $task);
+                } catch (ValidationException $e) {
+                    Notification::make()->danger()->title((string) collect($e->errors())->flatten()->first())->send();
+
+                    return;
+                }
+
+                $action->success();
+            });
     }
 }

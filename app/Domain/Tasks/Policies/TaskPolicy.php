@@ -14,8 +14,11 @@ use Illuminate\Database\Eloquent\Model;
  * client, create a task, comment on a task they can view and escalate it. The
  * Admin is admitted by KokpitPolicy::before().
  *
- * Editing, deleting and restoring stay denied, and so does clearing an
- * escalation: a later plan grants that to the Partner who is the assignee. The
+ * Editing, deleting and restoring stay denied for every Partner. Clearing an
+ * escalation is granted to a Partner only on a task of the own client whose
+ * assignee is that Partner (D-06: the assignee resolves the flag); the Admin
+ * may always clear it. Being the assignee gives no other right: a Partner
+ * assignee still cannot change priority or status. The
  * scoped query already hides every task of another client, so `view` is the
  * defence in depth for a record that reached the policy some other way.
  * `create` is true because the scoped project lookup inside CreateTask is the
@@ -50,7 +53,9 @@ final class TaskPolicy extends KokpitPolicy
 
     public function clearEscalation(User $user, Model $record): bool
     {
-        return false;
+        return $this->ownsProjectOf($user, $record)
+            && $record instanceof Task
+            && $record->assignee_id === $user->id;
     }
 
     private function ownsProjectOf(User $user, Model $record): bool

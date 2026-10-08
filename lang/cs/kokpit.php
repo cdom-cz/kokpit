@@ -486,8 +486,21 @@ return [
             'billing_type_invalid' => 'Vyberte platný typ fakturace úkolu.',
             'body_empty' => 'Napište text komentáře.',
             'body_too_long' => 'Komentář je příliš dlouhý. Zkraťte ho, vejde se nejvýše 100 000 bajtů textu včetně značek.',
+            'already_escalated' => 'Úkol už je eskalovaný.',
+            'not_escalated' => 'Úkol není eskalovaný.',
         ],
         'empty_value' => '—',
+        'escalation' => [
+            'label' => 'Eskalace',
+            'value' => 'Eskalováno (:name, :datetime)',
+            'reason' => 'Důvod eskalace',
+            'escalate_heading' => 'Eskalovat úkol?',
+            'escalate_description' => 'Správce dostane upozornění a úkol se označí jako eskalovaný. Napište, proč je věc naléhavá. Priorita se tím nemění.',
+            'clear_heading' => 'Zrušit eskalaci?',
+            'clear_description' => 'Úkol přestane být označený jako eskalovaný. Stav ani priorita se nezmění. Eskalovat ho půjde znovu.',
+            'escalated' => 'Úkol byl eskalován',
+            'cleared' => 'Eskalace byla zrušena',
+        ],
         'comments' => [
             'relation_title' => 'Komentáře',
             'fields' => [
@@ -595,6 +608,8 @@ return [
             'restore' => 'Obnovit',
             'archive_heading' => 'Archivovat úkol?',
             'archive_description' => 'Archivovaný úkol zmizí ze seznamů a nástěnky, ale zůstane v databázi a jeho číslo zůstane obsazené. Půjde ho obnovit.',
+            'escalate' => 'Eskalovat úkol',
+            'clear_escalation' => 'Zrušit eskalaci',
         ],
         'notifications' => [
             'archived' => 'Úkol byl archivován',
