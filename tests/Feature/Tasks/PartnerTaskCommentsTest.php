@@ -164,3 +164,131 @@ it('refuses the comments tab of a task of another client', function (): void {
 
     expect(fn () => partnerCommentSeen($foreign))->toThrow(ModelNotFoundException::class);
 });
+
+/**
+ * The payload parts of a Partner comment, assembled at runtime so no single line
+ * looks like a payload; each part carries a marker word that must never survive.
+ *
+ * @return list<string>
+ */
+function partnerCommentPayloadParts(): array
+{
+    $lt = '<';
+
+    return [
+        $lt.'p>Benign words'.$lt.'/p>',
+        $lt.'scr'.'ipt>window.markerOne()'.$lt.'/scr'.'ipt>',
+        $lt.'img src="x" on'.'error="markerTwo()">',
+        $lt.'a href="java'.'script:markerThree()">Example link text'.$lt.'/a>',
+        $lt.'p style="position:'.'fixed;top:markerFour" class="markerFive">More words'.$lt.'/p>',
+    ];
+}
+
+/**
+ * The marker words and substrings that must not appear in stored or rendered text. The
+ * style and class markers stand for the attributes themselves, which Filament's own
+ * markup uses around the comment.
+ *
+ * @return list<string>
+ */
+function partnerCommentForbidden(): array
+{
+    return ['markerOne', 'markerTwo', 'markerThree', 'markerFour', 'markerFive', '<script', '<img', 'onerror', 'javascript:', 'position:fixed'];
+}
+
+/**
+ * The HTML of a Livewire component without its snapshot attribute, which carries the raw state.
+ */
+function partnerCommentHtml(string $html): string
+{
+    return (string) preg_replace('/wire:snapshot="[^"]*"/', '', $html);
+}
+
+it('stores and renders a Partner comment without script, handler, script link or style, on both sides', function (): void {
+    $this->actingAs($this->partnerA);
+
+    $html = partnerCommentManager($this->task)
+        ->callAction(TestAction::make('create')->table(), ['body' => implode('', partnerCommentPayloadParts())])
+        ->assertHasNoActionErrors()
+        ->html();
+
+    $stored = app(PartnerContext::class)->runAsSystem(fn (): string => $this->task->comments()->firstOrFail()->body);
+
+    foreach (partnerCommentForbidden() as $needle) {
+        expect($stored)->not->toContain($needle);
+        expect(partnerCommentHtml($html))->not->toContain($needle);
+    }
+
+    expect($stored)->toContain('Benign words')->toContain('More words');
+
+    $this->actingAs($this->admin);
+    $adminHtml = Livewire::test(TaskCommentsRelationManager::class, ['ownerRecord' => $this->task, 'pageClass' => ViewTask::class])->assertSee('Benign words')->html();
+
+    foreach (partnerCommentForbidden() as $needle) {
+        expect(partnerCommentHtml($adminHtml))->not->toContain($needle);
+    }
+});
+
+it('cleans a Partner comment written around the Action again when it is rendered', function (): void {
+    $partner = $this->partnerA;
+    app(PartnerContext::class)->runAsSystem(function () use ($partner): void {
+        $row = new TaskComment(['body' => implode('', partnerCommentPayloadParts())]);
+        $row->forceFill(['task_id' => $this->task->id, 'author_id' => $partner->id])->save();
+    });
+    $this->actingAs($this->partnerA);
+
+    $html = partnerCommentHtml(partnerCommentManager($this->task)->assertSee('Benign words')->html());
+
+    foreach (partnerCommentForbidden() as $needle) {
+        expect($html)->not->toContain($needle);
+    }
+});
+
+it('sanitises the reason of an escalation like any other Partner comment', function (): void {
+    $this->actingAs($this->partnerA);
+
+    Livewire::test(ViewPartnerTask::class, ['record' => $this->task->reference])
+        ->callAction('escalate', ['comment' => implode('', partnerCommentPayloadParts())])
+        ->assertHasNoActionErrors();
+
+    $stored = app(PartnerContext::class)->runAsSystem(fn (): string => $this->task->comments()->firstOrFail()->body);
+
+    foreach (partnerCommentForbidden() as $needle) {
+        expect($stored)->not->toContain($needle);
+    }
+
+    expect($stored)->toContain('Benign words');
+});
+
+it('reveals no internal comment of an own task on any Partner surface, in a query or in a count', function (): void {
+    $canary = Canary::canary('internal');
+    $visible = Canary::canary('visible');
+    app(AddTaskComment::class)->handle($this->admin, $this->task, '<p>'.$canary.'</p>', internal: true);
+    app(AddTaskComment::class)->handle($this->admin, $this->task, '<p>'.$visible.'</p>');
+
+    // The canary exists, and the Admin sees it on the task page.
+    $this->actingAs($this->admin);
+    Livewire::test(TaskCommentsRelationManager::class, ['ownerRecord' => $this->task, 'pageClass' => ViewTask::class])->assertSee($canary);
+    expect(app(PartnerContext::class)->runAsSystem(static fn (): int => TaskComment::query()->count()))->toBe(2);
+
+    $this->actingAs($this->partnerA);
+    $seen = partnerCommentSeen($this->task);
+
+    $page = (string) $this->get('/admin/my-tasks/'.$this->task->reference)->assertOk()->getContent();
+    $pageLivewire = Livewire::test(ViewPartnerTask::class, ['record' => $this->task->reference])->html();
+    $manager = partnerCommentManager($this->task)->assertSee($visible);
+    $managerHtml = $manager->html();
+    $records = $manager->instance()->getTable()->getRecords();
+
+    expect($page)->not->toContain($canary)
+        ->and($pageLivewire)->not->toContain($canary)
+        ->and($managerHtml)->not->toContain($canary)
+        ->and($records->count())->toBe(1)
+        ->and($records->pluck('body')->implode(''))->not->toContain($canary)
+        ->and(TaskComment::query()->count())->toBe(1)
+        ->and(TaskComment::query()->where('body', 'like', '%'.$canary.'%')->count())->toBe(0)
+        ->and(TaskComment::query()->where('is_internal', true)->count())->toBe(0)
+        ->and($seen->comments()->count())->toBe(1)
+        ->and($seen->comments)->toHaveCount(1)
+        ->and(Task::query()->withCount('comments')->where('reference', $this->task->reference)->firstOrFail()->comments_count)->toBe(1);
+});

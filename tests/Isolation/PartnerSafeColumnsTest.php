@@ -82,3 +82,33 @@ it('has no tasks column whose name looks like money, a rate, an estimate, billin
 
     expect($suspicious)->toBe([], 'Admin-only attributes belong in task_billing, task_checklist_items or an internal comment, not in the Partner-readable tasks table.');
 });
+
+/*
+ * The task_comments table is readable by every Partner of the client for the
+ * non-internal comments of the visible tasks (TA-07, D-08), so its column list is
+ * pinned in migration order as well. The internal flag is a column of this table:
+ * the model scope drops every internal row for a Partner, and a new column fails
+ * this test until a reviewer has decided that every Partner may read it.
+ */
+
+it('pins the Partner-safe column list of the task_comments table', function (): void {
+    expect(Schema::getColumnListing('task_comments'))->toBe([
+        'id',
+        'task_id',
+        'author_id',
+        'body',
+        'is_internal',
+        'is_escalation',
+        'created_at',
+        'updated_at',
+    ], 'The task_comments table is readable by Partners for non-internal rows. Put Admin-only attributes into an Admin-only table; extend this list only after reviewing that every Partner may read the new column.');
+});
+
+it('has no task_comments column whose name looks like money, a rate, a price, an estimate or billing', function (): void {
+    $suspicious = array_values(array_filter(
+        Schema::getColumnListing('task_comments'),
+        static fn (string $column): bool => preg_match('/money|rate|price|estimate|billing|cost|budget/i', $column) === 1,
+    ));
+
+    expect($suspicious)->toBe([], 'Admin-only attributes do not belong in the Partner-readable task_comments table.');
+});
