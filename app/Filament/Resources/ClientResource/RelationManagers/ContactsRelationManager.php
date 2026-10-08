@@ -10,6 +10,7 @@ use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Concerns\EnforcesRelationManagerAccessRule;
 use Filament\Actions\CreateAction;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -71,6 +72,11 @@ final class ContactsRelationManager extends RelationManager
             Toggle::make('is_billing')
                 ->label(__('kokpit.contacts.fields.is_billing'))
                 ->helperText(__('kokpit.contacts.hints.is_billing')),
+            // Not a column: the Action decides what the flag means, `is_primary` is never bound.
+            Checkbox::make('make_primary')
+                ->label(__('kokpit.contacts.fields.make_primary'))
+                ->helperText(__('kokpit.contacts.hints.make_primary'))
+                ->default(false),
         ]);
     }
 
@@ -110,7 +116,7 @@ final class ContactsRelationManager extends RelationManager
                         assert($client instanceof Client);
 
                         try {
-                            return app(CreateContact::class)->handle($client, $data);
+                            return app(CreateContact::class)->handle($client, $data, makePrimary: ($data['make_primary'] ?? false) === true);
                         } catch (ValidationException $e) {
                             // The Action reports plain data keys; the modal form lives under the action state path.
                             $mapped = [];

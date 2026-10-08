@@ -364,8 +364,10 @@ return [
             'position' => 'Pozice',
             'is_primary' => 'Hlavní kontakt',
             'is_billing' => 'Fakturační kontakt',
+            'make_primary' => 'Nastavit jako hlavní kontakt',
         ],
         'hints' => [
+            'make_primary' => 'Dosavadní hlavní kontakt přestane být hlavní. První kontakt klienta je hlavní vždy.',
             'is_billing' => 'Fakturační kontakt dostává faktury. Fakturačních kontaktů může být libovolně mnoho.',
         ],
         'actions' => [
