@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks\Models;
 
+use App\Domain\Audit\LoggedAttributes;
+use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
@@ -34,6 +36,10 @@ use Spatie\Tags\HasTags;
  * the constraint delegates to the Partner-scoped Project query, so the project
  * rules (own client, client-visible, not archived, client not archived) live in
  * one place (TA-01).
+ *
+ * Changes to the identity, status, priority, dates, people and escalation are
+ * written to the activity log through the allowlist; the description and the
+ * board position are never logged.
  *
  * Only the plain content columns are fillable. The ids, number, reference,
  * depth, position, people and escalation columns are set with `forceFill` by
@@ -70,10 +76,23 @@ use Spatie\Tags\HasTags;
     'start_date',
     'due_date',
 ])]
+#[LoggedAttributes([
+    'project_id',
+    'parent_id',
+    'reference',
+    'title',
+    'status',
+    'priority',
+    'start_date',
+    'due_date',
+    'assignee_id',
+    'requester_id',
+    'escalated_at',
+])]
 final class Task extends KokpitModel implements PartnerIsolated
 {
     /** @use HasFactory<TaskFactory> */
-    use HasFactory, IsolatesPartners, SoftDeletes;
+    use HasFactory, IsolatesPartners, LogsAllowlistedActivity, SoftDeletes;
 
     use HasTags {
         detachTags as private detachTagsFromTrait;

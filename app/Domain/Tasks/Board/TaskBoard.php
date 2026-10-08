@@ -62,4 +62,29 @@ class TaskBoard
 
         return $highest === null ? 0 : (int) $highest + 1;
     }
+
+    /**
+     * Writes a status change: the task takes the end of the column of the new
+     * status, and `completed_at` is set (now) when the status is Done and cleared
+     * otherwise. Status, `completed_at` and `position` go out in one model save,
+     * together with any attribute the caller filled on the model beforehand, so
+     * the `updated` event reaches the activity log once.
+     *
+     * Call it with the board lock held and the task row locked, in the caller's
+     * transaction (D-01, D-02).
+     *
+     * @throws LogicException outside a database transaction
+     */
+    public function appendToColumn(Task $task, ProjectStatus $status): void
+    {
+        if (DB::transactionLevel() === 0) {
+            throw new LogicException('TaskBoard::appendToColumn() must run inside a database transaction.');
+        }
+
+        $task->forceFill([
+            'status' => $status,
+            'completed_at' => $status === ProjectStatus::Done ? now() : null,
+            'position' => $this->nextPosition($status),
+        ])->save();
+    }
 }

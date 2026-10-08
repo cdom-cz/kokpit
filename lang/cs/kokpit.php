@@ -208,6 +208,7 @@ return [
             'project' => 'Projekt',
             'project_billing' => 'Fakturace projektu',
             'contact' => 'Kontakt',
+            'task' => 'Úkol',
         ],
         'attributes' => [
             'client' => [
@@ -245,6 +246,19 @@ return [
                 'start_date' => 'Začátek',
                 'end_date' => 'Konec',
                 'client_visible' => 'Viditelný pro klienta',
+            ],
+            'task' => [
+                'project_id' => 'Projekt',
+                'parent_id' => 'Nadřazený úkol',
+                'reference' => 'Číslo',
+                'title' => 'Název',
+                'status' => 'Stav',
+                'priority' => 'Priorita',
+                'start_date' => 'Začátek',
+                'due_date' => 'Termín',
+                'assignee_id' => 'Řešitel',
+                'requester_id' => 'Zadavatel',
+                'escalated_at' => 'Eskalováno',
             ],
             'project_billing' => [
                 'project_id' => 'Projekt',
@@ -425,6 +439,11 @@ return [
             'priority_invalid' => 'Vyberte platnou prioritu úkolu.',
         ],
         'empty_value' => '—',
+        'sections' => [
+            'main' => 'Úkol',
+            'status' => 'Stav a priorita',
+            'dates' => 'Termíny',
+        ],
         'navigation_label' => 'Úkoly',
         'model_label' => 'Úkol',
         'plural_model_label' => 'Úkoly',

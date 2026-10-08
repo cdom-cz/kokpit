@@ -6,6 +6,8 @@ namespace App\Filament\Resources\TaskResource\Pages;
 
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Resources\TaskResource;
+use Filament\Actions\Action;
+use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
 
 /**
@@ -20,5 +22,15 @@ final class ViewTask extends ViewRecord
         $task = $this->getRecord();
 
         return $task instanceof Task ? $task->reference.' · '.$task->title : __('kokpit.tasks.model_label');
+    }
+
+    /**
+     * @return array<Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            EditAction::make(),
+        ];
     }
 }

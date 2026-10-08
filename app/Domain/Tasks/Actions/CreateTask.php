@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Domain\Tasks\Actions;
 
 use App\Domain\Identity\Models\User;
-use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Settings\Numbering\DocumentNumbering;
 use App\Domain\Tasks\Board\TaskBoard;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\TaskInput;
 use App\Domain\Tasks\TaskPeople;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -76,8 +76,8 @@ final class CreateTask
             unset($data['status'], $data['priority'], $data['assignee_id'], $data['requester_id']);
         }
 
-        $status = self::statusFrom($data['status'] ?? null);
-        $priority = self::priorityFrom($data['priority'] ?? null);
+        $status = TaskInput::status($data['status'] ?? null) ?? ProjectStatus::Planned;
+        $priority = TaskInput::priority($data['priority'] ?? null);
 
         return DB::transaction(function () use ($actor, $project, $data, $title, $status, $priority, $isPartner): Task {
             $this->board->lockBoard();
@@ -154,25 +154,5 @@ final class CreateTask
         }
 
         return $people;
-    }
-
-    private static function statusFrom(?string $value): ProjectStatus
-    {
-        if ($value === null) {
-            return ProjectStatus::Planned;
-        }
-
-        return ProjectStatus::tryFrom($value)
-            ?? throw ValidationException::withMessages(['status' => __('kokpit.tasks.errors.status_invalid')]);
-    }
-
-    private static function priorityFrom(?string $value): ?ProjectPriority
-    {
-        if ($value === null) {
-            return null;
-        }
-
-        return ProjectPriority::tryFrom($value)
-            ?? throw ValidationException::withMessages(['priority' => __('kokpit.tasks.errors.priority_invalid')]);
     }
 }

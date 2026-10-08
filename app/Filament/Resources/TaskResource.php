@@ -16,17 +16,22 @@ use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
+use App\Filament\RelationManagers\TaskHistoryRelationManager;
+use App\Filament\Resources\TaskResource\Pages\EditTask;
 use App\Filament\Resources\TaskResource\Pages\ListTasks;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use App\Filament\Support\TaskColumns;
+use BackedEnum;
 use Carbon\CarbonImmutable;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Filters\Filter;
@@ -135,6 +140,47 @@ final class TaskResource extends Resource
         ]);
     }
 
+    public static function form(Schema $schema): Schema
+    {
+        return $schema->components([
+            Section::make(__('kokpit.tasks.sections.main'))
+                ->columns(2)
+                ->schema([
+                    TextInput::make('title')
+                        ->label(__('kokpit.tasks.fields.title'))
+                        ->required()
+                        ->maxLength(255)
+                        ->columnSpanFull(),
+                    Textarea::make('description')
+                        ->label(__('kokpit.tasks.fields.description'))
+                        ->rows(6)
+                        ->columnSpanFull(),
+                ]),
+            Section::make(__('kokpit.tasks.sections.status'))
+                ->columns(2)
+                ->schema([
+                    Select::make('status')
+                        ->label(__('kokpit.tasks.fields.status'))
+                        ->options(ProjectStatus::class)
+                        ->required()
+                        ->native(false),
+                    Select::make('priority')
+                        ->label(__('kokpit.tasks.fields.priority'))
+                        ->options(ProjectPriority::class)
+                        ->required()
+                        ->native(false),
+                ]),
+            Section::make(__('kokpit.tasks.sections.dates'))
+                ->columns(2)
+                ->schema([
+                    DatePicker::make('start_date')
+                        ->label(__('kokpit.tasks.fields.start_date')),
+                    DatePicker::make('due_date')
+                        ->label(__('kokpit.tasks.fields.due_date')),
+                ]),
+        ]);
+    }
+
     public static function infolist(Schema $schema): Schema
     {
         return $schema->components(TaskColumns::adminEntries());
@@ -213,12 +259,73 @@ final class TaskResource extends Resource
             });
     }
 
+    public static function getRelations(): array
+    {
+        return [
+            TaskHistoryRelationManager::class,
+        ];
+    }
+
     public static function getPages(): array
     {
         return [
             'index' => ListTasks::route('/'),
             'view' => ViewTask::route('/{record}'),
+            'edit' => EditTask::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * The stored task in the shape of the edit form state. Later plans add the
+     * form keys that are not plain columns here.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public static function fillData(Task $task, array $data): array
+    {
+        return $data;
+    }
+
+    /**
+     * The form state in the shape of the domain Action UpdateTask: enum cases
+     * become their values and empty text becomes null. Later plans add their
+     * form keys here only.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public static function actionData(array $data): array
+    {
+        return [
+            'title' => self::text($data['title'] ?? null) ?? '',
+            'description' => self::text($data['description'] ?? null),
+            'status' => self::enumValue($data['status'] ?? null),
+            'priority' => self::enumValue($data['priority'] ?? null),
+            'start_date' => self::text($data['start_date'] ?? null),
+            'due_date' => self::text($data['due_date'] ?? null),
+        ];
+    }
+
+    /**
+     * The value of a form state that may hold an enum case (a Filament select over an enum).
+     */
+    public static function enumValue(mixed $state): ?string
+    {
+        if ($state instanceof BackedEnum) {
+            return (string) $state->value;
+        }
+
+        return is_string($state) && $state !== '' ? $state : null;
+    }
+
+    private static function text(mixed $state): ?string
+    {
+        if (! is_string($state)) {
+            return null;
+        }
+
+        return trim($state) === '' ? null : $state;
     }
 
     /**

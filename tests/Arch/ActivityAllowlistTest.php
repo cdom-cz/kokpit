@@ -9,6 +9,7 @@ use App\Domain\Clients\Models\Contact;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Shared\Models\KokpitModel;
+use App\Domain\Tasks\Models\Task;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
 use Tests\Support\AuditDeclaration;
@@ -41,8 +42,8 @@ function allowlistProblemsOf(object $model): array
 }
 
 it('lists the application models that log activity explicitly', function (): void {
-    // Tasks, invoices and time entries add themselves here, with their allowlist, when their plans create them.
-    expect(AuditDeclaration::loggingModels())->toBe([Client::class, Contact::class, Project::class, ProjectBilling::class]);
+    // Invoices and time entries add themselves here, with their allowlist, when their plans create them.
+    expect(AuditDeclaration::loggingModels())->toBe([Client::class, Contact::class, Project::class, ProjectBilling::class, Task::class]);
 });
 
 it('finds a logging model when it scans the probe directory, so the scan cannot pass vacuously', function (): void {
