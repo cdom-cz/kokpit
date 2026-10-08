@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Completed 05-07-PLAN.md
-last_updated: "2026-10-08T21:51:52.610Z"
+stopped_at: Completed 05-08-PLAN.md
+last_updated: "2026-10-08T22:05:47.332Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 05 execution started
-state_head: 5e8b50f470f626b54dc92a8c9db8b3a353887bbf
+state_head: 9b401345bdfd7733c4d233e1b3bd162f126ec3be
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 81
-  completed_plans: 71
+  completed_plans: 72
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 05 (Tasks and Kanban) — EXECUTING
-Plan: 8 of 17
+Plan: 9 of 17
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 05 execution started
 
@@ -129,6 +129,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 05 P05 | 11 min | 3 tasks | 10 files |
 | Phase 05 P06 | 8 min | 2 tasks | 12 files |
 | Phase 05 P07 | 12 min | 2 tasks | 14 files |
+| Phase 05 P08 | 25 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -272,6 +273,8 @@ Recent decisions affecting current work:
 - [Phase 05]: Checklist progress counts come from TaskColumns::checklistCounts() via withCount in the list query; the task page loads them with one loadCount
 - [Phase 05]: Task billing lives in the Admin-only task_billing table (D-13); a row exists only while the task overrides something (D-14)
 - [Phase 05]: A null billing_type leaves the stored task billing type; a non-text or unknown value is a field error on billing_type
+- [Phase 05]: Task billing resolver refuses callers that are neither the Admin nor a system run, because the visible client row would leak the client rate to a Partner (T-05-17)
+- [Phase 05]: Resolver fails loudly on a project without a billing row; zero is a value at every level and only null defers; estimate inherits literally (research A7)
 
 ### Pending Todos
 
@@ -311,6 +314,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T21:51:52.481Z
-Stopped at: Completed 05-07-PLAN.md
+Last session: 2026-10-08T22:05:47.191Z
+Stopped at: Completed 05-08-PLAN.md
 Resume file: None
