@@ -122,3 +122,104 @@ it('refuses a database row whose e-mail address is not lower case', function ():
         DB::table('client_invitations')->where('id', $invitation->id)->update(['email' => 'MIXED@'.implode('.', ['example', 'com'])]);
     });
 });
+
+it('refuses an e-mail that already belongs to the Admin or to a Partner of any client, in any letter case (D-03)', function (): void {
+    $otherClient = Client::factory()->create();
+    $partnerOfOther = Canary::partnerFor($otherClient->id);
+    $partnerOfSame = Canary::partnerFor($this->client->id);
+
+    foreach ([$this->admin, $partnerOfOther, $partnerOfSame] as $user) {
+        foreach ([$user->email, Str::upper($user->email), '  '.Str::ucfirst($user->email).' '] as $email) {
+            expect(emailErrorOf($email))->toBe(__('kokpit.invitations.errors.email_has_account'), $email);
+        }
+    }
+
+    expect(invitationCount())->toBe(0);
+});
+
+it('never re-links an existing account to another client through an invitation (D-03)', function (): void {
+    $otherClient = Client::factory()->create();
+    $partner = Canary::partnerFor($otherClient->id);
+
+    expect(emailErrorOf($partner->email))->not->toBeNull()
+        ->and($partner->fresh()?->client_id)->toBe($otherClient->id)
+        ->and(invitationCount())->toBe(0);
+});
+
+it('refuses an e-mail with an open invitation, pending or expired, for any client, with the resend hint', function (): void {
+    $other = Client::factory()->create();
+    $pending = invite(exampleEmail());
+    $expired = invite(exampleEmail(), $other);
+    app(PartnerContext::class)->runAsSystem(static fn () => $expired->forceFill(['expires_at' => now()->subDay()])->save());
+
+    foreach ([$pending, $expired] as $invitation) {
+        expect(emailErrorOf($invitation->email))->toBe(__('kokpit.invitations.errors.email_has_open_invitation'))
+            ->and(emailErrorOf(Str::upper($invitation->email), $other))->toBe(__('kokpit.invitations.errors.email_has_open_invitation'));
+    }
+
+    expect(invitationCount())->toBe(2);
+});
+
+it('invites an e-mail again once its earlier invitation is revoked or accepted', function (): void {
+    $revoked = invite(exampleEmail());
+    app(PartnerContext::class)->runAsSystem(static fn () => $revoked->forceFill(['revoked_at' => now()])->save());
+
+    $accepted = invite(exampleEmail());
+    $user = Canary::partnerFor($this->client->id);
+    app(PartnerContext::class)->runAsSystem(static fn () => $accepted->forceFill(['accepted_at' => now(), 'accepted_user_id' => $user->id])->save());
+    // The accepted person now has an account, so the invitation is refused by the account rule instead.
+    DB::table('users')->where('id', $user->id)->update(['email' => exampleEmail()]);
+
+    expect(emailErrorOf($revoked->email))->toBeNull()
+        ->and(emailErrorOf($accepted->email))->toBeNull()
+        ->and(invitationCount())->toBe(4);
+});
+
+it('refuses a second open invitation for one e-mail in the database with a unique violation', function (): void {
+    $first = invite(exampleEmail());
+
+    RawSql::expectSqlState('23505', static function () use ($first): void {
+        $row = (array) DB::table('client_invitations')->where('id', $first->id)->first();
+        $row['id'] = (string) Str::uuid7();
+        $row['token_hash'] = hash('sha256', bin2hex(random_bytes(32)));
+
+        DB::table('client_invitations')->insert($row);
+    });
+});
+
+it('refuses to invite for an archived client and stores nothing', function (): void {
+    $archived = Client::factory()->create();
+    $archived->delete();
+
+    try {
+        invite(exampleEmail(), $archived);
+        $thrown = null;
+    } catch (ValidationException $e) {
+        $thrown = $e->errors();
+    }
+
+    expect($thrown)->toHaveKey('client')
+        ->and($thrown['client'][0])->toBe(__('kokpit.invitations.errors.client_archived'))
+        ->and(invitationCount())->toBe(0);
+});
+
+it('refuses an archived client even when the instance in hand was loaded before the archive', function (): void {
+    $stale = Client::factory()->create();
+    Client::query()->whereKey($stale->id)->first()?->delete();
+
+    expect(fn () => invite(exampleEmail(), $stale))->toThrow(ValidationException::class)
+        ->and(invitationCount())->toBe(0);
+});
+
+it('refuses a missing name and a malformed e-mail on the matching field', function (): void {
+    expect(fn () => app(InvitePartner::class)->handle($this->client, '  ', exampleEmail(), $this->admin))
+        ->toThrow(ValidationException::class);
+
+    try {
+        invite('not-an-email');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('email');
+    }
+
+    expect(invitationCount())->toBe(0);
+});
