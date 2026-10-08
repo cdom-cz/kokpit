@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: Clients and Projects
 status: executing
-stopped_at: Completed 04-14-PLAN.md
-last_updated: "2026-10-08T14:56:05.008Z"
+stopped_at: Completed 04-15-PLAN.md
+last_updated: "2026-10-08T15:06:03.622Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 4 execution started
-state_head: f140df8d74a010de7c2a7c82e1914c6f39234287
+state_head: 6969c0e38a80e88d7ac83f727f103005e05d5fa7
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 64
-  completed_plans: 57
+  completed_plans: 58
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 4 (Clients and Projects) — EXECUTING
-Plan: 15 of 21
+Plan: 16 of 21
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 4 execution started
 
@@ -115,6 +115,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 04 P12 | 9 min | 2 tasks | 13 files |
 | Phase 04 P13 | 7min | 2 tasks | 11 files |
 | Phase 04 P14 | 8 min | 2 tasks | 11 files |
+| Phase 04 P15 | 18 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -231,6 +232,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-13: contact validation shared in ContactInput; SetPrimaryContact and DeleteContact re-read the contact under lockForUpdate after the client row lock; primary_contact_name is a selectSub in ClientResource::getEloquentQuery()
 - [Phase 04]: 04-14: Czech company number mod-11 check runs in ClientInput::attributes through CompanyIdRule (Validator::make), Czech clients only; the form applies the same rule while the country is CZ — One shared validator for both Actions reports the company number error with the other field errors, and a crafted payload cannot skip the form rule; foreign numbers stay free (D-09)
 - [Phase 04]: 04-14: checksum-valid fictional company numbers come from Tests\Support\FictionalCompanyId at test time; only the checksum-invalid placeholder may appear as a literal — scripts/check-sensitive.sh flags any 8-digit literal, and a valid literal could be a real number (public repository)
+- [Phase 04]: 04-15: ARES per-user limiter (10 a minute) counts every valid lookup before the cache; retry(3) means two retries; missing dic keeps the typed tax number and shows a warning notification
 
 ### Pending Todos
 
@@ -269,6 +271,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T14:56:04.915Z
-Stopped at: Completed 04-14-PLAN.md
+Last session: 2026-10-08T15:06:03.517Z
+Stopped at: Completed 04-15-PLAN.md
 Resume file: None
