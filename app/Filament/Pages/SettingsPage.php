@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace App\Filament\Pages;
 
 use App\Domain\Settings\Banking\BankAccountFormat;
+use App\Domain\Settings\Numbering\DocumentKind;
+use App\Domain\Settings\Numbering\DocumentNumbering;
+use App\Domain\Settings\Numbering\InvalidNumberPattern;
 use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
+use App\Domain\Settings\Settings\NumberingSettings;
 use App\Domain\Settings\Settings\PaymentSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Settings\Settings\ValidatedSettings;
@@ -30,6 +34,7 @@ use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Group;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
@@ -67,6 +72,7 @@ class SettingsPage extends Page
         SupplierSettings::class,
         BankAccountSettings::class,
         InvoicingSettings::class,
+        NumberingSettings::class,
         DefaultsSettings::class,
         PaymentSettings::class,
     ];
@@ -308,7 +314,59 @@ class SettingsPage extends Page
                     ->required()
                     ->rules($rules['payment_due_days']),
             ])->statePath(InvoicingSettings::group()),
+            $this->numberingSection(),
         ]);
+    }
+
+    /**
+     * The numbering patterns of the invoicing tab (D-05). Every pattern field
+     * shows the number its own counter would give next; the preview only reads.
+     */
+    private function numberingSection(): Group
+    {
+        return Group::make([
+            Section::make(__('kokpit.settings.numbering.title'))
+                ->description(__('kokpit.settings.numbering.token_help'))
+                ->schema([
+                    $this->patternInput(DocumentKind::Invoice, 'invoice_pattern'),
+                ]),
+        ])->statePath(NumberingSettings::group());
+    }
+
+    /**
+     * A pattern input with the rules of the data layer and a preview line under
+     * it. It updates on blur, not on every keystroke, and the preview is one
+     * indexed read of the counter.
+     */
+    private function patternInput(DocumentKind $kind, string $field): TextInput
+    {
+        return TextInput::make($field)
+            ->label(__("kokpit.settings.numbering.{$field}"))
+            ->live(onBlur: true)
+            ->required()
+            ->rules(NumberingSettings::rules()[$field])
+            ->helperText(static function (Get $get) use ($kind, $field): ?string {
+                $number = self::previewNumber($kind, $get($field));
+
+                return $number === null ? null : (string) __('kokpit.settings.numbering.preview', ['number' => $number]);
+            });
+    }
+
+    /**
+     * The number the counter would give next for a pattern as typed, or null
+     * when the pattern is not valid (the field then shows its own error).
+     */
+    private static function previewNumber(DocumentKind $kind, mixed $pattern): ?string
+    {
+        if (! is_string($pattern)) {
+            return null;
+        }
+
+        try {
+            return app(DocumentNumbering::class)->preview($kind, $pattern);
+        } catch (InvalidNumberPattern|OverflowException) {
+            return null;
+        }
     }
 
     private function paymentsTab(): Tab

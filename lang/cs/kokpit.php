@@ -106,6 +106,15 @@ return [
             'rate_currency_mismatch' => 'Měna výchozí sazby musí být stejná jako výchozí měna.',
         ],
         'numbering' => [
+            'title' => 'Číslování dokladů',
+            'token_help' => 'Značky ve vzoru: {YYYY} čtyřmístný rok, {YY} dvoumístný rok, {MM} měsíc a právě jeden čítač {N} až {NNNNNNNNNN} (počet písmen N je počet číslic). Čítač začíná znovu od 1, když se změní rok nebo měsíc ve vzoru. Změna vzoru se týká jen dalších čísel, už vystavená čísla se nemění.',
+            'invoice_pattern' => 'Vzor čísla faktury',
+            'proforma_pattern' => 'Vzor čísla zálohové faktury',
+            'credit_note_pattern' => 'Vzor čísla dobropisu',
+            'task_pattern' => 'Vzor čísla úkolu',
+            'preview' => 'Další číslo: :number',
+            'reset_warning' => 'Tento vzor mění období, ve kterém se čítač vynuluje. Číslování tohoto dokladu proto začne znovu od 1.',
+            'task_explanation' => 'Číslo úkolu má pevný tvar zkratka projektu, pomlčka a pořadové číslo úkolu v projektu, například ABC-12. Nelze ho změnit.',
             'errors' => [
                 'not_text' => 'Vzor čísla musí být text.',
                 'unknown_token' => 'Vzor obsahuje neznámou značku. Povolené jsou {YYYY}, {YY}, {MM} a čítač {N} až {NNNNNNNNNN}.',
