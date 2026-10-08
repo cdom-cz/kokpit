@@ -41,7 +41,9 @@ return [
             'queue' => env('REDIS_QUEUE', 'default'),
             'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
             'block_for' => null,
-            'after_commit' => false,
+            // A job dispatched inside a transaction becomes visible to workers
+            // only after the commit, so it never runs on rows that are not there yet.
+            'after_commit' => true,
         ],
 
     ],
