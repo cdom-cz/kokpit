@@ -487,6 +487,14 @@ return [
         'empty_description' => 'Projekty, které pro vás budou připravené, se objeví tady.',
     ],
 
+    'invitations' => [
+        'errors' => [
+            'email_has_account' => 'Tato e-mailová adresa už patří k existujícímu účtu, pozvat ji nelze.',
+            'email_has_open_invitation' => 'Tato adresa už má otevřenou pozvánku. Odešlete ji znovu.',
+            'client_archived' => 'Pro archivovaného klienta nelze vytvořit pozvánku.',
+        ],
+    ],
+
     'alerts' => [
         'link_label' => 'Otevřít stránku Systém',
         'suppressed' => 'Od posledního upozornění selhalo stejným způsobem dalších úloh: :count',
