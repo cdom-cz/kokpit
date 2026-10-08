@@ -33,5 +33,13 @@ final class ProductionConfigGuard
                 .'The canary harness registers test-only panel surfaces and is allowed in the test suite only.',
             );
         }
+
+        // A switched-off audit trail is silent: anything but a clean true counts as off.
+        if ($config->get('activitylog.enabled') !== true) {
+            throw new RuntimeException(
+                'Refusing to boot in production: ACTIVITYLOG_ENABLED must be true. '
+                .'The audit trail may not be switched off in production.',
+            );
+        }
     }
 }
