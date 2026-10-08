@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Audit\KokpitLogActivityAction;
 use App\Domain\Shared\Models\Activity;
 use Spatie\Activitylog\Actions\CleanActivityLogAction;
-use Spatie\Activitylog\Actions\LogActivityAction;
 
 return [
 
@@ -69,7 +69,7 @@ return [
      * are logged and cleaned. Your custom classes must extend the originals.
      */
     'actions' => [
-        'log_activity' => LogActivityAction::class,
+        'log_activity' => KokpitLogActivityAction::class,
         'clean_log' => CleanActivityLogAction::class,
     ],
 ];

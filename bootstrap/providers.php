@@ -7,6 +7,7 @@ use App\Providers\AppServiceProvider;
 use App\Providers\Filament\AdminPanelProvider;
 use App\Providers\LocalisationServiceProvider;
 use App\Providers\ModelConventionsServiceProvider;
+use App\Providers\OperationsServiceProvider;
 
 return [
     AppServiceProvider::class,
@@ -14,4 +15,5 @@ return [
     AdminPanelProvider::class,
     ModelConventionsServiceProvider::class,
     LocalisationServiceProvider::class,
+    OperationsServiceProvider::class,
 ];
