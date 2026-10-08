@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Completed 05-09-PLAN.md
-last_updated: "2026-10-08T22:16:25.277Z"
+stopped_at: Completed 05-10-PLAN.md
+last_updated: "2026-10-08T22:45:29.776Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 05 execution started
-state_head: d3f0db7257590f89db8f0379cae7fdabf525582a
+state_head: 8eca7c546cdeb340e229557d5551291216dda8c5
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 81
-  completed_plans: 73
+  completed_plans: 74
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 05 (Tasks and Kanban) — EXECUTING
-Plan: 10 of 17
+Plan: 11 of 17
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 05 execution started
 
@@ -131,6 +131,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 05 P07 | 12 min | 2 tasks | 14 files |
 | Phase 05 P08 | 25 min | 3 tasks | 10 files |
 | Phase 05 P09 | 25 min | 2 tasks | 14 files |
+| Phase 05 P10 | 28 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -277,6 +278,9 @@ Recent decisions affecting current work:
 - [Phase 05]: Task billing resolver refuses callers that are neither the Admin nor a system run, because the visible client row would leak the client rate to a Partner (T-05-17)
 - [Phase 05]: Resolver fails loudly on a project without a billing row; zero is a value at every level and only null defers; estimate inherits literally (research A7)
 - [Phase 05]: 05-09: the internal flag of a comment is honoured only for an Admin actor and never for an escalation; comments are append-only and not activity-logged
+- [Phase 05]: Board drop lands directly before the visible card at the drop index; hidden cards keep their relative place (plan behaviour list over the Pattern 5 formula)
+- [Phase 05]: eloquent-sortable global config keeps package defaults (order_column, sort_when_creating true) for tags and media; Task opts in with position and false through its own sortable property
+- [Phase 05]: Board status changes go through TaskBoard::appendToColumn; MoveTask re-reads the task under the board lock with lockForUpdate through the scoped query; BoardFilters::fromInput validates URL filters
 
 ### Pending Todos
 
@@ -316,6 +320,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T22:16:25.145Z
-Stopped at: Completed 05-09-PLAN.md
+Last session: 2026-10-08T22:45:22.939Z
+Stopped at: Completed 05-10-PLAN.md
 Resume file: None
