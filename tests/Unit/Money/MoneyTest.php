@@ -244,3 +244,7 @@ it('knows exactly the upper-case ISO codes', function () {
         ->and(Money::isKnownCurrency(''))->toBeFalse()
         ->and(Money::isKnownCurrency('CZKK'))->toBeFalse();
 });
+
+it('refuses 12,345 CZK because a third decimal would need rounding', function () {
+    Money::fromMajor('12,345', 'CZK');
+})->throws(InvalidArgumentException::class, 'more decimals');
