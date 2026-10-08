@@ -13,8 +13,6 @@ use App\Domain\Shared\Auth\AccessRules;
  * The declaration is checked first and fail-closed; the policy check of the
  * parent still runs, so strict authorization keeps throwing for a Resource
  * without a policy method and a policy can still narrow the declaration.
- *
- * @phpstan-ignore trait.unused (first real Resource arrives in Phase 4; the canary Resource in tests uses it today)
  */
 trait EnforcesResourceAccessRule
 {

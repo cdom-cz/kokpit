@@ -135,4 +135,39 @@ return [
         ],
     ],
 
+    'activity' => [
+        'navigation_group' => 'Správa',
+        'navigation_label' => 'Historie změn',
+        'title' => 'Historie změn',
+        'relation_title' => 'Historie změn',
+        'columns' => [
+            'created_at' => 'Čas',
+            'event' => 'Událost',
+            'subject' => 'Záznam',
+            'causer' => 'Uživatel nebo zdroj',
+            'changes' => 'Změny',
+        ],
+        'events' => [
+            'created' => 'Vytvořeno',
+            'updated' => 'Změněno',
+            'deleted' => 'Smazáno',
+        ],
+        'filters' => [
+            'event' => 'Událost',
+            'source' => 'Zdroj',
+            'subject_type' => 'Typ záznamu',
+            'causer' => 'Uživatel',
+            'created_from' => 'Od data',
+            'created_until' => 'Do data',
+        ],
+        'no_user' => 'Bez uživatele',
+        'empty_value' => '—',
+        'yes' => 'ano',
+        'no' => 'ne',
+        'empty_heading' => 'Zatím tu nejsou žádné změny',
+        'empty_description' => 'Změny sledovaných údajů se objeví, jakmile k nějaké dojde.',
+        'subjects' => [],
+        'attributes' => [],
+    ],
+
 ];
