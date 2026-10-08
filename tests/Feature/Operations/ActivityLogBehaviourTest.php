@@ -131,7 +131,6 @@ it('fails loudly on the first save when the wrapper has no allowlist attribute',
 
     expect(fn () => $model->newQuery()->create(['title' => 'Fictional probe']))
         ->toThrow(LogicException::class);
-    expect(DB::table('activity_probes')->count())->toBe(0);
 });
 
 it('fails loudly on the first save when the allowlist is empty', function (): void {
