@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace App\Domain\Tasks\Actions;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Projects\Actions\ProjectInput;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Shared\Money\Money;
 use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Board\TaskBoard;
+use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskBilling;
 use App\Domain\Tasks\TaskInput;
 use App\Domain\Tasks\TaskPeople;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +42,14 @@ use Illuminate\Validation\ValidationException;
  * checked against the stored value of the date the data does not name. Tags are
  * a list of names synced as task tags.
  *
+ * Billing (TA-06, D-12 to D-14): `billing_type`, `hourly_rate`, `fixed_price`
+ * (amounts as text in the client's currency, never rounded), `estimate_hours`
+ * and `internal_note` are stored only in the Admin-only task_billing row. A key
+ * that is absent leaves the stored value as it is; a task has a row only while
+ * it overrides something, so saving everything back to inherit and empty
+ * removes the row, and a task without a row inherits everything. Billing type
+ * fixed price needs a price.
+ *
  * Errors are ValidationExceptions keyed by the data key; the Admin form maps
  * them to its state paths.
  *
@@ -51,10 +63,18 @@ use Illuminate\Validation\ValidationException;
  *     assignee_id?: string|null,
  *     requester_id?: string|null,
  *     tags?: list<string>|null,
+ *     billing_type?: string|null,
+ *     hourly_rate?: string|null,
+ *     fixed_price?: string|null,
+ *     estimate_hours?: string|null,
+ *     internal_note?: string|null,
  * }
  */
 final class UpdateTask
 {
+    /** The data keys that are stored in the Admin-only task_billing row. */
+    private const array BILLING_KEYS = ['billing_type', 'hourly_rate', 'fixed_price', 'estimate_hours', 'internal_note'];
+
     /** The two people columns, validated against the allowed set when they change. */
     private const array PEOPLE_COLUMNS = ['assignee_id', 'requester_id'];
 
@@ -94,7 +114,9 @@ final class UpdateTask
             }
         }
 
-        return DB::transaction(function () use ($task, $data, $title, $status, $priority, $tags, $plain, $dates): Task {
+        $billing = $this->parseBilling($task, $data);
+
+        return DB::transaction(function () use ($task, $data, $title, $status, $priority, $tags, $plain, $dates, $billing): Task {
             $this->board->lockBoard();
 
             $locked = Task::query()->whereKey($task->getKey())->lockForUpdate()->firstOrFail();
@@ -130,8 +152,115 @@ final class UpdateTask
                 $locked->syncTagsWithType($tags, TagType::Task->value);
             }
 
+            if ($billing !== []) {
+                $this->saveBilling($locked, $billing);
+            }
+
             return $locked->refresh();
         });
+    }
+
+    /**
+     * Converts the billing keys the data names before anything is written: the
+     * amounts with the client's currency (nothing is rounded), the estimate to
+     * whole seconds, the type to a known value. The result holds only the keys
+     * the data names, so an absent key keeps the stored value.
+     *
+     * @param  TaskUpdateData  $data
+     * @return array<string, mixed>
+     */
+    private function parseBilling(Task $task, array $data): array
+    {
+        if (array_intersect(self::BILLING_KEYS, array_keys($data)) === []) {
+            return [];
+        }
+
+        $client = Project::query()->withTrashed()->findOrFail($task->project_id)->client()->withTrashed()->firstOrFail();
+        $parsed = [];
+
+        if (array_key_exists('billing_type', $data)) {
+            $type = TaskBillingType::tryFrom((string) $data['billing_type']);
+
+            if ($type === null) {
+                throw ValidationException::withMessages(['billing_type' => __('kokpit.tasks.errors.billing_type_invalid')]);
+            }
+
+            $parsed['billing_type'] = $type;
+        }
+
+        foreach (['hourly_rate', 'fixed_price'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $parsed[$field] = ProjectInput::money($data[$field], $client, $field);
+            }
+        }
+
+        if (array_key_exists('estimate_hours', $data)) {
+            $parsed['estimate_seconds'] = ProjectInput::estimateSeconds($data['estimate_hours']);
+        }
+
+        if (array_key_exists('internal_note', $data)) {
+            $note = $data['internal_note'];
+            $parsed['internal_note'] = is_string($note) && trim($note) !== '' ? $note : null;
+        }
+
+        // Fail before the transaction: the resulting type must carry a price when it is a fixed price.
+        $this->resolveBilling($task->billing, $parsed);
+
+        return $parsed;
+    }
+
+    /**
+     * The billing attributes after the parsed keys replace the stored ones. A
+     * task without a row starts from inherit and empty (D-14).
+     *
+     * @param  array<string, mixed>  $parsed
+     * @return array{billing_type: TaskBillingType, hourly_rate: ?Money, fixed_price: ?Money, estimate_seconds: ?int, internal_note: ?string}
+     */
+    private function resolveBilling(?TaskBilling $stored, array $parsed): array
+    {
+        $resolved = [
+            'billing_type' => $parsed['billing_type'] ?? $stored->billing_type ?? TaskBillingType::Inherit,
+            'hourly_rate' => array_key_exists('hourly_rate', $parsed) ? $parsed['hourly_rate'] : $stored?->hourly_rate,
+            'fixed_price' => array_key_exists('fixed_price', $parsed) ? $parsed['fixed_price'] : $stored?->fixed_price,
+            'estimate_seconds' => array_key_exists('estimate_seconds', $parsed) ? $parsed['estimate_seconds'] : $stored?->estimate_seconds,
+            'internal_note' => array_key_exists('internal_note', $parsed) ? $parsed['internal_note'] : $stored?->internal_note,
+        ];
+
+        ProjectInput::requireFixedPrice($resolved['billing_type']->value, $resolved['fixed_price']);
+
+        return $resolved;
+    }
+
+    /**
+     * Creates the billing row on the first override, updates it afterwards and
+     * deletes it when everything is back to inherit and empty (D-14).
+     *
+     * @param  array<string, mixed>  $parsed
+     */
+    private function saveBilling(Task $task, array $parsed): void
+    {
+        $stored = $task->billing()->first();
+        $resolved = $this->resolveBilling($stored, $parsed);
+
+        $inherits = $resolved['billing_type'] === TaskBillingType::Inherit
+            && $resolved['hourly_rate'] === null
+            && $resolved['fixed_price'] === null
+            && $resolved['estimate_seconds'] === null
+            && $resolved['internal_note'] === null;
+
+        if ($inherits) {
+            $stored?->delete();
+
+            return;
+        }
+
+        if ($stored === null) {
+            $task->billing()->create($resolved);
+
+            return;
+        }
+
+        $stored->update($resolved);
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
+use App\Domain\Projects\EstimateHours;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
@@ -16,6 +17,7 @@ use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Actions\ArchiveTask;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\RestoreTask;
+use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\TaskPeople;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
@@ -35,12 +37,14 @@ use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\SpatieTagsInput;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -262,6 +266,43 @@ final class TaskResource extends Resource
                                 ->default(false),
                         ])
                         ->columns(2),
+                ]),
+            // The Admin-only billing overrides (TA-06, D-13). The section exists on the Admin
+            // form only; the values are stored in task_billing, never in the tasks table.
+            Section::make(__('kokpit.tasks.sections.billing'))
+                ->columns(2)
+                ->schema([
+                    Select::make('billing_type')
+                        ->label(__('kokpit.tasks.fields.billing_type'))
+                        ->helperText(__('kokpit.tasks.hints.billing_type'))
+                        ->options(TaskBillingType::class)
+                        ->default(TaskBillingType::Inherit->value)
+                        ->required()
+                        ->live()
+                        ->native(false),
+                    TextInput::make('hourly_rate')
+                        ->label(__('kokpit.tasks.fields.hourly_rate'))
+                        ->helperText(__('kokpit.tasks.hints.hourly_rate'))
+                        ->inputMode('decimal')
+                        ->regex('/^\d+([.,]\d+)?$/')
+                        ->suffix(static fn (?Task $record): string => self::clientCurrency($record).' / '.__('kokpit.settings.defaults.per_hour')),
+                    TextInput::make('fixed_price')
+                        ->label(__('kokpit.tasks.fields.fixed_price'))
+                        ->helperText(__('kokpit.tasks.hints.fixed_price'))
+                        ->inputMode('decimal')
+                        ->regex('/^\d+([.,]\d+)?$/')
+                        ->required(static fn (Get $get): bool => self::enumValue($get('billing_type')) === TaskBillingType::FixedPrice->value)
+                        ->suffix(static fn (?Task $record): string => self::clientCurrency($record)),
+                    TextInput::make('estimate_hours')
+                        ->label(__('kokpit.tasks.fields.estimate_hours'))
+                        ->helperText(__('kokpit.tasks.hints.estimate_hours'))
+                        ->inputMode('decimal')
+                        ->regex('/^\d+([.,]\d{1,2})?$/'),
+                    Textarea::make('internal_note')
+                        ->label(__('kokpit.tasks.fields.internal_note'))
+                        ->helperText(__('kokpit.tasks.hints.internal_note'))
+                        ->rows(3)
+                        ->columnSpanFull(),
                 ]),
             Section::make(__('kokpit.tasks.sections.tags'))
                 ->schema([
@@ -497,6 +538,14 @@ final class TaskResource extends Resource
     {
         $data['tags'] = $task->tagsWithType(TagType::Task->value)->pluck('name')->all();
 
+        $billing = $task->billing;
+
+        $data['billing_type'] = ($billing->billing_type ?? TaskBillingType::Inherit)->value;
+        $data['hourly_rate'] = $billing?->hourly_rate === null ? null : str_replace('.', ',', $billing->hourly_rate->toMajor());
+        $data['fixed_price'] = $billing?->fixed_price === null ? null : str_replace('.', ',', $billing->fixed_price->toMajor());
+        $data['estimate_hours'] = $billing?->estimate_seconds === null ? null : EstimateHours::fromSeconds($billing->estimate_seconds);
+        $data['internal_note'] = $billing?->internal_note;
+
         return $data;
     }
 
@@ -520,6 +569,11 @@ final class TaskResource extends Resource
             'assignee_id' => self::text($data['assignee_id'] ?? null),
             'requester_id' => self::text($data['requester_id'] ?? null),
             'tags' => is_array($data['tags'] ?? null) ? array_values(array_filter($data['tags'], 'is_string')) : null,
+            'billing_type' => self::enumValue($data['billing_type'] ?? null) ?? TaskBillingType::Inherit->value,
+            'hourly_rate' => self::text($data['hourly_rate'] ?? null),
+            'fixed_price' => self::text($data['fixed_price'] ?? null),
+            'estimate_hours' => self::text($data['estimate_hours'] ?? null),
+            'internal_note' => self::text($data['internal_note'] ?? null),
         ];
     }
 
@@ -562,6 +616,16 @@ final class TaskResource extends Resource
         $project = self::projectOf($task);
 
         return $project === null ? [] : app(TaskPeople::class)->options($project);
+    }
+
+    /**
+     * The currency code of the client of the task's project, shown beside the money fields.
+     */
+    private static function clientCurrency(?Task $task): string
+    {
+        $project = self::projectOf($task);
+
+        return $project === null ? '' : (string) Client::query()->withTrashed()->whereKey($project->client_id)->value('currency');
     }
 
     private static function text(mixed $state): ?string

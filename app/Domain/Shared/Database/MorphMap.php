@@ -18,6 +18,7 @@ use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskBilling;
 use App\Domain\Tasks\Models\TaskChecklistItem;
 
 /**
@@ -45,6 +46,7 @@ final class MorphMap
         'project' => Project::class,
         'project_billing' => ProjectBilling::class,
         'task' => Task::class,
+        'task_billing' => TaskBilling::class,
         'task_checklist_item' => TaskChecklistItem::class,
     ];
 }

@@ -19,7 +19,9 @@ use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskBilling;
 use App\Domain\Tasks\Models\TaskChecklistItem;
 use Closure;
 use Illuminate\Support\Facades\Storage;
@@ -148,6 +150,23 @@ final class CanaryRegistry
                     $task = Task::query()->where('project_id', $project->getKey())->firstOrFail();
 
                     $task->checklistItems()->create(['text' => $canary, 'position' => 1]);
+                });
+            },
+
+            // The Admin-only billing row of the canary task of that client (found by its
+            // project name; the Task fixture runs before this one). The canary sits in the
+            // internal note, so a Partner reading any billing field would be caught.
+            TaskBilling::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $client = Client::query()->whereKey($clientId)->firstOrFail();
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+                    $task = Task::query()->where('project_id', $project->getKey())->firstOrFail();
+
+                    $task->billing()->create([
+                        'billing_type' => TaskBillingType::Hourly,
+                        'hourly_rate' => Money::ofMinor(95000, $client->currency),
+                        'internal_note' => $canary,
+                    ]);
                 });
             },
 

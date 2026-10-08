@@ -446,6 +446,7 @@ return [
             'parent_unavailable' => 'Nadřazený úkol neexistuje.',
             'parent_not_allowed' => 'Podúkol může vytvořit jen správce.',
             'has_active_subtasks' => 'Úkol má aktivní podúkoly. Nejdřív archivujte je.',
+            'billing_type_invalid' => 'Vyberte platný typ fakturace úkolu.',
         ],
         'empty_value' => '—',
         'subtasks' => [
@@ -468,6 +469,7 @@ return [
             'dates' => 'Termíny',
             'people' => 'Lidé',
             'tags' => 'Štítky',
+            'billing' => 'Fakturace úkolu',
         ],
         'checklist' => [
             'heading' => 'Kontrolní seznam',
@@ -478,6 +480,11 @@ return [
         ],
         'hints' => [
             'description_shared' => 'Projekt je viditelný pro klienta: popis úkolu uvidí i účty klienta. Nepište do něj nic interního.',
+            'billing_type' => 'Podle projektu: úkol přebírá fakturaci projektu a klienta. Ostatní typy ji pro tento úkol přepíšou.',
+            'hourly_rate' => 'Prázdné pole znamená sazbu projektu nebo klienta. Měna je měna klienta.',
+            'fixed_price' => 'Povinné u pevné ceny. Měna je měna klienta.',
+            'estimate_hours' => 'Hodiny s nejvýše dvěma desetinnými místy, například 1,5.',
+            'internal_note' => 'Vidí jen správce, nikdy klient.',
         ],
         'navigation_label' => 'Úkoly',
         'model_label' => 'Úkol',
@@ -496,6 +503,11 @@ return [
             'description' => 'Popis',
             'tags' => 'Štítky',
             'updated_at' => 'Změněno',
+            'billing_type' => 'Typ fakturace',
+            'hourly_rate' => 'Hodinová sazba',
+            'fixed_price' => 'Pevná cena',
+            'estimate_hours' => 'Odhad v hodinách',
+            'internal_note' => 'Interní poznámka k fakturaci',
         ],
         'actions' => [
             'create' => 'Nový úkol',

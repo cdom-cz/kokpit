@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Tags\HasTags;
 
@@ -165,6 +166,17 @@ final class Task extends KokpitModel implements PartnerIsolated
     public function checklistItems(): HasMany
     {
         return $this->hasMany(TaskChecklistItem::class)->orderBy('position')->orderBy('id');
+    }
+
+    /**
+     * The Admin-only billing overrides of the task, or null while it inherits
+     * everything (D-13, D-14). A Partner reads no row, so it is null for a Partner.
+     *
+     * @return HasOne<TaskBilling, $this>
+     */
+    public function billing(): HasOne
+    {
+        return $this->hasOne(TaskBilling::class);
     }
 
     /**

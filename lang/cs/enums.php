@@ -67,6 +67,13 @@ return [
         'fixed_price' => 'Pevná cena',
     ],
 
+    'task_billing_type' => [
+        'inherit' => 'Podle projektu',
+        'hourly' => 'Hodinová sazba',
+        'fixed_price' => 'Pevná cena',
+        'non_billable' => 'Nefakturovat',
+    ],
+
     'activity_source_label' => [
         'web' => 'Web',
         'console' => 'Konzole',
