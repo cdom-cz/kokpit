@@ -16,6 +16,7 @@ use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\AnonymousNotifiable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Route;
@@ -421,6 +422,8 @@ it('answers every bad link with one identical neutral message and the same statu
     $texts = [];
 
     foreach ($links as $case => $link) {
+        // More than ten requests from one IP are throttled (plan 04-18); this test is about the answers.
+        Cache::flush();
         $response = $this->get($link);
         $response->assertOk()->assertSee($message);
 
