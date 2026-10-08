@@ -30,6 +30,7 @@ Already fixed in earlier phases (not re-opened): Partner isolation via `users.cl
 - **D-06:** A Partner escalates a task with an "Escalate" action that requires a comment. It creates a non-internal comment and sets an escalation flag on the task (who, when). Priority is never changed by the Partner or automatically; the assignee resolves the flag and raises priority manually. The flag can be cleared.
 - **D-07:** Notifications are queued e-mail plus a database notification (Filament bell) for both sides. Admin or assignee is notified of a task, comment or escalation by a Partner. Partner (requester or assignee) is notified of non-internal comments and relevant changes by Admin. The escalation flag notifies the assignee, falling back to the Admin. Internal comments never notify a Partner and never appear in any notification body, e-mail, activity log or export visible to a Partner.
 - **D-08:** Comments exist on tasks and subtasks, with an internal flag. A Partner comment is never internal (forced server-side, not just hidden in the form). A Partner never sees internal comments.
+- **D-15:** Notification delivery is configurable per user in their profile: for each event type (task created by a Partner, comment, escalation, assignment or change) the user switches the e-mail and the bell channel on or off. Defaults are all on. This applies to Admin and Partner accounts alike. The preferences only narrow delivery: the rule that internal comments never reach a Partner is unconditional and not a preference. Exact event list and profile page layout are Claude's discretion.
 
 ### Task detail and text format
 - **D-09:** A task opens as a full page at a stable URL by key (`/tasks/KEY-N`, found by key in global search). From the board a card opens a slide-over preview. Quick creation is one modal asking for title and project, then continues on the detail page.
@@ -101,7 +102,7 @@ No external ADRs.
 ## Specific Ideas
 
 - The user wants assignee and requester on every task and subtask, and either may be a Partner account.
-- Partners receive both e-mail and the bell notification, not only e-mail.
+- Partners receive both e-mail and the bell notification, not only e-mail, and every user can switch channels per event type in their profile (D-15).
 
 </specifics>
 
