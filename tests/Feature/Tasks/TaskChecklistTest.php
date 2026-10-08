@@ -9,10 +9,15 @@ use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskChecklistItem;
 use App\Filament\Resources\TaskResource\Pages\EditTask;
+use App\Filament\Resources\TaskResource\Pages\ListTasks;
+use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
+use Tests\Support\RawSql;
 
 /*
  * The private todo checklist of a task or a subtask (TA-03): the Admin adds,
@@ -168,4 +173,96 @@ it('shows a Partner no checklist item, not even on a task of the own visible pro
     expect(Task::query()->whereKey($task->getKey())->exists())->toBeTrue()
         ->and(TaskChecklistItem::query()->count())->toBe(0)
         ->and(Task::query()->findOrFail($task->getKey())->checklistItems)->toHaveCount(0);
+});
+
+/**
+ * Gives the task a checklist of the given number of items, the first ones done.
+ */
+function taskChecklistFill(Task $task, int $total, int $done): void
+{
+    for ($i = 1; $i <= $total; $i++) {
+        $task->checklistItems()->create(['text' => 'Example item '.$i, 'is_done' => $i <= $done, 'position' => $i]);
+    }
+}
+
+/**
+ * The number of queries the callback runs.
+ */
+function taskChecklistQueryCount(Closure $callback): int
+{
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    $callback();
+    $count = count(DB::getQueryLog());
+    DB::disableQueryLog();
+
+    return $count;
+}
+
+it('shows the checklist progress as done/total in the list and on the task page', function (): void {
+    $project = taskChecklistProject();
+    $with = taskChecklistTask($project);
+    $without = taskChecklistTask($project);
+    taskChecklistFill($with, 3, 1);
+
+    Livewire::test(ListTasks::class)
+        ->assertTableColumnStateSet('checklist_progress', '1/3', $with)
+        ->assertTableColumnStateSet('checklist_progress', null, $without);
+
+    Livewire::test(ViewTask::class, ['record' => $with->reference])
+        ->assertSeeText('1/3');
+
+    Livewire::test(ViewTask::class, ['record' => $without->reference])
+        ->assertDontSeeText('0/0')
+        ->assertDontSeeText(__('kokpit.tasks.checklist.progress'));
+});
+
+it('counts the checklist of all tasks of a page with a constant number of queries', function (): void {
+    $project = taskChecklistProject();
+    $tasks = [taskChecklistTask($project), taskChecklistTask($project)];
+    taskChecklistFill($tasks[0], 3, 1);
+    taskChecklistFill($tasks[1], 3, 2);
+
+    $render = static fn (): mixed => Livewire::test(ListTasks::class)->set('tableRecordsPerPage', 25);
+
+    $render();
+    $few = taskChecklistQueryCount($render);
+
+    for ($i = 0; $i < 18; $i++) {
+        $task = taskChecklistTask($project);
+        taskChecklistFill($task, 3, 1);
+    }
+
+    $many = taskChecklistQueryCount($render);
+
+    expect(Task::query()->count())->toBe(20)
+        ->and($many)->toBe($few);
+
+    Livewire::test(ListTasks::class)
+        ->set('tableRecordsPerPage', 25)
+        ->assertTableColumnStateSet('checklist_progress', '1/3', $tasks[0])
+        ->assertTableColumnStateSet('checklist_progress', '2/3', $tasks[1]);
+});
+
+it('refuses a malformed checklist item in the database', function (): void {
+    $task = taskChecklistTask(taskChecklistProject());
+
+    $insert = static fn (array $row): Closure => static fn (): bool => DB::table('task_checklist_items')->insert([
+        'id' => (string) Str::uuid7(),
+        'task_id' => $task->getKey(),
+        'text' => 'Example item',
+        'is_done' => false,
+        'position' => 1,
+        ...$row,
+    ]);
+
+    // The well-formed row is accepted, so each refusal below is caused by its own field.
+    RawSql::expectAllowed($insert([]));
+
+    RawSql::expectSqlState('23514', $insert(['text' => '']));
+    RawSql::expectSqlState('23514', $insert(['text' => " \t\n "]));
+    RawSql::expectSqlState('22001', $insert(['text' => str_repeat('a', 501)]));
+    RawSql::expectAllowed($insert(['text' => str_repeat('a', 500)]));
+    RawSql::expectSqlState('23514', $insert(['position' => -1]));
+    RawSql::expectSqlState('23503', $insert(['task_id' => (string) Str::uuid7()]));
 });
