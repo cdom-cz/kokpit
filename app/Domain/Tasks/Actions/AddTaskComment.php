@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks\Actions;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Identity\RoleName;
 use App\Domain\Shared\Text\RichText;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskComment;
@@ -22,6 +23,12 @@ use InvalidArgumentException;
  * limit. The task, the author and both flags are written with `forceFill`, so
  * nothing but the cleaned body comes from the request.
  *
+ * Internal comments (D-08): only the Admin may write one. For every other actor,
+ * a Partner included, the flag is forced to false whatever the payload says, and
+ * an escalation comment is never internal either, so the stored flag can never
+ * contradict the check constraint or hide a Partner's words. The Partner form
+ * has no such field; this is the server-side guarantee behind it.
+ *
  * Comments are append-only and never written to the activity log.
  */
 final class AddTaskComment
@@ -31,6 +38,7 @@ final class AddTaskComment
         Gate::forUser($actor)->authorize('comment', $task);
 
         $clean = $this->cleanBody($body);
+        $internal = $internal && ! $escalation && $actor->hasRole(RoleName::Admin->value);
 
         $comment = new TaskComment(['body' => $clean]);
         $comment->forceFill([
