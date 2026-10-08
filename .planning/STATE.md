@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: Clients and Projects
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-10-08T12:17:58.708Z"
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-10-08T12:33:39.608Z"
 last_activity: 2026-10-08
-last_activity_desc: Phase 03 complete, transitioned to Phase 4
-state_head: e66d651228ee259156e39b7d78a833f84192cc92
+last_activity_desc: Phase 4 execution started
+state_head: 338160543271a6c5dfa75f909d9b6158316c3215
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 64
-  completed_plans: 43
+  completed_plans: 44
   percent: 25
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 03 — Operations Foundation
+**Current focus:** Phase 4 — Clients and Projects
 
 ## Current Position
 
-Phase: 4 (Clients and Projects) — READY TO EXECUTE
-Plan: Not started
+Phase: 4 (Clients and Projects) — EXECUTING
+Plan: 2 of 21
 Status: Ready to execute
-Last activity: 2026-10-08 - Completed quick task 261008-bec: Install and configure laravel/horizon
+Last activity: 2026-10-08 — Phase 4 execution started
 
 Progress: [███░░░░░░░] 25%
 
@@ -101,6 +101,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 03 P17 | 40 min | 2 tasks | 11 files |
 | Phase 03 P18 | 13 min | 3 tasks | 14 files |
 | Phase 03 P19 | 5 min | 2 tasks | 3 files |
+| Phase 04 P01 | 12 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -198,6 +199,7 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-18: deploy.yml starts only on release published or workflow_dispatch; verify job refuses prereleases, non-v* tags and non-main commits; zcli 1.1.2 pinned with a hard-coded SHA-256 — FND-15 hardening: no other trigger, no expression in run scripts, token only through step env in the protected production environment; DeployWorkflowTest mutation self-check and a behavioural run of the verify script guard it
 - [Phase 03]: 03-19: .gitignore reviewed for Phase 3, no change needed (no new tool output in the tree) — Spike work lives outside the repo, resources/views is tracked, ignored paths are already covered by existing rules
 - [Phase 03]: 03-19: CONTRIBUTING class names are guarded by RepositoryFilesTest (class_exists over the documented mechanisms) — A renamed or removed class fails the suite instead of leaving stale documentation
+- [Phase 04]: 04-01: company ID and tax ID stored as company_number and tax_number; canAccessPanel keeps no memo and re-reads the client in runAsSystem on every call — Schema rule R1 demands every *_id column be uuid; an archive must refuse the Partner's very next request
 
 ### Pending Todos
 
@@ -236,6 +238,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T10:25:45.851Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-clients-and-projects/04-CONTEXT.md
+Last session: 2026-10-08T12:33:39.499Z
+Stopped at: Completed 04-01-PLAN.md
+Resume file: None
