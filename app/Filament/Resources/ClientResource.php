@@ -30,6 +30,7 @@ use App\Filament\Resources\ClientResource\Pages\EditClient;
 use App\Filament\Resources\ClientResource\Pages\ListClients;
 use App\Filament\Resources\ClientResource\Pages\ViewClient;
 use App\Filament\Resources\ClientResource\RelationManagers\ContactsRelationManager;
+use App\Filament\Resources\ClientResource\RelationManagers\InvitationsRelationManager;
 use BackedEnum;
 use Closure;
 use Filament\Actions\Action;
@@ -437,6 +438,7 @@ final class ClientResource extends Resource
     {
         return [
             ContactsRelationManager::class,
+            InvitationsRelationManager::class,
             ClientHistoryRelationManager::class,
         ];
     }

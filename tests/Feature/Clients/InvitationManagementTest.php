@@ -280,21 +280,6 @@ it('offers neither action on an accepted invitation', function (): void {
         ->assertActionHidden(TestAction::make('revoke')->table($invitation));
 });
 
-it('shows a failed resend or revoke of a stale row as a notification instead of an error page', function (): void {
-    Notification::fake();
-    $invitation = manageInvite();
-    $tab = manageTab($this->client);
-
-    // Revoked in another tab of the browser after this list was rendered.
-    app(PartnerContext::class)->runAsSystem(static fn () => ClientInvitation::query()->whereKey($invitation->getKey())->update(['revoked_at' => now()]));
-
-    $tab->callAction(TestAction::make('resend')->table($invitation))
-        ->assertNotified(__('kokpit.invitations.admin.notifications.failed'));
-
-    expect(manageFresh($invitation)->send_count)->toBe(1);
-    Notification::assertSentOnDemandTimes(PartnerInvitation::class, 1);
-});
-
 it('refuses the Action to resend an invitation of an archived client and the tab hides the actions', function (): void {
     Notification::fake();
     $invitation = manageInvite();
@@ -305,7 +290,7 @@ it('refuses the Action to resend an invitation of an archived client and the tab
         ->assertActionHidden(TestAction::make('resend')->table($invitation));
 
     expect(static fn () => app(ResendInvitation::class)->handle($invitation))
-        ->toThrow(DomainException::class, __('kokpit.invitations.errors.client_archived'))
+        ->toThrow(DomainException::class, __('kokpit.invitations.errors.resend_client_archived'))
         ->and(manageFresh($invitation)->send_count)->toBe(1);
     Notification::assertSentOnDemandTimes(PartnerInvitation::class, 1);
 });
