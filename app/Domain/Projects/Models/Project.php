@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Projects\Models;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Projects\Enums\ProjectPriority;
+use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Shared\Auth\IsolatesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
@@ -36,8 +38,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string $name
  * @property string $key
  * @property string|null $description
- * @property string $status
- * @property string $priority
+ * @property ProjectStatus $status
+ * @property ProjectPriority $priority
  * @property CarbonInterface|null $start_date
  * @property CarbonInterface|null $end_date
  * @property bool $client_visible
@@ -95,6 +97,8 @@ final class Project extends KokpitModel implements PartnerIsolated
     protected function casts(): array
     {
         return [
+            'status' => ProjectStatus::class,
+            'priority' => ProjectPriority::class,
             'start_date' => 'date',
             'end_date' => 'date',
             'client_visible' => 'boolean',

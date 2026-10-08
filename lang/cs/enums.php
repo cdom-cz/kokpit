@@ -27,6 +27,22 @@ return [
         'payer' => 'Plátce DPH',
     ],
 
+    'project_status' => [
+        'planned' => 'Plánovaný',
+        'to_clarify' => 'K upřesnění',
+        'in_progress' => 'V realizaci',
+        'in_review' => 'Ke kontrole',
+        'ready_to_release' => 'K vypuštění',
+        'done' => 'Dokončeno',
+    ],
+
+    'project_priority' => [
+        'low' => 'Nízká',
+        'normal' => 'Normální',
+        'high' => 'Vysoká',
+        'urgent' => 'Naléhavá',
+    ],
+
     'activity_source_label' => [
         'web' => 'Web',
         'console' => 'Konzole',

@@ -234,6 +234,27 @@ return [
         ],
     ],
 
+    'projects' => [
+        'empty_value' => '—',
+        'fields' => [
+            'name' => 'Název',
+            'key' => 'Klíč',
+            'status' => 'Stav',
+            'description' => 'Popis',
+            'start_date' => 'Začátek',
+            'end_date' => 'Konec',
+            'priority' => 'Priorita',
+        ],
+    ],
+
+    'partner_projects' => [
+        'navigation_label' => 'Moje projekty',
+        'model_label' => 'Projekt',
+        'plural_model_label' => 'Moje projekty',
+        'empty_heading' => 'Zatím tu nejsou žádné projekty',
+        'empty_description' => 'Projekty, které pro vás budou připravené, se objeví tady.',
+    ],
+
     'alerts' => [
         'link_label' => 'Otevřít stránku Systém',
         'suppressed' => 'Od posledního upozornění selhalo stejným způsobem dalších úloh: :count',
