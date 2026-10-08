@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: Operations Foundation
 status: executing
-stopped_at: Completed 03-11-PLAN.md
-last_updated: "2026-10-08T03:46:51.262Z"
+stopped_at: Completed 03-12-PLAN.md
+last_updated: "2026-10-08T04:01:30.294Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 03 execution started
-state_head: 0e266345fafdbb7ae72d2ed03d0ba8ff29aa6cd7
+state_head: e57575dc43179919c46aca0dd52f13fd57020d54
 progress:
   total_phases: 12
   completed_phases: 2
   total_plans: 43
-  completed_plans: 35
+  completed_plans: 36
   percent: 17
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 03 (Operations Foundation) — EXECUTING
-Plan: 12 of 19
+Plan: 13 of 19
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 03 execution started
 
@@ -92,6 +92,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 03 P09 | 25 min | 2 tasks | 3 files |
 | Phase 03 P10 | 6 min | 2 tasks | 14 files |
 | Phase 03 P11 | 10 min | 2 tasks | 8 files |
+| Phase 03 P12 | 10 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -175,6 +176,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-09: numbering reset warning compares against the stored settings row (not the in-memory settings object); task pattern field is disabled but still validated so a crafted payload gets the Czech task_fixed error
 - [Phase 03]: 03-10: activity log is allowlist-only via #[LoggedAttributes] plus LogsAllowlistedActivity (missing or empty list throws); source label web/console/job/webhook set in KokpitLogActivityAction, CHECK-constrained; queue job depth entered on JobProcessing, left on JobProcessed and JobExceptionOccurred — D-06/D-08: fixed options leave no way to widen the list; JobFailed not listened to because JobExceptionOccurred always precedes it
 - [Phase 03]: 03-11: production guard requires activitylog.enabled to be exactly true; sensitive attribute names include password, token and secret variants; activity records are never pruned (RefusingCleanActivityLogAction, D-09)
+- [Phase 03]: 03-12: activity overview and history relation manager are Admin-only and read-only; relation manager and widget access traits get a boot hook that asks the AccessRule declaration directly (widget hook also ANDs canView) — Filament 5 already checks access at boot via canViewForRecord/canView, which a class can override; the hook cannot be widened, proven with visibility-override fixtures
+- [Phase 03]: 03-12: change summaries show null/empty as a dash, booleans as ano/ne, values cut at 80 characters; the subject model is never loaded and the properties payload is never rendered — T-03-30/T-03-31: only allowlisted attribute_changes are shown, no N+1 on subjects
 
 ### Pending Todos
 
@@ -210,6 +213,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T03:46:51.189Z
-Stopped at: Completed 03-11-PLAN.md
+Last session: 2026-10-08T04:01:30.167Z
+Stopped at: Completed 03-12-PLAN.md
 Resume file: None
