@@ -294,8 +294,60 @@ Plans:
   4. Admin drags cards on the per-project and the global kanban board; status and position persist immediately and survive a reload, and the global board filters by client, assignee, tag and priority
   5. A Partner creates tasks and comments in visible projects but cannot change status or priority or move cards, sees a read-only task list, never sees internal comments or another client's tasks, and Admin is notified of Partner tasks and comments
 
-**Plans**: TBD
+**Plans:** 17 plans (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 4 rule; each plan modifies at most 14 files)
 **UI hint**: yes
+
+Plans:
+**Wave 1**
+- [ ] 05-01-PLAN.md — Tracer: tasks table, Partner-isolated Task, CreateTask with KEY-N from the project counter and the D-04/D-05 people rules (TA-01, TA-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 05-02-PLAN.md — Project key freeze (trigger KP002, Action, form), tasks constraint proofs, column pin, parallel-process numbering proof (TA-02, TA-01)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 05-03-PLAN.md — Admin task list, one-modal quick creation, task page at /admin/tasks/KEY-N, global search by key, list filters (TA-02, TA-05, TA-01)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 05-04-PLAN.md — Edit page and UpdateTask, locked status changes, people pickers, tags, strict rich-text sanitiser, task history (TA-01)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 05-05-PLAN.md — One-level subtasks from the task page, archive and restore with the parent guard (TA-01)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 05-06-PLAN.md — Admin-only todo checklist on tasks and subtasks with progress (TA-03)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 05-07-PLAN.md — Admin-only task_billing with four billing types, form section and input rules (TA-06)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 05-08-PLAN.md — Read-time TaskBillingResolver with sources on the task page, billing constraints and audit (TA-06)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 05-09-PLAN.md — Comments with the internal flag, Partner scope hiding internal rows, server-side forcing (TA-04)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 05-10-PLAN.md — Global drag-and-drop board: status columns, Done cap, filters, guarded locked mover (KB-01, KB-02, KB-03)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [ ] 05-11-PLAN.md — Per-project board, slide-over preview, quick creation on boards, parallel-move proof (KB-01, KB-02)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [ ] 05-12-PLAN.md — Partner read-only task list, create and task page with pinned Partner-safe builders (TA-07, KB-03)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [ ] 05-13-PLAN.md — Partner comments and escalation with a required comment; the Admin clears the flag (TA-07, TA-04)
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [ ] 05-14-PLAN.md — Per-user notification preferences on the profile page, bell for Partners (TA-07)
+
+**Wave 15** *(blocked on Wave 14 completion)*
+- [ ] 05-15-PLAN.md — Queued mail and bell for Partner tasks and comments both ways, unconditional internal guard (TA-07)
+
+**Wave 16** *(blocked on Wave 15 completion)*
+- [ ] 05-16-PLAN.md — Escalation and change notifications, canary proof of no notification leak (TA-07)
+
+**Wave 17** *(blocked on Wave 16 completion)*
+- [ ] 05-17-PLAN.md — Conventions and hand-over documentation, requirements correction, .gitignore review and the phase gate
 
 ### Phase 6: Time Tracking
 
@@ -411,7 +463,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
 | 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
 | 4. Clients and Projects | 21/21 | In Progress | - |
-| 5. Tasks and Kanban | 0/0 | Not started | - |
+| 5. Tasks and Kanban | 0/17 | Planned | - |
 | 6. Time Tracking | 0/0 | Not started | - |
 | 7. REST API | 0/0 | Not started | - |
 | 8. Exchange Rates and Reports | 0/0 | Not started | - |

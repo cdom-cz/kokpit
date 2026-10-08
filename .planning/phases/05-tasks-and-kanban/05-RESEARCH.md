@@ -424,10 +424,10 @@ Model `TaskBilling`: `DeniesPartners`, `LogsAllowlistedActivity` with `#[LoggedA
 | Event | Actor | Recipients | Notes |
 |-------|-------|------------|-------|
 | `task_created` | Partner | the Admin(s) (assignee is always the Admin for Partner-created tasks) | |
-| `comment` | Partner | Admin, plus assignee when the assignee is an active Admin | author excluded |
+| `comment` | Partner | Admin, plus the assignee when that is an active user other than the author (the Admin or a Partner of the client; adopted in plan 05-15) | author excluded |
 | `comment` (non-internal) | Admin | active Partner requester and/or assignee of the task | author excluded |
 | `comment` (internal) | Admin | **nobody** | unconditional |
-| `escalation` | Partner | assignee when the assignee is the Admin, else the Admin | |
+| `escalation` | Partner | the assignee (the Admin or an active Partner of the client); the Admin only when the assignee cannot receive it (deactivated, a Partner of an archived client, or the escalating Partner) | locked D-07, not assumed; see Open Questions (RESOLVED) item 3 |
 | `assignment_change` | Admin | Partner requester/assignee on status, priority or assignee change; the new assignee when assigned | one notification per save, coalesced |
 
 Deactivated accounts (`users.deactivated_at` set) and Partners of archived clients are skipped. The rule "an internal event never reaches a Partner" is enforced twice: the recipient builder takes `bool $internal` and returns no Partner, and the notification constructor refuses to be built for an internal comment addressed to a Partner (throws `LogicException`).
@@ -436,7 +436,7 @@ Deactivated accounts (`users.deactivated_at` set) and Partners of archived clien
 
 ### Pattern 9: Escalation
 
-Columns `escalated_at`, `escalated_by_id` on `tasks` (Partner-readable: it is the Partner's own action). `EscalateTask` (policy ability `escalate`): requires a non-empty comment, creates a non-internal `TaskComment` flagged `is_escalation = true`, sets the pair, refuses when already escalated, sends the `escalation` notification. `ClearEscalation`: Admin (or the Admin assignee) only. Priority is never touched. Add `escalated_at` to `#[LoggedAttributes]`.
+Columns `escalated_at`, `escalated_by_id` on `tasks` (Partner-readable: it is the Partner's own action). `EscalateTask` (policy ability `escalate`): requires a non-empty comment, creates a non-internal `TaskComment` flagged `is_escalation = true`, sets the pair, refuses when already escalated, sends the `escalation` notification. `ClearEscalation`: the assignee (the Admin or a Partner who is the task's assignee) and the Admin, per locked D-06 (see Open Questions (RESOLVED) item 3); clearing writes only the escalation pair. Priority is never touched, and a Partner never changes priority or status (TA-07). Add `escalated_at` to `#[LoggedAttributes]`.
 
 ### Anti-Patterns to Avoid
 - **Computing the new position from the drop index alone** on a filtered or capped list: positions would be written against the wrong neighbours. Recompute with the full column (Pattern 5).
@@ -560,7 +560,7 @@ expect((string) $mail)->not->toContain($internalCanary);
 | A2 | `/tasks/KEY-N` in D-09 means `/admin/tasks/KEY-N`; a root-level `/tasks/{reference}` redirect is optional | Corrections C5 | Owner may expect the literal root path: add one authenticated redirect route outside the panel |
 | A3 | Touch drag works with Livewire's bundled SortableJS (spike expectation, not tested) | Pattern 5 | Fallback is `wire:sort:handle` / `wire:sort:config`; human check at end of phase |
 | A4 | The fix for livewire issue 10350 (drop into an empty group) is in 4.4.7 (spike marked it assumed) | Pattern 5 | Empty-column drop fails; human check |
-| A5 | Notification recipient matrix (Pattern 8) is the intended reading of D-07 | Pattern 8 | Wrong recipients; cheap to change in `TaskNotifier` |
+| A5 | Notification recipient matrix (Pattern 8) is the intended reading of D-07; the escalation row is excluded, it follows locked D-07 literally | Pattern 8 | Wrong recipients; cheap to change in `TaskNotifier` |
 | A6 | Partners cannot edit tasks after creation; comments are append-only (no edit/delete UI for anybody) | Pattern 3, 6 | Needs edit/delete features and policy grants |
 | A7 | Estimate inherits literally per D-14 (parent, then project) | Pattern 7 | Phase 6 may prefer "own estimate only" |
 | A8 | Strict sanitiser max input length 100000 characters is sufficient | Pattern 4 | Long pastes silently truncated/rejected; raise the limit |
@@ -569,12 +569,12 @@ expect((string) $mail)->not->toContain($internalCanary);
 | A11 | Done-column position value 0 for all Done rows is acceptable because ordering uses `completed_at` | Pattern 5 | If the owner wants manual order inside Done, positions must be maintained there too |
 | A12 | Filament's `modalContent` slide-over can host the preview with an action argument resolved server-side (API read, behaviour not run) | Pattern 5 | Use a dedicated Livewire component instead |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Root-level task URL.** What we know: all resources live under `/admin`. What's unclear: whether `/tasks/KEY-N` must literally exist. Recommendation: ship `/admin/tasks/KEY-N`; add a 5-line redirect only if the owner asks (A2).
-2. **Partner visibility of tags and checklist.** Recommendation: hide both (A1); revisit in the UI-SPEC step.
-3. **Who may be assignee when the assignee is a Partner** and escalation then needs "resolve" rights. Recommendation: escalation notification falls back to the Admin (Pattern 8) and only Admin clears the flag.
-4. **Touch drag and scroll conflict** is a human verification item (end-of-phase `human_verify_mode`).
+1. **Root-level task URL.** What we know: all resources live under `/admin`. What's unclear: whether `/tasks/KEY-N` must literally exist. Recommendation: ship `/admin/tasks/KEY-N`; add a 5-line redirect only if the owner asks (A2). **RESOLVED:** the recommendation is adopted as an explicit assumption pending owner confirmation (A2): plan 05-03 ships `/admin/tasks/KEY-N` with no root-level redirect, and plan 05-17 lists A2 for the owner.
+2. **Partner visibility of tags and checklist.** Recommendation: hide both (A1); revisit in the UI-SPEC step. **RESOLVED:** the recommendation is adopted as an explicit assumption pending owner confirmation (A1): plans 05-03 (tags), 05-06 (checklist) and 05-12 (Partner pages) keep both hidden from Partners, and plan 05-17 lists A1 for the owner.
+3. **Who may be assignee when the assignee is a Partner** and escalation then needs "resolve" rights. Recommendation: escalation notification falls back to the Admin (Pattern 8) and only Admin clears the flag. **RESOLVED (follows locked D-06 and D-07; the recommendation is withdrawn, no owner confirmation needed):** the assignee and the Admin may clear the flag, including a Partner who is the task's assignee, from the own task page (plan 05-13); clearing changes only the escalation pair, and priority and status stay Admin-only (TA-07). The escalation notifies the assignee, also an active Partner assignee, with the Admin as fallback only when the assignee cannot receive it: deactivated, a Partner of an archived client, or the escalating Partner (plan 05-16).
+4. **Touch drag and scroll conflict** is a human verification item (end-of-phase `human_verify_mode`). **RESOLVED (scheduled human check):** plan 05-11 Task 3 carries the human checks for touch drag at 375 px, drop into an empty column, the scroll conflict and SPA navigation; 05-VALIDATION.md "Manual-Only Verifications" lists them and plan 05-17 collects them for `/gsd-verify-work`.
 
 ## Environment Availability
 
