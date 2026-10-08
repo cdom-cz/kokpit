@@ -184,6 +184,11 @@ return [
             'some' => 'Selhané úlohy čekají na prověření',
             'not_countable' => 'Úložiště selhaných úloh neumí počítat',
         ],
+        'scheduler' => [
+            'never' => 'Plánovač se dosud nezapsal',
+            'alive' => 'Plánovač běží',
+            'late' => 'Plánovač se dlouho nezapsal, pravděpodobně neběží',
+        ],
     ],
 
     'alerts' => [

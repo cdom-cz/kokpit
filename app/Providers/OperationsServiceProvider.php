@@ -9,6 +9,7 @@ use App\Domain\Operations\Alerts\ReportFailedJob;
 use App\Domain\Operations\Health\HealthIndicatorRegistry;
 use App\Domain\Operations\Health\Indicators\FailedJobsIndicator;
 use App\Domain\Operations\Health\Indicators\PlaceholderIndicator;
+use App\Domain\Operations\Health\Indicators\SchedulerHeartbeatIndicator;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
@@ -40,6 +41,7 @@ final class OperationsServiceProvider extends ServiceProvider
             $registry = new HealthIndicatorRegistry;
             $real = [
                 new FailedJobsIndicator,
+                new SchedulerHeartbeatIndicator,
             ];
 
             foreach ($real as $indicator) {
