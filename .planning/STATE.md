@@ -3,11 +3,11 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Completed 05-05-PLAN.md
-last_updated: "2026-10-08T21:26:15.283Z"
+stopped_at: Completed 05-06-PLAN.md
+last_updated: "2026-10-08T21:37:46.769Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 05 execution started
-state_head: 785b9fe90461a63b3528bd11fcebf3856a4380d7
+state_head: 33094a58ce23097e965186fe297a2ac80f28d874
 progress:
   total_phases: 12
   completed_phases: 3
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 05 (Tasks and Kanban) — EXECUTING
-Plan: 6 of 17
+Plan: 7 of 17
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 05 execution started
 
@@ -127,6 +127,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 05 P03 | 50 min | 3 tasks | 12 files |
 | Phase 05 P04 | 35 min | 3 tasks | 17 files |
 | Phase 05 P05 | 11 min | 3 tasks | 10 files |
+| Phase 05 P06 | 8 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -266,6 +267,8 @@ Recent decisions affecting current work:
 - [Phase 05]: TaskBoard::appendToColumn keeps the completed_at of a task that is already Done, so a restored Done task keeps its completion time
 - [Phase 05]: RestoreTask appends the card while it is still archived and restores it afterwards, under the board lock, so no position collides at commit
 - [Phase 05]: Archive is the only deletion of a task (A9): a parent with active subtasks is refused, a subtask of an archived parent cannot be restored; an archived task is read-only
+- [Phase 05]: Checklist text check trims space, tab, CR and LF (btrim with explicit set), because plain btrim accepted tab-only text
+- [Phase 05]: Checklist progress counts come from TaskColumns::checklistCounts() via withCount in the list query; the task page loads them with one loadCount
 
 ### Pending Todos
 
@@ -305,6 +308,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T21:26:15.149Z
-Stopped at: Completed 05-05-PLAN.md
+Last session: 2026-10-08T21:37:46.586Z
+Stopped at: Completed 05-06-PLAN.md
 Resume file: None
