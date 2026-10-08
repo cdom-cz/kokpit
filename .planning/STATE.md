@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: Clients and Projects
 status: executing
-stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-10-08T12:44:12.896Z"
+stopped_at: Completed 04-03-PLAN.md
+last_updated: "2026-10-08T12:51:44.854Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 4 execution started
-state_head: 21b956200801f6825cc965727d88e4b3dd6c69e1
+state_head: 17f02d7672c38196674956be6da59bc3a4d01aaa
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 64
-  completed_plans: 45
+  completed_plans: 46
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 4 (Clients and Projects) — EXECUTING
-Plan: 3 of 21
+Plan: 4 of 21
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 4 execution started
 
@@ -103,6 +103,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 03 P19 | 5 min | 2 tasks | 3 files |
 | Phase 04 P01 | 12 min | 3 tasks | 14 files |
 | Phase 04 P02 | 8 min | 2 tasks | 14 files |
+| Phase 04 P03 | 5 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -203,6 +204,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-01: company ID and tax ID stored as company_number and tax_number; canAccessPanel keeps no memo and re-reads the client in runAsSystem on every call — Schema rule R1 demands every *_id column be uuid; an archive must refuse the Partner's very next request
 - [Phase 04]: 04-02: projects.client_id is never fillable; creation goes through Client::projects() or forceFill — Prevents a project being created under or moved to another client by mass assignment (T-04-52)
 - [Phase 04]: 04-02: Partner scope checks the archived client with a plain EXISTS on clients.deleted_at — Client is deny-all for a Partner, so a Client model subquery would hide its own row
+- [Phase 04]: 04-03: PartnerProjectResource::canAccess() repeats the trait conditions and adds a Partner-with-client check; shared project field labels live under kokpit.projects.fields — The Admin must get 403 and no duplicate navigation entry; the Admin project resource of plan 04-08 reuses the same labels and ProjectColumns builders
 
 ### Pending Todos
 
@@ -241,6 +243,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T12:44:12.806Z
-Stopped at: Completed 04-02-PLAN.md
+Last session: 2026-10-08T12:51:44.762Z
+Stopped at: Completed 04-03-PLAN.md
 Resume file: None
