@@ -8,6 +8,7 @@ use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Shared\Auth\KokpitPolicy;
 use App\Domain\Shared\Auth\NotPartnerScoped;
 use App\Domain\Shared\Auth\PartnerIsolated;
@@ -37,6 +38,7 @@ it('finds every model of the application, so the scan cannot pass vacuously', fu
         Permission::class,
         PersonalAccessToken::class,
         Project::class,
+        ProjectBilling::class,
         Role::class,
         SettingsProperty::class,
         Tag::class,
@@ -81,7 +83,7 @@ it('gives every PartnerIsolated model a policy that extends KokpitPolicy', funct
         static fn (string $class): bool => is_subclass_of($class, PartnerIsolated::class),
     ));
 
-    expect($isolated)->toContain(CanaryRecord::class, Client::class, Project::class, Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class);
+    expect($isolated)->toContain(CanaryRecord::class, Client::class, Project::class, ProjectBilling::class, Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class);
 
     foreach ($isolated as $class) {
         expect(Gate::getPolicyFor($class))->toBeInstanceOf(KokpitPolicy::class, "no KokpitPolicy for {$class}");

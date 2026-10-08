@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Tags\HasTags;
 
@@ -28,7 +29,9 @@ use Spatie\Tags\HasTags;
  * Every other state, including a missing flag, is invisible.
  *
  * The table holds Partner-safe columns only. Rates, prices, estimates, billing
- * type and internal notes live in the Admin-only project_billing table (D-05).
+ * type and internal notes live in the Admin-only project_billing table (D-05),
+ * reached through `billing()`; that relation is null for a Partner because
+ * ProjectBilling is closed to Partners.
  *
  * `client_id` is not fillable (a project must not be created under or moved to
  * another client by mass assignment): creation code sets it through
@@ -112,6 +115,16 @@ final class Project extends KokpitModel implements PartnerIsolated
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    /**
+     * The Admin-only billing terms; every project has exactly one row.
+     *
+     * @return HasOne<ProjectBilling, $this>
+     */
+    public function billing(): HasOne
+    {
+        return $this->hasOne(ProjectBilling::class);
     }
 
     /**

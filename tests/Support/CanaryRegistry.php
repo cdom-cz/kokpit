@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
+use App\Domain\Shared\Money\Money;
 use App\Domain\Shared\Tags\TagType;
 use Closure;
 use Illuminate\Support\Facades\Storage;
@@ -77,6 +80,22 @@ final class CanaryRegistry
                 app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
                     $project = new Project(['name' => $canary, 'key' => Canary::projectKey(), 'client_visible' => true]);
                     $project->forceFill(['client_id' => $clientId])->save();
+                });
+            },
+
+            // The Admin-only billing row of the canary project of that client (found
+            // by name; the Project fixture runs before this one). The canary sits in
+            // the internal note, so a Partner reading it would be caught.
+            ProjectBilling::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $client = Client::query()->whereKey($clientId)->firstOrFail();
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+
+                    $project->billing()->create([
+                        'billing_type' => BillingType::Hourly,
+                        'hourly_rate' => Money::ofMinor(85000, $client->currency),
+                        'internal_note' => $canary,
+                    ]);
                 });
             },
 

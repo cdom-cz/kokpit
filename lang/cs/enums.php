@@ -43,6 +43,11 @@ return [
         'urgent' => 'Naléhavá',
     ],
 
+    'billing_type' => [
+        'hourly' => 'Hodinová sazba',
+        'fixed_price' => 'Pevná cena',
+    ],
+
     'activity_source_label' => [
         'web' => 'Web',
         'console' => 'Konzole',

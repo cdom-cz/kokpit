@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\Activity;
@@ -88,6 +89,7 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         Client::class,
         Media::class,
         Project::class,
+        ProjectBilling::class,
         SettingsProperty::class,
         Tag::class,
         WebhookCall::class,

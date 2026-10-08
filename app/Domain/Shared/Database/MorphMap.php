@@ -10,6 +10,7 @@ use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\Tag;
@@ -36,5 +37,6 @@ final class MorphMap
         'webhook_call' => WebhookCall::class,
         'client' => Client::class,
         'project' => Project::class,
+        'project_billing' => ProjectBilling::class,
     ];
 }
