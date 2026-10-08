@@ -22,3 +22,9 @@ Schedule::call(fn () => app(Heartbeats::class)->recordScheduler())
 Schedule::job(new RecordWorkerHeartbeat)
     ->everyMinute()
     ->name('kokpit-worker-heartbeat');
+
+// Feeds the metrics graphs of the Horizon dashboard. onOneServer because the schedule runs on every container.
+Schedule::command('horizon:snapshot')
+    ->everyFiveMinutes()
+    ->onOneServer()
+    ->name('kokpit-horizon-snapshot');

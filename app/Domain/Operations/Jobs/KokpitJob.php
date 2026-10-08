@@ -19,8 +19,9 @@ use Illuminate\Queue\SerializesModels;
  *
  * Defaults, read by Laravel from this class and its parents; a subclass wins
  * with an attribute of its own: 3 attempts, a wait of 10 s, 60 s and 5 min
- * between them, and a 60 s timeout. The redis connection's retry_after (90 s)
- * stays above the timeout.
+ * between them, and a 60 s timeout. The redis connection's retry_after (330 s)
+ * stays above the Horizon supervisor timeout (300 s), which stays above this
+ * 60 s timeout.
  *
  * Idempotence contract. A job may run more than once (a retry, or a worker
  * that died after the work and before the acknowledgement), so every concrete

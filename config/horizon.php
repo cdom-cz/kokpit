@@ -2,10 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
 use Illuminate\Support\Str;
 
 // Laravel Horizon: the queue worker of Kokpit and its Admin-only dashboard (access rule in
 // app/Providers/HorizonServiceProvider.php).
+//
+// Timeout chain, asserted in tests/Feature/Operations/HorizonConfigTest.php:
+//   KokpitJob timeout 60 s < supervisor timeout 300 s < redis retry_after 330 s (config/queue.php)
+//   supervisor timeout 300 s < stopwaitsecs 360 s (supervisor-horizon.ini)
 
 return [
 
@@ -101,8 +106,9 @@ return [
     |
     */
 
+    // Only colours the dashboard: Kokpit's alerting is the System page indicator plus ReportFailedJob.
     'waits' => [
-        'redis:default' => 60,
+        'redis:'.env('REDIS_QUEUE', 'default') => 60,
     ],
 
     /*
@@ -116,6 +122,7 @@ return [
     |
     */
 
+    // The failed_jobs table stays the authoritative failure record (FND-09); this is only the dashboard's view.
     'trim' => [
         'recent' => 60,
         'pending' => 60,
@@ -136,8 +143,9 @@ return [
     |
     */
 
+    // The worker heartbeat runs every minute and would flood the completed list.
     'silenced' => [
-        // App\Jobs\ExampleJob::class,
+        RecordWorkerHeartbeat::class,
     ],
 
     'silenced_tags' => [
@@ -157,8 +165,9 @@ return [
 
     'metrics' => [
         'trim_snapshots' => [
-            'job' => 24,
-            'queue' => 24,
+            // 24 hours at the five-minute snapshot cadence (routes/console.php).
+            'job' => 288,
+            'queue' => 288,
         ],
     ],
 
@@ -204,32 +213,41 @@ return [
     'defaults' => [
         'supervisor-1' => [
             'connection' => 'redis',
-            'queue' => ['default'],
+            'queue' => [env('REDIS_QUEUE', 'default')],
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
-            'maxProcesses' => 1,
-            'maxTime' => 0,
-            'maxJobs' => 0,
+            'minProcesses' => 1,
+            'maxProcesses' => (int) env('HORIZON_MAX_PROCESSES', 3),
+            'balanceMaxShift' => 1,
+            'balanceCooldown' => 3,
+            'maxTime' => 3600,
+            'maxJobs' => 1000,
             'memory' => 128,
+            'sleep' => 3,
+            // Only jobs that declare their own policy are retried: KokpitJob declares Tries(3) and is
+            // idempotent by contract, package jobs make no such promise.
             'tries' => 1,
-            'timeout' => 60,
+            // Fixed by the stopwaitsecs of supervisor-horizon.ini (360 s); keep it a literal.
+            'timeout' => 300,
             'nice' => 0,
         ],
     ],
 
     'environments' => [
+        // Production and the wildcard inherit everything from the defaults. The wildcard applies when
+        // no other environment matches, so a mistyped APP_ENV does not start zero workers.
         'production' => [
-            'supervisor-1' => [
-                'maxProcesses' => 10,
-                'balanceMaxShift' => 1,
-                'balanceCooldown' => 3,
-            ],
+            'supervisor-1' => [],
         ],
 
         'local' => [
             'supervisor-1' => [
-                'maxProcesses' => 3,
+                'maxProcesses' => 2,
             ],
+        ],
+
+        '*' => [
+            'supervisor-1' => [],
         ],
     ],
 
