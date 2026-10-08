@@ -248,6 +248,70 @@ it('names the deploy readiness and storage checks in the README', function () {
         ->and($readme)->toContain('kokpit:storage:check');
 });
 
+it('names every Phase 3 operations mechanism in CONTRIBUTING.md and the named class exists', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    // The documentation must not name a convention, class or trait that is gone (T-03-58).
+    $mechanisms = [
+        'App\Domain\Settings\Settings\ValidatedSettings',
+        'App\Domain\Settings\SettingsMigration',
+        'App\Domain\Settings\Numbering\DocumentNumbering',
+        'App\Domain\Audit\LoggedAttributes',
+        'App\Domain\Audit\LogsAllowlistedActivity',
+        'App\Filament\RelationManagers\ActivityHistoryRelationManager',
+        'App\Domain\Operations\Jobs\KokpitJob',
+        'App\Domain\Operations\Jobs\Idempotent',
+        'App\Domain\Operations\Health\HealthIndicatorRegistry',
+        'App\Domain\Operations\Storage\StorageCheck',
+    ];
+
+    foreach ($mechanisms as $class) {
+        $short = substr($class, (int) strrpos($class, '\\') + 1);
+
+        expect($contributing)->toContain($short);
+        expect(class_exists($class) || trait_exists($class) || interface_exists($class))
+            ->toBeTrue("CONTRIBUTING.md names {$short} but {$class} does not exist");
+    }
+});
+
+it('only names Phase 3 classes in CONTRIBUTING.md that exist in app/', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    // Secondary names the Conventions section relies on; each is a class, enum or trait under app/.
+    $names = [
+        'ActivitySourceLabel' => 'App\Domain\Audit\ActivitySourceLabel',
+        'ActivitySource' => 'App\Domain\Audit\ActivitySource',
+        'RefusingCleanActivityLogAction' => 'App\Domain\Audit\RefusingCleanActivityLogAction',
+        'RunsAsSystem' => 'App\Domain\Operations\Jobs\Middleware\RunsAsSystem',
+        'ReportFailedJob' => 'App\Domain\Operations\Alerts\ReportFailedJob',
+        'AdminAlerter' => 'App\Domain\Operations\Alerts\AdminAlerter',
+        'HealthIndicator' => 'App\Domain\Operations\Health\HealthIndicator',
+        'HealthSlot' => 'App\Domain\Operations\Health\HealthSlot',
+        'SettingsProperty' => 'App\Domain\Shared\Models\SettingsProperty',
+        'SequenceAllocator' => 'App\Domain\Shared\Sequences\SequenceAllocator',
+    ];
+
+    foreach ($names as $short => $class) {
+        expect($contributing)->toContain($short);
+        expect(class_exists($class) || trait_exists($class) || interface_exists($class) || enum_exists($class))
+            ->toBeTrue("CONTRIBUTING.md names {$short} but {$class} does not exist");
+    }
+
+    expect(defined('App\Domain\Shared\Models\SettingsProperty::PARTNER_VISIBLE_GROUPS'))->toBeTrue()
+        ->and($contributing)->toContain('PARTNER_VISIBLE_GROUPS');
+});
+
+it('documents the audit step in the add-a-model checklist and the operations section of the README', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+    $readme = repoFile('README.md');
+
+    expect($contributing)->toContain('### Add-a-model checklist')
+        ->and($contributing)->toContain('#[LoggedAttributes([...])]')
+        ->and($readme)->toContain('## Operations')
+        ->and($readme)->toContain('kokpit:storage:check')
+        ->and(repoCodeBlockLines($readme))->toContain('ddev artisan kokpit:storage:check');
+});
+
 it('documents the service id variables the deploy workflow reads', function () {
     $workflow = repoFile('.github/workflows/deploy.yml');
     $contributing = repoFile('CONTRIBUTING.md');

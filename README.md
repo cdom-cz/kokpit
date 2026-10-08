@@ -59,6 +59,23 @@ A deploy starts only from a published release tagged `v*` (never a prerelease) o
 
 The first confirms that the database and Redis answer and that no migration is pending; the second proves the private object storage (upload, signed read, refused unsigned read, delete). The manual GitHub and Zerops settings, rollback and the migration rules are in the "Deploy (maintainer, manual)" section of [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Operations
+
+Two background processes must run next to the web container, or the application degrades without a visible error:
+
+- the queue worker runs every background job. Without it jobs wait in Redis and nothing is processed.
+- the scheduler runs the periodic tasks, among them the heartbeats that the System page reads. Run exactly one.
+
+In DDEV both are daemons that `ddev start` brings up (`ddev exec supervisorctl status` shows them); on Zerops they are the `worker` and `scheduler` services of `zerops.yml`.
+
+The Admin finds the state of both on the System page (menu "Systém", `/admin/system`, `https://kokpit.ddev.site/admin/system` in DDEV). It lists the failed jobs, the age of the oldest waiting job and the scheduler heartbeat as OK, Warning or Error, and refreshes itself every 30 seconds. A Partner cannot open it.
+
+When a background job fails for good, the Admin gets an alert by e-mail and in the bell of the panel. The e-mail needs working mail settings (the `MAIL_*` values in `.env`; DDEV delivers to Mailpit, a production instance needs a real mail service). The bell works without mail, so with broken mail settings the failure is still visible in the panel, and the System page shows it too.
+
+To prove that the private object storage works from the current configuration, run the storage check. It writes a throwaway object, reads it through a temporary URL, confirms that an unsigned read is refused, deletes the object and prints the result of each step:
+
+    ddev artisan kokpit:storage:check
+
 ## Language and time
 
 The whole interface is Czech (`lang/cs`), the fallback locale is English. Times are stored in UTC and shown in Europe/Prague as `j. n. Y H:i`.
