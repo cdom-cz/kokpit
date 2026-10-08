@@ -106,10 +106,15 @@ function walkedResourceMap(string $canaryRecordA, string $canaryRecordB, string 
         static fn (): string => Project::query()->where('name', $canary)->firstOrFail()->id,
     );
 
+    $clientId = static fn (string $canary): string => app(PartnerContext::class)->runAsSystem(
+        static fn (): string => Project::query()->where('name', $canary)->firstOrFail()->client_id,
+    );
+
     return [
         'canary-records' => ['partner' => true, 'a' => $canaryRecordA, 'b' => $canaryRecordB],
         'my-projects' => ['partner' => true, 'a' => $projectId($canaryA), 'b' => $projectId($canaryB)],
         'projects' => ['partner' => false, 'a' => $projectId($canaryA), 'b' => $projectId($canaryB)],
+        'clients' => ['partner' => false, 'a' => $clientId($canaryA), 'b' => $clientId($canaryB)],
     ];
 }
 

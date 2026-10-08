@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Clients\Models;
 
+use App\Domain\Clients\Enums\ClientStage;
+use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
@@ -38,14 +40,14 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $street
  * @property string|null $city
  * @property string|null $postal_code
- * @property string $stage
+ * @property ClientStage $stage
  * @property string $currency
  * @property Money|null $hourly_rate
  * @property int $hourly_rate_minor
  * @property string $hourly_rate_currency
  * @property int $payment_terms_days
  * @property string|null $invoice_email
- * @property string $invoice_language
+ * @property InvoiceLanguage $invoice_language
  * @property bool $online_payment_enabled
  * @property CarbonInterface|null $deleted_at
  * @property CarbonInterface|null $created_at
@@ -78,6 +80,8 @@ final class Client extends KokpitModel implements PartnerIsolated
     protected function casts(): array
     {
         return [
+            'stage' => ClientStage::class,
+            'invoice_language' => InvoiceLanguage::class,
             'hourly_rate' => MoneyCast::class,
             'online_payment_enabled' => 'boolean',
             'payment_terms_days' => 'integer',

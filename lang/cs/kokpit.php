@@ -257,6 +257,56 @@ return [
         ],
     ],
 
+    'clients' => [
+        'empty_value' => '—',
+        'days' => 'dní',
+        'errors' => [
+            'name_invalid' => 'Zadejte název klienta, nejvýše 255 znaků.',
+            'country_invalid' => 'Zadejte dvě velká písmena kódu země, například CZ.',
+            'currency_invalid' => 'Vyberte platnou měnu.',
+            'stage_invalid' => 'Vyberte stav klienta.',
+            'language_invalid' => 'Vyberte jazyk faktur.',
+            'terms_invalid' => 'Zadejte splatnost jako celé číslo dnů od 0 do 365.',
+            'email_invalid' => 'Zadejte platnou e-mailovou adresu.',
+            'rate_invalid' => 'Zadejte nezáporné číslo bez oddělovače tisíců a nejvýše s tolika desetinnými místy, kolik dovoluje měna klienta.',
+        ],
+        'fields' => [
+            'name' => 'Název',
+            'company_number' => 'IČO / identifikační číslo',
+            'tax_number' => 'DIČ / daňové číslo',
+            'country' => 'Země',
+            'street' => 'Ulice',
+            'city' => 'Město',
+            'postal_code' => 'PSČ',
+            'stage' => 'Stav',
+            'currency' => 'Měna',
+            'hourly_rate' => 'Hodinová sazba',
+            'payment_terms_days' => 'Splatnost',
+            'invoice_email' => 'E-mail pro faktury',
+            'invoice_language' => 'Jazyk faktur',
+            'online_payment_enabled' => 'Online platba',
+        ],
+        'navigation_label' => 'Klienti',
+        'model_label' => 'Klient',
+        'plural_model_label' => 'Klienti',
+        'sections' => [
+            'billing_data' => 'Fakturační údaje',
+            'terms' => 'Obchodní podmínky',
+        ],
+        'hints' => [
+            'country' => 'Dvoupísmenný kód velkými písmeny, například CZ.',
+            'stage' => 'Stav slouží jen k přehledu a filtrování; nemění oprávnění ani fakturaci.',
+            'hourly_rate' => 'Částka v měně klienta, s desetinnou čárkou a bez oddělovače tisíců, například 1500,50.',
+            'payment_terms_days' => 'Počet dní od 0 do 365.',
+            'online_payment_enabled' => 'Zapnuto: faktury tohoto klienta půjde zaplatit online.',
+        ],
+        'filters' => [
+            'stage' => 'Stav',
+        ],
+        'empty_heading' => 'Zatím tu nejsou žádní klienti',
+        'empty_description' => 'Vytvořte prvního klienta.',
+    ],
+
     'projects' => [
         'empty_value' => '—',
         'errors' => [

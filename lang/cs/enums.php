@@ -27,6 +27,18 @@ return [
         'payer' => 'Plátce DPH',
     ],
 
+    'client_stage' => [
+        'lead' => 'Zájemce',
+        'active' => 'Aktivní',
+        'paused' => 'Pozastavený',
+        'ended' => 'Ukončený',
+    ],
+
+    'invoice_language' => [
+        'cs' => 'Čeština',
+        'en' => 'Angličtina',
+    ],
+
     'project_status' => [
         'planned' => 'Plánovaný',
         'to_clarify' => 'K upřesnění',
