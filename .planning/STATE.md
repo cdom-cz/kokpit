@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: Operations Foundation
 status: executing
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-10-08T02:30:24.879Z"
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-10-08T02:37:42.108Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 03 execution started
-state_head: 5a8ff290d32ca99d5dd4e04b4ae88a573b035a1d
+state_head: 114b8d716b8179c09723dd8ef8a95eb390cad007
 progress:
   total_phases: 12
   completed_phases: 2
   total_plans: 43
-  completed_plans: 26
+  completed_plans: 27
   percent: 17
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 03 (Operations Foundation) — EXECUTING
-Plan: 3 of 19
+Plan: 4 of 19
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 03 execution started
 
@@ -83,6 +83,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 02 P13 | 7 min | 2 tasks | 5 files |
 | Phase 03 P01 | 25 min | 2 tasks | 1 files |
 | Phase 03 P02 | 37 min | 3 tasks | 1 files |
+| Phase 03 P03 | 8 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -151,6 +152,7 @@ Recent decisions affecting current work:
 - [Phase 03]: Dompdf chosen as PDF engine for Phase 8 work report and Phase 10 invoice PDF (passed every criterion; Chromium 3x slower, 6x larger, needs Node/Chromium in container); owner confirms before Phase 8 adds the dependency
 - [Phase 03]: LGPL-2.1 SPDX alias of dompdf/dompdf fails scripts/check-licenses.php; maintainer decision (normalise to LGPL-2.1-only in a reviewed commit) needed in the phase that adds Dompdf
 - [Phase 03]: Custom Livewire wire:sort board chosen over Flowforge for the Phase 5 kanban (D-15): passes persistence, model event, isolation and concurrency criteria; Flowforge has no policy hook and needs a Filament theme and Node build — Measured: no lock corrupts a column in every round; one advisory lock per move kept 60 of 60 rounds clean; column row locks deadlocked in 12 of 70 empty-column rounds. Conditional on a human touch check at 375 px (fallback is a drag handle).
+- [Phase 03]: 03-03: SettingsProperty stays on DeniesPartners with an empty PARTNER_VISIBLE_GROUPS allowlist; settings cache is a literal false; SettingsMigration::up() is final and runs migrate() in runAsSystem — A cached read bypasses the Partner scope; package migrator add/update read through the scoped model and see no rows without the system context; a later Partner-visible group must fail the canary test until chosen on purpose
 
 ### Pending Todos
 
@@ -186,6 +188,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T02:30:19.064Z
-Stopped at: Completed 03-02-PLAN.md
+Last session: 2026-10-08T02:37:42.040Z
+Stopped at: Completed 03-03-PLAN.md
 Resume file: None
