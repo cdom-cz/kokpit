@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Models\Tag;
+use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Pages\TaskBoardPage;
 use Filament\Facades\Filament;
@@ -188,4 +190,201 @@ it('orders tasks by position without changing how the tags package orders its mo
         ->and(config('eloquent-sortable.ignore_timestamps'))->toBeTrue()
         ->and((new Tag)->determineOrderColumnName())->toBe('order_column')
         ->and((new Tag)->shouldSortWhenCreating())->toBeTrue();
+});
+
+/*
+ * Filters, filter-aware drops, the Done cap and the guard order of a move.
+ */
+
+/**
+ * The tag id of a task tag by name, after attaching it to a task.
+ */
+function taskBoardTagId(Task $task, string $name): string
+{
+    $task->attachTag($name, TagType::Task->value);
+
+    return (string) Tag::query()->where('type', TagType::Task->value)->where('name->cs', $name)->orWhere('name->en', $name)->firstOrFail()->getKey();
+}
+
+/**
+ * Two clients with one project each, a hidden column of three planned cards
+ * A1, B1, A2 and a client A card X waiting in another column.
+ *
+ * @return array{clientA: Client, clientB: Client, x: Task}
+ */
+function taskBoardFilteredFixture(): array
+{
+    $clientA = Client::factory()->create();
+    $clientB = Client::factory()->create();
+    $projectA = taskBoardProject($clientA, 'AAA');
+    $projectB = taskBoardProject($clientB, 'BBB');
+
+    taskBoardTask($projectA, 'Example A1');
+    taskBoardTask($projectB, 'Example B1');
+    taskBoardTask($projectA, 'Example A2');
+
+    return ['clientA' => $clientA, 'clientB' => $clientB, 'x' => taskBoardTask($projectA, 'Example X', 'in_progress')];
+}
+
+it('narrows the board by client, assignee, tag and priority and combines the filters', function (): void {
+    $clientA = Client::factory()->create();
+    $clientB = Client::factory()->create();
+    $projectA = taskBoardProject($clientA, 'AAA');
+    $projectB = taskBoardProject($clientB, 'BBB');
+    $someone = User::factory()->create();
+
+    $matching = taskBoardTask($projectA, 'Example matching card', 'planned', ['assignee_id' => $someone->id, 'priority' => 'high']);
+    $otherClient = taskBoardTask($projectB, 'Example other client card', 'planned', ['assignee_id' => $someone->id, 'priority' => 'high']);
+    $otherPerson = taskBoardTask($projectA, 'Example other person card', 'planned', ['priority' => 'high']);
+    $otherPriority = taskBoardTask($projectA, 'Example other priority card', 'planned', ['assignee_id' => $someone->id]);
+    $tagId = taskBoardTagId($matching, 'example-board-label');
+
+    Livewire::withQueryParams(['clientFilter' => $clientA->id])->test(TaskBoardPage::class)
+        ->assertSee('Example matching card')->assertSee('Example other person card')
+        ->assertDontSee('Example other client card');
+
+    Livewire::withQueryParams(['assigneeFilter' => $someone->id])->test(TaskBoardPage::class)
+        ->assertSee('Example matching card')->assertSee('Example other client card')
+        ->assertDontSee('Example other person card');
+
+    Livewire::withQueryParams(['tagFilter' => $tagId])->test(TaskBoardPage::class)
+        ->assertSee('Example matching card')
+        ->assertDontSee('Example other client card')->assertDontSee('Example other person card');
+
+    Livewire::withQueryParams(['priorityFilter' => 'high'])->test(TaskBoardPage::class)
+        ->assertSee('Example matching card')->assertSee('Example other person card')
+        ->assertDontSee('Example other priority card');
+
+    Livewire::withQueryParams(['clientFilter' => $clientA->id, 'assigneeFilter' => $someone->id, 'priorityFilter' => 'high'])->test(TaskBoardPage::class)
+        ->assertSee('Example matching card')
+        ->assertDontSee('Example other client card')->assertDontSee('Example other person card')->assertDontSee('Example other priority card');
+
+    expect([$otherClient->id, $otherPerson->id, $otherPriority->id])->toHaveCount(3);
+});
+
+it('keeps the filter values in the URL query', function (): void {
+    $client = Client::factory()->create();
+
+    $component = Livewire::test(TaskBoardPage::class)->set('clientFilter', $client->id)->set('priorityFilter', 'urgent');
+
+    expect($component->effects['url'] ?? $component->effects['path'] ?? null)->not->toBeNull();
+    expect((string) ($component->effects['url'] ?? ''))->toContain('clientFilter')->toContain('priorityFilter');
+});
+
+it('ignores a filter value that is no id instead of failing', function (): void {
+    $project = taskBoardProject();
+    taskBoardTask($project, 'Example still visible');
+
+    Livewire::withQueryParams(['clientFilter' => 'not-an-id', 'priorityFilter' => 'bogus'])->test(TaskBoardPage::class)
+        ->assertOk()
+        ->assertSee('Example still visible');
+});
+
+it('drops a card after the visible neighbour on a filtered board even when hidden cards sit between', function (int $index, array $expected): void {
+    ['clientA' => $clientA, 'x' => $x] = taskBoardFilteredFixture();
+
+    Livewire::withQueryParams(['clientFilter' => $clientA->id])->test(TaskBoardPage::class)
+        ->call('moveCard', $x->id, $index, 'planned');
+
+    expect(taskBoardColumn('planned'))->toBe($expected)
+        ->and(taskBoardPositions('planned'))->toBe([0, 1, 2, 3]);
+
+    DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
+})->with([
+    'between the visible cards' => [1, ['Example A1', 'Example B1', 'Example X', 'Example A2']],
+    'before the first visible card' => [0, ['Example X', 'Example A1', 'Example B1', 'Example A2']],
+    'after the last visible card' => [2, ['Example A1', 'Example B1', 'Example A2', 'Example X']],
+]);
+
+it('appends a card dropped into an empty visible column to the end of the whole column', function (): void {
+    $clientA = Client::factory()->create();
+    $projectA = taskBoardProject($clientA, 'AAA');
+    $projectB = taskBoardProject(Client::factory()->create(), 'BBB');
+    $x = taskBoardTask($projectA, 'Example X');
+    taskBoardTask($projectB, 'Example hidden one', 'in_review');
+    taskBoardTask($projectB, 'Example hidden two', 'in_review');
+
+    Livewire::withQueryParams(['clientFilter' => $clientA->id])->test(TaskBoardPage::class)
+        ->call('moveCard', $x->id, 0, 'in_review');
+
+    expect(taskBoardColumn('in_review'))->toBe(['Example hidden one', 'Example hidden two', 'Example X'])
+        ->and(taskBoardPositions('in_review'))->toBe([0, 1, 2]);
+
+    DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
+});
+
+it('shows only the most recent done tasks up to the configured limit with an N of M count', function (): void {
+    config(['kokpit.board.done_limit' => 3]);
+    $project = taskBoardProject();
+
+    foreach ([1, 2, 3, 4, 5] as $n) {
+        taskBoardTask($project, 'Example done '.$n, 'done', ['completed_at' => now()->subHours($n)]);
+    }
+
+    Livewire::test(TaskBoardPage::class)
+        ->assertSee('Example done 1')->assertSee('Example done 2')->assertSee('Example done 3')
+        ->assertDontSee('Example done 4')->assertDontSee('Example done 5')
+        ->assertSee('3 / 5');
+
+});
+
+it('sets completion and position 0 when a card enters Done and clears the completion when it leaves', function (): void {
+    $project = taskBoardProject();
+    $card = taskBoardTask($project, 'Example finishing card');
+    taskBoardTask($project, 'Example waiting card');
+
+    Livewire::test(TaskBoardPage::class)->call('moveCard', $card->id, 0, 'done');
+
+    $card->refresh();
+    expect($card->status)->toBe(ProjectStatus::Done)
+        ->and($card->completed_at)->not->toBeNull()
+        ->and($card->position)->toBe(0);
+
+    Livewire::test(TaskBoardPage::class)->call('moveCard', $card->id, 1, 'planned');
+
+    $card->refresh();
+    expect($card->status)->toBe(ProjectStatus::Planned)
+        ->and($card->completed_at)->toBeNull()
+        ->and(taskBoardColumn('planned'))->toBe(['Example waiting card', 'Example finishing card'])
+        ->and(taskBoardPositions('planned'))->toBe([0, 1]);
+
+    DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
+});
+
+it('changes nothing for a drop inside the Done column', function (): void {
+    $project = taskBoardProject();
+    $first = taskBoardTask($project, 'Example done first', 'done', ['completed_at' => now()->subHour()]);
+    taskBoardTask($project, 'Example done second', 'done', ['completed_at' => now()->subHours(2)]);
+    $before = $first->fresh()->completed_at;
+
+    Livewire::test(TaskBoardPage::class)->call('moveCard', $first->id, 1, 'done');
+
+    expect($first->fresh()->completed_at->equalTo($before))->toBeTrue();
+});
+
+it('answers 422 for a forged status and changes nothing', function (): void {
+    $card = taskBoardTask(taskBoardProject(), 'Example guarded card');
+    $before = DB::table('tasks')->get()->toArray();
+
+    Livewire::test(TaskBoardPage::class)->call('moveCard', $card->id, 0, 'archived')->assertStatus(422);
+
+    expect(DB::table('tasks')->get()->toArray())->toEqual($before);
+});
+
+it('answers 404 for an unknown id, a malformed id and an archived task', function (): void {
+    $project = taskBoardProject();
+    $archived = taskBoardTask($project, 'Example archived card');
+    $archived->delete();
+
+    Livewire::test(TaskBoardPage::class)
+        ->call('moveCard', '01a11da2-6a80-7239-b49e-fc913bf8e2bb', 0, 'planned')->assertNotFound();
+
+    Livewire::test(TaskBoardPage::class)
+        ->call('moveCard', 'not-an-id', 0, 'planned')->assertNotFound();
+
+    Livewire::test(TaskBoardPage::class)
+        ->call('moveCard', $archived->id, 0, 'planned')->assertNotFound();
+
+    expect(Task::query()->find($archived->id))->toBeNull()
+        ->and(Task::query()->withTrashed()->find($archived->id)->status)->toBe(ProjectStatus::Planned);
 });
