@@ -11,6 +11,7 @@ use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\EstimateHours;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Projects\ProjectKeySuggester;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Tags\TagType;
@@ -30,6 +31,7 @@ use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\SpatieTagsInput;
 use Filament\Forms\Components\Textarea;
@@ -38,6 +40,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
@@ -48,6 +51,7 @@ use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Str;
 
 /**
  * The Admin project screens: list, create, edit, view, archive and restore, with
@@ -136,14 +140,43 @@ final class ProjectResource extends Resource
                     TextInput::make('name')
                         ->label(__('kokpit.projects.fields.name'))
                         ->required()
-                        ->maxLength(255),
+                        ->maxLength(255)
+                        ->live(onBlur: true)
+                        ->afterStateUpdated(static function (Get $get, Set $set, mixed $state, string $operation): void {
+                            // Only on create, and only while the Admin has not typed a key (D-14).
+                            if ($operation !== 'create' || $get('key_touched') === true) {
+                                return;
+                            }
+
+                            $suggestion = ProjectKeySuggester::suggest(
+                                is_string($state) ? $state : '',
+                                // Archived projects keep their key reserved, so they count as taken.
+                                static fn (string $key): bool => Project::withTrashed()->where('key', $key)->exists(),
+                            );
+
+                            if ($suggestion !== null) {
+                                $set('key', $suggestion);
+                            }
+                        }),
                     TextInput::make('key')
                         ->label(__('kokpit.projects.fields.key'))
                         ->helperText(__('kokpit.projects.hints.key'))
                         ->required()
                         ->maxLength(6)
                         ->regex('/^[A-Z]{2,6}$/')
-                        ->unique(ignoreRecord: true),
+                        // The raw unique rule also counts archived rows, like the database index.
+                        ->unique(ignoreRecord: true)
+                        ->live(onBlur: true)
+                        ->afterStateUpdated(static function (Set $set, mixed $state): void {
+                            // Upper-case before validation, so keys that differ only in case cannot coexist.
+                            $key = is_string($state) ? Str::upper(trim($state)) : '';
+
+                            $set('key', $key);
+                            $set('key_touched', $key !== '');
+                        }),
+                    Hidden::make('key_touched')
+                        ->default(false)
+                        ->dehydrated(false),
                     Select::make('status')
                         ->label(__('kokpit.projects.fields.status'))
                         ->options(ProjectStatus::class)
