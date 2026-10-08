@@ -12,12 +12,14 @@ use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Shared\Money\MoneyCast;
+use ArrayAccess;
 use Carbon\CarbonInterface;
 use Database\Factories\ClientFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\Tags\HasTags;
 
 /**
  * A client of the company. Admin-only data (D-06): a Partner reads no client
@@ -74,6 +76,10 @@ final class Client extends KokpitModel implements PartnerIsolated
     /** @use HasFactory<ClientFactory> */
     use DeniesPartners, HasFactory, SoftDeletes;
 
+    use HasTags {
+        detachTags as private detachTagsFromTrait;
+    }
+
     /**
      * @return array<string, string>
      */
@@ -86,6 +92,23 @@ final class Client extends KokpitModel implements PartnerIsolated
             'online_payment_enabled' => 'boolean',
             'payment_terms_days' => 'integer',
         ];
+    }
+
+    /**
+     * Keeps the tags of an archived client. The tags package calls this from its
+     * `deleted` listener, which also fires for a soft delete, so an archive would
+     * otherwise detach every tag and a restore would not bring them back. Only a
+     * force delete detaches them.
+     *
+     * @param  array<mixed>|ArrayAccess<int|string, mixed>  $tags
+     */
+    public function detachTags(array|ArrayAccess $tags, ?string $type = null): static
+    {
+        if ($this->trashed() && ! $this->isForceDeleting()) {
+            return $this;
+        }
+
+        return $this->detachTagsFromTrait($tags, $type);
     }
 
     /**

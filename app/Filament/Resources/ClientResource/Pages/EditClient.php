@@ -8,6 +8,10 @@ use App\Domain\Clients\Actions\UpdateClient;
 use App\Domain\Clients\Models\Client;
 use App\Filament\Concerns\RethrowsDomainValidation;
 use App\Filament\Resources\ClientResource;
+use Filament\Actions\Action;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\ViewAction;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 
@@ -30,6 +34,18 @@ final class EditClient extends EditRecord
         abort_unless(ClientResource::canAccess(), 403);
 
         parent::mount($record);
+    }
+
+    /**
+     * @return array<Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            ViewAction::make(),
+            ClientResource::archiveAction(DeleteAction::make()),
+            ClientResource::restoreAction(RestoreAction::make()),
+        ];
     }
 
     /**

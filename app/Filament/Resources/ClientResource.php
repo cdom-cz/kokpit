@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources;
 
+use App\Domain\Clients\Actions\ArchiveClient;
 use App\Domain\Clients\Actions\ClientInput;
 use App\Domain\Clients\Actions\CreateClient as CreateClientAction;
+use App\Domain\Clients\Actions\RestoreClient;
 use App\Domain\Clients\Enums\ClientStage;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
@@ -20,12 +22,21 @@ use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Resources\ClientResource\Pages\CreateClient;
 use App\Filament\Resources\ClientResource\Pages\EditClient;
 use App\Filament\Resources\ClientResource\Pages\ListClients;
+use App\Filament\Resources\ClientResource\Pages\ViewClient;
 use BackedEnum;
 use Closure;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\RestoreBulkAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Infolists\Components\IconEntry;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -33,18 +44,26 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 use InvalidArgumentException;
 
 /**
- * The Admin client screens: list, create and edit with billing data and terms (CL-01).
+ * The Admin client screens: list, create, edit and view with billing data and terms
+ * (CL-01), archive and restore (CL-05, D-11).
  *
  * Nothing here writes a row: the Create and Edit pages hand the form state to the
  * domain Actions CreateClient and UpdateClient, which own every rule. The stage
  * is a label and a list filter only (D-10). The client is Admin-only data (D-06):
  * the resource is not globally searchable, and a Partner gets 403 on every route.
  * A new client form opens pre-filled from the typed defaults (D-13); the values are
- * copied into the client row and never read from the settings again.
+ * copied into the client row and never read from the settings again. Archiving
+ * is a soft delete through the domain Actions; there is no force-delete action
+ * anywhere, so a client is never removed from the application.
  *
  * @phpstan-import-type ClientData from CreateClientAction
  */
@@ -79,6 +98,23 @@ final class ClientResource extends Resource
     public static function getPluralModelLabel(): string
     {
         return __('kokpit.clients.plural_model_label');
+    }
+
+    /**
+     * Archived clients stay reachable: the trashed filter decides what the list
+     * shows. The Partner scope is a different scope and stays on.
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->withoutGlobalScopes([SoftDeletingScope::class]);
+    }
+
+    /**
+     * An archived client opens by its URL.
+     */
+    public static function getRecordRouteBindingEloquentQuery(): Builder
+    {
+        return parent::getRecordRouteBindingEloquentQuery()->withoutGlobalScopes([SoftDeletingScope::class]);
     }
 
     public static function form(Schema $schema): Schema
@@ -183,6 +219,45 @@ final class ClientResource extends Resource
         ]);
     }
 
+    /**
+     * The read-only detail page: billing data and terms.
+     */
+    public static function infolist(Schema $schema): Schema
+    {
+        $empty = __('kokpit.clients.empty_value');
+
+        return $schema->components([
+            Section::make(__('kokpit.clients.sections.billing_data'))
+                ->columns(2)
+                ->schema([
+                    TextEntry::make('name')->label(__('kokpit.clients.fields.name')),
+                    TextEntry::make('company_number')->label(__('kokpit.clients.fields.company_number'))->placeholder($empty),
+                    TextEntry::make('tax_number')->label(__('kokpit.clients.fields.tax_number'))->placeholder($empty),
+                    TextEntry::make('country')->label(__('kokpit.clients.fields.country')),
+                    TextEntry::make('street')->label(__('kokpit.clients.fields.street'))->placeholder($empty),
+                    TextEntry::make('city')->label(__('kokpit.clients.fields.city'))->placeholder($empty),
+                    TextEntry::make('postal_code')->label(__('kokpit.clients.fields.postal_code'))->placeholder($empty),
+                ]),
+            Section::make(__('kokpit.clients.sections.terms'))
+                ->columns(2)
+                ->schema([
+                    TextEntry::make('stage')->label(__('kokpit.clients.fields.stage'))->badge(),
+                    TextEntry::make('currency')->label(__('kokpit.clients.fields.currency')),
+                    TextEntry::make('hourly_rate')
+                        ->label(__('kokpit.clients.fields.hourly_rate'))
+                        ->state(static fn (Client $record): string => str_replace('.', ',', $record->hourly_rate?->toMajor() ?? '').' '.$record->currency.' / '.__('kokpit.settings.defaults.per_hour')),
+                    TextEntry::make('payment_terms_days')
+                        ->label(__('kokpit.clients.fields.payment_terms_days'))
+                        ->suffix(' '.__('kokpit.clients.days')),
+                    TextEntry::make('invoice_language')->label(__('kokpit.clients.fields.invoice_language')),
+                    TextEntry::make('invoice_email')->label(__('kokpit.clients.fields.invoice_email'))->placeholder($empty),
+                    IconEntry::make('online_payment_enabled')
+                        ->label(__('kokpit.clients.fields.online_payment_enabled'))
+                        ->boolean(),
+                ]),
+        ]);
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -211,13 +286,83 @@ final class ClientResource extends Resource
                 SelectFilter::make('stage')
                     ->label(__('kokpit.clients.filters.stage'))
                     ->options(ClientStage::class),
+                TrashedFilter::make(),
             ])
             ->recordActions([
+                ViewAction::make(),
                 EditAction::make(),
+                self::archiveAction(DeleteAction::make()),
+                self::restoreAction(RestoreAction::make()),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    self::archiveBulkAction(DeleteBulkAction::make()),
+                    self::restoreBulkAction(RestoreBulkAction::make()),
+                ]),
             ])
             ->defaultSort('name')
             ->emptyStateHeading(__('kokpit.clients.empty_heading'))
             ->emptyStateDescription(__('kokpit.clients.empty_description'));
+    }
+
+    /**
+     * The Czech wording of the archive action: a soft delete through the domain
+     * Action, never a removal. The confirmation names what the archive does.
+     */
+    public static function archiveAction(DeleteAction $action): DeleteAction
+    {
+        return $action
+            ->label(__('kokpit.clients.actions.archive'))
+            ->modalHeading(__('kokpit.clients.actions.archive_heading'))
+            ->modalDescription(__('kokpit.clients.actions.archive_description'))
+            ->modalSubmitActionLabel(__('kokpit.clients.actions.archive'))
+            ->successNotificationTitle(__('kokpit.clients.notifications.archived'))
+            ->using(static function (Model $record): bool {
+                assert($record instanceof Client);
+
+                app(ArchiveClient::class)->handle($record);
+
+                return true;
+            });
+    }
+
+    public static function restoreAction(RestoreAction $action): RestoreAction
+    {
+        return $action
+            ->label(__('kokpit.clients.actions.restore'))
+            ->modalHeading(__('kokpit.clients.actions.restore_heading'))
+            ->modalDescription(__('kokpit.clients.actions.restore_description'))
+            ->modalSubmitActionLabel(__('kokpit.clients.actions.restore'))
+            ->successNotificationTitle(__('kokpit.clients.notifications.restored'))
+            ->using(static function (Model $record): bool {
+                assert($record instanceof Client);
+
+                app(RestoreClient::class)->handle($record);
+
+                return true;
+            });
+    }
+
+    public static function archiveBulkAction(DeleteBulkAction $action): DeleteBulkAction
+    {
+        return $action
+            ->label(__('kokpit.clients.actions.archive'))
+            ->modalHeading(__('kokpit.clients.actions.archive_heading'))
+            ->modalDescription(__('kokpit.clients.actions.archive_description'))
+            ->modalSubmitActionLabel(__('kokpit.clients.actions.archive'))
+            ->successNotificationTitle(__('kokpit.clients.notifications.archived_many'))
+            ->using(static fn (EloquentCollection $records) => self::eachClient($records, ArchiveClient::class));
+    }
+
+    public static function restoreBulkAction(RestoreBulkAction $action): RestoreBulkAction
+    {
+        return $action
+            ->label(__('kokpit.clients.actions.restore'))
+            ->modalHeading(__('kokpit.clients.actions.restore_heading'))
+            ->modalDescription(__('kokpit.clients.actions.restore_description'))
+            ->modalSubmitActionLabel(__('kokpit.clients.actions.restore'))
+            ->successNotificationTitle(__('kokpit.clients.notifications.restored_many'))
+            ->using(static fn (EloquentCollection $records) => self::eachClient($records, RestoreClient::class));
     }
 
     public static function getPages(): array
@@ -225,6 +370,7 @@ final class ClientResource extends Resource
         return [
             'index' => ListClients::route('/'),
             'create' => CreateClient::route('/create'),
+            'view' => ViewClient::route('/{record}'),
             'edit' => EditClient::route('/{record}/edit'),
         ];
     }
@@ -266,6 +412,21 @@ final class ClientResource extends Resource
             'invoice_language' => self::string($data['invoice_language'] ?? null),
             'online_payment_enabled' => (bool) ($data['online_payment_enabled'] ?? false),
         ];
+    }
+
+    /**
+     * Runs an archive or restore Action over the selected clients, one by one.
+     *
+     * @param  EloquentCollection<int, Model>  $records
+     * @param  class-string<ArchiveClient|RestoreClient>  $action
+     */
+    private static function eachClient(EloquentCollection $records, string $action): void
+    {
+        foreach ($records as $record) {
+            if ($record instanceof Client) {
+                app($action)->handle($record);
+            }
+        }
     }
 
     private static function nonEmpty(string $text): ?string

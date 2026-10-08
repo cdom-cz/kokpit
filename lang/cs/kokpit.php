@@ -306,6 +306,20 @@ return [
         'filters' => [
             'stage' => 'Stav',
         ],
+        'actions' => [
+            'archive' => 'Archivovat',
+            'restore' => 'Obnovit',
+            'archive_heading' => 'Archivovat klienta?',
+            'archive_description' => 'Archivovaný klient zmizí ze seznamů a výběrů. Jeho projekty zůstanou, ale klient je neuvidí ani v seznamu Moje projekty, a jeho přístupové účty se nebudou moci přihlásit, dokud klienta neobnovíte.',
+            'restore_heading' => 'Obnovit klienta?',
+            'restore_description' => 'Klient se vrátí do seznamů a výběrů, jeho přístupové účty se opět mohou přihlásit a jeho projekty viditelné pro klienta se mu znovu zobrazí.',
+        ],
+        'notifications' => [
+            'archived' => 'Klient byl archivován',
+            'restored' => 'Klient byl obnoven',
+            'archived_many' => 'Klienti byli archivováni',
+            'restored_many' => 'Klienti byli obnoveni',
+        ],
         'empty_heading' => 'Zatím tu nejsou žádní klienti',
         'empty_description' => 'Vytvořte prvního klienta.',
     ],
