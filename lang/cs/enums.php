@@ -9,4 +9,9 @@ return [
         'partner' => 'Partner',
     ],
 
+    'vat_mode' => [
+        'non_payer' => 'Neplátce DPH',
+        'payer' => 'Plátce DPH',
+    ],
+
 ];

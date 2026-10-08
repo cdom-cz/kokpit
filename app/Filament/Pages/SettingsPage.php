@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Filament\Pages;
 
 use App\Domain\Settings\Settings\DefaultsSettings;
+use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Settings\Settings\ValidatedSettings;
+use App\Domain\Settings\VatMode;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Money\Money;
@@ -58,6 +60,7 @@ class SettingsPage extends Page
      */
     private const SETTINGS = [
         SupplierSettings::class,
+        InvoicingSettings::class,
         DefaultsSettings::class,
     ];
 
@@ -116,6 +119,7 @@ class SettingsPage extends Page
             ->components([
                 Tabs::make()->tabs([
                     $this->supplierTab(),
+                    $this->invoicingTab(),
                     $this->defaultsTab(),
                 ]),
             ]);
@@ -194,6 +198,31 @@ class SettingsPage extends Page
                 $this->supplierInput('website')->url(),
                 $this->supplierInput('registration_note'),
             ])->statePath(SupplierSettings::group()),
+        ]);
+    }
+
+    private function invoicingTab(): Tab
+    {
+        $rules = InvoicingSettings::rules();
+
+        return Tab::make(__('kokpit.settings.tabs.invoicing'))->schema([
+            Group::make([
+                Select::make('vat_mode')
+                    ->label(__('kokpit.settings.invoicing.vat_mode'))
+                    ->helperText(__('kokpit.settings.invoicing.vat_mode_hint'))
+                    ->options(VatMode::class)
+                    ->native(false)
+                    ->required()
+                    ->rules($rules['vat_mode']),
+                TextInput::make('payment_due_days')
+                    ->label(__('kokpit.settings.invoicing.payment_due_days'))
+                    ->helperText(__('kokpit.settings.invoicing.payment_due_days_hint'))
+                    ->numeric()
+                    ->inputMode('numeric')
+                    ->suffix(__('kokpit.settings.invoicing.days'))
+                    ->required()
+                    ->rules($rules['payment_due_days']),
+            ])->statePath(InvoicingSettings::group()),
         ]);
     }
 

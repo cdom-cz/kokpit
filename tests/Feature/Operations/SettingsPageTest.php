@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Settings\Settings\DefaultsSettings;
+use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
+use App\Domain\Settings\VatMode;
 use App\Domain\Shared\Models\SettingsProperty;
 use App\Filament\Pages\SettingsPage;
 use Filament\Facades\Filament;
@@ -231,4 +233,28 @@ it('checks the decimals against the selected currency, so a currency without fra
         ])
         ->call('save')
         ->assertHasFormErrors(['defaults.default_hourly_rate']);
+});
+
+it('saves the VAT mode and the payment due days on the invoicing tab and shows them after a reload', function (): void {
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(SettingsPage::class)
+        ->fillForm([
+            'supplier' => fictionalSupplierState(exampleEmail()),
+            'invoicing' => ['vat_mode' => 'non_payer', 'payment_due_days' => 30],
+        ])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    app()->forgetScopedInstances();
+    $fresh = app(InvoicingSettings::class);
+
+    expect($fresh->vat_mode)->toBe(VatMode::NonPayer)
+        ->and($fresh->payment_due_days)->toBe(30);
+
+    app()->forgetScopedInstances();
+
+    Livewire::test(SettingsPage::class)
+        ->assertSet('data.invoicing.vat_mode', 'non_payer')
+        ->assertSet('data.invoicing.payment_due_days', 30);
 });

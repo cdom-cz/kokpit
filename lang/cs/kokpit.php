@@ -45,6 +45,7 @@ return [
         'saved' => 'Nastavení bylo uloženo.',
         'tabs' => [
             'supplier' => 'Dodavatel',
+            'invoicing' => 'Fakturace',
             'defaults' => 'Výchozí hodnoty',
         ],
         'supplier' => [
@@ -60,6 +61,15 @@ return [
             'phone' => 'Telefon',
             'website' => 'Web',
             'registration_note' => 'Poznámka o registraci',
+        ],
+        'invoicing' => [
+            'vat_mode' => 'Režim DPH',
+            'vat_mode_hint' => 'Zatím je podporován jen neplátce DPH. Režim plátce přibude později.',
+            'vat_mode_invalid' => 'Vyberte podporovaný režim DPH.',
+            'payment_due_days' => 'Splatnost faktur',
+            'payment_due_days_hint' => 'Počet dnů od vystavení do splatnosti, 0 až 365.',
+            'payment_due_days_invalid' => 'Zadejte celé číslo dnů od 0 do 365.',
+            'days' => 'dnů',
         ],
         'defaults' => [
             'default_currency' => 'Výchozí měna',
