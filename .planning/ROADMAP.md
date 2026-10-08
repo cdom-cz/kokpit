@@ -215,7 +215,7 @@ Plans:
   4. From the client detail Admin invites a Partner account by e-mail, and the invited person sets a password and logs in
   5. A Partner sees only projects of their own client that are flagged client-visible, never sees rates, prices or estimates in lists, details, selects or search, and never sees another client's canary data
 
-**Plans:** 9/21 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
+**Plans:** 10/21 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
 **UI hint**: yes
 
 Plans:
@@ -247,7 +247,7 @@ Plans:
 - [x] 04-09-PLAN.md — Admin client resource with billing data and terms, exact money and field validation (CL-01)
 
 **Wave 10** *(blocked on Wave 9 completion)*
-- [ ] 04-10-PLAN.md — Typed default invoice language and the one-time defaults prefill of new clients (CL-01)
+- [x] 04-10-PLAN.md — Typed default invoice language and the one-time defaults prefill of new clients (CL-01)
 
 **Wave 11** *(blocked on Wave 10 completion)*
 - [ ] 04-11-PLAN.md — Client archive and restore, client tags, client history, currency lock and per-country company number uniqueness (CL-05, CL-01)
@@ -410,7 +410,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Repository Hygiene | 11/11 | Complete    | 2026-10-08 |
 | 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
 | 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
-| 4. Clients and Projects | 9/21 | In Progress | - |
+| 4. Clients and Projects | 10/21 | In Progress | - |
 | 5. Tasks and Kanban | 0/0 | Not started | - |
 | 6. Time Tracking | 0/0 | Not started | - |
 | 7. REST API | 0/0 | Not started | - |

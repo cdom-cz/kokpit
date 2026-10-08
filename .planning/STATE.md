@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: Clients and Projects
 status: executing
-stopped_at: Completed 04-09-PLAN.md
-last_updated: "2026-10-08T13:56:42.196Z"
+stopped_at: Completed 04-10-PLAN.md
+last_updated: "2026-10-08T14:08:10.187Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 4 execution started
-state_head: f5e9c93d4556a620f3f63622932d12264ff3ddcb
+state_head: 59701bb42cabf27f0d8786cc9caf550f0f93880c
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 64
-  completed_plans: 52
+  completed_plans: 53
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 4 (Clients and Projects) — EXECUTING
-Plan: 10 of 21
+Plan: 11 of 21
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 4 execution started
 
@@ -110,6 +110,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 04 P07 | 11 min | 2 tasks | 12 files |
 | Phase 04 P08 | 14 min | 2 tasks | 13 files |
 | Phase 04 P09 | 10 min | 2 tasks | 14 files |
+| Phase 04 P10 | 15 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -218,6 +219,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-08: ProjectKeySuggester is a static pure service; clearing a typed key resumes the suggestion; Select over an enum returns the enum case so ProjectResource::actionData normalises it — The suggester must not touch models or the database; the Admin should be able to go back to the suggestion; Action data are plain strings
 - [Phase 04]: 04-09: ClientInput is the single validator for CreateClient and UpdateClient; the form rate rule calls the same ClientInput::rate (Money::fromMajor, no rounding)
 - [Phase 04]: 04-09: Admin-only resource with a deny-all Partner scope refuses in the edit page mount() with 403 (the scope would answer 404 first; withoutGlobalScopes() is a banned escape hatch)
+- [Phase 04]: 04-10: the default hourly rate is applied to a new client only when its currency equals the default currency; otherwise the rate stays a field error
+- [Phase 04]: 04-10: CreateClient treats only an absent key as missing; a present empty value is validated, not replaced by a default
 
 ### Pending Todos
 
@@ -256,6 +259,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T13:56:42.059Z
-Stopped at: Completed 04-09-PLAN.md
+Last session: 2026-10-08T14:08:10.093Z
+Stopped at: Completed 04-10-PLAN.md
 Resume file: None
