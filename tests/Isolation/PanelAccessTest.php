@@ -23,6 +23,9 @@ use Tests\Support\Filament\Fixtures\PolicyDeniedRelationManager;
 use Tests\Support\Filament\Fixtures\PolicyDeniedResource;
 use Tests\Support\Filament\Fixtures\UndeclaredCanaryRecordResource;
 use Tests\Support\Filament\Fixtures\UndeclaredPage;
+use Tests\Support\Filament\Fixtures\VisibleOverrideHistoryRelationManager;
+use Tests\Support\Filament\Fixtures\VisibleOverrideWidget;
+use Tests\Support\Probes\ActivityProbe;
 
 /**
  * One user per state of the access matrix.
@@ -231,6 +234,30 @@ it('refuses a Partner before the page mount() runs and runs it for an Admin', fu
     Livewire::test(MountProbePage::class)->assertOk();
 
     expect(MountProbePage::$mounted)->toBeTrue();
+});
+
+it('refuses a Partner before a relation manager or a widget mount() runs, whatever their own visibility check says', function (): void {
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    ActivityProbe::provision();
+
+    try {
+        $this->actingAs(Canary::admin());
+        $owner = ActivityProbe::query()->create(['title' => 'Boot order probe']);
+
+        foreach (['partner with a client' => fn () => Canary::partnerFor(Canary::twoClients()[0]), 'partner without a client' => fn () => Canary::partnerFor(null), 'user without a role' => fn () => Canary::userWithoutRole(null)] as $state => $make) {
+            VisibleOverrideHistoryRelationManager::$mounted = false;
+            VisibleOverrideWidget::$mounted = false;
+            $this->actingAs($make());
+
+            Livewire::test(VisibleOverrideHistoryRelationManager::class, ['ownerRecord' => $owner, 'pageClass' => Dashboard::class])->assertForbidden();
+            Livewire::test(VisibleOverrideWidget::class)->assertForbidden();
+
+            expect(VisibleOverrideHistoryRelationManager::$mounted)->toBeFalse($state)
+                ->and(VisibleOverrideWidget::$mounted)->toBeFalse($state);
+        }
+    } finally {
+        ActivityProbe::restoreMorphMap();
+    }
 });
 
 it('registers the canary resource and its routes while the harness is on', function (): void {

@@ -11,12 +11,21 @@ use Illuminate\Database\Eloquent\Model;
  * Makes a relation manager's visibility the AND of its #[AccessRule] and the
  * parent check of the related resource or policy (D-03).
  *
- * @phpstan-ignore trait.unused (first real relation manager arrives in Phase 4; tests use it today)
+ * Filament runs its own visibility check at boot, before mount(). That check
+ * calls canViewForRecord(), so a class that overrides it can widen what it
+ * admits. The boot hook below asks the declaration directly and cannot be
+ * widened: a user the declaration refuses never reaches the class's own code
+ * (research Pitfall 1).
  */
 trait EnforcesRelationManagerAccessRule
 {
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
         return AccessRules::allows(static::class) && parent::canViewForRecord($ownerRecord, $pageClass);
+    }
+
+    public function bootEnforcesRelationManagerAccessRule(): void
+    {
+        abort_unless(AccessRules::allows(static::class), 403);
     }
 }
