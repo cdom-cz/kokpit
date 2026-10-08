@@ -8,6 +8,8 @@ use App\Domain\Clients\Actions\ArchiveClient;
 use App\Domain\Clients\Actions\ClientInput;
 use App\Domain\Clients\Actions\CreateClient as CreateClientAction;
 use App\Domain\Clients\Actions\RestoreClient;
+use App\Domain\Clients\Ares\AresClient;
+use App\Domain\Clients\Ares\AresLookupFailed;
 use App\Domain\Clients\Enums\ClientStage;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
@@ -30,6 +32,7 @@ use App\Filament\Resources\ClientResource\Pages\ViewClient;
 use App\Filament\Resources\ClientResource\RelationManagers\ContactsRelationManager;
 use BackedEnum;
 use Closure;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -37,6 +40,7 @@ use Filament\Actions\EditAction;
 use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\SpatieTagsInput;
 use Filament\Forms\Components\TextInput;
@@ -44,9 +48,11 @@ use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\SpatieTagsEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\SpatieTagsColumn;
@@ -58,6 +64,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 /**
@@ -160,23 +167,40 @@ final class ClientResource extends Resource
                     TextInput::make('company_number')
                         ->label(__('kokpit.clients.fields.company_number'))
                         ->maxLength(32)
-                        ->rule(new CompanyIdRule, static fn (Get $get): bool => self::isCzech($get('country'))),
+                        ->rule(new CompanyIdRule, static fn (Get $get): bool => self::isCzech($get('country')))
+                        ->hint(self::aresHint('company_number'))
+                        ->hintColor('success')
+                        ->suffixAction(self::aresAction()),
                     TextInput::make('name')
                         ->label(__('kokpit.clients.fields.name'))
                         ->required()
-                        ->maxLength(255),
+                        ->maxLength(255)
+                        ->hint(self::aresHint('name'))
+                        ->hintColor('success'),
                     TextInput::make('tax_number')
                         ->label(__('kokpit.clients.fields.tax_number'))
-                        ->maxLength(32),
+                        ->maxLength(32)
+                        ->hint(self::aresHint('tax_number'))
+                        ->hintColor('success'),
                     TextInput::make('street')
                         ->label(__('kokpit.clients.fields.street'))
-                        ->maxLength(255),
+                        ->maxLength(255)
+                        ->hint(self::aresHint('street'))
+                        ->hintColor('success'),
                     TextInput::make('city')
                         ->label(__('kokpit.clients.fields.city'))
-                        ->maxLength(255),
+                        ->maxLength(255)
+                        ->hint(self::aresHint('city'))
+                        ->hintColor('success'),
                     TextInput::make('postal_code')
                         ->label(__('kokpit.clients.fields.postal_code'))
-                        ->maxLength(20),
+                        ->maxLength(20)
+                        ->hint(self::aresHint('postal_code'))
+                        ->hintColor('success'),
+                    // The fields the last ARES lookup changed; form state only, never saved.
+                    Hidden::make('ares_changed')
+                        ->default([])
+                        ->dehydrated(false),
                 ]),
             Section::make(__('kokpit.clients.sections.terms'))
                 ->columns(2)
@@ -479,6 +503,63 @@ final class ClientResource extends Resource
                 app($action)->handle($record);
             }
         }
+    }
+
+    /**
+     * The ARES button on the company number (CL-04, D-08, D-09). Shown only for a
+     * Czech client. A failed lookup becomes a field error and nothing is written;
+     * a successful one fills only the ARES fields and records which of them changed.
+     */
+    private static function aresAction(): Action
+    {
+        return Action::make('ares')
+            ->label(__('kokpit.ares.button'))
+            ->icon(Heroicon::OutlinedMagnifyingGlass)
+            ->visible(static fn (Get $get): bool => self::isCzech($get('country')))
+            ->action(static function (Get $get, Set $set, TextInput $component, AresClient $ares): void {
+                $number = $get('company_number');
+
+                try {
+                    $company = $ares->lookup(is_string($number) ? $number : '');
+                } catch (AresLookupFailed $failure) {
+                    throw ValidationException::withMessages([(string) $component->getStatePath() => $failure->userMessage()]);
+                }
+
+                // Only after success: a failed lookup leaves every field as it was.
+                $changed = [];
+
+                foreach ($company->formState() as $field => $value) {
+                    if ($get($field) !== $value) {
+                        $changed[] = $field;
+                    }
+
+                    $set($field, $value);
+                }
+
+                $set('ares_changed', $changed);
+
+                if ($company->taxNumber === null) {
+                    Notification::make()->title(__('kokpit.ares.no_tax_number'))->warning()->send();
+                }
+            });
+    }
+
+    /**
+     * The success hint of an ARES-sourced input while the last lookup changed it.
+     */
+    private static function aresHint(string $field): Closure
+    {
+        return static function (Get $get) use ($field): ?string {
+            $changed = $get('ares_changed');
+
+            if (! is_array($changed) || ! in_array($field, $changed, true)) {
+                return null;
+            }
+
+            $hint = __('kokpit.ares.filled');
+
+            return is_string($hint) ? $hint : null;
+        };
     }
 
     /**

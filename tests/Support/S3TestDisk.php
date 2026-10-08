@@ -7,6 +7,7 @@ namespace Tests\Support;
 use Aws\Exception\AwsException;
 use Aws\S3\S3Client;
 use Illuminate\Filesystem\FilesystemAdapter;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Assert;
 
@@ -24,11 +25,16 @@ final class S3TestDisk
 
     /**
      * Sets the bucket and makes sure it exists.
+     *
+     * The test endpoint is the one host that tests may reach over the Http client
+     * (the storage check reads an object without a signature); every other host
+     * stays blocked by Http::preventStrayRequests() in the test base class.
      */
     public static function use(string $bucket = self::BUCKET): void
     {
         config(['filesystems.disks.s3.bucket' => $bucket]);
         Storage::forgetDisk('s3');
+        Http::allowStrayRequests([rtrim((string) config('filesystems.disks.s3.endpoint'), '/').'/*']);
 
         $client = self::client();
         $host = self::host();

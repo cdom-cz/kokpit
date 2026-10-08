@@ -289,8 +289,15 @@ return [
     ],
 
     'ares' => [
+        'button' => 'Načíst z ARES',
+        'filled' => 'Načteno z ARES',
+        'no_tax_number' => 'ARES nevrátil DIČ, zadané DIČ zůstalo beze změny.',
         'errors' => [
             'invalid_id' => 'Zadejte platné osmimístné IČO se správnou kontrolní číslicí.',
+            'not_found' => 'ARES tento subjekt nenašel.',
+            'unavailable' => 'ARES teď neodpovídá. Zkuste to později nebo údaje vyplňte ručně.',
+            'rate_limited' => 'Příliš mnoho dotazů do ARES, chvíli počkejte.',
+            'malformed' => 'ARES vrátil nečekanou odpověď. Údaje vyplňte ručně.',
         ],
     ],
 

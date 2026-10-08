@@ -60,6 +60,14 @@ final class EditClient extends EditRecord
     }
 
     /**
+     * Saving clears the "loaded from ARES" marks.
+     */
+    protected function afterSave(): void
+    {
+        $this->data['ares_changed'] = [];
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      */
     protected function handleRecordUpdate(Model $record, array $data): Model

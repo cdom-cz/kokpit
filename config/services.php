@@ -16,6 +16,11 @@ return [
     |
     */
 
+    // ARES, the public Czech business register: a government address, no key or account.
+    'ares' => [
+        'base_url' => env('ARES_BASE_URL', 'https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

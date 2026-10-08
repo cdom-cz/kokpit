@@ -6,10 +6,22 @@ namespace Tests;
 
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
 {
+    /**
+     * No test may reach a real HTTP service: a request without a fake fails the test
+     * (the ARES lookup must never call the live registry from a test).
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Http::preventStrayRequests();
+    }
+
     /**
      * Create the application, then refuse to continue unless the default
      * connection is a PostgreSQL database dedicated to tests.
