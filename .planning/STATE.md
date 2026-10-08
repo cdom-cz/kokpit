@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: Clients and Projects
 status: executing
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-10-08T12:33:39.608Z"
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-10-08T12:44:12.896Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 4 execution started
-state_head: 338160543271a6c5dfa75f909d9b6158316c3215
+state_head: 21b956200801f6825cc965727d88e4b3dd6c69e1
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 64
-  completed_plans: 44
+  completed_plans: 45
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 4 (Clients and Projects) — EXECUTING
-Plan: 2 of 21
+Plan: 3 of 21
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 4 execution started
 
@@ -102,6 +102,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 03 P18 | 13 min | 3 tasks | 14 files |
 | Phase 03 P19 | 5 min | 2 tasks | 3 files |
 | Phase 04 P01 | 12 min | 3 tasks | 14 files |
+| Phase 04 P02 | 8 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -200,6 +201,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-19: .gitignore reviewed for Phase 3, no change needed (no new tool output in the tree) — Spike work lives outside the repo, resources/views is tracked, ignored paths are already covered by existing rules
 - [Phase 03]: 03-19: CONTRIBUTING class names are guarded by RepositoryFilesTest (class_exists over the documented mechanisms) — A renamed or removed class fails the suite instead of leaving stale documentation
 - [Phase 04]: 04-01: company ID and tax ID stored as company_number and tax_number; canAccessPanel keeps no memo and re-reads the client in runAsSystem on every call — Schema rule R1 demands every *_id column be uuid; an archive must refuse the Partner's very next request
+- [Phase 04]: 04-02: projects.client_id is never fillable; creation goes through Client::projects() or forceFill — Prevents a project being created under or moved to another client by mass assignment (T-04-52)
+- [Phase 04]: 04-02: Partner scope checks the archived client with a plain EXISTS on clients.deleted_at — Client is deny-all for a Partner, so a Client model subquery would hide its own row
 
 ### Pending Todos
 
@@ -238,6 +241,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T12:33:39.499Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-10-08T12:44:12.806Z
+Stopped at: Completed 04-02-PLAN.md
 Resume file: None

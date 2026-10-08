@@ -215,7 +215,7 @@ Plans:
   4. From the client detail Admin invites a Partner account by e-mail, and the invited person sets a password and logs in
   5. A Partner sees only projects of their own client that are flagged client-visible, never sees rates, prices or estimates in lists, details, selects or search, and never sees another client's canary data
 
-**Plans:** 1/21 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
+**Plans:** 2/21 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
 **UI hint**: yes
 
 Plans:
@@ -223,7 +223,7 @@ Plans:
 - [x] 04-01-PLAN.md — Tracer: clients table, Admin-only Client, real canary clients, users FK with deactivation and archived-client lockout (CL-01, CL-05, US-02)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 04-02-PLAN.md — Projects table, fail-closed Project Partner scope and policy, Project canary fixture, projects column allowlist (PR-04, PR-01, PR-02, CL-05)
+- [x] 04-02-PLAN.md — Projects table, fail-closed Project Partner scope and policy, Project canary fixture, projects column allowlist (PR-04, PR-01, PR-02, CL-05)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 04-03-PLAN.md — Read-only Partner project list and detail with Partner-safe columns and the route-walk resource map (PR-04, PR-01)
@@ -410,7 +410,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Repository Hygiene | 11/11 | Complete    | 2026-10-08 |
 | 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
 | 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
-| 4. Clients and Projects | 1/21 | In Progress | - |
+| 4. Clients and Projects | 2/21 | In Progress | - |
 | 5. Tasks and Kanban | 0/0 | Not started | - |
 | 6. Time Tracking | 0/0 | Not started | - |
 | 7. REST API | 0/0 | Not started | - |
