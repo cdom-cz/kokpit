@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Operations\Jobs\KokpitJob;
 use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
+use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Queue\Attributes\Timeout;
 use Illuminate\Queue\RedisQueue;
@@ -36,7 +37,7 @@ function horizonLongestTimeout(): int
     return max($timeouts);
 }
 
-function horizonScheduleEventNamed(string $name): ?Illuminate\Console\Scheduling\Event
+function horizonScheduleEventNamed(string $name): ?Event
 {
     foreach (app(Schedule::class)->events() as $event) {
         if ($event->description === $name) {
