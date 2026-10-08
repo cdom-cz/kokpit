@@ -511,7 +511,8 @@ it('renders a board of 200 cards with the same number of queries as a board of 2
             $project = $projects[$made % 2];
             $task = taskBoardTask($project, 'Example bulk card '.$made, $status);
 
-            if ($made % 5 === 0) {
+            // Every column gets a subtask in every batch, so each column runs the same eager loads.
+            if ($i < 6) {
                 taskBoardTask($project, 'Example bulk subtask '.$made, $status, ['parent_id' => $task->id, 'depth' => 1]);
                 $made++;
             }

@@ -7,8 +7,10 @@ namespace App\Domain\Tasks\Board;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Models\Task;
+use App\Providers\LocalisationServiceProvider;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use LogicException;
@@ -153,7 +155,17 @@ class TaskBoard
         $columns = [];
 
         foreach (ProjectStatus::cases() as $status) {
-            $query = $this->applyFilters(Task::query(), $filters)->where('tasks.status', $status->value);
+            $query = $this->applyFilters(Task::query(), $filters)
+                ->where('tasks.status', $status->value)
+                ->with([
+                    'assignee:id,name',
+                    'parent' => static fn ($parent) => $parent->withTrashed()->select('tasks.id', 'tasks.reference'),
+                    'tags',
+                ])
+                ->withCount([
+                    'checklistItems',
+                    'checklistItems as checklist_done_count' => static fn (Builder $items): Builder => $items->where('is_done', true),
+                ]);
 
             if ($status === ProjectStatus::Done) {
                 $total = (clone $query)->count();
@@ -273,6 +285,16 @@ class TaskBoard
      */
     private function card(Task $task): array
     {
+        $checklistTotal = (int) $task->getAttribute('checklist_items_count');
+
+        $tags = [];
+
+        foreach ($task->tags as $tag) {
+            if ($tag instanceof Tag && $tag->type === TagType::Task->value) {
+                $tags[] = (string) $tag->name;
+            }
+        }
+
         return [
             'id' => (string) $task->getKey(),
             'reference' => $task->reference,
@@ -280,6 +302,12 @@ class TaskBoard
             'priority' => $task->priority->value,
             'priority_label' => $task->priority->getLabel(),
             'priority_color' => $task->priority->getColor(),
+            'due_date' => $task->due_date?->format(LocalisationServiceProvider::DATE_FORMAT),
+            'tags' => $tags,
+            'checklist' => $checklistTotal === 0 ? null : (int) $task->getAttribute('checklist_done_count').'/'.$checklistTotal,
+            'escalated' => $task->escalated_at !== null,
+            'assignee' => $task->assignee?->name,
+            'parent_reference' => $task->parent?->reference,
         ];
     }
 }

@@ -450,6 +450,14 @@ return [
             'all' => 'Vše',
             'reset' => 'Zrušit filtry',
         ],
+        'card' => [
+            'escalated' => 'Eskalováno',
+            'subtask_of' => 'Podúkol :reference',
+            'open' => 'Otevřít úkol',
+            'checklist' => 'Kontrolní seznam',
+            'assignee' => 'Řešitel',
+            'due_date' => 'Termín',
+        ],
     ],
 
     'tasks' => [
