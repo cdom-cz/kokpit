@@ -578,17 +578,28 @@ return [
             'deactivate_heading' => 'Deaktivovat účet?',
             'deactivate_description' => 'Účet se okamžitě odhlásí, nepůjde se přihlásit a jeho přístupové tokeny se smažou. Účet se nemaže a lze ho znovu aktivovat.',
             'reactivate' => 'Aktivovat znovu',
+            'send_password_reset' => 'Poslat reset hesla',
+            'send_password_reset_heading' => 'Poslat odkaz pro obnovení hesla?',
+            'send_password_reset_description' => 'Partnerovi přijde e-mail s odkazem, přes který si nastaví nové heslo.',
         ],
         'notifications' => [
             'deactivated' => 'Účet byl deaktivován',
             'reactivated' => 'Účet byl znovu aktivován',
+            'reset_sent' => 'Odkaz pro obnovení hesla byl odeslán',
             'failed' => 'Účet se nepodařilo změnit',
         ],
         'errors' => [
             'not_a_partner' => 'Spravovat lze jen účty partnerů.',
+            'reset_throttled' => 'Odkaz pro obnovení hesla byl odeslán před chvílí. Zkuste to znovu za minutu.',
+            'reset_failed' => 'Odkaz pro obnovení hesla se nepodařilo odeslat.',
         ],
         'empty_heading' => 'Zatím tu nejsou žádné účty',
         'empty_description' => 'Účet vznikne, když pozvaný partner přijme pozvánku.',
+    ],
+
+    'password_reset' => [
+        'sent' => 'Odkaz pro obnovení hesla je na cestě',
+        'sent_body' => 'Pokud k zadané adrese existuje aktivní účet, poslali jsme na ni e-mail s odkazem pro nastavení nového hesla.',
     ],
 
     'alerts' => [

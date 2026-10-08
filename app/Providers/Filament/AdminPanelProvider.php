@@ -6,6 +6,7 @@ namespace App\Providers\Filament;
 
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Pages\Auth\AcceptInvitation;
+use App\Filament\Pages\Auth\RequestPasswordReset;
 use App\Filament\Pages\Dashboard;
 use App\Http\Middleware\EnsureAdminHasTwoFactor;
 use App\Http\Middleware\SetNoReferrerPolicy;
@@ -51,6 +52,12 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login()
             ->profile()
+            // The reset link the Admin sends from the client detail (US-02, D-04) opens Filament's
+            // signed reset page, and passwordReset() is what registers it. It also registers the
+            // public "forgot password" page, which is our own subclass that answers every address
+            // the same way and mails only an active account. The reset password rule is in
+            // AppServiceProvider.
+            ->passwordReset(RequestPasswordReset::class)
             // The invitation link (US-02): a guest page on a signed route, named
             // filament.admin.invitation.accept. It has no path parameters; the invitation id and the
             // token travel as query parameters under the signature. The page is not registered as a

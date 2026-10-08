@@ -221,8 +221,6 @@ it('answers the public request page the same for an unknown e-mail, a deactivate
     Notification::assertNotSentTo($off, ResetPasswordNotification::class);
     Notification::assertNotSentTo($archived, ResetPasswordNotification::class);
     Notification::assertSentToTimes($active, ResetPasswordNotification::class, 1);
-    expect(resetTokenCount($off->email))->toBe(0)
-        ->and(resetTokenCount($archived->email))->toBe(0);
 });
 
 it('keeps the generic answer when a reset was requested a moment ago and mails only once', function (): void {

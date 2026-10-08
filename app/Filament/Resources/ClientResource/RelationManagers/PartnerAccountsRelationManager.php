@@ -6,6 +6,7 @@ namespace App\Filament\Resources\ClientResource\RelationManagers;
 
 use App\Domain\Clients\Actions\DeactivatePartnerAccount;
 use App\Domain\Clients\Actions\ReactivatePartnerAccount;
+use App\Domain\Clients\Actions\SendPartnerPasswordReset;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
@@ -25,7 +26,8 @@ use Illuminate\Database\Eloquent\Model;
  *
  * The tab has no create, edit, delete, attach or detach: accounts come from the
  * invitation flow and are never removed, deactivation is the only way to take
- * access away. There is no global user screen either; the one Admin account is
+ * access away. Besides deactivate and reactivate the Admin can send a password
+ * reset link to an active account. There is no global user screen either; the one Admin account is
  * managed by the install and reset commands.
  */
 #[AccessRule(Audience::AdminOnly, reason: 'Partner accounts decide who may sign in for a client; a Partner never sees or changes them.')]
@@ -97,6 +99,21 @@ final class PartnerAccountsRelationManager extends RelationManager
                         $this->run(
                             static fn () => app(ReactivatePartnerAccount::class)->handle($record),
                             __('kokpit.partner_accounts.notifications.reactivated'),
+                        );
+                    }),
+                Action::make('sendPasswordReset')
+                    ->label(__('kokpit.partner_accounts.actions.send_password_reset'))
+                    ->icon(Heroicon::OutlinedKey)
+                    ->requiresConfirmation()
+                    ->modalHeading(__('kokpit.partner_accounts.actions.send_password_reset_heading'))
+                    ->modalDescription(__('kokpit.partner_accounts.actions.send_password_reset_description'))
+                    ->hidden(static fn (Model $record): bool => ! $record instanceof User || $record->deactivated_at !== null)
+                    ->action(function (Model $record): void {
+                        assert($record instanceof User);
+
+                        $this->run(
+                            static fn () => app(SendPartnerPasswordReset::class)->handle($record),
+                            __('kokpit.partner_accounts.notifications.reset_sent'),
                         );
                     }),
             ])
