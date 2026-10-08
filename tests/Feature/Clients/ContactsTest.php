@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Actions\CreateContact;
+use App\Domain\Clients\Actions\DeleteContact;
+use App\Domain\Clients\Actions\SetPrimaryContact;
+use App\Domain\Clients\Actions\UpdateContact;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\Contact;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -244,4 +247,209 @@ it('does not let a crafted payload set the primary flag or the client', function
     // And the model refuses mass assignment of both columns.
     expect(static fn () => $client->contacts()->create(['name' => 'Example mass', 'is_primary' => true]))->toThrow(MassAssignmentException::class)
         ->and(static fn () => Contact::query()->create(['name' => 'Example mass', 'client_id' => $other->id]))->toThrow(MassAssignmentException::class);
+});
+
+/**
+ * Three contacts of one client; the first one created is the primary.
+ *
+ * @return array{0: Client, 1: Contact, 2: Contact, 3: Contact}
+ */
+function clientWithThreeContacts(): array
+{
+    $client = Client::factory()->create();
+
+    return [
+        $client,
+        app(CreateContact::class)->handle($client, contactForm(['name' => 'Example primary'])),
+        app(CreateContact::class)->handle($client, contactForm(['name' => 'Example second'])),
+        app(CreateContact::class)->handle($client, contactForm(['name' => 'Example third'])),
+    ];
+}
+
+it('moves the primary flag to another contact and leaves exactly one primary', function (): void {
+    [$client, $primary, $second, $third] = clientWithThreeContacts();
+
+    app(SetPrimaryContact::class)->handle($second);
+
+    expect($primary->refresh()->is_primary)->toBeFalse()
+        ->and($second->refresh()->is_primary)->toBeTrue()
+        ->and($third->refresh()->is_primary)->toBeFalse()
+        ->and(Contact::query()->where('client_id', $client->id)->where('is_primary', true)->count())->toBe(1);
+});
+
+it('changes nothing when the contact is already the primary', function (): void {
+    [$client, $primary] = clientWithThreeContacts();
+    $before = $primary->refresh()->updated_at;
+
+    app(SetPrimaryContact::class)->handle($primary);
+
+    expect($primary->refresh()->is_primary)->toBeTrue()
+        ->and($primary->updated_at?->equalTo($before))->toBeTrue()
+        ->and(Contact::query()->where('client_id', $client->id)->where('is_primary', true)->count())->toBe(1);
+});
+
+it('does not touch the primary of another client when it moves the flag', function (): void {
+    [, , $second] = clientWithThreeContacts();
+    $other = app(CreateContact::class)->handle(Client::factory()->create(), contactForm());
+
+    app(SetPrimaryContact::class)->handle($second);
+
+    expect($other->refresh()->is_primary)->toBeTrue()
+        ->and(Contact::query()->where('is_primary', true)->count())->toBe(2);
+});
+
+it('locks the client row while it moves the primary flag', function (): void {
+    [, , $second] = clientWithThreeContacts();
+    $statements = [];
+    DB::listen(static function ($query) use (&$statements): void {
+        $statements[] = mb_strtolower($query->sql);
+    });
+
+    app(SetPrimaryContact::class)->handle($second);
+
+    $locks = array_filter($statements, static fn (string $sql): bool => str_contains($sql, 'from "clients"') && str_contains($sql, 'for update'));
+
+    expect($locks)->not->toBeEmpty();
+});
+
+it('moves the primary flag from the Kontakty tab and hides the action on the primary row', function (): void {
+    [$client, $primary, $second] = clientWithThreeContacts();
+
+    contactsTab($client)
+        ->assertActionHidden(TestAction::make('setPrimary')->table($primary))
+        ->assertActionVisible(TestAction::make('setPrimary')->table($second))
+        ->callAction(TestAction::make('setPrimary')->table($second));
+
+    expect($primary->refresh()->is_primary)->toBeFalse()
+        ->and($second->refresh()->is_primary)->toBeTrue();
+});
+
+it('refuses to delete the primary while other contacts exist and deletes nothing', function (): void {
+    [$client, $primary] = clientWithThreeContacts();
+
+    expect(static fn () => app(DeleteContact::class)->handle($primary))
+        ->toThrow(ValidationException::class, __('kokpit.contacts.errors.primary_delete'))
+        ->and(Contact::query()->where('client_id', $client->id)->count())->toBe(3);
+
+    contactsTab($client)
+        ->callAction(TestAction::make('delete')->table($primary))
+        ->assertNotified(__('kokpit.contacts.errors.primary_delete'));
+
+    expect(Contact::query()->where('client_id', $client->id)->count())->toBe(3)
+        ->and($primary->refresh()->is_primary)->toBeTrue();
+});
+
+it('deletes a contact that is not the primary and keeps the primary', function (): void {
+    [$client, $primary, $second] = clientWithThreeContacts();
+
+    contactsTab($client)->callAction(TestAction::make('delete')->table($second));
+
+    expect(Contact::query()->whereKey($second->id)->exists())->toBeFalse()
+        ->and($primary->refresh()->is_primary)->toBeTrue()
+        ->and(Contact::query()->where('client_id', $client->id)->count())->toBe(2);
+});
+
+it('lets the primary go once it is the only contact, and the next contact becomes the primary', function (): void {
+    $client = Client::factory()->create();
+    $only = app(CreateContact::class)->handle($client, contactForm());
+
+    contactsTab($client)->callAction(TestAction::make('delete')->table($only));
+
+    expect(Contact::query()->where('client_id', $client->id)->count())->toBe(0);
+
+    $next = app(CreateContact::class)->handle($client, contactForm());
+
+    expect($next->is_primary)->toBeTrue();
+});
+
+it('lets the primary be deleted after it handed the flag to another contact', function (): void {
+    [$client, $primary, $second, $third] = clientWithThreeContacts();
+
+    app(SetPrimaryContact::class)->handle($second);
+    app(DeleteContact::class)->handle($primary);
+
+    expect(Contact::query()->whereKey($primary->id)->exists())->toBeFalse()
+        ->and($second->refresh()->is_primary)->toBeTrue()
+        ->and($third->refresh()->is_primary)->toBeFalse();
+});
+
+it('edits name, e-mail, phone, position and billing flag and never the primary flag', function (): void {
+    [$client, $primary, $second] = clientWithThreeContacts();
+
+    $changes = contactForm(['name' => 'Example renamed', 'position' => 'Example new position', 'is_billing' => true]);
+
+    contactsTab($client)
+        ->callAction(TestAction::make('edit')->table($second), $changes)
+        ->assertHasNoFormErrors();
+
+    $second->refresh();
+
+    expect($second->name)->toBe('Example renamed')
+        ->and($second->email)->toBe($changes['email'])
+        ->and($second->phone)->toBe($changes['phone'])
+        ->and($second->position)->toBe('Example new position')
+        ->and($second->is_billing)->toBeTrue()
+        ->and($second->is_primary)->toBeFalse()
+        ->and($primary->refresh()->is_primary)->toBeTrue();
+});
+
+it('has no primary field in the edit modal', function (): void {
+    [$client, , $second] = clientWithThreeContacts();
+
+    contactsTab($client)
+        ->mountAction(TestAction::make('edit')->table($second))
+        ->assertSchemaComponentExists('name', 'mountedActionSchema0')
+        ->assertSchemaComponentDoesNotExist('make_primary', 'mountedActionSchema0')
+        ->assertSchemaComponentDoesNotExist('is_primary', 'mountedActionSchema0');
+});
+
+it('ignores a primary flag in the payload of UpdateContact and of the edit modal', function (): void {
+    [$client, $primary, $second] = clientWithThreeContacts();
+
+    $updated = app(UpdateContact::class)->handle($second, [...contactForm(['name' => 'Example crafted edit']), 'is_primary' => true, 'client_id' => Client::factory()->create()->id]);
+
+    expect($updated->is_primary)->toBeFalse()
+        ->and($updated->client_id)->toBe($client->id)
+        ->and($primary->refresh()->is_primary)->toBeTrue();
+
+    contactsTab($client)
+        ->callAction(TestAction::make('edit')->table($second), contactForm(['name' => 'Example crafted modal', 'is_primary' => true, 'make_primary' => true]))
+        ->assertHasNoFormErrors();
+
+    expect($second->refresh()->name)->toBe('Example crafted modal')
+        ->and($second->is_primary)->toBeFalse()
+        ->and(Contact::query()->where('client_id', $client->id)->where('is_primary', true)->count())->toBe(1);
+});
+
+it('reports the problems of an edited contact as field errors and changes nothing', function (): void {
+    [$client, , $second] = clientWithThreeContacts();
+
+    contactsTab($client)
+        ->callAction(TestAction::make('edit')->table($second), contactForm(['name' => '', 'email' => 'not-an-address']))
+        ->assertHasFormErrors(['name', 'email']);
+
+    expect($second->refresh()->name)->toBe('Example second');
+
+    expect(static fn () => app(UpdateContact::class)->handle($second, ['name' => '  ']))->toThrow(ValidationException::class);
+});
+
+it('keeps the invoice e-mail of the client apart from the contact flags', function (): void {
+    [$client, $primary, $second] = clientWithThreeContacts();
+    $invoiceEmail = exampleEmail();
+    $client->forceFill(['invoice_email' => $invoiceEmail])->save();
+
+    app(SetPrimaryContact::class)->handle($second);
+    app(UpdateContact::class)->handle($primary, contactForm(['is_billing' => true]));
+    app(UpdateContact::class)->handle($second, contactForm(['is_billing' => false]));
+    app(DeleteContact::class)->handle($primary);
+
+    expect($client->refresh()->invoice_email)->toBe($invoiceEmail);
+
+    $before = Contact::query()->where('client_id', $client->id)->orderBy('name')->get()->map(static fn (Contact $contact): array => $contact->only(['name', 'email', 'is_primary', 'is_billing']))->all();
+
+    $client->forceFill(['invoice_email' => exampleEmail()])->save();
+
+    $after = Contact::query()->where('client_id', $client->id)->orderBy('name')->get()->map(static fn (Contact $contact): array => $contact->only(['name', 'email', 'is_primary', 'is_billing']))->all();
+
+    expect($after)->toBe($before);
 });

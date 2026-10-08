@@ -22,25 +22,17 @@ use Illuminate\Validation\ValidationException;
  * never read from the input: it is not fillable and is set here with `forceFill`.
  *
  * Any number of contacts can be billing contacts (`is_billing`).
- *
- * @phpstan-type ContactData array{
- *     name?: mixed,
- *     email?: mixed,
- *     phone?: mixed,
- *     position?: mixed,
- *     is_billing?: mixed,
- * }
  */
 final class CreateContact
 {
     /**
-     * @param  ContactData  $data
+     * @param  array<string, mixed>  $data
      *
      * @throws ValidationException
      */
     public function handle(Client $client, array $data, bool $makePrimary = false): Contact
     {
-        $attributes = $this->attributes($data);
+        $attributes = ContactInput::attributes($data);
 
         return DB::transaction(static function () use ($client, $attributes, $makePrimary): Contact {
             // Serialises every contact write of this client; the archived client is locked too.
@@ -64,66 +56,5 @@ final class CreateContact
 
             return $contact->refresh();
         });
-    }
-
-    /**
-     * Validates and normalises the input: text trimmed, empty optional text
-     * becomes null. Every problem is reported at once, keyed by the data key.
-     *
-     * @param  array<string, mixed>  $data  read defensively because a crafted payload may miss keys
-     * @return array{name: string, email: string|null, phone: string|null, position: string|null, is_billing: bool}
-     *
-     * @throws ValidationException
-     */
-    private function attributes(array $data): array
-    {
-        $errors = [];
-
-        $name = $this->text($data['name'] ?? null);
-
-        if ($name === null || mb_strlen($name) > 255) {
-            $errors['name'] = __('kokpit.contacts.errors.name_invalid');
-        }
-
-        $email = $this->text($data['email'] ?? null);
-
-        if ($email !== null && (mb_strlen($email) > 255 || filter_var($email, FILTER_VALIDATE_EMAIL) === false)) {
-            $errors['email'] = __('kokpit.contacts.errors.email_invalid');
-        }
-
-        $phone = $this->text($data['phone'] ?? null);
-
-        if ($phone !== null && mb_strlen($phone) > 50) {
-            $errors['phone'] = __('kokpit.contacts.errors.phone_invalid');
-        }
-
-        $position = $this->text($data['position'] ?? null);
-
-        if ($position !== null && mb_strlen($position) > 255) {
-            $errors['position'] = __('kokpit.contacts.errors.position_invalid');
-        }
-
-        if ($errors !== []) {
-            throw ValidationException::withMessages($errors);
-        }
-
-        return [
-            'name' => (string) $name,
-            'email' => $email,
-            'phone' => $phone,
-            'position' => $position,
-            'is_billing' => (bool) ($data['is_billing'] ?? false),
-        ];
-    }
-
-    private function text(mixed $value): ?string
-    {
-        if (! is_string($value)) {
-            return null;
-        }
-
-        $value = trim($value);
-
-        return $value === '' ? null : $value;
     }
 }

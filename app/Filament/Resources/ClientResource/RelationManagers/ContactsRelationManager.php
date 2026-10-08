@@ -5,16 +5,25 @@ declare(strict_types=1);
 namespace App\Filament\Resources\ClientResource\RelationManagers;
 
 use App\Domain\Clients\Actions\CreateContact;
+use App\Domain\Clients\Actions\DeleteContact;
+use App\Domain\Clients\Actions\SetPrimaryContact;
+use App\Domain\Clients\Actions\UpdateContact;
 use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Models\Contact;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Concerns\EnforcesRelationManagerAccessRule;
+use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\EditAction;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -51,9 +60,21 @@ final class ContactsRelationManager extends RelationManager
         return __('kokpit.contacts.relation_title');
     }
 
+    /**
+     * The form of the edit modal: the data fields only. The primary flag is not a
+     * field; it moves through the "Nastavit jako primární" row action.
+     */
     public function form(Schema $schema): Schema
     {
-        return $schema->components([
+        return $schema->components($this->fields());
+    }
+
+    /**
+     * @return list<Component>
+     */
+    private function fields(): array
+    {
+        return [
             TextInput::make('name')
                 ->label(__('kokpit.contacts.fields.name'))
                 ->required()
@@ -72,12 +93,7 @@ final class ContactsRelationManager extends RelationManager
             Toggle::make('is_billing')
                 ->label(__('kokpit.contacts.fields.is_billing'))
                 ->helperText(__('kokpit.contacts.hints.is_billing')),
-            // Not a column: the Action decides what the flag means, `is_primary` is never bound.
-            Checkbox::make('make_primary')
-                ->label(__('kokpit.contacts.fields.make_primary'))
-                ->helperText(__('kokpit.contacts.hints.make_primary'))
-                ->default(false),
-        ]);
+        ];
     }
 
     public function table(Table $table): Table
@@ -111,6 +127,14 @@ final class ContactsRelationManager extends RelationManager
                     ->label(__('kokpit.contacts.actions.create'))
                     ->modalHeading(__('kokpit.contacts.actions.create_heading'))
                     ->successNotificationTitle(__('kokpit.contacts.notifications.created'))
+                    // Not a column: the Action decides what the flag means, `is_primary` is never bound.
+                    ->schema([
+                        ...$this->fields(),
+                        Checkbox::make('make_primary')
+                            ->label(__('kokpit.contacts.fields.make_primary'))
+                            ->helperText(__('kokpit.contacts.hints.make_primary'))
+                            ->default(false),
+                    ])
                     ->using(function (array $data): Model {
                         $client = $this->getOwnerRecord();
                         assert($client instanceof Client);
@@ -118,18 +142,72 @@ final class ContactsRelationManager extends RelationManager
                         try {
                             return app(CreateContact::class)->handle($client, $data, makePrimary: ($data['make_primary'] ?? false) === true);
                         } catch (ValidationException $e) {
-                            // The Action reports plain data keys; the modal form lives under the action state path.
-                            $mapped = [];
-
-                            foreach ($e->errors() as $key => $messages) {
-                                $mapped["mountedActions.0.data.{$key}"] = $messages;
-                            }
-
-                            throw ValidationException::withMessages($mapped);
+                            throw $this->underModal($e);
                         }
+                    }),
+            ])
+            ->recordActions([
+                Action::make('setPrimary')
+                    ->label(__('kokpit.contacts.actions.set_primary'))
+                    ->icon(Heroicon::OutlinedStar)
+                    ->requiresConfirmation()
+                    ->modalHeading(__('kokpit.contacts.actions.set_primary_heading'))
+                    ->modalDescription(__('kokpit.contacts.actions.set_primary_description'))
+                    ->successNotificationTitle(__('kokpit.contacts.notifications.primary_set'))
+                    ->hidden(static fn (Model $record): bool => $record instanceof Contact && $record->is_primary)
+                    ->action(function (Model $record, Action $action): void {
+                        assert($record instanceof Contact);
+
+                        app(SetPrimaryContact::class)->handle($record);
+
+                        $action->success();
+                    }),
+                EditAction::make()
+                    ->modalHeading(__('kokpit.contacts.actions.edit_heading'))
+                    ->successNotificationTitle(__('kokpit.contacts.notifications.updated'))
+                    ->using(function (Model $record, array $data): Model {
+                        assert($record instanceof Contact);
+
+                        try {
+                            return app(UpdateContact::class)->handle($record, $data);
+                        } catch (ValidationException $e) {
+                            throw $this->underModal($e);
+                        }
+                    }),
+                DeleteAction::make()
+                    ->modalHeading(__('kokpit.contacts.actions.delete_heading'))
+                    ->modalDescription(__('kokpit.contacts.actions.delete_description'))
+                    ->successNotificationTitle(__('kokpit.contacts.notifications.deleted'))
+                    ->using(static function (Model $record, DeleteAction $action): bool {
+                        assert($record instanceof Contact);
+
+                        try {
+                            app(DeleteContact::class)->handle($record);
+                        } catch (ValidationException) {
+                            // The primary of a multi-contact client stays: show why instead of a field error.
+                            $action->failureNotificationTitle(__('kokpit.contacts.errors.primary_delete'));
+
+                            return false;
+                        }
+
+                        return true;
                     }),
             ])
             ->emptyStateHeading(__('kokpit.contacts.empty_heading'))
             ->emptyStateDescription(__('kokpit.contacts.empty_description'));
+    }
+
+    /**
+     * The Action reports plain data keys; the modal form lives under the action state path.
+     */
+    private function underModal(ValidationException $e): ValidationException
+    {
+        $mapped = [];
+
+        foreach ($e->errors() as $key => $messages) {
+            $mapped["mountedActions.0.data.{$key}"] = $messages;
+        }
+
+        return ValidationException::withMessages($mapped);
     }
 }

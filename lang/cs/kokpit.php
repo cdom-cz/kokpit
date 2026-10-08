@@ -356,6 +356,7 @@ return [
             'email_invalid' => 'Zadejte platnou e-mailovou adresu, nejvýše 255 znaků.',
             'phone_invalid' => 'Zadejte telefon nejvýše o 50 znacích.',
             'position_invalid' => 'Zadejte pozici nejvýše o 255 znacích.',
+            'primary_delete' => 'Hlavní kontakt nelze smazat, dokud klient má další kontakty. Nejdřív nastavte jako hlavní jiný kontakt.',
         ],
         'fields' => [
             'name' => 'Jméno',
@@ -373,9 +374,18 @@ return [
         'actions' => [
             'create' => 'Přidat kontakt',
             'create_heading' => 'Nový kontakt',
+            'edit_heading' => 'Upravit kontakt',
+            'delete_heading' => 'Smazat kontakt',
+            'delete_description' => 'Kontakt bude odstraněn. Smazat lze i jediný kontakt klienta, další přidaný kontakt pak bude hlavní.',
+            'set_primary' => 'Nastavit jako primární',
+            'set_primary_heading' => 'Nastavit hlavní kontakt',
+            'set_primary_description' => 'Dosavadní hlavní kontakt přestane být hlavní. Hlavní kontakt je vždy právě jeden.',
         ],
         'notifications' => [
             'created' => 'Kontakt byl přidán',
+            'updated' => 'Kontakt byl upraven',
+            'deleted' => 'Kontakt byl smazán',
+            'primary_set' => 'Hlavní kontakt byl změněn',
         ],
         'empty_heading' => 'Zatím tu nejsou žádné kontakty',
         'empty_description' => 'První přidaný kontakt se stane hlavním.',
