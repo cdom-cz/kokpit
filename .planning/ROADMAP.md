@@ -144,7 +144,7 @@ Plans:
   4. Configuring S3-compatible private storage through environment variables only, a smoke test uploads a file and fetches it through a temporary URL
   5. Spike results are recorded as decisions: PDF engine (multi-page report with Czech diacritics and QR), kanban library versus custom board (queue driver Redis, PostgreSQL 18 and RustFS S3 storage are already decided)
 
-**Plans:** 6/19 plans executed (the two spikes run in parallel in wave 1; every application plan after them is serialized because each runs Pest in the single DDEV project against the shared `kokpit_test` database)
+**Plans:** 7/19 plans executed (the two spikes run in parallel in wave 1; every application plan after them is serialized because each runs Pest in the single DDEV project against the shared `kokpit_test` database)
 **UI hint**: yes
 
 Plans:
@@ -165,7 +165,7 @@ Plans:
 - [x] 03-06-PLAN.md — VAT mode, payment terms and online-payment toggle, one-transaction save across tabs (FND-07, D-02)
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 03-07-PLAN.md — Bank accounts per currency with format-driven fields and an own IBAN rule (FND-07, D-03, D-04)
+- [x] 03-07-PLAN.md — Bank accounts per currency with format-driven fields and an own IBAN rule (FND-07, D-03, D-04)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 03-08-PLAN.md — Numbering engine: token grammar, SequenceAllocator::peek preview, fixed KEY-N task numbers (FND-07, D-05)
@@ -345,7 +345,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Repository Hygiene | 11/11 | Complete    | 2026-10-08 |
 | 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
-| 3. Operations Foundation | 6/19 | In Progress | - |
+| 3. Operations Foundation | 7/19 | In Progress | - |
 | 4. Clients and Projects | 0/0 | Not started | - |
 | 5. Tasks and Kanban | 0/0 | Not started | - |
 | 6. Time Tracking | 0/0 | Not started | - |
