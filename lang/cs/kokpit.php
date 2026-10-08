@@ -270,6 +270,15 @@ return [
                 'fixed_price_currency' => 'Měna pevné ceny',
                 'estimate_seconds' => 'Odhad (v sekundách)',
             ],
+            'task_billing' => [
+                'task_id' => 'Úkol',
+                'billing_type' => 'Typ fakturace',
+                'hourly_rate_minor' => 'Hodinová sazba (v nejmenších jednotkách měny)',
+                'hourly_rate_currency' => 'Měna hodinové sazby',
+                'fixed_price_minor' => 'Pevná cena (v nejmenších jednotkách měny)',
+                'fixed_price_currency' => 'Měna pevné ceny',
+                'estimate_seconds' => 'Odhad (v sekundách)',
+            ],
         ],
     ],
 

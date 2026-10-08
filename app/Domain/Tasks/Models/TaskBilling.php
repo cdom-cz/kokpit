@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks\Models;
 
+use App\Domain\Audit\LoggedAttributes;
+use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
@@ -22,6 +24,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * A task has a row only while it overrides something (D-14); a task without a
  * row inherits everything, nothing is copied from the project.
+ *
+ * Changes to the billing type, money and estimate are written to the activity
+ * log through an allowlist (D-06); the internal note is free text and is never
+ * logged. The activity log itself is Admin-only.
  *
  * `task_id` is not fillable: rows are created through `$task->billing()->create()`.
  *
@@ -50,9 +56,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'estimate_seconds',
     'internal_note',
 ])]
+#[LoggedAttributes([
+    'task_id',
+    'billing_type',
+    'hourly_rate_minor',
+    'hourly_rate_currency',
+    'fixed_price_minor',
+    'fixed_price_currency',
+    'estimate_seconds',
+])]
 final class TaskBilling extends KokpitModel implements PartnerIsolated
 {
-    use DeniesPartners;
+    use DeniesPartners, LogsAllowlistedActivity;
 
     protected $table = 'task_billing';
 
