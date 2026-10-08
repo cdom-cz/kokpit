@@ -66,6 +66,7 @@ return [
             'default_hourly_rate' => 'Výchozí hodinová sazba',
             'default_hourly_rate_hint' => 'Částka s desetinnou čárkou nebo tečkou, například 1250,50.',
             'per_hour' => 'hod.',
+            'currency_invalid' => 'Vyberte platný kód měny podle ISO 4217.',
             'rate_invalid' => 'Zadejte nezáporné číslo s nejvýše tolika desetinnými místy, kolik měna dovoluje.',
             'rate_currency_mismatch' => 'Měna výchozí sazby musí být stejná jako výchozí měna.',
         ],

@@ -171,6 +171,20 @@ final readonly class Money implements JsonSerializable
     }
 
     /**
+     * Whether the text is an upper-case ISO 4217 code known to the money library.
+     */
+    public static function isKnownCurrency(string $code): bool
+    {
+        try {
+            self::validCurrency($code);
+        } catch (InvalidArgumentException) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * The amount for one tracked duration at an hourly rate, rounded once.
      */
     public static function forDuration(self $hourlyRate, int $seconds): self

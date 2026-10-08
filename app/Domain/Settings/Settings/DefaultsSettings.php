@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Settings\Settings;
 
 use App\Domain\Settings\Casts\MoneySettingsCast;
+use App\Domain\Settings\Rules\KnownCurrency;
 use App\Domain\Shared\Money\Money;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use OverflowException;
@@ -44,7 +44,7 @@ class DefaultsSettings extends ValidatedSettings
     public static function rules(): array
     {
         return [
-            'default_currency' => ['required', Rule::in(Money::isoCurrencyCodes())],
+            'default_currency' => ['required', new KnownCurrency],
             'default_hourly_rate' => ['required', 'regex:/^\d+([.,]\d+)?$/'],
         ];
     }
@@ -58,6 +58,23 @@ class DefaultsSettings extends ValidatedSettings
             'default_currency' => $this->default_currency,
             'default_hourly_rate' => str_replace('.', ',', $this->default_hourly_rate->toMajor()),
         ];
+    }
+
+    /**
+     * The rate must be in the default currency: a rate in another currency would
+     * silently price every new piece of work in the wrong money.
+     *
+     * @throws ValidationException
+     */
+    public function save(): static
+    {
+        if ($this->default_hourly_rate->currency !== $this->default_currency) {
+            throw ValidationException::withMessages([
+                'default_hourly_rate' => [__('kokpit.settings.defaults.rate_currency_mismatch')],
+            ]);
+        }
+
+        return parent::save();
     }
 
     /**
