@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Redis;
@@ -45,7 +44,7 @@ function registerPendingMigration(): string
         };
         PHP);
 
-    app(Migrator::class)->path($directory);
+    app('migrator')->path($directory);
 
     return $directory;
 }
@@ -78,7 +77,7 @@ it('reads the settings migrations registered on the migrator as well', function 
     // The settings package registers its path on the migrator; the command must read the
     // migrator's paths and not only database/migrations, otherwise a pending settings
     // migration could go live. They are all recorded as run on the migrated test database.
-    expect(app(Migrator::class)->paths())->toContain(database_path('settings'));
+    expect(app('migrator')->paths())->toContain(database_path('settings'));
 
     [$exit] = runDeployVerify();
 
@@ -105,7 +104,7 @@ it('fails the Redis check without printing any connection value', function (): v
         ->and($output)->not->toContain($password);
 });
 
-it('prints no database host, user or password on success or failure', function (): void {
+it('prints no database or Redis connection value on success or failure', function (): void {
     $directory = registerPendingMigration();
 
     try {
@@ -116,15 +115,25 @@ it('prints no database host, user or password on success or failure', function (
 
     [, $passing] = runDeployVerify();
 
-    foreach (['host', 'username', 'password'] as $key) {
-        $value = (string) config('database.connections.pgsql.'.$key);
+    $values = [];
 
-        // Short values such as "db" would match ordinary words, so only values long enough to be distinctive count.
-        if (strlen($value) < 6) {
-            continue;
-        }
+    foreach (['host', 'port', 'username', 'password'] as $key) {
+        $values[] = (string) config('database.connections.pgsql.'.$key);
+    }
 
-        expect($failing)->not->toContain($value)
-            ->and($passing)->not->toContain($value);
+    foreach (['host', 'port', 'password'] as $key) {
+        $values[] = (string) config('database.redis.default.'.$key);
+    }
+
+    $values = array_filter(array_unique($values), fn (string $value): bool => $value !== '');
+
+    expect($values)->not->toBe([]);
+
+    // Whole-word match, so a short value such as "db" is still caught without matching inside other words.
+    foreach ($values as $value) {
+        $pattern = '/(?<![\p{L}\p{N}])'.preg_quote($value, '/').'(?![\p{L}\p{N}])/u';
+
+        expect($failing)->not->toMatch($pattern)
+            ->and($passing)->not->toMatch($pattern);
     }
 });

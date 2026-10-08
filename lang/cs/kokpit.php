@@ -50,6 +50,20 @@ return [
         'passed' => 'Úložiště je soukromé a funguje, všech pět kroků prošlo.',
     ],
 
+    'deploy_verify' => [
+        'heading' => 'Kontrola připravenosti nasazení',
+        'steps' => [
+            'database' => 'Databáze',
+            'migrations' => 'Migrace',
+            'redis' => 'Redis',
+        ],
+        'step_ok' => ':check: v pořádku',
+        'step_failed' => ':check: selhalo, příčina: :reason',
+        'pending' => 'čekajících migrací: :count',
+        'failed' => 'Kontrola nasazení selhala, nová verze nepřevezme provoz.',
+        'passed' => 'Nasazení je připravené, všechny tři kontroly prošly.',
+    ],
+
     'dashboard' => [
         'empty_heading' => 'Zatím tu nic není',
         'empty_description_admin' => 'Nástěnka se naplní, jakmile v Kokpitu přibudou klienti, projekty a odpracovaný čas.',
