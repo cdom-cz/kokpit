@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
+use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Tests\Support\JobDeclaration;
 use Tests\Support\Probes\ActivityProbeJob;
@@ -17,12 +18,12 @@ use Tests\Support\Probes\SettingsReadingProbeJob;
  */
 
 /**
- * The application jobs expected under app/. Empty in this phase; plan 03-16
- * adds its heartbeat job here, so adding a job is a visible, reviewed change.
+ * The application jobs expected under app/. Adding a job is a visible, reviewed
+ * change: plan 03-16 added the worker heartbeat job, later phases add theirs.
  *
  * @var list<class-string<KokpitJob>>
  */
-const EXPECTED_APPLICATION_JOBS = [];
+const EXPECTED_APPLICATION_JOBS = [RecordWorkerHeartbeat::class];
 
 /** A concrete job that a self-check subclasses, to prove the declaration is not inherited. */
 #[Idempotent(how: 'Does nothing, so a second run changes nothing')]
@@ -104,4 +105,12 @@ it('accepts the probe jobs that extend the base and flags the probe that does no
     expect(JobDeclaration::problems(FailingProbeJob::class))->toBe([])
         ->and(JobDeclaration::problems(SettingsReadingProbeJob::class))->toBe([])
         ->and(JobDeclaration::problems(ActivityProbeJob::class))->toHaveCount(1);
+});
+
+it('declares the worker heartbeat job as idempotent with a written explanation', function (): void {
+    $attributes = (new ReflectionClass(RecordWorkerHeartbeat::class))->getAttributes(Idempotent::class);
+
+    expect($attributes)->toHaveCount(1)
+        ->and(trim($attributes[0]->newInstance()->how))->not->toBe('')
+        ->and(is_subclass_of(RecordWorkerHeartbeat::class, KokpitJob::class))->toBeTrue();
 });

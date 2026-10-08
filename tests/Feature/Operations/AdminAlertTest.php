@@ -244,11 +244,17 @@ it('puts at most 200 characters of the first message line and no payload or stac
     expect($mailText)->toContain(RuntimeException::class)->toContain('fictional-queue');
 });
 
-it('links to the panel when the System page does not exist yet', function (): void {
+it('links the alert to the System page', function (): void {
     $admin = Canary::admin();
 
     event(failedEvent());
 
     $data = bellData(bellRows($admin)->first());
-    expect($data['actions'][0]['url'])->toStartWith('http');
+    $url = $data['actions'][0]['url'];
+
+    expect($url)->toBe(route('filament.admin.pages.system'))
+        ->and(parse_url($url, PHP_URL_PATH))->toEndWith('/system');
+
+    $mail = sentMails()->first()->getOriginalMessage();
+    expect((string) $mail->getTextBody().(string) $mail->getHtmlBody())->toContain($url);
 });
