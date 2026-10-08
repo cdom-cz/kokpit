@@ -21,6 +21,7 @@ use App\Filament\RelationManagers\TaskHistoryRelationManager;
 use App\Filament\Resources\TaskResource\Pages\EditTask;
 use App\Filament\Resources\TaskResource\Pages\ListTasks;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
+use App\Filament\Resources\TaskResource\RelationManagers\SubtasksRelationManager;
 use App\Filament\Support\TaskColumns;
 use BackedEnum;
 use Carbon\CarbonImmutable;
@@ -32,6 +33,7 @@ use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\SpatieTagsInput;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -222,7 +224,26 @@ final class TaskResource extends Resource
 
     public static function infolist(Schema $schema): Schema
     {
-        return $schema->components(TaskColumns::adminEntries());
+        return $schema->components([
+            ...TaskColumns::adminEntries(),
+            // A subtask names its parent and links back to it (D-11).
+            TextEntry::make('parent_reference')
+                ->label(__('kokpit.tasks.fields.parent'))
+                ->state(static fn (Task $record): ?string => self::parentOf($record)?->reference)
+                ->url(static function (Task $record): ?string {
+                    $parent = self::parentOf($record);
+
+                    return $parent === null ? null : self::getUrl('view', ['record' => $parent]);
+                })
+                ->visible(static fn (Task $record): bool => $record->parent_id !== null),
+            // Files arrive with the documents module; no upload control exists yet (D-11).
+            Section::make(__('kokpit.tasks.attachments.heading'))
+                ->schema([
+                    TextEntry::make('attachments_note')
+                        ->hiddenLabel()
+                        ->state(__('kokpit.tasks.attachments.later')),
+                ]),
+        ]);
     }
 
     public static function table(Table $table): Table
@@ -301,6 +322,7 @@ final class TaskResource extends Resource
     public static function getRelations(): array
     {
         return [
+            SubtasksRelationManager::class,
             TaskHistoryRelationManager::class,
         ];
     }
@@ -361,6 +383,14 @@ final class TaskResource extends Resource
         }
 
         return is_string($state) && $state !== '' ? $state : null;
+    }
+
+    /**
+     * The parent of a subtask, an archived one included.
+     */
+    private static function parentOf(Task $task): ?Task
+    {
+        return $task->parent_id === null ? null : $task->parent()->withTrashed()->first();
     }
 
     /**

@@ -440,8 +440,28 @@ return [
             'dates_order' => 'Termín nesmí být dříve než začátek.',
             'description_too_long' => 'Popis je příliš dlouhý. Zkraťte ho, vejde se nejvýše 100 000 bajtů textu včetně značek.',
             'date_invalid' => 'Zadejte platné datum.',
+            'parent_is_subtask' => 'Podúkol nemůže mít vlastní podúkoly. Vyberte nadřazený úkol, který sám není podúkolem.',
+            'parent_other_project' => 'Podúkol musí patřit do stejného projektu jako nadřazený úkol.',
+            'parent_archived' => 'Nadřazený úkol je archivovaný. Nejdřív ho obnovte.',
+            'parent_unavailable' => 'Nadřazený úkol neexistuje.',
+            'parent_not_allowed' => 'Podúkol může vytvořit jen správce.',
+            'has_active_subtasks' => 'Úkol má aktivní podúkoly. Nejdřív archivujte je.',
         ],
         'empty_value' => '—',
+        'subtasks' => [
+            'relation_title' => 'Podúkoly',
+            'actions' => [
+                'create' => 'Nový podúkol',
+                'create_heading' => 'Nový podúkol',
+                'create_submit' => 'Vytvořit podúkol',
+            ],
+            'empty_heading' => 'Úkol zatím nemá žádné podúkoly',
+            'empty_description' => 'Rozdělte úkol na menší části tlačítkem Nový podúkol.',
+        ],
+        'attachments' => [
+            'heading' => 'Přílohy',
+            'later' => 'Soubory půjde k úkolu přidávat po zprovoznění modulu dokumentů. Zatím sem nic nahrát nelze.',
+        ],
         'sections' => [
             'main' => 'Úkol',
             'status' => 'Stav a priorita',
@@ -457,6 +477,7 @@ return [
         'plural_model_label' => 'Úkoly',
         'fields' => [
             'reference' => 'Číslo',
+            'parent' => 'Nadřazený úkol',
             'title' => 'Název',
             'project' => 'Projekt',
             'status' => 'Stav',

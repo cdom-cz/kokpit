@@ -42,6 +42,14 @@ use Illuminate\Validation\ValidationException;
  * field error on `description`. Dates must be calendar days and the due date may not precede the start date
  * (field error `due_date`). Tags are a list of names stored as task tags.
  *
+ * Subtasks (D-11): with a parent the new task is a subtask of it. The parent row
+ * is read again under the lock and must be an active root task of the same
+ * project; otherwise the field error is keyed `parent` (a subtask as parent, a
+ * parent of another project, an archived or unknown parent) and no number is
+ * used. The subtask takes its number from the same project counter. A Partner
+ * may not pass a parent. The composite foreign key `tasks_parent_fk` rejects a
+ * forged parent in the database as well.
+ *
  * Errors are ValidationExceptions keyed by the data key.
  *
  * @phpstan-type TaskData array{
@@ -67,7 +75,7 @@ final class CreateTask
     /**
      * @param  TaskData  $data
      */
-    public function handle(User $actor, Project $project, array $data): Task
+    public function handle(User $actor, Project $project, array $data, ?Task $parent = null): Task
     {
         $title = trim($data['title']);
 
@@ -78,6 +86,10 @@ final class CreateTask
         // A Partner only supplies the content: status, priority and people are ignored (D-04),
         // before they are validated, so a forged value is no error but simply has no effect.
         $isPartner = $this->people->isPartner($actor);
+
+        if ($isPartner && $parent !== null) {
+            throw ValidationException::withMessages(['parent' => __('kokpit.tasks.errors.parent_not_allowed')]);
+        }
 
         if ($isPartner) {
             unset($data['status'], $data['priority'], $data['assignee_id'], $data['requester_id']);
@@ -92,7 +104,7 @@ final class CreateTask
 
         TaskInput::assertDatesInOrder($startDate, $dueDate);
 
-        return DB::transaction(function () use ($actor, $project, $data, $title, $status, $priority, $isPartner, $description, $startDate, $dueDate, $tags): Task {
+        return DB::transaction(function () use ($actor, $project, $parent, $data, $title, $status, $priority, $isPartner, $description, $startDate, $dueDate, $tags): Task {
             $this->board->lockBoard();
 
             // The scoped lookup: a Partner only finds a visible project of the own client.
@@ -101,6 +113,9 @@ final class CreateTask
             if ($locked === null) {
                 throw ValidationException::withMessages(['project_id' => __('kokpit.tasks.errors.project_unavailable')]);
             }
+
+            // Checked before the allocation, so a refusal uses no number.
+            $this->assertParent($parent, $locked);
 
             $people = $this->peopleFor($actor, $locked, $data, $isPartner);
 
@@ -128,8 +143,8 @@ final class CreateTask
                 'project_id' => $locked->id,
                 'number' => $number,
                 'reference' => $reference,
-                'depth' => 0,
-                'parent_id' => null,
+                'depth' => $parent === null ? 0 : 1,
+                'parent_id' => $parent?->id,
                 'position' => $this->board->nextPosition($status),
                 'completed_at' => $status === ProjectStatus::Done ? now() : null,
                 'requester_id' => $people['requester_id'],
@@ -143,6 +158,36 @@ final class CreateTask
             // Load the database defaults, so the returned model is complete.
             return $task->refresh();
         });
+    }
+
+    /**
+     * The parent of a subtask, read again under the board lock: it must exist, be
+     * a root task of the same project and not be archived (D-11). Reported as the
+     * field error `parent`.
+     */
+    private function assertParent(?Task $parent, Project $project): void
+    {
+        if ($parent === null) {
+            return;
+        }
+
+        $locked = Task::query()->withTrashed()->whereKey($parent->getKey())->lockForUpdate()->first();
+
+        if ($locked === null) {
+            throw ValidationException::withMessages(['parent' => __('kokpit.tasks.errors.parent_unavailable')]);
+        }
+
+        if ($locked->project_id !== $project->id) {
+            throw ValidationException::withMessages(['parent' => __('kokpit.tasks.errors.parent_other_project')]);
+        }
+
+        if ($locked->parent_id !== null) {
+            throw ValidationException::withMessages(['parent' => __('kokpit.tasks.errors.parent_is_subtask')]);
+        }
+
+        if ($locked->trashed()) {
+            throw ValidationException::withMessages(['parent' => __('kokpit.tasks.errors.parent_archived')]);
+        }
     }
 
     /**
