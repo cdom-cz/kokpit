@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: Operations Foundation
 status: executing
-stopped_at: Completed 03-16-PLAN.md
-last_updated: "2026-10-08T04:41:42.317Z"
+stopped_at: Completed 03-17-PLAN.md
+last_updated: "2026-10-08T04:51:34.764Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 03 execution started
-state_head: 15cae4ee228730c5620cf4eebaf524bd0ae797ae
+state_head: 07c258675828399706330e853c702436b8b75978
 progress:
   total_phases: 12
   completed_phases: 2
   total_plans: 43
-  completed_plans: 40
+  completed_plans: 41
   percent: 17
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 03 (Operations Foundation) — EXECUTING
-Plan: 17 of 19
+Plan: 18 of 19
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 03 execution started
 
@@ -97,6 +97,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 03 P14 | 8 min | 2 tasks | 9 files |
 | Phase 03 P15 | 6 min | 2 tasks | 14 files |
 | Phase 03 P16 | 9 min | 3 tasks | 14 files |
+| Phase 03 P17 | 40 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -189,6 +190,7 @@ Recent decisions affecting current work:
 - [Phase 03]: Plan 03-15: HealthIndicatorRegistry register() refuses a second indicator for a slot; results() always returns one entry per HealthSlot and reports an unregistered slot as Error, a throwing indicator as Error with the exception class only — A missing or broken indicator must be visible on the System page, never OK and never leaking an exception message (D-12, T-03-39, T-03-40); swapping goes through replace() with a slot check
 - [Phase 03]: 03-16: registry binding registers real indicators first and placeholders only for uncovered slots (missingSlots), so register() never sees a duplicate
 - [Phase 03]: 03-16: scheduled RecordWorkerHeartbeat job makes a dead worker visible as a growing oldest-pending age; thresholds 180/600/1800 s and 1 failed job live in config/kokpit.php health
+- [Phase 03]: 03-17: public-object storage-check failure path is produced with a real RustFS bucket policy; check errors carry exception class and provider error code only; s3 disk throws on failed writes
 
 ### Pending Todos
 
@@ -224,6 +226,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T04:41:42.235Z
-Stopped at: Completed 03-16-PLAN.md
+Last session: 2026-10-08T04:51:34.687Z
+Stopped at: Completed 03-17-PLAN.md
 Resume file: None
