@@ -236,3 +236,17 @@ it('never shows a task tag to a Partner through the Tag query', function (): voi
 
     expect(Tag::query()->where('type', TagType::Task->value)->count())->toBe(1);
 });
+
+it('keeps the tags of an archived task and detaches them only on a force delete', function (): void {
+    $task = taskFilterTask(taskFilterProject(Client::factory()->create(), 'AAA'));
+    $task->attachTag('example-label', TagType::Task->value);
+    $count = static fn (): int => DB::table('taggables')->where('taggable_type', 'task')->where('taggable_id', $task->id)->count();
+
+    $task->delete();
+
+    expect($count())->toBe(1);
+
+    Task::withTrashed()->findOrFail($task->id)->forceDelete();
+
+    expect($count())->toBe(0);
+});

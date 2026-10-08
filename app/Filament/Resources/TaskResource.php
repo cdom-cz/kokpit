@@ -4,24 +4,33 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources;
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
+use App\Domain\Projects\Enums\ProjectPriority;
+use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
+use App\Domain\Shared\Models\Tag;
+use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Resources\TaskResource\Pages\ListTasks;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use App\Filament\Support\TaskColumns;
+use Carbon\CarbonImmutable;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
@@ -29,6 +38,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
  * The Admin task screens: the list with its quick create modal and the full task
@@ -137,8 +147,16 @@ final class TaskResource extends Resource
                 // An archived project still names its tasks.
                 'project' => static fn ($project) => $project->withoutGlobalScopes([SoftDeletingScope::class]),
                 'assignee',
+                'tags',
             ]))
             ->columns(TaskColumns::adminColumns())
+            ->filters(self::filters())
+            ->filtersFormColumns(2)
+            // Newest change first. The id is the tie-breaker, so rows with equal timestamps keep
+            // one order across pages; it also stays the last key when a column sort is chosen.
+            ->defaultSort(static fn (Builder $query): Builder => $query
+                ->orderByDesc($query->qualifyColumn('updated_at'))
+                ->orderByDesc($query->qualifyColumn('id')))
             ->recordActions([
                 ViewAction::make(),
             ])
@@ -216,6 +234,142 @@ final class TaskResource extends Resource
         foreach (Project::query()->selectable()->orderBy('key')->orderBy('id')->get(['id', 'key', 'name']) as $project) {
             $options[$project->id] = $project->key.' · '.$project->name;
         }
+
+        return $options;
+    }
+
+    /**
+     * The filters of the Admin list (TA-05). They combine with AND.
+     *
+     * @return list<Filter|SelectFilter>
+     */
+    private static function filters(): array
+    {
+        return [
+            SelectFilter::make('client')
+                ->label(__('kokpit.tasks.filters.client'))
+                ->options(static fn (): array => self::clientOptions())
+                ->searchable()
+                ->query(static function (Builder $query, array $data): Builder {
+                    $value = $data['value'] ?? null;
+
+                    // Archived projects still own their tasks, so the archive scope is lifted.
+                    return is_string($value) && $value !== ''
+                        ? $query->whereIn('project_id', Project::query()
+                            ->withoutGlobalScopes([SoftDeletingScope::class])
+                            ->where('client_id', $value)
+                            ->select('projects.id'))
+                        : $query;
+                }),
+            SelectFilter::make('project')
+                ->label(__('kokpit.tasks.filters.project'))
+                ->attribute('project_id')
+                ->options(static fn (): array => self::projectOptions())
+                ->searchable(),
+            SelectFilter::make('status')
+                ->label(__('kokpit.tasks.filters.status'))
+                ->options(ProjectStatus::class),
+            SelectFilter::make('priority')
+                ->label(__('kokpit.tasks.filters.priority'))
+                ->options(ProjectPriority::class),
+            SelectFilter::make('assignee')
+                ->label(__('kokpit.tasks.filters.assignee'))
+                ->attribute('assignee_id')
+                ->options(static fn (): array => self::assigneeOptions())
+                ->searchable(),
+            SelectFilter::make('tag')
+                ->label(__('kokpit.tasks.filters.tag'))
+                ->options(static fn (): array => self::tagOptions())
+                ->searchable()
+                ->query(static function (Builder $query, array $data): Builder {
+                    $value = $data['value'] ?? null;
+
+                    return is_string($value) && $value !== ''
+                        ? $query->whereHas('tags', static fn (Builder $tags): Builder => $tags->where('tags.id', $value))
+                        : $query;
+                }),
+            Filter::make('due')
+                ->label(__('kokpit.tasks.filters.due'))
+                ->schema([
+                    DatePicker::make('due_from')->label(__('kokpit.tasks.filters.due_from')),
+                    DatePicker::make('due_until')->label(__('kokpit.tasks.filters.due_until')),
+                ])
+                ->columns(2)
+                ->query(static function (Builder $query, array $data): Builder {
+                    $from = self::day($data['due_from'] ?? null);
+                    $until = self::day($data['due_until'] ?? null);
+
+                    // Both bounds are inclusive; a task without a due date matches neither bound.
+                    return $query
+                        ->when($from !== null, static fn (Builder $query): Builder => $query->where('due_date', '>=', $from))
+                        ->when($until !== null, static fn (Builder $query): Builder => $query->where('due_date', '<=', $until));
+                })
+                ->indicateUsing(static function (array $data): array {
+                    $from = self::day($data['due_from'] ?? null);
+                    $until = self::day($data['due_until'] ?? null);
+
+                    return array_values(array_filter([
+                        $from === null ? null : __('kokpit.tasks.filters.due_from').': '.$from,
+                        $until === null ? null : __('kokpit.tasks.filters.due_until').': '.$until,
+                    ]));
+                }),
+        ];
+    }
+
+    /**
+     * A real calendar day as `Y-m-d`, or null for anything else.
+     */
+    private static function day(mixed $value): ?string
+    {
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        try {
+            $day = CarbonImmutable::createFromFormat('!Y-m-d', $value);
+        } catch (Throwable) {
+            return null;
+        }
+
+        return $day !== null && $day->format('Y-m-d') === $value ? $value : null;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function clientOptions(): array
+    {
+        /** @var array<string, string> $clients */
+        $clients = Client::query()->withoutGlobalScopes([SoftDeletingScope::class])->orderBy('name')->pluck('name', 'id')->all();
+
+        return $clients;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function assigneeOptions(): array
+    {
+        /** @var array<string, string> $users */
+        $users = User::query()->orderBy('name')->pluck('name', 'id')->all();
+
+        return $users;
+    }
+
+    /**
+     * The task tags only; project and client tags never appear here.
+     *
+     * @return array<string, string>
+     */
+    private static function tagOptions(): array
+    {
+        $options = [];
+
+        foreach (Tag::query()->where('type', TagType::Task->value)->get() as $tag) {
+            $options[(string) $tag->getKey()] = (string) $tag->name;
+        }
+
+        asort($options);
 
         return $options;
     }

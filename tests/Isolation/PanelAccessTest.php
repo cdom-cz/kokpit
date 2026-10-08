@@ -87,11 +87,14 @@ it('replaces the stock dashboard and its widgets', function (): void {
         ->assertDontSee('fi-wi-filament-info', false);
 });
 
-it('runs the panel with strict authorization and without global search', function (): void {
+it('runs the panel with strict authorization and global search as a per-resource opt-in', function (): void {
     $panel = Filament::getPanel('admin');
 
+    // Global search is a Partner leakage surface: the panel switch is on, but a resource is
+    // searchable only when it declares so itself (Phase 5, TaskResource, which is Admin-only).
     expect($panel->isAuthorizationStrict())->toBeTrue()
-        ->and($panel->getGlobalSearchProvider())->toBeNull();
+        ->and($panel->getGlobalSearchProvider())->not->toBeNull()
+        ->and($panel->isGlobalSearchResourceOptIn())->toBeTrue();
 });
 
 it('lets the declaration drive the dashboard: PartnerAllowed admits an Admin and a Partner with a client only', function (): void {

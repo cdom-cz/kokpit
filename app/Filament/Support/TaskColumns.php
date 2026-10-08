@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Support;
 
+use App\Domain\Shared\Tags\TagType;
+use Filament\Infolists\Components\SpatieTagsEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Tables\Columns\SpatieTagsColumn;
 use Filament\Tables\Columns\TextColumn;
 
 /**
@@ -52,6 +55,9 @@ final class TaskColumns
                 ->date()
                 ->placeholder(__('kokpit.tasks.empty_value'))
                 ->sortable(),
+            SpatieTagsColumn::make('tags')
+                ->label(__('kokpit.tasks.fields.tags'))
+                ->type(TagType::Task->value),
             TextColumn::make('updated_at')
                 ->label(__('kokpit.tasks.fields.updated_at'))
                 ->dateTime()
@@ -98,6 +104,10 @@ final class TaskColumns
                 ->label(__('kokpit.tasks.fields.description'))
                 ->placeholder(__('kokpit.tasks.empty_value'))
                 ->columnSpanFull(),
+            SpatieTagsEntry::make('tags')
+                ->label(__('kokpit.tasks.fields.tags'))
+                ->type(TagType::Task->value)
+                ->placeholder(__('kokpit.tasks.empty_value')),
         ];
     }
 }

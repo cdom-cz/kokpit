@@ -11,6 +11,7 @@ use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\IsolatesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
+use ArrayAccess;
 use Carbon\CarbonInterface;
 use Database\Factories\TaskFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -20,6 +21,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\Tags\HasTags;
 
 /**
  * A task of a project, or one of its subtasks (one level only).
@@ -73,6 +75,10 @@ final class Task extends KokpitModel implements PartnerIsolated
     /** @use HasFactory<TaskFactory> */
     use HasFactory, IsolatesPartners, SoftDeletes;
 
+    use HasTags {
+        detachTags as private detachTagsFromTrait;
+    }
+
     /**
      * The tasks of the Partner's visible projects. The scoped Project query
      * applies the Partner constraint itself.
@@ -90,6 +96,21 @@ final class Task extends KokpitModel implements PartnerIsolated
     public function getRouteKeyName(): string
     {
         return 'reference';
+    }
+
+    /**
+     * The package detaches every tag when a model is deleted. A soft delete keeps
+     * the tags so a restore brings them back; only a force delete detaches them.
+     *
+     * @param  array<mixed>|ArrayAccess<int|string, mixed>  $tags
+     */
+    public function detachTags(array|ArrayAccess $tags, ?string $type = null): static
+    {
+        if ($this->trashed() && ! $this->isForceDeleting()) {
+            return $this;
+        }
+
+        return $this->detachTagsFromTrait($tags, $type);
     }
 
     /**
