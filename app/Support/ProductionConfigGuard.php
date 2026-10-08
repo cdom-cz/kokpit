@@ -41,5 +41,13 @@ final class ProductionConfigGuard
                 .'The audit trail may not be switched off in production.',
             );
         }
+
+        // The sync queue runs jobs inline with no worker and no retries, so a failing job would be silent.
+        if ($config->get('queue.default') !== 'redis') {
+            throw new RuntimeException(
+                'Refusing to boot in production: QUEUE_CONNECTION must be redis. '
+                .'The sync queue runs jobs inline without a worker, retries or failed-job alerts and is allowed for local development and tests only.',
+            );
+        }
     }
 }

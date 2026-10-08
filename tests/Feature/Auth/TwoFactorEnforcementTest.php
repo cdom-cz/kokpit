@@ -188,7 +188,7 @@ it('refuses to boot the application provider in production with enforcement off'
 
 it('boots the application provider in production with enforcement on', function (): void {
     // The test suite runs with the canary harness on; production must not (D-04).
-    config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false]);
+    config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'redis']);
     $this->app['env'] = 'production';
 
     (new AppServiceProvider($this->app))->boot();
@@ -196,12 +196,19 @@ it('boots the application provider in production with enforcement on', function 
     expect(true)->toBeTrue();
 });
 
+it('refuses to boot the application provider in production with the sync queue', function (): void {
+    config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'sync']);
+    $this->app['env'] = 'production';
+
+    (new AppServiceProvider($this->app))->boot();
+})->throws(RuntimeException::class, 'QUEUE_CONNECTION');
+
 it('refuses to start a real production process with enforcement off and starts with it on', function (): void {
     $run = function (string $enforcement): Process {
         $process = new Process(
             [PHP_BINARY, 'artisan', '--version'],
             base_path(),
-            ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => $enforcement, 'KOKPIT_CANARY_HARNESS' => 'false'],
+            ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => $enforcement, 'KOKPIT_CANARY_HARNESS' => 'false', 'QUEUE_CONNECTION' => 'redis'],
         );
         $process->run();
 
