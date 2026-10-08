@@ -5,8 +5,10 @@ declare(strict_types=1);
 use App\Filament\Resources\ClientResource\Pages\CreateClient;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\FictionalCompanyId;
@@ -142,6 +144,58 @@ it('shows a Czech field error and changes nothing when the number fails the chec
             expectUntouchedTerms($state);
             expect($state['ares_changed'])->toBe([]);
         });
+
+    Http::assertNothingSent();
+});
+
+it('shows the Czech message on the company number and changes nothing for every lookup failure', function (int $status, mixed $body, string $message): void {
+    Http::fake(['*' => Http::response($body, $status)]);
+    Sleep::fake();
+    $number = FictionalCompanyId::valid();
+
+    Livewire::test(CreateClient::class)
+        ->fillForm(['country' => 'CZ', 'company_number' => $number, 'name' => 'Typed name', 'street' => 'Typed street', ...untouchedClientFields()])
+        ->callAction(TestAction::make('ares')->schemaComponent('company_number'))
+        ->assertHasFormErrors(['company_number'])
+        ->assertSee($message)
+        ->assertSchemaStateSet(['name' => 'Typed name', 'street' => 'Typed street', 'company_number' => $number, 'tax_number' => null])
+        ->assertSchemaStateSet(function (array $state): void {
+            expectUntouchedTerms($state);
+            expect($state['ares_changed'])->toBe([]);
+        });
+})->with([
+    'not found' => [404, ['kod' => 'NENALEZENO'], 'ARES tento subjekt nenašel.'],
+    'server error' => [500, '', 'ARES teď neodpovídá.'],
+    'rate limited' => [429, '', 'Příliš mnoho dotazů do ARES'],
+    'malformed' => [200, '<html>Maintenance</html>', 'ARES vrátil nečekanou odpověď.'],
+    'invalid id answered by the registry' => [400, ['kod' => 'CHYBA_VSTUPU'], 'Zadejte platné osmimístné IČO'],
+]);
+
+it('shows the Czech message and changes nothing when the registry cannot be reached', function (): void {
+    Http::fake(static function (): never {
+        throw new ConnectionException('Connection refused');
+    });
+    Sleep::fake();
+    $number = FictionalCompanyId::valid();
+
+    Livewire::test(CreateClient::class)
+        ->fillForm(['country' => 'CZ', 'company_number' => $number, 'name' => 'Typed name', ...untouchedClientFields()])
+        ->callAction(TestAction::make('ares')->schemaComponent('company_number'))
+        ->assertHasFormErrors(['company_number'])
+        ->assertSee('ARES teď neodpovídá.')
+        ->assertSchemaStateSet(['name' => 'Typed name', 'company_number' => $number]);
+});
+
+it('hides the ARES action while the country is not CZ', function (): void {
+    Http::fake();
+
+    Livewire::test(CreateClient::class)
+        ->fillForm(['country' => 'DE', 'company_number' => 'free text'])
+        ->assertActionHidden(TestAction::make('ares')->schemaComponent('company_number'));
+
+    Livewire::test(CreateClient::class)
+        ->fillForm(['country' => 'CZ'])
+        ->assertActionVisible(TestAction::make('ares')->schemaComponent('company_number'));
 
     Http::assertNothingSent();
 });
