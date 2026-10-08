@@ -52,7 +52,7 @@ Open the panel URL, sign in as the Admin and set up an authenticator app (TOTP) 
 
 Production runs on Zerops as one service, `backend`, built from the single setup in `zerops.yml`: nginx and PHP-FPM serve the panel, supervisord runs the Horizon queue worker (`supervisor-horizon.ini`) and a crontab runs the scheduler every minute, next to PostgreSQL, Valkey (Redis) and private object storage. Nothing in the repository holds a secret or an environment value: every environment variable is set in the Zerops UI, and the access token lives in the GitHub `production` environment.
 
-A deploy starts only from a published release tagged `v*` (never a prerelease) or from a manual run of the `Deploy` workflow, and it waits for the approval of the `production` environment. The database is migrated once per deploy through `zsc execOnce`. Two commands check a running instance from its shell:
+A deploy starts only from a published release tagged `v*` (never a prerelease) or from a manual run of the `Deploy` workflow, and it waits for the approval of the `production` environment. The database is migrated once per deploy through `zsc execOnce`, then every container runs `php artisan kokpit:deploy:verify`, and a failed migration or a failed check ends the deploy before traffic switches, with the previous version still serving. Horizon is started by the last init command on every container start, only after both passed, and supervisord autostart brings it back after a restart. The build installs the PHP dependencies only (there is no frontend build yet). Two commands check a running instance from its shell:
 
     php artisan kokpit:deploy:verify
     php artisan kokpit:storage:check
@@ -64,9 +64,9 @@ The first confirms that the database and Redis answer and that no migration is p
 Two background processes must run next to the web container, or the application degrades without a visible error:
 
 - the queue worker runs every background job. Without it jobs wait in Redis and nothing is processed.
-- the scheduler runs the periodic tasks, among them the heartbeats that the System page reads. Run exactly one.
+- the scheduler runs the periodic tasks, among them the heartbeats that the System page reads. Every scheduled task is registered with `->onOneServer()`, so the scheduler may run on several containers and each task still runs once. The lock lives in the cache, so production needs the shared Redis store (`CACHE_STORE=redis`, refused otherwise at boot).
 
-In DDEV both are daemons that `ddev start` brings up (`ddev exec supervisorctl status` shows them); on Zerops they are the `worker` and `scheduler` services of `zerops.yml`.
+In DDEV both are daemons that `ddev start` brings up (`ddev exec supervisorctl status` shows them); on Zerops supervisord runs Horizon and the crontab runs `schedule:run` every minute on every container of the `backend` service.
 
 The queue worker is Laravel Horizon (`php artisan horizon`). Its dashboard is at `/horizon` (`https://kokpit.ddev.site/horizon` in DDEV). Only the Admin may open it, and while two-factor enforcement is on only after setting up 2FA; a Partner or a guest gets 403. In DDEV the `queue-worker` daemon runs Horizon; after changing job code, run `ddev artisan horizon:terminate` and the daemon starts it again on the new code. The scheduler takes a metrics snapshot every five minutes, and `HORIZON_MAX_PROCESSES` caps the worker processes per container (default 3, 2 in DDEV).
 
