@@ -157,6 +157,17 @@ final class Client extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * The Partner invitations issued for the client (US-02). Admin-only: a Partner
+     * reads none. The rows change only through the invitation Actions.
+     *
+     * @return HasMany<ClientInvitation, $this>
+     */
+    public function invitations(): HasMany
+    {
+        return $this->hasMany(ClientInvitation::class);
+    }
+
+    /**
      * The one primary contact of the client, if it has any contact.
      *
      * @return HasOne<Contact, $this>
