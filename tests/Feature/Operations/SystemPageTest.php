@@ -8,6 +8,7 @@ use App\Domain\Operations\Health\HealthSlot;
 use App\Domain\Operations\Health\HealthStatus;
 use App\Filament\Pages\SystemPage;
 use Filament\Facades\Filament;
+use Illuminate\Support\Carbon;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\Probes\HealthProbeIndicator;
@@ -87,4 +88,67 @@ it('shows the result of a replaced indicator', function (): void {
         ->assertSee(__('enums.health_status.warning'))
         ->assertSee('7 min')
         ->assertSee('Fictional detail text');
+});
+
+it('answers 200, names the exception class and never prints the exception message when an indicator throws', function (): void {
+    $secret = 'connection '.implode('.', ['db', 'internal']).' refused';
+    app(HealthIndicatorRegistry::class)->replace(
+        HealthSlot::SchedulerHeartbeat,
+        new HealthProbeIndicator(HealthSlot::SchedulerHeartbeat, new RuntimeException($secret)),
+    );
+
+    $response = $this->actingAs(Canary::admin())->get('/admin/system')->assertOk();
+
+    $response->assertSee(RuntimeException::class)
+        ->assertDontSee($secret);
+
+    // The other five slots are still there.
+    foreach (HealthSlot::cases() as $slot) {
+        $response->assertSee(__('enums.health_slot.'.$slot->value));
+    }
+});
+
+it('renders each status with its colour badge and its Czech label', function (): void {
+    $statuses = [
+        HealthSlot::FailedJobs->value => HealthStatus::Ok,
+        HealthSlot::OldestPendingJob->value => HealthStatus::Warning,
+        HealthSlot::SchedulerHeartbeat->value => HealthStatus::Error,
+        HealthSlot::LastRateDate->value => HealthStatus::NotAvailable,
+    ];
+
+    foreach ($statuses as $slot => $status) {
+        app(HealthIndicatorRegistry::class)->replace(
+            HealthSlot::from($slot),
+            new HealthProbeIndicator(HealthSlot::from($slot), new HealthResult($status, 'v')),
+        );
+    }
+
+    $html = (string) $this->actingAs(Canary::admin())->get('/admin/system')->assertOk()->getContent();
+
+    foreach ([HealthStatus::Ok, HealthStatus::Warning, HealthStatus::Error, HealthStatus::NotAvailable] as $status) {
+        expect($html)->toContain(__('enums.health_status.'.$status->value));
+    }
+
+    // Filament gives its badge the grey look without a colour class, so only the three coloured
+    // statuses leave a class to assert on; grey is the absence of the other three below.
+    expect(substr_count($html, 'fi-color-success'))->toBe(1)
+        ->and(substr_count($html, 'fi-color-warning'))->toBe(1)
+        ->and(substr_count($html, 'fi-color-danger'))->toBe(1);
+
+    expect(HealthStatus::Ok->getColor())->toBe('success')
+        ->and(HealthStatus::Warning->getColor())->toBe('warning')
+        ->and(HealthStatus::Error->getColor())->toBe('danger')
+        ->and(HealthStatus::NotAvailable->getColor())->toBe('gray');
+});
+
+it('shows the checked-at time in Europe/Prague, in summer and in winter time', function (): void {
+    $admin = Canary::admin();
+
+    Carbon::setTestNow('2026-07-01 10:00:00 UTC');
+    $this->actingAs($admin)->get('/admin/system')->assertOk()->assertSee('1. 7. 2026 12:00:00');
+
+    Carbon::setTestNow('2026-01-15 10:00:00 UTC');
+    $this->actingAs($admin)->get('/admin/system')->assertOk()->assertSee('15. 1. 2026 11:00:00');
+
+    Carbon::setTestNow();
 });
