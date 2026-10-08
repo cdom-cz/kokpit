@@ -215,7 +215,7 @@ Plans:
   4. From the client detail Admin invites a Partner account by e-mail, and the invited person sets a password and logs in
   5. A Partner sees only projects of their own client that are flagged client-visible, never sees rates, prices or estimates in lists, details, selects or search, and never sees another client's canary data
 
-**Plans:** 15/21 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
+**Plans:** 16/21 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
 **UI hint**: yes
 
 Plans:
@@ -265,7 +265,7 @@ Plans:
 - [x] 04-15-PLAN.md — ARES lookup button for Czech clients with field-level errors and an unchanged form on failure (CL-04)
 
 **Wave 16** *(blocked on Wave 15 completion)*
-- [ ] 04-16-PLAN.md — Hashed-token invitation records, InvitePartner and the D-03 duplicate rules (US-02)
+- [x] 04-16-PLAN.md — Hashed-token invitation records, InvitePartner and the D-03 duplicate rules (US-02)
 
 **Wave 17** *(blocked on Wave 16 completion)*
 - [ ] 04-17-PLAN.md — Queued invitation mail with a signed link, guest landing page, derived state, resend and revoke (US-02)
@@ -410,7 +410,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Repository Hygiene | 11/11 | Complete    | 2026-10-08 |
 | 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
 | 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
-| 4. Clients and Projects | 15/21 | In Progress | - |
+| 4. Clients and Projects | 16/21 | In Progress | - |
 | 5. Tasks and Kanban | 0/0 | Not started | - |
 | 6. Time Tracking | 0/0 | Not started | - |
 | 7. REST API | 0/0 | Not started | - |
