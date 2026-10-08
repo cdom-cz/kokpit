@@ -30,7 +30,11 @@ final class ViewTask extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            EditAction::make(),
+            // An archived task is read-only until it is restored.
+            EditAction::make()
+                ->hidden(fn (): bool => $this->getRecord() instanceof Task && $this->getRecord()->trashed()),
+            TaskResource::archiveAction()->record($this->getRecord()),
+            TaskResource::restoreAction()->record($this->getRecord()),
         ];
     }
 }

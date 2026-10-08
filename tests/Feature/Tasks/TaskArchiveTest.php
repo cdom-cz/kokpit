@@ -31,7 +31,7 @@ use Tests\Support\Canary;
 /**
  * A project with the given key, written through the domain Action.
  */
-function archiveProject(string $key = 'ABC'): Project
+function taskArchProject(string $key = 'ABC'): Project
 {
     return app(CreateProject::class)->handle(Client::factory()->create(), [
         'name' => 'Example archive project',
@@ -45,7 +45,7 @@ function archiveProject(string $key = 'ABC'): Project
  *
  * @param  array<string, mixed>  $data
  */
-function archiveTask(Project $project, string $title, ?Task $parent = null, array $data = []): Task
+function taskArchTask(Project $project, string $title, ?Task $parent = null, array $data = []): Task
 {
     return app(CreateTask::class)->handle(test()->admin, $project, ['title' => $title, ...$data], $parent);
 }
@@ -55,7 +55,7 @@ function archiveTask(Project $project, string $title, ?Task $parent = null, arra
  *
  * @return array<string, list<string>>
  */
-function archiveErrors(Closure $callback): array
+function taskArchErrors(Closure $callback): array
 {
     try {
         $callback();
@@ -73,9 +73,9 @@ beforeEach(function (): void {
 });
 
 it('archives a task without subtasks, hides it from the default list and shows it with the trashed filter', function (): void {
-    $project = archiveProject();
-    $kept = archiveTask($project, 'Example kept task');
-    $task = archiveTask($project, 'Example archived task');
+    $project = taskArchProject();
+    $kept = taskArchTask($project, 'Example kept task');
+    $task = taskArchTask($project, 'Example archived task');
 
     app(ArchiveTask::class)->handle($this->admin, $task);
 
@@ -89,8 +89,18 @@ it('archives a task without subtasks, hides it from the default list and shows i
         ->assertCanNotSeeTableRecords([$kept]);
 });
 
+it('leaves an archived task out of the global search', function (): void {
+    $project = taskArchProject();
+    $kept = taskArchTask($project, 'Example searchable task');
+    $archived = taskArchTask($project, 'Example hidden task');
+
+    app(ArchiveTask::class)->handle($this->admin, $archived);
+
+    expect(TaskResource::getGlobalSearchEloquentQuery()->pluck('reference')->all())->toBe([$kept->reference]);
+});
+
 it('keeps the tags of an archived task and brings them back on restore', function (): void {
-    $task = archiveTask(archiveProject(), 'Example tagged task', data: ['tags' => ['example-tag']]);
+    $task = taskArchTask(taskArchProject(), 'Example tagged task', data: ['tags' => ['example-tag']]);
 
     app(ArchiveTask::class)->handle($this->admin, $task);
 
@@ -102,11 +112,11 @@ it('keeps the tags of an archived task and brings them back on restore', functio
 });
 
 it('refuses to archive a parent with an active subtask and changes nothing', function (): void {
-    $project = archiveProject();
-    $parent = archiveTask($project, 'Example parent task');
-    $subtask = archiveTask($project, 'Example active subtask', $parent);
+    $project = taskArchProject();
+    $parent = taskArchTask($project, 'Example parent task');
+    $subtask = taskArchTask($project, 'Example active subtask', $parent);
 
-    $errors = archiveErrors(fn () => app(ArchiveTask::class)->handle($this->admin, $parent));
+    $errors = taskArchErrors(fn () => app(ArchiveTask::class)->handle($this->admin, $parent));
 
     expect($errors['task'] ?? [])->toBe([__('kokpit.tasks.errors.has_active_subtasks')])
         ->and($parent->refresh()->trashed())->toBeFalse()
@@ -119,9 +129,9 @@ it('refuses to archive a parent with an active subtask and changes nothing', fun
 });
 
 it('always allows archiving a subtask', function (): void {
-    $project = archiveProject();
-    $parent = archiveTask($project, 'Example parent task');
-    $subtask = archiveTask($project, 'Example archived subtask', $parent);
+    $project = taskArchProject();
+    $parent = taskArchTask($project, 'Example parent task');
+    $subtask = taskArchTask($project, 'Example archived subtask', $parent);
 
     app(ArchiveTask::class)->handle($this->admin, $subtask);
 
@@ -130,14 +140,14 @@ it('always allows archiving a subtask', function (): void {
 });
 
 it('puts a restored task at the end of its column when its old position was taken', function (): void {
-    $project = archiveProject();
-    archiveTask($project, 'Example first task');
-    $second = archiveTask($project, 'Example second task');
+    $project = taskArchProject();
+    taskArchTask($project, 'Example first task');
+    $second = taskArchTask($project, 'Example second task');
 
     expect($second->position)->toBe(1);
 
     app(ArchiveTask::class)->handle($this->admin, $second);
-    $taker = archiveTask($project, 'Example taker task');
+    $taker = taskArchTask($project, 'Example taker task');
 
     expect($taker->position)->toBe(1);
 
@@ -151,10 +161,10 @@ it('puts a restored task at the end of its column when its old position was take
 });
 
 it('restores a task into the column of its stored status', function (): void {
-    $project = archiveProject();
-    $task = archiveTask($project, 'Example moving task');
+    $project = taskArchProject();
+    $task = taskArchTask($project, 'Example moving task');
     app(UpdateTask::class)->handle($this->admin, $task, ['status' => 'in_progress']);
-    $resident = archiveTask($project, 'Example resident task', data: ['status' => 'in_progress']);
+    $resident = taskArchTask($project, 'Example resident task', data: ['status' => 'in_progress']);
 
     app(ArchiveTask::class)->handle($this->admin, $task);
     $restored = app(RestoreTask::class)->handle($this->admin, $task);
@@ -166,7 +176,7 @@ it('restores a task into the column of its stored status', function (): void {
 });
 
 it('keeps the completion time of a restored Done task', function (): void {
-    $task = archiveTask(archiveProject(), 'Example finished task', data: ['status' => 'done']);
+    $task = taskArchTask(taskArchProject(), 'Example finished task', data: ['status' => 'done']);
     Task::query()->whereKey($task->id)->update(['completed_at' => '2026-01-05 10:00:00']);
 
     app(ArchiveTask::class)->handle($this->admin, $task);
@@ -180,14 +190,14 @@ it('keeps the completion time of a restored Done task', function (): void {
 });
 
 it('refuses to restore a subtask whose parent is archived', function (): void {
-    $project = archiveProject();
-    $parent = archiveTask($project, 'Example parent task');
-    $subtask = archiveTask($project, 'Example hanging subtask', $parent);
+    $project = taskArchProject();
+    $parent = taskArchTask($project, 'Example parent task');
+    $subtask = taskArchTask($project, 'Example hanging subtask', $parent);
 
     app(ArchiveTask::class)->handle($this->admin, $subtask);
     app(ArchiveTask::class)->handle($this->admin, $parent);
 
-    $errors = archiveErrors(fn () => app(RestoreTask::class)->handle($this->admin, $subtask));
+    $errors = taskArchErrors(fn () => app(RestoreTask::class)->handle($this->admin, $subtask));
 
     expect($errors['task'] ?? [])->toBe([__('kokpit.tasks.errors.parent_archived')])
         ->and($subtask->refresh()->trashed())->toBeTrue();
@@ -199,7 +209,7 @@ it('refuses to restore a subtask whose parent is archived', function (): void {
 });
 
 it('treats archiving an archived task and restoring an active task as no-ops', function (): void {
-    $task = archiveTask(archiveProject(), 'Example repeated task');
+    $task = taskArchTask(taskArchProject(), 'Example repeated task');
 
     app(ArchiveTask::class)->handle($this->admin, $task);
     $deletedAt = $task->refresh()->deleted_at;
@@ -218,11 +228,11 @@ it('treats archiving an archived task and restoring an active task as no-ops', f
 });
 
 it('never hands the number of an archived task out again', function (): void {
-    $project = archiveProject();
-    $first = archiveTask($project, 'Example first task');
+    $project = taskArchProject();
+    $first = taskArchTask($project, 'Example first task');
 
     app(ArchiveTask::class)->handle($this->admin, $first);
-    $next = archiveTask($project, 'Example next task');
+    $next = taskArchTask($project, 'Example next task');
 
     expect($first->reference)->toBe('ABC-1')
         ->and($next->reference)->toBe('ABC-2');
@@ -236,8 +246,8 @@ it('refuses a Partner that calls the archive or the restore Action', function ()
         'billing_type' => 'hourly',
         'client_visible' => true,
     ]);
-    $task = archiveTask($project, 'Example guarded task');
-    $archived = archiveTask($project, 'Example guarded archived task');
+    $task = taskArchTask($project, 'Example guarded task');
+    $archived = taskArchTask($project, 'Example guarded archived task');
     app(ArchiveTask::class)->handle($this->admin, $archived);
 
     $partner = Canary::partnerFor($client->id);
@@ -253,7 +263,7 @@ it('refuses a Partner that calls the archive or the restore Action', function ()
 });
 
 it('archives and restores from the row actions of the task list', function (): void {
-    $task = archiveTask(archiveProject(), 'Example row task');
+    $task = taskArchTask(taskArchProject(), 'Example row task');
 
     Livewire::test(ListTasks::class)
         ->callAction(TestAction::make('archive')->table($task))
@@ -270,7 +280,7 @@ it('archives and restores from the row actions of the task list', function (): v
 });
 
 it('archives and restores from the header actions of the task page and opens an archived task by its address', function (): void {
-    $task = archiveTask(archiveProject(), 'Example page task');
+    $task = taskArchTask(taskArchProject(), 'Example page task');
 
     Livewire::test(ViewTask::class, ['record' => $task->reference])
         ->assertActionVisible('archive')
@@ -290,9 +300,9 @@ it('archives and restores from the header actions of the task page and opens an 
 });
 
 it('tells the Admin why a parent with active subtasks is not archived', function (): void {
-    $project = archiveProject();
-    $parent = archiveTask($project, 'Example busy parent');
-    archiveTask($project, 'Example busy subtask', $parent);
+    $project = taskArchProject();
+    $parent = taskArchTask($project, 'Example busy parent');
+    taskArchTask($project, 'Example busy subtask', $parent);
 
     Livewire::test(ViewTask::class, ['record' => $parent->reference])
         ->callAction('archive')
@@ -302,7 +312,7 @@ it('tells the Admin why a parent with active subtasks is not archived', function
 });
 
 it('offers no edit page for an archived task', function (): void {
-    $task = archiveTask(archiveProject(), 'Example frozen task');
+    $task = taskArchTask(taskArchProject(), 'Example frozen task');
     app(ArchiveTask::class)->handle($this->admin, $task);
 
     $this->get('/admin/tasks/ABC-1/edit')->assertForbidden();
@@ -311,7 +321,7 @@ it('offers no edit page for an archived task', function (): void {
 });
 
 it('offers no force delete anywhere on the task resource', function (): void {
-    $task = archiveTask(archiveProject(), 'Example permanent task');
+    $task = taskArchTask(taskArchProject(), 'Example permanent task');
 
     Livewire::test(ListTasks::class)
         ->assertTableActionDoesNotExist('forceDelete')

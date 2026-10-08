@@ -494,6 +494,14 @@ return [
             'create' => 'Nový úkol',
             'create_heading' => 'Nový úkol',
             'create_submit' => 'Vytvořit úkol',
+            'archive' => 'Archivovat',
+            'restore' => 'Obnovit',
+            'archive_heading' => 'Archivovat úkol?',
+            'archive_description' => 'Archivovaný úkol zmizí ze seznamů a nástěnky, ale zůstane v databázi a jeho číslo zůstane obsazené. Půjde ho obnovit.',
+        ],
+        'notifications' => [
+            'archived' => 'Úkol byl archivován',
+            'restored' => 'Úkol byl obnoven',
         ],
         'filters' => [
             'client' => 'Klient',

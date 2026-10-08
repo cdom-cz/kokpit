@@ -10,6 +10,7 @@ use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Resources\TaskResource;
 use App\Filament\Resources\TaskResource\Pages\EditTask;
+use App\Filament\Resources\TaskResource\Pages\ListTasks;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use App\Filament\Resources\TaskResource\RelationManagers\SubtasksRelationManager;
 use Filament\Actions\Testing\TestAction;
@@ -79,6 +80,16 @@ it('opens a subtask at its own address and links back to the parent', function (
     Livewire::test(ViewTask::class, ['record' => $subtask->reference])
         ->assertSee('ABC-1')
         ->assertSee(TaskResource::getUrl('view', ['record' => $parent]), escape: false);
+});
+
+it('shows the parent reference of a subtask in the task list', function (): void {
+    $project = subtaskProject();
+    $parent = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example parent task']);
+    $subtask = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example listed child'], $parent);
+
+    Livewire::test(ListTasks::class)
+        ->assertTableColumnStateSet('parent.reference', 'ABC-1', $subtask)
+        ->assertTableColumnStateSet('parent.reference', null, $parent);
 });
 
 it('keeps the status of a subtask and of its parent independent of each other', function (): void {

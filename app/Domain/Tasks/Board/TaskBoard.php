@@ -70,6 +70,9 @@ class TaskBoard
      * together with any attribute the caller filled on the model beforehand, so
      * the `updated` event reaches the activity log once.
      *
+     * A task that is already Done keeps the completion time it has: appending it
+     * again to the Done column (a restore from the archive) is no new completion.
+     *
      * Call it with the board lock held and the task row locked, in the caller's
      * transaction (D-01, D-02).
      *
@@ -81,9 +84,13 @@ class TaskBoard
             throw new LogicException('TaskBoard::appendToColumn() must run inside a database transaction.');
         }
 
+        $keepsCompletion = $status === ProjectStatus::Done
+            && $task->status === ProjectStatus::Done
+            && $task->completed_at !== null;
+
         $task->forceFill([
             'status' => $status,
-            'completed_at' => $status === ProjectStatus::Done ? now() : null,
+            'completed_at' => $status === ProjectStatus::Done ? ($keepsCompletion ? $task->completed_at : now()) : null,
             'position' => $this->nextPosition($status),
         ])->save();
     }

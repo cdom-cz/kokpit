@@ -13,7 +13,9 @@ use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Tags\TagType;
+use App\Domain\Tasks\Actions\ArchiveTask;
 use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Actions\RestoreTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\TaskPeople;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
@@ -34,12 +36,15 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\SpatieTagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
@@ -106,6 +111,29 @@ final class TaskResource extends Resource
     }
 
     /**
+     * Archived tasks stay reachable: the trashed filter decides what the list
+     * shows, and an archived task opens by its address (TA-02). The Partner scope
+     * is a different scope and stays on.
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->withoutGlobalScopes([SoftDeletingScope::class]);
+    }
+
+    public static function getRecordRouteBindingEloquentQuery(): Builder
+    {
+        return parent::getRecordRouteBindingEloquentQuery()->withoutGlobalScopes([SoftDeletingScope::class]);
+    }
+
+    /**
+     * An archived task is read-only until it is restored.
+     */
+    public static function canEdit(Model $record): bool
+    {
+        return parent::canEdit($record) && ! ($record instanceof Task && $record->trashed());
+    }
+
+    /**
      * Searchable by the key and the title, never by the id.
      *
      * @return array<string>
@@ -139,7 +167,7 @@ final class TaskResource extends Resource
 
     public static function getGlobalSearchEloquentQuery(): Builder
     {
-        return parent::getGlobalSearchEloquentQuery()->with([
+        return parent::getGlobalSearchEloquentQuery()->whereNull((new Task)->qualifyColumn('deleted_at'))->with([
             'project' => static fn ($project) => $project->withoutGlobalScopes([SoftDeletingScope::class]),
         ]);
     }
@@ -252,11 +280,12 @@ final class TaskResource extends Resource
             ->modifyQueryUsing(static fn (Builder $query): Builder => $query->with([
                 // An archived project still names its tasks.
                 'project' => static fn ($project) => $project->withoutGlobalScopes([SoftDeletingScope::class]),
+                'parent' => static fn ($parent) => $parent->withoutGlobalScopes([SoftDeletingScope::class]),
                 'assignee',
                 'tags',
             ]))
-            ->columns(TaskColumns::adminColumns())
-            ->filters(self::filters())
+            ->columns(self::columns())
+            ->filters([...self::filters(), TrashedFilter::make()])
             ->filtersFormColumns(2)
             // Newest change first. The id is the tie-breaker, so rows with equal timestamps keep
             // one order across pages; it also stays the last key when a column sort is chosen.
@@ -265,10 +294,107 @@ final class TaskResource extends Resource
                 ->orderByDesc($query->qualifyColumn('id')))
             ->recordActions([
                 ViewAction::make(),
+                self::archiveAction(),
+                self::restoreAction(),
             ])
             ->recordUrl(static fn (Task $record): string => self::getUrl('view', ['record' => $record]))
             ->emptyStateHeading(__('kokpit.tasks.empty_heading'))
             ->emptyStateDescription(__('kokpit.tasks.empty_description'));
+    }
+
+    /**
+     * The Admin list columns, with the parent reference of a subtask next to the
+     * task's own reference.
+     *
+     * @return list<TextColumn>
+     */
+    private static function columns(): array
+    {
+        $columns = TaskColumns::adminColumns();
+
+        array_splice($columns, 1, 0, [
+            TextColumn::make('parent.reference')
+                ->label(__('kokpit.tasks.fields.parent'))
+                ->placeholder(__('kokpit.tasks.empty_value')),
+        ]);
+
+        return $columns;
+    }
+
+    /**
+     * Archives the task through the domain Action (A9). A parent that still has
+     * active subtasks stays and the Admin is told why. A soft delete only: there
+     * is no hard delete of a task anywhere, so a task number stays valid forever.
+     */
+    public static function archiveAction(): Action
+    {
+        return Action::make('archive')
+            ->label(__('kokpit.tasks.actions.archive'))
+            ->icon(Heroicon::OutlinedArchiveBox)
+            ->color('danger')
+            ->requiresConfirmation()
+            ->modalHeading(__('kokpit.tasks.actions.archive_heading'))
+            ->modalDescription(__('kokpit.tasks.actions.archive_description'))
+            ->successNotificationTitle(__('kokpit.tasks.notifications.archived'))
+            ->visible(static fn (?Model $record): bool => $record instanceof Task && ! $record->trashed())
+            ->action(static function (Model $record, Action $action): void {
+                assert($record instanceof Task);
+
+                self::runLifecycle($action, static function (User $actor) use ($record): void {
+                    app(ArchiveTask::class)->handle($actor, $record);
+                });
+
+                $record->refresh();
+            });
+    }
+
+    /**
+     * Restores an archived task through the domain Action, back to the end of
+     * its status column (Pitfall 2).
+     */
+    public static function restoreAction(): Action
+    {
+        return Action::make('restore')
+            ->label(__('kokpit.tasks.actions.restore'))
+            ->icon(Heroicon::OutlinedArrowUturnLeft)
+            ->successNotificationTitle(__('kokpit.tasks.notifications.restored'))
+            ->visible(static fn (?Model $record): bool => $record instanceof Task && $record->trashed())
+            ->action(static function (Model $record, Action $action): void {
+                assert($record instanceof Task);
+
+                self::runLifecycle($action, static function (User $actor) use ($record): void {
+                    app(RestoreTask::class)->handle($actor, $record);
+                });
+
+                $record->refresh();
+            });
+    }
+
+    /**
+     * Runs a lifecycle Action as the signed-in Admin and reports the outcome: a
+     * refusal of the Action is shown as the failure message instead of a field error.
+     *
+     * @param  Closure(User): void  $run
+     */
+    private static function runLifecycle(Action $action, Closure $run): void
+    {
+        abort_unless(self::canAccess(), 403);
+
+        $actor = auth()->user();
+        assert($actor instanceof User);
+
+        try {
+            $run($actor);
+        } catch (ValidationException $e) {
+            Notification::make()
+                ->danger()
+                ->title((string) collect($e->errors())->flatten()->first())
+                ->send();
+
+            return;
+        }
+
+        $action->success();
     }
 
     /**
