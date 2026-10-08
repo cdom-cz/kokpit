@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: Operations Foundation
 status: executing
-stopped_at: Completed 03-07-PLAN.md
-last_updated: "2026-10-08T03:12:15.718Z"
+stopped_at: Completed 03-08-PLAN.md
+last_updated: "2026-10-08T03:22:17.811Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 03 execution started
-state_head: 0aa3fd411fb92d3fad88d1cc0c76f579d358239c
+state_head: 3fc27c083123649b2fc2a65d4426b571542a1ebf
 progress:
   total_phases: 12
   completed_phases: 2
   total_plans: 43
-  completed_plans: 31
+  completed_plans: 32
   percent: 17
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 03 (Operations Foundation) — EXECUTING
-Plan: 8 of 19
+Plan: 9 of 19
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 03 execution started
 
@@ -88,6 +88,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 03 P05 | 12min | 2 tasks | 11 files |
 | Phase 03 P06 | 6 min | 2 tasks | 12 files |
 | Phase 03 P07 | 7 min | 2 tasks | 14 files |
+| Phase 03 P08 | 9 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -166,6 +167,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-06: InvoicingSettings refuses every VAT mode but non_payer and due days outside 0..365 at the data layer; the form shows the payer option disabled
 - [Phase 03]: 03-06: enum settings properties must carry no docblock without @var (the cast factory loses the type); Filament enum selects return the case in form state
 - [Phase 03]: 03-07: own IBAN validation (32-country length table plus mod-97) behind IbanRule, no library; per-format account rules shared by form and save() via BankAccountSettings::fieldRules
+- [Phase 03]: 03-08: pattern drives allocator scope key (kind:YYYY, kind:YYYY-MM, kind:all); task number is fixed KEY-N from task:<project id> without reading settings; two year tokens are duplicate_token; NumberPatternRule carries the 32-character cap with a Czech reason
+- [Phase 03]: 03-08: SequenceAllocator::peek() is the only preview path (plain SELECT, no lock, no insert); Phase 10 open items: digits-only proforma and credit-note numbers, unique constraint on the issued number string
 
 ### Pending Todos
 
@@ -201,6 +204,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T03:12:15.645Z
-Stopped at: Completed 03-07-PLAN.md
+Last session: 2026-10-08T03:22:17.741Z
+Stopped at: Completed 03-08-PLAN.md
 Resume file: None
