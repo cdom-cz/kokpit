@@ -689,6 +689,29 @@ return [
         'empty_description' => 'Projekty, které pro vás budou připravené, se objeví tady.',
     ],
 
+    'partner_tasks' => [
+        'navigation_label' => 'Moje úkoly',
+        'model_label' => 'Úkol',
+        'plural_model_label' => 'Moje úkoly',
+        'empty_heading' => 'Zatím tu nejsou žádné úkoly',
+        'empty_description' => 'Úkol můžete zadat tlačítkem Nový úkol u projektu, který je pro vás zpřístupněný. Jakmile bude nějaký připravený, objeví se tady.',
+        'hints' => [
+            'description' => 'Popis uvidí správce a ostatní účty vašeho klienta.',
+        ],
+        'actions' => [
+            'create' => 'Nový úkol',
+            'create_heading' => 'Nový úkol',
+            'create_submit' => 'Vytvořit úkol',
+        ],
+        'notifications' => [
+            'created' => 'Úkol byl založen',
+        ],
+        'escalation' => [
+            'label' => 'Eskalace',
+            'value' => 'Eskalováno (:name, :datetime)',
+        ],
+    ],
+
     'invitations' => [
         'errors' => [
             'email_has_account' => 'Tato e-mailová adresa už patří k existujícímu účtu, pozvat ji nelze.',
