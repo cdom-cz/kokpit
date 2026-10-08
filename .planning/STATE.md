@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: Operations Foundation
 status: executing
-stopped_at: Completed 03-12-PLAN.md
-last_updated: "2026-10-08T04:01:30.294Z"
+stopped_at: Completed 03-13-PLAN.md
+last_updated: "2026-10-08T04:12:54.284Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 03 execution started
-state_head: e57575dc43179919c46aca0dd52f13fd57020d54
+state_head: 96a916931e725a1cc0a06f0a3f57ac900f217d1d
 progress:
   total_phases: 12
   completed_phases: 2
   total_plans: 43
-  completed_plans: 36
+  completed_plans: 37
   percent: 17
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 03 (Operations Foundation) — EXECUTING
-Plan: 13 of 19
+Plan: 14 of 19
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 03 execution started
 
@@ -93,6 +93,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 03 P10 | 6 min | 2 tasks | 14 files |
 | Phase 03 P11 | 10 min | 2 tasks | 8 files |
 | Phase 03 P12 | 10 min | 3 tasks | 14 files |
+| Phase 03 P13 | 10 min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -178,6 +179,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-11: production guard requires activitylog.enabled to be exactly true; sensitive attribute names include password, token and secret variants; activity records are never pruned (RefusingCleanActivityLogAction, D-09)
 - [Phase 03]: 03-12: activity overview and history relation manager are Admin-only and read-only; relation manager and widget access traits get a boot hook that asks the AccessRule declaration directly (widget hook also ANDs canView) — Filament 5 already checks access at boot via canViewForRecord/canView, which a class can override; the hook cannot be widened, proven with visibility-override fixtures
 - [Phase 03]: 03-12: change summaries show null/empty as a dash, booleans as ano/ne, values cut at 80 characters; the subject model is never loaded and the properties payload is never rendered — T-03-30/T-03-31: only allowlisted attribute_changes are shown, no N+1 on subjects
+- [Phase 03]: 03-13: bell enabled for the Admin only (databaseNotifications closure on PartnerContext::isAdmin); notifications.data converted to jsonb because the Filament bell filters with data->>'format' — A text column made every Admin panel page return 500 once the bell was on; the closure condition keeps Partners without a bell
+- [Phase 03]: 03-13: failed-job alert is non-queueable, sent per channel with sendNow, throttled per job class by Cache::add (900 s) with a held-back counter, content capped at 200 characters of the first message line without payload or trace — T-03-32, T-03-33, T-03-34: the alert must not depend on the queue, flood the Admin, or leak data, and no alert failure may stop failed_jobs
 
 ### Pending Todos
 
@@ -213,6 +216,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T04:01:30.167Z
-Stopped at: Completed 03-12-PLAN.md
+Last session: 2026-10-08T04:12:54.214Z
+Stopped at: Completed 03-13-PLAN.md
 Resume file: None
