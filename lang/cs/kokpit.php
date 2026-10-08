@@ -184,6 +184,15 @@ return [
             'some' => 'Selhané úlohy čekají na prověření',
             'not_countable' => 'Úložiště selhaných úloh neumí počítat',
         ],
+        'oldest_pending' => [
+            'not_redis' => 'Fronta neběží na Redis, stáří čekajících úloh nelze změřit',
+            'empty' => 'Ve frontě nic nečeká.',
+            'ok' => 'Úlohy se zpracovávají.',
+            'warning' => 'Nejstarší úloha čeká déle, než je obvyklé.',
+            'error' => 'Nejstarší úloha čeká příliš dlouho, worker pravděpodobně neběží.',
+            'worker_last' => 'Worker naposledy zpracoval úlohu: :time.',
+            'worker_unknown' => 'Worker zatím nezpracoval žádnou úlohu s tepem.',
+        ],
         'scheduler' => [
             'never' => 'Plánovač se dosud nezapsal',
             'alive' => 'Plánovač běží',

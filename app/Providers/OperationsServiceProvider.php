@@ -8,6 +8,7 @@ use App\Domain\Audit\ActivitySource;
 use App\Domain\Operations\Alerts\ReportFailedJob;
 use App\Domain\Operations\Health\HealthIndicatorRegistry;
 use App\Domain\Operations\Health\Indicators\FailedJobsIndicator;
+use App\Domain\Operations\Health\Indicators\OldestPendingJobIndicator;
 use App\Domain\Operations\Health\Indicators\PlaceholderIndicator;
 use App\Domain\Operations\Health\Indicators\SchedulerHeartbeatIndicator;
 use Illuminate\Queue\Events\JobExceptionOccurred;
@@ -41,6 +42,7 @@ final class OperationsServiceProvider extends ServiceProvider
             $registry = new HealthIndicatorRegistry;
             $real = [
                 new FailedJobsIndicator,
+                new OldestPendingJobIndicator,
                 new SchedulerHeartbeatIndicator,
             ];
 
