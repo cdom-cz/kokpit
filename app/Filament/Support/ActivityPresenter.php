@@ -22,6 +22,9 @@ use Illuminate\Support\Facades\Lang;
  */
 final class ActivityPresenter
 {
+    /** Longest value shown in a change summary, in characters. */
+    private const int VALUE_LIMIT = 80;
+
     /**
      * The shared table columns. The overview adds the subject; the history of
      * one record leaves it out because every row has the same subject.
@@ -76,11 +79,17 @@ final class ActivityPresenter
         /** @var array<string, mixed> $old */
         $old = (array) $changes->get('old', []);
 
+        $alias = (string) $activity->getAttribute('subject_type');
         $parts = [];
 
         foreach (array_unique([...array_keys($new), ...array_keys($old)]) as $name) {
             $name = (string) $name;
-            $parts[] = sprintf('%s: %s -> %s', $name, self::scalar($old[$name] ?? null), self::scalar($new[$name] ?? null));
+            $parts[] = sprintf(
+                '%s: %s -> %s',
+                self::attributeLabel($alias, $name),
+                self::value($old[$name] ?? null),
+                self::value($new[$name] ?? null),
+            );
         }
 
         return implode('; ', $parts);
@@ -137,8 +146,34 @@ final class ActivityPresenter
         return is_string($id) && $id !== '' ? '…'.substr($id, -8) : null;
     }
 
-    private static function scalar(mixed $value): string
+    /**
+     * The translated attribute name of a subject type, or the raw name.
+     */
+    private static function attributeLabel(string $alias, string $name): string
     {
-        return is_scalar($value) ? (string) $value : (string) json_encode($value);
+        if ($alias === '') {
+            return $name;
+        }
+
+        return self::translatedOr('kokpit.activity.attributes.'.$alias.'.'.$name, $name);
+    }
+
+    /**
+     * One value of a change in readable form: Czech words for booleans, a dash
+     * for an empty value and a cut at 80 characters with an ellipsis.
+     */
+    private static function value(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return __('kokpit.activity.empty_value');
+        }
+
+        if (is_bool($value)) {
+            return $value ? __('kokpit.activity.yes') : __('kokpit.activity.no');
+        }
+
+        $text = is_scalar($value) ? (string) $value : (string) json_encode($value, JSON_UNESCAPED_UNICODE);
+
+        return mb_strlen($text) > self::VALUE_LIMIT ? mb_substr($text, 0, self::VALUE_LIMIT).'…' : $text;
     }
 }
