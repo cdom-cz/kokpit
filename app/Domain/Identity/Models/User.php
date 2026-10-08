@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Identity\Models;
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\RoleName;
 use App\Domain\Shared\Auth\NotPartnerScoped;
+use App\Domain\Shared\Auth\PartnerContext;
+use Carbon\CarbonInterface;
 use Database\Factories\UserFactory;
 use Filament\Auth\MultiFactor\App\Concerns\InteractsWithAppAuthentication;
 use Filament\Auth\MultiFactor\App\Concerns\InteractsWithAppAuthenticationRecovery;
@@ -33,6 +36,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string $name
  * @property string $email
  * @property string|null $client_id
+ * @property CarbonInterface|null $deactivated_at
  * @property string|null $app_authentication_secret
  * @property array<int, string>|null $app_authentication_recovery_codes
  */
@@ -53,17 +57,48 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
     {
         return [
             'email_verified_at' => 'datetime',
+            'deactivated_at' => 'datetime',
             'password' => 'hashed',
         ];
     }
 
     /**
-     * Only the Admin and Partner roles may enter the panel; a user without
-     * either role is turned away even with a valid password.
+     * The panel gate, called by Filament at login and on every authenticated
+     * request. Access needs all three of:
+     * - the Admin or the Partner role;
+     * - an account that is not deactivated (`deactivated_at` is null);
+     * - for a Partner, a client that exists and is not archived. The Admin is
+     *   not tied to a client row.
+     *
+     * Nothing is memoised: the client is looked up again on every call (one
+     * primary-key query), so an archive committed by the Admin refuses the very
+     * next request, even in a long-lived process or on a reused user object, and
+     * the deactivation is read from the user the request just loaded. The client
+     * lookup is an explicit system run because Client is closed to Partners (it
+     * would otherwise always look missing); the soft-delete scope makes an
+     * archived client not found. A failed check at login yields the same generic
+     * credential error as a wrong password.
      */
     public function canAccessPanel(Panel $panel): bool
     {
-        return $this->hasAnyRole([RoleName::Admin->value, RoleName::Partner->value]);
+        if (! $this->hasAnyRole([RoleName::Admin->value, RoleName::Partner->value])) {
+            return false;
+        }
+
+        if ($this->deactivated_at !== null) {
+            return false;
+        }
+
+        if ($this->hasRole(RoleName::Admin->value)) {
+            return true;
+        }
+
+        $clientId = $this->client_id;
+
+        return is_string($clientId)
+            && app(PartnerContext::class)->runAsSystem(
+                static fn (): bool => Client::query()->whereKey($clientId)->exists(),
+            );
     }
 
     protected static function newFactory(): UserFactory

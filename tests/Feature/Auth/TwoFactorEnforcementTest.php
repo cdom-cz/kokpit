@@ -13,6 +13,7 @@ use Illuminate\Support\Str;
 use Livewire\Livewire;
 use PragmaRX\Google2FAQRCode\Google2FA;
 use Symfony\Component\Process\Process;
+use Tests\Support\Canary;
 
 beforeEach(function (): void {
     $this->seed(RoleSeeder::class);
@@ -82,7 +83,7 @@ it('never forces a Partner to set up two-factor authentication', function (): vo
     [$partner] = panelUser(RoleName::Partner);
     // A Partner without a client is refused by the dashboard's access rule (FND-18); this test is
     // about two-factor enforcement, so the Partner gets a client.
-    $partner->forceFill(['client_id' => Str::uuid7()->toString()])->save();
+    $partner->forceFill(['client_id' => Canary::twoClients()[0]])->save();
 
     $this->actingAs($partner)->get('/admin')->assertOk();
 });
