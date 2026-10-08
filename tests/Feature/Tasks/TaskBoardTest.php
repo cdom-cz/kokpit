@@ -5,12 +5,14 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
+use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Actions\MoveTask;
 use App\Domain\Tasks\Board\BoardFilters;
+use App\Domain\Tasks\Board\TaskBoard;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Pages\TaskBoardPage;
 use Filament\Facades\Filament;
@@ -418,3 +420,148 @@ it('refuses the mover to a Partner: another client task is not found, an own cli
 
     expect(DB::table('tasks')->get()->toArray())->toEqual($before);
 });
+
+/*
+ * Card content, subtasks as cards and the cost of a large board.
+ */
+
+it('shows the reference, the linked title, priority, due date, tags, checklist progress, escalation and assignee on a card', function (): void {
+    $project = taskBoardProject(key: 'CRD');
+    $someone = User::factory()->create(['name' => 'Jane Example']);
+    $card = taskBoardTask($project, 'Example full card', 'in_progress', [
+        'priority' => 'urgent',
+        'due_date' => '2026-03-07',
+        'assignee_id' => $someone->id,
+    ]);
+    $card->forceFill(['escalated_at' => now(), 'escalated_by_id' => $someone->id])->save();
+    $card->attachTag('example-card-label', TagType::Task->value);
+    $card->checklistItems()->createMany([
+        ['text' => 'Example item 1', 'is_done' => true, 'position' => 1],
+        ['text' => 'Example item 2', 'is_done' => false, 'position' => 2],
+        ['text' => 'Example item 3', 'is_done' => false, 'position' => 3],
+    ]);
+
+    $html = preg_replace('/\s+/', ' ', (string) $this->get('/admin/task-board')->assertOk()->getContent());
+    $article = taskBoardCardHtml($html, $card->id);
+
+    expect($article)
+        ->toContain($card->reference)
+        ->toContain('<a href="'.url('/admin/tasks/'.$card->reference).'"')
+        ->toContain('Example full card')
+        ->toContain(ProjectPriority::Urgent->getLabel())
+        ->toContain('7. 3. 2026')
+        ->toContain('example-card-label')
+        ->toContain('1/3')
+        ->toContain(__('kokpit.task_board.card.escalated'))
+        ->toContain('Jane Example');
+});
+
+it('shows no due date, checklist, tag or escalation on a bare card', function (): void {
+    $card = taskBoardTask(taskBoardProject(key: 'BAR'), 'Example bare card');
+
+    $article = taskBoardCardHtml(preg_replace('/\s+/', ' ', (string) $this->get('/admin/task-board')->getContent()), $card->id);
+
+    expect($article)
+        ->not->toContain(__('kokpit.task_board.card.escalated'))
+        ->not->toContain('0/0')
+        ->not->toContain('1. 1. 1970');
+});
+
+it('puts a subtask on its own card in the column of its own status with the parent reference', function (): void {
+    $project = taskBoardProject(key: 'SUB');
+    $parent = taskBoardTask($project, 'Example parent card', 'planned');
+    $child = taskBoardTask($project, 'Example child card', 'in_review', ['parent_id' => $parent->id, 'depth' => 1]);
+
+    $html = preg_replace('/\s+/', ' ', (string) $this->get('/admin/task-board')->assertOk()->getContent());
+    $column = taskBoardColumnHtml($html, 'in_review');
+
+    expect($column)->toContain('Example child card')->not->toContain('Example parent card');
+
+    $article = taskBoardCardHtml($html, $child->id);
+    expect($article)->toContain($parent->reference)->and(taskBoardCardHtml($html, $parent->id))->not->toContain('Example child card');
+});
+
+it('has no navigation attribute on a card and keeps every button inside a sort-ignore wrapper', function (): void {
+    $card = taskBoardTask(taskBoardProject(key: 'NAV'), 'Example navigation card');
+
+    $html = preg_replace('/\s+/', ' ', (string) $this->get('/admin/task-board')->assertOk()->getContent());
+    $article = taskBoardCardHtml($html, $card->id);
+
+    expect($article)->not->toContain('wire:navigate')->toContain('wire:sort:ignore');
+
+    preg_match_all('/<(button|a)\b[^>]*>/', $article, $matches, PREG_OFFSET_CAPTURE);
+    $ignoreAt = strpos($article, 'wire:sort:ignore');
+
+    foreach ($matches[0] as [$tag, $offset]) {
+        if (str_starts_with($tag, '<button')) {
+            expect($offset)->toBeGreaterThan($ignoreAt);
+        }
+    }
+});
+
+it('renders a board of 200 cards with the same number of queries as a board of 20 and keeps models out of the snapshot', function (): void {
+    $clients = [Client::factory()->create(), Client::factory()->create()];
+    $projects = [taskBoardProject($clients[0], 'AAA'), taskBoardProject($clients[1], 'BBB')];
+    $statuses = array_map(fn (ProjectStatus $status): string => $status->value, ProjectStatus::cases());
+    $made = 0;
+
+    $fill = function (int $count) use (&$made, $projects, $statuses): void {
+        for ($i = 0; $i < $count; $i++, $made++) {
+            $status = $statuses[$made % 6];
+            $project = $projects[$made % 2];
+            $task = taskBoardTask($project, 'Example bulk card '.$made, $status);
+
+            if ($made % 5 === 0) {
+                taskBoardTask($project, 'Example bulk subtask '.$made, $status, ['parent_id' => $task->id, 'depth' => 1]);
+                $made++;
+            }
+
+            $task->attachTag('example-bulk-label-'.($made % 3), TagType::Task->value);
+            $task->checklistItems()->create(['text' => 'Example bulk item', 'position' => 1]);
+        }
+    };
+
+    $countQueries = function (): int {
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        app(TaskBoard::class)->columns(BoardFilters::none());
+        $count = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        return $count;
+    };
+
+    $fill(20);
+    $small = $countQueries();
+
+    $fill(180);
+    expect(Task::query()->count())->toBeGreaterThanOrEqual(200);
+    $large = $countQueries();
+
+    expect($large)->toBe($small);
+
+    $component = Livewire::test(TaskBoardPage::class);
+    $snapshot = json_encode($component->snapshot, JSON_THROW_ON_ERROR);
+
+    expect($snapshot)->not->toContain('Models\\\\Task')->and(strlen($snapshot))->toBeLessThan(20000);
+});
+
+/**
+ * The markup of one card out of the whitespace-collapsed page.
+ */
+function taskBoardCardHtml(string $html, string $id): string
+{
+    preg_match('/<article[^>]*wire:sort:item="'.preg_quote($id, '/').'".*?<\/article>/', $html, $match);
+
+    return $match[0] ?? '';
+}
+
+/**
+ * The markup of one column container out of the whitespace-collapsed page.
+ */
+function taskBoardColumnHtml(string $html, string $status): string
+{
+    preg_match('/wire:sort:group-id="'.preg_quote($status, '/').'".*?<\/section>/', $html, $match);
+
+    return $match[0] ?? '';
+}
