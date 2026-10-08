@@ -192,3 +192,43 @@ it('saves the default currency and a default rate typed with a decimal comma and
         ->assertSet('data.defaults.default_currency', 'CZK')
         ->assertSet('data.defaults.default_hourly_rate', '1250,50');
 });
+
+it('shows a form error on the rate and stores nothing when more decimals are typed than the currency allows', function (): void {
+    $this->actingAs(Canary::admin());
+
+    $before = SettingsProperty::query()->where('group', 'defaults')->pluck('payload', 'name')->all();
+
+    Livewire::test(SettingsPage::class)
+        ->fillForm([
+            'supplier' => fictionalSupplierState(exampleEmail()),
+            'defaults' => ['default_currency' => 'CZK', 'default_hourly_rate' => '12,345'],
+        ])
+        ->call('save')
+        ->assertHasFormErrors(['defaults.default_hourly_rate']);
+
+    expect(SettingsProperty::query()->where('group', 'defaults')->pluck('payload', 'name')->all())->toBe($before);
+});
+
+it('refuses a grouped, a negative and an empty rate on the page', function (string $typed): void {
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(SettingsPage::class)
+        ->fillForm([
+            'supplier' => fictionalSupplierState(exampleEmail()),
+            'defaults' => ['default_currency' => 'CZK', 'default_hourly_rate' => $typed],
+        ])
+        ->call('save')
+        ->assertHasFormErrors(['defaults.default_hourly_rate']);
+})->with(['1 250,50', '-5', '']);
+
+it('checks the decimals against the selected currency, so a currency without fraction takes whole amounts only', function (): void {
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(SettingsPage::class)
+        ->fillForm([
+            'supplier' => fictionalSupplierState(exampleEmail()),
+            'defaults' => ['default_currency' => 'JPY', 'default_hourly_rate' => '10,5'],
+        ])
+        ->call('save')
+        ->assertHasFormErrors(['defaults.default_hourly_rate']);
+});
