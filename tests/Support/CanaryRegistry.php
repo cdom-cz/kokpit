@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
@@ -58,6 +59,14 @@ final class CanaryRegistry
         return [
             CanaryRecord::class => static function (string $clientId, string $canary): void {
                 Canary::record($clientId, $canary);
+            },
+
+            // The client id is the identity every other fixture hangs off, so the
+            // fixture writes the canary into the name of the existing client row.
+            Client::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    Client::query()->whereKey($clientId)->firstOrFail()->forceFill(['name' => $canary])->save();
+                });
             },
 
             Media::class => static function (string $clientId, string $canary): void {

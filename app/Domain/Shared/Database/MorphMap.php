@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Shared\Database;
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
@@ -32,5 +33,6 @@ final class MorphMap
         'tag' => Tag::class,
         'activity' => Activity::class,
         'webhook_call' => WebhookCall::class,
+        'client' => Client::class,
     ];
 }

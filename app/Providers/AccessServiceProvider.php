@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
@@ -35,5 +36,8 @@ final class AccessServiceProvider extends ServiceProvider
         foreach ([Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class] as $model) {
             Gate::policy($model, AdminOnlyPolicy::class);
         }
+
+        // Clients are Admin-only (Phase 4 D-06): a Partner is granted nothing.
+        Gate::policy(Client::class, AdminOnlyPolicy::class);
     }
 }

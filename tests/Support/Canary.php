@@ -4,20 +4,22 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\Role;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\RoleName;
+use App\Domain\Shared\Auth\PartnerContext;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Str;
 
 /**
  * Helpers of the canary harness (D-04): the test-only table, two fictional
  * clients, runtime canary strings and a user for every state of the
  * fail-closed matrix. Nothing here is a real value; everything is generated
- * when the test runs.
+ * when the test runs. The two clients are real rows of the clients table, so
+ * the foreign key from users.client_id holds for every Partner a test creates.
  */
 final class Canary
 {
@@ -35,13 +37,16 @@ final class Canary
     }
 
     /**
-     * Two fictional client ids.
+     * Creates two real fictional client rows and returns their ids.
      *
      * @return array{0: string, 1: string}
      */
     public static function twoClients(): array
     {
-        return [Str::uuid7()->toString(), Str::uuid7()->toString()];
+        return app(PartnerContext::class)->runAsSystem(static fn (): array => [
+            Client::factory()->create()->id,
+            Client::factory()->create()->id,
+        ]);
     }
 
     /**
