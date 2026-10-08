@@ -6,6 +6,7 @@ namespace App\Domain\Clients\Actions;
 
 use App\Domain\Clients\Enums\ClientStage;
 use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Rules\CompanyIdRule;
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\PaymentSettings;
@@ -29,10 +30,16 @@ use Illuminate\Support\Facades\DB;
  * so a later change of a default reaches only clients created afterwards. A key
  * that is present, even empty, is the caller's value and is validated as such.
  *
+ * A company number of a Czech client must pass CompanyIdRule, checked in
+ * ClientInput, so the form cannot be bypassed; any other country keeps a free
+ * string (D-09).
+ *
  * A company number already held by another client in the same country is a field
  * error on `company_number`, raised from the database unique index so it also
  * covers a number taken between the form check and the save; when the holder is
  * archived the message says so (D-09).
+ *
+ * @see CompanyIdRule
  *
  * @phpstan-type ClientData array{
  *     name: string,

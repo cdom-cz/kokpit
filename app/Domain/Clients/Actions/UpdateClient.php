@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Clients\Actions;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Rules\CompanyIdRule;
 use App\Domain\Projects\Models\ProjectBilling;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +23,11 @@ use Illuminate\Validation\ValidationException;
  * client currency, so the change is a field error on `currency` (research item
  * 3). Without project money the currency changes together with the rate, which
  * the caller sends in the new currency. A company number held by another client
- * in the same country is a field error on `company_number` (D-09).
+ * in the same country is a field error on `company_number` (D-09). A Czech
+ * client's company number must pass CompanyIdRule, checked in ClientInput like on
+ * creation (D-09).
+ *
+ * @see CompanyIdRule
  *
  * @phpstan-import-type ClientData from CreateClient
  */

@@ -7,7 +7,9 @@ namespace App\Domain\Clients\Actions;
 use App\Domain\Clients\Enums\ClientStage;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Rules\CompanyIdRule;
 use App\Domain\Shared\Money\Money;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -15,8 +17,10 @@ use OverflowException;
 
 /**
  * The input rules that CreateClient and UpdateClient share, so a client is
- * validated the same way whichever Action writes it (CL-01, D-09, D-10). Every
- * error is a ValidationException keyed by the data key; the Admin form maps the
+ * validated the same way whichever Action writes it (CL-01, D-09, D-10). A company
+ * number of a Czech client must pass CompanyIdRule, the rule of the form, so a
+ * crafted payload cannot skip the checksum; any other country keeps a free string
+ * (D-09). Every error is a ValidationException keyed by the data key; the Admin form maps the
  * key to its state path. No Filament dependency.
  */
 final class ClientInput
@@ -77,6 +81,16 @@ final class ClientInput
             $errors['currency'] = __('kokpit.clients.errors.currency_invalid');
         }
 
+        $companyNumber = self::text($data['company_number'] ?? null);
+
+        if ($country === 'CZ' && $companyNumber !== null) {
+            $problem = self::companyNumberProblem($companyNumber);
+
+            if ($problem !== null) {
+                $errors['company_number'] = $problem;
+            }
+        }
+
         $stage = ClientStage::tryFrom((string) ($data['stage'] ?? ''));
 
         if ($stage === null) {
@@ -122,7 +136,7 @@ final class ClientInput
 
         return [
             'name' => $name,
-            'company_number' => self::text($data['company_number'] ?? null),
+            'company_number' => $companyNumber,
             'tax_number' => self::text($data['tax_number'] ?? null),
             'country' => $country,
             'street' => self::text($data['street'] ?? null),
@@ -163,6 +177,16 @@ final class ClientInput
             : __('kokpit.clients.errors.company_number_taken');
 
         throw ValidationException::withMessages(['company_number' => $message]);
+    }
+
+    /**
+     * The message of CompanyIdRule for a Czech company number, or null when it passes.
+     */
+    private static function companyNumberProblem(string $companyNumber): ?string
+    {
+        $validator = Validator::make(['company_number' => $companyNumber], ['company_number' => [new CompanyIdRule]]);
+
+        return $validator->fails() ? $validator->errors()->first('company_number') : null;
     }
 
     /**
