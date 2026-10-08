@@ -288,6 +288,12 @@ return [
         ],
     ],
 
+    'ares' => [
+        'errors' => [
+            'invalid_id' => 'Zadejte platné osmimístné IČO se správnou kontrolní číslicí.',
+        ],
+    ],
+
     'clients' => [
         'empty_value' => '—',
         'days' => 'dní',

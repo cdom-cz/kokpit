@@ -18,10 +18,12 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\Support\Canary;
+use Tests\Support\FictionalCompanyId;
 
 /*
  * The Admin client screens (CL-01, D-09, D-10). Livewire page tests as the Admin;
- * every name and value is fictional and no company number passes the CZ checksum.
+ * every name and value is fictional; Czech company numbers are generated at test
+ * time by FictionalCompanyId, and the placeholder 12345678 is checksum-invalid.
  */
 
 /**
@@ -34,7 +36,7 @@ function clientForm(array $overrides = []): array
 {
     return [
         'country' => 'CZ',
-        'company_number' => '12345678',
+        'company_number' => FictionalCompanyId::valid(),
         'name' => 'Example client '.mb_strtolower(Str::random(6)),
         'tax_number' => 'CZ12345678',
         'street' => 'Example street 1',
@@ -67,7 +69,7 @@ it('creates a client with every field and stores the rate as an exact Money pair
     $client = Client::query()->where('name', 'Example client full')->firstOrFail();
 
     expect($client->country)->toBe('CZ')
-        ->and($client->company_number)->toBe('12345678')
+        ->and($client->company_number)->toBe($state['company_number'])
         ->and($client->tax_number)->toBe('CZ12345678')
         ->and($client->street)->toBe('Example street 1')
         ->and($client->city)->toBe('Example town')
@@ -243,6 +245,63 @@ it('saves a foreign client with a free-text company number', function (): void {
     expect($client->country)->toBe('DE')
         ->and($client->company_number)->toBe('HRB 000 example')
         ->and($client->hourly_rate_minor)->toBe(9000);
+});
+
+it('refuses a Czech company number with a wrong check digit as a field error and creates no client', function (): void {
+    $before = Client::query()->count();
+
+    // The placeholder is checksum-invalid by design: the check digit 9 is expected.
+    Livewire::test(CreateClient::class)
+        ->fillForm(clientForm(['company_number' => '12345678']))
+        ->call('create')
+        ->assertHasFormErrors(['company_number']);
+
+    expect(Client::query()->count())->toBe($before);
+});
+
+it('saves a Czech client with a checksum-valid company number', function (): void {
+    $number = FictionalCompanyId::valid();
+
+    Livewire::test(CreateClient::class)
+        ->fillForm(clientForm(['name' => 'Example client checksum', 'company_number' => $number]))
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    expect(Client::query()->where('name', 'Example client checksum')->firstOrFail()->company_number)->toBe($number);
+});
+
+it('saves a client of another country with a company number that has no checksum', function (): void {
+    Livewire::test(CreateClient::class)
+        ->fillForm(clientForm([
+            'name' => 'Example client DE',
+            'country' => 'DE',
+            'company_number' => 'DE-123',
+            'currency' => 'EUR',
+            'hourly_rate' => '90',
+        ]))
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    expect(Client::query()->where('name', 'Example client DE')->firstOrFail()->company_number)->toBe('DE-123');
+});
+
+it('applies the checksum rule when a Czech client is edited, and not after the country changes', function (): void {
+    $client = Client::factory()->create(['country' => 'CZ', 'company_number' => FictionalCompanyId::valid()]);
+    $kept = $client->company_number;
+
+    Livewire::test(EditClient::class, ['record' => $client->getRouteKey()])
+        ->fillForm(['company_number' => FictionalCompanyId::invalid()])
+        ->call('save')
+        ->assertHasFormErrors(['company_number']);
+
+    expect($client->refresh()->company_number)->toBe($kept);
+
+    Livewire::test(EditClient::class, ['record' => $client->getRouteKey()])
+        ->fillForm(['country' => 'SK', 'company_number' => 'free text 1'])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($client->refresh()->company_number)->toBe('free text 1');
 });
 
 it('applies the same rate rule when a client is edited', function (string $rate): void {

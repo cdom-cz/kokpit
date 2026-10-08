@@ -12,6 +12,7 @@ use App\Domain\Clients\Enums\ClientStage;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\Clients\Rules\CompanyIdRule;
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\PaymentSettings;
@@ -155,9 +156,11 @@ final class ClientResource extends Resource
                         ->regex('/^[A-Z]{2}$/')
                         ->live(onBlur: true)
                         ->dehydrateStateUsing(static fn (mixed $state): mixed => is_string($state) ? mb_strtoupper(trim($state)) : $state),
+                    // Only a Czech company number has a checksum; a foreign one stays free text (D-09).
                     TextInput::make('company_number')
                         ->label(__('kokpit.clients.fields.company_number'))
-                        ->maxLength(32),
+                        ->maxLength(32)
+                        ->rule(new CompanyIdRule, static fn (Get $get): bool => self::isCzech($get('country'))),
                     TextInput::make('name')
                         ->label(__('kokpit.clients.fields.name'))
                         ->required()
@@ -476,6 +479,14 @@ final class ClientResource extends Resource
                 app($action)->handle($record);
             }
         }
+    }
+
+    /**
+     * Whether the typed country is the Czech Republic, the way the Action reads it.
+     */
+    private static function isCzech(mixed $country): bool
+    {
+        return is_string($country) && mb_strtoupper(trim($country)) === 'CZ';
     }
 
     private static function nonEmpty(string $text): ?string
