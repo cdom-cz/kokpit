@@ -9,6 +9,10 @@ use App\Domain\Clients\Actions\CreateClient as CreateClientAction;
 use App\Domain\Clients\Enums\ClientStage;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
+use App\Domain\Settings\Settings\DefaultsSettings;
+use App\Domain\Settings\Settings\InvoicingSettings;
+use App\Domain\Settings\Settings\PaymentSettings;
+use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Money\Money;
@@ -39,6 +43,8 @@ use InvalidArgumentException;
  * domain Actions CreateClient and UpdateClient, which own every rule. The stage
  * is a label and a list filter only (D-10). The client is Admin-only data (D-06):
  * the resource is not globally searchable, and a Partner gets 403 on every route.
+ * A new client form opens pre-filled from the typed defaults (D-13); the values are
+ * copied into the client row and never read from the settings again.
  *
  * @phpstan-import-type ClientData from CreateClientAction
  */
@@ -87,6 +93,7 @@ final class ClientResource extends Resource
                     TextInput::make('country')
                         ->label(__('kokpit.clients.fields.country'))
                         ->helperText(__('kokpit.clients.hints.country'))
+                        ->default(static fn (): ?string => self::nonEmpty(app(SupplierSettings::class)->country))
                         ->required()
                         ->length(2)
                         ->regex('/^[A-Z]{2}$/')
@@ -125,6 +132,7 @@ final class ClientResource extends Resource
                     Select::make('currency')
                         ->label(__('kokpit.clients.fields.currency'))
                         ->options($currencies)
+                        ->default(static fn (): string => app(DefaultsSettings::class)->default_currency)
                         ->searchable()
                         ->required()
                         ->live(),
@@ -132,6 +140,7 @@ final class ClientResource extends Resource
                         ->label(__('kokpit.clients.fields.hourly_rate'))
                         ->helperText(__('kokpit.clients.hints.hourly_rate'))
                         ->inputMode('decimal')
+                        ->default(static fn (): string => app(DefaultsSettings::class)->toFormState()['default_hourly_rate'])
                         ->required()
                         ->rule(static fn (Get $get): Closure => static function (string $attribute, mixed $value, Closure $fail) use ($get): void {
                             $currency = $get('currency');
@@ -150,6 +159,7 @@ final class ClientResource extends Resource
                     TextInput::make('payment_terms_days')
                         ->label(__('kokpit.clients.fields.payment_terms_days'))
                         ->helperText(__('kokpit.clients.hints.payment_terms_days'))
+                        ->default(static fn (): int => app(InvoicingSettings::class)->payment_due_days)
                         ->required()
                         ->numeric()
                         ->rules(['integer', 'between:0,365'])
@@ -157,6 +167,7 @@ final class ClientResource extends Resource
                     Select::make('invoice_language')
                         ->label(__('kokpit.clients.fields.invoice_language'))
                         ->options(InvoiceLanguage::class)
+                        ->default(static fn (): string => app(DefaultsSettings::class)->default_invoice_language->value)
                         ->required()
                         ->native(false),
                     TextInput::make('invoice_email')
@@ -166,7 +177,7 @@ final class ClientResource extends Resource
                     Toggle::make('online_payment_enabled')
                         ->label(__('kokpit.clients.fields.online_payment_enabled'))
                         ->helperText(__('kokpit.clients.hints.online_payment_enabled'))
-                        ->default(false)
+                        ->default(static fn (): bool => app(PaymentSettings::class)->online_payments_enabled)
                         ->columnSpanFull(),
                 ]),
         ]);
@@ -255,6 +266,11 @@ final class ClientResource extends Resource
             'invoice_language' => self::string($data['invoice_language'] ?? null),
             'online_payment_enabled' => (bool) ($data['online_payment_enabled'] ?? false),
         ];
+    }
+
+    private static function nonEmpty(string $text): ?string
+    {
+        return trim($text) === '' ? null : $text;
     }
 
     private static function nullableString(mixed $state): ?string

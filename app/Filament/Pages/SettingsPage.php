@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages;
 
+use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Settings\Banking\BankAccountFormat;
 use App\Domain\Settings\Numbering\DocumentKind;
 use App\Domain\Settings\Numbering\DocumentNumbering;
@@ -467,6 +468,13 @@ class SettingsPage extends Page
                             }
                         },
                     ]),
+                Select::make('default_invoice_language')
+                    ->label(__('kokpit.settings.defaults.default_invoice_language'))
+                    ->helperText(__('kokpit.settings.defaults.default_invoice_language_hint'))
+                    ->options(InvoiceLanguage::class)
+                    ->native(false)
+                    ->required()
+                    ->rules($rules['default_invoice_language']),
             ])->statePath(DefaultsSettings::group()),
         ]);
     }

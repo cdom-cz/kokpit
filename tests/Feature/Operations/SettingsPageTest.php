@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\PaymentSettings;
@@ -178,7 +179,7 @@ it('saves the default currency and a default rate typed with a decimal comma and
     Livewire::test(SettingsPage::class)
         ->fillForm([
             'supplier' => fictionalSupplierState(exampleEmail()),
-            'defaults' => ['default_currency' => 'CZK', 'default_hourly_rate' => '1250,50'],
+            'defaults' => ['default_currency' => 'CZK', 'default_hourly_rate' => '1250,50', 'default_invoice_language' => 'cs'],
         ])
         ->call('save')
         ->assertHasNoFormErrors();
@@ -197,6 +198,44 @@ it('saves the default currency and a default rate typed with a decimal comma and
         ->assertSet('data.defaults.default_hourly_rate', '1250,50');
 });
 
+it('saves the default invoice language on the defaults tab and shows it after a reload', function (): void {
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(SettingsPage::class)
+        ->assertSet('data.defaults.default_invoice_language', 'cs')
+        ->fillForm([
+            'supplier' => fictionalSupplierState(exampleEmail()),
+            'defaults' => ['default_currency' => 'CZK', 'default_hourly_rate' => '1250,50', 'default_invoice_language' => 'en'],
+        ])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    app()->forgetScopedInstances();
+
+    expect(app(DefaultsSettings::class)->default_invoice_language)->toBe(InvoiceLanguage::English);
+
+    app()->forgetScopedInstances();
+
+    Livewire::test(SettingsPage::class)
+        ->assertSet('data.defaults.default_invoice_language', 'en');
+});
+
+it('refuses an unknown default invoice language on the page and stores nothing', function (): void {
+    $this->actingAs(Canary::admin());
+
+    $before = SettingsProperty::query()->where('group', 'defaults')->pluck('payload', 'name')->all();
+
+    Livewire::test(SettingsPage::class)
+        ->fillForm([
+            'supplier' => fictionalSupplierState(exampleEmail()),
+            'defaults' => ['default_currency' => 'CZK', 'default_hourly_rate' => '10', 'default_invoice_language' => 'de'],
+        ])
+        ->call('save')
+        ->assertHasFormErrors(['defaults.default_invoice_language']);
+
+    expect(SettingsProperty::query()->where('group', 'defaults')->pluck('payload', 'name')->all())->toBe($before);
+});
+
 it('shows a form error on the rate and stores nothing when more decimals are typed than the currency allows', function (): void {
     $this->actingAs(Canary::admin());
 
@@ -205,7 +244,7 @@ it('shows a form error on the rate and stores nothing when more decimals are typ
     Livewire::test(SettingsPage::class)
         ->fillForm([
             'supplier' => fictionalSupplierState(exampleEmail()),
-            'defaults' => ['default_currency' => 'CZK', 'default_hourly_rate' => '12,345'],
+            'defaults' => ['default_currency' => 'CZK', 'default_hourly_rate' => '12,345', 'default_invoice_language' => 'cs'],
         ])
         ->call('save')
         ->assertHasFormErrors(['defaults.default_hourly_rate']);
@@ -219,7 +258,7 @@ it('refuses a grouped, a negative and an empty rate on the page', function (stri
     Livewire::test(SettingsPage::class)
         ->fillForm([
             'supplier' => fictionalSupplierState(exampleEmail()),
-            'defaults' => ['default_currency' => 'CZK', 'default_hourly_rate' => $typed],
+            'defaults' => ['default_currency' => 'CZK', 'default_hourly_rate' => $typed, 'default_invoice_language' => 'cs'],
         ])
         ->call('save')
         ->assertHasFormErrors(['defaults.default_hourly_rate']);
@@ -231,7 +270,7 @@ it('checks the decimals against the selected currency, so a currency without fra
     Livewire::test(SettingsPage::class)
         ->fillForm([
             'supplier' => fictionalSupplierState(exampleEmail()),
-            'defaults' => ['default_currency' => 'JPY', 'default_hourly_rate' => '10,5'],
+            'defaults' => ['default_currency' => 'JPY', 'default_hourly_rate' => '10,5', 'default_invoice_language' => 'cs'],
         ])
         ->call('save')
         ->assertHasFormErrors(['defaults.default_hourly_rate']);

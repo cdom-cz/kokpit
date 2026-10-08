@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\PaymentSettings;
@@ -53,6 +54,35 @@ it('stores the default rate as integer minor units plus currency and reads it ba
         ->and(json_decode((string) SettingsProperty::query()->where('group', 'defaults')->where('name', 'default_hourly_rate')->value('payload'), true, 512, JSON_THROW_ON_ERROR))
         ->toBe(['minor' => 8550, 'currency' => 'EUR']);
 });
+
+it('starts with Czech as default invoice language and stores a changed language as its value', function (): void {
+    $this->actingAs(Canary::admin());
+
+    expect(app(DefaultsSettings::class)->default_invoice_language)->toBe(InvoiceLanguage::Czech);
+
+    $defaults = app(DefaultsSettings::class);
+    $defaults->default_invoice_language = InvoiceLanguage::English;
+    $defaults->save();
+    app()->forgetScopedInstances();
+
+    expect(app(DefaultsSettings::class)->default_invoice_language)->toBe(InvoiceLanguage::English)
+        ->and(json_decode((string) SettingsProperty::query()->where('group', 'defaults')->where('name', 'default_invoice_language')->value('payload'), true, 512, JSON_THROW_ON_ERROR))
+        ->toBe('en');
+});
+
+it('turns an unknown invoice language into a field error and keeps the stored one', function (mixed $typed): void {
+    $this->actingAs(Canary::admin());
+    $before = storedDefaults();
+
+    try {
+        app(DefaultsSettings::class)->fillFromFormState(['default_invoice_language' => $typed]);
+        $this->fail('The language was accepted.');
+    } catch (ValidationException $exception) {
+        expect(array_keys($exception->errors()))->toBe(['default_invoice_language']);
+    }
+
+    expect(storedDefaults())->toBe($before);
+})->with(['de', '', null, 7]);
 
 it('refuses a default rate in another currency than the default currency and stores nothing', function (): void {
     $this->actingAs(Canary::admin());

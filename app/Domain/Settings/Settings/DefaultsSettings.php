@@ -4,17 +4,20 @@ declare(strict_types=1);
 
 namespace App\Domain\Settings\Settings;
 
+use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Settings\Casts\MoneySettingsCast;
 use App\Domain\Settings\Rules\KnownCurrency;
 use App\Domain\Shared\Money\Money;
+use Illuminate\Validation\Rules\Enum;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use OverflowException;
 
 /**
- * Defaults for new work (group `defaults`): the default currency and the default
- * hourly rate. The rate is stored as integer minor units plus its currency
- * (Money); the form shows it as text with a decimal comma.
+ * Defaults for new work (group `defaults`): the default currency, the default
+ * hourly rate and the default invoice language. The rate is stored as integer
+ * minor units plus its currency (Money); the form shows it as text with a
+ * decimal comma. A new client copies these values once (D-13).
  */
 class DefaultsSettings extends ValidatedSettings
 {
@@ -22,6 +25,8 @@ class DefaultsSettings extends ValidatedSettings
     public string $default_currency;
 
     public Money $default_hourly_rate;
+
+    public InvoiceLanguage $default_invoice_language;
 
     public static function group(): string
     {
@@ -46,17 +51,19 @@ class DefaultsSettings extends ValidatedSettings
         return [
             'default_currency' => ['required', new KnownCurrency],
             'default_hourly_rate' => ['required', 'regex:/^\d+([.,]\d+)?$/'],
+            'default_invoice_language' => ['required', new Enum(InvoiceLanguage::class)],
         ];
     }
 
     /**
-     * @return array{default_currency: string, default_hourly_rate: string}
+     * @return array{default_currency: string, default_hourly_rate: string, default_invoice_language: string}
      */
     public function toFormState(): array
     {
         return [
             'default_currency' => $this->default_currency,
             'default_hourly_rate' => str_replace('.', ',', $this->default_hourly_rate->toMajor()),
+            'default_invoice_language' => $this->default_invoice_language->value,
         ];
     }
 
@@ -102,6 +109,23 @@ class DefaultsSettings extends ValidatedSettings
                     'default_hourly_rate' => [__('kokpit.settings.defaults.rate_invalid')],
                 ]);
             }
+        }
+
+        if (array_key_exists('default_invoice_language', $state)) {
+            // A Filament select over an enum hands the case itself back; a crafted payload hands a string.
+            $language = match (true) {
+                $state['default_invoice_language'] instanceof InvoiceLanguage => $state['default_invoice_language'],
+                is_string($state['default_invoice_language']) => InvoiceLanguage::tryFrom($state['default_invoice_language']),
+                default => null,
+            };
+
+            if ($language === null) {
+                throw ValidationException::withMessages([
+                    'default_invoice_language' => [__('kokpit.settings.defaults.invoice_language_invalid')],
+                ]);
+            }
+
+            $this->default_invoice_language = $language;
         }
 
         return $this;
