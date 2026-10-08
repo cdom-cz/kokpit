@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-10-08T20:46:45.360Z"
+stopped_at: Completed 05-04-PLAN.md
+last_updated: "2026-10-08T21:10:34.849Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 05 execution started
-state_head: a92f8f00e5c1826930a1289ebdbad9903fa3eee8
+state_head: 305b43cad502894ec5c15c7588eb46d73598c8d7
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 81
-  completed_plans: 67
+  completed_plans: 68
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 05 (Tasks and Kanban) — EXECUTING
-Plan: 4 of 17
+Plan: 5 of 17
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 05 execution started
 
@@ -125,6 +125,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 05 P01 | 15 min | 2 tasks | 16 files |
 | Phase 05 P02 | 40min | 3 tasks | 11 files |
 | Phase 05 P03 | 50 min | 3 tasks | 12 files |
+| Phase 05 P04 | 35 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -258,6 +259,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-03: global search is a per-resource opt-in; only the Admin-only TaskResource is searchable (key and title, never id)
 - [Phase 05]: 05-03: task address is /admin/tasks/KEY-N (assumption A2); the quick create modal redirects to the view page until 05-04 switches it to the edit page
 - [Phase 05]: 05-03: task tags are Admin-only (TagType::Task); due date range filter is inclusive and a null due date matches neither bound
+- [Phase 05]: 05-04: the description size limit counts bytes (RichText::MAX_LENGTH 100000), the unit the sanitiser cuts at, and clean() refuses longer input so nothing is cut silently
+- [Phase 05]: 05-04: UpdateTask changes status only through TaskBoard::appendToColumn under the board lock and writes status plus other edits in one save (one activity row); an unchanged person is not re-checked
+- [Phase 05]: 05-04: RichText owns a strict Symfony sanitiser and never rebinds Filament's global config; the editor has no attachments and a forged upload stores nothing
 
 ### Pending Todos
 
@@ -296,6 +300,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T20:46:45.244Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-10-08T21:10:34.725Z
+Stopped at: Completed 05-04-PLAN.md
 Resume file: None
