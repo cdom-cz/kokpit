@@ -99,4 +99,21 @@ return [
         'scheduler_heartbeat_error_after' => 180,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Task board
+    |--------------------------------------------------------------------------
+    |
+    | Fixed settings of the kanban board (D-02). A literal starting point, not
+    | editable in the UI.
+    |
+    | done_limit: how many of the most recently completed tasks the Done column
+    |   shows. Older done tasks are reached through the task list.
+    |
+    */
+
+    'board' => [
+        'done_limit' => 20,
+    ],
+
 ];

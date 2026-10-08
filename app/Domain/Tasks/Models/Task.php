@@ -24,6 +24,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\EloquentSortable\Sortable;
+use Spatie\EloquentSortable\SortableTrait;
 use Spatie\Tags\HasTags;
 
 /**
@@ -90,14 +92,26 @@ use Spatie\Tags\HasTags;
     'requester_id',
     'escalated_at',
 ])]
-final class Task extends KokpitModel implements PartnerIsolated
+final class Task extends KokpitModel implements PartnerIsolated, Sortable
 {
     /** @use HasFactory<TaskFactory> */
-    use HasFactory, IsolatesPartners, LogsAllowlistedActivity, SoftDeletes;
+    use HasFactory, IsolatesPartners, LogsAllowlistedActivity, SoftDeletes, SortableTrait;
 
     use HasTags {
         detachTags as private detachTagsFromTrait;
     }
+
+    /**
+     * The board order column and the creation behaviour (spatie/eloquent-sortable).
+     * The position is never set on creation by the package: the creating code
+     * appends the task at the end of its column under the board lock.
+     *
+     * @var array{order_column_name: string, sort_when_creating: bool}
+     */
+    public array $sortable = [
+        'order_column_name' => 'position',
+        'sort_when_creating' => false,
+    ];
 
     /**
      * The tasks of the Partner's visible projects. The scoped Project query
@@ -108,6 +122,17 @@ final class Task extends KokpitModel implements PartnerIsolated
     public function constrainForPartner(Builder $query, string $clientId): void
     {
         $query->whereIn($this->qualifyColumn('project_id'), Project::query()->select('projects.id'));
+    }
+
+    /**
+     * The tasks sharing this task's board column: the position is ordered
+     * within one status.
+     *
+     * @return Builder<Task>
+     */
+    public function buildSortQuery(): Builder
+    {
+        return self::query()->where('status', $this->status->value);
     }
 
     /**

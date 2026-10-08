@@ -439,6 +439,11 @@ return [
         'empty_description' => 'První přidaný kontakt se stane hlavním.',
     ],
 
+    'task_board' => [
+        'navigation_label' => 'Nástěnka úkolů',
+        'title' => 'Nástěnka úkolů',
+    ],
+
     'tasks' => [
         'errors' => [
             'project_unavailable' => 'Vyberte dostupný projekt.',
