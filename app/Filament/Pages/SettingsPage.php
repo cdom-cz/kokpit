@@ -8,6 +8,7 @@ use App\Domain\Settings\Banking\BankAccountFormat;
 use App\Domain\Settings\Numbering\DocumentKind;
 use App\Domain\Settings\Numbering\DocumentNumbering;
 use App\Domain\Settings\Numbering\InvalidNumberPattern;
+use App\Domain\Settings\Numbering\NumberPattern;
 use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
@@ -18,6 +19,7 @@ use App\Domain\Settings\Settings\ValidatedSettings;
 use App\Domain\Settings\VatMode;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
+use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Concerns\EnforcesPageAccessRule;
 use Closure;
@@ -37,6 +39,7 @@ use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -328,9 +331,34 @@ class SettingsPage extends Page
             Section::make(__('kokpit.settings.numbering.title'))
                 ->description(__('kokpit.settings.numbering.token_help'))
                 ->schema([
-                    $this->patternInput(DocumentKind::Invoice, 'invoice_pattern'),
+                    ...$this->patternInputs(DocumentKind::Invoice, 'invoice_pattern'),
+                    ...$this->patternInputs(DocumentKind::Proforma, 'proforma_pattern'),
+                    ...$this->patternInputs(DocumentKind::CreditNote, 'credit_note_pattern'),
+                    // Fixed: never taken from the request. The field is not dehydrated, and its rule still
+                    // refuses a crafted payload with the Czech reason instead of dropping it silently.
+                    TextInput::make('task_pattern')
+                        ->label(__('kokpit.settings.numbering.task_pattern'))
+                        ->helperText(__('kokpit.settings.numbering.task_explanation'))
+                        ->disabled()
+                        ->rules(NumberingSettings::rules()['task_pattern']),
                 ]),
         ])->statePath(NumberingSettings::group());
+    }
+
+    /**
+     * The pattern input of a kind and, under it, the warning shown when the edited
+     * pattern restarts the counter.
+     *
+     * @return list<TextInput|Text>
+     */
+    private function patternInputs(DocumentKind $kind, string $field): array
+    {
+        return [
+            $this->patternInput($kind, $field),
+            Text::make(__('kokpit.settings.numbering.reset_warning'))
+                ->color('warning')
+                ->visible(static fn (Get $get): bool => self::resetPeriodChanges($kind, $field, $get($field))),
+        ];
     }
 
     /**
@@ -350,6 +378,31 @@ class SettingsPage extends Page
 
                 return $number === null ? null : (string) __('kokpit.settings.numbering.preview', ['number' => $number]);
             });
+    }
+
+    /**
+     * Whether the edited pattern resets its counter in another period than the
+     * stored one, which starts the numbering again at 1. Compared with the stored
+     * row, not with an in-memory settings object, so a failed save cannot hide it.
+     */
+    private static function resetPeriodChanges(DocumentKind $kind, string $field, mixed $edited): bool
+    {
+        $payload = SettingsProperty::query()
+            ->where('group', NumberingSettings::group())
+            ->where('name', $field)
+            ->value('payload');
+
+        $stored = is_string($payload) ? json_decode($payload, true) : null;
+
+        if (! is_string($edited) || ! is_string($stored)) {
+            return false;
+        }
+
+        try {
+            return NumberPattern::parse($edited, $kind)->resetPeriod() !== NumberPattern::parse($stored, $kind)->resetPeriod();
+        } catch (InvalidNumberPattern) {
+            return false;
+        }
     }
 
     /**

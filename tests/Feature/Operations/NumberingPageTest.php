@@ -135,7 +135,7 @@ it('stores the saved pattern and the next allocation follows it', function (): v
  *
  * @return array<string, string>
  */
-function storedPatterns(): array
+function storedNumberingPatterns(): array
 {
     return DB::table('settings')->where('group', 'numbering')->orderBy('name')->get()
         ->mapWithKeys(fn (object $row): array => [(string) $row->name => (string) json_decode((string) $row->payload, true, 512, JSON_THROW_ON_ERROR)])
@@ -143,7 +143,7 @@ function storedPatterns(): array
 }
 
 it('shows the Czech reason on the invoice pattern field and stores nothing for an invalid pattern', function (): void {
-    $before = storedPatterns();
+    $before = storedNumberingPatterns();
     $counters = sequenceSnapshot();
 
     $page = Livewire::test(SettingsPage::class)
@@ -155,12 +155,12 @@ it('shows the Czech reason on the invoice pattern field and stores nothing for a
         ->assertHasFormErrors(['numbering.invoice_pattern']);
 
     expect($page->errors()->get('data.numbering.invoice_pattern'))->toContain(__('kokpit.settings.numbering.errors.invoice_digits'))
-        ->and(storedPatterns())->toBe($before)
+        ->and(storedNumberingPatterns())->toBe($before)
         ->and(sequenceSnapshot())->toBe($counters);
 });
 
 it('refuses an invalid pattern of each document kind with its own reason', function (string $field, string $pattern, string $reason): void {
-    $before = storedPatterns();
+    $before = storedNumberingPatterns();
 
     $page = Livewire::test(SettingsPage::class)
         ->fillForm([
@@ -171,7 +171,7 @@ it('refuses an invalid pattern of each document kind with its own reason', funct
         ->assertHasFormErrors(["numbering.{$field}"]);
 
     expect($page->errors()->get("data.numbering.{$field}"))->toContain(__("kokpit.settings.numbering.errors.{$reason}"))
-        ->and(storedPatterns())->toBe($before);
+        ->and(storedNumberingPatterns())->toBe($before);
 })->with([
     'proforma without a counter' => ['proforma_pattern', 'PF-{YYYY}', 'counter_count'],
     'credit note with an unknown token' => ['credit_note_pattern', 'CN{XX}{NNNN}', 'unknown_token'],
@@ -225,7 +225,7 @@ it('keeps the task pattern disabled and fixed to KEY-N with an explanation', fun
 });
 
 it('refuses a crafted payload that sets another task pattern and leaves the stored one', function (): void {
-    $before = storedPatterns();
+    $before = storedNumberingPatterns();
 
     $page = Livewire::test(SettingsPage::class)
         ->fillForm(['supplier' => numberingPageSupplier()])
@@ -234,8 +234,8 @@ it('refuses a crafted payload that sets another task pattern and leaves the stor
         ->assertHasFormErrors(['numbering.task_pattern']);
 
     expect($page->errors()->get('data.numbering.task_pattern'))->toContain(__('kokpit.settings.numbering.errors.task_fixed'))
-        ->and(storedPatterns())->toBe($before)
-        ->and(storedPatterns()['task_pattern'])->toBe('{KEY}-{N}');
+        ->and(storedNumberingPatterns())->toBe($before)
+        ->and(storedNumberingPatterns()['task_pattern'])->toBe('{KEY}-{N}');
 });
 
 it('names the allowed tokens in the help text', function (): void {
@@ -264,7 +264,7 @@ it('saves all three document patterns together and leaves the counters alone', f
         ->call('save')
         ->assertHasNoFormErrors();
 
-    expect(storedPatterns())->toBe([
+    expect(storedNumberingPatterns())->toBe([
         'credit_note_pattern' => 'D{YYYY}/{NNNN}',
         'invoice_pattern' => '{YYYY}{NNNNN}',
         'proforma_pattern' => 'ZF-{YY}{MM}-{NNN}',
