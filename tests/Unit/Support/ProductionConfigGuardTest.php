@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Support\ProductionConfigGuard;
 use Illuminate\Config\Repository;
 
-function guardConfig(bool $requireAdminTwoFactor, bool $canaryHarness = false, mixed $activityLog = true, mixed $queueDefault = 'redis', mixed $mailDefault = 'smtp', mixed $appUrl = 'https://kokpit.example.com'): Repository
+function guardConfig(bool $requireAdminTwoFactor, bool $canaryHarness = false, mixed $activityLog = true, mixed $queueDefault = 'redis', mixed $mailDefault = 'smtp', mixed $appUrl = 'https://kokpit.example.com', mixed $cacheDefault = 'redis'): Repository
 {
     return new Repository([
         'kokpit' => [
@@ -16,6 +16,7 @@ function guardConfig(bool $requireAdminTwoFactor, bool $canaryHarness = false, m
         'queue' => ['default' => $queueDefault],
         'mail' => ['default' => $mailDefault],
         'app' => ['url' => $appUrl],
+        'cache' => ['default' => $cacheDefault],
     ]);
 }
 
@@ -56,7 +57,7 @@ it('allows the canary harness outside production', function (): void {
 });
 
 it('treats a missing canary setting as off in production', function (): void {
-    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true], 'activitylog' => ['enabled' => true], 'queue' => ['default' => 'redis'], 'mail' => ['default' => 'smtp'], 'app' => ['url' => 'https://kokpit.example.com']]));
+    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true], 'activitylog' => ['enabled' => true], 'queue' => ['default' => 'redis'], 'mail' => ['default' => 'smtp'], 'app' => ['url' => 'https://kokpit.example.com'], 'cache' => ['default' => 'redis']]));
 
     expect(true)->toBeTrue();
 });
@@ -164,3 +165,23 @@ it('allows a localhost APP_URL outside production', function (): void {
 
     expect(true)->toBeTrue();
 });
+
+it('throws in production when the cache store is not the shared redis store', function (mixed $store): void {
+    ProductionConfigGuard::check(true, guardConfig(true, cacheDefault: $store));
+})->with(['array', 'file', 'database', 'Redis', '', null])->throws(RuntimeException::class, 'CACHE_STORE');
+
+it('allows production with the redis cache store', function (): void {
+    ProductionConfigGuard::check(true, guardConfig(true, cacheDefault: 'redis'));
+
+    expect(true)->toBeTrue();
+});
+
+it('allows the array cache store outside production', function (): void {
+    ProductionConfigGuard::check(false, guardConfig(true, cacheDefault: 'array'));
+
+    expect(true)->toBeTrue();
+});
+
+it('treats a missing cache setting as not redis in production', function (): void {
+    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true], 'activitylog' => ['enabled' => true], 'queue' => ['default' => 'redis'], 'mail' => ['default' => 'smtp'], 'app' => ['url' => 'https://kokpit.example.com']]));
+})->throws(RuntimeException::class, 'CACHE_STORE');

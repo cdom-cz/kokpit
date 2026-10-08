@@ -12,18 +12,25 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+// The production crontab runs schedule:run on every container, so every scheduled event must use
+// onOneServer (closure events call name() first, which Laravel requires). The lock is taken in
+// the shared Redis cache store: production CACHE_STORE=redis, refused otherwise by
+// ProductionConfigGuard. ScheduleOnOneServerTest enforces it for every registered event.
+
 // Liveness of the scheduler for the System page (D-12). Written every minute.
 Schedule::call(fn () => app(Heartbeats::class)->recordScheduler())
     ->everyMinute()
-    ->name('kokpit-heartbeat');
+    ->name('kokpit-heartbeat')
+    ->onOneServer();
 
 // A trivial queued job: it only ages when no worker takes it, which makes a dead worker
 // visible as a growing "oldest pending job" even when nothing else is queued (FND-09).
 Schedule::job(new RecordWorkerHeartbeat)
     ->everyMinute()
-    ->name('kokpit-worker-heartbeat');
+    ->name('kokpit-worker-heartbeat')
+    ->onOneServer();
 
-// Feeds the metrics graphs of the Horizon dashboard. onOneServer because the schedule runs on every container.
+// Feeds the metrics graphs of the Horizon dashboard.
 Schedule::command('horizon:snapshot')
     ->everyFiveMinutes()
     ->onOneServer()

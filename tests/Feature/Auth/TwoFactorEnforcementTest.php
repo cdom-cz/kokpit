@@ -188,13 +188,20 @@ it('refuses to boot the application provider in production with enforcement off'
 
 it('boots the application provider in production with enforcement on', function (): void {
     // The test suite runs with the canary harness on; production must not (D-04).
-    config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'redis', 'mail.default' => 'smtp', 'app.url' => 'https://kokpit.example.com']);
+    config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'redis', 'mail.default' => 'smtp', 'app.url' => 'https://kokpit.example.com', 'cache.default' => 'redis']);
     $this->app['env'] = 'production';
 
     (new AppServiceProvider($this->app))->boot();
 
     expect(true)->toBeTrue();
 });
+
+it('refuses to boot the application provider in production with the array cache store', function (): void {
+    config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'redis', 'mail.default' => 'smtp', 'app.url' => 'https://kokpit.example.com', 'cache.default' => 'array']);
+    $this->app['env'] = 'production';
+
+    (new AppServiceProvider($this->app))->boot();
+})->throws(RuntimeException::class, 'CACHE_STORE');
 
 it('refuses to boot the application provider in production with the sync queue', function (): void {
     config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'sync']);
@@ -218,11 +225,11 @@ it('refuses to boot the application provider in production with a localhost APP_
 })->throws(RuntimeException::class, 'APP_URL');
 
 it('refuses to start a real production process with enforcement off and starts with it on', function (): void {
-    $run = function (string $enforcement): Process {
+    $run = function (string $enforcement, string $cacheStore = 'redis'): Process {
         $process = new Process(
             [PHP_BINARY, 'artisan', '--version'],
             base_path(),
-            ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => $enforcement, 'KOKPIT_CANARY_HARNESS' => 'false', 'QUEUE_CONNECTION' => 'redis', 'MAIL_MAILER' => 'smtp', 'APP_URL' => 'https://kokpit.example.com'],
+            ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => $enforcement, 'KOKPIT_CANARY_HARNESS' => 'false', 'QUEUE_CONNECTION' => 'redis', 'CACHE_STORE' => $cacheStore, 'MAIL_MAILER' => 'smtp', 'APP_URL' => 'https://kokpit.example.com'],
         );
         $process->run();
 
@@ -231,8 +238,11 @@ it('refuses to start a real production process with enforcement off and starts w
 
     $off = $run('false');
     $on = $run('true');
+    $arrayCache = $run('true', 'array');
 
     expect($off->isSuccessful())->toBeFalse()
         ->and($off->getOutput().$off->getErrorOutput())->toContain('KOKPIT_REQUIRE_ADMIN_2FA must be true')
-        ->and($on->isSuccessful())->toBeTrue();
+        ->and($on->isSuccessful())->toBeTrue()
+        ->and($arrayCache->isSuccessful())->toBeFalse()
+        ->and($arrayCache->getOutput().$arrayCache->getErrorOutput())->toContain('CACHE_STORE must be redis');
 });

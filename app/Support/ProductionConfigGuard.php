@@ -65,6 +65,15 @@ final class ProductionConfigGuard
                 .'It is set per project (not in zerops.yml) and the worker and the scheduler need it too: mail and alert links are built from it.',
             );
         }
+
+        // onOneServer takes its lock in the cache store, and the heartbeats and the failed-job alert throttle live there too.
+        if ($config->get('cache.default') !== 'redis') {
+            throw new RuntimeException(
+                'Refusing to boot in production: CACHE_STORE must be redis. '
+                .'The scheduler runs on every container and onOneServer takes its lock in the cache store; the heartbeats and the failed-job alert throttle need the shared cache too. '
+                .'A per-container store (array, file) would run every scheduled task once per container.',
+            );
+        }
     }
 
     private static function isPublicHttpsUrl(mixed $url): bool
