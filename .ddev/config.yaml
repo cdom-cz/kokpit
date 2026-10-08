@@ -16,10 +16,12 @@ corepack_enable: false
 
 # Supervised daemons. Each waits until Composer has installed vendor/ and the app boots,
 # so a fresh clone does not put them into a restart loop before "ddev composer install".
-# queue:listen reloads code per job, which suits development; production uses queue:work.
+# The queue worker is Laravel Horizon, with the same supervisor config as production (the "local"
+# environment block of config/horizon.php). After changing job code run "ddev artisan horizon:terminate";
+# this daemon starts Horizon again on the new code.
 web_extra_daemons:
   - name: queue-worker
-    command: "until [ -f vendor/autoload.php ] && php artisan about --only=environment >/dev/null 2>&1; do sleep 5; done; exec php artisan queue:listen --tries=3 --sleep=1"
+    command: "until [ -f vendor/autoload.php ] && php artisan about --only=environment >/dev/null 2>&1; do sleep 5; done; exec php artisan horizon"
     directory: /var/www/html
   - name: scheduler
     command: "until [ -f vendor/autoload.php ] && php artisan about --only=environment >/dev/null 2>&1; do sleep 5; done; exec php artisan schedule:work"

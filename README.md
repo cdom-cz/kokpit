@@ -68,6 +68,8 @@ Two background processes must run next to the web container, or the application 
 
 In DDEV both are daemons that `ddev start` brings up (`ddev exec supervisorctl status` shows them); on Zerops they are the `worker` and `scheduler` services of `zerops.yml`.
 
+The queue worker is Laravel Horizon (`php artisan horizon`). Its dashboard is at `/horizon` (`https://kokpit.ddev.site/horizon` in DDEV). Only the Admin may open it, and while two-factor enforcement is on only after setting up 2FA; a Partner or a guest gets 403. In DDEV the `queue-worker` daemon runs Horizon; after changing job code, run `ddev artisan horizon:terminate` and the daemon starts it again on the new code. The scheduler takes a metrics snapshot every five minutes, and `HORIZON_MAX_PROCESSES` caps the worker processes per container (default 3, 2 in DDEV).
+
 The Admin finds the state of both on the System page (menu "Systém", `/admin/system`, `https://kokpit.ddev.site/admin/system` in DDEV). It lists the failed jobs, the age of the oldest waiting job and the scheduler heartbeat as OK, Warning or Error, and refreshes itself every 30 seconds. A Partner cannot open it.
 
 When a background job fails for good, the Admin gets an alert by e-mail and in the bell of the panel. The e-mail needs working mail settings (the `MAIL_*` values in `.env`; DDEV delivers to Mailpit, a production instance needs a real mail service). The bell works without mail, so with broken mail settings the failure is still visible in the panel, and the System page shows it too.
