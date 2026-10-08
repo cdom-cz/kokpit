@@ -85,11 +85,19 @@ final class ClientInvitation extends KokpitModel implements PartnerIsolated
             static fn (): ?self => self::query()->whereKey($id)->first(),
         );
 
-        if ($invitation === null || ! hash_equals($invitation->token_hash, hash('sha256', $plainToken))) {
-            return null;
-        }
+        return $invitation?->isAcceptableWith($plainToken) === true ? $invitation : null;
+    }
 
-        return $invitation->state() === InvitationState::Pending ? $invitation : null;
+    /**
+     * Whether this invitation can be accepted with the given plain token right
+     * now: the token matches the stored hash and the invitation is still pending
+     * (not accepted, not revoked, before `expires_at`). The one check shared by
+     * the guest lookup and the accept Action, which repeats it on the locked row.
+     */
+    public function isAcceptableWith(string $plainToken): bool
+    {
+        return hash_equals($this->token_hash, hash('sha256', $plainToken))
+            && $this->state() === InvitationState::Pending;
     }
 
     /**

@@ -509,6 +509,18 @@ return [
             'intro' => 'Pozvánka je určena pro tuto e-mailovou adresu:',
             'invalid_heading' => 'Odkaz nelze použít',
             'invalid_message' => 'Tento odkaz je neplatný nebo už nelze použít. Požádejte o novou pozvánku.',
+            'submit' => 'Vytvořit účet',
+            'done' => 'Účet byl vytvořen. Nyní se můžete přihlásit.',
+            'password_too_long' => 'Heslo smí mít nejvýše 72 bajtů.',
+            'fields' => [
+                'name' => 'Jméno',
+                'password' => 'Heslo',
+                'password_confirmation' => 'Heslo znovu',
+            ],
+            'attributes' => [
+                'name' => 'jméno',
+                'password' => 'heslo',
+            ],
         ],
     ],
 
