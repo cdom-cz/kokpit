@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: Clients and Projects
 status: executing
-stopped_at: Completed 04-18-PLAN.md
-last_updated: "2026-10-08T15:46:34.215Z"
+stopped_at: Completed 04-19-PLAN.md
+last_updated: "2026-10-08T15:56:15.836Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 4 execution started
-state_head: 46f92941679178099749b86885475fd5194c9dd5
+state_head: ab9d88c92ec87da40c982829cdaba505bafbe001
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 64
-  completed_plans: 61
+  completed_plans: 62
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 4 (Clients and Projects) — EXECUTING
-Plan: 19 of 21
+Plan: 20 of 21
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 4 execution started
 
@@ -119,6 +119,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 04 P16 | 25 min | 2 tasks | 13 files |
 | Phase 04 P17 | 10 min | 2 tasks | 12 files |
 | Phase 04 P18 | 15 min | 2 tasks | 11 files |
+| Phase 04 P19 | 7 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -240,6 +241,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-17: the invitation notification sets afterCommit() itself; an expired mailed link answers 403 from the signed middleware while the neutral page covers every valid-signature, unacceptable-invitation case; state() ranks accepted and revoked above expired
 - [Phase 04]: 04-18: the accept Action locks the invitation FOR UPDATE and the client FOR SHARE in one system-run transaction; field errors keep the invitation open, every invitation-side failure is the single neutral InvitationNotAcceptable
 - [Phase 04]: 04-18: Laravel sorts the limiter ahead of other route middleware, so bootstrap/app.php prepends SetNoReferrerPolicy and ValidateSignature to the priority list before ThrottleRequests; unsigned requests are not counted and 403/429 carry no-referrer
+- [Phase 04]: 04-19: ResendInvitation refuses an archived client; revoke stays allowed; the invitations tab hides resend for an archived client
 
 ### Pending Todos
 
@@ -278,6 +280,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T15:46:34.113Z
-Stopped at: Completed 04-18-PLAN.md
+Last session: 2026-10-08T15:56:15.671Z
+Stopped at: Completed 04-19-PLAN.md
 Resume file: None

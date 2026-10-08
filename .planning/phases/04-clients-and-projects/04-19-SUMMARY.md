@@ -155,7 +155,7 @@ status: complete
 1. **Task 1: Tracer - Admin invites a Partner from the client detail** - `bbcf0f3` (feat). The tracer verification (the management test file, full suite, Pint, PHPStan) passed end to end before Task 2 started.
 2. **Task 2: 'Pozvánky' tab with state badges, resend and revoke (TDD)** - `1d679eb` (test, RED: 9 new tests failed), `025c219` (feat, GREEN)
 
-Full suite at the end: 1518 passed; Pint and PHPStan clean; `scripts/check-sensitive.sh` clean on every commit.
+Full suite at the end: 1519 passed; Pint and PHPStan clean; `scripts/check-sensitive.sh` clean on every commit.
 
 **Plan metadata:** committed separately (docs: complete plan)
 
@@ -213,7 +213,7 @@ None - no external service configuration required.
 
 - Created files present: InvitationsRelationManager, InvitationManagementTest
 - Commits `bbcf0f3`, `1d679eb`, `025c219` are on the branch
-- All acceptance criteria of both tasks pass; plan-level verification (full Pest 1518 passed, Pint, PHPStan, `scripts/check-sensitive.sh`) clean
+- All acceptance criteria of both tasks pass; plan-level verification (full Pest 1519 passed, Pint, PHPStan, `scripts/check-sensitive.sh`) clean
 
 ---
 *Phase: 04-clients-and-projects*
