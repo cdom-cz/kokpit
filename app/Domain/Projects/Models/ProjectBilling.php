@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Projects\Models;
 
+use App\Domain\Audit\LoggedAttributes;
+use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
@@ -19,6 +21,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * fixed price, estimate and the internal note. Closed to Partners by
  * DeniesPartners and the admin-only policy, so a Partner reads zero rows and
  * `$project->billing` is null for a Partner.
+ *
+ * Changes to the billing type, money and estimate are written to the activity
+ * log through an allowlist (D-06); the internal note is free text and is never
+ * logged. The activity log itself is Admin-only.
  *
  * `project_id` is not fillable: creation code sets it through
  * `$project->billing()`.
@@ -48,9 +54,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'estimate_seconds',
     'internal_note',
 ])]
+#[LoggedAttributes([
+    'project_id',
+    'billing_type',
+    'hourly_rate_minor',
+    'hourly_rate_currency',
+    'fixed_price_minor',
+    'fixed_price_currency',
+    'estimate_seconds',
+])]
 final class ProjectBilling extends KokpitModel implements PartnerIsolated
 {
-    use DeniesPartners;
+    use DeniesPartners, LogsAllowlistedActivity;
 
     protected $table = 'project_billing';
 

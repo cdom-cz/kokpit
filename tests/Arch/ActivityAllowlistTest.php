@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Audit\LoggedAttributes;
 use App\Domain\Audit\LogsAllowlistedActivity;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Shared\Models\KokpitModel;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
@@ -36,9 +38,9 @@ function allowlistProblemsOf(object $model): array
     return AuditDeclaration::problems($model::class);
 }
 
-it('lists the application models that log activity explicitly, empty in this phase', function (): void {
-    // Tasks, projects, invoices and time entries add themselves here, with their allowlist, when their phases create them.
-    expect(AuditDeclaration::loggingModels())->toBe([]);
+it('lists the application models that log activity explicitly', function (): void {
+    // Clients, contacts, tasks, invoices and time entries add themselves here, with their allowlist, when their plans create them.
+    expect(AuditDeclaration::loggingModels())->toBe([Project::class, ProjectBilling::class]);
 });
 
 it('finds a logging model when it scans the probe directory, so the scan cannot pass vacuously', function (): void {

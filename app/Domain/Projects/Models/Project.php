@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Projects\Models;
 
+use App\Domain\Audit\LoggedAttributes;
+use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
@@ -38,6 +40,9 @@ use Spatie\Tags\HasTags;
  * `$client->projects()` or `forceFill`. `$project->client` is null for a Partner
  * because Client is closed to Partners (D-06).
  *
+ * Changes to the identity, status and dates are written to the activity log
+ * through an allowlist (D-06). The description is free text and stays out.
+ *
  * @property string $id
  * @property string $client_id
  * @property string $name
@@ -62,10 +67,20 @@ use Spatie\Tags\HasTags;
     'end_date',
     'client_visible',
 ])]
+#[LoggedAttributes([
+    'client_id',
+    'name',
+    'key',
+    'status',
+    'priority',
+    'start_date',
+    'end_date',
+    'client_visible',
+])]
 final class Project extends KokpitModel implements PartnerIsolated
 {
     /** @use HasFactory<ProjectFactory> */
-    use HasFactory, IsolatesPartners, SoftDeletes;
+    use HasFactory, IsolatesPartners, LogsAllowlistedActivity, SoftDeletes;
 
     use HasTags {
         detachTags as private detachTagsFromTrait;

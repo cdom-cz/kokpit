@@ -200,8 +200,31 @@ return [
         'no' => 'ne',
         'empty_heading' => 'Zatím tu nejsou žádné změny',
         'empty_description' => 'Změny sledovaných údajů se objeví, jakmile k nějaké dojde.',
-        'subjects' => [],
-        'attributes' => [],
+        'subjects' => [
+            'project' => 'Projekt',
+            'project_billing' => 'Fakturace projektu',
+        ],
+        'attributes' => [
+            'project' => [
+                'client_id' => 'Klient',
+                'name' => 'Název',
+                'key' => 'Klíč',
+                'status' => 'Stav',
+                'priority' => 'Priorita',
+                'start_date' => 'Začátek',
+                'end_date' => 'Konec',
+                'client_visible' => 'Viditelný pro klienta',
+            ],
+            'project_billing' => [
+                'project_id' => 'Projekt',
+                'billing_type' => 'Typ fakturace',
+                'hourly_rate_minor' => 'Hodinová sazba (v nejmenších jednotkách měny)',
+                'hourly_rate_currency' => 'Měna hodinové sazby',
+                'fixed_price_minor' => 'Pevná cena (v nejmenších jednotkách měny)',
+                'fixed_price_currency' => 'Měna pevné ceny',
+                'estimate_seconds' => 'Odhad (v sekundách)',
+            ],
+        ],
     ],
 
     'system' => [

@@ -101,7 +101,9 @@ final class CreateProject
                     'internal_note' => $data['internal_note'] ?? null,
                 ]);
 
-                return $project;
+                // Status and priority come from database defaults when not given: load them, so the
+                // returned model is complete and a later update does not log them as changed from null.
+                return $project->refresh();
             });
         } catch (UniqueConstraintViolationException $e) {
             ProjectInput::translateKeyViolation($e);

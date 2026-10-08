@@ -25,8 +25,6 @@ use Spatie\Activitylog\Support\LogOptions;
  *
  * Attributes change only through model saves: a bulk query update raises no
  * model event and therefore writes no row.
- *
- * @phpstan-ignore trait.unused (the first logged model arrives with tasks, projects, invoices or time entries; the activity probe in tests uses it today)
  */
 trait LogsAllowlistedActivity
 {
@@ -57,7 +55,8 @@ trait LogsAllowlistedActivity
             ));
         }
 
-        $attributes = array_values($declared[0]->newInstance()->attributes);
+        // The attribute argument is typed list<string> only by its docblock; a keyed array must still become a list.
+        $attributes = array_values($declared[0]->newInstance()->attributes); // @phpstan-ignore arrayValues.list
 
         if ($attributes === []) {
             throw new LogicException(sprintf(

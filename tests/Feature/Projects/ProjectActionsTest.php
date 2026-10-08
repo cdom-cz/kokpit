@@ -363,3 +363,11 @@ it('counts a rate or price of zero as money held, and a fixed price too', functi
     makeProject($client, ['billing_type' => 'fixed_price', 'hourly_rate' => null, 'fixed_price' => '5']);
     expect(ProjectBilling::clientHoldsMoney($client->id))->toBeTrue();
 });
+
+it('returns a created project with the database defaults of status and priority loaded', function (): void {
+    $project = makeProject($this->client);
+
+    expect($project->status)->toBe(ProjectStatus::Planned)
+        ->and($project->priority)->toBe(ProjectPriority::Normal)
+        ->and($project->getAttributes())->toHaveKeys(['status', 'priority', 'client_visible']);
+});
