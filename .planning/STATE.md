@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 03
-current_phase_name: operations-foundation
+current_phase_name: Operations Foundation
 status: executing
-stopped_at: Phase 3 context gathered
-last_updated: "2026-10-08T01:33:53.587Z"
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-10-08T01:51:29.402Z"
 last_activity: 2026-10-08
-last_activity_desc: Phase 02 complete, transitioned to Phase 3
-state_head: ffe588920e83a476b5283b5255d2d5d22c80c6f1
+last_activity_desc: Phase 03 execution started
+state_head: ee043db8855ee50db16aa6eb6f2b0f3f442a866d
 progress:
   total_phases: 12
   completed_phases: 2
   total_plans: 43
-  completed_plans: 24
+  completed_plans: 25
   percent: 17
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 02 — Platform Foundation
+**Current focus:** Phase 03 — Operations Foundation
 
 ## Current Position
 
-Phase: 03 (operations-foundation) — READY TO EXECUTE
-Plan: Not started
+Phase: 03 (Operations Foundation) — EXECUTING
+Plan: 2 of 19
 Status: Ready to execute
-Last activity: 2026-10-08 - Completed quick task 261008-28i: Remove the hosted product name from all tracked documentation
+Last activity: 2026-10-08 — Phase 03 execution started
 
 Progress: [██░░░░░░░░] 17%
 
@@ -81,6 +81,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 02 P11 | 11 min | 3 tasks | 28 files |
 | Phase 02 P12 | 10 min | 2 tasks | 9 files |
 | Phase 02 P13 | 7 min | 2 tasks | 5 files |
+| Phase 03 P01 | 25 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -146,6 +147,8 @@ Recent decisions affecting current work:
 - [Phase 02]: 02-12: CI service images use version tags (postgres:18, redis:7), not digests; ci-passed.needs lists every job and test-workflow.sh enforces it
 - [Phase 02]: 02-13: README and RepositoryFilesTest assert exactly the owner's licence id AGPL-3.0-only; docs say composer check-licenses (02-12 rename); a test fails when a documented command or composer script does not exist
 - [Phase 02]: 02-13: Gate::before limit of the permission package and the missing Admin password recovery are documented (CONTRIBUTING, README), not fixed
+- [Phase 03]: Dompdf chosen as PDF engine for Phase 8 work report and Phase 10 invoice PDF (passed every criterion; Chromium 3x slower, 6x larger, needs Node/Chromium in container); owner confirms before Phase 8 adds the dependency
+- [Phase 03]: LGPL-2.1 SPDX alias of dompdf/dompdf fails scripts/check-licenses.php; maintainer decision (normalise to LGPL-2.1-only in a reviewed commit) needed in the phase that adds Dompdf
 
 ### Pending Todos
 
@@ -181,6 +184,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-07T23:42:56.950Z
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-operations-foundation/03-CONTEXT.md
+Last session: 2026-10-08T01:51:25.111Z
+Stopped at: Completed 03-01-PLAN.md
+Resume file: None
