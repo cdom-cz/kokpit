@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\Settings\Settings\DefaultsSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
+use App\Domain\Settings\Settings\PaymentSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Settings\VatMode;
 use App\Domain\Shared\Models\SettingsProperty;
 use App\Filament\Pages\SettingsPage;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -258,3 +260,80 @@ it('saves the VAT mode and the payment due days on the invoicing tab and shows t
         ->assertSet('data.invoicing.vat_mode', 'non_payer')
         ->assertSet('data.invoicing.payment_due_days', 30);
 });
+
+it('saves the VAT mode, the due days and the online-payment toggle in one Save and shows them after a reload', function (): void {
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(SettingsPage::class)
+        ->fillForm([
+            'supplier' => fictionalSupplierState(exampleEmail()),
+            'invoicing' => ['vat_mode' => 'non_payer', 'payment_due_days' => 30],
+            'payments' => ['online_payments_enabled' => true],
+        ])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    app()->forgetScopedInstances();
+
+    expect(app(InvoicingSettings::class)->payment_due_days)->toBe(30)
+        ->and(app(PaymentSettings::class)->online_payments_enabled)->toBeTrue();
+
+    app()->forgetScopedInstances();
+
+    Livewire::test(SettingsPage::class)
+        ->assertSet('data.invoicing.payment_due_days', 30)
+        ->assertSet('data.payments.online_payments_enabled', true);
+});
+
+it('shows the payer option in the VAT mode select but disabled', function (): void {
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(SettingsPage::class)
+        ->assertFormFieldExists('invoicing.vat_mode', function (Select $field): bool {
+            return array_keys($field->getEnabledOptions()) === ['non_payer']
+                && array_key_exists('payer', $field->getOptions());
+        });
+});
+
+it('refuses a forced payer VAT mode with a form error and stores nothing', function (): void {
+    $this->actingAs(Canary::admin());
+    $before = SettingsProperty::query()->where('group', 'invoicing')->pluck('payload', 'name')->all();
+
+    Livewire::test(SettingsPage::class)
+        ->fillForm([
+            'supplier' => fictionalSupplierState(exampleEmail()),
+            'invoicing' => ['vat_mode' => 'payer', 'payment_due_days' => 30],
+        ])
+        ->call('save')
+        ->assertHasFormErrors(['invoicing.vat_mode']);
+
+    expect(SettingsProperty::query()->where('group', 'invoicing')->pluck('payload', 'name')->all())->toBe($before);
+});
+
+it('refuses payment due days outside 0 to 365 with a form error', function (int $days): void {
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(SettingsPage::class)
+        ->fillForm([
+            'supplier' => fictionalSupplierState(exampleEmail()),
+            'invoicing' => ['vat_mode' => 'non_payer', 'payment_due_days' => $days],
+        ])
+        ->call('save')
+        ->assertHasFormErrors(['invoicing.payment_due_days']);
+})->with([-1, 366]);
+
+it('accepts the payment due day boundaries 0 and 365', function (int $days): void {
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(SettingsPage::class)
+        ->fillForm([
+            'supplier' => fictionalSupplierState(exampleEmail()),
+            'invoicing' => ['vat_mode' => 'non_payer', 'payment_due_days' => $days],
+        ])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    app()->forgetScopedInstances();
+
+    expect(app(InvoicingSettings::class)->payment_due_days)->toBe($days);
+})->with([0, 365]);
