@@ -9,6 +9,8 @@ use App\Domain\Clients\InvitationNotAcceptable;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
+use DanHarrin\LivewireRateLimiting\Exceptions\TooManyRequestsException;
+use DanHarrin\LivewireRateLimiting\WithRateLimiting;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\TextInput;
@@ -47,6 +49,11 @@ use Livewire\Attributes\Locked;
 #[AccessRule(Audience::Guest, reason: 'Opened only through its own signed invitation route; a guest page is never granted through the panel access checks.')]
 final class AcceptInvitation extends SimplePage
 {
+    use WithRateLimiting;
+
+    /** Submits a minute and a visitor (per IP) the page accepts. */
+    private const int SUBMITS_PER_MINUTE = 5;
+
     #[Locked]
     public ?string $invitationId = null;
 
@@ -63,6 +70,11 @@ final class AcceptInvitation extends SimplePage
 
     public function mount(): void
     {
+        // A signed-in visitor gets a notice and no form, and the invitation is not even read.
+        if ($this->isSignedIn()) {
+            return;
+        }
+
         $id = request()->query('invitation');
         $token = request()->query('token');
 
@@ -81,7 +93,18 @@ final class AcceptInvitation extends SimplePage
 
     public function accept(): void
     {
-        if ($this->invitationId === null || $this->token === null) {
+        if ($this->isSignedIn() || $this->invitationId === null || $this->token === null) {
+            return;
+        }
+
+        try {
+            $this->rateLimit(self::SUBMITS_PER_MINUTE);
+        } catch (TooManyRequestsException $exception) {
+            Notification::make()
+                ->title(__('kokpit.invitations.accept.throttled', ['seconds' => $exception->secondsUntilAvailable]))
+                ->danger()
+                ->send();
+
             return;
         }
 
@@ -123,6 +146,14 @@ final class AcceptInvitation extends SimplePage
         $this->token = null;
         $this->inviteeEmail = null;
         $this->data = [];
+
+        // The content schema was built for the form; build it again for the neutral state.
+        $this->cacheSchema('content', null);
+    }
+
+    private function isSignedIn(): bool
+    {
+        return Filament::auth()->check();
     }
 
     public function defaultForm(Schema $schema): Schema
@@ -161,6 +192,10 @@ final class AcceptInvitation extends SimplePage
 
     public function getHeading(): string
     {
+        if ($this->isSignedIn()) {
+            return __('kokpit.invitations.accept.signed_in_heading');
+        }
+
         return $this->inviteeEmail === null
             ? __('kokpit.invitations.accept.invalid_heading')
             : __('kokpit.invitations.accept.heading');
@@ -168,6 +203,12 @@ final class AcceptInvitation extends SimplePage
 
     public function content(Schema $schema): Schema
     {
+        if ($this->isSignedIn()) {
+            return $schema->components([
+                Text::make(__('kokpit.invitations.accept.signed_in_message')),
+            ]);
+        }
+
         if ($this->inviteeEmail === null) {
             return $schema->components([
                 Text::make(__('kokpit.invitations.accept.invalid_message')),

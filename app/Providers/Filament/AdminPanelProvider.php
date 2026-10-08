@@ -8,6 +8,7 @@ use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Pages\Auth\AcceptInvitation;
 use App\Filament\Pages\Dashboard;
 use App\Http\Middleware\EnsureAdminHasTwoFactor;
+use App\Http\Middleware\SetNoReferrerPolicy;
 use App\Support\InitialsAvatarProvider;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
@@ -53,9 +54,11 @@ class AdminPanelProvider extends PanelProvider
             // The invitation link (US-02): a guest page on a signed route, named
             // filament.admin.invitation.accept. It has no path parameters; the invitation id and the
             // token travel as query parameters under the signature. The page is not registered as a
-            // panel page and does not enable registration.
+            // panel page and does not enable registration. The no-referrer header goes first, so the
+            // 403 of a bad signature and the 429 of the limiter carry it as well; `signed` stays ahead
+            // of the limiter, so an unsigned request answers 403 before it is counted.
             ->routes(fn () => Route::get('/invitation', AcceptInvitation::class)
-                ->middleware(['signed'])
+                ->middleware([SetNoReferrerPolicy::class, 'signed', 'throttle:invitation'])
                 ->name('invitation.accept'))
             ->spa()
             // The bell shows the Admin alerts of failed background jobs (D-11). The condition is

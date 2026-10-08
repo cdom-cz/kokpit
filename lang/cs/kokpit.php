@@ -510,6 +510,9 @@ return [
             'invalid_heading' => 'Odkaz nelze použít',
             'invalid_message' => 'Tento odkaz je neplatný nebo už nelze použít. Požádejte o novou pozvánku.',
             'submit' => 'Vytvořit účet',
+            'throttled' => 'Příliš mnoho pokusů. Zkuste to znovu za :seconds s.',
+            'signed_in_heading' => 'Jste přihlášeni',
+            'signed_in_message' => 'Jste přihlášeni pod jiným účtem. Pro přijetí pozvánky se nejdříve odhlaste a otevřete odkaz znovu.',
             'done' => 'Účet byl vytvořen. Nyní se můžete přihlásit.',
             'password_too_long' => 'Heslo smí mít nejvýše 72 bajtů.',
             'fields' => [
