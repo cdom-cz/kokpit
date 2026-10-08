@@ -37,4 +37,29 @@ return [
         'empty_description_partner' => 'Jakmile pro vás bude něco připraveno, objeví se to tady.',
     ],
 
+    'settings' => [
+        'navigation_group' => 'Správa',
+        'navigation_label' => 'Nastavení',
+        'title' => 'Nastavení',
+        'save' => 'Uložit',
+        'saved' => 'Nastavení bylo uloženo.',
+        'tabs' => [
+            'supplier' => 'Dodavatel',
+        ],
+        'supplier' => [
+            'company_name' => 'Název společnosti',
+            'street' => 'Ulice a číslo',
+            'city' => 'Město',
+            'postal_code' => 'PSČ',
+            'country' => 'Země (kód ISO)',
+            'country_hint' => 'Dvoupísmenný kód, například CZ.',
+            'company_id' => 'IČO',
+            'vat_id' => 'DIČ',
+            'email' => 'E-mail',
+            'phone' => 'Telefon',
+            'website' => 'Web',
+            'registration_note' => 'Poznámka o registraci',
+        ],
+    ],
+
 ];
