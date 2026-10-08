@@ -236,6 +236,12 @@ return [
 
     'projects' => [
         'empty_value' => '—',
+        'errors' => [
+            'key_taken' => 'Tento klíč už používá jiný projekt, i archivovaný. Zvolte jiný.',
+            'client_archived' => 'Pro archivovaného klienta nelze vytvořit projekt.',
+            'amount_invalid' => 'Zadejte nezáporné číslo bez oddělovače tisíců a nejvýše s tolika desetinnými místy, kolik dovoluje měna klienta.',
+            'fixed_price_required' => 'U pevné ceny zadejte částku.',
+        ],
         'fields' => [
             'name' => 'Název',
             'key' => 'Klíč',
