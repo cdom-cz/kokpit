@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Pages\Dashboard;
 use App\Http\Middleware\EnsureAdminHasTwoFactor;
 use App\Support\InitialsAvatarProvider;
@@ -48,6 +49,10 @@ class AdminPanelProvider extends PanelProvider
             ->login()
             ->profile()
             ->spa()
+            // The bell shows the Admin alerts of failed background jobs (D-11). The condition is
+            // evaluated per request, so a Partner never gets the bell.
+            ->databaseNotifications(static fn (): bool => app(PartnerContext::class)->isAdmin())
+            ->databaseNotificationsPolling('30s')
             // A Resource without a policy method throws instead of being allowed (D-03). Pages and
             // widgets are covered by #[AccessRule], which strict authorization does not reach.
             ->strictAuthorization()

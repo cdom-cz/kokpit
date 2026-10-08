@@ -170,4 +170,17 @@ return [
         'attributes' => [],
     ],
 
+    'alerts' => [
+        'link_label' => 'Otevřít stránku Systém',
+        'suppressed' => 'Od posledního upozornění selhalo stejným způsobem dalších úloh: :count',
+        'failed_job' => [
+            'title' => 'Úloha na pozadí selhala',
+            'job' => 'Úloha: :job',
+            'queue' => 'Fronta: :queue (:connection)',
+            'attempts' => 'Počet pokusů: :attempts',
+            'error' => 'Chyba: :class: :message',
+            'failed_job_id' => 'ID selhané úlohy: :id',
+        ],
+    ],
+
 ];
