@@ -108,6 +108,26 @@ it('rejects a rate with a decimal comma, too many digits or a float', function (
     'spaces' => [' 24.405 '],
 ])->throws(InvalidArgumentException::class);
 
+it('rejects a zero, negative or non-finite rate', function (string $rate) {
+    Money::ofMinor(10000, 'EUR')->convert($rate, 'CZK');
+})->with([
+    'zero' => ['0'],
+    'zero with fraction' => ['0.0000000000'],
+    'negative zero' => ['-0'],
+    'negative' => ['-24.405'],
+    'negative small' => ['-0.0000000001'],
+    'explicit plus' => ['+24.405'],
+    'infinity' => ['INF'],
+    'not a number' => ['NAN'],
+])->throws(InvalidArgumentException::class, 'positive');
+
+it('accepts the smallest positive rate', function () {
+    $converted = Money::ofMinor(100000000000, 'EUR')->convert('0.0000000001', 'CZK');
+
+    expect($converted->minor)->toBe(10)
+        ->and($converted->currency)->toBe('CZK');
+});
+
 it('rejects a float rate', function () {
     Money::ofMinor(10000, 'EUR')->convert(24.405, 'CZK');
 })->throws(TypeError::class);

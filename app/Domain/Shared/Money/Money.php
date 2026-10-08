@@ -230,14 +230,16 @@ final readonly class Money implements JsonSerializable
      * to the result. Each currency's default fraction digits decide the minor
      * unit, so JPY (no fraction) converts correctly.
      *
-     * @param  string  $decimalRate  digits with an optional point and at most ten fraction digits, no comma, no exponent
+     * @param  string  $decimalRate  a positive number: digits with an optional point and at most ten fraction digits, no sign, no comma, no exponent
      *
-     * @throws InvalidArgumentException when the rate or the target currency is malformed or the unit amount is below one
+     * @throws InvalidArgumentException when the rate is malformed, zero or negative, the target currency is malformed or the unit amount is below one
      */
     public function convert(string $decimalRate, string $toCurrency, int $unitAmount = 1): self
     {
-        if (preg_match('/^-?\d+(\.\d{1,10})?$/D', $decimalRate) !== 1) {
-            throw new InvalidArgumentException('The exchange rate must be a decimal string with at most ten fraction digits.');
+        // Digits only (no sign, exponent, INF or NAN) and not zero: a zero rate would turn every amount into
+        // nothing and a negative one would flip the sign of a billed amount, in an immutable invoice snapshot.
+        if (preg_match('/^\d+(\.\d{1,10})?$/D', $decimalRate) !== 1 || BigDecimal::of($decimalRate)->isZero()) {
+            throw new InvalidArgumentException('The exchange rate must be a positive decimal string with at most ten fraction digits.');
         }
 
         if ($unitAmount < 1) {
