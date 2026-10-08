@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\Tags\HasTags;
 
 /**
  * A project of a client. The only Partner-readable model of Phase 4: a Partner
@@ -60,7 +61,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 final class Project extends KokpitModel implements PartnerIsolated
 {
     /** @use HasFactory<ProjectFactory> */
-    use HasFactory, IsolatesPartners, SoftDeletes;
+    use HasFactory, HasTags, IsolatesPartners, SoftDeletes;
 
     /**
      * Own client AND client-visible AND the client is not archived. The client

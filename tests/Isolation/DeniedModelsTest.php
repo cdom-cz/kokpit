@@ -23,6 +23,10 @@ afterEach(function (): void {
 /**
  * One row in each of media, tags, activity log and webhook calls, created
  * through the packages' own APIs inside a system run. Returns the probe host.
+ *
+ * Tag is not deny-all since plan 04-04: a Partner sees a project-type tag of a
+ * visible own project. The probe tag below has no type and is attached to no
+ * project, so a Partner still sees none of it.
  */
 function seedAdminOnlyRows(): PackageProbe
 {
@@ -44,7 +48,8 @@ function seedAdminOnlyRows(): PackageProbe
 }
 
 /**
- * Row counts of the four admin-only models as seen by the current user.
+ * Row counts of the four package models as seen by the current user (for a
+ * Partner, tags are limited to project tags of visible own projects).
  *
  * @return array<string, int>
  */
@@ -65,7 +70,7 @@ it('shows an Admin the rows of the four package models', function (): void {
     expect(adminOnlyCounts())->toBe(['media' => 1, 'tags' => 1, 'activities' => 1, 'webhook calls' => 1]);
 });
 
-it('shows a Partner with a client none of the package rows', function (): void {
+it('shows a Partner with a client none of the untyped probe tag and the other package rows', function (): void {
     seedAdminOnlyRows();
     $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
 

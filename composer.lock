@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "56b205acb2fdb62ec25e537634ca7cae",
+    "content-hash": "18030c87c57339c7c315d8b193829304",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -1813,6 +1813,43 @@
                 "source": "https://github.com/filamentphp/filament"
             },
             "time": "2026-10-06T18:13:10+00:00"
+        },
+        {
+            "name": "filament/spatie-laravel-tags-plugin",
+            "version": "v5.10.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/filamentphp/spatie-laravel-tags-plugin.git",
+                "reference": "b0989c35a1560c9f6240d88b71be2179f2d1fd66"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/filamentphp/spatie-laravel-tags-plugin/zipball/b0989c35a1560c9f6240d88b71be2179f2d1fd66",
+                "reference": "b0989c35a1560c9f6240d88b71be2179f2d1fd66",
+                "shasum": ""
+            },
+            "require": {
+                "filament/support": "self.version",
+                "php": "^8.2",
+                "spatie/laravel-tags": "^4.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Filament\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "description": "Filament support for `spatie/laravel-tags`.",
+            "homepage": "https://github.com/filamentphp/filament",
+            "support": {
+                "issues": "https://github.com/filamentphp/filament/issues",
+                "source": "https://github.com/filamentphp/filament"
+            },
+            "time": "2026-10-06T18:16:34+00:00"
         },
         {
             "name": "filament/support",

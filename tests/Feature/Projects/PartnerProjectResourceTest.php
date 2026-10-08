@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Tags\TagType;
 use App\Filament\Partner\Resources\PartnerProjectResource;
 use App\Filament\Partner\Resources\PartnerProjectResource\Pages\ListPartnerProjects;
 use App\Filament\Support\ProjectColumns;
@@ -201,5 +202,28 @@ it('does not render a rate, price or client field on the list or the detail', fu
         foreach (['hourly_rate', 'fixed_price', 'billing_type', 'internal_note', 'client_id', 'client_visible'] as $forbidden) {
             expect(str_contains($body, $forbidden))->toBeFalse("{$url} rendered {$forbidden}");
         }
+    }
+});
+
+it('shows the project tags of the own project on the list and the detail and never a tag of client B', function (): void {
+    $tagA = Canary::canary('tag_a');
+    $tagB = Canary::canary('tag_b');
+    $clientTag = Canary::canary('client_type_tag');
+    app(PartnerContext::class)->runAsSystem(function () use ($tagA, $tagB, $clientTag): void {
+        $this->projectA->attachTag($tagA, TagType::Project->value);
+        $this->projectA->attachTag($clientTag, TagType::Client->value);
+        $this->projectB->attachTag($tagB, TagType::Project->value);
+    });
+    $this->actingAs(Canary::partnerFor($this->clientA));
+
+    foreach ([
+        route('filament.admin.resources.my-projects.index'),
+        route('filament.admin.resources.my-projects.view', ['record' => $this->projectA->id]),
+    ] as $url) {
+        $body = (string) $this->get($url)->assertOk()->getContent();
+
+        expect(str_contains($body, $tagA))->toBeTrue("{$url} must show the own project tag")
+            ->and(str_contains($body, $tagB))->toBeFalse("{$url} must not show a tag of client B")
+            ->and(str_contains($body, $clientTag))->toBeFalse("{$url} must not show a client-type tag");
     }
 });

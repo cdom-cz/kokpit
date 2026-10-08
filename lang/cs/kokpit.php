@@ -244,6 +244,7 @@ return [
             'start_date' => 'Začátek',
             'end_date' => 'Konec',
             'priority' => 'Priorita',
+            'tags' => 'Štítky',
         ],
     ],
 

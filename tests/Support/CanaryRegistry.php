@@ -12,6 +12,7 @@ use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
+use App\Domain\Shared\Tags\TagType;
 use Closure;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\Probes\PackageProbe;
@@ -34,7 +35,7 @@ final class CanaryRegistry
 
     /**
      * Creates what the fixtures need inside the test transaction: the canary
-     * table, a fake media disk and the probe host for media, tags and activity.
+     * table, a fake media disk and the probe host for media and activity.
      * Pair every call with cleanup() in afterEach.
      */
     public static function prepare(): void
@@ -90,9 +91,14 @@ final class CanaryRegistry
                 });
             },
 
+            // A project-type tag carrying the canary, attached to the canary
+            // Project of that client (found by name; the Project fixture runs
+            // before this one). A Partner sees exactly this tag of the own client
+            // (D-07) and none of the other client's.
             Tag::class => static function (string $clientId, string $canary): void {
-                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
-                    self::host()->attachTag($canary);
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+                    $project->attachTag($canary, TagType::Project->value);
                 });
             },
 
