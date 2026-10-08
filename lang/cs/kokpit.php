@@ -170,6 +170,17 @@ return [
         'attributes' => [],
     ],
 
+    'system' => [
+        'navigation_group' => 'Správa',
+        'navigation_label' => 'Systém',
+        'title' => 'Systém',
+        'heading' => 'Stav systému',
+        'description' => 'Stav úloh na pozadí a plánovače. Stránka se obnovuje sama každých 30 sekund.',
+        'checked_at' => 'Zkontrolováno: :time',
+        'not_available_yet' => 'Zatím není k dispozici',
+        'no_indicator' => 'Pro tuto položku není zaregistrována žádná kontrola',
+    ],
+
     'alerts' => [
         'link_label' => 'Otevřít stránku Systém',
         'suppressed' => 'Od posledního upozornění selhalo stejným způsobem dalších úloh: :count',
