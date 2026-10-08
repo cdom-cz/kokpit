@@ -9,12 +9,17 @@ use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Tags\TagType;
+use App\Domain\Tasks\Actions\MoveTask;
+use App\Domain\Tasks\Board\BoardFilters;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Pages\TaskBoardPage;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Livewire\Attributes\Url;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -262,13 +267,18 @@ it('narrows the board by client, assignee, tag and priority and combines the fil
     expect([$otherClient->id, $otherPerson->id, $otherPriority->id])->toHaveCount(3);
 });
 
-it('keeps the filter values in the URL query', function (): void {
+it('binds every filter to the URL query', function (): void {
+    foreach (['clientFilter', 'assigneeFilter', 'tagFilter', 'priorityFilter'] as $property) {
+        $attributes = (new ReflectionProperty(TaskBoardPage::class, $property))->getAttributes(Url::class);
+
+        expect($attributes)->toHaveCount(1, $property.' must be a #[Url] property');
+    }
+
     $client = Client::factory()->create();
 
-    $component = Livewire::test(TaskBoardPage::class)->set('clientFilter', $client->id)->set('priorityFilter', 'urgent');
-
-    expect($component->effects['url'] ?? $component->effects['path'] ?? null)->not->toBeNull();
-    expect((string) ($component->effects['url'] ?? ''))->toContain('clientFilter')->toContain('priorityFilter');
+    Livewire::withQueryParams(['clientFilter' => $client->id, 'priorityFilter' => 'urgent'])->test(TaskBoardPage::class)
+        ->assertSet('clientFilter', $client->id)
+        ->assertSet('priorityFilter', 'urgent');
 });
 
 it('ignores a filter value that is no id instead of failing', function (): void {
@@ -387,4 +397,24 @@ it('answers 404 for an unknown id, a malformed id and an archived task', functio
 
     expect(Task::query()->find($archived->id))->toBeNull()
         ->and(Task::query()->withTrashed()->find($archived->id)->status)->toBe(ProjectStatus::Planned);
+});
+
+it('refuses the mover to a Partner: another client task is not found, an own client task is forbidden, nothing changes', function (): void {
+    [$idA, $idB] = Canary::twoClients();
+    $projectA = taskBoardProject(Client::query()->findOrFail($idA), 'AAA');
+    $projectB = taskBoardProject(Client::query()->findOrFail($idB), 'BBB');
+    Project::query()->whereKey([$projectA->id, $projectB->id])->update(['client_visible' => true]);
+    $own = taskBoardTask($projectA, 'Example own client card');
+    $foreign = taskBoardTask($projectB, 'Example other client card');
+    $before = DB::table('tasks')->get()->toArray();
+
+    $partner = Canary::partnerFor($idA);
+    $this->actingAs($partner);
+
+    expect(fn () => app(MoveTask::class)->handle($partner, $foreign->id, 0, ProjectStatus::Done, BoardFilters::none()))
+        ->toThrow(ModelNotFoundException::class)
+        ->and(fn () => app(MoveTask::class)->handle($partner, $own->id, 0, ProjectStatus::Done, BoardFilters::none()))
+        ->toThrow(AuthorizationException::class);
+
+    expect(DB::table('tasks')->get()->toArray())->toEqual($before);
 });

@@ -442,6 +442,14 @@ return [
     'task_board' => [
         'navigation_label' => 'Nástěnka úkolů',
         'title' => 'Nástěnka úkolů',
+        'filters' => [
+            'client' => 'Klient',
+            'assignee' => 'Řešitel',
+            'tag' => 'Štítek',
+            'priority' => 'Priorita',
+            'all' => 'Vše',
+            'reset' => 'Zrušit filtry',
+        ],
     ],
 
     'tasks' => [

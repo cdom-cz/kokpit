@@ -7,6 +7,7 @@ namespace App\Domain\Tasks\Board;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Models\Task;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -108,7 +109,33 @@ class TaskBoard
      */
     public function applyFilters(Builder $query, BoardFilters $filters): Builder
     {
-        return $query->whereIn('tasks.project_id', Project::query()->selectable()->select('projects.id'));
+        $projects = Project::query()->selectable()->select('projects.id');
+
+        if ($filters->projectId !== null) {
+            $projects->where('projects.id', $filters->projectId);
+        }
+
+        if ($filters->clientId !== null) {
+            $projects->where('projects.client_id', $filters->clientId);
+        }
+
+        $query->whereIn('tasks.project_id', $projects);
+
+        if ($filters->assigneeId !== null) {
+            $query->where('tasks.assignee_id', $filters->assigneeId);
+        }
+
+        if ($filters->priority !== null) {
+            $query->where('tasks.priority', $filters->priority);
+        }
+
+        if ($filters->tag !== null) {
+            $query->whereHas('tags', static fn (Builder $tags): Builder => $tags
+                ->where('tags.id', $filters->tag)
+                ->where('tags.type', TagType::Task->value));
+        }
+
+        return $query;
     }
 
     /**
