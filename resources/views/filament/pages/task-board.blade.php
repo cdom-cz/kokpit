@@ -58,19 +58,28 @@
                                 </span>
 
                                 {{-- Buttons and links that must stay clickable sit in a sort-ignore wrapper. --}}
-                                <div wire:sort:ignore>
+                                <div wire:sort:ignore style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <button
+                                        type="button"
+                                        wire:click="mountAction('preview', { task: '{{ $card['id'] }}' })"
+                                        title="{{ __('kokpit.task_board.card.preview') }}"
+                                        aria-label="{{ __('kokpit.task_board.card.preview') }}"
+                                        style="display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; opacity: 0.8;"
+                                    >
+                                        <x-filament::icon icon="heroicon-m-eye" style="width: 1rem; height: 1rem;" />
+                                    </button>
                                     <a
                                         href="{{ $card['url'] }}"
                                         title="{{ __('kokpit.task_board.card.open') }}"
                                         aria-label="{{ __('kokpit.task_board.card.open') }}"
-                                        style="display: inline-flex; opacity: 0.7;"
+                                        style="display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; opacity: 0.8;"
                                     >
-                                        <x-filament::icon icon="heroicon-m-arrow-top-right-on-square" style="width: 1.1rem; height: 1.1rem;" />
+                                        <x-filament::icon icon="heroicon-m-arrow-top-right-on-square" style="width: 1rem; height: 1rem;" />
                                     </a>
                                 </div>
                             </div>
 
-                            <a href="{{ $card['url'] }}" style="font-weight: 600;">{{ $card['title'] }}</a>
+                            <a href="{{ $card['url'] }}" style="font-weight: 600; overflow-wrap: anywhere;">{{ $card['title'] }}</a>
 
                             <div style="display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center;">
                                 <x-filament::badge :color="$card['priority_color']" size="sm">{{ $card['priority_label'] }}</x-filament::badge>

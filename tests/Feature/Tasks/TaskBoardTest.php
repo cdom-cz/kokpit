@@ -16,14 +16,15 @@ use App\Domain\Tasks\Board\TaskBoard;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Pages\TaskBoardPage;
 use App\Filament\Resources\ProjectResource\Pages\ProjectBoard;
-use Illuminate\Support\Str;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Url;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -670,16 +671,15 @@ it('opens the preview of a card with reference, title, status, description and a
         'due_date' => '2026-03-07',
     ]);
 
-    Livewire::test(TaskBoardPage::class)
-        ->assertActionExists('preview')
-        ->mountAction('preview', ['task' => $task->id])
-        ->assertSee($task->reference)
-        ->assertSee('Example previewed task')
-        ->assertSee(ProjectStatus::InReview->getLabel())
-        ->assertSee('Rita Example')
-        ->assertSee('7. 3. 2026')
-        ->assertSeeHtml('<strong>description</strong>')
-        ->assertSeeHtml('href="'.url('/admin/tasks/'.$task->reference).'"');
+    $html = taskBoardPreviewHtml(Livewire::test(TaskBoardPage::class)->assertActionExists('preview')->mountAction('preview', ['task' => $task->id]));
+
+    expect($html)
+        ->toContain($task->reference.' · Example previewed task')
+        ->toContain(ProjectStatus::InReview->getLabel())
+        ->toContain('Rita Example')
+        ->toContain('7. 3. 2026')
+        ->toContain('<strong>description</strong>')
+        ->toContain('href="'.url('/admin/tasks/'.$task->reference).'"');
 });
 
 it('names the parent reference of a subtask in the preview', function (): void {
@@ -687,10 +687,9 @@ it('names the parent reference of a subtask in the preview', function (): void {
     $parent = taskBoardTask($project, 'Example parent task');
     $child = taskBoardTask($project, 'Example child task', 'planned', ['parent_id' => $parent->id, 'depth' => 1]);
 
-    Livewire::test(TaskBoardPage::class)
-        ->assertActionExists('preview')
-        ->mountAction('preview', ['task' => $child->id])
-        ->assertSee($parent->reference);
+    $html = taskBoardPreviewHtml(Livewire::test(TaskBoardPage::class)->assertActionExists('preview')->mountAction('preview', ['task' => $child->id]));
+
+    expect($html)->toContain('Example child task')->toContain($parent->reference);
 });
 
 it('answers 404 to a preview of an archived task, an unknown id and a malformed id and shows nothing', function (string $kind): void {
@@ -706,10 +705,10 @@ it('answers 404 to a preview of an archived task, an unknown id and a malformed 
 
     $component = Livewire::test(TaskBoardPage::class)->assertActionExists('preview');
 
-    expect(fn () => $component->mountAction('preview', ['task' => $id])->html())
-        ->toThrow(ModelNotFoundException::class);
+    // The lookup runs while the modal is rendered, so the mounting request itself answers 404.
+    $component->mountAction('preview', ['task' => $id])->assertNotFound();
 
-    expect($component->html())->not->toContain('Example hidden preview task');
+    expect((string) $component->html())->not->toContain('Example hidden preview task');
 })->with(['archived', 'unknown', 'malformed']);
 
 it('renders the description of the preview without the elements the rich text sanitiser removes', function (): void {
@@ -718,10 +717,7 @@ it('renders the description of the preview without the elements the rich text sa
         'description' => '<p>Example visible text</p><script>alert(1)</script><img src="https://example.com/x.png"><a href="javascript:alert(1)">Example link</a>',
     ]);
 
-    $html = Livewire::test(TaskBoardPage::class)
-        ->assertActionExists('preview')
-        ->mountAction('preview', ['task' => $task->id])
-        ->html();
+    $html = taskBoardPreviewHtml(Livewire::test(TaskBoardPage::class)->assertActionExists('preview')->mountAction('preview', ['task' => $task->id]));
 
     expect($html)->toContain('Example visible text')
         ->not->toContain('alert(1)')
@@ -734,10 +730,7 @@ it('shows no tags, checklist items, billing or comments in the preview', functio
     $task->attachTag('example-secret-label', TagType::Task->value);
     $task->checklistItems()->create(['text' => 'Example secret item', 'is_done' => false, 'position' => 1]);
 
-    $html = Livewire::test(TaskBoardPage::class)
-        ->assertActionExists('preview')
-        ->mountAction('preview', ['task' => $task->id])
-        ->html();
+    $html = taskBoardPreviewHtml(Livewire::test(TaskBoardPage::class)->assertActionExists('preview')->mountAction('preview', ['task' => $task->id]));
 
     expect($html)->toContain('Example lean preview task')
         ->not->toContain('example-secret-label')
@@ -781,7 +774,8 @@ it('presets the project of a project board in the quick create action and create
         ->assertActionExists('quickCreate')
         ->mountAction('quickCreate')
         ->assertSchemaStateSet(['project_id' => $project->id])
-        ->callAction('quickCreate', ['title' => 'Example quick project task'])
+        ->setActionData(['title' => 'Example quick project task'])
+        ->callMountedAction()
         ->assertHasNoActionErrors();
 
     $task = Task::query()->where('title', 'Example quick project task')->firstOrFail();
@@ -790,3 +784,20 @@ it('presets the project of a project board in the quick create action and create
 
     $component->assertRedirect(url('/admin/tasks/'.$task->reference.'/edit'));
 });
+
+/**
+ * What the mounted preview action shows: its heading, the rendered body and the
+ * footer links. A mounted action is rendered as a partial that a test cannot
+ * reach through the component html, so the parts are evaluated from the action.
+ */
+function taskBoardPreviewHtml(Testable $component): string
+{
+    $action = $component->instance()->getMountedAction();
+
+    $footer = array_map(
+        static fn ($extra): string => $extra->getLabel().' href="'.$extra->getUrl().'"',
+        array_values($action->getExtraModalFooterActions()),
+    );
+
+    return $action->getModalHeading().' '.$action->getModalContent()?->render().' '.implode(' ', $footer);
+}

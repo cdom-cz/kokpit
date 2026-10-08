@@ -459,6 +459,10 @@ return [
             'checklist' => 'Kontrolní seznam',
             'assignee' => 'Řešitel',
             'due_date' => 'Termín',
+            'preview' => 'Náhled úkolu',
+        ],
+        'preview' => [
+            'close' => 'Zavřít',
         ],
     ],
 
