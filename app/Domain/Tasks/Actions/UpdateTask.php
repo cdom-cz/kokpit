@@ -63,7 +63,7 @@ use Illuminate\Validation\ValidationException;
  *     assignee_id?: string|null,
  *     requester_id?: string|null,
  *     tags?: list<string>|null,
- *     billing_type?: string|null,
+ *     billing_type?: mixed,
  *     hourly_rate?: string|null,
  *     fixed_price?: string|null,
  *     estimate_hours?: string|null,
@@ -178,8 +178,9 @@ final class UpdateTask
         $client = Project::query()->withTrashed()->findOrFail($task->project_id)->client()->withTrashed()->firstOrFail();
         $parsed = [];
 
-        if (array_key_exists('billing_type', $data)) {
-            $type = TaskBillingType::tryFrom((string) $data['billing_type']);
+        // Like priority, the type is never empty: null leaves the stored type, anything that is not a known value is a field error.
+        if (($data['billing_type'] ?? null) !== null) {
+            $type = is_string($data['billing_type']) ? TaskBillingType::tryFrom($data['billing_type']) : null;
 
             if ($type === null) {
                 throw ValidationException::withMessages(['billing_type' => __('kokpit.tasks.errors.billing_type_invalid')]);
