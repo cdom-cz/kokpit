@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: Clients and Projects
 status: executing
-stopped_at: Completed 04-05-PLAN.md
-last_updated: "2026-10-08T13:06:27.063Z"
+stopped_at: Completed 04-06-PLAN.md
+last_updated: "2026-10-08T13:17:11.318Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 4 execution started
-state_head: dc534a6a33b22a44863c6d444b41835d37696a65
+state_head: 7c09fde63f467d981e448cb27122c66f973e00df
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 64
-  completed_plans: 48
+  completed_plans: 49
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 4 (Clients and Projects) — EXECUTING
-Plan: 6 of 21
+Plan: 7 of 21
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 4 execution started
 
@@ -106,6 +106,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 04 P03 | 5 min | 2 tasks | 12 files |
 | Phase 04 P04 | 8 min | 2 tasks | 11 files |
 | Phase 04 P05 | 4 min | 2 tasks | 7 files |
+| Phase 04 P06 | 6 min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -209,6 +210,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-03: PartnerProjectResource::canAccess() repeats the trait conditions and adds a Partner-with-client check; shared project field labels live under kokpit.projects.fields — The Admin must get 403 and no duplicate navigation entry; the Admin project resource of plan 04-08 reuses the same labels and ProjectColumns builders
 - [Phase 04]: 04-04: Tag swapped DeniesPartners for a real constraint (project-type tags of Project::query() visible ids); Project.detachTags override keeps tags on archive — A Partner sees project tags only through the project resource, the Project scope stays the single visibility rule, and a soft delete must not trigger the package's detach-on-deleted listener
 - [Phase 04]: 04-05: Audience::Guest always denies in AccessRules; registry governs SimplePage and restricts Guest to unregistered SimplePage subclasses; scanner rule matches PartnerScope by name inside withoutGlobalScope(s) arguments
+- [Phase 04]: 04-06: CreateProject refuses negative amounts and a fixed-price project without a price as field errors itself; unique key violation is translated outside the transaction; errors keyed by plain data key — Money::fromMajor accepts a minus sign, and a savepoint must roll the insert back before the error is translated; plan 04-08 maps keys to form state paths
 
 ### Pending Todos
 
@@ -247,6 +249,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T13:06:26.947Z
-Stopped at: Completed 04-05-PLAN.md
+Last session: 2026-10-08T13:17:11.208Z
+Stopped at: Completed 04-06-PLAN.md
 Resume file: None
