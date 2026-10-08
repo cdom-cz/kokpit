@@ -15,6 +15,7 @@ use Tests\Support\Canary;
 use Tests\Support\CanaryRecord;
 use Tests\Support\Filament\CanaryRecordResource;
 use Tests\Support\Filament\CanaryRecordResource\Pages\ListCanaryRecords;
+use Tests\Support\Filament\Fixtures\AccessOverrideMountProbePage;
 use Tests\Support\Filament\Fixtures\AdminOnlyRelationManager;
 use Tests\Support\Filament\Fixtures\AdminOnlyWidget;
 use Tests\Support\Filament\Fixtures\MountProbePage;
@@ -234,6 +235,26 @@ it('refuses a Partner before the page mount() runs and runs it for an Admin', fu
     Livewire::test(MountProbePage::class)->assertOk();
 
     expect(MountProbePage::$mounted)->toBeTrue();
+});
+
+it('refuses a Partner on a page that overrides canAccess() to always pass, before its mount() runs', function (): void {
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+    foreach (['partner with a client' => fn () => Canary::partnerFor(Canary::twoClients()[0]), 'partner without a client' => fn () => Canary::partnerFor(null), 'user without a role' => fn () => Canary::userWithoutRole(null)] as $state => $make) {
+        AccessOverrideMountProbePage::$mounted = false;
+        $this->actingAs($make());
+
+        Livewire::test(AccessOverrideMountProbePage::class)->assertForbidden();
+
+        expect(AccessOverrideMountProbePage::$mounted)->toBeFalse($state);
+    }
+
+    AccessOverrideMountProbePage::$mounted = false;
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(AccessOverrideMountProbePage::class)->assertOk();
+
+    expect(AccessOverrideMountProbePage::$mounted)->toBeTrue();
 });
 
 it('refuses a Partner before a relation manager or a widget mount() runs, whatever their own visibility check says', function (): void {
