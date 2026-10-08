@@ -10,8 +10,10 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\Contact;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Resources\ClientResource;
+use App\Filament\Resources\ClientResource\Pages\ListClients;
 use App\Filament\Resources\ClientResource\Pages\ViewClient;
 use App\Filament\Resources\ClientResource\RelationManagers\ContactsRelationManager;
+use App\Filament\Support\ActivityPresenter;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Database\Eloquent\MassAssignmentException;
@@ -452,4 +454,78 @@ it('keeps the invoice e-mail of the client apart from the contact flags', functi
     $after = Contact::query()->where('client_id', $client->id)->orderBy('name')->get()->map(static fn (Contact $contact): array => $contact->only(['name', 'email', 'is_primary', 'is_billing']))->all();
 
     expect($after)->toBe($before);
+});
+
+it('shows the name of the primary contact in the client list', function (): void {
+    $client = Client::factory()->create();
+    app(CreateContact::class)->handle($client, contactForm(['name' => 'Example list primary']));
+    app(CreateContact::class)->handle($client, contactForm(['name' => 'Example list second']));
+    $withoutContacts = Client::factory()->create();
+
+    Livewire::test(ListClients::class)
+        ->assertCanSeeTableRecords([$client, $withoutContacts])
+        ->assertTableColumnStateSet('primary_contact_name', 'Example list primary', $client)
+        ->assertTableColumnStateSet('primary_contact_name', null, $withoutContacts);
+});
+
+it('names the primary contact of a page of 10 clients without a contact query per client', function (): void {
+    $clients = [];
+
+    foreach (range(1, 10) as $index) {
+        $clients[$index] = Client::factory()->create();
+        app(CreateContact::class)->handle($clients[$index], contactForm(['name' => "Example listed contact {$index}"]));
+    }
+
+    $component = Livewire::test(ListClients::class);
+    $statements = [];
+    DB::listen(static function ($query) use (&$statements): void {
+        $statements[] = mb_strtolower($query->sql);
+    });
+
+    $component->call('$refresh')
+        ->assertTableColumnStateSet('primary_contact_name', 'Example listed contact 7', $clients[7]);
+
+    // The contact lookup is a subquery of the client query; a lazy relation load would start from contacts.
+    $contactQueries = array_filter($statements, static fn (string $sql): bool => str_contains($sql, 'from "contacts"') && ! str_contains($sql, 'from "clients"'));
+
+    expect($statements)->not->toBeEmpty()
+        ->and($contactQueries)->toBe([]);
+});
+
+it('logs a change of the e-mail of a contact under the log name contact listing email', function (): void {
+    [$client, , $second] = clientWithThreeContacts();
+    $second->activitiesAsSubject()->delete();
+    $newEmail = exampleEmail('changed');
+
+    contactsTab($client)
+        ->callAction(TestAction::make('edit')->table($second), contactForm(['name' => $second->name, 'email' => $newEmail]))
+        ->assertHasNoFormErrors();
+
+    $rows = $second->activitiesAsSubject()->get();
+    $changes = $rows->first()?->attribute_changes;
+
+    expect($rows)->toHaveCount(1)
+        ->and($rows->first()?->log_name)->toBe('contact')
+        ->and(array_keys($changes?->get('attributes') ?? []))->toContain('email')
+        ->and($changes?->get('attributes')['email'])->toBe($newEmail);
+});
+
+it('logs both sides of a primary switch', function (): void {
+    [, $primary, $second] = clientWithThreeContacts();
+    $primary->activitiesAsSubject()->delete();
+    $second->activitiesAsSubject()->delete();
+
+    app(SetPrimaryContact::class)->handle($second);
+
+    expect($primary->activitiesAsSubject()->count())->toBe(1)
+        ->and($second->activitiesAsSubject()->count())->toBe(1)
+        ->and($second->activitiesAsSubject()->firstOrFail()->attribute_changes->get('attributes'))->toBe(['is_primary' => true]);
+});
+
+it('names the contact subject and its attributes in Czech in the change history', function (): void {
+    expect(ActivityPresenter::subjectLabel('contact'))->toBe('Kontakt');
+
+    foreach (['client_id', 'name', 'email', 'phone', 'position', 'is_primary', 'is_billing'] as $attribute) {
+        expect(__("kokpit.activity.attributes.contact.{$attribute}"))->not->toBe("kokpit.activity.attributes.contact.{$attribute}");
+    }
 });

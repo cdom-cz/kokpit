@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Audit\LoggedAttributes;
 use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Models\Contact;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Shared\Models\KokpitModel;
@@ -40,8 +41,8 @@ function allowlistProblemsOf(object $model): array
 }
 
 it('lists the application models that log activity explicitly', function (): void {
-    // Contacts, tasks, invoices and time entries add themselves here, with their allowlist, when their plans create them.
-    expect(AuditDeclaration::loggingModels())->toBe([Client::class, Project::class, ProjectBilling::class]);
+    // Tasks, invoices and time entries add themselves here, with their allowlist, when their plans create them.
+    expect(AuditDeclaration::loggingModels())->toBe([Client::class, Contact::class, Project::class, ProjectBilling::class]);
 });
 
 it('finds a logging model when it scans the probe directory, so the scan cannot pass vacuously', function (): void {
