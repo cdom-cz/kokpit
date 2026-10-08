@@ -60,6 +60,7 @@ return [
         'step_ok' => ':check: v pořádku',
         'step_failed' => ':check: selhalo, příčina: :reason',
         'pending' => 'čekajících migrací: :count',
+        'no_answer' => 'ping nevrátil platnou odpověď',
         'failed' => 'Kontrola nasazení selhala, nová verze nepřevezme provoz.',
         'passed' => 'Nasazení je připravené, všechny tři kontroly prošly.',
     ],

@@ -3,20 +3,13 @@ zerops:
     build:
       base:
         - alpine/php@8.5
-        - alpine/nodejs@24
       os: alpine
       buildCommands:
         - composer install --optimize-autoloader --no-dev --ignore-platform-reqs
-        - pnpm install
-        - pnpm run build
-      envVariables:
-        VITE_APP_NAME: ${RUNTIME_VITE_APP_NAME}
       deployFiles: ./
       cache:
         - vendor
         - composer.lock
-        - node_modules
-        - pnpm-lock.yaml
     run:
       base: alpine/php-nginx@8.5
       os: alpine
@@ -35,6 +28,11 @@ zerops:
         - php artisan optimize
         - php artisan icons:cache
         - sudo -E -u zerops -- zsc execOnce ${appVersionId} -- php artisan migrate --force
+        # Zerops stops the deploy at the first failing initCommand, so a failed migration
+        # (execOnce) or a failed verify (pending migration, unreachable database or Redis)
+        # ends the deploy before traffic is switched. The verify runs on every container,
+        # deliberately without execOnce.
+        - php artisan kokpit:deploy:verify
         - php artisan filament:optimize
         # Runs per container, deliberately WITHOUT execOnce: horizon:terminate only
         # signals Horizon masters on the same hostname, so an execOnce run on one

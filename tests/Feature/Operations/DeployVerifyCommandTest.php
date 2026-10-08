@@ -3,14 +3,16 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 
 /*
- * kokpit:deploy:verify is the readiness gate of the app service (D-18): a new
- * version only takes traffic while it exits 0, so a pending migration, an
- * unreachable database or an unreachable Redis keeps the previous version
+ * kokpit:deploy:verify is the readiness gate (D-18). It runs as an init command of
+ * every container right after the execOnce migration, and Zerops ends the deploy at
+ * the first failing init command, so a pending migration, an unreachable database,
+ * an unreachable Redis or a broken session connection keeps the previous version
  * serving. The output names checks and results, never connection details.
  */
 
@@ -136,4 +138,94 @@ it('prints no database or Redis connection value on success or failure', functio
         expect($failing)->not->toMatch($pattern)
             ->and($passing)->not->toMatch($pattern);
     }
+});
+
+it('fails the Redis check when a ping returns a falsy answer instead of throwing', function (): void {
+    $connection = Mockery::mock();
+    $connection->shouldReceive('ping')->andReturn(false);
+
+    Redis::partialMock()->shouldReceive('connection')->andReturn($connection);
+
+    [$exit, $output] = runDeployVerify();
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('Redis: selhalo')
+        ->and($output)->toContain('ping nevrátil platnou odpověď')
+        ->and($output)->toContain('Databáze: v pořádku');
+});
+
+/**
+ * Registers a Redis connection that cannot be reached and returns the password it was given.
+ */
+function brokenSessionRedisConnection(): string
+{
+    $password = implode('-', ['not', 'a', 'real', 'password']);
+
+    config(['database.redis.kokpit-probe-session' => array_merge(
+        (array) config('database.redis.default'),
+        ['host' => '127.0.0.1', 'port' => '1', 'password' => $password, 'max_retries' => 0],
+    )]);
+    Redis::purge('kokpit-probe-session');
+
+    return $password;
+}
+
+it('fails the Redis check when the redis session connection is unreachable', function (): void {
+    $password = brokenSessionRedisConnection();
+    config(['session.driver' => 'redis', 'session.connection' => 'kokpit-probe-session']);
+
+    [$exit, $output] = runDeployVerify();
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('Redis: selhalo')
+        ->and($output)->toContain('Databáze: v pořádku')
+        ->and($output)->not->toContain('127.0.0.1')
+        ->and($output)->not->toContain($password);
+});
+
+it('ignores the session connection unless the session driver is redis or database', function (): void {
+    brokenSessionRedisConnection();
+    config(['session.driver' => 'array', 'session.connection' => 'kokpit-probe-session']);
+
+    [$exit] = runDeployVerify();
+
+    expect($exit)->toBe(0);
+});
+
+/**
+ * Registers a database connection that cannot be reached and returns the password it was given.
+ */
+function brokenSessionDatabaseConnection(): string
+{
+    $password = implode('-', ['not', 'a', 'real', 'password']);
+
+    config(['database.connections.kokpit_probe_session' => array_merge(
+        (array) config('database.connections.pgsql'),
+        ['host' => '127.0.0.1', 'port' => '1', 'password' => $password],
+    )]);
+    DB::purge('kokpit_probe_session');
+
+    return $password;
+}
+
+it('fails the database check when the database session connection is unreachable', function (): void {
+    $password = brokenSessionDatabaseConnection();
+    config(['session.driver' => 'database', 'session.connection' => 'kokpit_probe_session']);
+
+    [$exit, $output] = runDeployVerify();
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('Databáze: selhalo')
+        ->and($output)->toContain('Redis: v pořádku')
+        ->and($output)->not->toContain('127.0.0.1')
+        ->and($output)->not->toContain($password);
+});
+
+it('ignores a broken database session connection unless the session driver is database', function (): void {
+    brokenSessionDatabaseConnection();
+    config(['session.driver' => 'array', 'session.connection' => 'kokpit_probe_session']);
+
+    [$exit] = runDeployVerify();
+
+    expect($exit)->toBe(0);
 });

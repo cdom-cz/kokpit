@@ -16,11 +16,15 @@ use Throwable;
  * Readiness gate of a deploy (D-18): exits 0 only when the database answers,
  * no migration is pending and Redis answers.
  *
- * Zerops activates a new version only after this command succeeded, so a
+ * It runs as an init command of every container, right after the execOnce
+ * migration. Zerops ends the deploy at the first failing init command, so a
  * migration that failed or never ran cannot go live and the previous version
- * keeps serving. Output names the checks and their result; connection details
- * (host, port, user, password) are never printed, and a failure is reduced to
- * the exception class.
+ * keeps serving. The checks include the session connection (the Redis session
+ * connection for the redis driver, the database session connection for the
+ * database driver) and treat a falsy Redis ping as a failure. Output names the
+ * checks and their result; connection details (host, port, user, password) are
+ * never printed, and a failure is reduced to the exception class or a fixed
+ * translated reason.
  */
 class DeployVerifyCommand extends Command
 {
@@ -46,11 +50,7 @@ class DeployVerifyCommand extends Command
                 return null;
             }),
             $this->check('migrations', fn (): ?string => $this->pendingMigrations()),
-            $this->check('redis', function (): ?string {
-                $this->pingRedis();
-
-                return null;
-            }),
+            $this->check('redis', fn (): ?string => $this->pingRedis()),
         ];
 
         if (in_array(false, $results, true)) {
@@ -92,9 +92,19 @@ class DeployVerifyCommand extends Command
         return false;
     }
 
+    /**
+     * Pings the default connection and, for the database session driver, the
+     * session connection (null means the default connection).
+     */
     private function pingDatabase(): void
     {
         DB::connection()->selectOne('select 1');
+
+        if (config('session.driver') === 'database') {
+            $connection = config('session.connection');
+
+            DB::connection(is_string($connection) && $connection !== '' ? $connection : null)->selectOne('select 1');
+        }
     }
 
     /**
@@ -117,18 +127,29 @@ class DeployVerifyCommand extends Command
 
     /**
      * Pings every Redis connection the queue, the cache and the default
-     * connection use; the first failure ends the check.
+     * connection use, plus the session connection for the redis session driver
+     * (null means the default connection). The first failure ends the check; a
+     * falsy ping result counts as a failure.
      */
-    private function pingRedis(): void
+    private function pingRedis(): ?string
     {
-        $connections = array_unique([
+        $connections = [
             'default',
             (string) config('queue.connections.redis.connection', 'default'),
             (string) config('cache.stores.redis.connection', 'default'),
-        ]);
+        ];
 
-        foreach ($connections as $connection) {
-            Redis::connection($connection)->ping();
+        if (config('session.driver') === 'redis') {
+            $session = config('session.connection');
+            $connections[] = is_string($session) && $session !== '' ? $session : 'default';
         }
+
+        foreach (array_unique($connections) as $connection) {
+            if (! Redis::connection($connection)->ping()) {
+                return (string) __('kokpit.deploy_verify.no_answer');
+            }
+        }
+
+        return null;
     }
 }
