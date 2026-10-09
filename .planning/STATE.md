@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: time-tracking
 status: executing
-stopped_at: Completed 06-08-PLAN.md
-last_updated: "2026-10-09T14:57:47.143Z"
+stopped_at: Completed 06-09-PLAN.md
+last_updated: "2026-10-09T15:15:34.199Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 06 execution started
-state_head: 521060831cf49594798997f302e7bb025b12db24
+state_head: a0160f42ef77405d8cc194c8a7f4e3a7e49de4af
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 100
-  completed_plans: 94
+  completed_plans: 95
   percent: 42
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 06 (time-tracking) — EXECUTING
-Plan: 9 of 14
+Plan: 10 of 14
 Status: Ready to execute
 Last activity: 2026-10-09 — Phase 06 execution started
 
@@ -154,6 +154,7 @@ Progress: [████░░░░░░] 42%
 | Phase 06 P06 | 33min | 3 tasks | 13 files |
 | Phase 06 P07 | 55min | 3 tasks | 11 files |
 | Phase 06 P08 | 15min | 3 tasks | 10 files |
+| Phase 06 P09 | 17 min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -344,6 +345,8 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-08: the top bar timer guards itself in layers: the render hook renders nothing for a Partner and the RequiresAdmin boot hook refuses a forged mount or update with 403; an architecture test forces the trait and scalar-only public properties on every component under app/Livewire
 - [Phase 06]: 06-08: the stop button names the entry it shows, so a stale view never stops a newer timer; the forgotten-timer state is computed from the stored start on every render and poll and the timer is never stopped
 - [Phase 06]: 06-08: TI-09 stays open after the visible danger state; the scheduled job and the bell notification are in 06-13
+- [Phase 06]: 06-09: the bar and the side panel share one ControlsTimer trait (two views of the single running entry); the panel keeps the number of shown days (visibleDays) and re-reads them on every refresh instead of a cursor
+- [Phase 06]: 06-09: users.time_panel_open (nullable, null = default open from 80rem) is written only by SetTimePanelOpen for the actor's own row; the overlay below 80rem is client-side and never stored
 
 ### Pending Todos
 
@@ -383,6 +386,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T14:57:46.997Z
-Stopped at: Completed 06-08-PLAN.md
+Last session: 2026-10-09T15:15:34.052Z
+Stopped at: Completed 06-09-PLAN.md
 Resume file: None
