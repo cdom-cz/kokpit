@@ -15,6 +15,7 @@ use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Database\Eloquent\Model;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
 
 /**
  * The time row of the Admin project page (PR-05): estimate, worked, billed and unbilled time as
@@ -41,6 +42,13 @@ final class ProjectTimeStats extends StatsOverviewWidget
 
     #[Locked]
     public ?Model $record = null;
+
+    /**
+     * Billing or saving an entry on the page changes these figures; the event only has to re-render
+     * the widget, which reads the totals again.
+     */
+    #[On('time-entry-saved')]
+    public function refreshAfterEntryChange(): void {}
 
     /**
      * @return array<Stat>

@@ -21,6 +21,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Livewire\Attributes\On;
 
 /**
  * The tab "Úkoly a čas" of the Admin project page (PR-05): every task and subtask of the project,
@@ -53,6 +54,12 @@ final class ProjectTasksTimeRelationManager extends RelationManager
     {
         return __('kokpit.time.project.tabs.tasks');
     }
+
+    /**
+     * Billing or saving an entry changes the figures of this tab; the event only has to re-render it.
+     */
+    #[On('time-entry-saved')]
+    public function refreshAfterEntryChange(): void {}
 
     public function table(Table $table): Table
     {

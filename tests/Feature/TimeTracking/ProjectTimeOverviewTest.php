@@ -9,13 +9,17 @@ use App\Domain\Tasks\Actions\ArchiveTask;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Enums\BillingBadge;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Queries\TimeTotals;
 use App\Filament\Resources\ProjectResource;
+use App\Filament\Resources\ProjectResource\Pages\EditProject;
 use App\Filament\Resources\ProjectResource\Pages\ViewProject;
 use App\Filament\Resources\ProjectResource\RelationManagers\ProjectTasksTimeRelationManager;
+use App\Filament\Resources\ProjectResource\RelationManagers\ProjectTimeEntriesRelationManager;
 use App\Filament\Resources\ProjectResource\Widgets\ProjectTimeStats;
 use App\Filament\Resources\TaskResource;
+use App\Filament\Resources\TimeEntryResource;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
@@ -147,6 +151,14 @@ function overviewTaskEntry(Task $task, string $start, string $end, array $attrib
 function overviewTasksTab(Project $project): Testable
 {
     return Livewire::test(ProjectTasksTimeRelationManager::class, ['ownerRecord' => $project, 'pageClass' => ViewProject::class]);
+}
+
+/**
+ * The tab "Časové záznamy" of the project as a Livewire test.
+ */
+function overviewEntriesTab(Project $project, string $page = ViewProject::class): Testable
+{
+    return Livewire::test(ProjectTimeEntriesRelationManager::class, ['ownerRecord' => $project, 'pageClass' => $page]);
 }
 
 describe('the stats row', function (): void {
@@ -512,5 +524,148 @@ describe('the tab "Úkoly a čas"', function (): void {
 
         expect(ProjectTasksTimeRelationManager::canViewForRecord($project, ViewProject::class))->toBeFalse();
         Livewire::test(ProjectTasksTimeRelationManager::class, ['ownerRecord' => $project, 'pageClass' => ViewProject::class])->assertForbidden();
+    });
+});
+
+describe('the tab "Časové záznamy"', function (): void {
+    it('lists the entries of the project only, with the columns and badges of the entries list', function (): void {
+        $project = overviewProject();
+        $other = overviewProject();
+        $task = overviewTask($project, 'Example entry task');
+        $withTask = overviewTaskEntry($task, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+        $withoutTask = overviewEntry($project, '2026-10-12 10:00:00', '2026-10-12 10:30:00', ['billable' => false]);
+        $foreign = overviewEntry($other, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+        $noProject = TimeEntry::factory()->create(['user_id' => $this->admin->id]);
+
+        $tab = overviewEntriesTab($project)
+            ->assertSuccessful()
+            ->assertCanSeeTableRecords([$withoutTask, $withTask], inOrder: true)
+            ->assertCanNotSeeTableRecords([$foreign, $noProject])
+            ->assertTableColumnStateSet('billing_badge', BillingBadge::Unbilled, $withTask)
+            ->assertTableColumnStateSet('billing_badge', BillingBadge::NonBillable, $withoutTask)
+            ->assertTableColumnStateSet('elapsed_seconds', '1:00', $withTask);
+
+        foreach (TimeEntryResource::tableColumns() as $column) {
+            $tab->assertTableColumnExists($column->getName());
+        }
+    });
+
+    it('shows a running entry with its elapsed time and the running badge', function (): void {
+        $project = overviewProject();
+        $running = overviewEntry($project, '2026-10-14 09:30:00', '');
+
+        $tab = overviewEntriesTab($project)->assertTableColumnStateSet('elapsed_seconds', '0:30', $running);
+
+        expect(overviewText($tab->html()))->toContain('Běží');
+    });
+
+    it('has the filters of the entries list but none for the project', function (): void {
+        $table = overviewEntriesTab(overviewProject())->instance()->getTable();
+
+        expect($table->getFilter('project_id'))->toBeNull()
+            ->and($table->getFilter('client_id'))->not->toBeNull()
+            ->and($table->getFilter('period'))->not->toBeNull()
+            ->and($table->getFilter('billing'))->not->toBeNull();
+    });
+
+    it('offers the two billing actions as bulk actions and nothing else per row', function (): void {
+        $project = overviewProject();
+        overviewEntry($project, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+
+        overviewEntriesTab($project)
+            ->assertTableBulkActionExists('markBilled')
+            ->assertTableBulkActionExists('cancelBilling')
+            ->assertTableActionDoesNotExist('edit')
+            ->assertTableActionDoesNotExist('delete');
+    });
+
+    it('bills a selection, locks it and the stats row shows the billed time after the update', function (): void {
+        $project = overviewProject();
+        $one = overviewEntry($project, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+        $two = overviewEntry($project, '2026-10-12 10:00:00', '2026-10-12 10:30:00');
+        $untouched = overviewEntry($project, '2026-10-12 11:00:00', '2026-10-12 11:20:00');
+
+        expect(overviewStats($project))->toContain('Vyfakturováno 0:00')->toContain('Nevyfakturováno 1:50');
+
+        overviewEntriesTab($project)
+            ->callTableBulkAction('markBilled', [$one, $two])
+            ->assertNotified('Označeno jako vyfakturované (2)')
+            ->assertTableColumnStateSet('billing_badge', BillingBadge::Billed, $one)
+            ->assertTableColumnStateSet('billing_badge', BillingBadge::Unbilled, $untouched);
+
+        expect($one->refresh()->isBilled())->toBeTrue()
+            ->and($untouched->refresh()->isBilled())->toBeFalse()
+            ->and(overviewStats($project))->toContain('Vyfakturováno 1:30')->toContain('Nevyfakturováno 0:20');
+
+        overviewEntriesTab($project)
+            ->callTableBulkAction('cancelBilling', [$one])
+            ->assertNotified('Fakturace byla zrušena (1)');
+
+        expect($one->refresh()->isBilled())->toBeFalse()
+            ->and(overviewStats($project))->toContain('Vyfakturováno 0:30');
+    });
+
+    it('refreshes the stats row and the task tab when an entry is saved', function (): void {
+        $project = overviewProject();
+        $task = overviewTask($project, 'Example refreshed task');
+
+        $stats = Livewire::test(ProjectTimeStats::class, ['record' => $project]);
+        $tab = overviewTasksTab($project);
+        overviewTaskEntry($task, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+
+        $stats->dispatch('time-entry-saved');
+        $tab->dispatch('time-entry-saved');
+
+        expect(overviewText($stats->html()))->toContain('Odpracováno 1:00')
+            ->and(overviewText($tab->html()))->toContain('Celkem')
+            ->and($tab->assertTableColumnStateSet('worked_seconds', '1:00', $task));
+    });
+
+    it('says so, with its body, when the project has no entries', function (): void {
+        $text = overviewText(overviewEntriesTab(overviewProject())->html());
+
+        expect($text)->toContain('K projektu zatím nejsou žádné záznamy')
+            ->and($text)->toContain('Spusťte časovač u úkolu tohoto projektu nebo přidejte záznam ručně.');
+    });
+
+    it('opens the entry page from a row', function (): void {
+        $project = overviewProject();
+        $entry = overviewEntry($project, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+
+        expect(overviewEntriesTab($project)->html())->toContain(TimeEntryResource::getUrl('view', ['record' => $entry]));
+    });
+
+    it('is on the Admin project page and the edit page as two tabs, after the history', function (): void {
+        $project = overviewProject();
+
+        $relations = ProjectResource::getRelations();
+
+        expect(array_slice($relations, -2))->toBe([ProjectTasksTimeRelationManager::class, ProjectTimeEntriesRelationManager::class]);
+
+        foreach ([ViewProject::class, EditProject::class] as $page) {
+            expect(ProjectTasksTimeRelationManager::canViewForRecord($project, $page))->toBeTrue()
+                ->and(ProjectTimeEntriesRelationManager::canViewForRecord($project, $page))->toBeTrue();
+        }
+
+        $text = overviewText($this->get(ProjectResource::getUrl('view', ['record' => $project]))->assertOk()->getContent() ?: '');
+
+        expect($text)->toContain('Úkoly a čas')->and($text)->toContain('Časové záznamy');
+    });
+
+    it('refuses both tabs to a Partner, who cannot mount them for the own visible project', function (): void {
+        [$clientA] = Canary::twoClients();
+        $project = app(CreateProject::class)->handle(Client::query()->findOrFail($clientA), [
+            'name' => 'Example partner '.mb_strtolower(Canary::projectKey()),
+            'key' => Canary::projectKey(),
+            'billing_type' => 'hourly',
+            'client_visible' => true,
+        ]);
+
+        $this->actingAs(Canary::partnerFor($clientA));
+
+        foreach ([ProjectTasksTimeRelationManager::class, ProjectTimeEntriesRelationManager::class] as $manager) {
+            expect($manager::canViewForRecord($project, ViewProject::class))->toBeFalse();
+            Livewire::test($manager, ['ownerRecord' => $project, 'pageClass' => ViewProject::class])->assertForbidden();
+        }
     });
 });

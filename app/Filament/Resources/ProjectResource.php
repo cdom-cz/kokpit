@@ -23,6 +23,7 @@ use App\Filament\Resources\ProjectResource\Pages\ListProjects;
 use App\Filament\Resources\ProjectResource\Pages\ProjectBoard;
 use App\Filament\Resources\ProjectResource\Pages\ViewProject;
 use App\Filament\Resources\ProjectResource\RelationManagers\ProjectTasksTimeRelationManager;
+use App\Filament\Resources\ProjectResource\RelationManagers\ProjectTimeEntriesRelationManager;
 use App\Filament\Resources\ProjectResource\Widgets\ProjectTimeStats;
 use App\Filament\Support\ProjectColumns;
 use BackedEnum;
@@ -335,6 +336,7 @@ final class ProjectResource extends Resource
         return [
             ProjectHistoryRelationManager::class,
             ProjectTasksTimeRelationManager::class,
+            ProjectTimeEntriesRelationManager::class,
         ];
     }
 
