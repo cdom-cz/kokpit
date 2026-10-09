@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Operations\Health\Heartbeats;
 use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
+use App\Domain\TimeTracking\Jobs\NotifyLongRunningTimers;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -35,3 +36,9 @@ Schedule::command('horizon:snapshot')
     ->everyFiveMinutes()
     ->onOneServer()
     ->name('kokpit-horizon-snapshot');
+
+// One bell notice per timer that has run past kokpit.time.long_running_hours; it never stops the timer (TI-09, D-07).
+Schedule::job(new NotifyLongRunningTimers)
+    ->everyFiveMinutes()
+    ->name('kokpit-long-running-timers')
+    ->onOneServer();

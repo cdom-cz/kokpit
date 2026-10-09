@@ -36,7 +36,7 @@ it('registers the known scheduled events', function (): void {
         app(Schedule::class)->events(),
     );
 
-    expect($descriptions)->toContain('kokpit-heartbeat', 'kokpit-worker-heartbeat', 'kokpit-horizon-snapshot');
+    expect($descriptions)->toContain('kokpit-heartbeat', 'kokpit-worker-heartbeat', 'kokpit-horizon-snapshot', 'kokpit-long-running-timers');
 });
 
 it('runs every scheduled event on one server only', function (): void {

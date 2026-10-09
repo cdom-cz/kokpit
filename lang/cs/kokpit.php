@@ -1065,6 +1065,11 @@ return [
             'complete' => 'Doplnit záznam',
             'complete_heading' => 'Doplnit běžící záznam',
         ],
+        'long_running' => [
+            'bell_title' => 'Časovač běží příliš dlouho',
+            'bell_body' => 'Časovač u klienta :client běží už :duration. Zkontrolujte ho a případně zastavte.',
+            'bell_action' => 'Otevřít záznam',
+        ],
         'panel' => [
             'heading' => 'Poslední záznamy',
             'show' => 'Zobrazit poslední záznamy',

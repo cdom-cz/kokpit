@@ -125,8 +125,8 @@ return [
     | editable in the UI.
     |
     | long_running_hours: a timer that has been running this many hours or more
-    |   is flagged as forgotten: the top bar pill turns to the danger state and,
-    |   in a later plan, the Admin gets one bell notification. The timer is
+    |   is flagged as forgotten: the top bar pill turns to the danger state and
+    |   the Admin gets one bell notification from a scheduled job. The timer is
     |   never stopped automatically.
     |
     */
