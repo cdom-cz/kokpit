@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: time-tracking
 status: executing
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-10-09T13:25:43.660Z"
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-10-09T13:36:03.656Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 06 execution started
-state_head: 5d74c6be4819a392388c5193aa39cef74aae7203
+state_head: 4a14c312445a50d0a0e9e8a50d7a7bc7a259b077
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 100
-  completed_plans: 88
+  completed_plans: 89
   percent: 42
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 06 (time-tracking) — EXECUTING
-Plan: 3 of 14
+Plan: 4 of 14
 Status: Ready to execute
 Last activity: 2026-10-09 — Phase 06 execution started
 
@@ -148,6 +148,7 @@ Progress: [████░░░░░░] 42%
 | Phase 05 P22 | 9 min | 2 tasks | 2 files |
 | Phase 06 P01 | 30 min | 3 tasks | 13 files |
 | Phase 06 P02 | 35min | 3 tasks | 8 files |
+| Phase 06 P03 | 40 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -324,6 +325,9 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-02: Lock order in StartTimer is per-user timer lock, task, project, client FOR SHARE, then running entry FOR UPDATE; no cycle with ArchiveTask
 - [Phase 06]: 06-02: A task fixes project and client in TimeEntryInput::context(); a given project_id or client_id is only compared, mismatches are inconsistent_context field errors
 - [Phase 06]: 06-02: StopTimer shares the inline advisory lock key with StartTimer until 06-03 moves both into TimerLock
+- [Phase 06]: 06-03: TimerLock is a plain class resolved from the container so UnlockedTimerLock can extend it; the production Actions carry no test hook
+- [Phase 06]: 06-03: the lock-less mutation run is forced deterministically by an arrival rendezvous on eloquent.creating between the running-row read and the insert (1 started, 7 TimerRaceLost per round, no retry)
+- [Phase 06]: 06-03: StartTimer translates a violation of time_entries_one_running_per_user to TimerRaceLost outside the rolled-back transaction by constraint name and rethrows any other unique violation
 
 ### Pending Todos
 
@@ -363,6 +367,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T13:25:43.521Z
-Stopped at: Completed 06-02-PLAN.md
+Last session: 2026-10-09T13:36:03.514Z
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None
