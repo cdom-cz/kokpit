@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Completed 05-15-PLAN.md
-last_updated: "2026-10-09T00:28:20.183Z"
+stopped_at: Completed 05-16-PLAN.md
+last_updated: "2026-10-09T00:45:58.813Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 05 execution started
-state_head: c910d409737a359250de3190a0ab2128e0905825
+state_head: d96d010fb7537a2dfd057ae9f2efb3e9f03be8e2
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 81
-  completed_plans: 79
+  completed_plans: 80
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 05 (Tasks and Kanban) — EXECUTING
-Plan: 16 of 17
+Plan: 17 of 17
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 05 execution started
 
@@ -137,6 +137,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 05 P13 | 45min | 3 tasks | 12 files |
 | Phase 05 P14 | 10 min | 2 tasks | 11 files |
 | Phase 05 P15 | 25 min | 2 tasks | 8 files |
+| Phase 05 P16 | 20 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -296,6 +297,8 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-14: notification switches live in users.notification_preferences (jsonb object, missing key means on), written only by UpdateNotificationPreferences for the owner; the profile save button reads Uložit nastavení; the bell is available to any signed-in panel user
 - [Phase 05]: 05-15: an escalation comment is not announced by AddTaskComment; plan 05-16 announces the escalation itself so nobody is told twice
 - [Phase 05]: 05-15: a Partner notification recipient must belong to the project's client, and the project must be client-visible and not archived, and the client not archived
+- [Phase 05]: 05-16: the escalation fallback to the Admin depends only on whether the assignee can receive, never on preferences (A13); an assignee with escalation off on both channels gets nothing
+- [Phase 05]: 05-16: change notifications go only for an Admin actor to the current Partner requester and assignee, one per save; the old assignee is not told (A5)
 
 ### Pending Todos
 
@@ -335,6 +338,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T00:28:20.070Z
-Stopped at: Completed 05-15-PLAN.md
+Last session: 2026-10-09T00:45:58.693Z
+Stopped at: Completed 05-16-PLAN.md
 Resume file: None
