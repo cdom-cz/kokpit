@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: time-tracking
 status: executing
-stopped_at: Phase 6 UI-SPEC approved
-last_updated: "2026-10-09T13:07:29.103Z"
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-10-09T13:17:00.956Z"
 last_activity: 2026-10-09
-last_activity_desc: Phase 05 complete, transitioned to Phase 6
-state_head: 56a74386ded4bca1369e56ab99cc85e0f5312801
+last_activity_desc: Phase 06 execution started
+state_head: 3b88b2e8fce4789adabffc60ee681f2a531d9ac3
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 100
-  completed_plans: 86
+  completed_plans: 87
   percent: 42
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 06 — Time Tracking
+**Current focus:** Phase 06 — time-tracking
 
 ## Current Position
 
-Phase: 06 (time-tracking) — READY TO EXECUTE
-Plan: Not started
+Phase: 06 (time-tracking) — EXECUTING
+Plan: 2 of 14
 Status: Ready to execute
-Last activity: 2026-10-09 — Phase 05 complete, transitioned to Phase 6
+Last activity: 2026-10-09 — Phase 06 execution started
 
 Progress: [████░░░░░░] 42%
 
@@ -146,6 +146,7 @@ Progress: [████░░░░░░] 42%
 | Phase 05 P20 | 10 min | 3 tasks | 8 files |
 | Phase 05 P21 | 9 min | 3 tasks | 13 files |
 | Phase 05 P22 | 9 min | 2 tasks | 2 files |
+| Phase 06 P01 | 30 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -316,6 +317,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-21: Reuse AssignmentChange for the Admin's description-edit notice; NotificationEvent::helper takes the role so only the Admin row has its own helper
 - [Phase 05]: 05-21: A Partner's description edit notifies Admins and the eligible assignee (comment rule) with a name-only change line, never description text
 - [Phase 05]: 05-22: activity and comment rows read by tests are ordered by created_at then UUID v7 id; flaky any-Partner description case fixed in the test layer only
+- [Phase 06]: 06-01: time_entries CHECK is ended_at >= started_at (zero length allowed) so a same-second start keeps the stopped entry; owner to confirm TI-07 wording
+- [Phase 06]: 06-01: duration_seconds stays in the billed-row guard mutable list (generated columns are computed after BEFORE triggers); Phase 10 must re-create the guard when adding snapshot columns
+- [Phase 06]: 06-01: all time instants go through TimerClock (startOfSecond), because timestamptz(0) rounds; TimeEntry relations include archived rows
 
 ### Pending Todos
 
@@ -355,6 +359,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T12:01:26.319Z
-Stopped at: Phase 6 UI-SPEC approved
-Resume file: .planning/phases/06-time-tracking/06-UI-SPEC.md
+Last session: 2026-10-09T13:16:57.589Z
+Stopped at: Completed 06-01-PLAN.md
+Resume file: None
