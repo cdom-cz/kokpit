@@ -76,6 +76,16 @@
                                     >
                                         <x-filament::icon icon="heroicon-m-arrow-top-right-on-square" style="width: 1rem; height: 1rem;" />
                                     </a>
+                                    @php($running = $this->runningTaskId === $card['id'])
+                                    <button
+                                        type="button"
+                                        wire:click="toggleTimer('{{ $card['id'] }}')"
+                                        title="{{ $running ? __('kokpit.time.timer.stop') : __('kokpit.time.timer.start') }}"
+                                        aria-label="{{ $running ? __('kokpit.time.timer.stop') : __('kokpit.time.timer.start') }}"
+                                        style="display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; opacity: {{ $running ? '1' : '0.8' }};{{ $running ? ' color: var(--warning-600);' : '' }}"
+                                    >
+                                        <x-filament::icon :icon="$running ? 'heroicon-m-stop' : 'heroicon-m-play'" style="width: 1rem; height: 1rem;" />
+                                    </button>
                                 </div>
                             </div>
 

@@ -16,6 +16,7 @@ use App\Domain\Tasks\Board\BoardFilters;
 use App\Domain\Tasks\Board\TaskBoard;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Resources\TaskResource;
+use App\Filament\Support\TaskTimerToggle;
 use App\Providers\LocalisationServiceProvider;
 use Filament\Actions\Action;
 use Filament\Support\Enums\Width;
@@ -38,7 +39,8 @@ use Livewire\Attributes\Url;
  * The three arguments of `moveCard` come from the browser and are untrusted:
  * the status is whitelisted here, the task id is resolved through the scoped
  * query and authorised by MoveTask. The task argument of the preview action is
- * untrusted the same way: scoped lookup, then the view Gate (D-09).
+ * untrusted the same way: scoped lookup, then the view Gate (D-09). So is the task id
+ * of the timer button of a card (`toggleTimer`).
  */
 trait ManagesTaskBoard
 {
@@ -199,6 +201,47 @@ trait ManagesTaskBoard
 
         // The columns were computed before the move when this request rendered them earlier.
         unset($this->columns);
+    }
+
+    /**
+     * Starts the timer for the task of a card, or stops it while that task is the running one
+     * (TI-01, D-01). The id comes from the browser and is never trusted: a malformed or unknown id
+     * is not found (404), the lookup goes through the Partner-scoped query and the view Gate decides
+     * the rest. An archived task is looked up too, so a stale card can still stop its own timer; a
+     * start on it is refused by StartTimer with the task error. The context of the new entry is
+     * derived from the task there, never from the card.
+     */
+    public function toggleTimer(string $taskId): void
+    {
+        abort_unless(Str::isUuid($taskId), 404);
+
+        $user = Auth::user();
+        abort_unless($user instanceof User, 403);
+
+        $task = Task::query()->withTrashed()->whereKey($taskId)->firstOrFail();
+
+        Gate::authorize('view', $task);
+
+        $event = app(TaskTimerToggle::class)->handle($user, $task);
+
+        // The running task changed: the card icons are read again.
+        unset($this->runningTaskId);
+
+        if ($event !== null) {
+            $this->dispatch($event);
+        }
+    }
+
+    /**
+     * The id of the task the signed-in user's running timer is logged to, one query per render for
+     * every card; null when nothing runs.
+     */
+    #[Computed]
+    public function runningTaskId(): ?string
+    {
+        $user = Auth::user();
+
+        return $user instanceof User ? app(TaskTimerToggle::class)->runningTaskId($user) : null;
     }
 
     /**
