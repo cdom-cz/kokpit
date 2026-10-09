@@ -13,7 +13,8 @@ use App\Domain\Notifications\NotificationEvent;
  * It is always for a Partner and never carries an excerpt. The changed fields
  * arrive as ready Czech lines ("Stav: old to new"), built by TaskNotifier from the
  * labels of the enums and the names of the two people, so no other data of the
- * task can be in the message.
+ * task can be in the message. It holds raw values and no text; the base class
+ * names the texts and escapes every value.
  */
 final class TaskChangedNotification extends TaskNotification
 {
@@ -40,46 +41,18 @@ final class TaskChangedNotification extends TaskNotification
         );
     }
 
-    protected function mailSubject(): string
+    protected function textGroup(): string
     {
-        return __('kokpit.tasks.notifications.changed.mail_subject', [
-            'reference' => $this->taskReference,
-            'title' => $this->taskTitle,
-        ]);
-    }
-
-    protected function mailLine(): string
-    {
-        return __('kokpit.tasks.notifications.changed.mail_line', [
-            'reference' => $this->taskReference,
-            'title' => $this->taskTitle,
-        ]);
+        return 'changed';
     }
 
     /**
-     * The event line followed by one line per change.
+     * One raw line per change; the base class escapes each for the mail and the bell.
      *
      * @return list<string>
      */
-    protected function mailLines(): array
+    protected function changeLines(): array
     {
-        return [
-            $this->mailLine(),
-            ...array_map(static fn (string $label): string => self::escapeMarkdown($label), $this->changedLabels),
-        ];
-    }
-
-    protected function bellTitle(): string
-    {
-        return __('kokpit.tasks.notifications.changed.bell_title', ['reference' => $this->taskReference]);
-    }
-
-    /**
-     * One line per change; the bell renders sanitised HTML, so each line is
-     * escaped and the lines are joined with a line break.
-     */
-    protected function bellBody(): string
-    {
-        return implode('<br>', array_map(static fn (string $label): string => e($label), $this->changedLabels));
+        return $this->changedLabels;
     }
 }

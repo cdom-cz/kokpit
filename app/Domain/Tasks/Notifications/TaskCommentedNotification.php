@@ -13,7 +13,8 @@ use LogicException;
  * The excerpt is the plain text of the already sanitised, non-internal body. An
  * internal comment carries no excerpt at all, and it cannot be built for a
  * Partner: the constructor of the base refuses it with a LogicException before
- * any preference is read.
+ * any preference is read. It holds raw values and no text; the base class names
+ * the texts and escapes every value.
  */
 final class TaskCommentedNotification extends TaskNotification
 {
@@ -43,36 +44,8 @@ final class TaskCommentedNotification extends TaskNotification
         );
     }
 
-    protected function mailSubject(): string
+    protected function textGroup(): string
     {
-        return __('kokpit.tasks.notifications.comment.mail_subject', ['reference' => $this->taskReference]);
-    }
-
-    protected function mailLine(): string
-    {
-        return __('kokpit.tasks.notifications.comment.mail_line', [
-            'reference' => $this->taskReference,
-            'title' => $this->taskTitle,
-            'actor' => $this->actorName,
-        ]);
-    }
-
-    protected function bellTitle(): string
-    {
-        return __('kokpit.tasks.notifications.comment.bell_title', ['reference' => $this->taskReference]);
-    }
-
-    protected function bellBody(): string
-    {
-        $excerpt = $this->bellExcerpt();
-
-        if ($excerpt === null) {
-            return __('kokpit.tasks.notifications.comment.bell_body_no_excerpt', ['actor' => $this->actorName]);
-        }
-
-        return __('kokpit.tasks.notifications.comment.bell_body', [
-            'actor' => $this->actorName,
-            'excerpt' => $excerpt,
-        ]);
+        return 'comment';
     }
 }

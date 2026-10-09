@@ -13,7 +13,8 @@ use LogicException;
  *
  * The excerpt is the plain text of the escalation comment, which is never
  * internal. The internal guard of the base stays in force all the same: an
- * internal comment cannot be built for a Partner and carries no excerpt.
+ * internal comment cannot be built for a Partner and carries no excerpt. It holds
+ * raw values and no text; the base class names the texts and escapes every value.
  */
 final class TaskEscalatedNotification extends TaskNotification
 {
@@ -43,39 +44,8 @@ final class TaskEscalatedNotification extends TaskNotification
         );
     }
 
-    protected function mailSubject(): string
+    protected function textGroup(): string
     {
-        return __('kokpit.tasks.notifications.escalated.mail_subject', [
-            'reference' => $this->taskReference,
-            'title' => $this->taskTitle,
-        ]);
-    }
-
-    protected function mailLine(): string
-    {
-        return __('kokpit.tasks.notifications.escalated.mail_line', [
-            'reference' => $this->taskReference,
-            'title' => $this->taskTitle,
-            'actor' => $this->actorName,
-        ]);
-    }
-
-    protected function bellTitle(): string
-    {
-        return __('kokpit.tasks.notifications.escalated.bell_title', ['reference' => $this->taskReference]);
-    }
-
-    protected function bellBody(): string
-    {
-        $excerpt = $this->bellExcerpt();
-
-        if ($excerpt === null) {
-            return __('kokpit.tasks.notifications.escalated.bell_body_no_excerpt', ['actor' => $this->actorName]);
-        }
-
-        return __('kokpit.tasks.notifications.escalated.bell_body', [
-            'actor' => $this->actorName,
-            'excerpt' => $excerpt,
-        ]);
+        return 'escalated';
     }
 }

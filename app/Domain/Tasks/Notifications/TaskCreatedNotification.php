@@ -10,7 +10,8 @@ use App\Domain\Notifications\NotificationEvent;
  * Tells the Admin that a Partner created a task (TA-07, D-07).
  *
  * It never carries an excerpt: the task description is not part of the
- * notification, only the reference, the title and the project key.
+ * notification, only the reference, the title and the project key. It holds raw
+ * values and no text; the base class names the texts and escapes every value.
  */
 final class TaskCreatedNotification extends TaskNotification
 {
@@ -33,32 +34,13 @@ final class TaskCreatedNotification extends TaskNotification
         );
     }
 
-    protected function mailSubject(): string
+    protected function textGroup(): string
     {
-        return __('kokpit.tasks.notifications.task_created.mail_subject', [
-            'reference' => $this->taskReference,
-            'title' => $this->taskTitle,
-        ]);
+        return 'task_created';
     }
 
-    protected function mailLine(): string
+    protected function bellBodyKey(): string
     {
-        return __('kokpit.tasks.notifications.task_created.mail_line', [
-            'project' => $this->projectKey,
-            'actor' => $this->actorName,
-        ]);
-    }
-
-    protected function bellTitle(): string
-    {
-        return __('kokpit.tasks.notifications.task_created.bell_title', ['reference' => $this->taskReference]);
-    }
-
-    protected function bellBody(): string
-    {
-        return __('kokpit.tasks.notifications.task_created.bell_body', [
-            'title' => $this->taskTitle,
-            'project' => $this->projectKey,
-        ]);
+        return 'bell_body';
     }
 }

@@ -41,6 +41,12 @@ abstract class TaskNotification extends Notification implements ShouldQueue
 
     private const int EXCERPT_BELL_LIMIT = 120;
 
+    private const string TARGET_SUBJECT = 'subject';
+
+    private const string TARGET_MAIL = 'mail';
+
+    private const string TARGET_BELL = 'bell';
+
     /**
      * @throws LogicException when an internal comment is addressed to a Partner
      */
@@ -85,14 +91,19 @@ abstract class TaskNotification extends Notification implements ShouldQueue
         return $channels;
     }
 
-    public function toMail(object $notifiable): MailMessage
+    /**
+     * The mail: the subject is plain text (a header is never rendered as markup),
+     * every value in the body lines is Markdown-escaped.
+     */
+    final public function toMail(object $notifiable): MailMessage
     {
         $message = (new MailMessage)
-            ->subject($this->mailSubject())
-            ->greeting(__('kokpit.tasks.notifications.shared.greeting'));
+            ->subject($this->text('mail_subject', self::TARGET_SUBJECT))
+            ->greeting(__('kokpit.tasks.notifications.shared.greeting'))
+            ->line($this->text('mail_line', self::TARGET_MAIL));
 
-        foreach ($this->mailLines() as $line) {
-            $message->line($line);
+        foreach ($this->changeLines() as $line) {
+            $message->line(self::escapeMarkdown($line));
         }
 
         if ($this->excerpt !== null && $this->excerpt !== '') {
@@ -106,15 +117,22 @@ abstract class TaskNotification extends Notification implements ShouldQueue
 
     /**
      * The bell entry in the Filament database format, with one button to the task
-     * page of the recipient's audience.
+     * page of the recipient's audience. Filament renders the title and the body as
+     * sanitised HTML, so every value is HTML-escaped here and reads as written.
      *
      * @return array<string, mixed>
      */
-    public function toDatabase(object $notifiable): array
+    final public function toDatabase(object $notifiable): array
     {
+        $changes = $this->changeLines();
+
+        $body = $changes !== []
+            ? implode('<br>', array_map(static fn (string $line): string => e($line), $changes))
+            : $this->text($this->bellBodyKey(), self::TARGET_BELL);
+
         return FilamentNotification::make()
-            ->title($this->bellTitle())
-            ->body($this->bellBody())
+            ->title($this->text('bell_title', self::TARGET_BELL))
+            ->body($body)
             ->actions([
                 Action::make('open')
                     ->label(__('kokpit.tasks.notifications.shared.action'))
@@ -123,29 +141,61 @@ abstract class TaskNotification extends Notification implements ShouldQueue
             ->getDatabaseMessage();
     }
 
-    abstract protected function mailSubject(): string;
-
-    abstract protected function mailLine(): string;
+    /**
+     * The segment under `kokpit.tasks.notifications.` that holds the texts of the
+     * event: `task_created`, `comment`, `escalated` or `changed`.
+     */
+    abstract protected function textGroup(): string;
 
     /**
-     * The lines of the mail body before the quote and the button: the one line
-     * of the event, unless the event adds more.
+     * The raw lines that describe the changes of the event, one per line; none by
+     * default. They are escaped per channel by this class, never by the subclass.
      *
      * @return list<string>
      */
-    protected function mailLines(): array
+    protected function changeLines(): array
     {
-        return [$this->mailLine()];
+        return [];
     }
 
-    abstract protected function bellTitle(): string;
-
-    abstract protected function bellBody(): string;
+    /**
+     * The translation key of the bell body when the event has no change lines:
+     * the one with the excerpt when there is one, otherwise the one without.
+     */
+    protected function bellBodyKey(): string
+    {
+        return $this->bellExcerpt() === null ? 'bell_body_no_excerpt' : 'bell_body';
+    }
 
     /**
-     * The excerpt cut for the narrow bell entry.
+     * The one place that reads a text of the event and puts the values into it.
+     * A value is escaped for the target and for nothing else, once, here, from the
+     * raw scalar the notification holds, so a second render gives the same output.
      */
-    protected function bellExcerpt(): ?string
+    private function text(string $key, string $target): string
+    {
+        $values = [
+            'reference' => $this->taskReference,
+            'title' => $this->taskTitle,
+            'project' => $this->projectKey,
+            'actor' => $this->actorName,
+            'excerpt' => $this->bellExcerpt() ?? '',
+        ];
+
+        $escaped = match ($target) {
+            self::TARGET_MAIL => array_map(self::escapeMarkdown(...), $values),
+            self::TARGET_BELL => array_map(static fn (string $value): string => e($value), $values),
+            default => $values,
+        };
+
+        return __('kokpit.tasks.notifications.'.$this->textGroup().'.'.$key, $escaped);
+    }
+
+    /**
+     * The excerpt cut for the narrow bell entry. It is cut as plain text, before
+     * any escaping, so no entity or escape sequence is cut in half.
+     */
+    private function bellExcerpt(): ?string
     {
         if ($this->excerpt === null || $this->excerpt === '') {
             return null;
@@ -155,11 +205,20 @@ abstract class TaskNotification extends Notification implements ShouldQueue
     }
 
     /**
-     * Makes a plain-text excerpt inert in the Markdown of the mail: no link,
-     * emphasis, code or heading can be built from the words of a comment.
+     * Makes a plain-text value inert in the Markdown of the mail: no link, image,
+     * emphasis, code, heading or table can be built from it, and a line break can
+     * not start a new block.
+     *
+     * `<` and `>` are left alone on purpose: the mail renderer HTML-encodes every
+     * line before it parses the Markdown, so they can not open a tag, and a
+     * backslash in front of them would make the renderer show a literal "&lt;".
+     * Do not apply e() to a mail line either: it would be encoded twice and read
+     * "&amp;".
      */
-    protected static function escapeMarkdown(string $text): string
+    private static function escapeMarkdown(string $text): string
     {
-        return (string) preg_replace('/([\\\\`*_\[\]()<>#|~!])/', '\\\\$1', $text);
+        $flat = (string) preg_replace('/\s+/u', ' ', $text);
+
+        return (string) preg_replace('/([\\\\`*_\[\]()#|~!])/', '\\\\$1', $flat);
     }
 }
