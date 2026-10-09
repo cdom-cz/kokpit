@@ -3,17 +3,22 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Actions\SetTimePanelOpen;
+use App\Domain\TimeTracking\Actions\StartTimer;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Domain\TimeTracking\Queries\RecentEntries;
+use App\Domain\TimeTracking\TimerRaceLost;
 use App\Livewire\TimeTracking\RecentEntriesPanel;
 use App\Livewire\TimeTracking\TimerBar;
 use Carbon\CarbonImmutable;
 use Database\Factories\ProjectFactory;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -37,7 +42,8 @@ beforeEach(function (): void {
  */
 function panelEntry(string $startedAt, int $minutes, array $attributes = []): TimeEntry
 {
-    $start = CarbonImmutable::parse($startedAt, 'Europe/Prague');
+    // Converted to UTC: the model writes the wall-clock value of the instant it is given.
+    $start = CarbonImmutable::parse($startedAt, 'Europe/Prague')->utc();
 
     return TimeEntry::factory()->create(array_merge([
         'user_id' => test()->admin->id,
@@ -251,4 +257,259 @@ it('refuses a forged setOpen by a Partner and writes nothing', function (): void
 
     expect($partner->refresh()->time_panel_open)->toBeNull()
         ->and($this->admin->refresh()->time_panel_open)->toBeNull();
+});
+
+/**
+ * One finished entry on each of the given days before today, 10:00 Prague, one hour long.
+ *
+ * @param  list<int>  $daysAgo
+ */
+function panelDays(Client $client, array $daysAgo): void
+{
+    foreach ($daysAgo as $ago) {
+        panelEntry(CarbonImmutable::parse('2026-10-09 10:00', 'Europe/Prague')->subDays($ago)->format('Y-m-d H:i'), 60, ['client_id' => $client->id]);
+    }
+}
+
+it('shows the seven newest days that have entries and appends the rest with the older button', function (): void {
+    $client = Client::factory()->create(['name' => 'Cihla']);
+    // Ten distinct days, with quiet days in between: 7 days that contain entries, not 7 calendar days.
+    panelDays($client, [0, 1, 3, 4, 6, 8, 9, 12, 15, 20]);
+
+    $component = Livewire::test(RecentEntriesPanel::class)
+        ->assertSee('Načíst starší záznamy');
+
+    expect($component->instance()->recent['days'])->toHaveCount(7)
+        ->and($component->instance()->recent['has_more'])->toBeTrue();
+
+    $component->call('loadOlder')->assertDontSee('Načíst starší záznamy');
+
+    expect($component->instance()->recent['days'])->toHaveCount(10)
+        ->and($component->instance()->recent['has_more'])->toBeFalse();
+});
+
+it('disappears the older button when exactly one page of days exists', function (): void {
+    $client = Client::factory()->create(['name' => 'Cihla']);
+    panelDays($client, [0, 1, 2, 3, 4, 5, 6]);
+
+    Livewire::test(RecentEntriesPanel::class)->assertDontSee('Načíst starší záznamy');
+});
+
+it('shows one day with one entry as a heading, a total and one row', function (): void {
+    $client = Client::factory()->create(['name' => 'Cihla']);
+    panelEntry('2026-10-09 08:00', 95, ['client_id' => $client->id]);
+
+    $component = Livewire::test(RecentEntriesPanel::class)
+        ->assertSee('Dnes')
+        ->assertSee('1:35')
+        ->assertDontSee('Načíst starší záznamy');
+
+    expect($component->instance()->recent['days'][0]['entries'])->toHaveCount(1);
+});
+
+it('pages through the days with the same keys after a refresh event', function (): void {
+    $client = Client::factory()->create(['name' => 'Cihla']);
+    panelDays($client, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+
+    $component = Livewire::test(RecentEntriesPanel::class)->call('loadOlder');
+
+    // A new entry saved elsewhere shows up on refresh and the number of shown days is kept.
+    panelEntry('2026-10-09 11:00', 30, ['client_id' => $client->id]);
+    $component->dispatch('time-entry-saved');
+
+    $days = $component->instance()->recent['days'];
+
+    expect($days)->toHaveCount(9)
+        ->and($days[0]['entries'])->toHaveCount(2)
+        ->and($component->instance()->visibleDays)->toBe(14);
+});
+
+it('puts the year on a day heading outside the current year', function (): void {
+    $client = Client::factory()->create(['name' => 'Cihla']);
+    panelEntry('2025-12-30 10:00', 60, ['client_id' => $client->id]);
+    panelEntry('2026-10-05 10:00', 60, ['client_id' => $client->id]);
+
+    $labels = array_column(Livewire::test(RecentEntriesPanel::class)->instance()->recent['days'], 'label');
+
+    expect($labels)->toBe(['Pondělí 5. 10.', 'Úterý 30. 12. 2025']);
+});
+
+it('lists an entry from 23:30 to 00:30 Prague under the day it started', function (): void {
+    $client = Client::factory()->create(['name' => 'Cihla']);
+    panelEntry('2026-10-07 23:30', 60, ['client_id' => $client->id]);
+
+    $days = Livewire::test(RecentEntriesPanel::class)->instance()->recent['days'];
+
+    expect($days)->toHaveCount(1)
+        ->and($days[0]['label'])->toBe('Středa 7. 10.')
+        ->and($days[0]['total_seconds'])->toBe(3600);
+});
+
+it('counts a 25 hour day by its Prague date and never as 24 hours', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-27 12:00:00', 'Europe/Prague'));
+    $client = Client::factory()->create(['name' => 'Cihla']);
+
+    // The clocks go back on Sunday 25 October 2026: that day lasts 25 hours.
+    panelEntry('2026-10-24 23:30', 40, ['client_id' => $client->id]);
+    panelEntry('2026-10-25 00:15', 20, ['client_id' => $client->id]);
+    panelEntry('2026-10-25 23:30', 30, ['client_id' => $client->id]);
+    panelEntry('2026-10-26 00:10', 10, ['client_id' => $client->id]);
+
+    $days = Livewire::test(RecentEntriesPanel::class)->instance()->recent['days'];
+
+    expect(array_column($days, 'date'))->toBe(['2026-10-26', '2026-10-25', '2026-10-24'])
+        ->and(array_column($days, 'total_seconds'))->toBe([600, 3000, 2400]);
+});
+
+it('reads the days in a number of queries that does not depend on the number of entries', function (): void {
+    $w = panelWorld();
+    $task = $w['task'];
+    $client = $w['client'];
+
+    $count = static function (): int {
+        $queries = 0;
+        DB::listen(static function () use (&$queries): void {
+            $queries++;
+        });
+
+        Livewire::test(RecentEntriesPanel::class)->assertSee('Dnes');
+
+        return $queries;
+    };
+
+    $entriesOf = static function (int $perDay) use ($task): void {
+        foreach (range(0, 6) as $ago) {
+            foreach (range(1, $perDay) as $n) {
+                $start = CarbonImmutable::parse('2026-10-09 06:00', 'Europe/Prague')->utc()->subDays($ago)->addMinutes(($n - 1) * 20);
+                TimeEntry::factory()->forTask($task)->create([
+                    'user_id' => test()->admin->id,
+                    'started_at' => $start,
+                    'ended_at' => $start->addMinutes(15),
+                ]);
+            }
+        }
+    };
+
+    $entriesOf(3);
+    $few = $count();
+
+    $entriesOf(30);
+    $many = $count();
+
+    expect(TimeEntry::query()->count())->toBe(7 * 33)
+        ->and($few)->toBeGreaterThan(0)
+        ->and($many)->toBe($few);
+});
+
+it('renders the empty state with its two sentences and no way to log time', function (): void {
+    Client::factory()->create(['name' => 'Cihla']);
+
+    Livewire::test(RecentEntriesPanel::class)
+        ->assertSee('Zatím tu nejsou žádné záznamy')
+        ->assertSee('Spusťte časovač výše. Záznam můžete přidat i ručně v nabídce Časové záznamy.')
+        ->assertDontSee('Log time')
+        ->assertDontSee('Načíst starší záznamy')
+        // The timer block above stays usable.
+        ->assertSee('Spustit časovač')
+        ->assertSee('0:00:00')
+        ->set('clientId', Client::query()->sole()->id)
+        ->call('start')
+        ->assertNotified('Časovač byl spuštěn');
+});
+
+it('shows the danger callout above the readout when the timer runs too long', function (): void {
+    $client = Client::factory()->create(['name' => 'Cihla']);
+    $entry = TimeEntry::factory()->running()->create(['user_id' => $this->admin->id, 'client_id' => $client->id, 'started_at' => now()->subHours(12)->subMinute()]);
+
+    Livewire::test(RecentEntriesPanel::class)
+        ->assertSee('Časovač běží příliš dlouho')
+        ->assertSee('Běží déle než 12 h. Zkontrolujte, jestli ho nemáte zastavit.')
+        ->assertSeeHtml('data-state="too-long"')
+        ->assertSee('12:01:00');
+
+    // Under the threshold there is no callout, and the entry is never stopped by the panel.
+    $entry->forceFill(['started_at' => now()->subHours(2)])->save();
+
+    Livewire::test(RecentEntriesPanel::class)
+        ->assertDontSee('Časovač běží příliš dlouho')
+        ->assertSeeHtml('data-state="running"');
+
+    expect($entry->refresh()->ended_at)->toBeNull();
+});
+
+it('shows the same race toast as the bar and tells a stale stop that nothing runs', function (): void {
+    $client = Client::factory()->create();
+
+    $this->app->instance(StartTimer::class, new class
+    {
+        /**
+         * @param  array<string, mixed>  $data
+         */
+        public function handle(User $actor, array $data): never
+        {
+            throw new TimerRaceLost;
+        }
+    });
+
+    Livewire::test(RecentEntriesPanel::class)
+        ->set('clientId', $client->id)
+        ->call('start')
+        ->assertNotified('Časovač se nepodařilo spustit, protože se současně změnil jiný. Zkuste to znovu.')
+        ->assertNotDispatched('timer-started');
+
+    $old = TimeEntry::factory()->create(['user_id' => $this->admin->id, 'client_id' => $client->id]);
+    $newer = TimeEntry::factory()->running()->create(['user_id' => $this->admin->id, 'client_id' => $client->id]);
+
+    Livewire::test(RecentEntriesPanel::class)->call('stop', $old->id)->assertNotified('Žádný časovač neběží.');
+
+    expect($newer->refresh()->ended_at)->toBeNull();
+});
+
+it('keeps a long title to one line and a long description to two lines with the full text as tooltip', function (): void {
+    $name = str_repeat('Dlouhý název ', 10);
+    $client = Client::factory()->create(['name' => $name]);
+    panelEntry('2026-10-09 08:00', 30, ['client_id' => $client->id, 'description' => str_repeat('Example long text ', 12)]);
+
+    Livewire::test(RecentEntriesPanel::class)
+        ->assertSeeHtml('kokpit-panel-row-title')
+        ->assertSeeHtml('white-space: nowrap')
+        ->assertSeeHtml('-webkit-line-clamp: 2')
+        ->assertSeeHtml('title="'.$name.'"');
+});
+
+it('opens the entries list from the footer link and offers no billed marks', function (): void {
+    $client = Client::factory()->create(['name' => 'Cihla']);
+    panelEntry('2026-10-09 08:00', 30, ['client_id' => $client->id, 'billing_state' => 'billed', 'billed_at' => now()]);
+
+    Livewire::test(RecentEntriesPanel::class)
+        ->assertSee('Zobrazit všechny záznamy')
+        ->assertSeeHtml('/admin/time-entries"')
+        ->assertDontSeeHtml('lock-closed');
+});
+
+it('reads the days before a cursor and says whether older ones exist', function (): void {
+    $client = Client::factory()->create(['name' => 'Cihla']);
+    panelDays($client, [0, 2, 5, 9]);
+
+    $page = app(RecentEntries::class)->days($this->admin, '2026-10-07', 2);
+
+    expect(array_column($page['days'], 'date'))->toBe(['2026-10-04', '2026-09-30'])
+        ->and($page['has_more'])->toBeFalse();
+
+    $first = app(RecentEntries::class)->days($this->admin, null, 2);
+
+    expect(array_column($first['days'], 'date'))->toBe(['2026-10-09', '2026-10-07'])
+        ->and($first['has_more'])->toBeTrue();
+});
+
+it('never lists the entries of another user', function (): void {
+    $client = Client::factory()->create(['name' => 'Cihla']);
+    TimeEntry::factory()->create([
+        'user_id' => Canary::admin()->id,
+        'client_id' => $client->id,
+        'started_at' => now()->subHours(3),
+        'ended_at' => now()->subHours(2),
+    ]);
+
+    expect(app(RecentEntries::class)->days($this->admin, null)['days'])->toBe([]);
 });

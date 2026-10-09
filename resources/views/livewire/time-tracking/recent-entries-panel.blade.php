@@ -39,16 +39,17 @@
         .kokpit-panel-timer { display: grid; gap: 1rem; padding: 0 1rem 1rem; }
         .kokpit-panel-field { display: grid; gap: 0.25rem; font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; }
         .kokpit-panel-readout { font-size: 1.875rem; line-height: 2.25rem; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 9ch; white-space: nowrap; }
-        .kokpit-panel-readout.fi-color-gray, .kokpit-panel-readout.fi-color-warning, .kokpit-panel-readout.fi-color-danger { color: var(--color-600); }
-        .dark .kokpit-panel-readout.fi-color-gray, .dark .kokpit-panel-readout.fi-color-warning, .dark .kokpit-panel-readout.fi-color-danger { color: var(--color-400); }
+        /* The fi-color-<role> class of the element supplies the --color-N variables. */
+        .kokpit-panel-readout { color: var(--color-600); }
+        .dark .kokpit-panel-readout { color: var(--color-400); }
         .kokpit-panel-line { margin: 0; font-size: 0.875rem; line-height: 1.25rem; overflow-wrap: anywhere; }
         .kokpit-panel-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .kokpit-panel-link { color: var(--primary-600); font-weight: 600; text-decoration: underline; }
         .dark .kokpit-panel-link { color: var(--primary-400); }
         .kokpit-panel-actions { display: flex; align-items: center; gap: 0.5rem; }
         .kokpit-panel-actions > :first-child { flex: 1; }
-        .kokpit-panel-muted.fi-color-gray { color: var(--color-500); }
-        .dark .kokpit-panel-muted.fi-color-gray { color: var(--color-400); }
+        .kokpit-panel-muted { color: var(--color-500); }
+        .dark .kokpit-panel-muted { color: var(--color-400); }
         .kokpit-panel-list { display: grid; gap: 1rem; padding: 1rem; border-top: 1px solid color-mix(in oklab, currentColor 12%, transparent); }
         .kokpit-panel-day { display: grid; gap: 0.5rem; }
         .kokpit-panel-day-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; margin: 0; font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; }
