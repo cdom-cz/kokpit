@@ -6,6 +6,7 @@ namespace App\Domain\Tasks\Actions;
 
 use App\Domain\Identity\Models\User;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Notifications\TaskNotifier;
 use App\Domain\Tasks\TaskInput;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -42,9 +43,16 @@ use Illuminate\Validation\ValidationException;
  * new, is never logged. Lock order: only the row lock of the task is taken; no
  * status or position is written, so the board lock does not apply and this Action
  * cannot deadlock with UpdateTask (board lock, then row).
+ *
+ * Notification (TA-07, D-07, G-05-5): after the history row, only on the path that
+ * wrote, TaskNotifier tells the Admin and the eligible assignee of a Partner's edit,
+ * inside the transaction (delivered after commit). A refused, stale or unchanged
+ * save and an Admin's edit tell nobody, and the message carries no description text.
  */
 final class UpdateTaskDescription
 {
+    public function __construct(private readonly TaskNotifier $notifier) {}
+
     /**
      * The fingerprint of a stored description, the one definition for the page and the Action.
      */
@@ -89,6 +97,8 @@ final class UpdateTaskDescription
                 ->causedBy($actor)
                 ->event('description_changed')
                 ->log('description_changed');
+
+            $this->notifier->descriptionChanged($locked, $actor);
         });
 
         // The caller's instance shows the stored value, whatever it showed before.

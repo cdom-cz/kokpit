@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
+use App\Domain\Notifications\NotificationEvent;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -14,6 +15,7 @@ use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Actions\UpdateTaskDescription;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Notifications\TaskChangedNotification;
 use App\Domain\Tasks\Policies\TaskPolicy;
 use App\Filament\Partner\Resources\PartnerTaskResource;
 use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ViewPartnerTask;
@@ -23,7 +25,9 @@ use App\Filament\Resources\TaskResource\Pages\EditTask;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -570,4 +574,237 @@ it('filters the activity overview by the description edit', function (): void {
     $overview->filterTable('event', 'description_changed')
         ->assertCanSeeTableRecords($edits)
         ->assertCanNotSeeTableRecords($others);
+});
+
+/**
+ * The Partner saves a new description through the Action, based on the stored one, signed in as that user.
+ */
+function partnerDescSave(User $actor, Task $task, string $html): Task
+{
+    test()->actingAs($actor);
+
+    $row = partnerDescRow($task);
+
+    return app(UpdateTaskDescription::class)->handle($actor, $row, $html, UpdateTaskDescription::fingerprint($row->description));
+}
+
+/**
+ * Sets the assignee as the Admin through the real Action (it may notify, so call it before Notification::fake()).
+ */
+function partnerDescAssign(User $admin, Task $task, User $assignee): void
+{
+    partnerDescSystem(static fn (): Task => app(UpdateTask::class)->handle($admin, Task::query()->findOrFail($task->id), ['assignee_id' => $assignee->id]));
+}
+
+/**
+ * The change notifications the fake holds for the user.
+ *
+ * @return Collection<int, mixed>
+ */
+function partnerDescChanges(User $user): Collection
+{
+    return Notification::sent($user, TaskChangedNotification::class);
+}
+
+it('tells the Admin of a Partner description edit by mail and in the bell with the admin link', function (): void {
+    Notification::fake();
+    $this->actingAs($this->partnerA);
+
+    Livewire::test(ViewPartnerTask::class, ['record' => $this->task->reference])
+        ->callAction('editDescription', ['description' => '<p>Edited '.Canary::canary('notice').'</p>'])
+        ->assertHasNoActionErrors();
+
+    Notification::assertCount(1);
+    Notification::assertSentTo(
+        $this->admin,
+        TaskChangedNotification::class,
+        fn (TaskChangedNotification $notification, array $channels): bool => $channels === ['mail', 'database']
+            && $notification->event === NotificationEvent::AssignmentChange
+            && ! $notification->recipientIsPartner
+            && $notification->taskReference === $this->task->reference
+            && str_ends_with($notification->url, '/admin/tasks/'.$this->task->reference)
+            && $notification->changedLabels === [__('kokpit.tasks.notifications.changed.description', ['actor' => $this->partnerA->name])]
+            && $notification->excerpt === null,
+    );
+    Notification::assertNotSentTo($this->partnerA, TaskChangedNotification::class);
+    expect(partnerDescChanges($this->admin))->toHaveCount(1);
+});
+
+it('puts no text of the description into the notification of the edit', function (): void {
+    $oldWord = Canary::canary('olddesc');
+    $newWord = Canary::canary('newdesc');
+    $thirdWord = Canary::canary('thirddesc');
+    partnerDescSave($this->partnerA, $this->task, '<p>'.$oldWord.'</p>');
+    $bellBefore = $this->admin->notifications()->count();
+
+    // The real delivery (sync queue): the stored bell entry holds no description word.
+    partnerDescSave($this->partnerA, $this->task, '<p>'.$thirdWord.'</p>');
+
+    $rows = $this->admin->notifications()->get();
+    $stored = (string) json_encode($rows->map(static fn ($row): mixed => $row->data)->all(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+
+    expect($rows->count())->toBe($bellBefore + 1)
+        ->and($stored)->toContain('Popis upraven')
+        ->and($stored)->not->toContain($oldWord)->not->toContain($thirdWord);
+
+    // The sent notification, rendered with no signed-in user as a worker would.
+    Notification::fake();
+    partnerDescSave($this->partnerA, $this->task, '<p>'.$newWord.'</p>');
+
+    /** @var TaskChangedNotification $sent */
+    $sent = partnerDescChanges($this->admin)->firstOrFail();
+    auth()->logout();
+
+    $mail = $sent->toMail($this->admin);
+    $html = (string) $mail->render();
+    $line = __('kokpit.tasks.notifications.changed.description', ['actor' => $this->partnerA->name]);
+    $bell = $sent->toDatabase($this->admin);
+    $everything = json_encode([$mail->subject, $mail->introLines, $mail->outroLines, $bell, $sent->changedLabels, $html], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+
+    expect($html)->toContain('Popis upraven uživatelem')
+        ->and($html)->toContain($this->partnerA->name)
+        ->and($mail->subject)->toBe(__('kokpit.tasks.notifications.changed.mail_subject', ['reference' => $this->task->reference, 'title' => $this->task->title]))
+        ->and($bell['title'])->toBe(__('kokpit.tasks.notifications.changed.bell_title', ['reference' => $this->task->reference]))
+        ->and($bell['body'])->toBe(e($line))
+        ->and($everything)->not->toContain($newWord)->not->toContain($oldWord)->not->toContain($thirdWord);
+});
+
+it('sends nothing for a refused, stale or unchanged save or an Admin edit through the Action', function (): void {
+    $attempt = function (User $actor, Task $based, string $html, ?string $fingerprint = null): ?Throwable {
+        $this->actingAs($actor);
+
+        try {
+            app(UpdateTaskDescription::class)->handle($actor, $based, $html, $fingerprint ?? UpdateTaskDescription::fingerprint($based->description));
+        } catch (Throwable $e) {
+            return $e;
+        }
+
+        return null;
+    };
+
+    // (1) A Partner of another client.
+    Notification::fake();
+    $thrown = $attempt($this->partnerB, partnerDescRow($this->task), '<p>Example foreign text</p>');
+    expect($thrown)->toBeInstanceOf(AuthorizationException::class);
+    Notification::assertNothingSent();
+
+    // (2) A status outside D-16.
+    partnerDescStatus($this->admin, $this->task, 'in_progress');
+    Notification::fake();
+    $thrown = $attempt($this->partnerA, partnerDescRow($this->task), '<p>Example late text</p>');
+    expect($thrown)->toBeInstanceOf(AuthorizationException::class);
+    Notification::assertNothingSent();
+
+    // (3) A status changed while the editor was open (D-16 on the locked row).
+    partnerDescStatus($this->admin, $this->task, 'planned');
+    $stale = partnerDescRow($this->task);
+    partnerDescStatus($this->admin, $this->task, 'done');
+    Notification::fake();
+    $thrown = $attempt($this->partnerA, $stale, '<p>Example late text</p>');
+    expect($thrown)->toBeInstanceOf(ValidationException::class);
+    Notification::assertNothingSent();
+
+    // (4) A stale save.
+    partnerDescStatus($this->admin, $this->task, 'planned');
+    Notification::fake();
+    $thrown = $attempt($this->partnerA, partnerDescRow($this->task), '<p>Example partner text</p>', UpdateTaskDescription::fingerprint('<p>Some other text</p>'));
+    expect($thrown)->toBeInstanceOf(ValidationException::class);
+    Notification::assertNothingSent();
+
+    // (5) An unchanged save.
+    Notification::fake();
+    $current = partnerDescRow($this->task);
+    $thrown = $attempt($this->partnerA, $current, (string) $current->description);
+    expect($thrown)->toBeNull()
+        ->and(partnerDescEdits($this->task))->toBeEmpty();
+    Notification::assertNothingSent();
+
+    // (6) The Admin calling the Action writes the text and tells nobody.
+    Notification::fake();
+    $thrown = $attempt($this->admin, partnerDescRow($this->task), '<p>Example admin text</p>');
+    expect($thrown)->toBeNull()
+        ->and(partnerDescRow($this->task)->description)->toBe('<p>Example admin text</p>');
+    Notification::assertNothingSent();
+});
+
+it('tells the assignee of the same client and never the author or a Partner of another client', function (): void {
+    $edit = static fn (User $author, Task $task): Task => partnerDescSave($author, $task, '<p>Edited '.Canary::canary('assignee').'</p>');
+
+    // A Partner assignee of the same client hears of an edit by another Partner, with the Partner link.
+    partnerDescAssign($this->admin, $this->task, $this->partnerA2);
+    Notification::fake();
+    $edit($this->partnerA, $this->task);
+
+    Notification::assertCount(2);
+    expect(partnerDescChanges($this->admin))->toHaveCount(1)
+        ->and(partnerDescChanges($this->partnerA2))->toHaveCount(1)
+        ->and(partnerDescChanges($this->partnerA))->toHaveCount(0)
+        ->and(partnerDescChanges($this->partnerB))->toHaveCount(0);
+
+    /** @var TaskChangedNotification $toAdmin */
+    $toAdmin = partnerDescChanges($this->admin)->firstOrFail();
+    /** @var TaskChangedNotification $toAssignee */
+    $toAssignee = partnerDescChanges($this->partnerA2)->firstOrFail();
+
+    expect($toAdmin->recipientIsPartner)->toBeFalse()
+        ->and($toAdmin->url)->toEndWith('/admin/tasks/'.$this->task->reference)
+        ->and($toAssignee->recipientIsPartner)->toBeTrue()
+        ->and($toAssignee->url)->toEndWith('/admin/my-tasks/'.$this->task->reference)
+        ->and($toAssignee->changedLabels)->toBe([__('kokpit.tasks.notifications.changed.description', ['actor' => $this->partnerA->name])])
+        ->and($toAssignee->event)->toBe(NotificationEvent::AssignmentChange);
+
+    // The assignee editing is the author: only the Admin is told, and never the requester.
+    Notification::fake();
+    $edit($this->partnerA2, $this->task);
+
+    Notification::assertCount(1);
+    expect(partnerDescChanges($this->admin))->toHaveCount(1)
+        ->and(partnerDescChanges($this->partnerA2))->toHaveCount(0)
+        ->and(partnerDescChanges($this->partnerA))->toHaveCount(0)
+        ->and(partnerDescChanges($this->partnerB))->toHaveCount(0);
+
+    // A deactivated assignee gets nothing.
+    $this->partnerA2->forceFill(['deactivated_at' => now()])->save();
+    Notification::fake();
+    $edit($this->partnerA, $this->task);
+
+    Notification::assertCount(1);
+    expect(partnerDescChanges($this->admin))->toHaveCount(1)
+        ->and(partnerDescChanges($this->partnerA2))->toHaveCount(0)
+        ->and(partnerDescChanges($this->partnerB))->toHaveCount(0);
+
+    // The Admin as assignee is told exactly once.
+    $this->partnerA2->forceFill(['deactivated_at' => null])->save();
+    partnerDescAssign($this->admin, $this->task, $this->admin);
+    Notification::fake();
+    $edit($this->partnerA, $this->task);
+
+    Notification::assertCount(1);
+    expect(partnerDescChanges($this->admin))->toHaveCount(1)
+        ->and(partnerDescChanges($this->partnerB))->toHaveCount(0);
+});
+
+it('sends no notification when the Admin changes the description on the edit page', function (): void {
+    $this->actingAs($this->admin);
+    Notification::fake();
+    $typed = '<p>Admin '.Canary::canary('editpage').'</p>';
+
+    Livewire::test(EditTask::class, ['record' => $this->task->reference])
+        ->fillForm(['description' => $typed])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect(partnerDescRow($this->task)->description)->toBe(RichText::clean($typed));
+    Notification::assertNothingSent();
+});
+
+it('sends no notification when the Admin saves only the description through UpdateTask', function (): void {
+    $this->actingAs($this->admin);
+    Notification::fake();
+    $typed = '<p>Admin '.Canary::canary('updatetask').'</p>';
+
+    partnerDescSystem(fn (): Task => app(UpdateTask::class)->handle($this->admin, Task::query()->findOrFail($this->task->id), ['description' => $typed]));
+
+    expect(partnerDescRow($this->task)->description)->toBe(RichText::clean($typed));
+    Notification::assertNothingSent();
 });

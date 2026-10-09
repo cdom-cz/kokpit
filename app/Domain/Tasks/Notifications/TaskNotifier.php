@@ -40,7 +40,9 @@ use Illuminate\Support\Str;
  * author; a non-internal Admin comment goes to the Partner requester and
  * assignee; an escalation goes to exactly one person, the assignee or else the
  * Admin; an Admin's change of status, priority or assignee goes to the Partner
- * requester and assignee.
+ * requester and assignee; a Partner's change of a description goes to the Admin
+ * and to the assignee when that is an eligible account other than the author, with
+ * one line that names the Partner and never a word of the description.
  */
 final class TaskNotifier
 {
@@ -208,6 +210,48 @@ final class TaskNotifier
                 actorName: $actor->name,
                 url: $this->url($facts['reference'], partner: true),
                 changedLabels: $labels,
+            ));
+        }
+    }
+
+    /**
+     * A Partner changed the description of a task: the Admin and the assignee (when
+     * that is an eligible account other than the author) are told once, with one
+     * line that names the Partner (D-07, TA-07). Only a Partner's edit notifies; an
+     * Admin changing a description tells nobody. The line holds the actor's name and
+     * nothing of the description, so nothing the Partner wrote can travel in the
+     * message.
+     */
+    public function descriptionChanged(Task $task, User $actor): void
+    {
+        if (! $actor->hasRole(RoleName::Partner->value)) {
+            return;
+        }
+
+        $facts = $this->facts($task->getKey());
+
+        $candidates = [];
+
+        foreach ($this->admins() as $admin) {
+            $candidates[(string) $admin->getKey()] = $admin;
+        }
+
+        $this->addCandidate($candidates, $facts['assignee_id'], $facts);
+        unset($candidates[(string) $actor->getKey()]);
+
+        $line = __('kokpit.tasks.notifications.changed.description', ['actor' => $actor->name]);
+
+        foreach ($candidates as $recipient) {
+            $isPartner = $recipient->hasRole(RoleName::Partner->value);
+
+            $recipient->notify(new TaskChangedNotification(
+                taskReference: $facts['reference'],
+                taskTitle: $facts['title'],
+                projectKey: $facts['project_key'],
+                actorName: $actor->name,
+                url: $this->url($facts['reference'], partner: $isPartner),
+                changedLabels: [$line],
+                recipientIsPartner: $isPartner,
             ));
         }
     }

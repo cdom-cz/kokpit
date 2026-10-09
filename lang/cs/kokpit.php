@@ -649,6 +649,7 @@ return [
                 'status' => 'Stav: :old → :new',
                 'priority' => 'Priorita: :old → :new',
                 'assignee' => 'Řešitel: :old → :new',
+                'description' => 'Popis upraven uživatelem :actor',
                 'empty' => '—',
             ],
         ],
