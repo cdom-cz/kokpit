@@ -29,7 +29,8 @@ final readonly class NotificationPreferences
     }
 
     /**
-     * Keeps only the known events and channels.
+     * Keeps only the known events and channels, and only values that are real booleans:
+     * anything else (a string, a number, null) is dropped and so reads as on.
      *
      * @param  array<array-key, mixed>  $input
      */
@@ -45,8 +46,10 @@ final readonly class NotificationPreferences
             }
 
             foreach (NotificationChannel::cases() as $channel) {
-                if (array_key_exists($channel->value, $row)) {
-                    $values[$event->value][$channel->value] = (bool) $row[$channel->value];
+                $on = $row[$channel->value] ?? null;
+
+                if (is_bool($on)) {
+                    $values[$event->value][$channel->value] = $on;
                 }
             }
         }
