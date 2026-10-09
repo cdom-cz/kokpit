@@ -23,7 +23,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 05 — Tasks and Kanban
+**Current focus:** Phase 06 — Time Tracking
 
 ## Current Position
 
