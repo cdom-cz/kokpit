@@ -15,6 +15,7 @@ Kokpit is released under the GNU Affero General Public License version 3 only, S
 ## Requirements
 
 - Docker and [DDEV](https://ddev.readthedocs.io/) 1.25 or newer. DDEV supplies PHP 8.5, PostgreSQL 18, Redis, RustFS, Mailpit, the queue worker and the scheduler, so nothing else has to be installed on your machine.
+- PostgreSQL 18 with ICU support, because the application sorts Czech names with the ICU collation `cs-CZ-x-icu`. The official PostgreSQL images and the DDEV database have it; a server built without ICU does not, and `kokpit:deploy:verify` then fails the readiness gate on purpose, with no fallback to the default collation (which would sort Czech names wrongly). The remedy is an ICU-enabled PostgreSQL.
 - Contributors also need `lefthook` and `gitleaks` (the pre-commit hook); see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Install
@@ -57,14 +58,14 @@ A deploy starts only from a published release tagged `v*` (never a prerelease) o
     php artisan kokpit:deploy:verify
     php artisan kokpit:storage:check
 
-The first confirms that the database and Redis answer and that no migration is pending; the second proves the private object storage (upload, signed read, refused unsigned read, delete). The manual GitHub and Zerops settings, rollback and the migration rules are in the "Deploy (maintainer, manual)" section of [CONTRIBUTING.md](CONTRIBUTING.md).
+The first confirms that the database and Redis answer, that no migration is pending and that the database server provides the Czech ICU collation `cs-CZ-x-icu`; the second proves the private object storage (upload, signed read, refused unsigned read, delete). The manual GitHub and Zerops settings, rollback and the migration rules are in the "Deploy (maintainer, manual)" section of [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Operations
 
 Two background processes must run next to the web container, or the application degrades without a visible error:
 
 - the queue worker runs every background job. Without it jobs wait in Redis and nothing is processed.
-- the scheduler runs the periodic tasks, among them the heartbeats that the System page reads. Every scheduled task is registered with `->onOneServer()`, so the scheduler may run on several containers and each task still runs once. The lock lives in the cache, so production needs the shared Redis store (`CACHE_STORE=redis`, refused otherwise at boot).
+- the scheduler runs the periodic tasks, among them the heartbeats that the System page reads and, every five minutes, the forgotten-timer notice (a timer that has run longer than `time.long_running_hours` in `config/kokpit.php` (12 hours) puts one notice in the Admin's bell and keeps running). Every scheduled task is registered with `->onOneServer()`, so the scheduler may run on several containers and each task still runs once. The lock lives in the cache, so production needs the shared Redis store (`CACHE_STORE=redis`, refused otherwise at boot).
 
 In DDEV both are daemons that `ddev start` brings up (`ddev exec supervisorctl status` shows them); on Zerops supervisord runs Horizon and the crontab runs `schedule:run` every minute on every container of the `backend` service.
 

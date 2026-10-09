@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Shared\Database\CzechCollation;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -12,8 +13,8 @@ use Illuminate\Support\Str;
  * kokpit:deploy:verify is the readiness gate (D-18). It runs as an init command of
  * every container right after the execOnce migration, and Zerops ends the deploy at
  * the first failing init command, so a pending migration, an unreachable database,
- * an unreachable Redis or a broken session connection keeps the previous version
- * serving. The output names checks and results, never connection details.
+ * an unreachable Redis, a broken session connection or a database server without the
+ * Czech collation keeps the previous version serving. The output names checks and results, never connection details.
  */
 
 /**
@@ -51,12 +52,44 @@ function registerPendingMigration(): string
     return $directory;
 }
 
-it('passes on the migrated database with Redis reachable and prints three ok lines', function (): void {
+it('passes on the migrated database with Redis reachable and prints four ok lines including the collation', function (): void {
     [$exit, $output] = runDeployVerify();
 
     expect($exit)->toBe(0)
-        ->and(substr_count($output, 'v pořádku'))->toBe(3)
+        ->and(substr_count($output, 'v pořádku'))->toBe(4)
+        ->and($output)->toContain('České řazení: v pořádku')
+        ->and($output)->toContain('všechny čtyři kontroly prošly')
         ->and($output)->not->toContain('selhalo');
+});
+
+it('tells a present collation from an absent one', function (): void {
+    expect(CzechCollation::isAvailable())->toBeTrue()
+        ->and(CzechCollation::isAvailable(CzechCollation::NAME))->toBeTrue()
+        ->and(CzechCollation::isAvailable('no-such-collation'))->toBeFalse()
+        ->and(CzechCollation::isAvailable("x' or true --"))->toBeFalse();
+});
+
+it('fails the readiness gate when the Czech collation is missing, without a fallback and without a connection value', function (): void {
+    // The check asks the catalogue for the collation by name. A temporary view named pg_collation, found first on
+    // the search path, stands in for a server whose catalogue lacks the Czech collation.
+    DB::statement('create temporary table pg_collation_probe (collname text)');
+    $original = DB::selectOne('select current_setting(\'search_path\') as path')->path;
+    DB::statement('set search_path to pg_temp, pg_catalog, '.$original);
+    DB::statement('create temporary view pg_collation as select collname from pg_collation_probe');
+
+    try {
+        [$exit, $output] = runDeployVerify();
+    } finally {
+        DB::statement('drop view if exists pg_temp.pg_collation');
+        DB::statement('drop table if exists pg_temp.pg_collation_probe');
+        DB::statement('set search_path to '.$original);
+    }
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('České řazení: selhalo')
+        ->and($output)->toContain(CzechCollation::NAME)
+        ->and($output)->toContain('Databáze: v pořádku')
+        ->and($output)->toContain('Kontrola nasazení selhala');
 });
 
 it('fails and names the number of pending migrations', function (): void {

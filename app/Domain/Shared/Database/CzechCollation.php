@@ -7,6 +7,7 @@ namespace App\Domain\Shared\Database;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Query\Expression;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**
@@ -18,7 +19,9 @@ use InvalidArgumentException;
  * order goes through `orderBy()` here instead of `orderBy('name')`.
  *
  * The collation must exist in the production database; `kokpit:deploy:verify` checks
- * it, and a missing collation makes the query fail loudly rather than sort wrongly.
+ * it through `isAvailable()`, and a missing collation makes the query fail loudly rather
+ * than sort wrongly. There is no fallback to the default collation on purpose: a silent
+ * fallback would sort Czech names wrongly and nobody would notice.
  */
 final class CzechCollation
 {
@@ -51,5 +54,15 @@ final class CzechCollation
         $query->orderBy(new Expression($base->getGrammar()->wrap($column).' COLLATE "'.self::NAME.'"'), $direction); // @phpstan-ignore argument.type
 
         return $query;
+    }
+
+    /**
+     * Whether the database server provides the collation (the readiness check of a deploy).
+     *
+     * The name is bound, never concatenated, so nothing a caller passes reaches the SQL as it is.
+     */
+    public static function isAvailable(?string $name = null): bool
+    {
+        return DB::selectOne('select 1 as present from pg_collation where collname = ?', [$name ?? self::NAME]) !== null;
     }
 }

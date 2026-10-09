@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Database\CzechCollation;
 use Closure;
 use Illuminate\Console\Command;
 use Illuminate\Database\Migrations\Migrator;
@@ -14,7 +15,9 @@ use Throwable;
 
 /**
  * Readiness gate of a deploy (D-18): exits 0 only when the database answers,
- * no migration is pending and Redis answers.
+ * no migration is pending, Redis answers and the database server provides the
+ * Czech collation (a server without ICU would sort Czech names wrongly, so it
+ * never goes live; there is no fallback to the default collation).
  *
  * It runs as an init command of every container, right after the execOnce
  * migration. Zerops ends the deploy at the first failing init command, so a
@@ -30,7 +33,7 @@ class DeployVerifyCommand extends Command
 {
     protected $signature = 'kokpit:deploy:verify';
 
-    protected $description = 'Check that the database and Redis answer and that no migration is pending (readiness gate of a deploy)';
+    protected $description = 'Check that the database and Redis answer, that no migration is pending and that the Czech collation exists (readiness gate of a deploy)';
 
     public function handle(): int
     {
@@ -51,6 +54,7 @@ class DeployVerifyCommand extends Command
             }),
             $this->check('migrations', fn (): ?string => $this->pendingMigrations()),
             $this->check('redis', fn (): ?string => $this->pingRedis()),
+            $this->check('collation', fn (): ?string => $this->czechCollation()),
         ];
 
         if (in_array(false, $results, true)) {
@@ -123,6 +127,15 @@ class DeployVerifyCommand extends Command
         $pending = count(array_diff($files, $ran));
 
         return $pending === 0 ? null : (string) __('kokpit.deploy_verify.pending', ['count' => $pending]);
+    }
+
+    /**
+     * Fails when the database server has no Czech ICU collation. The reason names the
+     * collation, a fixed constant, and no connection value.
+     */
+    private function czechCollation(): ?string
+    {
+        return CzechCollation::isAvailable() ? null : (string) __('kokpit.deploy_verify.collation_missing', ['collation' => CzechCollation::NAME]);
     }
 
     /**
