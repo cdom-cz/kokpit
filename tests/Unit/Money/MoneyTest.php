@@ -108,6 +108,26 @@ it('rejects a rate with a decimal comma, too many digits or a float', function (
     'spaces' => [' 24.405 '],
 ])->throws(InvalidArgumentException::class);
 
+it('rejects a zero, negative or non-finite rate', function (string $rate) {
+    Money::ofMinor(10000, 'EUR')->convert($rate, 'CZK');
+})->with([
+    'zero' => ['0'],
+    'zero with fraction' => ['0.0000000000'],
+    'negative zero' => ['-0'],
+    'negative' => ['-24.405'],
+    'negative small' => ['-0.0000000001'],
+    'explicit plus' => ['+24.405'],
+    'infinity' => ['INF'],
+    'not a number' => ['NAN'],
+])->throws(InvalidArgumentException::class, 'positive');
+
+it('accepts the smallest positive rate', function () {
+    $converted = Money::ofMinor(100000000000, 'EUR')->convert('0.0000000001', 'CZK');
+
+    expect($converted->minor)->toBe(10)
+        ->and($converted->currency)->toBe('CZK');
+});
+
 it('rejects a float rate', function () {
     Money::ofMinor(10000, 'EUR')->convert(24.405, 'CZK');
 })->throws(TypeError::class);
@@ -167,3 +187,84 @@ it('serialises to minor units and currency without a float', function () {
     expect($json)->toBe(['minor' => 123450, 'currency' => 'CZK'])
         ->and(json_encode(Money::ofMinor(5, 'EUR')))->toBe('{"minor":5,"currency":"EUR"}');
 });
+
+it('parses a typed amount in major units into minor units without rounding', function (string $typed, string $currency, int $minor) {
+    expect(Money::fromMajor($typed, $currency)->equals(Money::ofMinor($minor, $currency)))->toBeTrue();
+})->with([
+    'decimal comma' => ['1250,50', 'CZK', 125050],
+    'decimal point' => ['1250.50', 'CZK', 125050],
+    'one fraction digit is padded' => ['1250.5', 'CZK', 125050],
+    'whole amount' => ['3', 'CZK', 300],
+    'zero' => ['0', 'EUR', 0],
+    'negative whole amount' => ['-3', 'CZK', -300],
+    'trailing zero beyond the minor unit stays exact' => ['1.500', 'CZK', 150],
+    'surrounding spaces are trimmed' => [' 12,5 ', 'EUR', 1250],
+    'currency without fraction' => ['1500', 'JPY', 1500],
+]);
+
+it('refuses a typed amount instead of rounding it', function (string $typed, string $currency) {
+    Money::fromMajor($typed, $currency);
+})->with([
+    'excess decimals' => ['12,345', 'CZK'],
+    'excess decimals with a point' => ['0.001', 'EUR'],
+    'any fraction on a currency without fraction' => ['10.5', 'JPY'],
+    'grouping space' => ['1 250', 'CZK'],
+    'grouping comma and point' => ['1,250.50', 'CZK'],
+    'empty' => ['', 'CZK'],
+    'blank' => ['   ', 'CZK'],
+    'not a number' => ['abc', 'CZK'],
+    'exponent' => ['1e3', 'CZK'],
+    'plus sign' => ['+5', 'CZK'],
+    'unknown currency' => ['10', 'XYZ'],
+    'lower case currency' => ['10', 'czk'],
+])->throws(InvalidArgumentException::class);
+
+it('refuses a typed amount that does not fit into an integer of minor units', function () {
+    Money::fromMajor('99999999999999999999', 'CZK');
+})->throws(OverflowException::class);
+
+it('prints the amount in major units with a point and the currency fraction digits', function (Money $amount, string $expected) {
+    expect($amount->toMajor())->toBe($expected);
+})->with([
+    'two fraction digits' => [fn () => Money::ofMinor(125050, 'CZK'), '1250.50'],
+    'negative' => [fn () => Money::ofMinor(-300, 'CZK'), '-3.00'],
+    'below one unit' => [fn () => Money::ofMinor(5, 'EUR'), '0.05'],
+    'zero' => [fn () => Money::zero('CZK'), '0.00'],
+    'currency without fraction' => [fn () => Money::ofMinor(1500, 'JPY'), '1500'],
+]);
+
+it('reads back what it prints', function (int $minor, string $currency) {
+    $amount = Money::ofMinor($minor, $currency);
+
+    expect(Money::fromMajor($amount->toMajor(), $currency)->equals($amount))->toBeTrue();
+})->with([
+    [0, 'CZK'],
+    [1, 'CZK'],
+    [125050, 'CZK'],
+    [-98765, 'EUR'],
+    [1500, 'JPY'],
+]);
+
+it('lists the ISO currency codes sorted and unique', function () {
+    $codes = Money::isoCurrencyCodes();
+
+    expect($codes)->toContain('CZK', 'EUR', 'USD')
+        ->and($codes)->toBe(array_values(array_unique($codes)))
+        ->and($codes)->toBe((function (array $copy): array {
+            sort($copy);
+
+            return $copy;
+        })($codes));
+});
+
+it('knows exactly the upper-case ISO codes', function () {
+    expect(Money::isKnownCurrency('CZK'))->toBeTrue()
+        ->and(Money::isKnownCurrency('czk'))->toBeFalse()
+        ->and(Money::isKnownCurrency('XYZ'))->toBeFalse()
+        ->and(Money::isKnownCurrency(''))->toBeFalse()
+        ->and(Money::isKnownCurrency('CZKK'))->toBeFalse();
+});
+
+it('refuses 12,345 CZK because a third decimal would need rounding', function () {
+    Money::fromMajor('12,345', 'CZK');
+})->throws(InvalidArgumentException::class, 'more decimals');

@@ -30,6 +30,7 @@ final class PgSchema
         'failed_jobs.id' => 'framework failed-job store keys rows by its uuid column',
         'sessions.id' => 'opaque session string; sessions.user_id is still checked',
         'password_reset_tokens.email' => 'framework table keyed by e-mail',
+        'tasks.parent_depth' => 'generated depth discriminator (0 for a subtask) in the composite parent key, not an identifier',
     ];
 
     /**

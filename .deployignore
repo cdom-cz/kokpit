@@ -1,0 +1,12 @@
+.DS_Store
+/.ddev
+/.github
+/.gitattributes
+/node_modules
+/.env
+/.env.example
+/.planning
+/lefthook.yml
+/README.cs.md
+/README.md
+CLAUDE.md

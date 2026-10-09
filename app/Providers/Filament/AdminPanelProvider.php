@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Domain\Shared\Auth\PartnerContext;
+use App\Filament\Auth\EditProfile;
+use App\Filament\Pages\Auth\AcceptInvitation;
+use App\Filament\Pages\Auth\RequestPasswordReset;
 use App\Filament\Pages\Dashboard;
 use App\Http\Middleware\EnsureAdminHasTwoFactor;
+use App\Http\Middleware\SetNoReferrerPolicy;
 use App\Support\InitialsAvatarProvider;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
@@ -15,11 +20,14 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Route;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Tests\Support\Filament\CanaryRecordResource;
 
@@ -46,23 +54,68 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
-            ->profile()
+            // Our own subclass adds the notification switches (D-15). It lives outside
+            // app/Filament/Pages so that page discovery does not register it a second time.
+            ->profile(EditProfile::class)
+            // The reset link the Admin sends from the client detail (US-02, D-04) opens Filament's
+            // signed reset page, and passwordReset() is what registers it. It also registers the
+            // public "forgot password" page, which is our own subclass that answers every address
+            // the same way and mails only an active account. The reset password rule is in
+            // AppServiceProvider.
+            ->passwordReset(RequestPasswordReset::class)
+            // The invitation link (US-02): a guest page on a signed route, named
+            // filament.admin.invitation.accept. It has no path parameters; the invitation id and the
+            // token travel as query parameters under the signature. The page is not registered as a
+            // panel page and does not enable registration. The no-referrer header goes first, so the
+            // 403 of a bad signature and the 429 of the limiter carry it as well; `signed` stays ahead
+            // of the limiter, so an unsigned request answers 403 before it is counted.
+            ->routes(fn () => Route::get('/invitation', AcceptInvitation::class)
+                ->middleware([SetNoReferrerPolicy::class, 'signed', 'throttle:invitation'])
+                ->name('invitation.accept'))
             ->spa()
+            // The bell shows the Admin alerts of failed background jobs (D-11) and the task
+            // notifications of both sides (D-07). Every signed-in account has one, and Filament
+            // lists only the notifications of the signed-in user, so nobody reads another
+            // account's bell. The condition is evaluated per request.
+            ->databaseNotifications(static fn (): bool => app(PartnerContext::class)->user() !== null)
+            ->databaseNotificationsPolling('30s')
             // A Resource without a policy method throws instead of being allowed (D-03). Pages and
             // widgets are covered by #[AccessRule], which strict authorization does not reach.
             ->strictAuthorization()
-            // Global search is a Partner leakage surface; it comes back per resource together with
-            // an explicit rule (UI-SPEC A-6).
-            ->globalSearch(false)
+            // Global search is a Partner leakage surface, so it is opt-in per resource: only a
+            // resource that declares $isGloballySearchable on its own class is searchable, and a
+            // resource that inherits the default is not. TaskResource is the only one (an
+            // Admin-only resource, found by KEY-N or title). A Partner sees no result at all,
+            // because every searchable resource is closed to Partners (UI-SPEC A-6).
+            ->globalSearch()
+            ->globalSearchResourceOptIn()
             // Built-in TOTP with one-time recovery codes (D-07). Enforcement is per request in
             // the middleware below, because Filament evaluates isRequired once at route build.
             ->multiFactorAuthentication([AppAuthentication::make()->recoverable()], isRequired: true)
             ->multiFactorAuthenticationRequiredMiddlewareName(EnsureAdminHasTwoFactor::class)
             ->defaultAvatarProvider(InitialsAvatarProvider::class)
+            // The timer in the persisted end region of the top bar, directly before the bell (D-01).
+            // The hook closure runs on every render of the page, so a Partner's page renders nothing
+            // of it; the component refuses a forged request on its own as well (RequiresAdmin).
+            ->renderHook(
+                PanelsRenderHook::GLOBAL_SEARCH_AFTER,
+                static fn (): string => app(PartnerContext::class)->isAdmin()
+                    ? Blade::render('@livewire(\App\Livewire\TimeTracking\TimerBar::class)')
+                    : '',
+            )
+            // The side panel "Poslední záznamy" at the end of the layout row, next to the page
+            // content (D-08). Same guard as the bar: nothing is rendered for a Partner.
+            ->renderHook(
+                PanelsRenderHook::LAYOUT_END,
+                static fn (): string => app(PartnerContext::class)->isAdmin()
+                    ? Blade::render('@livewire(\App\Livewire\TimeTracking\RecentEntriesPanel::class)')
+                    : '',
+            )
             ->colors([
                 'primary' => Color::Amber,
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
+            ->discoverResources(in: app_path('Filament/Partner/Resources'), for: 'App\Filament\Partner\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([
                 Dashboard::class,

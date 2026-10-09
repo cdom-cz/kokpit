@@ -47,7 +47,10 @@ return [
             'port' => env('MAIL_PORT', 2525),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
-            'timeout' => null,
+            // Socket timeout in seconds for the connection and every read. Bounded on purpose: the Admin alert
+            // for a failed job is sent synchronously inside the queue worker and must stay far below the job
+            // timeout (60 s). The Symfony default would be 60 s per recipient.
+            'timeout' => (int) env('MAIL_TIMEOUT', 10),
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 

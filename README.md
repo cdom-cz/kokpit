@@ -15,6 +15,7 @@ Kokpit is released under the GNU Affero General Public License version 3 only, S
 ## Requirements
 
 - Docker and [DDEV](https://ddev.readthedocs.io/) 1.25 or newer. DDEV supplies PHP 8.5, PostgreSQL 18, Redis, RustFS, Mailpit, the queue worker and the scheduler, so nothing else has to be installed on your machine.
+- PostgreSQL 18 with ICU support, because the application sorts Czech names with the ICU collation `cs-CZ-x-icu`. The official PostgreSQL images and the DDEV database have it; a server built without ICU does not, and `kokpit:deploy:verify` then fails the readiness gate on purpose, with no fallback to the default collation (which would sort Czech names wrongly). The remedy is an ICU-enabled PostgreSQL.
 - Contributors also need `lefthook` and `gitleaks` (the pre-commit hook); see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Install
@@ -46,7 +47,41 @@ Open the panel URL, sign in as the Admin and set up an authenticator app (TOTP) 
 
 - Lost device or lost recovery codes: run `ddev artisan kokpit:admin:reset-2fa <e-mail>` (without DDEV: `php artisan kokpit:admin:reset-2fa <e-mail>`). It clears the stored TOTP secret and recovery codes of that user, after a confirmation (`--force` skips it), and the user sets two-factor authentication up again at the next sign-in. It needs shell access to the server; there is deliberately no web equivalent.
 - After an `APP_KEY` rotation the stored TOTP secrets can no longer be decrypted. Keep the previous key in `APP_PREVIOUS_KEYS` (a comma-separated list in `.env`) so they stay readable, or reset the two-factor authentication with the command above.
-- There is no password recovery path for the Admin yet. Keep access to the server shell.
+- Forgotten password: the sign-in page links to "forgot password" (`/admin/password-reset/request`), which works for the Admin as well as for a Partner. It always shows the same notice, whether or not the address has an account, and mails a link only to an account that can sign in. After the reset the Admin still has to pass two-factor authentication, so a lost device is handled with the command above. The new password has at least 12 characters.
+
+## Deploy
+
+Production runs on Zerops as one service, `backend`, built from the single setup in `zerops.yml`: nginx and PHP-FPM serve the panel, supervisord runs the Horizon queue worker (`supervisor-horizon.ini`) and a crontab runs the scheduler every minute, next to PostgreSQL, Valkey (Redis) and private object storage. Nothing in the repository holds a secret or an environment value: every environment variable is set in the Zerops UI, and the access token lives in the GitHub `production` environment.
+
+A deploy starts only from a published release tagged `v*` (never a prerelease) or from a manual run of the `Deploy` workflow, and it waits for the approval of the `production` environment. The database is migrated once per deploy through `zsc execOnce`, then every container runs `php artisan kokpit:deploy:verify`, and a failed migration or a failed check ends the deploy before traffic switches, with the previous version still serving. Horizon is started by the last init command on every container start, only after both passed, and supervisord autostart brings it back after a restart. The build installs the PHP dependencies only (there is no frontend build yet). Two commands check a running instance from its shell:
+
+    php artisan kokpit:deploy:verify
+    php artisan kokpit:storage:check
+
+The first confirms that the database and Redis answer, that no migration is pending and that the database server provides the Czech ICU collation `cs-CZ-x-icu`; the second proves the private object storage (upload, signed read, refused unsigned read, delete). The manual GitHub and Zerops settings, rollback and the migration rules are in the "Deploy (maintainer, manual)" section of [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Operations
+
+Two background processes must run next to the web container, or the application degrades without a visible error:
+
+- the queue worker runs every background job. Without it jobs wait in Redis and nothing is processed.
+- the scheduler runs the periodic tasks, among them the heartbeats that the System page reads and, every five minutes, the forgotten-timer notice (a timer that has run longer than `time.long_running_hours` in `config/kokpit.php` (12 hours) puts one notice in the Admin's bell and keeps running). Every scheduled task is registered with `->onOneServer()`, so the scheduler may run on several containers and each task still runs once. The lock lives in the cache, so production needs the shared Redis store (`CACHE_STORE=redis`, refused otherwise at boot).
+
+In DDEV both are daemons that `ddev start` brings up (`ddev exec supervisorctl status` shows them); on Zerops supervisord runs Horizon and the crontab runs `schedule:run` every minute on every container of the `backend` service.
+
+The queue worker is Laravel Horizon (`php artisan horizon`). Its dashboard is at `/horizon` (`https://kokpit.ddev.site/horizon` in DDEV). Only the Admin may open it, and while two-factor enforcement is on only after setting up 2FA; a Partner or a guest gets 403. In DDEV the `queue-worker` daemon runs Horizon; after changing job code, run `ddev artisan horizon:terminate` and the daemon starts it again on the new code. The scheduler takes a metrics snapshot every five minutes, and `HORIZON_MAX_PROCESSES` caps the worker processes per container (default 3, 2 in DDEV).
+
+The Admin finds the state of both on the System page (menu "Systém", `/admin/system`, `https://kokpit.ddev.site/admin/system` in DDEV). It lists the failed jobs, the age of the oldest waiting job and the scheduler heartbeat as OK, Warning or Error, and refreshes itself every 30 seconds. A Partner cannot open it.
+
+When a background job fails for good, the Admin gets an alert by e-mail and in the bell of the panel. The e-mail needs working mail settings (the `MAIL_*` values in `.env`; DDEV delivers to Mailpit, a production instance needs a real mail service). The bell works without mail, so with broken mail settings the failure is still visible in the panel, and the System page shows it too.
+
+Invitations to a client (Partner) account and password reset links are e-mails sent through the queue, after the database transaction commits. They need working mail settings (the `MAIL_*` values in `.env`) and a running queue worker; in DDEV they arrive in Mailpit (`ddev launch -m`). If the mail settings are wrong or the worker is stopped, the invitation is created but the e-mail is not delivered, and the Admin can resend it from the client's "Pozvánky" tab.
+
+Task notifications reach the Admin and the Partners by e-mail and in the bell: a new task or comment from a Partner, a Partner's edit of a task description (announced without its text), an escalation, a comment from the Admin and a change of status, priority or assignee. The e-mails go through the queue, after the database transaction commits, so they need working mail settings (the `MAIL_*` values in `.env`) and a running queue worker, as for invitations; in DDEV they arrive in Mailpit (`ddev launch -m`). The bell entries are written by the same queued job, so a stopped worker delays both. Every user switches each event and channel (e-mail, bell) on or off on the own profile page ("Upozornění"); a switch can only reduce what is sent. An internal comment is never announced to a Partner.
+
+To prove that the private object storage works from the current configuration, run the storage check. It writes a throwaway object, reads it through a temporary URL, confirms that an unsigned read is refused, deletes the object and prints the result of each step:
+
+    ddev artisan kokpit:storage:check
 
 ## Language and time
 

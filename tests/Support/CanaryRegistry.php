@@ -4,11 +4,29 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Models\ClientInvitation;
+use App\Domain\Clients\Models\Contact;
+use App\Domain\Projects\Enums\BillingType;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
+use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
+use App\Domain\Shared\Money\Money;
+use App\Domain\Shared\Tags\TagType;
+use App\Domain\Tasks\Actions\AddTaskComment;
+use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Enums\TaskBillingType;
+use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskBilling;
+use App\Domain\Tasks\Models\TaskChecklistItem;
+use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Domain\TimeTracking\Support\TimerClock;
 use Closure;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\Probes\PackageProbe;
@@ -31,7 +49,7 @@ final class CanaryRegistry
 
     /**
      * Creates what the fixtures need inside the test transaction: the canary
-     * table, a fake media disk and the probe host for media, tags and activity.
+     * table, a fake media disk and the probe host for media and activity.
      * Pair every call with cleanup() in afterEach.
      */
     public static function prepare(): void
@@ -59,6 +77,138 @@ final class CanaryRegistry
                 Canary::record($clientId, $canary);
             },
 
+            // The client id is the identity every other fixture hangs off, so the
+            // fixture writes the canary into the name of the existing client row.
+            Client::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    Client::query()->whereKey($clientId)->firstOrFail()->forceFill(['name' => $canary])->save();
+                });
+            },
+
+            // The canary is the name of the contact, so a Partner reading any contact
+            // field would be caught; the e-mail is a fictional example.com address.
+            Contact::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $client = Client::query()->whereKey($clientId)->firstOrFail();
+
+                    $client->contacts()->create(['name' => $canary, 'email' => exampleEmail(), 'is_billing' => true]);
+                });
+            },
+
+            // The canary is the invitee's name, so a Partner reading any invitation
+            // field would be caught. The token hash is that of a random token.
+            ClientInvitation::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $invitation = new ClientInvitation(['name' => $canary, 'email' => exampleEmail()]);
+                    $invitation->forceFill([
+                        'client_id' => $clientId,
+                        'token_hash' => hash('sha256', bin2hex(random_bytes(32))),
+                        'expires_at' => now()->addDays(7),
+                        'last_sent_at' => now(),
+                    ])->save();
+                });
+            },
+
+            // One client-visible project per client, directly after the Client
+            // fixture so later fixtures (tags, project billing) can find it.
+            Project::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = new Project(['name' => $canary, 'key' => Canary::projectKey(), 'client_visible' => true]);
+                    $project->forceFill(['client_id' => $clientId])->save();
+                });
+            },
+
+            // The Admin-only billing row of the canary project of that client (found
+            // by name; the Project fixture runs before this one). The canary sits in
+            // the internal note, so a Partner reading it would be caught.
+            ProjectBilling::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $client = Client::query()->whereKey($clientId)->firstOrFail();
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+
+                    $project->billing()->create([
+                        'billing_type' => BillingType::Hourly,
+                        'hourly_rate' => Money::ofMinor(85000, $client->currency),
+                        'internal_note' => $canary,
+                    ]);
+                });
+            },
+
+            // One task in the canary project of that client (found by name; the Project
+            // fixture runs before this one), created through the real Action by an
+            // Admin. The canary is the title, so a Partner reading it would be caught.
+            Task::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+
+                    app(CreateTask::class)->handle(Canary::admin(), $project, ['title' => $canary]);
+                });
+            },
+
+            // One checklist item on the canary task of that client (found by its project
+            // name; the Task fixture runs before this one). The canary is the item text,
+            // so a Partner reading it would be caught.
+            TaskChecklistItem::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+                    $task = Task::query()->where('project_id', $project->getKey())->firstOrFail();
+
+                    $task->checklistItems()->create(['text' => $canary, 'position' => 1]);
+                });
+            },
+
+            // The Admin-only billing row of the canary task of that client (found by its
+            // project name; the Task fixture runs before this one). The canary sits in the
+            // internal note, so a Partner reading any billing field would be caught.
+            TaskBilling::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $client = Client::query()->whereKey($clientId)->firstOrFail();
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+                    $task = Task::query()->where('project_id', $project->getKey())->firstOrFail();
+
+                    $task->billing()->create([
+                        'billing_type' => TaskBillingType::Hourly,
+                        'hourly_rate' => Money::ofMinor(95000, $client->currency),
+                        'internal_note' => $canary,
+                    ]);
+                });
+            },
+
+            // Two comments on the canary task of that client (found by its project name; the
+            // Task fixture runs before this one): a visible one and an internal twin, both
+            // carrying the canary. A Partner must read exactly the visible one, so the
+            // exact-one-row check fails if the internal comment is ever returned.
+            TaskComment::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+                    $task = Task::query()->where('project_id', $project->getKey())->firstOrFail();
+                    $admin = Canary::admin();
+
+                    app(AddTaskComment::class)->handle($admin, $task, '<p>'.$canary.'</p>');
+                    app(AddTaskComment::class)->handle($admin, $task, '<p>'.$canary.'</p>', internal: true);
+                });
+            },
+
+            // One finished time entry of the Admin on the canary project and canary task of
+            // that client (found by the project name; the Task fixture runs before this
+            // one). The canary is the description, so a Partner reading any entry would be
+            // caught: measured time is closed to Partners.
+            TimeEntry::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+                    $task = Task::query()->where('project_id', $project->getKey())->firstOrFail();
+
+                    (new TimeEntry(['description' => $canary]))->forceFill([
+                        'user_id' => Canary::admin()->getKey(),
+                        'client_id' => $clientId,
+                        'project_id' => $project->getKey(),
+                        'task_id' => $task->getKey(),
+                        'started_at' => TimerClock::now()->subHours(2),
+                        'ended_at' => TimerClock::now()->subHour(),
+                    ])->save();
+                });
+            },
+
             Media::class => static function (string $clientId, string $canary): void {
                 app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
                     self::host()
@@ -70,9 +220,14 @@ final class CanaryRegistry
                 });
             },
 
+            // A project-type tag carrying the canary, attached to the canary
+            // Project of that client (found by name; the Project fixture runs
+            // before this one). A Partner sees exactly this tag of the own client
+            // (D-07) and none of the other client's.
             Tag::class => static function (string $clientId, string $canary): void {
-                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
-                    self::host()->attachTag($canary);
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+                    $project->attachTag($canary, TagType::Project->value);
                 });
             },
 
@@ -91,6 +246,16 @@ final class CanaryRegistry
                         'name' => 'default',
                         'url' => 'https://'.implode('.', ['example', 'com']).'/hook',
                         'payload' => ['client_id' => $clientId, 'note' => $canary],
+                    ]);
+                });
+            },
+
+            SettingsProperty::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    SettingsProperty::query()->create([
+                        'group' => 'canary',
+                        'name' => $canary,
+                        'payload' => json_encode(['client_id' => $clientId, 'note' => $canary], JSON_THROW_ON_ERROR),
                     ]);
                 });
             },

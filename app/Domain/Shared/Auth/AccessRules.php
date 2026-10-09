@@ -47,6 +47,7 @@ final class AccessRules
         return match ($rule->audience) {
             Audience::AdminOnly => $context->isAdmin(),
             Audience::PartnerAllowed => $context->isAdmin() || $context->partnerClientId() !== null,
+            Audience::Guest => false,
         };
     }
 }

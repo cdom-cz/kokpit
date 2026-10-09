@@ -135,6 +135,24 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      # S3-compatible object storage for the s3 Pest group (php artisan kokpit:storage:check). The image tag is
+      # kept equal to .ddev/docker-compose.rustfs.yaml, and the key pair equals AWS_ACCESS_KEY_ID and
+      # AWS_SECRET_ACCESS_KEY of .env.example (tests/Feature/Repo/CiParityTest.php). It is the publicly documented
+      # RustFS development default, valid only for this job's throwaway container. The tests create their own bucket.
+      rustfs:
+        image: rustfs/rustfs:1.0.1
+        env:
+          RUSTFS_ACCESS_KEY: rustfsadmin
+          RUSTFS_SECRET_KEY: rustfsadmin
+          RUSTFS_ADDRESS: ":9000"
+          RUSTFS_VOLUMES: /data
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl --fail http://localhost:9000/health || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       DB_CONNECTION: pgsql
       DB_HOST: 127.0.0.1
@@ -143,6 +161,7 @@ jobs:
       DB_USERNAME: kokpit
       DB_PASSWORD: kokpit-ci-only
       REDIS_HOST: 127.0.0.1
+      AWS_ENDPOINT: http://127.0.0.1:9000
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -156,7 +175,11 @@ jobs:
           extensions: intl, bcmath, pdo_pgsql, gd, exif, zip, sodium, mbstring, redis
           coverage: none
 
+      # A fresh checkout has no .env, so APP_ENV would default to production and the production guard would fail
+      # `artisan package:discover` in the post-autoload-dump script. CI is not production.
       - name: Install Composer dependencies
+        env:
+          APP_ENV: testing
         run: composer install --prefer-dist --no-progress --no-interaction
 
       # The Admin password is created inside this step and never echoed; it is valid only in this job's
@@ -179,6 +202,10 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+    # A fresh checkout has no .env, so APP_ENV would default to production and the production guard would fail
+    # `artisan package:discover` (Composer post-autoload-dump) and the Larastan bootstrap. CI is not production.
+    env:
+      APP_ENV: testing
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

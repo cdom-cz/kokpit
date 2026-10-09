@@ -4,12 +4,28 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Models\ClientInvitation;
+use App\Domain\Clients\Models\Contact;
+use App\Domain\Identity\Models\User;
+use App\Domain\Identity\Policies\UserPolicy;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Projects\Models\ProjectBilling;
+use App\Domain\Projects\Policies\ProjectPolicy;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
+use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Shared\Policies\AdminOnlyPolicy;
+use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskBilling;
+use App\Domain\Tasks\Models\TaskChecklistItem;
+use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\Tasks\Policies\TaskCommentPolicy;
+use App\Domain\Tasks\Policies\TaskPolicy;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -31,8 +47,41 @@ final class AccessServiceProvider extends ServiceProvider
     {
         // The package models have no policy attribute of their own: Phase 2 closes
         // them to Partners. Later phases replace the registration deliberately.
-        foreach ([Media::class, Tag::class, Activity::class, WebhookCall::class] as $model) {
+        foreach ([Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class] as $model) {
             Gate::policy($model, AdminOnlyPolicy::class);
         }
+
+        // Clients are Admin-only (Phase 4 D-06): a Partner is granted nothing.
+        Gate::policy(Client::class, AdminOnlyPolicy::class);
+
+        // Contacts are personal data of the client's people, Admin-only (D-06).
+        Gate::policy(Contact::class, AdminOnlyPolicy::class);
+
+        // Partner invitations carry the invitee's e-mail and a token hash, Admin-only (US-02).
+        Gate::policy(ClientInvitation::class, AdminOnlyPolicy::class);
+
+        // Accounts are managed by the Admin only, from the client detail (US-02, D-04).
+        Gate::policy(User::class, UserPolicy::class);
+
+        // Projects are the only Partner-readable model of Phase 4: explicit grants
+        // for the own client-visible projects, everything else stays denied.
+        Gate::policy(Project::class, ProjectPolicy::class);
+
+        // Billing terms (rates, prices, estimate, internal note) are Admin-only (D-05).
+        Gate::policy(ProjectBilling::class, AdminOnlyPolicy::class);
+
+        // Tasks are Partner-readable through their project; explicit grants only.
+        Gate::policy(Task::class, TaskPolicy::class);
+
+        // The private todo checklist of a task is the Admin's working note (TA-03, A1).
+        Gate::policy(TaskChecklistItem::class, AdminOnlyPolicy::class);
+        Gate::policy(TaskBilling::class, AdminOnlyPolicy::class);
+
+        // Comments: a Partner reads the non-internal comments of the visible tasks and
+        // writes new ones; nobody edits or deletes a comment (TA-04, D-08, A6).
+        Gate::policy(TaskComment::class, TaskCommentPolicy::class);
+
+        // Tracked time, its rates and its billing are Admin-only (TI-07): a Partner is granted nothing.
+        Gate::policy(TimeEntry::class, AdminOnlyPolicy::class);
     }
 }

@@ -1,0 +1,54 @@
+zerops:
+  - setup: backend
+    build:
+      base:
+        - alpine/php@8.5
+      os: alpine
+      buildCommands:
+        - composer install --optimize-autoloader --no-dev --ignore-platform-reqs
+      deployFiles: ./
+      cache:
+        - vendor
+        - composer.lock
+    run:
+      base: alpine/php-nginx@8.5
+      os: alpine
+      siteConfigPath: site.conf.tmpl
+      prepareCommands:
+        - sudo apk update
+        - sudo apk add --no-cache supervisor
+        - sudo rc-update add supervisord default
+        - sudo mkdir -p /etc/supervisor.d
+        - sudo mkdir -p /var/log/supervisor
+        - sudo rc-service supervisord start
+        - sudo rc-service supervisord status
+        - sudo supervisorctl status
+      initCommands:
+        - php artisan optimize:clear
+        - php artisan optimize
+        - php artisan icons:cache
+        - sudo -E -u zerops -- zsc execOnce ${appVersionId} -- php artisan migrate --force
+        # Zerops stops the deploy at the first failing initCommand, so a failed migration
+        # (execOnce) or a failed verify (pending migration, unreachable database or Redis)
+        # ends the deploy before traffic is switched. The verify runs on every container,
+        # deliberately without execOnce.
+        - php artisan kokpit:deploy:verify
+        - php artisan filament:optimize
+        # Runs per container, deliberately WITHOUT execOnce: horizon:terminate only
+        # signals Horizon masters on the same hostname, so an execOnce run on one
+        # container could never reach the masters of the other containers. On a
+        # fresh container it is a no-op; if a container is ever reused in place it
+        # gracefully restarts the old-code master.
+        - php artisan horizon:terminate
+        - sudo cp supervisor-horizon.ini /etc/supervisor.d/
+        # Clean up the pre-Horizon worker program if the container is reused.
+        - sudo rm -f /etc/supervisor.d/supervisor-laravel.ini
+        - sudo supervisorctl reread
+        - sudo supervisorctl update
+        - sudo supervisorctl start horizon
+
+      crontab:
+        - command: "php artisan schedule:run"
+          timing: "* * * * *"
+          workingDir: /var/www
+          allContainers: true

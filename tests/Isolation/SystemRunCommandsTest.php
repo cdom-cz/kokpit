@@ -47,6 +47,18 @@ it('creates the Admin inside the system context', function (): void {
         ->and(app(PartnerContext::class)->isSystem())->toBeFalse();
 });
 
+it('reads the migrations table of the deploy check inside the system context', function (): void {
+    $flags = recordSystemFlagAt('/from "migrations"/');
+
+    $this->artisan('kokpit:deploy:verify')->assertExitCode(0);
+
+    $seen = $flags();
+
+    expect($seen)->not->toBe([])
+        ->and(array_unique($seen))->toBe([true])
+        ->and(app(PartnerContext::class)->isSystem())->toBeFalse();
+});
+
 it('resets two-factor authentication inside the system context', function (): void {
     $user = Canary::admin();
     $flags = recordSystemFlagAt('/^(select .* from "users"|update "users")/');

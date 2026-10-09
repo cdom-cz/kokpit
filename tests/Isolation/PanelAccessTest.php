@@ -9,18 +9,25 @@ use Filament\Facades\Filament;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
+use Livewire\Livewire;
 use Symfony\Component\Process\Process;
 use Tests\Support\Canary;
 use Tests\Support\CanaryRecord;
 use Tests\Support\Filament\CanaryRecordResource;
 use Tests\Support\Filament\CanaryRecordResource\Pages\ListCanaryRecords;
+use Tests\Support\Filament\Fixtures\AccessOverrideMountProbePage;
 use Tests\Support\Filament\Fixtures\AdminOnlyRelationManager;
 use Tests\Support\Filament\Fixtures\AdminOnlyWidget;
+use Tests\Support\Filament\Fixtures\GuestSimplePageFixture;
+use Tests\Support\Filament\Fixtures\MountProbePage;
 use Tests\Support\Filament\Fixtures\PartnerAllowedWidget;
 use Tests\Support\Filament\Fixtures\PolicyDeniedRelationManager;
 use Tests\Support\Filament\Fixtures\PolicyDeniedResource;
 use Tests\Support\Filament\Fixtures\UndeclaredCanaryRecordResource;
 use Tests\Support\Filament\Fixtures\UndeclaredPage;
+use Tests\Support\Filament\Fixtures\VisibleOverrideHistoryRelationManager;
+use Tests\Support\Filament\Fixtures\VisibleOverrideWidget;
+use Tests\Support\Probes\ActivityProbe;
 
 /**
  * One user per state of the access matrix.
@@ -80,11 +87,14 @@ it('replaces the stock dashboard and its widgets', function (): void {
         ->assertDontSee('fi-wi-filament-info', false);
 });
 
-it('runs the panel with strict authorization and without global search', function (): void {
+it('runs the panel with strict authorization and global search as a per-resource opt-in', function (): void {
     $panel = Filament::getPanel('admin');
 
+    // Global search is a Partner leakage surface: the panel switch is on, but a resource is
+    // searchable only when it declares so itself (Phase 5, TaskResource, which is Admin-only).
     expect($panel->isAuthorizationStrict())->toBeTrue()
-        ->and($panel->getGlobalSearchProvider())->toBeNull();
+        ->and($panel->getGlobalSearchProvider())->not->toBeNull()
+        ->and($panel->isGlobalSearchResourceOptIn())->toBeTrue();
 });
 
 it('lets the declaration drive the dashboard: PartnerAllowed admits an Admin and a Partner with a client only', function (): void {
@@ -119,6 +129,23 @@ it('denies a class without the attribute in every state, even to the Admin', fun
 
         expect(AccessRules::allows(UndeclaredPage::class))->toBeFalse($state);
     }
+});
+
+it('denies a class declaring Audience::Guest to a guest, a Partner with or without a client and the Admin', function (): void {
+    expect(AccessRules::for(GuestSimplePageFixture::class)?->audience)->toBe(Audience::Guest);
+
+    $expectedStates = ['guest', 'admin', 'partner with a client', 'partner without a client'];
+    $checked = [];
+
+    foreach (accessStates() as $state => $make) {
+        $user = $make();
+        $user !== null ? $this->actingAs($user) : auth()->logout();
+
+        expect(AccessRules::allows(GuestSimplePageFixture::class))->toBeFalse($state);
+        $checked[] = $state;
+    }
+
+    expect($checked)->toContain(...$expectedStates);
 });
 
 it('denies a class that does not exist and a subclass of a declared class', function (): void {
@@ -211,6 +238,70 @@ it('leaves a page without the trait open, which is why the registry test exists'
     expect(UndeclaredPage::canAccess())->toBeTrue();
 });
 
+it('refuses a Partner before the page mount() runs and runs it for an Admin', function (): void {
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+    foreach (['partner with a client' => fn () => Canary::partnerFor(Canary::twoClients()[0]), 'partner without a client' => fn () => Canary::partnerFor(null), 'user without a role' => fn () => Canary::userWithoutRole(null)] as $state => $make) {
+        MountProbePage::$mounted = false;
+        $this->actingAs($make());
+
+        Livewire::test(MountProbePage::class)->assertForbidden();
+
+        expect(MountProbePage::$mounted)->toBeFalse($state);
+    }
+
+    MountProbePage::$mounted = false;
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(MountProbePage::class)->assertOk();
+
+    expect(MountProbePage::$mounted)->toBeTrue();
+});
+
+it('refuses a Partner on a page that overrides canAccess() to always pass, before its mount() runs', function (): void {
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+    foreach (['partner with a client' => fn () => Canary::partnerFor(Canary::twoClients()[0]), 'partner without a client' => fn () => Canary::partnerFor(null), 'user without a role' => fn () => Canary::userWithoutRole(null)] as $state => $make) {
+        AccessOverrideMountProbePage::$mounted = false;
+        $this->actingAs($make());
+
+        Livewire::test(AccessOverrideMountProbePage::class)->assertForbidden();
+
+        expect(AccessOverrideMountProbePage::$mounted)->toBeFalse($state);
+    }
+
+    AccessOverrideMountProbePage::$mounted = false;
+    $this->actingAs(Canary::admin());
+
+    Livewire::test(AccessOverrideMountProbePage::class)->assertOk();
+
+    expect(AccessOverrideMountProbePage::$mounted)->toBeTrue();
+});
+
+it('refuses a Partner before a relation manager or a widget mount() runs, whatever their own visibility check says', function (): void {
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    ActivityProbe::provision();
+
+    try {
+        $this->actingAs(Canary::admin());
+        $owner = ActivityProbe::query()->create(['title' => 'Boot order probe']);
+
+        foreach (['partner with a client' => fn () => Canary::partnerFor(Canary::twoClients()[0]), 'partner without a client' => fn () => Canary::partnerFor(null), 'user without a role' => fn () => Canary::userWithoutRole(null)] as $state => $make) {
+            VisibleOverrideHistoryRelationManager::$mounted = false;
+            VisibleOverrideWidget::$mounted = false;
+            $this->actingAs($make());
+
+            Livewire::test(VisibleOverrideHistoryRelationManager::class, ['ownerRecord' => $owner, 'pageClass' => Dashboard::class])->assertForbidden();
+            Livewire::test(VisibleOverrideWidget::class)->assertForbidden();
+
+            expect(VisibleOverrideHistoryRelationManager::$mounted)->toBeFalse($state)
+                ->and(VisibleOverrideWidget::$mounted)->toBeFalse($state);
+        }
+    } finally {
+        ActivityProbe::restoreMorphMap();
+    }
+});
+
 it('registers the canary resource and its routes while the harness is on', function (): void {
     expect(config('kokpit.canary_harness'))->toBeTrue()
         ->and(Filament::getPanel('admin')->getResources())->toContain(CanaryRecordResource::class)
@@ -244,7 +335,7 @@ it('keeps the canary resource out of the panel while the harness is off', functi
 
 it('refuses to start a production process while the canary harness is on', function (): void {
     $run = fn (string $harness): Process => artisanProcess(
-        ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => 'true', 'KOKPIT_CANARY_HARNESS' => $harness],
+        ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => 'true', 'KOKPIT_CANARY_HARNESS' => $harness, 'QUEUE_CONNECTION' => 'redis', 'CACHE_STORE' => 'redis', 'MAIL_MAILER' => 'smtp', 'APP_URL' => 'https://kokpit.example.com'],
         ['--version'],
     );
 

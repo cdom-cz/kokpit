@@ -56,6 +56,12 @@ it('runs exactly the queue worker and scheduler daemons', function () {
     expect(array_column($daemons, 'name'))->toBe(['queue-worker', 'scheduler']);
 });
 
+it('runs Horizon as the queue worker daemon', function () {
+    $daemons = array_column(ddevYaml('config.yaml')['web_extra_daemons'] ?? [], 'command', 'name');
+
+    expect($daemons['queue-worker'])->toContain('exec php artisan horizon');
+});
+
 it('makes every daemon wait for vendor/autoload.php before it execs artisan', function () {
     $daemons = ddevYaml('config.yaml')['web_extra_daemons'] ?? [];
 

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Audit\KokpitLogActivityAction;
+use App\Domain\Audit\RefusingCleanActivityLogAction;
 use App\Domain\Shared\Models\Activity;
-use Spatie\Activitylog\Actions\CleanActivityLogAction;
-use Spatie\Activitylog\Actions\LogActivityAction;
 
 return [
 
@@ -14,8 +14,9 @@ return [
     'enabled' => env('ACTIVITYLOG_ENABLED', true),
 
     /*
-     * When the clean command is executed, all recording activities older than
-     * the number of days specified here will be deleted.
+     * Not used: activity records are kept indefinitely (D-09). The clean action
+     * below refuses to delete, so the activitylog:clean command fails whatever
+     * this value says, and nothing schedules it.
      */
     'clean_after_days' => 365,
 
@@ -69,7 +70,7 @@ return [
      * are logged and cleaned. Your custom classes must extend the originals.
      */
     'actions' => [
-        'log_activity' => LogActivityAction::class,
-        'clean_log' => CleanActivityLogAction::class,
+        'log_activity' => KokpitLogActivityAction::class,
+        'clean_log' => RefusingCleanActivityLogAction::class,
     ],
 ];

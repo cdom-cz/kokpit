@@ -1,0 +1,204 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\TimeTracking\Models;
+
+use App\Domain\Audit\LoggedAttributes;
+use App\Domain\Audit\LogsAllowlistedActivity;
+use App\Domain\Clients\Models\Client;
+use App\Domain\Identity\Models\User;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Shared\Auth\DeniesPartners;
+use App\Domain\Shared\Auth\PartnerIsolated;
+use App\Domain\Shared\Models\KokpitModel;
+use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Enums\BillingBadge;
+use App\Domain\TimeTracking\Enums\BillingState;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
+use Database\Factories\TimeEntryFactory;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+/**
+ * A stretch of tracked time of one user, running or finished.
+ *
+ * Admin-only: measured time is closed to Partners by DeniesPartners and the
+ * admin-only policy, so a Partner reads zero rows.
+ *
+ * `ended_at` null means the entry is running. The duration is the stored
+ * generated column `duration_seconds`, exact whole seconds, null while running.
+ * The client is always set; the project and the task are optional, and the
+ * database refuses a client, project and task that disagree.
+ *
+ * Only the content columns are fillable. The ids, the instants and the billing
+ * state are set with `forceFill` by the Actions, so a request can never re-point
+ * an entry or bill it by mass assignment.
+ *
+ * Changes to the context, the instants, the billable flag and the billing state
+ * are written to the activity log through an allowlist (D-06). The description
+ * is free text and `long_running_notified_at` is bookkeeping: neither is logged.
+ * Billing and unbilling save the model one entry at a time so each writes a row.
+ *
+ * The relations to client, project and task include archived rows: archiving
+ * never stops a running timer and never hides the time already tracked.
+ *
+ * @property string $id
+ * @property string $user_id
+ * @property string $client_id
+ * @property string|null $project_id
+ * @property string|null $task_id
+ * @property string|null $description
+ * @property CarbonImmutable $started_at
+ * @property CarbonImmutable|null $ended_at
+ * @property int|null $duration_seconds
+ * @property bool $billable
+ * @property BillingState $billing_state
+ * @property CarbonImmutable|null $billed_at
+ * @property CarbonImmutable|null $long_running_notified_at
+ * @property CarbonImmutable|null $created_at
+ * @property CarbonImmutable|null $updated_at
+ * @property-read int|null $elapsed_seconds only on rows read through the withElapsedSeconds scope
+ * @property-read bool|null $overlaps only on rows read through the withOverlapFlag scope
+ * @property-read string|null $overlap_label only on rows read through the withOverlapFlag scope
+ */
+#[Fillable(['description', 'billable'])]
+#[LoggedAttributes(['client_id', 'project_id', 'task_id', 'started_at', 'ended_at', 'billable', 'billing_state', 'billed_at'])]
+final class TimeEntry extends KokpitModel implements PartnerIsolated
+{
+    /** @use HasFactory<TimeEntryFactory> */
+    use DeniesPartners, HasFactory, LogsAllowlistedActivity;
+
+    public function isRunning(): bool
+    {
+        return $this->ended_at === null;
+    }
+
+    public function isBilled(): bool
+    {
+        return $this->billing_state === BillingState::Billed;
+    }
+
+    /**
+     * How the entry reads on the screens: to bill, billed, or not billable.
+     */
+    public function billingBadge(): BillingBadge
+    {
+        return BillingBadge::for($this);
+    }
+
+    /**
+     * Adds `elapsed_seconds` to every row: the exact stored duration of a finished
+     * entry, the seconds from the start to `$now` of a running one (never negative).
+     *
+     * The instant is bound from the PHP clock, never SQL `now()`, because
+     * PostgreSQL's `now()` ignores a frozen test clock and would make the screens
+     * disagree with the timer.
+     *
+     * @param  Builder<TimeEntry>  $query
+     */
+    public function scopeWithElapsedSeconds(Builder $query, CarbonInterface $now): void
+    {
+        $query
+            ->addSelect($this->qualifyColumn('*'))
+            ->selectRaw(
+                'COALESCE(time_entries.duration_seconds, GREATEST(0, EXTRACT(EPOCH FROM (?::timestamptz - time_entries.started_at))::int)) AS elapsed_seconds',
+                [$now->utc()->format('Y-m-d H:i:sP')],
+            );
+    }
+
+    /**
+     * Adds `overlaps` and `overlap_label` to every row, in the one query (D-04).
+     *
+     * `overlaps` is true when another entry of the same user overlaps this one; `overlap_label`
+     * names the first such entry in start order, as the task reference and title, or the client
+     * when it has no task. Two intervals overlap when each starts strictly before the other
+     * ends, a running entry is open-ended, and a zero-length entry holds no time and overlaps
+     * nothing, on either side: the same rule as OverlapFinder, here as correlated sub-selects
+     * so a list of any size costs no extra query. Archived clients and tasks still name it.
+     *
+     * @param  Builder<TimeEntry>  $query
+     */
+    public function scopeWithOverlapFlag(Builder $query): void
+    {
+        $where = <<<'SQL'
+            other.user_id = time_entries.user_id
+              AND other.id <> time_entries.id
+              AND other.started_at < COALESCE(time_entries.ended_at, 'infinity'::timestamptz)
+              AND time_entries.started_at < COALESCE(other.ended_at, 'infinity'::timestamptz)
+              AND (other.ended_at IS NULL OR other.ended_at > other.started_at)
+              AND (time_entries.ended_at IS NULL OR time_entries.ended_at > time_entries.started_at)
+            SQL;
+
+        if ($query->getQuery()->columns === null) {
+            $query->addSelect($this->qualifyColumn('*'));
+        }
+
+        $query
+            ->selectRaw('EXISTS (SELECT 1 FROM time_entries AS other WHERE '.$where.') AS overlaps')
+            ->selectRaw(
+                "(SELECT COALESCE(task.reference || ' · ' || task.title, client.name)"
+                .' FROM time_entries AS other'
+                .' LEFT JOIN tasks AS task ON task.id = other.task_id'
+                .' LEFT JOIN clients AS client ON client.id = other.client_id'
+                .' WHERE '.$where
+                .' ORDER BY other.started_at, other.id LIMIT 1) AS overlap_label',
+            );
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /**
+     * @return BelongsTo<Client, $this>
+     */
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(Client::class)->withTrashed();
+    }
+
+    /**
+     * @return BelongsTo<Project, $this>
+     */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class)->withTrashed();
+    }
+
+    /**
+     * @return BelongsTo<Task, $this>
+     */
+    public function task(): BelongsTo
+    {
+        return $this->belongsTo(Task::class)->withTrashed();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'started_at' => 'immutable_datetime',
+            'ended_at' => 'immutable_datetime',
+            'billed_at' => 'immutable_datetime',
+            'long_running_notified_at' => 'immutable_datetime',
+            'billable' => 'boolean',
+            'billing_state' => BillingState::class,
+            'duration_seconds' => 'integer',
+        ];
+    }
+
+    protected static function newFactory(): TimeEntryFactory
+    {
+        return TimeEntryFactory::new();
+    }
+}

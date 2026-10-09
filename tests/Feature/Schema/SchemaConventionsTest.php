@@ -8,6 +8,7 @@ use App\Domain\Identity\Models\Role;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
+use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\PersonalAccessToken as BasePersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Activitylog\Models\Activity as BaseActivity;
+use Spatie\LaravelSettings\Models\SettingsProperty as BaseSettingsProperty;
 use Spatie\MediaLibrary\MediaCollections\Models\Media as BaseMedia;
 use Spatie\Permission\Models\Permission as BasePermission;
 use Spatie\Permission\Models\Role as BaseRole;
@@ -133,12 +135,13 @@ it('R6 self-check: reports a uuid primary key without the uuidv7() default', fun
     expect(PgSchema::missingUuidv7Default($columns))->toBe(['gadgets.id', 'widgets.id']);
 });
 
-it('keeps the exempt map to the four documented framework columns with reasons', function () {
+it('keeps the exempt map to the four framework columns and the task parent discriminator, each with a reason', function () {
     expect(array_keys(PgSchema::EXEMPT))->toBe([
         'migrations.id',
         'failed_jobs.id',
         'sessions.id',
         'password_reset_tokens.email',
+        'tasks.parent_depth',
     ])->and(array_filter(PgSchema::EXEMPT, fn (string $reason): bool => trim($reason) === ''))->toBe([]);
 });
 
@@ -201,6 +204,7 @@ function packageModelRegistry(): array
         'medialibrary media' => [config('media-library.media_model'), Media::class, BaseMedia::class],
         'tags tags' => [config('tags.tag_model'), Tag::class, BaseTag::class],
         'activitylog activities' => [config('activitylog.activity_model'), Activity::class, BaseActivity::class],
+        'settings properties' => [config('settings.repositories.database.model'), SettingsProperty::class, BaseSettingsProperty::class],
         'sanctum tokens' => [Sanctum::$personalAccessTokenModel, PersonalAccessToken::class, BasePersonalAccessToken::class],
     ];
 

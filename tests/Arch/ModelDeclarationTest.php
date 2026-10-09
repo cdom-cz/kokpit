@@ -2,18 +2,29 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Models\ClientInvitation;
+use App\Domain\Clients\Models\Contact;
 use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
 use App\Domain\Identity\Models\User;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Shared\Auth\KokpitPolicy;
 use App\Domain\Shared\Auth\NotPartnerScoped;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
+use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Shared\Policies\AdminOnlyPolicy;
+use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskBilling;
+use App\Domain\Tasks\Models\TaskChecklistItem;
+use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
@@ -29,11 +40,22 @@ use Tests\Support\ModelDeclaration;
 it('finds every model of the application, so the scan cannot pass vacuously', function (): void {
     expect(ModelDeclaration::appModels())->toEqualCanonicalizing([
         Activity::class,
+        Client::class,
+        ClientInvitation::class,
+        Contact::class,
         Media::class,
         Permission::class,
         PersonalAccessToken::class,
+        Project::class,
+        ProjectBilling::class,
         Role::class,
+        SettingsProperty::class,
         Tag::class,
+        Task::class,
+        TaskBilling::class,
+        TaskChecklistItem::class,
+        TaskComment::class,
+        TimeEntry::class,
         User::class,
         WebhookCall::class,
     ]);
@@ -75,15 +97,15 @@ it('gives every PartnerIsolated model a policy that extends KokpitPolicy', funct
         static fn (string $class): bool => is_subclass_of($class, PartnerIsolated::class),
     ));
 
-    expect($isolated)->toContain(CanaryRecord::class, Media::class, Tag::class, Activity::class, WebhookCall::class);
+    expect($isolated)->toContain(CanaryRecord::class, Client::class, ClientInvitation::class, Contact::class, Project::class, ProjectBilling::class, Task::class, TaskBilling::class, TaskChecklistItem::class, TaskComment::class, TimeEntry::class, Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class);
 
     foreach ($isolated as $class) {
         expect(Gate::getPolicyFor($class))->toBeInstanceOf(KokpitPolicy::class, "no KokpitPolicy for {$class}");
     }
 });
 
-it('closes the four package models to Partners with the admin-only policy', function (): void {
-    foreach ([Media::class, Tag::class, Activity::class, WebhookCall::class] as $class) {
+it('closes the five package models to Partners with the admin-only policy', function (): void {
+    foreach ([Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class] as $class) {
         expect(Gate::getPolicyFor($class))->toBeInstanceOf(AdminOnlyPolicy::class);
     }
 });

@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 /**
- * Finds the two ways to read around the fail-closed scopes in PHP source: a
- * raw `DB::table(` query and a `withoutGlobalScopes()` call without arguments
- * (which also removes the Partner scope). Comments and strings are ignored
- * because the scan works on tokens, not on text.
+ * Finds the three ways to read around the fail-closed scopes in PHP source: a
+ * raw `DB::table(` query, a `withoutGlobalScopes()` call without arguments
+ * (which also removes the Partner scope) and a `withoutGlobalScope(` or
+ * `withoutGlobalScopes([` call whose arguments name `PartnerScope`, short or
+ * fully qualified. Comments and strings are ignored because the scan works on
+ * tokens, not on text. A scope name that only reaches the call through a
+ * variable or a `use ... as` alias is not seen; code review covers that.
  */
 final class EscapeHatchScanner
 {
@@ -49,8 +52,41 @@ final class EscapeHatchScanner
                 && ($tokens[$i + 2]['text'] ?? '') === ')') {
                 $findings[] = ['file' => $file, 'line' => $tokens[$i]['line'], 'hatch' => 'withoutGlobalScopes()'];
             }
+
+            // withoutGlobalScope( or withoutGlobalScopes( with PartnerScope among the arguments
+            if (in_array(strtolower($text), ['withoutglobalscope', 'withoutglobalscopes'], true)
+                && ($tokens[$i + 1]['text'] ?? '') === '('
+                && self::argumentsNamePartnerScope($tokens, $i + 2)) {
+                $findings[] = ['file' => $file, 'line' => $tokens[$i]['line'], 'hatch' => 'withoutGlobalScope(PartnerScope)'];
+            }
         }
 
         return $findings;
+    }
+
+    /**
+     * Whether a token of the call's argument list, which starts right after the
+     * opening parenthesis, is the PartnerScope class name (a trailing segment
+     * match, so SomePartnerScopeFoo does not count).
+     *
+     * @param  list<array{text: string, line: int}>  $tokens
+     */
+    private static function argumentsNamePartnerScope(array $tokens, int $start): bool
+    {
+        $depth = 1;
+
+        for ($i = $start, $count = count($tokens); $i < $count; $i++) {
+            $text = $tokens[$i]['text'];
+
+            if ($text === '(') {
+                $depth++;
+            } elseif ($text === ')' && --$depth === 0) {
+                return false;
+            } elseif ($text === 'PartnerScope' || str_ends_with($text, '\\PartnerScope')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

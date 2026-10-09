@@ -2,12 +2,23 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Models\ClientInvitation;
+use App\Domain\Clients\Models\Contact;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
+use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
+use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskBilling;
+use App\Domain\Tasks\Models\TaskChecklistItem;
+use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Tests\Support\Canary;
@@ -82,8 +93,19 @@ it('does not pass vacuously: the real isolated models and the canary model are a
     expect(partnerIsolatedModels())->toEqualCanonicalizing([
         Activity::class,
         CanaryRecord::class,
+        Client::class,
+        ClientInvitation::class,
+        Contact::class,
         Media::class,
+        Project::class,
+        ProjectBilling::class,
+        SettingsProperty::class,
         Tag::class,
+        Task::class,
+        TaskBilling::class,
+        TaskChecklistItem::class,
+        TaskComment::class,
+        TimeEntry::class,
         WebhookCall::class,
     ]);
 });

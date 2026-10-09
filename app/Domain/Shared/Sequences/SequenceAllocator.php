@@ -68,6 +68,23 @@ class SequenceAllocator
     }
 
     /**
+     * Reads the number the next call of next() would hand out, without
+     * changing anything: no lock, no insert, no transaction needed. A key
+     * without a row answers 1. The answer is a preview only; it is not
+     * reserved, and a concurrent caller may take the number first.
+     *
+     * @throws InvalidArgumentException when the key is malformed
+     */
+    public function peek(string $scopeKey): int
+    {
+        self::assertValidKey($scopeKey);
+
+        $row = DB::selectOne('SELECT next_value FROM number_sequences WHERE scope_key = ?', [$scopeKey]);
+
+        return $row === null ? 1 : (int) $row->next_value;
+    }
+
+    /**
      * Builds the yearly key "{kind}:{year}", the year taken in Europe/Prague.
      */
     public function scopeKeyForYear(string $kind, DateTimeInterface $at): string
