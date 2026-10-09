@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: time-tracking
 status: executing
-stopped_at: Completed 06-07-PLAN.md
-last_updated: "2026-10-09T14:40:48.830Z"
+stopped_at: Completed 06-08-PLAN.md
+last_updated: "2026-10-09T14:57:47.143Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 06 execution started
-state_head: e80aec071c22e9df82aafc6cb9a6cfd6690736c3
+state_head: 521060831cf49594798997f302e7bb025b12db24
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 100
-  completed_plans: 93
+  completed_plans: 94
   percent: 42
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 06 (time-tracking) — EXECUTING
-Plan: 8 of 14
+Plan: 9 of 14
 Status: Ready to execute
 Last activity: 2026-10-09 — Phase 06 execution started
 
@@ -153,6 +153,7 @@ Progress: [████░░░░░░] 42%
 | Phase 06 P05 | 10 min | 3 tasks | 11 files |
 | Phase 06 P06 | 33min | 3 tasks | 13 files |
 | Phase 06 P07 | 55min | 3 tasks | 11 files |
+| Phase 06 P08 | 15min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -340,6 +341,9 @@ Recent decisions affecting current work:
 - [Phase 06]: DateTimePicker values read through a Get closure are in the application timezone (UTC); the raw form state is the Prague wall clock, so server-side interval logic parses in config app.timezone
 - [Phase 06]: Text sorted for people goes through CzechCollation::orderBy (cs-CZ-x-icu); the production availability check is added to kokpit:deploy:verify in plan 06-14
 - [Phase 06]: 06-07: footer totals render only the whole-filtered-set row (summaries(pageCondition: false)); a stale edit page of a billed entry answers 403 (lock via hydrate); extra Úkol filter on the entry list for the task page link
+- [Phase 06]: 06-08: the top bar timer guards itself in layers: the render hook renders nothing for a Partner and the RequiresAdmin boot hook refuses a forged mount or update with 403; an architecture test forces the trait and scalar-only public properties on every component under app/Livewire
+- [Phase 06]: 06-08: the stop button names the entry it shows, so a stale view never stops a newer timer; the forgotten-timer state is computed from the stored start on every render and poll and the timer is never stopped
+- [Phase 06]: 06-08: TI-09 stays open after the visible danger state; the scheduled job and the bell notification are in 06-13
 
 ### Pending Todos
 
@@ -379,6 +383,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T14:40:48.685Z
-Stopped at: Completed 06-07-PLAN.md
+Last session: 2026-10-09T14:57:46.997Z
+Stopped at: Completed 06-08-PLAN.md
 Resume file: None
