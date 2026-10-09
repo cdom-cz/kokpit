@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Completed 05-21-PLAN.md
-last_updated: "2026-10-09T09:24:58.265Z"
+stopped_at: Completed 05-22-PLAN.md
+last_updated: "2026-10-09T10:35:34.588Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 05 execution started
-state_head: 21aa2148508d77d969fcbb781d9861c7bc63a589
+state_head: 66b42e0035a4de1ed9fe5362be1e1e2ad7d7aed3
 progress:
   total_phases: 12
   completed_phases: 4
-  total_plans: 85
-  completed_plans: 85
+  total_plans: 86
+  completed_plans: 86
   percent: 33
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 05 (Tasks and Kanban) — EXECUTING
-Plan: 3 of 21
+Plan: 3 of 22
 Status: Ready to execute
 Last activity: 2026-10-09 — Phase 05 execution started
 
@@ -144,6 +144,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 05 P19 | 10 min | 3 tasks | 8 files |
 | Phase 05 P20 | 10 min | 3 tasks | 8 files |
 | Phase 05 P21 | 9 min | 3 tasks | 13 files |
+| Phase 05 P22 | 9 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -313,6 +314,7 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-20: the D-16 status rule lives only in TaskPolicy::editDescription; UpdateTaskDescription re-checks it on the locked row
 - [Phase 05]: 05-21: Reuse AssignmentChange for the Admin's description-edit notice; NotificationEvent::helper takes the role so only the Admin row has its own helper
 - [Phase 05]: 05-21: A Partner's description edit notifies Admins and the eligible assignee (comment rule) with a name-only change line, never description text
+- [Phase 05]: 05-22: activity and comment rows read by tests are ordered by created_at then UUID v7 id; flaky any-Partner description case fixed in the test layer only
 
 ### Pending Todos
 
@@ -352,6 +354,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T09:24:58.120Z
-Stopped at: Completed 05-21-PLAN.md
+Last session: 2026-10-09T10:35:31.203Z
+Stopped at: Completed 05-22-PLAN.md
 Resume file: None
