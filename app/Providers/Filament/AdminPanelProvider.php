@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers\Filament;
 
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Filament\Auth\EditProfile;
 use App\Filament\Pages\Auth\AcceptInvitation;
 use App\Filament\Pages\Auth\RequestPasswordReset;
 use App\Filament\Pages\Dashboard;
@@ -51,7 +52,9 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
-            ->profile()
+            // Our own subclass adds the notification switches (D-15). It lives outside
+            // app/Filament/Pages so that page discovery does not register it a second time.
+            ->profile(EditProfile::class)
             // The reset link the Admin sends from the client detail (US-02, D-04) opens Filament's
             // signed reset page, and passwordReset() is what registers it. It also registers the
             // public "forgot password" page, which is our own subclass that answers every address
@@ -68,9 +71,11 @@ class AdminPanelProvider extends PanelProvider
                 ->middleware([SetNoReferrerPolicy::class, 'signed', 'throttle:invitation'])
                 ->name('invitation.accept'))
             ->spa()
-            // The bell shows the Admin alerts of failed background jobs (D-11). The condition is
-            // evaluated per request, so a Partner never gets the bell.
-            ->databaseNotifications(static fn (): bool => app(PartnerContext::class)->isAdmin())
+            // The bell shows the Admin alerts of failed background jobs (D-11) and the task
+            // notifications of both sides (D-07). Every signed-in account has one, and Filament
+            // lists only the notifications of the signed-in user, so nobody reads another
+            // account's bell. The condition is evaluated per request.
+            ->databaseNotifications(static fn (): bool => app(PartnerContext::class)->user() !== null)
             ->databaseNotificationsPolling('30s')
             // A Resource without a policy method throws instead of being allowed (D-03). Pages and
             // widgets are covered by #[AccessRule], which strict authorization does not reach.

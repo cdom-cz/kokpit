@@ -860,4 +860,18 @@ return [
         ],
     ],
 
+    'notifications' => [
+        'profile' => [
+            'heading' => 'Upozornění',
+            'description' => 'Vyberte, o čem a jakým způsobem vás Kokpit upozorní.',
+            'save' => 'Uložit nastavení',
+            'helpers' => [
+                'task_created' => 'Klient zadal nový úkol.',
+                'comment' => 'K úkolu, kterého se týkáte, přibyl komentář.',
+                'escalation' => 'Úkol byl eskalován.',
+                'assignment_change' => 'U vašeho úkolu se změnil stav, priorita nebo řešitel.',
+            ],
+        ],
+    ],
+
 ];

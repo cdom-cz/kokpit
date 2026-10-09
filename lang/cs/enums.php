@@ -104,4 +104,16 @@ return [
         'unsent_invoice_emails' => 'Neodeslané e-maily s fakturou',
     ],
 
+    'notification_event' => [
+        'task_created' => 'Nový úkol od klienta',
+        'comment' => 'Nový komentář',
+        'escalation' => 'Eskalace úkolu',
+        'assignment_change' => 'Změna úkolu',
+    ],
+
+    'notification_channel' => [
+        'mail' => 'E-mail',
+        'database' => 'Zvonek',
+    ],
+
 ];
