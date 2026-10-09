@@ -7,6 +7,11 @@ namespace App\Domain\TimeTracking;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Support\TimerClock;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -100,6 +105,91 @@ final class TimeEntryInput
         }
 
         return $description === '' ? null : $description;
+    }
+
+    /**
+     * An instant of a manual entry, truncated to the whole second (never rounded).
+     *
+     * Accepted: a CarbonInterface, an ISO 8601 string with an offset or `Z`
+     * (`2026-10-12T10:00:00+02:00`, optional fraction), or `Y-m-d H:i:s`
+     * (optional fraction) read in the application timezone, which is how the
+     * Filament pickers dehydrate a Prague wall-clock value to UTC. Null and an
+     * empty string are absent. A calendar day that does not exist is rejected,
+     * not rolled over.
+     *
+     * @param  string  $field  the data key the field error is keyed by (`started_at` or `ended_at`)
+     * @return CarbonImmutable|null null for an absent value
+     *
+     * @throws ValidationException the field error `invalid_time` on `$field` for anything unparsable
+     */
+    public static function instant(mixed $value, string $field): ?CarbonImmutable
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if ($value instanceof CarbonInterface) {
+            return self::normalised($value);
+        }
+
+        if (! is_string($value)) {
+            throw self::error($field, 'invalid_time');
+        }
+
+        $text = trim($value);
+
+        $parsed = null;
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/', $text) === 1) {
+            $parsed = self::parse($text, str_contains($text, '.') ? 'Y-m-d\TH:i:s.uP' : 'Y-m-d\TH:i:sP', null);
+        } elseif (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,9})?$/', $text) === 1) {
+            $parsed = self::parse($text, str_contains($text, '.') ? 'Y-m-d H:i:s.u' : 'Y-m-d H:i:s', new DateTimeZone((string) config('app.timezone')));
+        }
+
+        return $parsed === null
+            ? throw self::error($field, 'invalid_time')
+            : self::normalised($parsed);
+    }
+
+    /**
+     * The end of a finished entry must lie strictly after its start.
+     *
+     * @throws ValidationException the field error `end_before_start` on `ended_at`
+     */
+    public static function assertEndAfterStart(CarbonImmutable $start, ?CarbonImmutable $end): void
+    {
+        if ($end !== null && $end->lessThanOrEqualTo($start)) {
+            throw self::error('ended_at', 'end_before_start');
+        }
+    }
+
+    /**
+     * The instant in the application timezone, truncated to the whole second.
+     *
+     * The model casts write the wall-clock value of the instant's own zone, so
+     * an instant carrying a +02:00 offset must be moved to UTC before it is
+     * stored, or it would be stored two hours late.
+     */
+    private static function normalised(CarbonInterface $value): CarbonImmutable
+    {
+        return TimerClock::truncate($value)->setTimezone((string) config('app.timezone'));
+    }
+
+    /**
+     * Strict parse of one format: null for a mismatch or a day that PHP would roll over.
+     */
+    private static function parse(string $text, string $format, ?DateTimeZone $timezone): ?CarbonImmutable
+    {
+        // Fractions beyond microseconds carry nothing a whole second needs.
+        $text = (string) preg_replace('/(\.\d{6})\d+/', '$1', $text);
+        $date = DateTimeImmutable::createFromFormat($format, $text, $timezone);
+        $errors = DateTimeImmutable::getLastErrors();
+
+        if ($date === false || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+            return null;
+        }
+
+        return CarbonImmutable::instance($date);
     }
 
     /**
