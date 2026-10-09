@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 05-tasks-and-kanban
 source: [05-VERIFICATION.md]
 started: 2026-10-09T01:36:53Z
@@ -59,5 +59,16 @@ blocked: 0
   reason: "User reported: The Partner should also be able to edit the task description, where applicable. Everything else is OK."
   severity: major
   test: 5
-  artifacts: []
-  missing: []
+  root_cause: "The Partner panel has no edit path for tasks: PartnerTaskResource registers only index, create and view pages, and TaskPolicy defines no Partner-facing update ability (only view, create, comment, escalate, clearEscalation). The Partner can set the description only once, at creation."
+  artifacts:
+    - path: "app/Filament/Partner/Resources/PartnerTaskResource.php"
+      issue: "getPages() has no edit page; the description field exists only in the create form"
+    - path: "app/Domain/Tasks/Policies/TaskPolicy.php"
+      issue: "no update ability scoped to Partner-owned tasks of own client"
+    - path: "app/Domain/Tasks/Actions/UpdateTask.php"
+      issue: "Admin-oriented; needs a description-only Partner path with activity logging and Admin notification"
+  missing:
+    - "Partner edit page or header action limited to the description field"
+    - "Policy ability allowing a Partner to edit the description only on tasks they may view (own client, client-visible project), never status, priority, people or dates"
+    - "Action that persists the description, sanitises HTML and logs the change in task history"
+  debug_session: ""
