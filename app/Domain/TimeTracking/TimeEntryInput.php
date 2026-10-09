@@ -12,6 +12,8 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use DateTimeImmutable;
 use DateTimeZone;
+use DomainException;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -161,6 +163,30 @@ final class TimeEntryInput
         if ($end !== null && $end->lessThanOrEqualTo($start)) {
             throw self::error('ended_at', 'end_before_start');
         }
+    }
+
+    /**
+     * The refusal of a write to a billed entry (D-06): it is unlocked only
+     * through the cancel action of the billing.
+     */
+    public static function locked(): DomainException
+    {
+        return new DomainException(__('kokpit.time.errors.locked'));
+    }
+
+    /**
+     * Whether the database refused the statement through the frozen-row guard
+     * (SQLSTATE KP001), which is how a billed entry answers a write that got
+     * past the application check.
+     */
+    public static function isFrozenRowRefusal(QueryException $e): bool
+    {
+        $previous = $e->getPrevious();
+        $state = $previous instanceof \PDOException && is_array($previous->errorInfo) && isset($previous->errorInfo[0])
+            ? (string) $previous->errorInfo[0]
+            : (string) $e->getCode();
+
+        return $state === 'KP001';
     }
 
     /**
