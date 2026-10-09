@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\TimeTracking\Queries;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Database\CzechCollation;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -38,6 +40,59 @@ final class EntryContextOptions
         }
 
         return $options;
+    }
+
+    /**
+     * The clients the timer offers to the user (UI-SPEC Surface A): up to five non-archived
+     * clients by the user's most recent entry, then every other non-archived client in Czech
+     * order, so no client appears twice. The client of the user's very latest entry is
+     * preselected, unless that client is archived.
+     *
+     * @return array{recent: array<string, string>, all: array<string, string>, preselected: string|null}
+     */
+    public function timerClients(User $user): array
+    {
+        $active = Client::query()->select('clients.id');
+
+        // The soft-delete scope of Client leaves archived clients out of the sub-select.
+        $recentIds = TimeEntry::query()
+            ->where('time_entries.user_id', $user->getKey())
+            ->whereIn('time_entries.client_id', $active)
+            ->groupBy('time_entries.client_id')
+            ->orderByRaw('MAX(time_entries.started_at) DESC')
+            ->orderBy('time_entries.client_id')
+            ->limit(5)
+            ->pluck('time_entries.client_id')
+            ->map(static fn (mixed $id): string => (string) $id)
+            ->all();
+
+        $names = Client::query()->whereIn('clients.id', $recentIds)->pluck('clients.name', 'clients.id');
+
+        $recent = [];
+
+        foreach ($recentIds as $id) {
+            if ($names->has($id)) {
+                $recent[$id] = (string) $names->get($id);
+            }
+        }
+
+        $all = [];
+
+        $others = Client::query()->whereNotIn('clients.id', $recentIds);
+
+        foreach (CzechCollation::orderBy($others, 'clients.name')->orderBy('clients.id')->get(['clients.id', 'clients.name']) as $client) {
+            $all[$client->id] = $client->name;
+        }
+
+        $latest = TimeEntry::query()
+            ->where('time_entries.user_id', $user->getKey())
+            ->orderByDesc('time_entries.started_at')
+            ->orderByDesc('time_entries.id')
+            ->value('client_id');
+
+        $preselected = is_string($latest) && (array_key_exists($latest, $recent) || array_key_exists($latest, $all)) ? $latest : null;
+
+        return ['recent' => $recent, 'all' => $all, 'preselected' => $preselected];
     }
 
     /**

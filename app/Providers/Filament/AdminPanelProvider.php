@@ -20,11 +20,13 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Route;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Tests\Support\Filament\CanaryRecordResource;
@@ -92,6 +94,15 @@ class AdminPanelProvider extends PanelProvider
             ->multiFactorAuthentication([AppAuthentication::make()->recoverable()], isRequired: true)
             ->multiFactorAuthenticationRequiredMiddlewareName(EnsureAdminHasTwoFactor::class)
             ->defaultAvatarProvider(InitialsAvatarProvider::class)
+            // The timer in the persisted end region of the top bar, directly before the bell (D-01).
+            // The hook closure runs on every render of the page, so a Partner's page renders nothing
+            // of it; the component refuses a forged request on its own as well (RequiresAdmin).
+            ->renderHook(
+                PanelsRenderHook::GLOBAL_SEARCH_AFTER,
+                static fn (): string => app(PartnerContext::class)->isAdmin()
+                    ? Blade::render('@livewire(\App\Livewire\TimeTracking\TimerBar::class)')
+                    : '',
+            )
             ->colors([
                 'primary' => Color::Amber,
             ])
