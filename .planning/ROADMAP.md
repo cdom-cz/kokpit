@@ -26,7 +26,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Repository Hygiene** - Tooling that keeps secrets and real data out of the public repository, in place before anything else is committed (completed 2026-10-08)
 - [x] **Phase 2: Platform Foundation** - Installable Laravel + Filament app with enforced UUID/timestamp/money/numbering conventions, Czech UI and default-deny Partner isolation (completed 2026-10-08)
 - [x] **Phase 3: Operations Foundation** - Typed settings, audit trail, resilient background jobs, health page, release deploy, private storage and technology spikes (completed 2026-10-08)
-- [ ] **Phase 4: Clients and Projects** - Clients, contacts, ARES lookup, Partner invitations, and projects with keys, billing terms and client visibility
+- [x] **Phase 4: Clients and Projects** - Clients, contacts, ARES lookup, Partner invitations, and projects with keys, billing terms and client visibility (completed 2026-10-09)
 - [ ] **Phase 5: Tasks and Kanban** - Tasks and subtasks with per-project keys, comments, list filters, drag-and-drop boards and Partner task access
 - [ ] **Phase 6: Time Tracking** - Always-visible timer, manual entries, exact durations, billed locking, timesheet and project time totals
 - [ ] **Phase 7: REST API** - Token-secured `/api/v1` for time entries, timer and lookups with the same rules as the UI
@@ -215,7 +215,7 @@ Plans:
   4. From the client detail Admin invites a Partner account by e-mail, and the invited person sets a password and logs in
   5. A Partner sees only projects of their own client that are flagged client-visible, never sees rates, prices or estimates in lists, details, selects or search, and never sees another client's canary data
 
-**Plans:** 21/21 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
+**Plans:** 21/21 plans complete (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
 **UI hint**: yes
 
 Plans:
@@ -470,7 +470,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Repository Hygiene | 11/11 | Complete    | 2026-10-08 |
 | 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
 | 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
-| 4. Clients and Projects | 21/21 | In Progress | - |
+| 4. Clients and Projects | 21/21 | Complete    | 2026-10-09 |
 | 5. Tasks and Kanban | 19/19 | In Progress | - |
 | 6. Time Tracking | 0/0 | Not started | - |
 | 7. REST API | 0/0 | Not started | - |
