@@ -78,6 +78,17 @@ created: "2026-10-09"
 | T-05-43 | Information disclosure | Escalation reaches an ineligible Partner | medium | mitigate | Eligibility check in `addCandidate` (active, same client, may read) | closed |
 | T-05-SC | Tampering | Supply chain (all 17 plans) | low | accept / mitigate | Only `spatie/eloquent-sortable ^5.0` added; `composer check-licenses`: 210 packages allowed | closed |
 | T-05-44 | Tampering / Information disclosure | Partner injects HTML/Markdown (links, styles, remote images) into the Admin's bell and notification mails via task title or own display name | medium | mitigate | Closed by plan 05-19: every interpolated value is escaped once in the `TaskNotification` base class (`final` `toMail` and `toDatabase`; mail lines through `escapeMarkdown()`, bell through `e()`); `tests/Isolation/NotificationMarkupTest.php` covers every class and audience with a DOM-level markup canary and four recorded mutation runs | closed |
+| T-05-47 | Elevation / Tampering | A forged payload of the description edit writes status, priority, people, dates, tags, project or the escalation pair | high | mitigate | `UpdateTaskDescription` takes only `?string $description` and `string $basedOn` and writes only `description`; modal schema pinned; `update` stays denied to every Partner | closed |
+| T-05-48 | Information disclosure / Elevation | Description edit of a task of another client, a hidden project or an archived task | high | mitigate | `TaskPolicy::editDescription` before the transaction, then the Partner-scoped re-read under `lockForUpdate` | closed |
+| T-05-49 | Tampering (stored XSS) | Partner-written description rendered to the Admin | high | mitigate | `TaskInput::description` (`RichText::clean`, byte limit) for every actor; output through `RichText::render`; markup canary over storage and both pages | closed |
+| T-05-50 | Repudiation / Information disclosure | History of description edits | medium | mitigate | One manual activity row per real change, Partner as causer, no description text in any column; `Activity` denies Partners | closed |
+| T-05-51 | Tampering (lost update) | Admin and Partner edit the description at the same time | medium | mitigate | Fingerprint compared with `hash_equals` on the locked row; stale save is a field error | closed |
+| T-05-56 | Elevation | Edit outside the owner-approved statuses (D-16), directly or by racing an Admin status change | medium | mitigate | One rule in `TaskPolicy::DESCRIPTION_EDITABLE_STATUSES`, used for visibility, the pre-check and the re-check on the locked row | closed |
+| T-05-53 | Information disclosure | Recipients and content of the description-change notification | high | mitigate | Recipients only through `addCandidate` plus active Admins, author removed, name-only line without description text, sent only after a real write | closed |
+| T-05-54 | Tampering / Spoofing | Markup in a Partner-controlled title or name in the Admin audience of `TaskChangedNotification` | medium | mitigate | 05-19 base class escapes once (`final` `toMail`, `toDatabase`); Admin audience added to the `NotificationMarkupTest` matrix | closed |
+| T-05-52 | Denial of service | Repeated description saves fill the history | low | accept | Only an authenticated Partner of the client can save; unchanged saves write nothing; same exposure as comments | closed (accepted) |
+| T-05-55 | Denial of service | A Partner floods the Admin with edit notices | low | accept | Only a real change notifies; the Admin can switch the event off per channel | closed (accepted) |
+| T-05-SC2 | Tampering | Package installs in plans 05-20 and 05-21 | low | accept | No package added (composer and lock files unchanged) | closed (accepted) |
 
 *Status: open · closed*
 *Severity: critical > high > medium > low — only open threats at or above workflow.security_block_on count toward threats_open*
@@ -95,6 +106,9 @@ created: "2026-10-09"
 |---------|------------|-----------|-------------|------|
 | AR-05-01 | T-05-38 | No rate limit on notifications a Partner triggers; each recipient can switch channels per event (D-15). Documented in the 05-15 threat model and in the 05-17 SUMMARY "For the owner". | plan register (owner confirmation pending in 05-17 SUMMARY) | 2026-10-09 |
 | AR-05-02 | T-05-SC | Sixteen plans add no package; plan 05-10 adds `spatie/eloquent-sortable` (MIT, already locked) under the license gate. | plan register | 2026-10-09 |
+| AR-05-03 | T-05-52 | A Partner can fill the task history by repeated real description changes; same exposure as comments, every row is attributed. | plan register (05-20) | 2026-10-09 |
+| AR-05-04 | T-05-55 | A Partner can trigger many edit notices; only real changes notify and the Admin can switch the event off per channel. | plan register (05-21) | 2026-10-09 |
+| AR-05-05 | T-05-SC2 | Plans 05-20 and 05-21 add no package. | plan register | 2026-10-09 |
 
 ---
 
@@ -104,6 +118,7 @@ created: "2026-10-09"
 |------------|---------------|--------|------|--------|
 | 2026-10-09 | 44 | 44 | 0 (blocking); 1 unregistered medium finding (T-05-44) open below threshold | gsd-security-auditor (opus), orchestrator |
 | 2026-10-09 | 45 | 45 | 0 (T-05-44 and G-1 closed by gap-closure plans 05-19 and 05-18) | orchestrator (L1 grep check of the mitigations plus the green full suite) |
+| 2026-10-09 | 56 | 56 | 0 (T-05-47 to T-05-56 of gap-closure plans 05-20 and 05-21 verified) | gsd-security-auditor (opus), orchestrator |
 
 ---
 
@@ -122,4 +137,12 @@ created: "2026-10-09"
 |---|---|
 | Threats found | 45 |
 | Closed | 45 |
+| Open | 0 |
+
+## Security Audit 2026-10-09
+
+| Metric | Count |
+|---|---|
+| Threats found | 56 |
+| Closed | 56 |
 | Open | 0 |
