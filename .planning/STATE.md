@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: time-tracking
-status: executing
-stopped_at: Completed 06-13-PLAN.md
-last_updated: "2026-10-09T16:06:19.005Z"
+status: verifying
+stopped_at: Completed 06-14-PLAN.md
+last_updated: "2026-10-09T16:21:37.316Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 06 execution started
-state_head: 17ba4922169c4f4d7da50045e4f5db7cbffab0e8
+state_head: 3c9e525751285e8ce29708a6781a7b97d24c9dee
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 100
-  completed_plans: 99
+  completed_plans: 100
   percent: 42
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 Phase: 06 (time-tracking) — EXECUTING
 Plan: 14 of 14
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-09 — Phase 06 execution started
 
 Progress: [████░░░░░░] 42%
@@ -159,6 +159,7 @@ Progress: [████░░░░░░] 42%
 | Phase 06 P11 | 40 min | 3 tasks | 6 files |
 | Phase 06 P12 | 15 min | 3 tasks | 11 files |
 | Phase 06 P13 | 20 min | 2 tasks | 8 files |
+| Phase 06 P14 | 14 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -360,6 +361,8 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-12: task rows compare time only with the task's own or parent's estimate; the project estimate is shown in the stats row only (research A2)
 - [Phase 06]: 06-12: 'Bez ukolu' and 'Celkem' are a two-line table footer (a relation manager cannot host a synthetic last row); footer Odhad sums own task estimates, footer Zbyva is blank
 - [Phase 06]: 06-13: the forgotten-timer notice is a non-queued database notification sent with notifyNow in the same transaction as the atomic long_running_notified_at claim, so claim and notice roll back together; a deactivated or non-Admin owner is skipped without claiming
+- [Phase 06]: Czech collation is guarded at deploy (kokpit:deploy:verify collation check), never silently replaced by the default collation
+- [Phase 06]: Phase 10 snapshot migration must re-create time_entries_frozen_guard with an extended mutable list; hand-over notes for Phases 7, 8, 9 and 10 live in CONTRIBUTING
 
 ### Pending Todos
 
@@ -399,6 +402,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T16:06:18.866Z
-Stopped at: Completed 06-13-PLAN.md
+Last session: 2026-10-09T16:21:37.166Z
+Stopped at: Completed 06-14-PLAN.md
 Resume file: None
