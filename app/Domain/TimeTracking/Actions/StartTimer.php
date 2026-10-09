@@ -9,6 +9,7 @@ use App\Domain\TimeTracking\Billing\BillableDefault;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\TimerClock;
 use App\Domain\TimeTracking\TimeEntryInput;
+use App\Domain\TimeTracking\TimerLock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -44,7 +45,10 @@ use Illuminate\Validation\ValidationException;
  */
 final class StartTimer
 {
-    public function __construct(private readonly BillableDefault $billableDefault) {}
+    public function __construct(
+        private readonly BillableDefault $billableDefault,
+        private readonly TimerLock $timerLock,
+    ) {}
 
     /**
      * @param  TimerData  $data
@@ -57,7 +61,7 @@ final class StartTimer
         Gate::forUser($actor)->authorize('create', TimeEntry::class);
 
         return DB::transaction(function () use ($actor, $data): array {
-            $this->lockTimerOf($actor);
+            $this->timerLock->lock($actor);
 
             // Read after the lock, so a waiting start sees the instant of its own turn.
             $now = TimerClock::now();
@@ -91,13 +95,5 @@ final class StartTimer
 
             return ['entry' => $entry, 'stopped' => $running];
         });
-    }
-
-    /**
-     * One timer decision per user at a time; different users never wait on each other.
-     */
-    private function lockTimerOf(User $user): void
-    {
-        DB::select('select pg_advisory_xact_lock(hashtextextended(?, 0))', ['kokpit:timer:'.$user->getKey()]);
     }
 }

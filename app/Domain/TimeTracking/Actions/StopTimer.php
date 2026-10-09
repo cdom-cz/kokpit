@@ -7,6 +7,7 @@ namespace App\Domain\TimeTracking\Actions;
 use App\Domain\Identity\Models\User;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\TimerClock;
+use App\Domain\TimeTracking\TimerLock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\Gate;
  * is no longer the running one (a second tab, a double click, a start in
  * between), it does nothing and returns null, so it can never overwrite an
  * `ended_at` or stop a newer timer by mistake. The stop takes the same per-user
- * advisory lock as StartTimer, so a start and a stop of one user never
+ * TimerLock as StartTimer, so a start and a stop of one user never
  * interleave; the clock is read after the lock.
  *
  * The entry is stopped at `max(now, started_at)`, so a start ahead of the clock
@@ -30,6 +31,8 @@ use Illuminate\Support\Facades\Gate;
  */
 final class StopTimer
 {
+    public function __construct(private readonly TimerLock $timerLock) {}
+
     /**
      * @return TimeEntry|null the stopped entry, null when there was nothing to stop
      */
@@ -38,7 +41,7 @@ final class StopTimer
         Gate::forUser($actor)->authorize('create', TimeEntry::class);
 
         return DB::transaction(function () use ($actor, $expectedEntryId): ?TimeEntry {
-            $this->lockTimerOf($actor);
+            $this->timerLock->lock($actor);
 
             // Read after the lock, so a waiting stop sees the instant of its own turn.
             $now = TimerClock::now();
@@ -59,13 +62,5 @@ final class StopTimer
 
             return $running->refresh();
         });
-    }
-
-    /**
-     * Same key as StartTimer: one timer decision per user at a time.
-     */
-    private function lockTimerOf(User $user): void
-    {
-        DB::select('select pg_advisory_xact_lock(hashtextextended(?, 0))', ['kokpit:timer:'.$user->getKey()]);
     }
 }
