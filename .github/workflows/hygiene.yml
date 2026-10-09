@@ -175,7 +175,11 @@ jobs:
           extensions: intl, bcmath, pdo_pgsql, gd, exif, zip, sodium, mbstring, redis
           coverage: none
 
+      # A fresh checkout has no .env, so APP_ENV would default to production and the production guard would fail
+      # `artisan package:discover` in the post-autoload-dump script. CI is not production.
       - name: Install Composer dependencies
+        env:
+          APP_ENV: testing
         run: composer install --prefer-dist --no-progress --no-interaction
 
       # The Admin password is created inside this step and never echoed; it is valid only in this job's
@@ -211,7 +215,11 @@ jobs:
           extensions: intl, bcmath, pdo_pgsql, gd, exif, zip, sodium, mbstring, redis
           coverage: none
 
+      # A fresh checkout has no .env, so APP_ENV would default to production and the production guard would fail
+      # `artisan package:discover` in the post-autoload-dump script. CI is not production.
       - name: Install Composer dependencies
+        env:
+          APP_ENV: testing
         run: composer install --prefer-dist --no-progress --no-interaction
 
       - name: Pint (formatting, no changes written)
