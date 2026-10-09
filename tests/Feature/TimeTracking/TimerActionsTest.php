@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Actions\ArchiveClient;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
+use App\Domain\Tasks\Actions\ArchiveTask;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
@@ -450,4 +452,225 @@ it('stops the running timer at the current second and is a no-op the next time',
 
     expect(app(StopTimer::class)->handle($admin))->toBeNull()
         ->and(timerSystem(static fn (): ?CarbonImmutable => TimeEntry::query()->findOrFail($started->id)->ended_at)?->equalTo(CarbonImmutable::parse('2026-10-12 08:25:30', 'UTC')))->toBeTrue();
+});
+
+/*
+ * Context guards: forged, archived and inconsistent context (TI-07, T-06-04).
+ */
+
+/**
+ * Starts a timer that must be refused with a field error and returns the messages.
+ *
+ * @param  array<string, mixed>  $data
+ * @return array<string, array<int, string>>
+ */
+function timerRefusedStart(User $actor, array $data): array
+{
+    test()->actingAs($actor);
+
+    try {
+        app(StartTimer::class)->handle($actor, $data);
+    } catch (ValidationException $exception) {
+        return $exception->errors();
+    }
+
+    test()->fail('The start was accepted although the context is not valid.');
+}
+
+it('refuses an archived task, a task of an archived project and a task of an archived client on task_id and leaves the running timer alone', function (string $archived): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $project = timerProject();
+    $task = timerTask($admin, $project);
+    $running = timerStart($admin, timerProject()->client_id)['entry'];
+
+    match ($archived) {
+        'task' => app(ArchiveTask::class)->handle($admin, $task),
+        'project' => timerSystem(static fn () => $project->delete()),
+        'client' => app(ArchiveClient::class)->handle($project->client()->withTrashed()->firstOrFail()),
+    };
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:30:00', 'UTC'));
+    $errors = timerRefusedStart($admin, ['task_id' => $task->id]);
+
+    expect($errors)->toHaveKey('task_id')
+        ->and($errors['task_id'][0])->toBe('Úkol je archivovaný. Vyberte jiný úkol.')
+        ->and(timerCount($admin))->toBe(1)
+        ->and(timerCount($admin, runningOnly: true))->toBe(1)
+        ->and(timerSystem(static fn (): bool => TimeEntry::query()->findOrFail($running->id)->isRunning()))->toBeTrue();
+})->with(['task', 'project', 'client']);
+
+it('refuses an archived project and a project of an archived client on project_id', function (string $archived): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $project = timerProject();
+
+    if ($archived === 'project') {
+        timerSystem(static fn () => $project->delete());
+    } else {
+        app(ArchiveClient::class)->handle($project->client()->firstOrFail());
+    }
+
+    $errors = timerRefusedStart($admin, ['project_id' => $project->id]);
+
+    expect($errors)->toHaveKey('project_id')
+        ->and($errors['project_id'][0])->toBe('Projekt je archivovaný. Vyberte jiný projekt.')
+        ->and(timerCount($admin))->toBe(0);
+})->with(['project', 'client']);
+
+it('starts a timer from a project and derives the client', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $project = timerProject();
+
+    $entry = app(StartTimer::class)->handle($admin, ['project_id' => $project->id])['entry'];
+
+    expect($entry->project_id)->toBe($project->id)
+        ->and($entry->client_id)->toBe($project->client_id)
+        ->and($entry->task_id)->toBeNull();
+});
+
+it('refuses a task together with a project of another task as inconsistent_context on task_id', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $task = timerTask($admin, timerProject());
+    $other = timerProject();
+
+    $errors = timerRefusedStart($admin, ['task_id' => $task->id, 'project_id' => $other->id]);
+
+    expect($errors)->toHaveKey('task_id')
+        ->and($errors['task_id'][0])->toBe('Klient, projekt a úkol k sobě nepatří. Vyberte je znovu.')
+        ->and(timerCount($admin))->toBe(0);
+});
+
+it('refuses a project together with a client of another project as inconsistent_context on project_id', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $project = timerProject();
+    $otherClient = timerSystem(static fn (): Client => Client::factory()->create());
+
+    $errors = timerRefusedStart($admin, ['project_id' => $project->id, 'client_id' => $otherClient->id]);
+
+    expect($errors)->toHaveKey('project_id')
+        ->and($errors['project_id'][0])->toBe('Klient, projekt a úkol k sobě nepatří. Vyberte je znovu.')
+        ->and(timerCount($admin))->toBe(0);
+});
+
+it('accepts a task together with its own project and client', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $project = timerProject();
+    $task = timerTask($admin, $project);
+
+    $entry = app(StartTimer::class)->handle($admin, [
+        'client_id' => $project->client_id,
+        'project_id' => $project->id,
+        'task_id' => $task->id,
+    ])['entry'];
+
+    expect($entry->task_id)->toBe($task->id);
+});
+
+it('answers a malformed uuid in any of the three keys with the field error of that key', function (string $key, string $message): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $client = timerSystem(static fn (): Client => Client::factory()->create());
+
+    $data = $key === 'client_id' ? [] : ['client_id' => $client->id];
+    $errors = timerRefusedStart($admin, [...$data, $key => 'not-a-uuid']);
+
+    expect($errors)->toHaveKey($key)
+        ->and($errors[$key][0])->toBe($message)
+        ->and(timerCount($admin))->toBe(0);
+})->with([
+    'task_id' => ['task_id', 'Úkol je archivovaný. Vyberte jiný úkol.'],
+    'project_id' => ['project_id', 'Projekt je archivovaný. Vyberte jiný projekt.'],
+    'client_id' => ['client_id', 'Vyberte klienta.'],
+]);
+
+it('keeps the running timer running after the task, the project client and the task are archived and stops it normally', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $project = timerProject();
+    $task = timerTask($admin, $project);
+    $entry = app(StartTimer::class)->handle($admin, ['task_id' => $task->id])['entry'];
+
+    app(ArchiveTask::class)->handle($admin, $task);
+    app(ArchiveClient::class)->handle($project->client()->firstOrFail());
+
+    $loaded = TimeEntry::query()->findOrFail($entry->id);
+
+    expect($loaded->isRunning())->toBeTrue()
+        ->and($loaded->task?->trashed())->toBeTrue()
+        ->and($loaded->task?->id)->toBe($task->id)
+        ->and($loaded->project?->id)->toBe($project->id)
+        ->and($loaded->client?->trashed())->toBeTrue();
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:45:00', 'UTC'));
+    $stopped = app(StopTimer::class)->handle($admin);
+
+    expect($stopped?->id)->toBe($entry->id)
+        ->and($stopped?->duration_seconds)->toBe(2700);
+});
+
+it('stores an explicit billable value over the default of the task', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $nonBillable = timerTask($admin, timerProject(), ['billing_type' => 'non_billable']);
+
+    $forced = app(StartTimer::class)->handle($admin, ['task_id' => $nonBillable->id, 'billable' => true])['entry'];
+
+    expect($forced->billable)->toBeTrue();
+
+    $hourly = timerTask($admin, timerProject());
+    $off = app(StartTimer::class)->handle($admin, ['task_id' => $hourly->id, 'billable' => false])['entry'];
+
+    expect($off->billable)->toBeFalse();
+});
+
+it('does nothing when the expected entry id is not the running entry', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $admin = Canary::admin();
+    $client = timerSystem(static fn (): Client => Client::factory()->create());
+    $first = timerStart($admin, $client->id)['entry'];
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:10:00', 'UTC'));
+    $second = timerStart($admin, $client->id)['entry'];
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:20:00', 'UTC'));
+
+    expect(app(StopTimer::class)->handle($admin, $first->id))->toBeNull()
+        ->and(timerCount($admin, runningOnly: true))->toBe(1)
+        ->and(timerSystem(static fn (): bool => TimeEntry::query()->findOrFail($second->id)->isRunning()))->toBeTrue();
+
+    expect(app(StopTimer::class)->handle($admin, $second->id)?->id)->toBe($second->id);
+});
+
+it('stops the running timer at its own start when the clock lags behind it', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $admin = Canary::admin();
+    $client = timerSystem(static fn (): Client => Client::factory()->create());
+    $entry = timerStart($admin, $client->id)['entry'];
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 07:59:50', 'UTC'));
+    $stopped = app(StopTimer::class)->handle($admin);
+
+    expect($stopped?->id)->toBe($entry->id)
+        ->and($stopped?->duration_seconds)->toBe(0);
+});
+
+it('refuses a Partner who stops a timer and leaves the timer of the Admin running', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $admin = Canary::admin();
+    [$clientA] = Canary::twoClients();
+    $running = timerStart($admin, $clientA)['entry'];
+    $partner = Canary::partnerFor($clientA);
+
+    $this->actingAs($partner);
+
+    expect(fn () => app(StopTimer::class)->handle($partner))->toThrow(AuthorizationException::class)
+        ->and(fn () => app(StopTimer::class)->handle($partner, $running->id))->toThrow(AuthorizationException::class)
+        ->and(timerSystem(static fn (): bool => TimeEntry::query()->findOrFail($running->id)->isRunning()))->toBeTrue();
 });
