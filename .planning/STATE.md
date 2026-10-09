@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Phase 04 complete; Phase 5 awaiting human verification (6 UAT items in 05-UAT.md)
-last_updated: "2026-10-09T08:11:43.355Z"
+stopped_at: Completed 05-20-PLAN.md
+last_updated: "2026-10-09T09:14:31.729Z"
 last_activity: 2026-10-09
-last_activity_desc: Phase 04 UAT passed, re-verified and marked complete
-state_head: 73d72246023f54f9e7565f5626723fb937254759
+last_activity_desc: Phase 05 execution started
+state_head: 6fab92e156d8544e8f2e5f557b4d57247656dd2c
 progress:
   total_phases: 12
   completed_phases: 4
-  total_plans: 83
-  completed_plans: 83
+  total_plans: 85
+  completed_plans: 84
   percent: 33
 ---
 
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 ## Current Position
 
-Phase: 05 (Tasks and Kanban) — ALL PLANS EXECUTED, AWAITING HUMAN VERIFICATION
-Plan: 19 of 19
-Status: Verification human_needed (6 manual UAT items); CR-01 and T-05-44 closed by gap-closure plans 05-18 and 05-19. Phase 04 verified and complete (UAT 3/3 passed, re-verified 2026-10-09).
-Last activity: 2026-10-09 — Phase 04 UAT passed, re-verified and marked complete
+Phase: 05 (Tasks and Kanban) — EXECUTING
+Plan: 2 of 21
+Status: Ready to execute
+Last activity: 2026-10-09 — Phase 05 execution started
 
 Progress: [███░░░░░░░] 33%
 
@@ -142,6 +142,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 05 P17 | 9 min | 2 tasks | 5 files |
 | Phase 05 P18 | 12 min | 3 tasks | 4 files |
 | Phase 05 P19 | 10 min | 3 tasks | 8 files |
+| Phase 05 P20 | 10 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -308,6 +309,7 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-18: TaskResource peopleOptions adds only the record's current person of the same field; TaskPeople and UpdateTask unchanged so every changed person is still re-checked (CR-01, D-05) — UpdateTask keeps an unchanged person, so the form must still offer the stored value or every save of a task with a deactivated person is refused
 - [Phase 05]: 05-18: CreateTask drops Partner tags before any parsing, like status, priority and people (G-1, D-04) — Tags are Admin-only; the drop must hold for any caller of the Action, not only the Partner create page
 - [Phase 05]: 05-19: task notification values are escaped once in the TaskNotification base (final toMail/toDatabase; mail Markdown-escaped without < and >, bell e(), subject raw) — The mail renderer HTML-encodes each line before parsing Markdown, so only Markdown syntax is live there; the bell sanitiser keeps links and images, so it needs e(). One place means no subclass can forget it.
+- [Phase 05]: 05-20: the D-16 status rule lives only in TaskPolicy::editDescription; UpdateTaskDescription re-checks it on the locked row
 
 ### Pending Todos
 
@@ -347,6 +349,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T05:57:30.190Z
-Stopped at: Phase 04 complete; Phase 5 awaiting human verification (6 UAT items in 05-UAT.md)
+Last session: 2026-10-09T09:14:31.519Z
+Stopped at: Completed 05-20-PLAN.md
 Resume file: None
