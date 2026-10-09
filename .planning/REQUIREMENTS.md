@@ -87,7 +87,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [ ] **TI-06**: Daily/weekly timesheet with totals
 - [x] **TI-07**: Consistency rules enforced in the database: task/project/client agree, at most one running timer per user, end after start; starting a timer stops the running one
 - [ ] **TI-08**: Time is stored exactly in seconds without rounding; rate resolution is task, project, client, global default; snapshot of rate and amount on billing
-- [ ] **TI-09**: A forgotten long-running timer is flagged to the user
+- [x] **TI-09**: A forgotten long-running timer is flagged to the user
 
 ### API
 
@@ -254,7 +254,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TI-06 | Phase 6 | Pending |
 | TI-07 | Phase 6 | Complete |
 | TI-08 | Phase 6 | Pending |
-| TI-09 | Phase 6 | Pending |
+| TI-09 | Phase 6 | Complete |
 | AP-01 | Phase 7 | Pending |
 | AP-02 | Phase 7 | Pending |
 | AP-03 | Phase 7 | Pending |
