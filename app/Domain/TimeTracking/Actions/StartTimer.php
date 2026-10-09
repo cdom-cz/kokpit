@@ -10,6 +10,8 @@ use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\TimerClock;
 use App\Domain\TimeTracking\TimeEntryInput;
 use App\Domain\TimeTracking\TimerLock;
+use App\Domain\TimeTracking\TimerRaceLost;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -37,6 +39,12 @@ use Illuminate\Validation\ValidationException;
  * task when it is null. Ids and instants are set with `forceFill`, so the
  * payload can never smuggle them in.
  *
+ * A start that still loses a race on time_entries_one_running_per_user (the
+ * lock makes that rare, the index makes it impossible to store) surfaces as the
+ * typed TimerRaceLost with the Czech copy, translated after the transaction
+ * rolled back. A unique violation on any other index is rethrown unchanged.
+ * Nothing is retried here.
+ *
  * Lock order: the per-user timer lock, then the task, project and client rows
  * FOR SHARE, then the running entry FOR UPDATE. ArchiveTask takes the board lock
  * and then the task row FOR UPDATE and never the timer lock, so there is no cycle.
@@ -45,6 +53,8 @@ use Illuminate\Validation\ValidationException;
  */
 final class StartTimer
 {
+    private const string ONE_RUNNING_INDEX = 'time_entries_one_running_per_user';
+
     public function __construct(
         private readonly BillableDefault $billableDefault,
         private readonly TimerLock $timerLock,
@@ -55,45 +65,55 @@ final class StartTimer
      * @return array{entry: TimeEntry, stopped: TimeEntry|null}
      *
      * @throws ValidationException
+     * @throws TimerRaceLost a concurrent start won the one-running index
      */
     public function handle(User $actor, array $data): array
     {
         Gate::forUser($actor)->authorize('create', TimeEntry::class);
 
-        return DB::transaction(function () use ($actor, $data): array {
-            $this->timerLock->lock($actor);
+        try {
+            return DB::transaction(function () use ($actor, $data): array {
+                $this->timerLock->lock($actor);
 
-            // Read after the lock, so a waiting start sees the instant of its own turn.
-            $now = TimerClock::now();
+                // Read after the lock, so a waiting start sees the instant of its own turn.
+                $now = TimerClock::now();
 
-            $context = TimeEntryInput::context($data);
-            $description = TimeEntryInput::description($data['description'] ?? null);
-            $billable = is_bool($data['billable'] ?? null)
-                ? $data['billable']
-                : $this->billableDefault->for($context['task']);
+                $context = TimeEntryInput::context($data);
+                $description = TimeEntryInput::description($data['description'] ?? null);
+                $billable = is_bool($data['billable'] ?? null)
+                    ? $data['billable']
+                    : $this->billableDefault->for($context['task']);
 
-            $running = TimeEntry::query()
-                ->where('user_id', $actor->getKey())
-                ->whereNull('ended_at')
-                ->lockForUpdate()
-                ->first();
+                $running = TimeEntry::query()
+                    ->where('user_id', $actor->getKey())
+                    ->whereNull('ended_at')
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($running !== null) {
-                $running->forceFill(['ended_at' => $now->max($running->started_at)])->save();
-                $running->refresh();
+                if ($running !== null) {
+                    $running->forceFill(['ended_at' => $now->max($running->started_at)])->save();
+                    $running->refresh();
+                }
+
+                $entry = (new TimeEntry(['description' => $description, 'billable' => $billable]))->forceFill([
+                    'user_id' => $actor->getKey(),
+                    'client_id' => $context['client']->getKey(),
+                    'project_id' => $context['project']?->getKey(),
+                    'task_id' => $context['task']?->getKey(),
+                    'started_at' => $now,
+                ]);
+                $entry->save();
+                $entry->refresh();
+
+                return ['entry' => $entry, 'stopped' => $running];
+            });
+        } catch (UniqueConstraintViolationException $e) {
+            // Translated outside the rolled-back transaction. Any other unique violation is not ours to hide.
+            if (str_contains($e->getMessage(), self::ONE_RUNNING_INDEX)) {
+                throw new TimerRaceLost;
             }
 
-            $entry = (new TimeEntry(['description' => $description, 'billable' => $billable]))->forceFill([
-                'user_id' => $actor->getKey(),
-                'client_id' => $context['client']->getKey(),
-                'project_id' => $context['project']?->getKey(),
-                'task_id' => $context['task']?->getKey(),
-                'started_at' => $now,
-            ]);
-            $entry->save();
-            $entry->refresh();
-
-            return ['entry' => $entry, 'stopped' => $running];
-        });
+            throw $e;
+        }
     }
 }

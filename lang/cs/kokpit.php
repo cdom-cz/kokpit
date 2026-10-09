@@ -924,6 +924,7 @@ return [
             'project_unavailable' => 'Projekt je archivovaný. Vyberte jiný projekt.',
             'inconsistent_context' => 'Klient, projekt a úkol k sobě nepatří. Vyberte je znovu.',
             'description_too_long' => 'Popis je příliš dlouhý. Zkraťte ho na nejvýše 1000 znaků.',
+            'start_race' => 'Časovač se nepodařilo spustit, protože se současně změnil jiný. Zkuste to znovu.',
         ],
     ],
 
