@@ -35,8 +35,8 @@ use Illuminate\Validation\ValidationException;
  * are given; every id must be in the allowed set of TaskPeople (the active
  * Admin and the active Partners of the project's client), otherwise the error is
  * keyed `assignee_id` or `requester_id`. A Partner always becomes the requester
- * with the Admin as assignee, and their status, priority and people inputs are
- * ignored. With no active Admin a Partner creation is a DomainException.
+ * with the Admin as assignee, and their status, priority, people and tags inputs are
+ * ignored (tags are Admin-only). With no active Admin a Partner creation is a DomainException.
  *
  * The description is cleaned with RichText::clean (through TaskInput::description)
  * before it is stored, whoever wrote it (D-10); text over the length limit is a
@@ -89,8 +89,8 @@ final class CreateTask
             throw ValidationException::withMessages(['title' => __('kokpit.tasks.errors.title_required')]);
         }
 
-        // A Partner only supplies the content: status, priority and people are ignored (D-04),
-        // before they are validated, so a forged value is no error but simply has no effect.
+        // A Partner only supplies the content: status, priority, people and tags are ignored
+        // (D-04), before they are validated, so a forged value is no error but simply has no effect.
         $isPartner = $this->people->isPartner($actor);
 
         if ($isPartner && $parent !== null) {
@@ -98,7 +98,7 @@ final class CreateTask
         }
 
         if ($isPartner) {
-            unset($data['status'], $data['priority'], $data['assignee_id'], $data['requester_id']);
+            unset($data['status'], $data['priority'], $data['assignee_id'], $data['requester_id'], $data['tags']);
         }
 
         $status = TaskInput::status($data['status'] ?? null) ?? ProjectStatus::Planned;
