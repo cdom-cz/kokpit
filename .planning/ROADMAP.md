@@ -382,8 +382,51 @@ Gap closure (from 05-VERIFICATION.md gap 1: the closing-gate test of G-05-5 is f
   4. Admin sees a daily and weekly timesheet with totals, and a timer left running unusually long is flagged to the user
   5. Project detail (Admin only) shows tasks, estimate versus actual and billed versus unbilled time, and a Partner sees no time, rates or prices anywhere, proven by the canary tests
 
-**Plans**: TBD
+**Plans:** 14 plans (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 5 rule; each plan modifies at most 13 files)
 **UI hint**: yes
+
+Plans:
+**Wave 1**
+- [ ] 06-01-PLAN.md — Tracer: `time_entries` with composite keys, CHECKs, one-running partial index and billed guard; Admin-only TimeEntry; StartTimer client-only start with same-instant auto-stop and exact seconds (TI-01, TI-03, TI-07, TI-08)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 06-02-PLAN.md — Start from a task, StopTimer, D-03 billable default, context guards, every constraint proven by SQLSTATE (TI-01, TI-04, TI-05, TI-07)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 06-03-PLAN.md — TimerLock and the parallel-process proof with a mutation run; typed lost-race error (TI-07)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 06-04-PLAN.md — Manual entries: Create/Update/DeleteTimeEntry, billed refusal, overlap finder, DurationFormat (TI-02, TI-03, TI-07, TI-08)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 06-05-PLAN.md — Mark billed and cancel billing with audit; effective rate resolver task, project, client, default (TI-05, TI-08)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 06-06-PLAN.md — Time entries resource: list, create, edit, view; consistent pickers in Czech order; overlap warning; billable preset (TI-02, TI-03, TI-04)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 06-07-PLAN.md — Bulk billing actions, locked rows and pages, filters, whole-set totals, overlap badge, rate, delete, history (TI-05, TI-06, TI-08)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 06-08-PLAN.md — Top bar timer: quick start, running pill, forgotten-timer state, "Doplnit záznam", Admin guard on every Livewire request (TI-01, TI-09)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 06-09-PLAN.md — "Poslední záznamy" side panel with the detailed timer, day groups and the per-user toggle (TI-01, TI-09)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 06-10-PLAN.md — One-click start and stop on the task page, task list and board cards; task "Čas" section (TI-01, TI-04)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [ ] 06-11-PLAN.md — "Výkaz" timesheet: day view and week grid with totals, Prague days and DST (TI-06)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [ ] 06-12-PLAN.md — Admin project time overview: stats, tasks with estimate vs actual, project entries (PR-05)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [ ] 06-13-PLAN.md — Forgotten-timer job: one escaped bell notice per running entry, never stopping (TI-09)
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [ ] 06-14-PLAN.md — Partner leak proof, collation readiness check, conventions and hand-over docs, .gitignore review and the phase gate
 
 ### Phase 7: REST API
 
