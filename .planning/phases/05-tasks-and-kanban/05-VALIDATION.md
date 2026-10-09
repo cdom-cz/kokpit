@@ -91,6 +91,12 @@ Refined by the planner to the 17 plans (one plan per wave). Every test file is c
 | 05-19-01 | 05-19 | 19 | TA-07, TA-04 | T-05-44 | Task title and actor name escaped once in the TaskNotification base (mail and bell) | isolation | `ddev exec vendor/bin/pest tests/Isolation/NotificationMarkupTest.php` | ✅ | ✅ green |
 | 05-19-02 | 05-19 | 19 | TA-07, TA-04 | T-05-44 | Markup matrix over every notification class and audience; idempotency; 120/300 cuts; completeness and structure pins | isolation | `ddev exec vendor/bin/pest tests/Isolation/NotificationMarkupTest.php tests/Feature/Tasks/TaskNotificationsTest.php tests/Isolation/NotificationLeakTest.php` | ✅ | ✅ green |
 | 05-19-03 | 05-19 | 19 | TA-07 | T-05-44 | CONTRIBUTING escaping rule pinned; closing gate of the gap closure | feature + full | `ddev exec vendor/bin/pest tests/Feature/Repo/RepositoryFilesTest.php` | ✅ | ✅ green |
+| 05-20-01 | 05-20 | 20 | TA-07, TA-01, KB-03 | G-05-5, D-16 | Tracer: a Partner edits the description of an own task from the task page; stored cleaned; history row "Popis upraven" | feature + isolation | `ddev exec vendor/bin/pest tests/Feature/Tasks/PartnerTaskDescriptionTest.php tests/Isolation/PartnerTaskVisibilityTest.php tests/Feature/Tasks/TaskEscalationTest.php` | ✅ | ✅ green |
+| 05-20-02 | 05-20 | 20 | TA-07 | G-05-5, D-16, D-10 | Description only, own visible task in Planned or To clarify only, always cleaned, never in the log | feature + isolation | `ddev exec vendor/bin/pest tests/Feature/Tasks/PartnerTaskDescriptionTest.php` | ✅ | ✅ green |
+| 05-20-03 | 05-20 | 20 | TA-07 | G-05-5, D-16 | Stale save refused, status flip on the locked row refused, unchanged save leaves no trace, overview filters the event; six recorded mutations | feature | `ddev exec vendor/bin/pest tests/Feature/Tasks/PartnerTaskDescriptionTest.php tests/Feature/Operations/ActivityViewsTest.php` | ✅ | ✅ green |
+| 05-21-01 | 05-21 | 21 | TA-07 | G-05-5 | Tracer: a Partner's description edit reaches the Admin and the eligible assignee by mail and bell, without the description text | feature + isolation | `ddev exec vendor/bin/pest tests/Feature/Tasks/PartnerTaskDescriptionTest.php tests/Feature/Tasks/TaskNotificationsTest.php tests/Isolation/NotificationMarkupTest.php tests/Isolation/NotificationLeakTest.php` | ✅ | ✅ green |
+| 05-21-02 | 05-21 | 21 | TA-07 | G-05-5 | Admin profile switch "Změna úkolu" with its own helper; Partner rows unchanged | feature | `ddev exec vendor/bin/pest tests/Feature/Notifications/NotificationPreferencesTest.php tests/Feature/Tasks/TaskNotificationsTest.php` | ✅ | ✅ green |
+| 05-21-03 | 05-21 | 21 | TA-07 | G-05-5 | Markup proof for the Admin audience; Partner write paths documented; closing gate of the gap closure | isolation + feature + full | `ddev exec vendor/bin/pest tests/Isolation/NotificationMarkupTest.php tests/Feature/Repo/RepositoryFilesTest.php` | ✅ | ✅ green |
 
 *Status: ✅ green · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -130,7 +136,7 @@ Each item is created by the plan that first needs it (tracer-first; no separate 
 - [x] Feedback latency < 120s (per task-file runs 10-95 s; the full suite takes about 165 s and runs per wave, not per task)
 - [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** validated 2026-10-09 (all 32 referenced test files exist and pass: 508 tests; full suite 1982 tests green at the phase gate)
+**Approval:** validated 2026-10-09 (all referenced test files exist and pass; full suite 2047 tests green at the gap-closure gate of plan 05-21; Manual-Only list unchanged plus the browser walk of 05-21 Task 3, tracked in 05-UAT.md)
 
 ## Validation Audit 2026-10-09
 
