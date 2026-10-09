@@ -118,6 +118,52 @@ final class TaskNotifier
     }
 
     /**
+     * A task was escalated: exactly one recipient is told (D-06, D-07). That is
+     * the assignee when the account can receive it (active, and an Admin or a
+     * Partner of the project's client who can still read the task) and is not the
+     * actor; otherwise the Admin, again unless the Admin is the actor.
+     *
+     * The fallback depends only on whether the assignee CAN receive the event,
+     * never on the assignee's preferences: an assignee who switched escalations
+     * off on both channels gets nothing and the Admin is not told in that place
+     * (D-15 preferences only narrow; assumption A13 of plan 05-16). If the owner
+     * wants the Admin told in that case, this is the one branch to change.
+     */
+    public function escalated(Task $task, User $actor, TaskComment $comment): void
+    {
+        $internal = $comment->is_internal;
+        $facts = $this->facts($task->getKey());
+
+        $candidates = [];
+        $this->addCandidate($candidates, $facts['assignee_id'], $facts);
+        unset($candidates[(string) $actor->getKey()]);
+
+        // An internal comment must never reach a Partner (an escalation comment never is internal).
+        if ($internal) {
+            $candidates = array_filter($candidates, static fn (User $user): bool => ! $user->hasRole(RoleName::Partner->value));
+        }
+
+        $recipient = array_values($candidates)[0] ?? $this->admins()[0] ?? null;
+
+        if ($recipient === null || $recipient->getKey() === $actor->getKey()) {
+            return;
+        }
+
+        $isPartner = $recipient->hasRole(RoleName::Partner->value);
+
+        $recipient->notify(new TaskEscalatedNotification(
+            taskReference: $facts['reference'],
+            taskTitle: $facts['title'],
+            projectKey: $facts['project_key'],
+            actorName: $actor->name,
+            excerpt: $internal ? null : self::excerpt($comment->body),
+            url: $this->url($facts['reference'], partner: $isPartner),
+            recipientIsPartner: $isPartner,
+            internal: $internal,
+        ));
+    }
+
+    /**
      * The plain text of a sanitised body, cut to the excerpt limit: block ends
      * become spaces, tags and entities are resolved to text, and anything that
      * still looks like a tag is removed, so no markup survives.

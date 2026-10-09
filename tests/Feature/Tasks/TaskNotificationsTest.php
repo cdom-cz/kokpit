@@ -15,6 +15,7 @@ use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskComment;
 use App\Domain\Tasks\Notifications\TaskCommentedNotification;
 use App\Domain\Tasks\Notifications\TaskCreatedNotification;
+use App\Domain\Tasks\Notifications\TaskEscalatedNotification;
 use Filament\Facades\Filament;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -181,13 +182,16 @@ function taskNotifPrefs(User $user, array $preferences): void
 }
 
 /**
- * How many e-mails the array mailer holds for the user.
+ * How many e-mails the array mailer holds for the user, optionally only those
+ * whose subject contains the text.
  */
-function taskNotifMailCount(User $user): int
+function taskNotifMailCount(User $user, ?string $subjectContains = null): int
 {
     return collect(Mail::getSymfonyTransport()->messages())
         ->filter(static fn (SentMessage $message): bool => collect($message->getEnvelope()->getRecipients())
             ->contains(static fn (Address $address): bool => $address->getAddress() === $user->email))
+        ->filter(static fn (SentMessage $message): bool => $subjectContains === null
+            || str_contains((string) $message->getOriginalMessage()->getHeaders()->get('Subject')?->getBodyAsString(), $subjectContains))
         ->count();
 }
 
@@ -453,5 +457,191 @@ describe('comment notifications', function (): void {
 
         expect($html)->not->toContain('href="https://example.com/x"')
             ->and($html)->not->toContain('<em>stars</em>');
+    });
+});
+
+/**
+ * The escalation notifications sent on the fake to the user.
+ *
+ * @return Collection<int, mixed>
+ */
+function taskNotifEscalations(User $user): Collection
+{
+    return Notification::sent($user, TaskEscalatedNotification::class);
+}
+
+/**
+ * The user escalates the task with a visible reason, signed in as that user.
+ */
+function taskNotifEscalate(User $actor, Task $task, string $reason = '<p>Example reason</p>'): Task
+{
+    return app(EscalateTask::class)->handle($actor, taskNotifSeen($actor, $task), $reason);
+}
+
+describe('escalation notifications', function (): void {
+    beforeEach(function (): void {
+        $this->partnerA2 = Canary::partnerFor($this->clientA);
+        $this->partnerB = Canary::partnerFor($this->clientB);
+        $this->task = taskNotifCreate($this->partnerA, $this->projectA);
+    });
+
+    it('tells the Admin assignee on mail and in the bell, with the comment excerpt and the admin link', function (): void {
+        Notification::fake();
+
+        taskNotifEscalate($this->partnerA, $this->task);
+
+        Notification::assertSentTo(
+            $this->admin,
+            TaskEscalatedNotification::class,
+            fn (TaskEscalatedNotification $notification, array $channels): bool => $channels === ['mail', 'database']
+                && $notification->event === NotificationEvent::Escalation
+                && ! $notification->recipientIsPartner
+                && $notification->excerpt === 'Example reason'
+                && $notification->actorName === $this->partnerA->name
+                && str_ends_with($notification->url, '/admin/tasks/'.$this->task->reference),
+        );
+        expect(taskNotifEscalations($this->admin))->toHaveCount(1)
+            ->and(taskNotifEscalations($this->partnerA))->toHaveCount(0)
+            ->and(taskNotifSent($this->admin))->toHaveCount(0);
+    });
+
+    it('tells a Partner assignee of the same client on both channels with the my-tasks link, and not the Admin', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerA2);
+        Notification::fake();
+
+        taskNotifEscalate($this->partnerA, $this->task);
+
+        Notification::assertSentTo(
+            $this->partnerA2,
+            TaskEscalatedNotification::class,
+            fn (TaskEscalatedNotification $notification, array $channels): bool => $channels === ['mail', 'database']
+                && $notification->recipientIsPartner
+                && $notification->excerpt === 'Example reason'
+                && str_ends_with($notification->url, '/admin/my-tasks/'.$this->task->reference)
+                && ! str_contains($notification->url, '/admin/tasks/'),
+        );
+        expect(taskNotifEscalations($this->partnerA2))->toHaveCount(1)
+            ->and(taskNotifEscalations($this->admin))->toHaveCount(0);
+        Notification::assertNothingSentTo($this->partnerA, TaskEscalatedNotification::class);
+    });
+
+    it('falls back to the Admin when the assignee is a deactivated Partner', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerA2);
+        $this->partnerA2->forceFill(['deactivated_at' => now()])->save();
+        Notification::fake();
+
+        taskNotifEscalate($this->partnerA, $this->task);
+
+        expect(taskNotifEscalations($this->admin))->toHaveCount(1)
+            ->and(taskNotifEscalations($this->partnerA2))->toHaveCount(0);
+    });
+
+    it('falls back to the Admin when the assignee is a Partner of another client', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerB);
+        Notification::fake();
+
+        taskNotifEscalate($this->partnerA, $this->task);
+
+        expect(taskNotifEscalations($this->admin))->toHaveCount(1)
+            ->and(taskNotifEscalations($this->partnerB))->toHaveCount(0);
+    });
+
+    it('notifies the Admin and not the Partner when the escalating Partner is the assignee', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerA);
+        Notification::fake();
+
+        taskNotifEscalate($this->partnerA, $this->task);
+
+        expect(taskNotifEscalations($this->admin))->toHaveCount(1)
+            ->and(taskNotifEscalations($this->partnerA))->toHaveCount(0);
+    });
+
+    it('notifies exactly one recipient per escalation', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerA2);
+        Notification::fake();
+
+        taskNotifEscalate($this->partnerA, $this->task);
+
+        Notification::assertSentTimes(TaskEscalatedNotification::class, 1);
+    });
+
+    it('delivers only the bell to an Admin who switched the e-mail of escalations off', function (): void {
+        taskNotifPrefs($this->admin, ['escalation' => ['mail' => false]]);
+        Notification::fake();
+
+        taskNotifEscalate($this->partnerA, $this->task);
+
+        Notification::assertSentTo(
+            $this->admin,
+            TaskEscalatedNotification::class,
+            static fn (TaskEscalatedNotification $notification, array $channels): bool => $channels === ['database'],
+        );
+    });
+
+    it('A13: tells nobody when the assignee switched escalations off on both channels, the Admin is not a preference fallback', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerA2);
+        taskNotifPrefs($this->partnerA2, ['escalation' => ['mail' => false, 'database' => false]]);
+
+        taskNotifEscalate($this->partnerA, $this->task);
+
+        $title = __('kokpit.tasks.notifications.escalated.bell_title', ['reference' => $this->task->reference]);
+        $subject = __('kokpit.tasks.notifications.escalated.mail_subject', ['reference' => $this->task->reference, 'title' => $this->task->title]);
+
+        expect($this->partnerA2->notifications()->where('data->title', $title)->count())->toBe(0)
+            ->and(taskNotifMailCount($this->partnerA2, $subject))->toBe(0)
+            ->and($this->admin->notifications()->where('data->title', $title)->count())->toBe(0)
+            ->and(taskNotifMailCount($this->admin, $subject))->toBe(0);
+    });
+
+    it('stores one escalation entry of the audience in the bell and renders the mail with no signed-in user', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerA2);
+
+        taskNotifEscalate($this->partnerA, $this->task, '<p>Example <strong>urgent</strong> reason</p>');
+
+        $title = __('kokpit.tasks.notifications.escalated.bell_title', ['reference' => $this->task->reference]);
+        $row = $this->partnerA2->notifications()->where('data->title', $title)->firstOrFail();
+
+        /** @var array<string, mixed> $data */
+        $data = $row->data;
+
+        expect($data['format'])->toBe('filament')
+            ->and($data['body'])->toBe($this->partnerA->name.': Example urgent reason')
+            ->and($data['actions'][0]['url'])->toEndWith('/admin/my-tasks/'.$this->task->reference);
+
+        auth()->logout();
+
+        $notification = new TaskEscalatedNotification(
+            taskReference: $this->task->reference,
+            taskTitle: $this->task->title,
+            projectKey: $this->projectA->key,
+            actorName: $this->partnerA->name,
+            excerpt: 'Example urgent reason',
+            url: route('filament.admin.resources.my-tasks.view', ['record' => $this->task->reference]),
+            recipientIsPartner: true,
+        );
+        $mail = $notification->toMail($this->partnerA2);
+        $html = (string) $mail->render();
+
+        expect($mail->subject)->toBe(__('kokpit.tasks.notifications.escalated.mail_subject', ['reference' => $this->task->reference, 'title' => $this->task->title]))
+            ->and($html)->toContain($this->task->title)
+            ->and($html)->toContain($this->partnerA->name)
+            ->and($html)->toContain('Example urgent reason')
+            ->and($html)->toContain('/admin/my-tasks/'.$this->task->reference);
+    });
+
+    it('refuses to build an internal escalation notification for a Partner', function (): void {
+        $build = static fn (bool $partner): TaskEscalatedNotification => new TaskEscalatedNotification(
+            taskReference: 'ABC-1',
+            taskTitle: 'Example task',
+            projectKey: 'ABC',
+            actorName: 'Example Admin',
+            excerpt: 'Example excerpt',
+            url: 'https://example.com/admin/my-tasks/ABC-1',
+            recipientIsPartner: $partner,
+            internal: true,
+        );
+
+        expect(static fn (): TaskEscalatedNotification => $build(true))->toThrow(LogicException::class)
+            ->and($build(false)->excerpt)->toBeNull();
     });
 });

@@ -632,6 +632,22 @@ return [
                 'mail_subject' => 'Nový komentář u úkolu :reference',
                 'mail_line' => 'K úkolu :reference :title přibyl nový komentář od uživatele :actor.',
             ],
+            'escalated' => [
+                'bell_title' => 'Eskalace úkolu :reference',
+                'bell_body' => ':actor: :excerpt',
+                'bell_body_no_excerpt' => ':actor',
+                'mail_subject' => 'Eskalace úkolu :reference: :title',
+                'mail_line' => 'Úkol :reference :title byl eskalován uživatelem :actor.',
+            ],
+            'changed' => [
+                'bell_title' => 'Změna úkolu :reference',
+                'mail_subject' => 'Změna úkolu :reference: :title',
+                'mail_line' => 'U úkolu :reference :title došlo ke změně.',
+                'status' => 'Stav: :old → :new',
+                'priority' => 'Priorita: :old → :new',
+                'assignee' => 'Řešitel: :old → :new',
+                'empty' => '—',
+            ],
         ],
         'filters' => [
             'client' => 'Klient',
