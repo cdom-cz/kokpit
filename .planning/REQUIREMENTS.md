@@ -188,7 +188,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | Custom theme | Default Filament UI |
 | Multi-tenancy | One instance per company |
 | In-app backups | Handled by the database service |
-| Import from previous tool | Done manually outside the app; must set `projects.next_task_number` and `number_sequences` |
+| Import from previous tool | Done manually outside the app; must set the `number_sequences` rows (`task:<project uuid>` for the task counter of each project; there is no counter column on `projects`) |
 | Time rounding | Exact time is a product decision |
 
 ## Traceability

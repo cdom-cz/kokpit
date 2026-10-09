@@ -41,7 +41,7 @@ Tracked time turns into an issued, payable invoice in one pass, with no unbilled
 - Custom theme — default Filament UI
 - Multi-tenancy — one instance per company
 - In-app backups — handled by the database service
-- Import from the previous tool — done manually outside the app; the import must set counters (`projects.next_task_number`, `number_sequences`)
+- Import from the previous tool — done manually outside the app; the import must set the counters, which are `number_sequences` rows (`task:<project uuid>` for task numbers)
 - VAT-payer mode calculations and PDF template — data model prepared, implemented later
 
 ## Context

@@ -400,3 +400,80 @@ it('names the production environment variables for the Zerops UI and each is a d
             ->and($documented)->toContain($name);
     }
 });
+
+it('only names Phase 5 classes in CONTRIBUTING.md that exist in app/', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    // The documentation must not name a Phase 5 mechanism that is gone (T-05-41).
+    $names = [
+        'CreateTask' => 'App\Domain\Tasks\Actions\CreateTask',
+        'TaskBoard' => 'App\Domain\Tasks\Board\TaskBoard',
+        'MoveTask' => 'App\Domain\Tasks\Actions\MoveTask',
+        'RichText' => 'App\Domain\Shared\Text\RichText',
+        'TaskColumns' => 'App\Filament\Support\TaskColumns',
+        'TaskBillingResolver' => 'App\Domain\Tasks\Billing\TaskBillingResolver',
+        'TaskNotifier' => 'App\Domain\Tasks\Notifications\TaskNotifier',
+        'NotificationPreferences' => 'App\Domain\Notifications\NotificationPreferences',
+        'TaskComment' => 'App\Domain\Tasks\Models\TaskComment',
+        'TaskBilling' => 'App\Domain\Tasks\Models\TaskBilling',
+        'TaskChecklistItem' => 'App\Domain\Tasks\Models\TaskChecklistItem',
+    ];
+
+    foreach ($names as $short => $class) {
+        expect($contributing)->toContain($short);
+        expect(class_exists($class) || trait_exists($class) || interface_exists($class) || enum_exists($class))
+            ->toBeTrue("CONTRIBUTING.md names {$short} but {$class} does not exist");
+    }
+
+    // Methods and constants the Phase 5 conventions rely on.
+    expect(method_exists('App\Domain\Tasks\Board\TaskBoard', 'appendToColumn'))->toBeTrue()
+        ->and(method_exists('App\Domain\Tasks\Board\TaskBoard', 'move'))->toBeTrue()
+        ->and(method_exists('App\Domain\Shared\Text\RichText', 'clean'))->toBeTrue()
+        ->and(method_exists('App\Domain\Shared\Text\RichText', 'render'))->toBeTrue()
+        ->and(method_exists('App\Domain\Settings\Numbering\DocumentNumbering', 'nextTaskNumber'))->toBeTrue()
+        ->and(defined('App\Domain\Shared\Text\RichText::MAX_LENGTH'))->toBeTrue()
+        ->and(defined('App\Filament\Support\TaskColumns::PARTNER_COLUMN_NAMES'))->toBeTrue()
+        ->and(defined('App\Filament\Support\TaskColumns::PARTNER_ENTRY_NAMES'))->toBeTrue()
+        ->and($contributing)->toContain('nextTaskNumber')
+        ->and($contributing)->toContain('appendToColumn')
+        ->and($contributing)->toContain('RichText::clean()')
+        ->and($contributing)->toContain('KP002')
+        ->and($contributing)->toContain('projects_key_frozen_guard')
+        ->and($contributing)->toContain('PARTNER_COLUMN_NAMES')
+        ->and($contributing)->toContain('PARTNER_ENTRY_NAMES');
+});
+
+it('names the Phase 5 enforcing tests and the hand-over notes for Phases 6, 7, 9 and 10', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    foreach ([
+        'TaskActionsTest', 'TaskKeyTest', 'TaskNumberConcurrencyTest', 'TasksTableTest', 'TaskBoardTest',
+        'TaskBoardConcurrencyTest', 'RichTextSanitiserTest', 'PartnerSafeColumnsTest', 'PartnerTaskVisibilityTest',
+        'TaskBillingResolverTest', 'TaskNotificationsTest', 'NotificationLeakTest',
+    ] as $test) {
+        expect($contributing)->toContain($test);
+    }
+
+    foreach (['Phase 6 (', 'Phase 7 (', 'Phase 9 (', 'Phase 10 ('] as $note) {
+        expect($contributing)->toContain("**{$note}");
+    }
+
+    // The earlier single Phase 5 hand-over note is replaced, not kept next to the new ones.
+    expect($contributing)->not->toContain('**Phase 5 (tasks).**');
+});
+
+it('documents the queued task notifications for the operator in the README', function () {
+    $readme = repoFile('README.md');
+
+    expect($readme)->toContain('Task notifications')
+        ->and($readme)->toContain('queue worker')
+        ->and($readme)->toContain('MAIL_*');
+});
+
+it('no longer points the import at a projects counter column', function () {
+    $requirements = file_get_contents(base_path('.planning/REQUIREMENTS.md'));
+
+    // .planning is a public part of the repository; the stale wording is research correction C1.
+    expect($requirements)->not->toContain('next_task_number')
+        ->and($requirements)->toContain('task:<project uuid>');
+});
