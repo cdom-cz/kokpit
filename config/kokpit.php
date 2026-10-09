@@ -116,4 +116,23 @@ return [
         'done_limit' => 20,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Time tracking
+    |--------------------------------------------------------------------------
+    |
+    | Fixed settings of the timer (D-07). A literal starting point, not
+    | editable in the UI.
+    |
+    | long_running_hours: a timer that has been running this many hours or more
+    |   is flagged as forgotten: the top bar pill turns to the danger state and,
+    |   in a later plan, the Admin gets one bell notification. The timer is
+    |   never stopped automatically.
+    |
+    */
+
+    'time' => [
+        'long_running_hours' => 12,
+    ],
+
 ];

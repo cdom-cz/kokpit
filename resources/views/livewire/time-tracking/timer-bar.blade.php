@@ -5,6 +5,11 @@
     $running = $this->running;
     $groups = $this->clientGroups;
     $hasClients = $groups['recent'] !== [] || $groups['all'] !== [];
+
+    // Normal running is the warning role; too long (D-07) is the danger role with the triangle and a text.
+    $tooLong = $running !== null && $running['long_running'];
+    $runningColor = $tooLong ? 'danger' : 'warning';
+    $runningTooltip = $tooLong ? __('kokpit.time.timer.long_running_tooltip', ['hours' => $running['hours']]) : null;
 @endphp
 
 {{-- The refresh of a persisted region: the poll runs only while the tab is visible. --}}
@@ -99,11 +104,11 @@
         </x-filament::dropdown>
     @else
         {{-- 2. Running: one pill with the clock, the description and the stop button. --}}
-        <div class="kokpit-timer-pill fi-color-warning" wire:key="running-{{ $running['id'] }}">
+        <div class="kokpit-timer-pill fi-color-{{ $runningColor }}" data-state="{{ $tooLong ? 'too-long' : 'running' }}" wire:key="running-{{ $running['id'] }}">
             <x-filament::dropdown placement="bottom-end" width="xs">
                 <x-slot name="trigger">
-                    <button type="button" class="kokpit-timer-trigger">
-                        <x-filament::icon :icon="Heroicon::OutlinedClock" />
+                    <button type="button" class="kokpit-timer-trigger" @if ($tooLong) title="{{ $runningTooltip }}" @endif>
+                        <x-filament::icon :icon="$tooLong ? Heroicon::OutlinedExclamationTriangle : Heroicon::OutlinedClock" />
                         <span
                             role="timer"
                             aria-live="off"
@@ -129,6 +134,9 @@
                             }"
                             x-text="text"
                         >{{ $running['elapsed_text'] }}</span>
+                        @if ($tooLong)
+                            <span class="kokpit-timer-sr">{{ $runningTooltip }}</span>
+                        @endif
                         @if (filled($running['description']))
                             <span class="kokpit-timer-description" title="{{ $running['description'] }}">{{ $running['description'] }}</span>
                         @endif
@@ -144,6 +152,10 @@
                             {{ $running['client'] }}
                         @endif
                     </h2>
+
+                    @if ($tooLong)
+                        <p class="kokpit-timer-heading fi-color-danger" style="color: var(--color-600);">{{ $runningTooltip }}</p>
+                    @endif
 
                     <dl class="kokpit-timer-lines">
                         <dt>{{ __('kokpit.time.fields.client') }}</dt>
@@ -163,7 +175,7 @@
             </x-filament::dropdown>
 
             <x-filament::icon-button
-                color="warning"
+                :color="$runningColor"
                 size="sm"
                 :icon="Heroicon::OutlinedStop"
                 :label="__('kokpit.time.timer.stop')"

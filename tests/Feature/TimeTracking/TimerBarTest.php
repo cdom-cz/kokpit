@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\Clients\Actions\ArchiveClient;
 use App\Domain\Clients\Models\Client;
+use App\Domain\Identity\Models\User;
+use App\Domain\TimeTracking\Actions\StartTimer;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Queries\EntryContextOptions;
+use App\Domain\TimeTracking\TimerRaceLost;
 use App\Livewire\TimeTracking\TimerBar;
+use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -218,4 +222,176 @@ it('refuses a forged update posted to the Livewire endpoint by a Partner', funct
     $this->actingAs($this->admin);
 
     expect(TimeEntry::query()->whereNull('ended_at')->count())->toBe(1);
+});
+
+it('turns the pill to the danger state exactly at the threshold, without a reload', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $client = Client::factory()->create();
+    TimeEntry::factory()->create(['user_id' => $this->admin->id, 'client_id' => $client->id, 'started_at' => now(), 'ended_at' => null]);
+
+    $component = Livewire::test(TimerBar::class);
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 19:59:59', 'UTC'));
+    $component->call('refreshState')
+        ->assertSeeHtml('fi-color-warning')
+        ->assertDontSeeHtml('fi-color-danger')
+        ->assertSeeHtml('data-state="running"')
+        ->assertSee('11:59:59');
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 20:00:00', 'UTC'));
+    $component->call('refreshState')
+        ->assertSeeHtml('fi-color-danger')
+        ->assertDontSeeHtml('fi-color-warning')
+        ->assertSeeHtml('data-state="too-long"')
+        ->assertSee('Časovač běží déle než 12 h. Zkontrolujte, jestli ho nemáte zastavit.')
+        ->assertSee('12:00:00');
+
+    // Nothing was stored or stopped by the flag.
+    expect(TimeEntry::query()->whereNull('ended_at')->count())->toBe(1);
+});
+
+it('reads the threshold from the configuration on every render', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $client = Client::factory()->create();
+    TimeEntry::factory()->create(['user_id' => $this->admin->id, 'client_id' => $client->id, 'started_at' => now(), 'ended_at' => null]);
+    config(['kokpit.time.long_running_hours' => 2]);
+
+    $component = Livewire::test(TimerBar::class)->assertSeeHtml('fi-color-warning');
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 10:00:00', 'UTC'));
+    $component->call('refreshState')
+        ->assertSeeHtml('fi-color-danger')
+        ->assertSee('Časovač běží déle než 2 h.');
+});
+
+it('shows the running state when another surface starts a timer and announces the event', function (): void {
+    $client = Client::factory()->create();
+    $component = Livewire::test(TimerBar::class)->assertDontSeeHtml('role="timer"');
+
+    app(StartTimer::class)->handle($this->admin, ['client_id' => $client->id, 'description' => 'Example started elsewhere']);
+
+    $component->dispatch('timer-started')->assertSeeHtml('role="timer"');
+});
+
+it('goes idle when another surface stops the timer', function (): void {
+    $client = Client::factory()->create();
+    $entry = TimeEntry::factory()->running()->create(['user_id' => $this->admin->id, 'client_id' => $client->id]);
+    $component = Livewire::test(TimerBar::class)->assertSeeHtml('role="timer"');
+
+    $entry->forceFill(['ended_at' => now()])->save();
+
+    $component->dispatch('timer-stopped')->assertDontSeeHtml('role="timer"');
+});
+
+it('re-reads the description when an entry was saved', function (): void {
+    $client = Client::factory()->create();
+    $entry = TimeEntry::factory()->running()->create(['user_id' => $this->admin->id, 'client_id' => $client->id, 'description' => 'Example before']);
+    $component = Livewire::test(TimerBar::class)->assertSee('Example before');
+
+    $entry->forceFill(['description' => 'Example after'])->save();
+
+    $component->dispatch('time-entry-saved')->assertSee('Example after')->assertDontSee('Example before');
+});
+
+it('also refreshes on the deletion of an entry', function (): void {
+    $client = Client::factory()->create();
+    $entry = TimeEntry::factory()->running()->create(['user_id' => $this->admin->id, 'client_id' => $client->id]);
+    $component = Livewire::test(TimerBar::class)->assertSeeHtml('role="timer"');
+
+    $entry->delete();
+
+    $component->dispatch('time-entry-deleted')->assertDontSeeHtml('role="timer"');
+});
+
+it('shows the race toast and re-reads the state when a concurrent start won', function (): void {
+    $client = Client::factory()->create();
+
+    // StartTimer is final, so the container gets a stand-in that loses the race.
+    $this->app->instance(StartTimer::class, new class
+    {
+        /**
+         * @param  array<string, mixed>  $data
+         */
+        public function handle(User $actor, array $data): never
+        {
+            throw new TimerRaceLost;
+        }
+    });
+
+    Livewire::test(TimerBar::class)
+        ->set('clientId', $client->id)
+        ->call('start')
+        ->assertNotified('Časovač se nepodařilo spustit, protože se současně změnil jiný. Zkuste to znovu.')
+        ->assertNotDispatched('timer-started');
+});
+
+it('tells a stale stop that nothing runs and renders the idle state', function (): void {
+    $client = Client::factory()->create();
+    $entry = TimeEntry::factory()->running()->create(['user_id' => $this->admin->id, 'client_id' => $client->id]);
+    $component = Livewire::test(TimerBar::class)->assertSeeHtml('role="timer"');
+
+    // Stopped in another tab meanwhile.
+    $entry->forceFill(['ended_at' => now()])->save();
+    $stoppedAt = $entry->refresh()->ended_at;
+
+    $component->call('stop', $entry->id)
+        ->assertNotified('Žádný časovač neběží.')
+        ->assertDontSeeHtml('role="timer"')
+        ->assertSee('Spustit časovač');
+
+    expect($entry->refresh()->ended_at?->equalTo($stoppedAt))->toBeTrue();
+});
+
+it('never stops a newer timer from a stale stop button', function (): void {
+    $client = Client::factory()->create();
+    $old = TimeEntry::factory()->create(['user_id' => $this->admin->id, 'client_id' => $client->id, 'started_at' => now()->subHour(), 'ended_at' => now()->subMinutes(30)]);
+    $newer = TimeEntry::factory()->running()->create(['user_id' => $this->admin->id, 'client_id' => $client->id]);
+
+    Livewire::test(TimerBar::class)->call('stop', $old->id)->assertNotified('Žádný časovač neběží.');
+
+    expect($newer->refresh()->ended_at)->toBeNull();
+});
+
+it('offers only the no-client text and the link while no client exists', function (): void {
+    Livewire::test(TimerBar::class)
+        ->assertSee('Nejdřív vytvořte klienta, ke kterému se bude čas zapisovat.')
+        ->assertSee('Klienti')
+        ->assertSeeHtml('/admin/clients')
+        ->assertDontSeeHtml('type="submit"')
+        ->assertDontSee('Na čem pracujete?');
+});
+
+it('keeps the full description in the tooltip of the pill', function (): void {
+    $client = Client::factory()->create();
+    $text = 'Example '.str_repeat('long description ', 12).'end';
+    TimeEntry::factory()->running()->create(['user_id' => $this->admin->id, 'client_id' => $client->id, 'description' => $text]);
+
+    Livewire::test(TimerBar::class)->assertSeeHtml('title="'.e($text).'"');
+});
+
+it('escapes a description with markup', function (): void {
+    $client = Client::factory()->create();
+    TimeEntry::factory()->running()->create(['user_id' => $this->admin->id, 'client_id' => $client->id, 'description' => '<script>alert(1)</script>']);
+
+    Livewire::test(TimerBar::class)
+        ->assertDontSeeHtml('<script>alert(1)</script>')
+        ->assertSeeHtml('&lt;script&gt;alert(1)&lt;/script&gt;');
+});
+
+it('shows a running entry with only a client as a normal state and its missing parts as dashes', function (): void {
+    $client = Client::factory()->create(['name' => 'Cihla']);
+    TimeEntry::factory()->running()->create(['user_id' => $this->admin->id, 'client_id' => $client->id, 'description' => null]);
+
+    Livewire::test(TimerBar::class)
+        ->assertSeeHtml('fi-color-warning')
+        ->assertSee('Cihla')
+        ->assertSee('—');
+});
+
+it('shows hours without an upper bound', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $client = Client::factory()->create();
+    TimeEntry::factory()->create(['user_id' => $this->admin->id, 'client_id' => $client->id, 'started_at' => now()->subHours(123)->subMinutes(45)->subSeconds(7), 'ended_at' => null]);
+
+    Livewire::test(TimerBar::class)->assertSee('123:45:07');
 });

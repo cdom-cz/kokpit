@@ -54,7 +54,7 @@ final class TimerBar extends Component
     /**
      * The running entry of the signed-in user as scalars, or null when nothing runs.
      *
-     * @return array{id: string, started_at: string, now: string, elapsed: int, elapsed_text: string, client: string, task_reference: string|null, task_title: string|null, task_url: string|null, description: string|null, view_url: string, started_text: string}|null
+     * @return array{id: string, started_at: string, now: string, elapsed: int, elapsed_text: string, client: string, task_reference: string|null, task_title: string|null, task_url: string|null, description: string|null, view_url: string, started_text: string, long_running: bool, hours: int}|null
      */
     #[Computed]
     public function running(): ?array
@@ -71,6 +71,10 @@ final class TimerBar extends Component
         $started = $entry->started_at->setTimezone($zone);
         $task = $entry->task;
 
+        // The flag of a forgotten timer (D-07) is computed from the stored start on every render and
+        // every poll, so it appears without a page load. Nothing is stored and nothing is stopped.
+        $hours = max(1, (int) config('kokpit.time.long_running_hours', 12));
+
         return [
             'id' => $entry->id,
             'started_at' => $entry->started_at->utc()->format('Y-m-d\TH:i:s\Z'),
@@ -86,6 +90,8 @@ final class TimerBar extends Component
             'started_text' => $started->isSameDay($now->setTimezone($zone))
                 ? $started->format(LocalisationServiceProvider::TIME_FORMAT)
                 : $started->format(LocalisationServiceProvider::DATE_TIME_FORMAT),
+            'long_running' => $elapsed >= $hours * 3600,
+            'hours' => $hours,
         ];
     }
 
