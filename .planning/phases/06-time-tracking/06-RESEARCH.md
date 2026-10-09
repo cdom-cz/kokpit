@@ -572,19 +572,24 @@ $q->where('started_at', '>=', $from)->where('started_at', '<', $to);
 | A12 | No cap on duration and no ban on future times in manual entries (not specified upstream) | Pattern 7 | A typo could create a very long or future entry; add a warning if the owner wants one |
 | A13 | Archiving a task, project or client does not stop a running timer; the bar keeps showing it with archived relations loaded via `withTrashed()` | Pitfall 5 | If the owner wants a block or auto-stop, ArchiveTask/ArchiveClient change |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Estimate inheritance on task rows (PR-05).**
    - What we know: `TaskBillingResolver` inherits the estimate literally task -> parent -> project [VERIFIED: its docblock "The estimate inherits literally like the other fields; whether Phase 6 compares time against an inherited estimate is left to Phase 6 (research A7)"]; UI-SPEC column "Odhad" says "the task's resolved estimate".
    - What's unclear: literal inheritance would print the project estimate on every task without its own.
    - Recommendation: show estimate only when the source is the task or its parent task (A2); the project estimate stays in the stats row. Confirm before planning the relation manager.
+   - RESOLVED: task rows show an estimate only when its source is the task itself or its parent task; the project estimate appears only in the stats row (A2 adopted, listed for owner review) (plan 06-12)
 2. **Fixed "Bez úkolu" last row in a relation manager.**
    - What we know: a relation manager table is relationship-backed; `Table::records()` works on Pages/Livewire tables but not as the base of a relation manager.
    - What's unclear: whether UI-SPEC's "one fixed last row" must be a table row.
    - Recommendation: (a) show "Bez úkolu" as a first-class line in the table header/`contentFooter` plus include it in the footer sums; or (b) host the tab as a custom Livewire/`TableWidget` with `records()`. Prefer (a) and record the deviation in the plan; the numbers are the contract.
+   - RESOLVED: option (a); "Bez úkolu" is rendered in the table's `contentFooter` together with the footer sums, which include its figures; the deviation from the UI-SPEC "one fixed last row" is recorded in the plan and listed for owner review (plan 06-12)
 3. **Does a running entry count as "Nevyfakturováno"?** (A3) UI-SPEC says "billable, unbilled time" and U-16 only decides "Odpracováno". Recommendation: yes (core value: no unbilled time slips through).
+   - RESOLVED: yes; a running billable entry counts in "Odpracováno" and "Nevyfakturováno" at its elapsed time at render, while bulk billing still skips running entries (plans 06-10, 06-12)
 4. **Rate source labels.** Existing task page labels differ from the UI-SPEC copy (A10). Recommendation: new `kokpit.time.rate_source.*` keys; do not change the task page.
+   - RESOLVED: new `kokpit.time.rate_source.*` keys with the UI-SPEC wording; the task page keeps its `enums.billing_source.*` labels unchanged (plan 06-05)
 5. **Phase 10 snapshot columns.** Phase 6 stores no money. Phase 10's migration must add the snapshot columns and re-create the guard with an extended mutable list; note this in the CONTRIBUTING hand-over bullet.
+   - RESOLVED: Phase 6 stores no money on a time entry; the CONTRIBUTING Phase 10 hand-over note states that the snapshot migration must re-create the `time_entries` guard trigger with an extended mutable list (plan 06-14), and the `time_entries` migration header docblock says the same (plan 06-01)
 
 ## Environment Availability
 
