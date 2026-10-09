@@ -7,11 +7,21 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Notifications\NotificationEvent;
+use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Actions\EscalateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\Tasks\Notifications\TaskCommentedNotification;
 use App\Domain\Tasks\Notifications\TaskCreatedNotification;
 use Filament\Facades\Filament;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
+use Symfony\Component\Mailer\SentMessage;
+use Symfony\Component\Mime\Address;
 use Tests\Support\Canary;
 
 /*
@@ -125,4 +135,312 @@ it('renders the mail and the bell payload complete with no signed-in user', func
     expect($payload)->toContain($task->reference)
         ->and($payload)->toContain($task->title)
         ->and($payload)->toContain($this->projectA->key);
+});
+
+/**
+ * The task as the signed-in user reads it, found through the scoped query the way a page does.
+ */
+function taskNotifSeen(User $viewer, Task $task): Task
+{
+    test()->actingAs($viewer);
+
+    return Task::query()->where('reference', $task->reference)->firstOrFail();
+}
+
+/**
+ * A comment written by the user, signed in as that user.
+ */
+function taskNotifComment(User $author, Task $task, string $body, bool $internal = false): TaskComment
+{
+    return app(AddTaskComment::class)->handle($author, taskNotifSeen($author, $task), $body, internal: $internal);
+}
+
+/**
+ * Re-points the people of a task directly in the database (a test arrangement).
+ */
+function taskNotifPeople(Task $task, ?User $assignee = null, ?User $requester = null): void
+{
+    app(PartnerContext::class)->runAsSystem(static function () use ($task, $assignee, $requester): void {
+        $people = array_filter([
+            'assignee_id' => $assignee?->id,
+            'requester_id' => $requester?->id,
+        ]);
+
+        Task::query()->whereKey($task->id)->firstOrFail()->forceFill($people)->save();
+    });
+}
+
+/**
+ * Sets a user's stored notification preferences.
+ *
+ * @param  array<string, array<string, bool>>  $preferences
+ */
+function taskNotifPrefs(User $user, array $preferences): void
+{
+    $user->forceFill(['notification_preferences' => $preferences])->save();
+}
+
+/**
+ * How many e-mails the array mailer holds for the user.
+ */
+function taskNotifMailCount(User $user): int
+{
+    return collect(Mail::getSymfonyTransport()->messages())
+        ->filter(static fn (SentMessage $message): bool => collect($message->getEnvelope()->getRecipients())
+            ->contains(static fn (Address $address): bool => $address->getAddress() === $user->email))
+        ->count();
+}
+
+/**
+ * The comment notifications sent on the fake to the user.
+ *
+ * @return Collection<int, mixed>
+ */
+function taskNotifSent(User $user): Collection
+{
+    return Notification::sent($user, TaskCommentedNotification::class);
+}
+
+describe('comment notifications', function (): void {
+    beforeEach(function (): void {
+        $this->partnerA2 = Canary::partnerFor($this->clientA);
+        $this->partnerB = Canary::partnerFor($this->clientB);
+        $this->task = taskNotifCreate($this->partnerA, $this->projectA);
+    });
+
+    it('tells the Admin of a Partner comment, with a link to the admin task page, and not the author', function (): void {
+        Notification::fake();
+
+        taskNotifComment($this->partnerA, $this->task, '<p>Example remark</p>');
+
+        Notification::assertSentTo(
+            $this->admin,
+            TaskCommentedNotification::class,
+            fn (TaskCommentedNotification $notification, array $channels): bool => $channels === ['mail', 'database']
+                && $notification->event === NotificationEvent::Comment
+                && ! $notification->recipientIsPartner
+                && str_ends_with($notification->url, '/admin/tasks/'.$this->task->reference),
+        );
+        Notification::assertNotSentTo($this->partnerA, TaskCommentedNotification::class);
+        expect(taskNotifSent($this->admin))->toHaveCount(1);
+    });
+
+    it('also tells a Partner assignee of the same client, once, and not the author', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerA2);
+        Notification::fake();
+
+        taskNotifComment($this->partnerA, $this->task, '<p>Example remark</p>');
+
+        Notification::assertSentTo(
+            $this->partnerA2,
+            TaskCommentedNotification::class,
+            fn (TaskCommentedNotification $notification): bool => $notification->recipientIsPartner
+                && str_ends_with($notification->url, '/admin/my-tasks/'.$this->task->reference)
+                && ! str_contains($notification->url, '/admin/tasks/'),
+        );
+        expect(taskNotifSent($this->partnerA2))->toHaveCount(1)
+            ->and(taskNotifSent($this->admin))->toHaveCount(1)
+            ->and(taskNotifSent($this->partnerA))->toHaveCount(0);
+    });
+
+    it('does not tell a Partner assignee of another client, a deactivated assignee or the author', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerB);
+        Notification::fake();
+
+        taskNotifComment($this->partnerA, $this->task, '<p>Example remark</p>');
+
+        expect(taskNotifSent($this->partnerB))->toHaveCount(0)
+            ->and(taskNotifSent($this->admin))->toHaveCount(1);
+
+        taskNotifPeople($this->task, assignee: $this->partnerA2);
+        $this->partnerA2->forceFill(['deactivated_at' => now()])->save();
+        Notification::fake();
+
+        taskNotifComment($this->partnerA, $this->task, '<p>Example second remark</p>');
+
+        expect(taskNotifSent($this->partnerA2))->toHaveCount(0)
+            ->and(taskNotifSent($this->admin))->toHaveCount(1);
+    });
+
+    it('tells the Partner requester of a non-internal Admin comment, not the Admin author', function (): void {
+        Notification::fake();
+
+        taskNotifComment($this->admin, $this->task, '<p>Example answer</p>');
+
+        Notification::assertSentTo(
+            $this->partnerA,
+            TaskCommentedNotification::class,
+            fn (TaskCommentedNotification $notification, array $channels): bool => $channels === ['mail', 'database']
+                && $notification->recipientIsPartner
+                && ! $notification->internal
+                && $notification->excerpt === 'Example answer'
+                && str_ends_with($notification->url, '/admin/my-tasks/'.$this->task->reference),
+        );
+        Notification::assertNotSentTo($this->admin, TaskCommentedNotification::class);
+    });
+
+    it('tells both the Partner requester and a Partner assignee of the client, each once', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerA2);
+        Notification::fake();
+
+        taskNotifComment($this->admin, $this->task, '<p>Example answer</p>');
+
+        expect(taskNotifSent($this->partnerA))->toHaveCount(1)
+            ->and(taskNotifSent($this->partnerA2))->toHaveCount(1)
+            ->and(taskNotifSent($this->partnerB))->toHaveCount(0);
+    });
+
+    it('notifies nobody of an internal Admin comment, and leaves no canary in any Partner inbox', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerA2);
+        $canary = Canary::canary('internal');
+
+        taskNotifComment($this->admin, $this->task, '<p>'.$canary.'</p>', internal: true);
+
+        foreach ([$this->partnerA, $this->partnerA2, $this->partnerB] as $partner) {
+            expect($partner->notifications()->count())->toBe(0);
+        }
+
+        $leaks = DB::table('notifications')->whereRaw('data::text like ?', ['%'.$canary.'%'])->count();
+
+        expect($leaks)->toBe(0);
+
+        Notification::fake();
+
+        taskNotifComment($this->admin, $this->task, '<p>'.$canary.'</p>', internal: true);
+
+        Notification::assertNotSentTo([$this->partnerA, $this->partnerA2, $this->partnerB, $this->admin], TaskCommentedNotification::class);
+    });
+
+    it('refuses to build a comment notification of an internal comment for a Partner', function (): void {
+        expect(class_exists(TaskCommentedNotification::class))->toBeTrue();
+
+        $build = static fn (bool $partner): TaskCommentedNotification => new TaskCommentedNotification(
+            taskReference: 'ABC-1',
+            taskTitle: 'Example task',
+            projectKey: 'ABC',
+            actorName: 'Example Admin',
+            excerpt: 'Example excerpt',
+            url: 'https://example.com/admin/my-tasks/ABC-1',
+            recipientIsPartner: $partner,
+            internal: true,
+        );
+
+        expect(static fn (): TaskCommentedNotification => $build(true))->toThrow(LogicException::class);
+
+        $internalForAdmin = $build(false);
+
+        expect($internalForAdmin->internal)->toBeTrue()
+            ->and($internalForAdmin->excerpt)->toBeNull();
+    });
+
+    it('delivers only the bell when the recipient switched the e-mail of comments off', function (): void {
+        taskNotifPrefs($this->admin, ['comment' => ['mail' => false]]);
+        Notification::fake();
+
+        taskNotifComment($this->partnerA, $this->task, '<p>Example remark</p>');
+
+        Notification::assertSentTo(
+            $this->admin,
+            TaskCommentedNotification::class,
+            static fn (TaskCommentedNotification $notification, array $channels): bool => $channels === ['database'],
+        );
+    });
+
+    it('delivers nothing to a recipient who switched both channels off, and still tells the others', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerA2);
+        taskNotifPrefs($this->partnerA2, ['comment' => ['mail' => false, 'database' => false]]);
+
+        taskNotifComment($this->partnerA, $this->task, '<p>Example remark</p>');
+
+        expect($this->partnerA2->notifications()->count())->toBe(0)
+            ->and(taskNotifMailCount($this->partnerA2))->toBe(0)
+            ->and($this->admin->notifications()->where('data->title', __('kokpit.tasks.notifications.comment.bell_title', ['reference' => $this->task->reference]))->count())->toBe(1)
+            ->and(taskNotifMailCount($this->admin))->toBeGreaterThanOrEqual(1);
+    });
+
+    it('delivers on both channels when the preference column is empty', function (): void {
+        taskNotifComment($this->admin, $this->task, '<p>Example answer</p>');
+
+        expect($this->partnerA->notifications()->count())->toBe(1)
+            ->and(taskNotifMailCount($this->partnerA))->toBe(1);
+    });
+
+    it('does not tell a deactivated Partner requester or a Partner of an archived client', function (): void {
+        $this->partnerA->forceFill(['deactivated_at' => now()])->save();
+
+        taskNotifComment($this->admin, $this->task, '<p>Example answer</p>');
+
+        expect($this->partnerA->notifications()->count())->toBe(0)
+            ->and(taskNotifMailCount($this->partnerA))->toBe(0);
+
+        $this->partnerA->forceFill(['deactivated_at' => null])->save();
+        app(PartnerContext::class)->runAsSystem(fn () => Client::query()->findOrFail($this->clientA)->delete());
+
+        taskNotifComment($this->admin, $this->task, '<p>Example second answer</p>');
+
+        expect($this->partnerA->notifications()->count())->toBe(0)
+            ->and(taskNotifMailCount($this->partnerA))->toBe(0);
+    });
+
+    it('does not send a comment notification for the comment of an escalation', function (): void {
+        Notification::fake();
+
+        app(EscalateTask::class)->handle($this->partnerA, taskNotifSeen($this->partnerA, $this->task), '<p>Example reason</p>');
+
+        Notification::assertNotSentTo([$this->admin, $this->partnerA, $this->partnerA2], TaskCommentedNotification::class);
+    });
+
+    it('cuts the excerpt to plain text of at most 300 characters from the cleaned body', function (): void {
+        Notification::fake();
+        $words = implode(' ', array_fill(0, 120, 'word'));
+
+        taskNotifComment($this->partnerA, $this->task, '<p>First <strong>bold</strong> line</p><p>'.$words.'</p>');
+
+        /** @var TaskCommentedNotification $notification */
+        $notification = taskNotifSent($this->admin)->firstOrFail();
+
+        expect($notification->excerpt)->toStartWith('First bold line word')
+            ->and(mb_strlen((string) $notification->excerpt))->toBeLessThanOrEqual(300)
+            ->and($notification->excerpt)->not->toContain('<')
+            ->and($notification->excerpt)->not->toContain('>');
+    });
+
+    it('renders the mail and the bell complete with no signed-in user and no tag in the excerpt', function (): void {
+        Notification::fake();
+
+        taskNotifComment($this->partnerA, $this->task, '<p>Example <strong>bold</strong> remark</p>');
+
+        /** @var TaskCommentedNotification $notification */
+        $notification = taskNotifSent($this->admin)->firstOrFail();
+
+        auth()->logout();
+
+        $mail = $notification->toMail($this->admin);
+        $html = (string) $mail->render();
+        $payload = json_encode($notification->toDatabase($this->admin), JSON_THROW_ON_ERROR);
+
+        expect($mail->subject)->toContain($this->task->reference)
+            ->and($html)->toContain('Example bold remark')
+            ->and($html)->toContain($this->partnerA->name)
+            ->and($html)->toContain($this->task->title)
+            ->and($html)->toContain('/admin/tasks/'.$this->task->reference)
+            ->and(implode(' ', $mail->introLines))->not->toContain('<strong>')
+            ->and($payload)->toContain('Example bold remark')
+            ->and($payload)->toContain($this->task->reference)
+            ->and($payload)->toContain($this->partnerA->name)
+            ->and($payload)->not->toContain('<strong>');
+    });
+
+    it('keeps markup of a comment out of the quote block of the mail', function (): void {
+        Notification::fake();
+
+        taskNotifComment($this->partnerA, $this->task, '<p>Example [link](https://example.com/x) and *stars*</p>');
+
+        /** @var TaskCommentedNotification $notification */
+        $notification = taskNotifSent($this->admin)->firstOrFail();
+        $html = (string) $notification->toMail($this->admin)->render();
+
+        expect($html)->not->toContain('href="https://example.com/x"')
+            ->and($html)->not->toContain('<em>stars</em>');
+    });
 });
