@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: time-tracking
 status: executing
-stopped_at: Completed 06-05-PLAN.md
-last_updated: "2026-10-09T13:58:40.532Z"
+stopped_at: Completed 06-06-PLAN.md
+last_updated: "2026-10-09T14:18:19.996Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 06 execution started
-state_head: 1391a76c1b478fbe0ce3bbde19fdd1a3b5255880
+state_head: 8c50306aa589ecdeab48bebc75dfde84f781df05
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 100
-  completed_plans: 91
+  completed_plans: 92
   percent: 42
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 06 (time-tracking) — EXECUTING
-Plan: 6 of 14
+Plan: 7 of 14
 Status: Ready to execute
 Last activity: 2026-10-09 — Phase 06 execution started
 
@@ -151,6 +151,7 @@ Progress: [████░░░░░░] 42%
 | Phase 06 P03 | 40 min | 2 tasks | 8 files |
 | Phase 06 P04 | 30 min | 3 tasks | 9 files |
 | Phase 06 P05 | 10 min | 3 tasks | 11 files |
+| Phase 06 P06 | 33min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -334,6 +335,9 @@ Recent decisions affecting current work:
 - [Phase 06]: Update checks end-after-start only when the start or end changes, so a zero-length timer entry can still have its description edited
 - [Phase 06]: 06-05: a skipped entry counts once under the first reason (billed, running, non-billable); zero-length finished billable entries are billable
 - [Phase 06]: 06-05: the global default rate applies only below all levels and only in the client's currency; no money is stored on an entry (snapshot is Phase 10)
+- [Phase 06]: Time entry form: a failed Select option check ('in') shows the domain copy (inconsistent context under project and task, Vyberte klienta under client), because options only narrow the UI and the Actions re-validate
+- [Phase 06]: DateTimePicker values read through a Get closure are in the application timezone (UTC); the raw form state is the Prague wall clock, so server-side interval logic parses in config app.timezone
+- [Phase 06]: Text sorted for people goes through CzechCollation::orderBy (cs-CZ-x-icu); the production availability check is added to kokpit:deploy:verify in plan 06-14
 
 ### Pending Todos
 
@@ -373,6 +377,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T13:58:40.390Z
-Stopped at: Completed 06-05-PLAN.md
+Last session: 2026-10-09T14:18:19.857Z
+Stopped at: Completed 06-06-PLAN.md
 Resume file: None
