@@ -15,13 +15,17 @@ use App\Filament\Concerns\EnforcesPageAccessRule;
 use App\Filament\Resources\TimeEntryResource;
 use Carbon\CarbonImmutable;
 use Filament\Pages\Page;
+use Filament\Support\Enums\FontWeight;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\Column;
+use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Url;
 
 /**
@@ -53,6 +57,11 @@ class TimesheetPage extends Page implements HasTable
     #[Url]
     public ?string $date = null;
 
+    /**
+     * @var array{rows: list<array{key: string, client: string, project: string|null, task: string|null, days: array<string, int|null>, total: int}>, day_totals: array<string, int>, day_overlaps: array<string, bool>, total: int}|null
+     */
+    protected ?array $weekGrid = null;
+
     public static function getNavigationLabel(): string
     {
         return __('kokpit.time.timesheet.navigation');
@@ -79,7 +88,7 @@ class TimesheetPage extends Page implements HasTable
 
     public function table(Table $table): Table
     {
-        return $this->dayTable($table);
+        return $this->resolvedMode() === 'week' ? $this->weekTable($table) : $this->dayTable($table);
     }
 
     /**
@@ -195,6 +204,84 @@ class TimesheetPage extends Page implements HasTable
             ->recordUrl(static fn (TimeEntry $record): string => TimeEntryResource::getUrl('view', ['record' => $record]))
             ->emptyStateHeading(__('kokpit.time.timesheet.empty_day_heading'))
             ->emptyStateDescription(__('kokpit.time.timesheet.empty_day_body'));
+    }
+
+    /**
+     * The week grid: a table over the rows of one grouped query (research Pattern 9), so the number
+     * of queries does not depend on the number of entries. The records are arrays with a unique
+     * `key`; the footer row is a view because array records have no summarizers.
+     */
+    private function weekTable(Table $table): Table
+    {
+        $days = $this->query()->weekDays($this->resolvedDate());
+        $grid = $this->weekGrid();
+        $columns = [
+            TextColumn::make('client')
+                ->label(__('kokpit.time.fields.client')),
+            TextColumn::make('project')
+                ->label(__('kokpit.time.fields.project'))
+                ->state(static fn (array $record): string => $record['project'] ?? (string) __('kokpit.time.timesheet.no_project')),
+            TextColumn::make('task')
+                ->label(__('kokpit.time.fields.task'))
+                ->state(static fn (array $record): string => $record['task'] ?? (string) __('kokpit.time.timesheet.no_task')),
+        ];
+
+        foreach ($days as $index => $day) {
+            $columns[] = TextColumn::make('day_'.$index)
+                ->label($this->dayHeader($day))
+                ->alignEnd()
+                ->state(static fn (array $record): string => isset($record['days'][$day])
+                    ? DurationFormat::hoursMinutes($record['days'][$day])
+                    : (string) __('kokpit.time.empty_value'));
+        }
+
+        $columns[] = TextColumn::make('total')
+            ->label(__('kokpit.time.timesheet.total'))
+            ->alignEnd()
+            ->weight(FontWeight::SemiBold)
+            ->state(static fn (array $record): string => DurationFormat::hoursMinutes($record['total']));
+
+        return $table
+            ->records(static fn (): array => $grid['rows'])
+            ->columns($columns)
+            ->paginated(false)
+            ->contentFooter(view('filament.pages.timesheet-week-footer', [
+                'days' => $days,
+                'dayTotals' => $grid['day_totals'],
+                'dayOverlaps' => $grid['day_overlaps'],
+                'total' => $grid['total'],
+            ]))
+            ->emptyStateHeading(__('kokpit.time.timesheet.empty_week_heading'))
+            ->emptyStateDescription(__('kokpit.time.timesheet.empty_week_body'));
+    }
+
+    /**
+     * The header of a day column: its weekday and date as a link to the day view. Today's header
+     * is semibold and carries aria-current="date"; the others are regular.
+     */
+    private function dayHeader(string $day): HtmlString
+    {
+        $date = CarbonImmutable::parse($day);
+        $isToday = $day === $this->query()->today(TimerClock::now());
+
+        return new HtmlString(Blade::render(
+            '<a href="{{ $url }}" wire:navigate @if ($isToday) aria-current="date" @endif style="font-weight: {{ $isToday ? 600 : 400 }}; white-space: nowrap;">{{ $text }}</a>',
+            [
+                'url' => static::getUrl(['view' => 'day', 'date' => $day]),
+                'isToday' => $isToday,
+                'text' => __('kokpit.time.timesheet.weekdays.'.$date->isoWeekday()).' '.$date->format('j. n.'),
+            ],
+        ));
+    }
+
+    /**
+     * The grid of the shown week, read once per request.
+     *
+     * @return array{rows: list<array{key: string, client: string, project: string|null, task: string|null, days: array<string, int|null>, total: int}>, day_totals: array<string, int>, day_overlaps: array<string, bool>, total: int}
+     */
+    private function weekGrid(): array
+    {
+        return $this->weekGrid ??= $this->query()->weekRows($this->admin(), $this->resolvedDate(), TimerClock::now());
     }
 
     /**

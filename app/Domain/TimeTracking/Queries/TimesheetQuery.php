@@ -210,6 +210,8 @@ final class TimesheetQuery
             $total += $seconds;
         }
 
+        ksort($dayTotals);
+
         return [
             'rows' => array_values($rows),
             'day_totals' => $dayTotals,
