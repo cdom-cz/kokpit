@@ -256,6 +256,23 @@ it('offers exactly the active Admin and the active Partners of the project clien
     }
 });
 
+it('saves a rename of a task whose assignee was deactivated and keeps the assignee', function (): void {
+    $project = taskUpdProject(visible: true);
+    $task = taskUpdTask($project);
+    $partner = Canary::partnerFor($project->client_id);
+    app(UpdateTask::class)->handle($this->admin, $task, ['assignee_id' => $partner->id]);
+    $partner->forceFill(['deactivated_at' => now()])->save();
+
+    Livewire::test(EditTask::class, ['record' => $task->reference])
+        ->fillForm(['title' => 'Example renamed after offboarding'])
+        ->call('save')
+        ->assertHasNoFormErrors()
+        ->assertFormFieldExists('assignee_id', static fn (Select $select): bool => array_key_exists($partner->id, $select->getOptions()));
+
+    expect($task->refresh()->title)->toBe('Example renamed after offboarding')
+        ->and($task->assignee_id)->toBe($partner->id);
+});
+
 it('saves the people chosen on the edit page', function (): void {
     $project = taskUpdProject(visible: true);
     $task = taskUpdTask($project);
