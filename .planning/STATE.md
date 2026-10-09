@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
-status: executing
-stopped_at: Completed 05-16-PLAN.md
-last_updated: "2026-10-09T00:45:58.813Z"
+status: verifying
+stopped_at: Completed 05-17-PLAN.md
+last_updated: "2026-10-09T00:56:53.606Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 05 execution started
-state_head: d96d010fb7537a2dfd057ae9f2efb3e9f03be8e2
+state_head: aaf0f14f7473ef570f5d428162e77ca839296ef7
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 81
-  completed_plans: 80
+  completed_plans: 81
   percent: 25
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 Phase: 05 (Tasks and Kanban) — EXECUTING
 Plan: 17 of 17
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-08 — Phase 05 execution started
 
 Progress: [███░░░░░░░] 25%
@@ -138,6 +138,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 05 P14 | 10 min | 2 tasks | 11 files |
 | Phase 05 P15 | 25 min | 2 tasks | 8 files |
 | Phase 05 P16 | 20 min | 3 tasks | 10 files |
+| Phase 05 P17 | 9 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -299,6 +300,8 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-15: a Partner notification recipient must belong to the project's client, and the project must be client-visible and not archived, and the client not archived
 - [Phase 05]: 05-16: the escalation fallback to the Admin depends only on whether the assignee can receive, never on preferences (A13); an assignee with escalation off on both channels gets nothing
 - [Phase 05]: 05-16: change notifications go only for an Admin actor to the current Partner requester and assignee, one per save; the old assignee is not told (A5)
+- [Phase 05]: The Phase 5 documentation test also checks methods and constants, not only class names, because the CONTRIBUTING conventions rely on them
+- [Phase 05]: The .gitignore review for Phase 5 found no new tool output; no rule or test case added
 
 ### Pending Todos
 
@@ -338,6 +341,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T00:45:58.693Z
-Stopped at: Completed 05-16-PLAN.md
+Last session: 2026-10-09T00:56:53.484Z
+Stopped at: Completed 05-17-PLAN.md
 Resume file: None

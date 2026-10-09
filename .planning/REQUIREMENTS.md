@@ -63,19 +63,19 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Tasks
 
-- [ ] **TA-01**: Tasks and one-level subtasks with title, status, description, dates, priority, assignee, tags and files
-- [ ] **TA-02**: Task numbers `KEY-N` come from one per-project counter allocated in a locked transaction and never recycled; keys are searchable and usable in URL and API
-- [ ] **TA-03**: Todo checklist on tasks and subtasks
-- [ ] **TA-04**: Comments on tasks and subtasks, optionally internal; Partner comments are never internal and Partner never sees internal comments or their attachments
-- [ ] **TA-05**: List view with filters (client, project, status, priority, assignee, tag, due date)
-- [ ] **TA-06**: Fixed price, billing type, rate override and time estimate on task level
-- [ ] **TA-07**: Partner can create and comment on tasks in visible projects but cannot change status or priority; Admin is notified of Partner tasks and comments
+- [x] **TA-01**: Tasks and one-level subtasks with title, status, description, dates, priority, assignee, tags and files
+- [x] **TA-02**: Task numbers `KEY-N` come from one per-project counter allocated in a locked transaction and never recycled; keys are searchable and usable in URL and API
+- [x] **TA-03**: Todo checklist on tasks and subtasks
+- [x] **TA-04**: Comments on tasks and subtasks, optionally internal; Partner comments are never internal and Partner never sees internal comments or their attachments
+- [x] **TA-05**: List view with filters (client, project, status, priority, assignee, tag, due date)
+- [x] **TA-06**: Fixed price, billing type, rate override and time estimate on task level
+- [x] **TA-07**: Partner can create and comment on tasks in visible projects but cannot change status or priority; Admin is notified of Partner tasks and comments
 
 ### Kanban
 
 - [x] **KB-01**: Kanban per project and global with columns by status and card order by position
 - [x] **KB-02**: Drag and drop changes status and position synchronously; global view filters by client, assignee, tag, priority
-- [ ] **KB-03**: Partner has no board manipulation and sees a read-only task list
+- [x] **KB-03**: Partner has no board manipulation and sees a read-only task list
 
 ### Time Tracking
 
@@ -236,16 +236,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PR-03 | Phase 4 | Complete |
 | PR-04 | Phase 4 | Complete |
 | PR-05 | Phase 6 | Pending |
-| TA-01 | Phase 5 | Pending |
-| TA-02 | Phase 5 | Pending |
-| TA-03 | Phase 5 | Pending |
-| TA-04 | Phase 5 | Pending |
-| TA-05 | Phase 5 | Pending |
-| TA-06 | Phase 5 | Pending |
-| TA-07 | Phase 5 | Pending |
+| TA-01 | Phase 5 | Complete |
+| TA-02 | Phase 5 | Complete |
+| TA-03 | Phase 5 | Complete |
+| TA-04 | Phase 5 | Complete |
+| TA-05 | Phase 5 | Complete |
+| TA-06 | Phase 5 | Complete |
+| TA-07 | Phase 5 | Complete |
 | KB-01 | Phase 5 | Complete |
 | KB-02 | Phase 5 | Complete |
-| KB-03 | Phase 5 | Pending |
+| KB-03 | Phase 5 | Complete |
 | TI-01 | Phase 6 | Pending |
 | TI-02 | Phase 6 | Pending |
 | TI-03 | Phase 6 | Pending |
