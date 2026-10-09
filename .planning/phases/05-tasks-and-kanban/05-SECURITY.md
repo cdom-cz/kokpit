@@ -77,15 +77,15 @@ created: "2026-10-09"
 | T-05-42 | Elevation | Non-assignee Partner clears escalation | medium | mitigate | `clearEscalation` for the assignee only, authorised on the locked row | closed |
 | T-05-43 | Information disclosure | Escalation reaches an ineligible Partner | medium | mitigate | Eligibility check in `addCandidate` (active, same client, may read) | closed |
 | T-05-SC | Tampering | Supply chain (all 17 plans) | low | accept / mitigate | Only `spatie/eloquent-sortable ^5.0` added; `composer check-licenses`: 210 packages allowed | closed |
-| T-05-44 | Tampering / Information disclosure | Partner injects HTML/Markdown (links, styles, remote images) into the Admin's bell and notification mails via task title or own display name | medium | mitigate (not yet done) | Unregistered finding U-1 of the audit. Fix: wrap title and actor name in `e()` in every bell title/body and pass them through `escapeMarkdown()` in every mail line; add a canary test | open — below high threshold (non-blocking) |
+| T-05-44 | Tampering / Information disclosure | Partner injects HTML/Markdown (links, styles, remote images) into the Admin's bell and notification mails via task title or own display name | medium | mitigate | Closed by plan 05-19: every interpolated value is escaped once in the `TaskNotification` base class (`final` `toMail` and `toDatabase`; mail lines through `escapeMarkdown()`, bell through `e()`); `tests/Isolation/NotificationMarkupTest.php` covers every class and audience with a DOM-level markup canary and four recorded mutation runs | closed |
 
-*Status: open · closed · open — below high threshold (non-blocking)*
+*Status: open · closed*
 *Severity: critical > high > medium > low — only open threats at or above workflow.security_block_on count toward threats_open*
 
 ### Findings outside the register
 
-- **U-1 (= T-05-44), medium:** reproduced by the auditor without writes. The bell body (`TaskCreatedNotification::bellBody`, comment and escalation bell bodies) puts the task title and the actor's name in unescaped; Filament renders it through its permissive global sanitiser (links, `style`, remote `img`). The mail lines (`lang/cs/kokpit.php` `mail_line` strings) do the same. A Partner can set their own display name on the profile page. No script execution, but phishing links, a full-screen style overlay and a tracking image can reach the Admin. `TaskChangedNotification::bellBody` already escapes and is the pattern to copy.
-- **G-1, low (defence in depth):** `CreateTask` drops a Partner's status, priority, assignee and requester but not `tags` (`CreateTask.php` around lines 100-108 and 160-162). Not reachable today (`CreatePartnerTask` forwards only title and description; test and mutation run prove it). Add `tags` to the Partner drop list before Phase 7 adds a task API.
+- **U-1 (= T-05-44), medium — CLOSED by plan 05-19:** reproduced by the auditor without writes. The bell body (`TaskCreatedNotification::bellBody`, comment and escalation bell bodies) puts the task title and the actor's name in unescaped; Filament renders it through its permissive global sanitiser (links, `style`, remote `img`). The mail lines (`lang/cs/kokpit.php` `mail_line` strings) do the same. A Partner can set their own display name on the profile page. No script execution, but phishing links, a full-screen style overlay and a tracking image can reach the Admin. `TaskChangedNotification::bellBody` already escapes and is the pattern to copy.
+- **G-1, low (defence in depth) — CLOSED by plan 05-18:** `CreateTask` now drops `tags` from a Partner payload before any input is parsed (`unset(... $data['tags'])`), proven by a Partner/Admin pair of tests and a mutation run. Original finding: `CreateTask` drops a Partner's status, priority, assignee and requester but not `tags` (`CreateTask.php` around lines 100-108 and 160-162). Not reachable today (`CreatePartnerTask` forwards only title and description; test and mutation run prove it). Add `tags` to the Partner drop list before Phase 7 adds a task API.
 
 ---
 
@@ -103,6 +103,7 @@ created: "2026-10-09"
 | Audit Date | Threats Total | Closed | Open | Run By |
 |------------|---------------|--------|------|--------|
 | 2026-10-09 | 44 | 44 | 0 (blocking); 1 unregistered medium finding (T-05-44) open below threshold | gsd-security-auditor (opus), orchestrator |
+| 2026-10-09 | 45 | 45 | 0 (T-05-44 and G-1 closed by gap-closure plans 05-19 and 05-18) | orchestrator (L1 grep check of the mitigations plus the green full suite) |
 
 ---
 
@@ -113,4 +114,12 @@ created: "2026-10-09"
 - [x] `threats_open: 0` confirmed (blocking threshold: high)
 - [x] `status: verified` set in frontmatter
 
-**Approval:** verified 2026-10-09 for the blocking gate. Open item for follow-up: T-05-44 / U-1 (medium) and G-1 (low) should be closed by a gap-closure plan before this phase is shipped.
+**Approval:** verified 2026-10-09 for the blocking gate. T-05-44 / U-1 (medium) and G-1 (low) were closed by gap-closure plans 05-19 and 05-18 and re-checked on 2026-10-09.
+
+## Security Audit 2026-10-09
+
+| Metric | Count |
+|---|---|
+| Threats found | 45 |
+| Closed | 45 |
+| Open | 0 |
