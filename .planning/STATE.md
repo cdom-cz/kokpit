@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: time-tracking
 status: executing
-stopped_at: Completed 06-11-PLAN.md
-last_updated: "2026-10-09T15:42:41.734Z"
+stopped_at: Completed 06-12-PLAN.md
+last_updated: "2026-10-09T15:58:04.328Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 06 execution started
-state_head: b47934c2159b2bb1a64b72eded0f1e79a73b043d
+state_head: b953dc2aa995aff4dabbab4ca90ec1ea2523b83e
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 100
-  completed_plans: 97
+  completed_plans: 98
   percent: 42
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 06 (time-tracking) — EXECUTING
-Plan: 12 of 14
+Plan: 13 of 14
 Status: Ready to execute
 Last activity: 2026-10-09 — Phase 06 execution started
 
@@ -157,6 +157,7 @@ Progress: [████░░░░░░] 42%
 | Phase 06 P09 | 17 min | 3 tasks | 12 files |
 | Phase 06 P10 | 10 min | 3 tasks | 10 files |
 | Phase 06 P11 | 40 min | 3 tasks | 6 files |
+| Phase 06 P12 | 15 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -354,6 +355,9 @@ Recent decisions affecting current work:
 - [Phase 06]: Timesheet view URL property is $mode with #[Url(as: 'view')] because Filament Page owns $view; every read re-validates mode and date, so a forged Livewire property falls back to the day view of today
 - [Phase 06]: Timesheet week grid reads names of archived clients, projects and tasks by joining them into the one grouped query, so the page costs the same number of queries at any volume; an entry belongs to the Prague day it started
 - [Phase 06]: Timesheet day footer reuses the entry list's total summarizer relabelled Celkem za den and hides the billable split summarizers, leaving TimeEntryResource::tableColumns() unchanged
+- [Phase 06]: 06-12: ProjectTimeStats is registered on ProjectResource and returned by ViewProject, not discovered at panel level, so the panel widget list stays empty
+- [Phase 06]: 06-12: task rows compare time only with the task's own or parent's estimate; the project estimate is shown in the stats row only (research A2)
+- [Phase 06]: 06-12: 'Bez ukolu' and 'Celkem' are a two-line table footer (a relation manager cannot host a synthetic last row); footer Odhad sums own task estimates, footer Zbyva is blank
 
 ### Pending Todos
 
@@ -393,6 +397,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T15:42:41.587Z
-Stopped at: Completed 06-11-PLAN.md
+Last session: 2026-10-09T15:58:04.182Z
+Stopped at: Completed 06-12-PLAN.md
 Resume file: None
