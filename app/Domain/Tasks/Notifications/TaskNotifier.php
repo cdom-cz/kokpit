@@ -7,6 +7,8 @@ namespace App\Domain\Tasks\Notifications;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\RoleName;
+use App\Domain\Projects\Enums\ProjectPriority;
+use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Models\Task;
@@ -36,7 +38,9 @@ use Illuminate\Support\Str;
  * D-07: a task created by a Partner goes to the Admin; a Partner comment goes to
  * the Admin and to the assignee when that is an eligible account other than the
  * author; a non-internal Admin comment goes to the Partner requester and
- * assignee; the escalation and change recipients belong to plan 05-16.
+ * assignee; an escalation goes to exactly one person, the assignee or else the
+ * Admin; an Admin's change of status, priority or assignee goes to the Partner
+ * requester and assignee.
  */
 final class TaskNotifier
 {
@@ -161,6 +165,106 @@ final class TaskNotifier
             recipientIsPartner: $isPartner,
             internal: $internal,
         ));
+    }
+
+    /**
+     * The Admin changed the status, priority or assignee of a task: the Partner
+     * requester and the Partner assignee (a newly assigned Partner included, who is
+     * the current assignee) are told once, with one line per change (D-07, D-15).
+     * Only an Admin's change notifies; anybody else changing a task tells nobody.
+     * A deactivated account and a Partner who cannot read the task get nothing.
+     *
+     * `$changes` maps `status`, `priority` and `assignee_id` to the old and new
+     * value (the enum value, or the user id). The lines are built here from the
+     * labels of the enums and the names of the two people only, so nothing else of
+     * the task can reach the message.
+     *
+     * @param  array<string, array{old: ?string, new: ?string}>  $changes
+     */
+    public function changed(Task $task, User $actor, array $changes): void
+    {
+        if (! $actor->hasRole(RoleName::Admin->value)) {
+            return;
+        }
+
+        $labels = $this->changeLabels($changes);
+
+        if ($labels === []) {
+            return;
+        }
+
+        $facts = $this->facts($task->getKey());
+
+        $candidates = [];
+        $this->addCandidate($candidates, $facts['requester_id'], $facts, partnersOnly: true);
+        $this->addCandidate($candidates, $facts['assignee_id'], $facts, partnersOnly: true);
+        unset($candidates[(string) $actor->getKey()]);
+
+        foreach ($candidates as $recipient) {
+            $recipient->notify(new TaskChangedNotification(
+                taskReference: $facts['reference'],
+                taskTitle: $facts['title'],
+                projectKey: $facts['project_key'],
+                actorName: $actor->name,
+                url: $this->url($facts['reference'], partner: true),
+                changedLabels: $labels,
+            ));
+        }
+    }
+
+    /**
+     * One Czech line per change, in the fixed order status, priority, assignee.
+     *
+     * @param  array<string, array{old: ?string, new: ?string}>  $changes
+     * @return list<string>
+     */
+    private function changeLabels(array $changes): array
+    {
+        $empty = __('kokpit.tasks.notifications.changed.empty');
+        $labels = [];
+
+        foreach (['status', 'priority', 'assignee_id'] as $field) {
+            if (! isset($changes[$field])) {
+                continue;
+            }
+
+            $old = $changes[$field]['old'];
+            $new = $changes[$field]['new'];
+
+            [$key, $oldLabel, $newLabel] = match ($field) {
+                'status' => ['status', $this->enumLabel(ProjectStatus::class, $old), $this->enumLabel(ProjectStatus::class, $new)],
+                'priority' => ['priority', $this->enumLabel(ProjectPriority::class, $old), $this->enumLabel(ProjectPriority::class, $new)],
+                default => ['assignee', $this->userName($old), $this->userName($new)],
+            };
+
+            $labels[] = __('kokpit.tasks.notifications.changed.'.$key, [
+                'old' => $oldLabel ?? $empty,
+                'new' => $newLabel ?? $empty,
+            ]);
+        }
+
+        return $labels;
+    }
+
+    /**
+     * @param  class-string<ProjectStatus|ProjectPriority>  $enum
+     */
+    private function enumLabel(string $enum, ?string $value): ?string
+    {
+        return $value === null ? null : $enum::tryFrom($value)?->getLabel();
+    }
+
+    private function userName(?string $userId): ?string
+    {
+        if ($userId === null) {
+            return null;
+        }
+
+        $name = app(PartnerContext::class)->runAsSystem(
+            static fn (): mixed => User::query()->whereKey($userId)->value('name'),
+        );
+
+        return is_string($name) ? $name : null;
     }
 
     /**

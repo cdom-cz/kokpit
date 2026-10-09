@@ -13,6 +13,7 @@ use App\Domain\Tasks\Board\TaskBoard;
 use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskBilling;
+use App\Domain\Tasks\Notifications\TaskNotifier;
 use App\Domain\Tasks\TaskInput;
 use App\Domain\Tasks\TaskPeople;
 use Illuminate\Support\Facades\DB;
@@ -50,6 +51,10 @@ use Illuminate\Validation\ValidationException;
  * removes the row, and a task without a row inherits everything. Billing type
  * fixed price needs a price.
  *
+ * Notification (TA-07, D-07, D-15): when the status, the priority or the assignee
+ * differs after the save, TaskNotifier tells the Partner requester and assignee
+ * once, inside the transaction (delivered after commit).
+ *
  * Errors are ValidationExceptions keyed by the data key; the Admin form maps
  * them to its state paths.
  *
@@ -81,6 +86,7 @@ final class UpdateTask
     public function __construct(
         private readonly TaskBoard $board,
         private readonly TaskPeople $people,
+        private readonly TaskNotifier $notifier,
     ) {}
 
     /**
@@ -116,7 +122,7 @@ final class UpdateTask
 
         $billing = $this->parseBilling($task, $data);
 
-        return DB::transaction(function () use ($task, $data, $title, $status, $priority, $tags, $plain, $dates, $billing): Task {
+        return DB::transaction(function () use ($actor, $task, $data, $title, $status, $priority, $tags, $plain, $dates, $billing): Task {
             $this->board->lockBoard();
 
             $locked = Task::query()->whereKey($task->getKey())->lockForUpdate()->firstOrFail();
@@ -129,6 +135,12 @@ final class UpdateTask
             );
 
             $people = $this->changedPeople($locked, $data);
+
+            $before = [
+                'status' => $locked->status->value,
+                'priority' => $locked->priority->value,
+                'assignee_id' => $locked->assignee_id,
+            ];
 
             if ($title !== null) {
                 $attributes['title'] = $title;
@@ -156,8 +168,38 @@ final class UpdateTask
                 $this->saveBilling($locked, $billing);
             }
 
+            $this->notifyChanges($actor, $locked, $before);
+
             return $locked->refresh();
         });
+    }
+
+    /**
+     * Tells the Partner side of the status, priority and assignee that differ
+     * from the values read under the lock, once per save (D-07, D-15). Dates,
+     * title, description, tags and billing never notify.
+     *
+     * @param  array{status: string, priority: string, assignee_id: string}  $before
+     */
+    private function notifyChanges(User $actor, Task $task, array $before): void
+    {
+        $after = [
+            'status' => $task->status->value,
+            'priority' => $task->priority->value,
+            'assignee_id' => $task->assignee_id,
+        ];
+
+        $changes = [];
+
+        foreach ($after as $field => $new) {
+            if ($new !== $before[$field]) {
+                $changes[$field] = ['old' => $before[$field], 'new' => $new];
+            }
+        }
+
+        if ($changes !== []) {
+            $this->notifier->changed($task, $actor, $changes);
+        }
     }
 
     /**

@@ -89,8 +89,11 @@ abstract class TaskNotification extends Notification implements ShouldQueue
     {
         $message = (new MailMessage)
             ->subject($this->mailSubject())
-            ->greeting(__('kokpit.tasks.notifications.shared.greeting'))
-            ->line($this->mailLine());
+            ->greeting(__('kokpit.tasks.notifications.shared.greeting'));
+
+        foreach ($this->mailLines() as $line) {
+            $message->line($line);
+        }
 
         if ($this->excerpt !== null && $this->excerpt !== '') {
             $message->line('> '.self::escapeMarkdown($this->excerpt));
@@ -124,6 +127,17 @@ abstract class TaskNotification extends Notification implements ShouldQueue
 
     abstract protected function mailLine(): string;
 
+    /**
+     * The lines of the mail body before the quote and the button: the one line
+     * of the event, unless the event adds more.
+     *
+     * @return list<string>
+     */
+    protected function mailLines(): array
+    {
+        return [$this->mailLine()];
+    }
+
     abstract protected function bellTitle(): string;
 
     abstract protected function bellBody(): string;
@@ -144,7 +158,7 @@ abstract class TaskNotification extends Notification implements ShouldQueue
      * Makes a plain-text excerpt inert in the Markdown of the mail: no link,
      * emphasis, code or heading can be built from the words of a comment.
      */
-    private static function escapeMarkdown(string $text): string
+    protected static function escapeMarkdown(string $text): string
     {
         return (string) preg_replace('/([\\\\`*_\[\]()<>#|~!])/', '\\\\$1', $text);
     }

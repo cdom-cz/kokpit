@@ -9,6 +9,7 @@ use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Tasks\Board\BoardFilters;
 use App\Domain\Tasks\Board\TaskBoard;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Notifications\TaskNotifier;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -29,12 +30,18 @@ use Illuminate\Support\Str;
  * 4. TaskBoard::move writes the status through the model and the order through
  *    setNewOrder.
  *
+ * Notification (TA-07, D-07): when the move changes the status, TaskNotifier tells
+ * the Partner requester and assignee once; a reorder inside a column tells nobody.
+ *
  * The database CHECK on `status` and the deferred position exclusion are the
  * last line.
  */
 final class MoveTask
 {
-    public function __construct(private readonly TaskBoard $board) {}
+    public function __construct(
+        private readonly TaskBoard $board,
+        private readonly TaskNotifier $notifier,
+    ) {}
 
     public function handle(User $actor, string $taskId, int $index, ProjectStatus $status, BoardFilters $filters): Task
     {
@@ -47,12 +54,19 @@ final class MoveTask
 
         Gate::forUser($actor)->authorize('update', $task);
 
-        return DB::transaction(function () use ($task, $index, $status, $filters): Task {
+        return DB::transaction(function () use ($actor, $task, $index, $status, $filters): Task {
             $this->board->lockBoard();
 
             $locked = Task::query()->whereKey($task->getKey())->lockForUpdate()->firstOrFail();
 
+            $before = $locked->status;
+
             $this->board->move($locked, $index, $status, $filters);
+
+            // A move into another column is a status change the Partner side is told of; a reorder is not.
+            if ($locked->status !== $before) {
+                $this->notifier->changed($locked, $actor, ['status' => ['old' => $before->value, 'new' => $locked->status->value]]);
+            }
 
             return $locked;
         });
