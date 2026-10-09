@@ -58,13 +58,13 @@ function escalationRow(Task $task): Task
 }
 
 /**
- * The comments of the task, read around every scope.
+ * The comments of the task, read around every scope, oldest first with ties broken by the UUID v7 id.
  *
  * @return list<TaskComment>
  */
 function escalationComments(Task $task): array
 {
-    return escalationSystem(static fn (): array => TaskComment::query()->where('task_id', $task->id)->orderBy('created_at')->get()->all());
+    return escalationSystem(static fn (): array => TaskComment::query()->where('task_id', $task->id)->orderBy('created_at')->orderBy('id')->get()->all());
 }
 
 /**
