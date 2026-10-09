@@ -13,6 +13,7 @@ use App\Domain\TimeTracking\Queries\TimesheetQuery;
 use App\Filament\Pages\TimesheetPage;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -286,5 +287,233 @@ describe('the week grid', function (): void {
 
         expect($component->instance()->getTable()->getRecordActions())->toBe([])
             ->and($component->instance()->getTable()->getBulkActions())->toBe([]);
+    });
+});
+
+/**
+ * The seconds of an entry's grid cell and of the day view, read through the page.
+ *
+ * @return array{day: string, week: string}
+ */
+function sheetTexts(string $date): array
+{
+    return [
+        'day' => sheetText((string) test()->get('/admin/timesheet?view=day&date='.$date)->assertOk()->getContent()),
+        'week' => sheetText((string) test()->get('/admin/timesheet?view=week&date='.$date)->assertOk()->getContent()),
+    ];
+}
+
+describe('Prague midnight and daylight saving', function (): void {
+    it('attributes an entry from 23:30 to 00:30 wholly to the day it started, in both views', function (): void {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 10:00:00', 'UTC'));
+        $client = Client::factory()->create(['name' => 'Example Night']);
+        // Wednesday 23:30 to Thursday 00:30 Prague (UTC+2).
+        sheetEntry('2026-10-14 21:30:00', '2026-10-14 22:30:00', ['client_id' => $client->id]);
+
+        $wednesday = sheetTexts('2026-10-14');
+        $thursday = sheetTexts('2026-10-15');
+
+        expect($wednesday['day'])->toContain('23:30–00:30')
+            ->and($wednesday['day'])->toContain('Celkem 1:00 · fakturovatelné 1:00 · nefakturovatelné 0:00')
+            ->and($wednesday['week'])->toContain('Example Night Bez projektu Bez úkolu — — 1:00 — — — — 1:00')
+            ->and($thursday['day'])->not->toContain('23:30–00:30')
+            ->and($thursday['day'])->toContain('Celkem 0:00 ·');
+    });
+
+    it('puts a Sunday night entry in the week it started and not in the next one', function (): void {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 10:00:00', 'UTC'));
+        $client = Client::factory()->create(['name' => 'Example Night']);
+        // Sunday 2026-10-18 23:30 to Monday 00:30 Prague.
+        sheetEntry('2026-10-18 21:30:00', '2026-10-18 22:30:00', ['client_id' => $client->id]);
+
+        $thisWeek = sheetTexts('2026-10-14')['week'];
+        $nextWeek = sheetTexts('2026-10-19')['week'];
+
+        expect($thisWeek)->toContain('Example Night Bez projektu Bez úkolu — — — — — — 1:00 1:00')
+            ->and($nextWeek)->not->toContain('Example Night Bez projektu')
+            ->and($nextWeek)->toContain('V tomto týdnu nejsou žádné záznamy');
+    });
+
+    it('sums the 25-hour day the clocks go back without losing the repeated hour', function (): void {
+        $this->travelTo(CarbonImmutable::parse('2026-10-25 11:00:00', 'UTC'));
+        $client = Client::factory()->create(['name' => 'Example Autumn']);
+        $in = ['client_id' => $client->id];
+        // 00:30 CEST to 03:30 CET crosses the repeated hour: four hours of work.
+        sheetEntry('2026-10-24 22:30:00', '2026-10-25 02:30:00', $in);
+        // 23:30 on the 25th to 00:30 on the 26th (UTC+1): the last entry that belongs to the 25th.
+        sheetEntry('2026-10-25 22:30:00', '2026-10-25 23:30:00', $in);
+        // 00:30 on the 26th starts the next day; 23:30 on the 24th ended the day before.
+        sheetEntry('2026-10-25 23:30:00', '2026-10-26 00:00:00', $in);
+        sheetEntry('2026-10-24 21:30:00', '2026-10-24 21:45:00', $in);
+
+        $texts = sheetTexts('2026-10-25');
+
+        expect(TimeEntry::query()->orderBy('started_at')->pluck('duration_seconds')->all())->toBe([900, 14400, 3600, 1800])
+            ->and($texts['day'])->toContain('Celkem 5:00 · fakturovatelné 5:00 · nefakturovatelné 0:00')
+            ->and($texts['day'])->toContain('00:30–03:30')
+            ->and($texts['day'])->toContain('23:30–00:30')
+            ->and($texts['week'])->toContain('Example Autumn Bez projektu Bez úkolu — — — — — 0:15 5:00 5:15')
+            ->and($texts['week'])->toContain('Celkem — — — — — 0:15 5:00 5:15');
+    });
+
+    it('sums the 23-hour day the clocks go forward', function (): void {
+        $this->travelTo(CarbonImmutable::parse('2027-03-28 10:00:00', 'UTC'));
+        $client = Client::factory()->create(['name' => 'Example Spring']);
+        $in = ['client_id' => $client->id];
+        // 01:30 CET to 03:30 CEST: one hour, the hour from 02:00 does not exist.
+        sheetEntry('2027-03-28 00:30:00', '2027-03-28 01:30:00', $in);
+        // 23:30 on the 28th (UTC+2) is the last half hour of that day; 00:30 on the 29th is the next day.
+        sheetEntry('2027-03-28 21:30:00', '2027-03-28 22:00:00', $in);
+        sheetEntry('2027-03-28 22:30:00', '2027-03-28 23:00:00', $in);
+
+        $texts = sheetTexts('2027-03-28');
+
+        expect(TimeEntry::query()->orderBy('started_at')->pluck('duration_seconds')->all())->toBe([3600, 1800, 1800])
+            ->and($texts['day'])->toContain('Celkem 1:30 · fakturovatelné 1:30 · nefakturovatelné 0:00')
+            ->and($texts['week'])->toContain('Example Spring Bez projektu Bez úkolu — — — — — — 1:30 1:30');
+    });
+});
+
+describe('the URL', function (): void {
+    it('falls back to the day view of today for a bad view or date', function (string $query): void {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 10:00:00', 'UTC'));
+        sheetEntry('2026-10-14 06:00:00', '2026-10-14 07:00:00');
+
+        $html = (string) $this->get('/admin/timesheet?'.$query)->assertOk()->getContent();
+
+        expect($html)->toContain('value="2026-10-14"')
+            ->and($html)->toContain('Celkem 1:00 ·')
+            ->and($html)->not->toContain('Týden 42');
+    })->with([
+        'unknown view' => ['view=month'],
+        'impossible date' => ['date=2026-13-45'],
+        'day that does not exist' => ['date=2026-02-30'],
+        'text after the date' => ['date=2026-10-15abc'],
+        'not a date' => ['date=yesterday'],
+        'array date' => ['date[]=2026-10-15'],
+        'array view and date' => ['view[]=week&date[x]=1'],
+    ]);
+
+    it('keeps a valid view and date', function (): void {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 10:00:00', 'UTC'));
+
+        $this->get('/admin/timesheet?view=week&date=2026-11-03')
+            ->assertOk()
+            ->assertSee('Týden 45 · 2. 11. – 8. 11.');
+        $this->get('/admin/timesheet?view=day&date=2026-11-03')
+            ->assertOk()
+            ->assertSee('value="2026-11-03"', false);
+    });
+
+    it('ignores a forged view or date sent to the page after it was mounted', function (): void {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 10:00:00', 'UTC'));
+        sheetEntry('2026-10-14 06:00:00', '2026-10-14 07:00:00');
+
+        Livewire::test(TimesheetPage::class)
+            ->set('mode', 'month; DROP TABLE time_entries')
+            ->set('date', "2026-10-14' OR '1'='1")
+            ->assertSuccessful()
+            ->assertSee('Celkem 1:00 ·');
+
+        expect(TimeEntry::query()->count())->toBe(1);
+    });
+});
+
+describe('the overlap flag', function (): void {
+    it('marks every overlapping row in the day view, also when more than two overlap', function (): void {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 10:00:00', 'UTC'));
+        $first = sheetEntry('2026-10-14 06:00:00', '2026-10-14 07:00:00');
+        $second = sheetEntry('2026-10-14 06:30:00', '2026-10-14 07:30:00');
+        $third = sheetEntry('2026-10-14 06:45:00', '2026-10-14 06:50:00');
+        $apart = sheetEntry('2026-10-14 08:00:00', '2026-10-14 08:30:00');
+
+        Livewire::test(TimesheetPage::class)
+            ->assertTableColumnStateSet('overlap', 'Překryv', record: $first)
+            ->assertTableColumnStateSet('overlap', 'Překryv', record: $second)
+            ->assertTableColumnStateSet('overlap', 'Překryv', record: $third)
+            ->assertTableColumnStateSet('overlap', null, record: $apart);
+    });
+});
+
+describe('the cost of a page', function (): void {
+    /**
+     * The number of queries one request to the page costs, after a warm-up request.
+     */
+    function sheetQueryCount(string $url): int
+    {
+        test()->get($url)->assertOk();
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        test()->get($url)->assertOk();
+        $count = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        return $count;
+    }
+
+    /**
+     * Entries on the day of Wednesday 2026-10-14, one more client, project and task each time, so
+     * a query per row would show.
+     */
+    function sheetSpread(int $from, int $to): void
+    {
+        for ($i = $from; $i < $to; $i++) {
+            $w = sheetWorld('Example Client '.$i, 'PX'.chr(65 + intdiv($i, 26)).chr(65 + $i % 26));
+            $minutes = $i * 10;
+            $day = $i % 5; // spread over Monday to Friday of the week
+            $start = CarbonImmutable::parse('2026-10-12 06:00:00', 'UTC')->addDays($day)->addMinutes($minutes);
+
+            sheetEntry($start->toDateTimeString(), $start->addMinutes(5)->toDateTimeString(), [
+                'client_id' => $w['client']->id,
+                'project_id' => $w['project']->id,
+                'task_id' => $w['task']->id,
+            ]);
+        }
+    }
+
+    it('issues the same number of queries for the day and the week with 3 and with 40 entries', function (): void {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 10:00:00', 'UTC'));
+        // Every entry of the day: the same day for the day view, spread over the week for the grid.
+        sheetSpread(0, 3);
+        $weekWithThree = sheetQueryCount('/admin/timesheet?view=week&date=2026-10-14');
+        $dayWithThree = sheetQueryCount('/admin/timesheet?view=day&date=2026-10-14');
+
+        sheetSpread(3, 40);
+        $weekWithForty = sheetQueryCount('/admin/timesheet?view=week&date=2026-10-14');
+        $dayWithForty = sheetQueryCount('/admin/timesheet?view=day&date=2026-10-14');
+
+        expect(TimeEntry::query()->count())->toBe(40)
+            ->and($weekWithForty)->toBe($weekWithThree)
+            ->and($dayWithForty)->toBe($dayWithThree);
+
+        // The day view really holds several rows by then (every fifth entry falls on Wednesday).
+        expect(sheetText((string) $this->get('/admin/timesheet?view=day&date=2026-10-14')->getContent()))->toContain('Example Client 2 ');
+    });
+});
+
+describe('empty days and weeks', function (): void {
+    it('says so and keeps the controls usable', function (): void {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 10:00:00', 'UTC'));
+
+        $day = (string) $this->get('/admin/timesheet?view=day&date=2026-10-20')->assertOk()->getContent();
+        $week = (string) $this->get('/admin/timesheet?view=week&date=2026-10-20')->assertOk()->getContent();
+
+        expect(sheetText($day))->toContain('V tento den nejsou žádné záznamy')
+            ->and(sheetText($day))->toContain('Zvolte jiný den nebo přidejte záznam v nabídce Časové záznamy.')
+            ->and($day)->toContain(e(TimesheetPage::getUrl(['view' => 'day', 'date' => '2026-10-21'])))
+            ->and($day)->toContain('name="date"')
+            ->and(sheetText($week))->toContain('V tomto týdnu nejsou žádné záznamy')
+            ->and(sheetText($week))->toContain('Zvolte jiný týden nebo přidejte záznam v nabídce Časové záznamy.')
+            ->and($week)->toContain(e(TimesheetPage::getUrl(['view' => 'week', 'date' => '2026-10-27'])))
+            ->and($week)->toContain('name="date"');
+    });
+
+    it('scrolls the grid inside its wrapper so that the page never scrolls sideways', function (): void {
+        sheetWeek();
+
+        $html = (string) $this->get('/admin/timesheet?view=week&date=2026-10-14')->assertOk()->getContent();
+
+        expect($html)->toContain('min-width: 0; max-width: 100%; overflow-x: auto;');
     });
 });
