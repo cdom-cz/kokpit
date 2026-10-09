@@ -90,6 +90,29 @@ final class TimeEntryInput
     }
 
     /**
+     * The well-formed, distinct uuids of a bulk selection, in the given order.
+     *
+     * A selection comes from the browser and may be stale or forged: anything
+     * that is not a uuid string is dropped silently, an unknown uuid simply
+     * matches no row.
+     *
+     * @param  array<array-key, mixed>  $ids
+     * @return list<string>
+     */
+    public static function uuids(array $ids): array
+    {
+        $valid = [];
+
+        foreach ($ids as $id) {
+            if (is_string($id) && Str::isUuid($id)) {
+                $valid[strtolower($id)] = true;
+            }
+        }
+
+        return array_map('strval', array_keys($valid));
+    }
+
+    /**
      * The description as stored: trimmed, null when empty.
      *
      * @throws ValidationException a field error on `description` for more than 1000 characters

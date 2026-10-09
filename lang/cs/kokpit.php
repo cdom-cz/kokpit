@@ -211,6 +211,7 @@ return [
             'task_billing' => 'Fakturace úkolu',
             'contact' => 'Kontakt',
             'task' => 'Úkol',
+            'time_entry' => 'Časový záznam',
         ],
         'attributes' => [
             'client' => [
@@ -279,6 +280,16 @@ return [
                 'fixed_price_minor' => 'Pevná cena (v nejmenších jednotkách měny)',
                 'fixed_price_currency' => 'Měna pevné ceny',
                 'estimate_seconds' => 'Odhad (v sekundách)',
+            ],
+            'time_entry' => [
+                'client_id' => 'Klient',
+                'project_id' => 'Projekt',
+                'task_id' => 'Úkol',
+                'started_at' => 'Začátek',
+                'ended_at' => 'Konec',
+                'billable' => 'Fakturovatelné',
+                'billing_state' => 'Stav fakturace',
+                'billed_at' => 'Vyfakturováno',
             ],
         ],
     ],
@@ -930,6 +941,8 @@ return [
             'invalid_time' => 'Zadejte platné datum a čas.',
             'locked' => 'Záznam je vyfakturovaný a nelze ho upravit. Nejdřív zrušte fakturaci.',
             'start_race' => 'Časovač se nepodařilo spustit, protože se současně změnil jiný. Zkuste to znovu.',
+            'nothing_to_bill' => 'V označených záznamech není nic k vyfakturování.',
+            'nothing_to_unbill' => 'V označených záznamech není nic, co by šlo odemknout.',
         ],
     ],
 

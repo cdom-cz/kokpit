@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\TimeTracking\Models;
 
+use App\Domain\Audit\LoggedAttributes;
+use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
@@ -33,6 +35,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * state are set with `forceFill` by the Actions, so a request can never re-point
  * an entry or bill it by mass assignment.
  *
+ * Changes to the context, the instants, the billable flag and the billing state
+ * are written to the activity log through an allowlist (D-06). The description
+ * is free text and `long_running_notified_at` is bookkeeping: neither is logged.
+ * Billing and unbilling save the model one entry at a time so each writes a row.
+ *
  * The relations to client, project and task include archived rows: archiving
  * never stops a running timer and never hides the time already tracked.
  *
@@ -53,10 +60,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $updated_at
  */
 #[Fillable(['description', 'billable'])]
+#[LoggedAttributes(['client_id', 'project_id', 'task_id', 'started_at', 'ended_at', 'billable', 'billing_state', 'billed_at'])]
 final class TimeEntry extends KokpitModel implements PartnerIsolated
 {
     /** @use HasFactory<TimeEntryFactory> */
-    use DeniesPartners, HasFactory;
+    use DeniesPartners, HasFactory, LogsAllowlistedActivity;
 
     public function isRunning(): bool
     {
