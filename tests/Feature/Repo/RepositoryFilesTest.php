@@ -407,6 +407,7 @@ it('only names Phase 5 classes in CONTRIBUTING.md that exist in app/', function 
     // The documentation must not name a Phase 5 mechanism that is gone (T-05-41).
     $names = [
         'CreateTask' => 'App\Domain\Tasks\Actions\CreateTask',
+        'UpdateTaskDescription' => 'App\Domain\Tasks\Actions\UpdateTaskDescription',
         'TaskBoard' => 'App\Domain\Tasks\Board\TaskBoard',
         'MoveTask' => 'App\Domain\Tasks\Actions\MoveTask',
         'RichText' => 'App\Domain\Shared\Text\RichText',
@@ -432,10 +433,14 @@ it('only names Phase 5 classes in CONTRIBUTING.md that exist in app/', function 
         ->and(method_exists('App\Domain\Shared\Text\RichText', 'clean'))->toBeTrue()
         ->and(method_exists('App\Domain\Shared\Text\RichText', 'render'))->toBeTrue()
         ->and(method_exists('App\Domain\Settings\Numbering\DocumentNumbering', 'nextTaskNumber'))->toBeTrue()
+        ->and(method_exists('App\Domain\Tasks\Policies\TaskPolicy', 'editDescription'))->toBeTrue()
+        ->and(defined('App\Domain\Tasks\Policies\TaskPolicy::DESCRIPTION_EDITABLE_STATUSES'))->toBeTrue()
         ->and(defined('App\Domain\Shared\Text\RichText::MAX_LENGTH'))->toBeTrue()
         ->and(defined('App\Filament\Support\TaskColumns::PARTNER_COLUMN_NAMES'))->toBeTrue()
         ->and(defined('App\Filament\Support\TaskColumns::PARTNER_ENTRY_NAMES'))->toBeTrue()
         ->and($contributing)->toContain('nextTaskNumber')
+        ->and($contributing)->toContain('editDescription')
+        ->and($contributing)->toContain('DESCRIPTION_EDITABLE_STATUSES')
         ->and($contributing)->toContain('appendToColumn')
         ->and($contributing)->toContain('RichText::clean()')
         ->and($contributing)->toContain('KP002')
@@ -453,6 +458,7 @@ it('names the Phase 5 enforcing tests and the hand-over notes for Phases 6, 7, 9
         'TaskActionsTest', 'TaskKeyTest', 'TaskNumberConcurrencyTest', 'TasksTableTest', 'TaskBoardTest',
         'TaskBoardConcurrencyTest', 'RichTextSanitiserTest', 'PartnerSafeColumnsTest', 'PartnerTaskVisibilityTest',
         'TaskBillingResolverTest', 'TaskNotificationsTest', 'NotificationLeakTest', 'NotificationMarkupTest',
+        'PartnerTaskDescriptionTest',
     ] as $test) {
         expect($contributing)->toContain($test);
     }

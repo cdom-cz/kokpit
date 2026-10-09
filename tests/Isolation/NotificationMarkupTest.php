@@ -327,8 +327,8 @@ function notifMarkupMatrix(): array
         ],
         TaskChangedNotification::class => [
             'group' => 'changed',
-            'audiences' => ['partner'],
-            'build' => static fn (string $url, bool $partner): TaskNotification => new TaskChangedNotification('ABC-1', $full, 'ABC', $full, $url, [$person, 'Status: A < B & C → D']),
+            'audiences' => ['admin', 'partner'],
+            'build' => static fn (string $url, bool $partner): TaskNotification => new TaskChangedNotification('ABC-1', $full, 'ABC', $full, $url, [$person, 'Status: A < B & C → D'], recipientIsPartner: $partner),
             'mail' => [$full, $person],
             'bell' => [$person],
         ],
