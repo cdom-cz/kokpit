@@ -7,16 +7,16 @@ use App\Domain\Notifications\NotificationChannel;
 use App\Domain\Notifications\NotificationEvent;
 use App\Domain\Notifications\NotificationPreferences;
 use App\Domain\Notifications\UpdateNotificationPreferences;
+use App\Domain\Operations\Alerts\OperationalAlert;
+use App\Filament\Auth\EditProfile;
+use Filament\Facades\Filament;
+use Filament\Livewire\DatabaseNotifications;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\MassAssignmentException;
 use Illuminate\Support\Str;
-use Tests\Support\RawSql;
-use App\Filament\Auth\EditProfile;
-use App\Domain\Operations\Alerts\OperationalAlert;
-use Filament\Facades\Filament;
-use Filament\Livewire\DatabaseNotifications;
 use Livewire\Livewire;
 use Tests\Support\Canary;
+use Tests\Support\RawSql;
 
 /*
  * Per-user notification switches on the profile page and the bell for both roles
