@@ -18,11 +18,13 @@ use App\Domain\Tasks\Policies\TaskPolicy;
 use App\Filament\Partner\Resources\PartnerTaskResource;
 use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ViewPartnerTask;
 use App\Filament\RelationManagers\TaskHistoryRelationManager;
+use App\Filament\Resources\ActivityResource\Pages\ListActivities;
 use App\Filament\Resources\TaskResource\Pages\EditTask;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -438,4 +440,134 @@ it('writes no description text into the history row', function (): void {
 
     // The log is closed to a Partner: not one activity row is readable.
     expect(Activity::query()->count())->toBe(0);
+});
+
+it('refuses a save based on a description that changed since the modal opened', function (): void {
+    $this->actingAs($this->partnerA);
+    $page = Livewire::test(ViewPartnerTask::class, ['record' => $this->task->reference])->mountAction('editDescription');
+
+    // The Admin edits the description while the Partner's editor is open.
+    $adminText = '<p>Admin '.Canary::canary('meanwhile').'</p>';
+    partnerDescSystem(fn (): Task => app(UpdateTask::class)->handle($this->admin, Task::query()->findOrFail($this->task->id), ['description' => $adminText]));
+    $rowsBefore = count(partnerDescEdits($this->task));
+
+    $page->setActionData(['description' => '<p>Partner text</p>'])
+        ->callMountedAction()
+        ->assertHasActionErrors(['description' => __('kokpit.tasks.errors.description_stale')]);
+
+    expect(partnerDescRow($this->task)->description)->toBe($adminText)
+        ->and(partnerDescEdits($this->task))->toHaveCount($rowsBefore);
+
+    // The Action called directly with the fingerprint of another text is refused the same way.
+    $row = partnerDescRow($this->task);
+
+    try {
+        app(UpdateTaskDescription::class)->handle($this->partnerA, $row, '<p>Partner text</p>', UpdateTaskDescription::fingerprint('<p>Some other text</p>'));
+        $this->fail('The stale save was accepted.');
+    } catch (ValidationException $e) {
+        expect(array_keys($e->errors()))->toBe(['description'])
+            ->and($e->errors()['description'])->toBe([__('kokpit.tasks.errors.description_stale')]);
+    }
+
+    expect(partnerDescRow($this->task)->description)->toBe($adminText);
+});
+
+it('accepts a save after an unrelated change of the task', function (): void {
+    $this->actingAs($this->partnerA);
+    $page = Livewire::test(ViewPartnerTask::class, ['record' => $this->task->reference])->mountAction('editDescription');
+
+    // Priority and a move between the two editable statuses do not touch the description.
+    partnerDescSystem(fn (): Task => app(UpdateTask::class)->handle($this->admin, Task::query()->findOrFail($this->task->id), ['priority' => 'high', 'status' => 'to_clarify']));
+    $typed = '<p>Edited '.Canary::canary('unrelated').'</p>';
+
+    $page->setActionData(['description' => $typed])->callMountedAction()->assertHasNoActionErrors();
+
+    $row = partnerDescRow($this->task);
+
+    expect($row->description)->toBe(RichText::clean($typed))
+        ->and($row->status->value)->toBe('to_clarify')
+        ->and($row->priority->value)->toBe('high');
+});
+
+it('refuses the save when the status left the editable statuses while the editor was open', function (string $status): void {
+    // (1) Action level: the caller holds an instance read while the task was Planned.
+    $stale = partnerDescRow($this->task);
+    $fingerprint = UpdateTaskDescription::fingerprint($stale->description);
+    $this->actingAs($this->partnerA);
+    $page = Livewire::test(ViewPartnerTask::class, ['record' => $this->task->reference])->mountAction('editDescription');
+
+    // The Admin's own status change writes its history row; only the description edit must add none.
+    partnerDescStatus($this->admin, $this->task, $status);
+    $rowsBefore = count(partnerDescHistory($this->task));
+
+    try {
+        app(UpdateTaskDescription::class)->handle($this->partnerA, $stale, '<p>Example late text</p>', $fingerprint);
+        $this->fail('The save after the status change was accepted.');
+    } catch (ValidationException $e) {
+        expect(array_keys($e->errors()))->toBe(['description'])
+            ->and($e->errors()['description'])->toBe([__('kokpit.tasks.errors.description_not_editable')]);
+    }
+
+    expect(partnerDescRow($this->task)->description)->toBe($stale->description)
+        ->and(count(partnerDescHistory($this->task)))->toBe($rowsBefore);
+
+    // (2) Page level: the action is hidden now, so Filament treats it as disabled and does not run it.
+    $page->setActionData(['description' => '<p>Example late text</p>'])->callMountedAction();
+
+    expect(partnerDescRow($this->task)->description)->toBe($stale->description)
+        ->and(count(partnerDescHistory($this->task)))->toBe($rowsBefore);
+
+    Livewire::test(ViewPartnerTask::class, ['record' => $this->task->reference])->assertActionHidden('editDescription');
+})->with(['in progress' => ['in_progress'], 'done' => ['done']]);
+
+it('writes nothing and logs nothing when the description is saved unchanged', function (): void {
+    $stored = partnerDescRow($this->task);
+    $rowsBefore = count(partnerDescHistory($this->task));
+    $this->actingAs($this->partnerA);
+    $this->travelTo(now()->addMinutes(10));
+
+    Livewire::test(ViewPartnerTask::class, ['record' => $this->task->reference])
+        ->callAction('editDescription', ['description' => $stored->description])
+        ->assertHasNoActionErrors();
+
+    $after = partnerDescRow($this->task);
+
+    expect($after->description)->toBe($stored->description)
+        ->and($after->updated_at?->getTimestamp())->toBe($stored->updated_at?->getTimestamp())
+        ->and(count(partnerDescHistory($this->task)))->toBe($rowsBefore);
+
+    // The same new text twice is one change: the second save is based on the stored new text.
+    $typed = '<p>Edited '.Canary::canary('twice').'</p>';
+    $action = app(UpdateTaskDescription::class);
+    $action->handle($this->partnerA, partnerDescRow($this->task), $typed, UpdateTaskDescription::fingerprint($stored->description));
+    $action->handle($this->partnerA, partnerDescRow($this->task), $typed, UpdateTaskDescription::fingerprint(partnerDescRow($this->task)->description));
+
+    expect(partnerDescEdits($this->task))->toHaveCount(1)
+        ->and(count(partnerDescHistory($this->task)))->toBe($rowsBefore + 1);
+});
+
+it('filters the activity overview by the description edit', function (): void {
+    $this->actingAs($this->partnerA);
+    app(UpdateTaskDescription::class)->handle($this->partnerA, partnerDescRow($this->task), '<p>Edited '.Canary::canary('overview').'</p>', UpdateTaskDescription::fingerprint(partnerDescRow($this->task)->description));
+    partnerDescStatus($this->admin, $this->task, 'to_clarify');
+
+    $history = partnerDescHistory($this->task);
+    $edits = array_values(array_filter($history, static fn (Activity $row): bool => $row->event === 'description_changed'));
+    $others = array_values(array_filter($history, static fn (Activity $row): bool => $row->event !== 'description_changed'));
+    $events = array_unique(array_map(static fn (Activity $row): string => (string) $row->event, $others));
+
+    expect($edits)->toHaveCount(1)->and($events)->toContain('created')->toContain('updated');
+
+    $this->actingAs($this->admin);
+
+    $overview = Livewire::test(ListActivities::class);
+    $options = $overview->instance()->getTable()->getFilter('event')?->getOptions() ?? [];
+
+    // The event is offered by the filter, labelled in Czech, not only accepted as a value.
+    expect($options)->toHaveKey('description_changed')
+        ->and($options['description_changed'] ?? null)->toBe(__('kokpit.activity.events.description_changed'));
+
+    $overview->filterTable('event', 'description_changed')
+        ->assertCanSeeTableRecords($edits)
+        ->assertCanNotSeeTableRecords($others);
 });

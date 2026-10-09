@@ -101,6 +101,7 @@ final class ActivityResource extends Resource
                     'created' => __('kokpit.activity.events.created'),
                     'updated' => __('kokpit.activity.events.updated'),
                     'deleted' => __('kokpit.activity.events.deleted'),
+                    'description_changed' => __('kokpit.activity.events.description_changed'),
                 ]),
             SelectFilter::make('source')
                 ->label(__('kokpit.activity.filters.source'))
