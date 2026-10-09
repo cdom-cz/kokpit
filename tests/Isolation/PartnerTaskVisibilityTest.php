@@ -235,8 +235,9 @@ describe('nothing to change', function (): void {
 
         $page = Livewire::test(ViewPartnerTask::class, ['record' => $this->taskA->reference]);
 
-        // The only actions are the two escalation ones (plan 05-13); neither edits or deletes anything.
-        expect(partnerTaskVisNames($page->instance()->getCachedHeaderActions()))->toBe(['escalate', 'clearEscalation']);
+        // The actions are the description edit (plan 05-20) and the two escalation ones (plan 05-13);
+        // none of them deletes anything or edits more than the description.
+        expect(partnerTaskVisNames($page->instance()->getCachedHeaderActions()))->toBe(['editDescription', 'escalate', 'clearEscalation']);
         $page->assertActionDoesNotExist('edit')->assertActionDoesNotExist('delete');
 
         expect(array_keys(PartnerTaskResource::getPages()))->toBe(['index', 'create', 'view']);

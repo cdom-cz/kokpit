@@ -331,7 +331,7 @@ it('keeps priority and status with the Admin even for a Partner who is the assig
     $page = Livewire::test(ViewPartnerTask::class, ['record' => $this->task->reference]);
     $names = array_map(static fn ($action): string => (string) $action->getName(), array_values($page->instance()->getCachedHeaderActions()));
 
-    expect($names)->toBe(['escalate', 'clearEscalation']);
+    expect($names)->toBe(['editDescription', 'escalate', 'clearEscalation']);
 });
 
 it('refuses to clear a task that is not escalated as a field error on task', function (): void {

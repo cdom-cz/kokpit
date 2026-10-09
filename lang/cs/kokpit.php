@@ -188,6 +188,7 @@ return [
             'created' => 'Vytvořeno',
             'updated' => 'Změněno',
             'deleted' => 'Smazáno',
+            'description_changed' => 'Popis upraven',
         ],
         'filters' => [
             'event' => 'Událost',
@@ -488,6 +489,8 @@ return [
             'body_too_long' => 'Komentář je příliš dlouhý. Zkraťte ho, vejde se nejvýše 100 000 bajtů textu včetně značek.',
             'already_escalated' => 'Úkol už je eskalovaný.',
             'not_escalated' => 'Úkol není eskalovaný.',
+            'description_stale' => 'Popis mezitím změnil někdo jiný. Zavřete okno a otevřete ho znovu, ať vidíte aktuální znění.',
+            'description_not_editable' => 'Popis lze upravit jen u úkolu ve stavu Plánovaný nebo K upřesnění. Stav úkolu se mezitím změnil.',
         ],
         'empty_value' => '—',
         'escalation' => [
@@ -751,9 +754,13 @@ return [
             'create' => 'Nový úkol',
             'create_heading' => 'Nový úkol',
             'create_submit' => 'Vytvořit úkol',
+            'edit_description' => 'Upravit popis',
+            'edit_description_heading' => 'Upravit popis úkolu',
+            'edit_description_submit' => 'Uložit popis',
         ],
         'notifications' => [
             'created' => 'Úkol byl založen',
+            'description_saved' => 'Popis byl uložen',
         ],
         'escalation' => [
             'label' => 'Eskalace',
