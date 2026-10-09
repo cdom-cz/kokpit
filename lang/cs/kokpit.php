@@ -614,6 +614,24 @@ return [
         'notifications' => [
             'archived' => 'Úkol byl archivován',
             'restored' => 'Úkol byl obnoven',
+            'shared' => [
+                'greeting' => 'Dobrý den,',
+                'action' => 'Otevřít úkol',
+                'footer' => 'Způsob doručení upozornění můžete změnit ve svém profilu.',
+            ],
+            'task_created' => [
+                'bell_title' => 'Nový úkol :reference',
+                'bell_body' => ':title (:project)',
+                'mail_subject' => 'Nový úkol :reference: :title',
+                'mail_line' => 'V projektu :project přibyl nový úkol od uživatele :actor.',
+            ],
+            'comment' => [
+                'bell_title' => 'Nový komentář u úkolu :reference',
+                'bell_body' => ':actor: :excerpt',
+                'bell_body_no_excerpt' => ':actor',
+                'mail_subject' => 'Nový komentář u úkolu :reference',
+                'mail_line' => 'K úkolu :reference :title přibyl nový komentář od uživatele :actor.',
+            ],
         ],
         'filters' => [
             'client' => 'Klient',

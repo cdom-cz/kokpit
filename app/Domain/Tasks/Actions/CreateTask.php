@@ -11,6 +11,7 @@ use App\Domain\Settings\Numbering\DocumentNumbering;
 use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Board\TaskBoard;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Notifications\TaskNotifier;
 use App\Domain\Tasks\TaskInput;
 use App\Domain\Tasks\TaskPeople;
 use Illuminate\Support\Facades\DB;
@@ -50,6 +51,10 @@ use Illuminate\Validation\ValidationException;
  * may not pass a parent. The composite foreign key `tasks_parent_fk` rejects a
  * forged parent in the database as well.
  *
+ * Notification (TA-07, D-07): a task created by a Partner notifies the Admin through
+ * TaskNotifier, after the insert and inside the transaction; the notification is
+ * delivered after commit. A task created by the Admin notifies nobody.
+ *
  * Errors are ValidationExceptions keyed by the data key.
  *
  * @phpstan-type TaskData array{
@@ -70,6 +75,7 @@ final class CreateTask
         private readonly TaskBoard $board,
         private readonly DocumentNumbering $numbering,
         private readonly TaskPeople $people,
+        private readonly TaskNotifier $notifier,
     ) {}
 
     /**
@@ -156,7 +162,13 @@ final class CreateTask
             }
 
             // Load the database defaults, so the returned model is complete.
-            return $task->refresh();
+            $task->refresh();
+
+            // The Admin is told of a task a Partner raised (D-07); the notification is
+            // queued after the commit, so a rolled-back creation tells nobody.
+            $this->notifier->taskCreated($task, $actor);
+
+            return $task;
         });
     }
 
