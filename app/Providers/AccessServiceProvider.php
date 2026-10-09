@@ -25,6 +25,7 @@ use App\Domain\Tasks\Models\TaskChecklistItem;
 use App\Domain\Tasks\Models\TaskComment;
 use App\Domain\Tasks\Policies\TaskCommentPolicy;
 use App\Domain\Tasks\Policies\TaskPolicy;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -79,5 +80,8 @@ final class AccessServiceProvider extends ServiceProvider
         // Comments: a Partner reads the non-internal comments of the visible tasks and
         // writes new ones; nobody edits or deletes a comment (TA-04, D-08, A6).
         Gate::policy(TaskComment::class, TaskCommentPolicy::class);
+
+        // Tracked time, its rates and its billing are Admin-only (TI-07): a Partner is granted nothing.
+        Gate::policy(TimeEntry::class, AdminOnlyPolicy::class);
     }
 }

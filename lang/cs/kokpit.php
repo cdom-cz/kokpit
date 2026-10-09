@@ -917,4 +917,11 @@ return [
         ],
     ],
 
+    'time' => [
+        'errors' => [
+            'client_required' => 'Vyberte klienta.',
+            'description_too_long' => 'Popis je příliš dlouhý. Zkraťte ho na nejvýše 1000 znaků.',
+        ],
+    ],
+
 ];
