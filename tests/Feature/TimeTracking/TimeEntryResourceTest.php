@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Resources\TimeEntryResource;
 use App\Filament\Resources\TimeEntryResource\Pages\CreateTimeEntry;
@@ -16,6 +20,27 @@ use Tests\Support\Canary;
  * The Admin time entry screens (TI-02, TI-03): list, create page and entry page, and the refusal
  * of every time entry route to a Partner. Every name is fictional.
  */
+
+/**
+ * Two clients, each with a project and a task, for the cascade tests.
+ *
+ * @return array{a: Client, b: Client, pa: Project, pb: Project, pa2: Project, ta: Task, tb: Task, ta2: Task}
+ */
+function entryFormWorld(): array
+{
+    $admin = test()->admin;
+    $a = Client::factory()->create(['name' => 'Cihla']);
+    $b = Client::factory()->create(['name' => 'Dub']);
+    $project = static fn (Client $client, string $key): Project => app(PartnerContext::class)->runAsSystem(
+        static fn (): Project => Project::factory()->create(['client_id' => $client->id, 'key' => $key]),
+    );
+    $pa = $project($a, 'AAA');
+    $pa2 = $project($a, 'AAB');
+    $pb = $project($b, 'BBB');
+    $create = static fn (Project $project, string $title): Task => app(CreateTask::class)->handle($admin, $project, ['title' => $title]);
+
+    return ['a' => $a, 'b' => $b, 'pa' => $pa, 'pb' => $pb, 'pa2' => $pa2, 'ta' => $create($pa, 'Example a'), 'tb' => $create($pb, 'Example b'), 'ta2' => $create($pa2, 'Example a2')];
+}
 
 beforeEach(function (): void {
     Filament::setCurrentPanel(Filament::getPanel('admin'));
@@ -132,4 +157,118 @@ it('refuses a Partner every time entry route', function (): void {
 
 it('is not globally searchable', function (): void {
     expect(TimeEntryResource::canGloballySearch())->toBeFalse();
+});
+
+it('fills the project and the client when a task is chosen', function (): void {
+    $w = entryFormWorld();
+
+    Livewire::test(CreateTimeEntry::class)
+        ->set('data.task_id', $w['tb']->id)
+        ->assertSet('data.project_id', $w['pb']->id)
+        ->assertSet('data.client_id', $w['b']->id);
+});
+
+it('switches the client and clears a task of another project when a project is chosen', function (): void {
+    $w = entryFormWorld();
+
+    Livewire::test(CreateTimeEntry::class)
+        ->set('data.client_id', $w['a']->id)
+        ->set('data.task_id', $w['ta']->id)
+        ->set('data.project_id', $w['pb']->id)
+        ->assertSet('data.client_id', $w['b']->id)
+        ->assertSet('data.task_id', null)
+        ->assertSet('data.project_id', $w['pb']->id);
+});
+
+it('keeps a task of the chosen project', function (): void {
+    $w = entryFormWorld();
+
+    Livewire::test(CreateTimeEntry::class)
+        ->set('data.task_id', $w['ta']->id)
+        ->set('data.project_id', $w['pa']->id)
+        ->assertSet('data.task_id', $w['ta']->id)
+        ->assertSet('data.client_id', $w['a']->id);
+});
+
+it('clears a project and a task of another client when the client changes', function (): void {
+    $w = entryFormWorld();
+
+    Livewire::test(CreateTimeEntry::class)
+        ->set('data.task_id', $w['ta']->id)
+        ->set('data.client_id', $w['b']->id)
+        ->assertSet('data.project_id', null)
+        ->assertSet('data.task_id', null)
+        ->assertSet('data.client_id', $w['b']->id);
+});
+
+it('keeps the client when the project is cleared', function (): void {
+    $w = entryFormWorld();
+
+    Livewire::test(CreateTimeEntry::class)
+        ->set('data.project_id', $w['pa']->id)
+        ->set('data.project_id', null)
+        ->assertSet('data.client_id', $w['a']->id)
+        ->assertSet('data.project_id', null);
+});
+
+it('offers only the projects and tasks of the chosen client', function (): void {
+    $w = entryFormWorld();
+
+    $options = static fn ($component, string $field): array => array_keys($component->instance()->form->getComponent($field)?->getOptions() ?? []);
+
+    $component = Livewire::test(CreateTimeEntry::class)->set('data.client_id', $w['a']->id);
+
+    expect($options($component, 'project_id'))->toEqualCanonicalizing([$w['pa']->id, $w['pa2']->id])
+        ->and($options($component, 'task_id'))->toEqualCanonicalizing([$w['ta']->id, $w['ta2']->id]);
+
+    $component->set('data.project_id', $w['pa2']->id);
+
+    expect($options($component, 'task_id'))->toBe([$w['ta2']->id]);
+});
+
+it('saves an entry with a client, a project and a task', function (): void {
+    $w = entryFormWorld();
+
+    Livewire::test(CreateTimeEntry::class)
+        ->set('data.task_id', $w['ta']->id)
+        ->fillForm(['started_at' => '2026-10-12 10:00:00', 'ended_at' => '2026-10-12 10:30:00'])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $entry = TimeEntry::query()->firstOrFail();
+
+    expect($entry->task_id)->toBe($w['ta']->id)
+        ->and($entry->project_id)->toBe($w['pa']->id)
+        ->and($entry->client_id)->toBe($w['a']->id);
+});
+
+it('refuses a forged combination as a field error and stores nothing', function (): void {
+    $w = entryFormWorld();
+
+    // The whole state is replaced at once, so the cascade hooks do not tidy the forged ids.
+    $component = Livewire::test(CreateTimeEntry::class)
+        ->set('data', [
+            'client_id' => $w['a']->id,
+            'project_id' => $w['pa2']->id,
+            'task_id' => $w['ta']->id,
+            'description' => null,
+            'started_at' => '2026-10-12 10:00:00',
+            'ended_at' => '2026-10-12 10:30:00',
+            'billable' => true,
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['task_id']);
+
+    expect($component->errors()->get('data.task_id'))->toContain('Klient, projekt a úkol k sobě nepatří. Vyberte je znovu.')
+        ->and(TimeEntry::query()->count())->toBe(0);
+});
+
+it('reports a missing client as a field error under the client and stores nothing', function (): void {
+    $component = Livewire::test(CreateTimeEntry::class)
+        ->fillForm(['started_at' => '2026-10-12 10:00:00', 'ended_at' => '2026-10-12 10:30:00'])
+        ->call('create')
+        ->assertHasFormErrors(['client_id']);
+
+    expect($component->errors()->get('data.client_id'))->toContain('Vyberte klienta.')
+        ->and(TimeEntry::query()->count())->toBe(0);
 });

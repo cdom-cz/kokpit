@@ -10,6 +10,7 @@ use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Domain\TimeTracking\Queries\EntryContextOptions;
 use App\Domain\TimeTracking\Support\DurationFormat;
 use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
@@ -24,6 +25,8 @@ use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Facades\FilamentTimezone;
 use Filament\Support\Icons\Heroicon;
@@ -102,10 +105,56 @@ final class TimeEntryResource extends Resource
                 ->schema([
                     Select::make('client_id')
                         ->label(__('kokpit.time.fields.client'))
-                        ->options(static fn (): array => self::clientOptions())
+                        ->options(static fn (?TimeEntry $record, Get $get): array => self::withCurrent(
+                            app(EntryContextOptions::class)->clients(),
+                            $record?->client_id,
+                            $get('client_id'),
+                            static fn (string $id): ?string => Client::query()->withTrashed()->whereKey($id)->value('name'),
+                        ))
                         ->searchable()
                         ->required()
-                        ->validationMessages(['required' => __('kokpit.time.errors.client_required')])
+                        ->live()
+                        ->validationMessages([
+                            'required' => __('kokpit.time.errors.client_required'),
+                            'in' => __('kokpit.time.errors.client_required'),
+                        ])
+                        ->afterStateUpdated(static function (Get $get, Set $set, mixed $state): void {
+                            self::clientChanged($get, $set, is_string($state) && $state !== '' ? $state : null);
+                        })
+                        ->native(false),
+                    Select::make('project_id')
+                        ->label(__('kokpit.time.fields.project'))
+                        ->options(static fn (?TimeEntry $record, Get $get): array => self::withCurrent(
+                            app(EntryContextOptions::class)->projects(self::id($get('client_id'))),
+                            $record?->project_id,
+                            $get('project_id'),
+                            static fn (string $id): ?string => ($project = Project::query()->withTrashed()->find($id)) instanceof Project
+                                ? $project->key.' · '.$project->name
+                                : null,
+                        ))
+                        ->searchable()
+                        ->live()
+                        ->validationMessages(['in' => __('kokpit.time.errors.inconsistent_context')])
+                        ->afterStateUpdated(static function (Get $get, Set $set, mixed $state): void {
+                            self::projectChanged($get, $set, is_string($state) && $state !== '' ? $state : null);
+                        })
+                        ->native(false),
+                    Select::make('task_id')
+                        ->label(__('kokpit.time.fields.task'))
+                        ->options(static fn (?TimeEntry $record, Get $get): array => self::withCurrent(
+                            app(EntryContextOptions::class)->tasks(self::id($get('client_id')), self::id($get('project_id'))),
+                            $record?->task_id,
+                            $get('task_id'),
+                            static fn (string $id): ?string => ($task = Task::query()->withTrashed()->find($id)) instanceof Task
+                                ? $task->reference.' · '.$task->title
+                                : null,
+                        ))
+                        ->searchable()
+                        ->live()
+                        ->validationMessages(['in' => __('kokpit.time.errors.inconsistent_context')])
+                        ->afterStateUpdated(static function (Get $get, Set $set, mixed $state): void {
+                            self::taskChanged($set, is_string($state) && $state !== '' ? $state : null);
+                        })
                         ->native(false),
                     Textarea::make('description')
                         ->label(__('kokpit.time.fields.description'))
@@ -288,6 +337,106 @@ final class TimeEntryResource extends Resource
         return new HtmlString($range.' '.$badge);
     }
 
+    /**
+     * Choosing a client clears the project and the task that do not belong to it;
+     * clearing the client clears both.
+     */
+    private static function clientChanged(Get $get, Set $set, ?string $clientId): void
+    {
+        $options = app(EntryContextOptions::class);
+        $projectId = self::id($get('project_id'));
+        $taskId = self::id($get('task_id'));
+
+        if ($projectId !== null && ($clientId === null || $options->clientIdOfProject($projectId) !== $clientId)) {
+            $set('project_id', null);
+            $projectId = null;
+        }
+
+        if ($taskId === null) {
+            return;
+        }
+
+        $taskProjectId = $options->projectIdOfTask($taskId);
+        $taskClientId = $taskProjectId === null ? null : $options->clientIdOfProject($taskProjectId);
+
+        if ($clientId === null || $taskClientId !== $clientId || ($projectId !== null && $taskProjectId !== $projectId)) {
+            $set('task_id', null);
+        }
+    }
+
+    /**
+     * Choosing a project sets its client and clears a task of another project;
+     * clearing the project keeps the client and clears the task, which fixes the
+     * project.
+     */
+    private static function projectChanged(Get $get, Set $set, ?string $projectId): void
+    {
+        $options = app(EntryContextOptions::class);
+        $taskId = self::id($get('task_id'));
+
+        if ($projectId !== null) {
+            $clientId = $options->clientIdOfProject($projectId);
+
+            if ($clientId !== null) {
+                $set('client_id', $clientId);
+            }
+        }
+
+        if ($taskId !== null && ($projectId === null || $options->projectIdOfTask($taskId) !== $projectId)) {
+            $set('task_id', null);
+        }
+    }
+
+    /**
+     * Choosing a task sets its project and its client.
+     */
+    private static function taskChanged(Set $set, ?string $taskId): void
+    {
+        if ($taskId === null) {
+            return;
+        }
+
+        $options = app(EntryContextOptions::class);
+        $projectId = $options->projectIdOfTask($taskId);
+
+        if ($projectId === null) {
+            return;
+        }
+
+        $set('project_id', $projectId);
+
+        $clientId = $options->clientIdOfProject($projectId);
+
+        if ($clientId !== null) {
+            $set('client_id', $clientId);
+        }
+    }
+
+    /**
+     * Adds the stored value of the entry being edited to the options when the form still
+     * holds it: an entry whose client, project or task was archived later must keep
+     * saving its other fields, and the archived row is not offered for a new choice.
+     *
+     * @param  array<string, string>  $options
+     * @param  callable(string): ?string  $label
+     * @return array<string, string>
+     */
+    private static function withCurrent(array $options, ?string $stored, mixed $current, callable $label): array
+    {
+        if ($stored === null || $current !== $stored || array_key_exists($stored, $options)) {
+            return $options;
+        }
+
+        $text = $label($stored);
+
+        return $text === null ? $options : [$stored => $text, ...$options];
+    }
+
+    private static function id(mixed $state): ?string
+    {
+        return is_string($state) && $state !== '' ? $state : null;
+    }
+
     private static function text(mixed $state): ?string
     {
         if (! is_string($state)) {
@@ -295,18 +444,5 @@ final class TimeEntryResource extends Resource
         }
 
         return trim($state) === '' ? null : $state;
-    }
-
-    /**
-     * The clients an entry may be recorded for: the archive scope hides archived ones.
-     *
-     * @return array<string, string>
-     */
-    private static function clientOptions(): array
-    {
-        /** @var array<string, string> $clients */
-        $clients = Client::query()->orderBy('name')->pluck('name', 'id')->all();
-
-        return $clients;
     }
 }
