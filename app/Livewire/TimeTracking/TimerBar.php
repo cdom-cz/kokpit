@@ -15,7 +15,11 @@ use App\Domain\TimeTracking\TimerRaceLost;
 use App\Filament\Resources\TaskResource;
 use App\Filament\Resources\TimeEntryResource;
 use App\Providers\LocalisationServiceProvider;
+use Filament\Actions\Concerns\InteractsWithActions;
+use Filament\Actions\Contracts\HasActions;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Concerns\InteractsWithSchemas;
+use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Contracts\View\View;
 use Illuminate\Validation\ValidationException;
@@ -32,15 +36,16 @@ use Livewire\Component;
  * time-entry-saved and time-entry-deleted and by a 60-second visible-tab poll. The clock itself
  * ticks in the browser from the stored start instant.
  *
- * Public properties hold scalars only (the snapshot is sent to the browser); the running entry
- * is a computed array of scalars without any rate or price. Every request is refused for anybody
+ * "Doplnit záznam" opens the modal that fills in the project, task and description of the running
+ * entry (CompletesRunningEntry). Public properties hold scalars only (the snapshot is sent to the
+ * browser); the running entry is a computed array of scalars without any rate or price. Every request is refused for anybody
  * but the Admin (RequiresAdmin), and the Actions authorize again.
  *
  * @property-read array{recent: array<string, string>, all: array<string, string>, preselected: string|null} $clientGroups
  */
-final class TimerBar extends Component
+final class TimerBar extends Component implements HasActions, HasSchemas
 {
-    use RequiresAdmin;
+    use CompletesRunningEntry, InteractsWithActions, InteractsWithSchemas, RequiresAdmin;
 
     public ?string $clientId = null;
 
@@ -189,7 +194,7 @@ final class TimerBar extends Component
         return view('livewire.time-tracking.timer-bar');
     }
 
-    private function runningEntry(): ?TimeEntry
+    protected function runningEntry(): ?TimeEntry
     {
         return TimeEntry::query()
             ->with(['client', 'project', 'task'])

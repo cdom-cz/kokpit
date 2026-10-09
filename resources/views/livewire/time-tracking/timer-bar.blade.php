@@ -167,6 +167,9 @@
                     </dl>
 
                     <div class="kokpit-timer-actions">
+                        <x-filament::button color="gray" size="sm" :icon="Heroicon::OutlinedPencilSquare" wire:click="mountAction('completeRunningEntry')">
+                            {{ __('kokpit.time.timer.complete') }}
+                        </x-filament::button>
                         <x-filament::button color="gray" size="sm" :icon="Heroicon::OutlinedStop" wire:click="stop('{{ $running['id'] }}')">
                             {{ __('kokpit.time.timer.stop') }}
                         </x-filament::button>
@@ -184,4 +187,6 @@
             />
         </div>
     @endif
+
+    <x-filament-actions::modals />
 </div>
