@@ -90,14 +90,18 @@ final class TimeTotals
 
     /**
      * The sum of the estimates that tasks of the project hold in their own billing row, archived
-     * tasks included. A subtask that only inherits its parent's estimate adds nothing, so the sum
-     * does not count one estimate twice.
+     * tasks included, or null while no task holds one. A subtask that only inherits its parent's
+     * estimate adds nothing, so the sum does not count one estimate twice.
      */
-    public function ownTaskEstimates(Project $project): int
+    public function ownTaskEstimates(Project $project): ?int
     {
-        return (int) TaskBilling::query()
+        $sum = TaskBilling::query()
             ->whereIn('task_id', Task::query()->withTrashed()->where('project_id', $project->getKey())->select('tasks.id'))
-            ->sum('estimate_seconds');
+            ->toBase()
+            ->selectRaw('SUM(estimate_seconds) AS total')
+            ->value('total');
+
+        return $sum === null ? null : (int) $sum;
     }
 
     /**

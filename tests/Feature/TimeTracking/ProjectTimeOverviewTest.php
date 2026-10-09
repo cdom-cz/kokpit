@@ -5,13 +5,21 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Tasks\Actions\ArchiveTask;
+use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Actions\UpdateTask;
+use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Queries\TimeTotals;
 use App\Filament\Resources\ProjectResource;
 use App\Filament\Resources\ProjectResource\Pages\ViewProject;
+use App\Filament\Resources\ProjectResource\RelationManagers\ProjectTasksTimeRelationManager;
 use App\Filament\Resources\ProjectResource\Widgets\ProjectTimeStats;
+use App\Filament\Resources\TaskResource;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -86,11 +94,59 @@ function overviewText(string $html): string
 }
 
 /**
+ * Whether the cell that shows exactly `$value` is rendered in danger text. The class name also
+ * occurs in the column manager of the table, so the check is anchored on the value.
+ */
+function overviewDanger(string $html, string $value): bool
+{
+    return preg_match('/fi-color-danger[^>]*>\s*'.preg_quote($value, '/').'\s*</', $html) === 1;
+}
+
+/**
  * The stats row of the project as visible text.
  */
 function overviewStats(Project $project): string
 {
     return overviewText(Livewire::test(ProjectTimeStats::class, ['record' => $project])->assertSuccessful()->html());
+}
+
+/**
+ * A task of the project written through the domain Actions; `$billing` may hold `estimate_hours`.
+ *
+ * @param  array<string, mixed>  $billing
+ */
+function overviewTask(Project $project, string $title, array $billing = [], ?Task $parent = null): Task
+{
+    $task = app(CreateTask::class)->handle(test()->admin, $project, ['title' => $title], $parent);
+
+    if ($billing !== []) {
+        $task = app(UpdateTask::class)->handle(test()->admin, $task, $billing);
+    }
+
+    return $task->refresh();
+}
+
+/**
+ * Time on the task, from UTC instants.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function overviewTaskEntry(Task $task, string $start, string $end, array $attributes = []): TimeEntry
+{
+    return TimeEntry::factory()->forTask($task)->create([
+        'user_id' => test()->admin->id,
+        'started_at' => CarbonImmutable::parse($start, 'UTC'),
+        'ended_at' => $end === '' ? null : CarbonImmutable::parse($end, 'UTC'),
+        ...$attributes,
+    ])->refresh();
+}
+
+/**
+ * The "Úkoly a čas" tab of the project as a Livewire test.
+ */
+function overviewTasksTab(Project $project): Testable
+{
+    return Livewire::test(ProjectTasksTimeRelationManager::class, ['ownerRecord' => $project, 'pageClass' => ViewProject::class]);
 }
 
 describe('the stats row', function (): void {
@@ -144,7 +200,7 @@ describe('the stats row', function (): void {
         $html = Livewire::test(ProjectTimeStats::class, ['record' => $project])->html();
 
         expect(overviewText($html))->toContain('Odpracováno 1:45 Překročeno o 0:45')
-            ->and($html)->toContain('fi-color-danger');
+            ->and(preg_match('/fi-color-danger[^>]*>(\s|<[^>]+>)*Překročeno o 0:45/u', $html))->toBe(1);
     });
 
     it('treats an estimate of 0 as a value: any time exceeds it and there is no percent', function (): void {
@@ -243,5 +299,218 @@ describe('the registration', function (): void {
         foreach (['Odpracováno', 'Vyfakturováno', 'Nevyfakturováno', 'Odhad', 'Úkoly a čas', 'Časové záznamy'] as $word) {
             expect((string) $html)->not->toContain($word);
         }
+    });
+});
+
+describe('the tab "Úkoly a čas"', function (): void {
+    it('compares the time of a task with its own estimate and shows what is over in danger text', function (): void {
+        $project = overviewProject('10');
+        $task = overviewTask($project, 'Example estimated task', ['estimate_hours' => '2']);
+        overviewTaskEntry($task, '2026-10-12 08:00:00', '2026-10-12 10:30:00');
+
+        $tab = overviewTasksTab($project)->assertSuccessful()
+            ->assertTableColumnStateSet('estimate_seconds', '2:00', $task)
+            ->assertTableColumnStateSet('worked_seconds', '2:30', $task)
+            ->assertTableColumnStateSet('remaining', '-0:30', $task);
+
+        expect(overviewDanger($tab->html(), '-0:30'))->toBeTrue()
+            ->and(overviewText($tab->html()))->toContain($task->reference.' Example estimated task');
+    });
+
+    it('shows a positive remainder without the danger colour', function (): void {
+        $project = overviewProject();
+        $task = overviewTask($project, 'Example roomy task', ['estimate_hours' => '3']);
+        overviewTaskEntry($task, '2026-10-12 08:00:00', '2026-10-12 09:15:00');
+
+        $tab = overviewTasksTab($project)->assertTableColumnStateSet('remaining', '1:45', $task);
+
+        expect($tab->html())->toContain('>1:45<')
+            ->and(overviewDanger($tab->html(), '1:45'))->toBeFalse();
+    });
+
+    it('takes the estimate of the parent for a subtask without one, and none from the project', function (): void {
+        $project = overviewProject('10');
+        $parent = overviewTask($project, 'Example parent', ['estimate_hours' => '2']);
+        $subtask = overviewTask($project, 'Example subtask', [], $parent);
+        $bare = overviewTask($project, 'Example bare task');
+        overviewTaskEntry($bare, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+
+        overviewTasksTab($project)
+            ->assertTableColumnStateSet('estimate_seconds', '2:00', $subtask)
+            ->assertTableColumnStateSet('remaining', '2:00', $subtask)
+            ->assertTableColumnStateSet('estimate_seconds', '—', $bare)
+            ->assertTableColumnStateSet('remaining', null, $bare)
+            ->assertTableColumnStateSet('worked_seconds', '1:00', $bare);
+    });
+
+    it('treats an own estimate of 0 as a value, also when the parent has one', function (): void {
+        $project = overviewProject();
+        $parent = overviewTask($project, 'Example parent', ['estimate_hours' => '2']);
+        $subtask = overviewTask($project, 'Example zero subtask', ['estimate_hours' => '0'], $parent);
+        overviewTaskEntry($subtask, '2026-10-12 08:00:00', '2026-10-12 08:10:00');
+
+        overviewTasksTab($project)
+            ->assertTableColumnStateSet('estimate_seconds', '0:00', $subtask)
+            ->assertTableColumnStateSet('remaining', '-0:10', $subtask);
+    });
+
+    it('shows billed, unbilled and non-billable time of each task, the running entry as unbilled', function (): void {
+        $project = overviewProject();
+        $task = overviewTask($project, 'Example mixed task');
+        overviewTaskEntry($task, '2026-10-12 08:00:00', '2026-10-12 09:00:00', ['billing_state' => 'billed', 'billed_at' => CarbonImmutable::parse('2026-10-13 09:00:00', 'UTC')]);
+        overviewTaskEntry($task, '2026-10-12 10:00:00', '2026-10-12 10:30:00');
+        overviewTaskEntry($task, '2026-10-12 11:00:00', '2026-10-12 11:20:00', ['billable' => false]);
+        overviewTaskEntry($task, '2026-10-14 09:50:00', '');
+
+        overviewTasksTab($project)
+            ->assertTableColumnStateSet('worked_seconds', '2:00', $task)
+            ->assertTableColumnStateSet('billed_seconds', '1:00', $task)
+            ->assertTableColumnStateSet('unbilled_seconds', '0:40', $task)
+            ->assertTableColumnStateSet('non_billable_seconds', '0:20', $task)
+            ->assertTableColumnExists('non_billable_seconds')
+            ->assertTableColumnVisible('non_billable_seconds');
+    });
+
+    it('lists archived tasks with their time, ordered by the worked time descending', function (): void {
+        $project = overviewProject();
+        $small = overviewTask($project, 'Example small task');
+        $big = overviewTask($project, 'Example big task');
+        $archived = overviewTask($project, 'Example archived task');
+        overviewTaskEntry($small, '2026-10-12 08:00:00', '2026-10-12 08:10:00');
+        overviewTaskEntry($big, '2026-10-12 09:00:00', '2026-10-12 11:00:00');
+        overviewTaskEntry($archived, '2026-10-12 12:00:00', '2026-10-12 12:50:00');
+        app(ArchiveTask::class)->handle($this->admin, $archived);
+
+        overviewTasksTab($project)
+            ->assertCanSeeTableRecords([$big, $archived, $small], inOrder: true)
+            ->assertTableColumnStateSet('worked_seconds', '0:50', $archived);
+    });
+
+    it('sorts by the time columns, which exist only as sub-selects', function (): void {
+        $project = overviewProject();
+        $small = overviewTask($project, 'Example small task');
+        $big = overviewTask($project, 'Example big task');
+        overviewTaskEntry($small, '2026-10-12 08:00:00', '2026-10-12 08:10:00');
+        overviewTaskEntry($big, '2026-10-12 09:00:00', '2026-10-12 11:00:00', ['billable' => false]);
+
+        foreach (['worked_seconds', 'billed_seconds', 'unbilled_seconds', 'non_billable_seconds', 'estimate_seconds'] as $column) {
+            overviewTasksTab($project)->sortTable($column)->assertSuccessful()->sortTable($column, 'desc')->assertSuccessful();
+        }
+
+        overviewTasksTab($project)->sortTable('worked_seconds')->assertCanSeeTableRecords([$small, $big], inOrder: true);
+    });
+
+    it('keeps the order when the tasks have no time: by id', function (): void {
+        $project = overviewProject();
+        $first = overviewTask($project, 'Example first');
+        $second = overviewTask($project, 'Example second');
+
+        overviewTasksTab($project)->assertCanSeeTableRecords([$first, $second], inOrder: true);
+    });
+
+    it('shows the time without a task on the "Bez úkolu" line and sums everything in "Celkem"', function (): void {
+        $project = overviewProject('10');
+        $task = overviewTask($project, 'Example counted task', ['estimate_hours' => '4']);
+        overviewTaskEntry($task, '2026-10-12 08:00:00', '2026-10-12 09:30:00');
+        overviewEntry($project, '2026-10-12 11:00:00', '2026-10-12 12:00:00'); // 1:00 without a task
+        overviewEntry($project, '2026-10-12 13:00:00', '2026-10-12 13:10:00', ['billable' => false]);
+
+        $text = overviewText(overviewTasksTab($project)->html());
+
+        // Odhad, Odpracováno, Zbývá (blank), Vyfakturováno, Nevyfakturováno.
+        expect($text)->toContain('Bez úkolu — 1:10 0:00 1:00')
+            ->and($text)->toContain('Celkem 4:00 2:40 0:00 2:30');
+
+        expect(overviewStats($project))->toContain('Odpracováno 2:40');
+    });
+
+    it('sums the estimates of the tasks that hold one, a subtask that only inherits adds none', function (): void {
+        $project = overviewProject();
+        $parent = overviewTask($project, 'Example parent', ['estimate_hours' => '2']);
+        overviewTask($project, 'Example inheriting subtask', [], $parent);
+        overviewTask($project, 'Example own subtask', ['estimate_hours' => '1'], $parent);
+        overviewTaskEntry($parent, '2026-10-12 08:00:00', '2026-10-12 08:30:00');
+
+        expect(overviewText(overviewTasksTab($project)->html()))->toContain('Celkem 3:00 0:30');
+    });
+
+    it('opens the task page from the row and links the number', function (): void {
+        $project = overviewProject();
+        $task = overviewTask($project, 'Example linked task');
+        $url = TaskResource::getUrl('view', ['record' => $task]);
+
+        $html = overviewTasksTab($project)->html();
+
+        expect($html)->toContain($url);
+    });
+
+    it('wraps a single unbroken word in the title instead of overflowing', function (): void {
+        $project = overviewProject();
+        overviewTask($project, str_repeat('Unbroken', 12));
+
+        expect(overviewTasksTab($project)->html())->toContain('overflow-wrap: anywhere');
+    });
+
+    it('says so, with its body, when the project has no tasks', function (): void {
+        $text = overviewText(overviewTasksTab(overviewProject())->html());
+
+        expect($text)->toContain('V projektu zatím nejsou žádné úkoly')
+            ->and($text)->toContain('Čas se tu objeví, jakmile k projektu nebo k jeho úkolům někdo zapíše záznam.');
+    });
+
+    it('takes the time of the tasks of this project only', function (): void {
+        $project = overviewProject();
+        $other = overviewProject();
+        $mine = overviewTask($project, 'Example own task');
+        $theirs = overviewTask($other, 'Example foreign task');
+        overviewTaskEntry($mine, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+        overviewTaskEntry($theirs, '2026-10-12 08:00:00', '2026-10-12 09:30:00');
+
+        overviewTasksTab($project)
+            ->assertCanSeeTableRecords([$mine])
+            ->assertCanNotSeeTableRecords([$theirs])
+            ->assertTableColumnStateSet('worked_seconds', '1:00', $mine);
+    });
+
+    it('issues the same number of queries for 3 tasks as for 20', function (): void {
+        $project = overviewProject('10');
+        $count = static function (Project $project): int {
+            overviewTasksTab($project)->assertSuccessful(); // warm-up
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            overviewTasksTab($project)->assertSuccessful();
+            $queries = count(DB::getQueryLog());
+            DB::disableQueryLog();
+
+            return $queries;
+        };
+        $fill = static function (Project $project, int $from, int $to): void {
+            for ($i = $from; $i < $to; $i++) {
+                $task = overviewTask($project, 'Example task '.$i, $i % 2 === 0 ? ['estimate_hours' => '1'] : []);
+                overviewTaskEntry($task, '2026-10-12 08:00:00', '2026-10-12 08:'.str_pad((string) ($i % 50), 2, '0', STR_PAD_LEFT).':00');
+            }
+        };
+
+        $fill($project, 0, 3);
+        $withThree = $count($project);
+        $fill($project, 3, 20);
+        $withTwenty = $count($project);
+
+        expect($withThree)->toBeGreaterThan(0)->and($withTwenty)->toBe($withThree);
+    });
+
+    it('refuses the tab to a Partner and does not offer it on the Partner project page', function (): void {
+        [$clientA] = Canary::twoClients();
+        $project = app(CreateProject::class)->handle(Client::query()->findOrFail($clientA), [
+            'name' => 'Example partner '.mb_strtolower(Canary::projectKey()),
+            'key' => Canary::projectKey(),
+            'billing_type' => 'hourly',
+            'client_visible' => true,
+        ]);
+
+        $this->actingAs(Canary::partnerFor($clientA));
+
+        expect(ProjectTasksTimeRelationManager::canViewForRecord($project, ViewProject::class))->toBeFalse();
+        Livewire::test(ProjectTasksTimeRelationManager::class, ['ownerRecord' => $project, 'pageClass' => ViewProject::class])->assertForbidden();
     });
 });
