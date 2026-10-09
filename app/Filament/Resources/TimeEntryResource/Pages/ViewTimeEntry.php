@@ -6,6 +6,7 @@ namespace App\Filament\Resources\TimeEntryResource\Pages;
 
 use App\Domain\Identity\Models\User;
 use App\Domain\TimeTracking\Actions\CancelEntriesBilling;
+use App\Domain\TimeTracking\Billing\TimeEntryRateResolver;
 use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Resources\TimeEntryResource;
@@ -47,6 +48,25 @@ final class ViewTimeEntry extends ViewRecord
 
         return $entry->started_at->setTimezone(FilamentTimezone::get())->format(LocalisationServiceProvider::DATE_FORMAT)
             .' '.TimeEntryResource::timeRangeText($entry);
+    }
+
+    /**
+     * The effective rate as `:rate (zdroj: :source)`, or a dash when no level holds a rate. The
+     * rate and its source come from TimeEntryRateResolver, which refuses anyone but the Admin;
+     * never an amount, because the amount is written when the entry is billed (Phase 10).
+     */
+    public static function effectiveRateText(TimeEntry $entry): string
+    {
+        $rate = app(TimeEntryRateResolver::class)->resolve($entry);
+
+        if ($rate->rate === null || $rate->source === null) {
+            return __('kokpit.time.empty_value');
+        }
+
+        return __('kokpit.time.rate_entry', [
+            'rate' => $rate->rate->format('cs'),
+            'source' => $rate->source->getLabel(),
+        ]);
     }
 
     /**

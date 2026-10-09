@@ -23,6 +23,7 @@ use App\Domain\TimeTracking\Queries\OverlapFinder;
 use App\Domain\TimeTracking\Support\DurationFormat;
 use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
+use App\Filament\RelationManagers\TimeEntryHistoryRelationManager;
 use App\Filament\Resources\TimeEntryResource\Pages\CreateTimeEntry;
 use App\Filament\Resources\TimeEntryResource\Pages\EditTimeEntry;
 use App\Filament\Resources\TimeEntryResource\Pages\ListTimeEntries;
@@ -316,6 +317,12 @@ final class TimeEntryResource extends Resource
                         ->label(__('kokpit.time.fields.billing_state'))
                         ->state(static fn (TimeEntry $record): BillingBadge => $record->billingBadge())
                         ->badge(),
+                    // The hourly rate that would apply and where it comes from, never an amount: the
+                    // amount is written when the entry is billed (Phase 10). The resolver refuses non-Admins.
+                    TextEntry::make('effective_rate')
+                        ->label(__('kokpit.time.fields.effective_rate'))
+                        ->state(static fn (TimeEntry $record): string => ViewTimeEntry::effectiveRateText($record))
+                        ->visible(static fn (TimeEntry $record): bool => $record->billable),
                     TextEntry::make('billed_at')
                         ->label(__('kokpit.time.fields.billed_at'))
                         ->dateTime(LocalisationServiceProvider::DATE_TIME_FORMAT)
@@ -780,6 +787,16 @@ final class TimeEntryResource extends Resource
         }
 
         return $keys;
+    }
+
+    /**
+     * @return array<class-string>
+     */
+    public static function getRelations(): array
+    {
+        return [
+            TimeEntryHistoryRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

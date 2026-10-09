@@ -2,8 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
+use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Money\Money;
+use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\TimeTracking\Actions\CancelEntriesBilling;
 use App\Domain\TimeTracking\Actions\DeleteTimeEntry;
 use App\Domain\TimeTracking\Actions\MarkEntriesBilled;
@@ -11,10 +16,12 @@ use App\Domain\TimeTracking\Actions\UpdateTimeEntry;
 use App\Domain\TimeTracking\Enums\BillingBadge;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\TimeEntryInput;
+use App\Filament\RelationManagers\TimeEntryHistoryRelationManager;
 use App\Filament\Resources\TimeEntryResource\Pages\EditTimeEntry;
 use App\Filament\Resources\TimeEntryResource\Pages\ListTimeEntries;
 use App\Filament\Resources\TimeEntryResource\Pages\ViewTimeEntry;
 use Carbon\CarbonImmutable;
+use Database\Factories\ProjectFactory;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
@@ -529,6 +536,7 @@ it('sends the edit URL of a billed entry to its view page and shows the callout 
         ->assertSee('Záznam je uzamčený')
         ->assertSee('Vyfakturovaný záznam nejde upravit ani smazat.')
         ->assertSee('Zrušit fakturaci')
+        ->assertSee('Historie změn')
         ->assertDontSee('Upravit záznam')
         ->assertDontSee('Smazat záznam');
 });
@@ -579,4 +587,127 @@ it('unlocks a selection in bulk, announces it to the timer components and asks w
     foreach ($entries as $entry) {
         expect(lockReload($entry)->billing_state->value)->toBe('unbilled');
     }
+});
+
+/*
+ * The entry page: the effective rate, delete and the history tab (TI-08, TI-02, D-06).
+ */
+
+it('shows the effective rate with its source on the view page, never an amount', function (): void {
+    $admin = lockScreenAdmin();
+    $client = Client::factory()->create(['currency' => 'CZK', 'hourly_rate' => Money::fromMajor('800', 'CZK')]);
+    $project = app(CreateProject::class)->handle($client, ['name' => 'Example rate project', 'key' => ProjectFactory::randomKey(), 'billing_type' => 'hourly', 'hourly_rate' => '900']);
+    $task = app(CreateTask::class)->handle($admin, $project, ['title' => 'Example rate task']);
+    $task = app(UpdateTask::class)->handle($admin, $task, ['billing_type' => 'hourly', 'hourly_rate' => '1250'])->refresh();
+
+    $onTask = lockEntry($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00', ['client_id' => $client->id, 'project_id' => $project->id, 'task_id' => $task->id]);
+    $clientOnly = lockEntry($admin, '2026-10-12 10:00:00', '2026-10-12 11:00:00', ['client_id' => $client->id]);
+    $nonBillable = lockEntry($admin, '2026-10-12 12:00:00', '2026-10-12 13:00:00', ['client_id' => $client->id, 'billable' => false]);
+
+    Livewire::test(ViewTimeEntry::class, ['record' => $onTask->id])
+        ->assertSee('Platná sazba')
+        ->assertSee(Money::fromMajor('1250', 'CZK')->format('cs').' (zdroj: úkol)', escape: false)
+        ->assertDontSee('Záznam je uzamčený');
+
+    Livewire::test(ViewTimeEntry::class, ['record' => $clientOnly->id])
+        ->assertSee('Platná sazba')
+        ->assertSee(Money::fromMajor('800', 'CZK')->format('cs').' (zdroj: klient)', escape: false);
+
+    Livewire::test(ViewTimeEntry::class, ['record' => $nonBillable->id])
+        ->assertDontSee('Platná sazba')
+        ->assertSee('Nefakturovatelné');
+});
+
+it('shows when an entry was billed and the billing state on its page', function (): void {
+    $admin = lockScreenAdmin();
+    $this->travelTo(CarbonImmutable::parse('2026-10-14 10:30:00', 'UTC'));
+    $entry = lockEntry($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+
+    Livewire::test(ViewTimeEntry::class, ['record' => $entry->id])
+        ->assertSee('Nevyfakturováno')
+        ->assertDontSee('Vyfakturováno');
+
+    app(MarkEntriesBilled::class)->handle($admin, [$entry->id]);
+
+    // 10:30 UTC is 12:30 in Prague.
+    Livewire::test(ViewTimeEntry::class, ['record' => $entry->id])
+        ->assertSee('Vyfakturováno')
+        ->assertSee('14. 10. 2026 12:30');
+});
+
+it('deletes an unbilled finished entry from its page after a confirmation that names the duration', function (): void {
+    $admin = lockScreenAdmin();
+    $entry = lockEntry($admin, '2026-10-12 08:00:00', '2026-10-12 09:30:00');
+
+    Livewire::test(ViewTimeEntry::class, ['record' => $entry->id])
+        ->mountAction('delete')
+        ->assertMountedActionModalSee(['Smazat záznam?', 'Záznam s časem 1:30 se trvale smaže. Tuto akci nelze vrátit.'])
+        ->callMountedAction()
+        ->assertNotified('Záznam byl smazán')
+        ->assertDispatched('time-entry-deleted')
+        ->assertRedirect('/admin/time-entries');
+
+    expect(lockSystem(static fn (): int => TimeEntry::query()->whereKey($entry->id)->count()))->toBe(0);
+});
+
+it('deletes an unbilled finished entry from the list and offers a running entry no delete', function (): void {
+    $admin = lockScreenAdmin();
+    $entry = lockEntry($admin, '2026-10-12 08:00:00', '2026-10-12 09:30:00');
+    $running = lockEntry($admin, '2026-10-12 10:00:00', '');
+
+    Livewire::test(ListTimeEntries::class)
+        ->assertTableActionHidden('delete', $running)
+        ->assertTableActionVisible('edit', $running)
+        ->callTableAction('delete', $entry)
+        ->assertNotified('Záznam byl smazán');
+
+    expect(lockSystem(static fn (): int => TimeEntry::query()->whereKey($entry->id)->count()))->toBe(0)
+        ->and(lockSystem(static fn (): int => TimeEntry::query()->whereKey($running->id)->count()))->toBe(1);
+});
+
+it('does not delete an entry that was billed after the confirmation opened', function (): void {
+    $admin = lockScreenAdmin();
+    $entry = lockEntry($admin, '2026-10-12 08:00:00', '2026-10-12 09:30:00');
+
+    $page = Livewire::test(ViewTimeEntry::class, ['record' => $entry->id])->mountAction('delete');
+
+    app(MarkEntriesBilled::class)->handle($admin, [$entry->id]);
+
+    // The page asks again on the new request: the delete action is hidden for a billed entry, and
+    // DeleteTimeEntry would refuse it anyway.
+    $page->callMountedAction();
+
+    expect(lockReload($entry)->billing_state->value)->toBe('billed')
+        ->and(lockSystem(static fn (): int => TimeEntry::query()->whereKey($entry->id)->count()))->toBe(1);
+});
+
+it('lists the billing change of an entry in the history tab with the Czech label and no description', function (): void {
+    $admin = lockScreenAdmin();
+    $canary = Canary::canary('description');
+    $entry = lockEntry($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00', ['description' => $canary]);
+    app(MarkEntriesBilled::class)->handle($admin, [$entry->id]);
+    app(CancelEntriesBilling::class)->handle($admin, [$entry->id]);
+
+    $activities = $entry->activitiesAsSubject()->where('event', 'updated')->get();
+
+    expect($activities)->toHaveCount(2)
+        ->and(TimeEntryHistoryRelationManager::canViewForRecord($entry, ViewTimeEntry::class))->toBeTrue();
+
+    Livewire::test(TimeEntryHistoryRelationManager::class, ['ownerRecord' => $entry, 'pageClass' => ViewTimeEntry::class])
+        ->assertSuccessful()
+        ->assertCanSeeTableRecords($activities)
+        ->assertSee('Stav fakturace')
+        ->assertDontSee($canary);
+});
+
+it('keeps the history tab and the rate from a Partner', function (): void {
+    $admin = lockScreenAdmin();
+    $entry = lockEntry($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+    $partner = Canary::partnerFor(Canary::twoClients()[0]);
+    $this->actingAs($partner);
+
+    expect(TimeEntryHistoryRelationManager::canViewForRecord($entry, ViewTimeEntry::class))->toBeFalse();
+
+    Livewire::test(TimeEntryHistoryRelationManager::class, ['ownerRecord' => $entry, 'pageClass' => ViewTimeEntry::class])->assertForbidden();
+    $this->get('/admin/time-entries/'.$entry->id)->assertForbidden();
 });
