@@ -382,7 +382,7 @@ Gap closure (from 05-VERIFICATION.md gap 1: the closing-gate test of G-05-5 is f
   4. Admin sees a daily and weekly timesheet with totals, and a timer left running unusually long is flagged to the user
   5. Project detail (Admin only) shows tasks, estimate versus actual and billed versus unbilled time, and a Partner sees no time, rates or prices anywhere, proven by the canary tests
 
-**Plans:** 1/14 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 5 rule; each plan modifies at most 13 files)
+**Plans:** 2/14 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 5 rule; each plan modifies at most 13 files)
 **UI hint**: yes
 
 Plans:
@@ -390,7 +390,7 @@ Plans:
 - [x] 06-01-PLAN.md — Tracer: `time_entries` with composite keys, CHECKs, one-running partial index and billed guard; Admin-only TimeEntry; StartTimer client-only start with same-instant auto-stop and exact seconds (TI-01, TI-03, TI-07, TI-08)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 06-02-PLAN.md — Start from a task, StopTimer, D-03 billable default, context guards, every constraint proven by SQLSTATE (TI-01, TI-04, TI-05, TI-07)
+- [x] 06-02-PLAN.md — Start from a task, StopTimer, D-03 billable default, context guards, every constraint proven by SQLSTATE (TI-01, TI-04, TI-05, TI-07)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 06-03-PLAN.md — TimerLock and the parallel-process proof with a mutation run; typed lost-race error (TI-07)
@@ -528,7 +528,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
 | 4. Clients and Projects | 21/21 | Complete    | 2026-10-09 |
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
-| 6. Time Tracking | 1/14 | In Progress | - |
+| 6. Time Tracking | 2/14 | In Progress | - |
 | 7. REST API | 0/0 | Not started | - |
 | 8. Exchange Rates and Reports | 0/0 | Not started | - |
 | 9. Documents and Finance | 0/0 | Not started | - |

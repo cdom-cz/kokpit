@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: time-tracking
 status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-10-09T13:17:00.956Z"
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-10-09T13:25:43.660Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 06 execution started
-state_head: 3b88b2e8fce4789adabffc60ee681f2a531d9ac3
+state_head: 5d74c6be4819a392388c5193aa39cef74aae7203
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 100
-  completed_plans: 87
+  completed_plans: 88
   percent: 42
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 06 (time-tracking) — EXECUTING
-Plan: 2 of 14
+Plan: 3 of 14
 Status: Ready to execute
 Last activity: 2026-10-09 — Phase 06 execution started
 
@@ -147,6 +147,7 @@ Progress: [████░░░░░░] 42%
 | Phase 05 P21 | 9 min | 3 tasks | 13 files |
 | Phase 05 P22 | 9 min | 2 tasks | 2 files |
 | Phase 06 P01 | 30 min | 3 tasks | 13 files |
+| Phase 06 P02 | 35min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -320,6 +321,9 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-01: time_entries CHECK is ended_at >= started_at (zero length allowed) so a same-second start keeps the stopped entry; owner to confirm TI-07 wording
 - [Phase 06]: 06-01: duration_seconds stays in the billed-row guard mutable list (generated columns are computed after BEFORE triggers); Phase 10 must re-create the guard when adding snapshot columns
 - [Phase 06]: 06-01: all time instants go through TimerClock (startOfSecond), because timestamptz(0) rounds; TimeEntry relations include archived rows
+- [Phase 06]: 06-02: Lock order in StartTimer is per-user timer lock, task, project, client FOR SHARE, then running entry FOR UPDATE; no cycle with ArchiveTask
+- [Phase 06]: 06-02: A task fixes project and client in TimeEntryInput::context(); a given project_id or client_id is only compared, mismatches are inconsistent_context field errors
+- [Phase 06]: 06-02: StopTimer shares the inline advisory lock key with StartTimer until 06-03 moves both into TimerLock
 
 ### Pending Todos
 
@@ -359,6 +363,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T13:16:57.589Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-10-09T13:25:43.521Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None

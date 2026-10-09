@@ -79,13 +79,13 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Time Tracking
 
-- [ ] **TI-01**: A timer is visible throughout the app and can be started from a task in at most two clicks
+- [x] **TI-01**: A timer is visible throughout the app and can be started from a task in at most two clicks
 - [ ] **TI-02**: Manual creation and editing of entries (from, to, client, project, task, description)
 - [ ] **TI-03**: Entries can have only a client (no project or task); client is always required
-- [ ] **TI-04**: Billable flag defaults to true and is pre-set to false for non-billable projects/tasks; user can override
-- [ ] **TI-05**: Entries can be marked billed manually, in bulk, or automatically by invoicing; billed entries are locked until billing is cancelled
+- [x] **TI-04**: Billable flag defaults to true and is pre-set to false for non-billable projects/tasks; user can override
+- [x] **TI-05**: Entries can be marked billed manually, in bulk, or automatically by invoicing; billed entries are locked until billing is cancelled
 - [ ] **TI-06**: Daily/weekly timesheet with totals
-- [ ] **TI-07**: Consistency rules enforced in the database: task/project/client agree, at most one running timer per user, end after start; starting a timer stops the running one
+- [x] **TI-07**: Consistency rules enforced in the database: task/project/client agree, at most one running timer per user, end after start; starting a timer stops the running one
 - [ ] **TI-08**: Time is stored exactly in seconds without rounding; rate resolution is task, project, client, global default; snapshot of rate and amount on billing
 - [ ] **TI-09**: A forgotten long-running timer is flagged to the user
 
@@ -246,13 +246,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | KB-01 | Phase 5 | Complete |
 | KB-02 | Phase 5 | Complete |
 | KB-03 | Phase 5 | Complete |
-| TI-01 | Phase 6 | Pending |
+| TI-01 | Phase 6 | Complete |
 | TI-02 | Phase 6 | Pending |
 | TI-03 | Phase 6 | Pending |
-| TI-04 | Phase 6 | Pending |
-| TI-05 | Phase 6 | Pending |
+| TI-04 | Phase 6 | Complete |
+| TI-05 | Phase 6 | Complete |
 | TI-06 | Phase 6 | Pending |
-| TI-07 | Phase 6 | Pending |
+| TI-07 | Phase 6 | Complete |
 | TI-08 | Phase 6 | Pending |
 | TI-09 | Phase 6 | Pending |
 | AP-01 | Phase 7 | Pending |
