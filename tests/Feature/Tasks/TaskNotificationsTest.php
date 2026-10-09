@@ -6,13 +6,19 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Notifications\NotificationEvent;
 use App\Domain\Projects\Actions\CreateProject;
+use App\Domain\Projects\Enums\ProjectPriority;
+use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\EscalateTask;
+use App\Domain\Tasks\Actions\MoveTask;
+use App\Domain\Tasks\Actions\UpdateTask;
+use App\Domain\Tasks\Board\BoardFilters;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\Tasks\Notifications\TaskChangedNotification;
 use App\Domain\Tasks\Notifications\TaskCommentedNotification;
 use App\Domain\Tasks\Notifications\TaskCreatedNotification;
 use App\Domain\Tasks\Notifications\TaskEscalatedNotification;
@@ -643,5 +649,232 @@ describe('escalation notifications', function (): void {
 
         expect(static fn (): TaskEscalatedNotification => $build(true))->toThrow(LogicException::class)
             ->and($build(false)->excerpt)->toBeNull();
+    });
+});
+
+/**
+ * The change notifications sent on the fake to the user.
+ *
+ * @return Collection<int, mixed>
+ */
+function taskNotifChanges(User $user): Collection
+{
+    return Notification::sent($user, TaskChangedNotification::class);
+}
+
+/**
+ * The user saves the task through the edit action, signed in as that user.
+ *
+ * @param  array<string, mixed>  $data
+ */
+function taskNotifUpdate(User $actor, Task $task, array $data): Task
+{
+    // @phpstan-ignore argument.type
+    return app(UpdateTask::class)->handle($actor, taskNotifSeen($actor, $task), $data);
+}
+
+/**
+ * The user drops the card into the column at the index, signed in as that user.
+ */
+function taskNotifMove(User $actor, Task $task, ProjectStatus $status, int $index = 0): Task
+{
+    test()->actingAs($actor);
+
+    return app(MoveTask::class)->handle($actor, (string) $task->id, $index, $status, BoardFilters::none());
+}
+
+describe('change notifications', function (): void {
+    beforeEach(function (): void {
+        $this->partnerA2 = Canary::partnerFor($this->clientA);
+        $this->partnerB = Canary::partnerFor($this->clientB);
+        $this->task = taskNotifCreate($this->partnerA, $this->projectA);
+        $this->oldStatus = $this->task->status;
+        $this->newStatus = $this->oldStatus === ProjectStatus::InProgress ? ProjectStatus::ToClarify : ProjectStatus::InProgress;
+        $this->oldPriority = $this->task->priority;
+        $this->newPriority = $this->oldPriority === ProjectPriority::Urgent ? ProjectPriority::Low : ProjectPriority::Urgent;
+    });
+
+    it('tells the Partner requester once with every change of one save, and not the Admin', function (): void {
+        Notification::fake();
+
+        taskNotifUpdate($this->admin, $this->task, ['status' => $this->newStatus->value, 'priority' => $this->newPriority->value]);
+
+        expect(taskNotifChanges($this->partnerA))->toHaveCount(1)
+            ->and(taskNotifChanges($this->admin))->toHaveCount(0);
+
+        /** @var TaskChangedNotification $notification */
+        $notification = taskNotifChanges($this->partnerA)->firstOrFail();
+
+        expect($notification->event)->toBe(NotificationEvent::AssignmentChange)
+            ->and($notification->recipientIsPartner)->toBeTrue()
+            ->and($notification->changedLabels)->toBe([
+                __('kokpit.tasks.notifications.changed.status', ['old' => $this->oldStatus->getLabel(), 'new' => $this->newStatus->getLabel()]),
+                __('kokpit.tasks.notifications.changed.priority', ['old' => $this->oldPriority->getLabel(), 'new' => $this->newPriority->getLabel()]),
+            ])
+            ->and($notification->url)->toEndWith('/admin/my-tasks/'.$this->task->reference);
+
+        Notification::assertSentTo($this->partnerA, TaskChangedNotification::class, static fn ($n, array $channels): bool => $channels === ['mail', 'database']);
+    });
+
+    it('tells a newly assigned Partner and the requester, each once, with the assignee change', function (): void {
+        Notification::fake();
+
+        taskNotifUpdate($this->admin, $this->task, ['assignee_id' => $this->partnerA2->id]);
+
+        expect(taskNotifChanges($this->partnerA2))->toHaveCount(1)
+            ->and(taskNotifChanges($this->partnerA))->toHaveCount(1)
+            ->and(taskNotifChanges($this->admin))->toHaveCount(0)
+            ->and(taskNotifChanges($this->partnerB))->toHaveCount(0);
+
+        /** @var TaskChangedNotification $notification */
+        $notification = taskNotifChanges($this->partnerA2)->firstOrFail();
+
+        expect($notification->changedLabels)->toBe([
+            __('kokpit.tasks.notifications.changed.assignee', ['old' => $this->admin->name, 'new' => $this->partnerA2->name]),
+        ])->and($notification->url)->toEndWith('/admin/my-tasks/'.$this->task->reference);
+    });
+
+    it('tells a Partner who is both requester and assignee only once', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerA);
+        Notification::fake();
+
+        taskNotifUpdate($this->admin, $this->task, ['status' => $this->newStatus->value]);
+
+        expect(taskNotifChanges($this->partnerA))->toHaveCount(1);
+    });
+
+    it('sends nothing for a change of the dates, the title or the description', function (): void {
+        Notification::fake();
+
+        taskNotifUpdate($this->admin, $this->task, [
+            'due_date' => '2031-01-15',
+            'title' => 'Example renamed task',
+            'description' => '<p>Example text</p>',
+        ]);
+
+        expect(taskNotifChanges($this->partnerA))->toHaveCount(0)
+            ->and(taskNotifChanges($this->admin))->toHaveCount(0);
+    });
+
+    it('sends nothing when a save names the stored status, priority and assignee again', function (): void {
+        Notification::fake();
+
+        taskNotifUpdate($this->admin, $this->task, [
+            'status' => $this->oldStatus->value,
+            'priority' => $this->oldPriority->value,
+            'assignee_id' => $this->task->assignee_id,
+        ]);
+
+        expect(taskNotifChanges($this->partnerA))->toHaveCount(0);
+    });
+
+    it('sends nothing for a task with no Partner on it', function (): void {
+        $own = taskNotifCreate($this->admin, $this->projectA);
+        Notification::fake();
+
+        taskNotifUpdate($this->admin, $own, ['status' => $this->newStatus->value]);
+
+        Notification::assertNothingSent();
+    });
+
+    it('tells the Partner requester once when a board move changes the column, and not for a reorder', function (): void {
+        Notification::fake();
+
+        taskNotifMove($this->admin, $this->task, $this->newStatus);
+
+        expect(taskNotifChanges($this->partnerA))->toHaveCount(1)
+            ->and(taskNotifChanges($this->admin))->toHaveCount(0);
+
+        /** @var TaskChangedNotification $notification */
+        $notification = taskNotifChanges($this->partnerA)->firstOrFail();
+
+        expect($notification->changedLabels)->toBe([
+            __('kokpit.tasks.notifications.changed.status', ['old' => $this->oldStatus->getLabel(), 'new' => $this->newStatus->getLabel()]),
+        ]);
+
+        $second = taskNotifCreate($this->partnerA, $this->projectA);
+        taskNotifMove($this->admin, $second, $this->newStatus);
+        Notification::fake();
+
+        taskNotifMove($this->admin, $second, $this->newStatus, index: 0);
+        taskNotifMove($this->admin, $this->task, $this->newStatus, index: 1);
+
+        expect(taskNotifChanges($this->partnerA))->toHaveCount(0);
+    });
+
+    it('tells the Partner when a card is dropped into the done column', function (): void {
+        Notification::fake();
+
+        taskNotifMove($this->admin, $this->task, ProjectStatus::Done);
+
+        expect(taskNotifChanges($this->partnerA))->toHaveCount(1);
+    });
+
+    it('delivers nothing to a Partner who switched the change notifications off on both channels', function (): void {
+        taskNotifPrefs($this->partnerA, ['assignment_change' => ['mail' => false, 'database' => false]]);
+
+        taskNotifUpdate($this->admin, $this->task, ['status' => $this->newStatus->value]);
+
+        $title = __('kokpit.tasks.notifications.changed.bell_title', ['reference' => $this->task->reference]);
+
+        expect($this->partnerA->notifications()->where('data->title', $title)->count())->toBe(0)
+            ->and(taskNotifMailCount($this->partnerA, $title))->toBe(0);
+    });
+
+    it('delivers only the bell to a Partner who switched the e-mail of change notifications off', function (): void {
+        taskNotifPrefs($this->partnerA, ['assignment_change' => ['mail' => false]]);
+        Notification::fake();
+
+        taskNotifUpdate($this->admin, $this->task, ['status' => $this->newStatus->value]);
+
+        Notification::assertSentTo(
+            $this->partnerA,
+            TaskChangedNotification::class,
+            static fn ($notification, array $channels): bool => $channels === ['database'],
+        );
+    });
+
+    it('does not tell a deactivated Partner requester', function (): void {
+        $this->partnerA->forceFill(['deactivated_at' => now()])->save();
+        Notification::fake();
+
+        taskNotifUpdate($this->admin, $this->task, ['status' => $this->newStatus->value]);
+
+        expect(taskNotifChanges($this->partnerA))->toHaveCount(0);
+    });
+
+    it('stores one bell entry with a line per change that opens the Partner page, and renders the mail with no signed-in user', function (): void {
+        taskNotifUpdate($this->admin, $this->task, ['status' => $this->newStatus->value, 'priority' => $this->newPriority->value]);
+
+        $title = __('kokpit.tasks.notifications.changed.bell_title', ['reference' => $this->task->reference]);
+        $rows = $this->partnerA->notifications()->where('data->title', $title)->get();
+
+        expect($rows)->toHaveCount(1);
+
+        /** @var array<string, mixed> $data */
+        $data = $rows[0]->data;
+
+        expect($data['format'])->toBe('filament')
+            ->and($data['body'])->toContain($this->newStatus->getLabel())
+            ->and($data['body'])->toContain($this->newPriority->getLabel())
+            ->and($data['actions'][0]['url'])->toEndWith('/admin/my-tasks/'.$this->task->reference);
+
+        auth()->logout();
+
+        $notification = new TaskChangedNotification(
+            taskReference: $this->task->reference,
+            taskTitle: $this->task->title,
+            projectKey: $this->projectA->key,
+            actorName: $this->admin->name,
+            url: route('filament.admin.resources.my-tasks.view', ['record' => $this->task->reference]),
+            changedLabels: ['Stav: A → B', 'Priorita: C → D'],
+        );
+        $mail = $notification->toMail($this->partnerA);
+        $html = (string) $mail->render();
+
+        expect($mail->subject)->toBe(__('kokpit.tasks.notifications.changed.mail_subject', ['reference' => $this->task->reference, 'title' => $this->task->title]))
+            ->and($html)->toContain('Stav: A → B')
+            ->and($html)->toContain('Priorita: C → D')
+            ->and($html)->toContain('/admin/my-tasks/'.$this->task->reference);
     });
 });
