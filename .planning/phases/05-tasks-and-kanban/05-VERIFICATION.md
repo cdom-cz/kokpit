@@ -1,30 +1,20 @@
 ---
 phase: 05-tasks-and-kanban
-verified: 2026-10-09T10:05:00Z
-status: gaps_found
-score: 5/5 roadmap success criteria verified; 1 plan-level gate truth failed (test-only, see gaps)
-covered_files: [".planning/phases/05-tasks-and-kanban/05-01-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-01-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-02-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-02-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-03-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-03-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-04-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-04-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-05-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-05-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-06-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-06-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-07-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-07-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-08-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-08-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-09-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-09-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-10-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-10-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-11-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-11-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-12-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-12-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-13-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-13-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-14-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-14-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-15-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-15-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-16-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-16-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-17-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-17-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-18-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-18-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-19-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-19-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-20-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-20-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-21-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-21-SUMMARY.md", "CONTRIBUTING.md", "README.md", "app/Domain/Notifications/NotificationEvent.php", "app/Domain/Tasks/Actions/UpdateTaskDescription.php", "app/Domain/Tasks/Notifications/TaskChangedNotification.php", "app/Domain/Tasks/Notifications/TaskNotification.php", "app/Domain/Tasks/Notifications/TaskNotifier.php", "app/Domain/Tasks/Policies/TaskPolicy.php", "app/Filament/Auth/EditProfile.php", "app/Filament/Partner/Resources/PartnerTaskResource/Pages/ViewPartnerTask.php", "app/Filament/Resources/ActivityResource.php", "lang/cs/kokpit.php", "tests/Feature/Notifications/NotificationPreferencesTest.php", "tests/Feature/Repo/RepositoryFilesTest.php", "tests/Feature/Tasks/PartnerTaskDescriptionTest.php", "tests/Feature/Tasks/TaskEscalationTest.php", "tests/Isolation/NotificationMarkupTest.php", "tests/Isolation/PartnerTaskVisibilityTest.php"]
-covered_digest: "v3:sha256:7fdc58cee75983fb71b6083a9522c969541735dd253d52226fc3ae7c22096bf3"
+verified: 2026-10-09T10:50:00Z
+status: human_needed
+score: 5/5 roadmap success criteria verified; all plan-level truths of 05-20, 05-21 and 05-22 verified
+covered_files: [".planning/phases/05-tasks-and-kanban/05-01-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-01-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-02-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-02-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-03-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-03-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-04-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-04-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-05-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-05-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-06-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-06-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-07-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-07-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-08-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-08-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-09-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-09-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-10-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-10-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-11-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-11-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-12-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-12-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-13-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-13-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-14-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-14-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-15-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-15-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-16-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-16-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-17-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-17-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-18-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-18-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-19-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-19-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-20-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-20-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-21-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-21-SUMMARY.md", ".planning/phases/05-tasks-and-kanban/05-22-PLAN.md", ".planning/phases/05-tasks-and-kanban/05-22-SUMMARY.md", "CONTRIBUTING.md", "README.md", "app/Domain/Notifications/NotificationEvent.php", "app/Domain/Tasks/Actions/UpdateTaskDescription.php", "app/Domain/Tasks/Notifications/TaskChangedNotification.php", "app/Domain/Tasks/Notifications/TaskNotification.php", "app/Domain/Tasks/Notifications/TaskNotifier.php", "app/Domain/Tasks/Policies/TaskPolicy.php", "app/Filament/Auth/EditProfile.php", "app/Filament/Partner/Resources/PartnerTaskResource/Pages/ViewPartnerTask.php", "app/Filament/Resources/ActivityResource.php", "lang/cs/kokpit.php", "tests/Feature/Notifications/NotificationPreferencesTest.php", "tests/Feature/Repo/RepositoryFilesTest.php", "tests/Feature/Tasks/PartnerTaskDescriptionTest.php", "tests/Feature/Tasks/TaskEscalationTest.php", "tests/Isolation/NotificationMarkupTest.php", "tests/Isolation/PartnerTaskVisibilityTest.php"]
+covered_digest: "v3:sha256:4e764ca5e169315ae92646582636e2e246190e0664625f7d17056a433914f677"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
-  previous_status: human_needed
-  previous_score: 5/5
+  previous_status: gaps_found
+  previous_score: "5/5 roadmap success criteria; 1 plan-level gate truth failed (test-only)"
   gaps_closed:
-    - "UAT G-05-5: a Partner can edit the description of an own task (owner rule D-16: Planned or To clarify only) through the description-only action, with history row and Admin/assignee notification (plans 05-20, 05-21)"
-  gaps_remaining:
-    - "Closing-gate truth of plan 05-21 (green full Pest suite) is not reliably true: one new test is flaky"
+    - "Closing-gate truth of plan 05-21 (green full Pest suite) was falsified by a flaky case in PartnerTaskDescriptionTest (any-Partner description edit, ordering by tied created_at); closed by plan 05-22 (commits acee05f, 66b42e0)"
+  gaps_remaining: []
   regressions: []
-gaps:
-  - truth: "The closing gate of the G-05-5 gap closure is green: full Pest suite (plan 05-21 must-have; 05-21-SUMMARY claims 2036/2043 passed)"
-    status: failed
-    reason: "tests/Feature/Tasks/PartnerTaskDescriptionTest.php, case 'it lets any Partner of the client edit the description of a task in an editable status, whatever its requester or assignee' (dataset 'planned') fails intermittently at line 254 (`array_last(partnerDescEdits($task))->causer_id` is the first Partner instead of the second). Cause: the helper `partnerDescHistory()` (line 69-76) orders activity rows by `created_at` only, the activity_log timestamps are stored at whole-second precision (debug output showed `.000000`), and two edits by two Partners inside the same second tie, so the 'last' row is arbitrary. Observed: failed in 4 of 7 runs of `tests/Feature/Tasks` (and in the first run of the 883-test phase subset), passed in 4 of 4 runs of the file alone and in the clean full run. The production code is correct (debug output showed both `description_changed` rows with the right causers); the defect is in the test only."
-    artifacts:
-      - path: "tests/Feature/Tasks/PartnerTaskDescriptionTest.php"
-        issue: "partnerDescHistory() orders by created_at only; the assertion at line 252-254 takes array_last() of a tied ordering"
-    missing:
-      - "Make the ordering deterministic (add a tiebreaker such as `->orderBy('id')`, UUID v7 ids are time ordered across separate requests) or assert on the set of causers instead of the last row"
-      - "Re-run `ddev exec vendor/bin/pest tests/Feature/Tasks` at least five times and the full suite once, all green, and record it"
+gaps: []
 deferred: []
 advisory: []
 human_verification:
@@ -48,65 +38,63 @@ human_verification:
 # Phase 5: Tasks and Kanban Verification Report
 
 **Phase Goal:** Admin organises work as tasks and subtasks with per-project keys and a drag-and-drop board, and a Partner can raise and discuss tasks in visible projects without seeing anything internal
-**Verified:** 2026-10-09T10:05:00Z
-**Status:** gaps_found
-**Re-verification:** Yes, after gap-closure plans 05-20 and 05-21 (UAT gap G-05-5). This report replaces the one written after 05-18 and 05-19.
+**Verified:** 2026-10-09T10:50:00Z
+**Status:** human_needed
+**Re-verification:** Yes, after gap-closure plan 05-22 (the flaky closing-gate test reported by the previous report). This report replaces the one written after 05-20 and 05-21.
 
-Method: goal-backward against the five ROADMAP success criteria and the plan-level truths of 05-20 and 05-21, reading the code rather than the SUMMARYs, and running the tests myself.
+Method: goal-backward against the five ROADMAP success criteria and the plan-level truths of 05-20, 05-21 and 05-22. For the previous gap I read the changed test code and ran the tests myself rather than relying on 05-22-SUMMARY.md.
 
-**Headline.** The phase goal is achieved in the code. The ten requirements are satisfied, G-05-5 is closed on the code side, and the roadmap criteria hold. One plan-level truth fails: the closing gate "green full suite" is not reliably green because one new test added by 05-20 is flaky (test-only defect, one-line fix). Several browser/mail checks remain for a human, including the 05-21 Task 3 walk, which nobody has done.
+**Headline.** The phase goal is achieved in the code and the one gap from the previous report is closed. The ten requirements are satisfied, all automated gates are green, and the closing-gate truth of 05-21 ("green full suite") is now reliably true. The status is `human_needed` only because five browser, mail and wording checks cannot be done by a program; none is marked passed.
 
-## Evidence base (what I ran at HEAD `8b6db83`)
+## Evidence base (what I ran at HEAD `5056a8e`)
 
-Working tree: only `.planning/config.json`, `.planning/state.json` and `.planning/milestone.lock` differ from HEAD (no source changes). I temporarily instrumented one test to debug the flake and restored it byte for byte (`git status` clean for tests afterwards).
+Working tree: only `.planning/config.json`, `.planning/state.json` and the untracked `.planning/milestone.lock` differ from HEAD. Since the previous verified head `8b6db83`, the only non-`.planning` files changed are the two test files below (`git diff --stat 8b6db83 HEAD -- . ':!.planning'`: 14 and 4 line changes). No production file changed.
 
-| Run | Result |
+| Run (all strictly sequential, never in parallel) | Result |
 |-----|--------|
-| `pest tests/Feature/Tasks tests/Isolation tests/Arch tests/Feature/Schema tests/Concurrency tests/Feature/Notifications tests/Feature/Repo` | 883 passed, **1 failed** (the flaky case below) |
-| `pest tests/Feature/Tasks/PartnerTaskDescriptionTest.php` x4 | 28 passed each time |
-| `pest tests/Feature/Tasks` x7 | 4 runs with 1 failure (same case), 3 runs 365 passed |
-| `pest tests/Concurrency` | 10 passed (209 assertions) |
-| Full `pest`, clean run | 2047 passed, 15327 assertions |
-| Full `pest`, run overlapping an aborted background run on the shared `kokpit_test` database | 4 Concurrency failures; not counted, caused by my own overlapping run, the same files pass alone |
-| Pint `--test app tests` | pass, 392 files |
-| PHPStan | No errors |
-| `scripts/check-sensitive.sh --all` | clean |
-| Debt-marker scan (`TBD|FIXME|XXX|TODO|HACK`) over the 7 new or changed source and test files of 05-20/05-21 | no matches |
+| `ddev exec vendor/bin/pest tests/Feature/Tasks --compact`, run 1 | 365 passed (1942 assertions), 32.3 s |
+| same, run 2 | 365 passed, 37.1 s |
+| same, run 3 | 365 passed, 33.2 s |
+| same, run 4 | 365 passed, 34.4 s |
+| same, run 5 | 365 passed, 31.4 s |
+| `ddev exec vendor/bin/pest --compact` (full suite) | 2047 passed (15333 assertions), 174 s, no failure |
+| `ddev exec vendor/bin/pint --test` | PASS, 458 files |
+| `ddev exec vendor/bin/phpstan analyse --no-progress --memory-limit=1G` | [OK] No errors |
+| `scripts/check-sensitive.sh --all` | clean (generic patterns only; `KOKPIT_DENYLIST` not set in this shell) |
 
-## Gaps
+Context for the five directory runs: the previous report observed the failure in 4 of 7 runs of this same directory, about 55 percent per run. Five consecutive green runs would happen by chance with a probability of roughly 2 percent, so together with the code reading below this is real evidence of the fix, not luck. I did not rerun the mutation proof (descending id) that 05-22-SUMMARY records; I read the code that makes it work (below).
 
-| Gap | Severity | Detail |
-|-----|----------|--------|
-| Flaky test in the G-05-5 closing gate | Low (test-only), but it falsifies the plan 05-21 truth "full Pest suite is green" | See the `gaps:` entry. `partnerDescHistory()` orders by `created_at` only; the `activity_log` timestamps have second resolution, so two edits in one second tie. Reproducible at about 55 percent in the `tests/Feature/Tasks` directory run. Fix: add `->orderBy('id')` (or assert on the causer set). Production behaviour is not affected: with debug output both `description_changed` rows were present with the correct causers. |
+## Gap Closure (re-verification focus): plan 05-22
 
-## Gap Closure (re-verification focus): G-05-5
+Previous gap: the closing-gate truth of plan 05-21 (green full suite) failed because `partnerDescHistory()` ordered by `created_at` only; `activity_log` timestamps have whole-second precision, two edits by two Partners in one second tied, and `array_last()` read an arbitrary row.
 
-UAT test 5 reported: the Partner should also be able to edit the task description, where applicable. Owner rule D-16 (05-CONTEXT.md): a Partner may edit the description only on a task of an own client-visible project in the status Plánovaný or K upřesnění, nothing else of the task.
-
-| Must-have (plan 05-20) | Status | Evidence in code |
+| Must-have (plan 05-22) | Status | Evidence in code |
 |---|---|---|
-| Header action 'Upravit popis' with a description-only modal (no file attachments), filled with the stored text, saving the `RichText::clean` result | VERIFIED | `ViewPartnerTask::editDescriptionAction()` (RichEditor `description`, `fileAttachments(false)`, Partner create toolbar, hidden `based_on`), calls only `UpdateTaskDescription::handle($actor, $task, $description, $basedOn)`; the Action cleans through `TaskInput::description`. Tests: first and `stores and shows an edited Partner description without any hostile part (D-10)` green. |
-| Nothing but the description changes; no edit page, route or row action; `UpdateTask` still refuses Partners | VERIFIED | The Action takes no data array and writes `forceFill(['description' => $clean])` only. `PartnerTaskResource::getPages()` is still `index, create, view` (asserted in a test; `route:list` shows only those three `my-tasks` routes). `UpdateTask` line 97 `authorize('update')`; `TaskPolicy` has no Partner `update`. Tests `changes nothing but the description when the action payload is forged...`, `offers only the description editor in the modal and still refuses a Partner the full update`. |
-| D-16 scope: any Partner of the client, visible non-archived project, task not archived, status Planned or To clarify; refused for the four other statuses, another client, hidden project, archived task | VERIFIED | `TaskPolicy::DESCRIPTION_EDITABLE_STATUSES = [Planned, ToClarify]`; `editDescription` = `ownsProjectOf` (through the Partner-scoped project relation) and not trashed and status in the list. Tests with datasets for every other status and for the isolation cases green. |
-| Status re-checked on the row locked for the save; Planned to To clarify does not block | VERIFIED | `UpdateTaskDescription::handle`: scoped `lockForUpdate()->firstOrFail()` then `Gate::forUser($actor)->denies('editDescription', $locked)` raises a field error. Test `refuses the save when the status left the editable statuses while the editor was open` (two datasets, page and Action level). |
-| Exactly one history row 'Popis upraven' with the Partner as author, no description text anywhere; Admin sees it, Partner reads no activity | VERIFIED | `activity()->useLog(...)->event('description_changed')->log('description_changed')` with no properties; `description` is absent from `Task`'s `#[LoggedAttributes]` allowlist (checked in the model). `ActivityResource` event filter has `description_changed`. Tests `writes no description text into the history row`, `filters the activity overview by the description edit`. |
-| Hostile markup removed before storage and from both pages | VERIFIED | Same sanitiser as every write; test 377. |
-| Over-long text is a field error and writes nothing; emptied editor stores null and is logged | VERIFIED | Tests 401, 414. |
-| Stale save refused; unrelated change does not block | VERIFIED | `fingerprint()` compared with `hash_equals` on the locked row; tests 450, 480. |
-| Unchanged save writes and logs nothing; same text twice logs once | VERIFIED | `if ($clean === $locked->description) return;` test 528. |
-| Each guard has a mutation that fails a named test (recorded) | VERIFIED (claim), not re-run | 05-20-SUMMARY has a six-row mutation table (policy ownership, sanitiser, stale comparison, unchanged shortcut, policy status, locked-row re-check) with named failing cases. I did not repeat the mutations; the guards exist in code and the named tests pass. |
-| Prohibitions (3, `verification: test`): no other attribute; no write outside D-16 statuses; no description text in logs | VERIFIED | Each has wired enforcement above (forgery test, status datasets, history-row test). None is unverified. |
+| `partnerDescHistory()` orders by `created_at` and then by `id`, so tied rows come back in write order | VERIFIED | `tests/Feature/Tasks/PartnerTaskDescriptionTest.php` lines 73-79: `->orderBy('created_at')->orderBy('id')`. Docblock states the whole-second resolution and the UUID v7 tiebreaker. Ids are built by the single test process (`HasUuids` with the UUID v7 factory), strictly increasing within one process per 05-22 key link; the test process writes both Partner edits, so write order equals id order. |
+| The any-Partner dataset case proves each save independently of row order: exactly one new `description_changed` row (id difference against the rows before the save) whose causer is the saving Partner; the last row also names that Partner | VERIFIED | Lines 246-265: `$editIdsBefore` collected before `callAction`, `$newEdits` computed by id difference, expectations `->toHaveCount(1)`, `$newEdits[0]->causer_id === $partner->id`, plus the original `array_last(partnerDescEdits($task))->causer_id` expectation retained. The `$newEdits` proof does not depend on ordering at all; the `array_last` expectation now depends only on the deterministic id tiebreaker. |
+| `escalationComments()` in `TaskEscalationTest` orders by `created_at` then `id`; every `created_at` ordering in `tests/Feature/Tasks` carries the tiebreaker | VERIFIED | `tests/Feature/Tasks/TaskEscalationTest.php` line 67 has `->orderBy('created_at')->orderBy('id')`. `grep orderBy('created_at') tests/Feature/Tasks` finds exactly one other occurrence (PartnerTaskDescriptionTest line 75) and it is followed by `->orderBy('id')` on the next line. |
+| Recorded assumption check that the id tiebreaker carries the order among tied timestamps (frozen clock; ascending passes 3x, descending fails; mutation reverted) | VERIFIED (claim, not re-run) | 05-22-SUMMARY "Assumption check" table has the five rows with run results and the revert; `git status` shows the test files unmodified, so no leftover mutation. The code path is consistent with the claim. I did not repeat the mutation. |
+| Five consecutive green `tests/Feature/Tasks` runs and one green full run | VERIFIED | Reproduced independently: 5 of 5 green (365 passed each) and a full run of 2047 passed, same counts as the SUMMARY (the SUMMARY records 15333 assertions for the full run, which I also saw). |
+| No production file changes; Pint, PHPStan and the sensitive scan clean | VERIFIED | `git diff --stat 8b6db83 HEAD -- . ':!.planning'` lists only the two test files; Pint, PHPStan and `check-sensitive.sh --all` green as above. |
 
-| Must-have (plan 05-21) | Status | Evidence |
+Resulting status of the previous gap: the plan 05-21 truth "closing gate green: full Pest, Pint, Larastan, licence check, gitignore self-test, sensitive scan" is now true for full Pest, Pint, PHPStan and the sensitive scan. I did not re-run `check-licenses` or `scripts/test-gitignore.sh` (unchanged by this plan, which touched tests only; `RepositoryFilesTest` is part of the green full suite).
+
+## Carried verification of plans 05-20 and 05-21 (G-05-5, unchanged since the previous report)
+
+No production file has changed since the previous verification, whose findings I re-checked by the full green suite (which includes `PartnerTaskDescriptionTest`, `NotificationPreferencesTest`, `NotificationMarkupTest`, `PartnerTaskVisibilityTest`, `RepositoryFilesTest`). Summary of the verified must-haves:
+
+| Must-have | Status | Evidence |
 |---|---|---|
-| A Partner's real description change notifies every active Admin by queued mail and bell: title 'Změna úkolu KEY-N', line 'Popis upraven uživatelem <name>', subject 'Změna úkolu KEY-N: <title>', link /admin/tasks/KEY-N; the author never | VERIFIED | `TaskNotifier::descriptionChanged` (Partner actors only; Admins from `admins()`; `unset` of the actor), line from `kokpit.tasks.notifications.changed.description`; `TaskChangedNotification` with `recipientIsPartner`; `afterCommit()` in the base. Called in `UpdateTaskDescription` only after the write. Test `tells the Admin of a Partner description edit by mail and in the bell with the admin link` green. |
-| Assignee told when eligible and not the author; deactivated gets nothing; other-client Partner never | VERIFIED | `addCandidate` (active, same client and `partners_may_read`, or Admin); keyed by id so an Admin assignee is told once. Test `tells the assignee of the same client and never the author or a Partner of another client`. |
-| No description text in mail, bell or queued payload | VERIFIED | The only variable text is the actor name; the notification holds raw scalars with `excerpt: null`. Test `puts no text of the description into the notification of the edit`. |
-| Refused, stale, unchanged save and Admin edit send nothing; EditTask sends nothing | VERIFIED | Notifier call sits after the unchanged shortcut and is skipped for non-Partner actors. Tests `sends nothing for a refused, stale or unchanged save or an Admin edit through the Action`, `sends no notification when the Admin changes the description on the edit page`, `...saves only the description through UpdateTask`. |
-| Admin profile switch 'Změna úkolu' with its own helper; Partner rows and helper unchanged | VERIFIED | `NotificationEvent::forRole(Admin)` now includes `AssignmentChange`; `helper(RoleName $role)` returns `assignment_change_admin` only for Admin plus AssignmentChange; `EditProfile` passes `$this->role()`. Partner key `assignment_change` text is unchanged in the lang diff. Tests in `NotificationPreferencesTest` and `lets the Admin narrow the description edit notice per channel` green. |
-| Markup in title or actor name inert in the new Admin audience | VERIFIED | `NotificationMarkupTest` matrix extended (diff +4 lines) and green; the base class escaping is unchanged. |
-| CONTRIBUTING names all Partner write paths; documentation test pins the symbols; README and UI-SPEC updated | VERIFIED | The CONTRIBUTING "Partner writes on tasks" bullet lists CreateTask, AddTaskComment, EscalateTask, ClearEscalation and UpdateTaskDescription and the rule of one ability and one Action per new path; README and the notification bullet extended; `RepositoryFilesTest` +6 lines, green. |
-| Closing gate green: full Pest, Pint, Larastan, licence check, gitignore self-test, sensitive scan | **FAILED (test-only)** for the full-suite part | Pint, PHPStan and the sensitive scan are green in my run; the suite is intermittently red because of the flaky case (see Gaps). I did not re-run `check-licenses` or `test-gitignore.sh` (`RepositoryFilesTest` and the sensitive scan, which I did run, are green). |
+| Partner 'Upravit popis' header action, description-only modal, no attachments, sanitised result stored | VERIFIED | `ViewPartnerTask::editDescriptionAction()` calls only `UpdateTaskDescription::handle(actor, task, description, basedOn)`; description cleaned by `TaskInput::description` |
+| Nothing but the description changes; no edit page or route; `UpdateTask` still refuses Partners | VERIFIED | Action writes `forceFill(['description' => $clean])` only; `PartnerTaskResource::getPages()` still index, create, view; no Partner `update` ability in `TaskPolicy` |
+| D-16 scope: any Partner of the client, visible non-archived project, status Planned or To clarify only | VERIFIED | `TaskPolicy::DESCRIPTION_EDITABLE_STATUSES`; `editDescription` ability; dataset tests for the other statuses and isolation cases green |
+| Status re-checked on the locked row; stale and unchanged saves handled | VERIFIED | `UpdateTaskDescription::handle`: `lockForUpdate`, `denies('editDescription', $locked)`, fingerprint compare, unchanged shortcut |
+| One 'Popis upraven' history row, no text; Admin reads it, Partner reads no activity | VERIFIED | `event('description_changed')` with no properties; filter in `ActivityResource` |
+| Admin and eligible assignee notified (queued mail plus bell), author never, no description text in the notice | VERIFIED | `TaskNotifier::descriptionChanged`, `TaskChangedNotification` with `recipientIsPartner`, `afterCommit`; tests green |
+| Admin profile switch 'Změna úkolu' with its own helper; Partner rows unchanged | VERIFIED | `NotificationEvent::forRole(Admin)`, `helper(RoleName)`, `EditProfile` |
+| Markup in title or actor name inert in the new Admin audience | VERIFIED | `NotificationMarkupTest` matrix green |
+| CONTRIBUTING lists all Partner write paths and a documentation test pins the symbols | VERIFIED | `RepositoryFilesTest` green |
+| Prohibitions (3, `verification: test`): no other attribute; no write outside D-16 statuses; no description text in logs | VERIFIED | Each has wired enforcement (forged payload test, status datasets, history-row test) |
 
 ## Goal Achievement
 
@@ -114,54 +102,53 @@ UAT test 5 reported: the Partner should also be able to edit the task descriptio
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Admin creates tasks and one-level subtasks with title, status, description, dates, priority, assignee, tags, checklist, plus billing type, fixed price, rate override, estimate | VERIFIED (regression check) | `CreateTask`, `UpdateTask`, `TaskBillingResolver`, `task_billing` table unchanged by 05-20/05-21 (`git diff 4becb0f HEAD --stat` touches none of them); suites in `tests/Feature/Tasks` and `tests/Feature/Schema` green. Files on tasks stay Phase 9 per ROADMAP mapping note. |
-| 2 | KEY-N from the project counter, no duplicate or gap under parallel creation, never reused, found by key in search and URL, project key frozen after the first task | VERIFIED | `tests/Concurrency` 10 passed (including `TaskNumberConcurrencyTest` 8 workers x 25, counter-lock-only and mutation runs), `TaskKeyTest`, `TasksTableTest`. API use of the key is Phase 7. |
-| 3 | List filters by client, project, status, priority, assignee, tag, due date; comments on tasks and subtasks, optionally internal | VERIFIED | `TaskListFiltersTest`, `TaskCommentsTest` green. |
-| 4 | Drag cards on per-project and global board; status and position persist; global filters | VERIFIED (server side); gesture confirmed by the owner in UAT tests 1 and 2 (pass) | `TaskBoardTest`, `TaskBoardConcurrencyTest` green; unchanged by 05-20/05-21. |
-| 5 | Partner creates tasks and comments in visible projects but cannot change status or priority or move cards, sees a read-only list, never sees internal comments or another client's tasks; Admin notified of Partner tasks and comments | VERIFIED | The one new Partner write (description, D-16) changes neither status nor priority nor position and adds no edit page; `PartnerTaskVisibilityTest`, `PartnerSafeColumnsTest`, `NotificationLeakTest`, `PartnerTaskCommentsTest` and the canary registry green; Admin is now also notified of a Partner's description edit. |
+| 1 | Admin creates tasks and one-level subtasks with title, status, description, dates, priority, assignee, tags, checklist, plus billing type, fixed price, rate override, estimate | VERIFIED | `CreateTask`, `UpdateTask`, `TaskBillingResolver`, `task_billing` unchanged; `tests/Feature/Tasks` (365 tests, 5 runs) and the full suite green. Files on tasks are Phase 9 per the ROADMAP mapping note. |
+| 2 | KEY-N from the project counter, no duplicate or gap under parallel creation, never reused, found by key in search and URL, project key frozen after the first task | VERIFIED | `TaskKeyTest`, `TasksTableTest`, `tests/Concurrency` (part of the green full suite). API use of the key is Phase 7. |
+| 3 | List filters by client, project, status, priority, assignee, tag, due date; comments on tasks and subtasks, optionally internal | VERIFIED | `TaskListFiltersTest`, `TaskCommentsTest` green |
+| 4 | Drag cards on per-project and global board; status and position persist; global filters | VERIFIED (server side); gesture confirmed by the owner in UAT tests 1 and 2 (pass) | `TaskBoardTest`, `TaskBoardConcurrencyTest` green |
+| 5 | Partner creates tasks and comments in visible projects, cannot change status, priority or move cards, sees a read-only list, never sees internal comments or another client's tasks; Admin notified | VERIFIED | `PartnerTaskVisibilityTest`, `PartnerSafeColumnsTest`, `NotificationLeakTest`, `PartnerTaskCommentsTest`, canary registry green; the description edit changes neither status, priority nor position and adds no edit page |
 
-**Score:** 5/5 roadmap success criteria verified, 0 present but behavior-unverified. One plan-level truth (closing gate) failed; see Gaps.
+**Score:** 5/5 roadmap success criteria verified, 0 present but behavior-unverified. No plan-level truth failed.
 
-### Required Artifacts (05-20, 05-21)
+### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `app/Domain/Tasks/Actions/UpdateTaskDescription.php` | Only Partner write path of the description | VERIFIED | 109 lines, substantive; used by `ViewPartnerTask` and tests; no other caller needed |
-| `app/Domain/Tasks/Policies/TaskPolicy.php` | `editDescription`, `DESCRIPTION_EDITABLE_STATUSES` | VERIFIED | Present, used by the Action (twice), the page visibility and the docs test |
-| `ViewPartnerTask.php` `Action::make('editDescription')` | Header action | VERIFIED | First of three header actions, pinned by tests |
-| `TaskNotifier::descriptionChanged`, `TaskChangedNotification` (`recipientIsPartner`) | Admin and assignee notice | VERIFIED | Called from the Action after a real write |
-| `NotificationEvent` + `EditProfile` + lang | Admin switch and helper | VERIFIED | `helper($this->role())` wired |
-| `CONTRIBUTING.md`, `README.md`, `RepositoryFilesTest`, `05-UI-SPEC.md` | Documentation | VERIFIED | Greps pass; documentation test green |
-| `tests/Feature/Tasks/PartnerTaskDescriptionTest.php` | End-to-end proofs | PARTIAL | 22 cases, substantive, but one case is flaky (Gaps) |
+| `app/Domain/Tasks/Actions/UpdateTaskDescription.php` | Only Partner write path of the description | VERIFIED | Substantive, wired from `ViewPartnerTask` |
+| `app/Domain/Tasks/Policies/TaskPolicy.php` | `editDescription`, `DESCRIPTION_EDITABLE_STATUSES` | VERIFIED | Used by the Action (twice), page visibility, docs test |
+| `app/Filament/Partner/Resources/PartnerTaskResource/Pages/ViewPartnerTask.php` | Header action | VERIFIED | Pinned by tests |
+| `TaskNotifier`, `TaskChangedNotification`, `NotificationEvent`, `EditProfile`, lang | Admin and assignee notice, profile switch | VERIFIED | Called after a real write; helper wired |
+| `CONTRIBUTING.md`, `README.md`, `RepositoryFilesTest` | Documentation of Partner write paths | VERIFIED | Documentation test green |
+| `tests/Feature/Tasks/PartnerTaskDescriptionTest.php` | Deterministic end-to-end proofs | VERIFIED | Now orders by `created_at, id`; new-row proof independent of ordering; 5 of 5 runs green |
+| `tests/Feature/Tasks/TaskEscalationTest.php` | Deterministic comment helper | VERIFIED | `created_at, id` ordering |
 
 ### Key Link Verification
 
 | From | To | Via | Status |
 |------|----|-----|--------|
-| `ViewPartnerTask` action | `UpdateTaskDescription` | `app(UpdateTaskDescription::class)->handle(actor, task, description, based_on)`; only those four values | WIRED |
-| `UpdateTaskDescription` | `TaskPolicy::editDescription` | `authorize` before the transaction and `denies('editDescription', $locked)` on the locked row | WIRED |
+| `ViewPartnerTask` action | `UpdateTaskDescription` | `handle(actor, task, description, based_on)` | WIRED |
+| `UpdateTaskDescription` | `TaskPolicy::editDescription` | `authorize` before the transaction, `denies` on the locked row | WIRED |
 | `UpdateTaskDescription` | `TaskInput::description` | sanitiser and length limit | WIRED |
-| `UpdateTaskDescription` | `TaskNotifier::descriptionChanged` | after the history row, inside the transaction, notification `afterCommit` | WIRED |
-| `TaskNotifier` | `TaskChangedNotification` | passes audience and raw line; base escapes once | WIRED |
+| `UpdateTaskDescription` | `TaskNotifier::descriptionChanged` | after the history row, notification `afterCommit` | WIRED |
 | `EditProfile` | `NotificationEvent::helper($role)` | row helper | WIRED |
+| `partnerDescEdits()` | `partnerDescHistory()` | edit filter keeps the helper's `created_at, id` order | WIRED |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data variable | Source | Real data | Status |
 |----------|---------------|--------|-----------|--------|
-| Partner modal editor | `description`, `based_on` | `fillForm` reads the task record, fingerprint of the stored description | Yes | FLOWING |
-| Partner task page after save | task description | `$task->refresh()` then Livewire re-render | Yes | FLOWING |
-| Admin history relation manager / overview | `description_changed` rows | `activity_log` row written by the Action | Yes | FLOWING |
+| Partner modal editor | `description`, `based_on` | task record, fingerprint of stored description | Yes | FLOWING |
+| Partner task page after save | task description | `$task->refresh()` then re-render | Yes | FLOWING |
+| Admin history | `description_changed` rows | `activity_log` row written by the Action | Yes | FLOWING |
 | Admin bell and mail | change line | `kokpit.tasks.notifications.changed.description` with the actor name | Yes | FLOWING |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Partner description path, policy, notices | `pest tests/Feature/Tasks/PartnerTaskDescriptionTest.php` | 28 passed (x4) | PASS |
-| Phase subset | see Evidence base | 883 passed, 1 flaky failure | FAIL (flaky) |
-| Full suite | `pest` clean run | 2047 passed | PASS (intermittently red via the flake) |
-| Static analysis, style, sensitive scan | Pint, PHPStan, `check-sensitive.sh --all` | clean | PASS |
+| Tasks suite is deterministic | `ddev exec vendor/bin/pest tests/Feature/Tasks --compact` x5 | 365 passed each | PASS |
+| Full suite | `ddev exec vendor/bin/pest --compact` | 2047 passed | PASS |
+| Style, static analysis, sensitive scan | Pint, PHPStan, `check-sensitive.sh --all` | clean | PASS |
 
 ### Probe Execution
 
@@ -169,43 +156,49 @@ Step 7c: SKIPPED. No PLAN or SUMMARY declares a `probe-*.sh`.
 
 ### Requirements Coverage
 
-All ten IDs are declared in PLAN frontmatter and are the only IDs REQUIREMENTS.md maps to Phase 5; no orphan. REQUIREMENTS.md marks all ten Complete.
+All ten IDs are declared in PLAN frontmatter and are the only IDs REQUIREMENTS.md maps to Phase 5 (lines 239-248: all `Complete`; checkboxes at lines 67-78 ticked); no orphan.
 
-| Requirement | Source Plans (this round) | Description | Status | Evidence |
-|-------------|---------------------------|-------------|--------|----------|
-| TA-01 | 05-01..05, 17, 18, 20 | Tasks, one-level subtasks, fields | SATISFIED | SC1; the Partner now edits the description within D-16. "Files" part is Phase 9 by mapping note |
+| Requirement | Source Plans | Description | Status | Evidence |
+|-------------|--------------|-------------|--------|----------|
+| TA-01 | 05-01..05, 17, 18, 20, 22 | Tasks, one-level subtasks, fields | SATISFIED | SC1; Partner description edit within D-16. The "files" part is Phase 9 by mapping note |
 | TA-02 | 05-01..03, 17 | KEY-N counter, locked, never recycled, searchable | SATISFIED | SC2; API use is Phase 7 |
 | TA-03 | 05-06, 17 | Todo checklist | SATISFIED | `TaskChecklistTest` |
 | TA-04 | 05-09, 13, 17, 19 | Comments, internal flag, Partner never internal | SATISFIED | SC3, SC5; attachments part is Phase 9 |
 | TA-05 | 05-03, 17 | List with filters | SATISFIED | SC3 |
 | TA-06 | 05-07, 08, 17 | Fixed price, billing type, rate override, estimate | SATISFIED | resolver and table tests |
-| TA-07 | 05-12..16, 17, 18, 19, 20, 21 | Partner create and comment, no status or priority change, Admin notified | SATISFIED | SC5 and the G-05-5 additions; the Partner still cannot change status or priority |
+| TA-07 | 05-12..16, 17, 18, 19, 20, 21, 22 | Partner create and comment, no status or priority change, Admin notified | SATISFIED | SC5 and the G-05-5 additions; the closing gate is reliably green |
 | KB-01 | 05-10, 11, 17 | Kanban per project and global | SATISFIED | SC4 |
 | KB-02 | 05-10, 11, 17 | Drag and drop synchronous; global filters | SATISFIED | SC4; gesture confirmed by the owner in UAT |
-| KB-03 | 05-10, 12, 17, 20 | Partner has no board manipulation, read-only list | SATISFIED | No new Partner page or list action; header pin test updated to three actions |
+| KB-03 | 05-10, 12, 17, 20 | Partner has no board manipulation, read-only list | SATISFIED | No new Partner page or list action |
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| `tests/Feature/Tasks/PartnerTaskDescriptionTest.php` | 69-76, 252-254 | Non-deterministic ordering (`orderBy('created_at')`, second-resolution timestamps) feeding `array_last()` | Blocker for the "green suite" truth (test-only) | Intermittent red suite; see Gaps |
-| (05-20/05-21 source files) | - | TODO/FIXME/XXX/TBD | none found | - |
+| (the two test files of 05-22) | - | Previous non-deterministic `orderBy('created_at')` | resolved | Tiebreaker added; 5 of 5 directory runs green |
+| (05-20, 05-21, 05-22 files) | - | TBD/FIXME/XXX/TODO/HACK | none found in the previous round; 05-22 added no new such markers (diff is 18 lines of ordering and assertions) | - |
 
-Carried, non-blocking (unchanged from the previous report): review items WR-01, WR-03, WR-04 and IN-01..IN-07 in 05-REVIEW-DISPOSITION.md; UI review flags F-1, F-2, F-5, F-8, F-9. A new code review of the G-05-5 closure exists (`8b6db83`); I did not re-read it.
+Carried, non-blocking (unchanged): review items WR-01, WR-03, WR-04 and IN-01..IN-07 in `05-REVIEW-DISPOSITION.md`; UI review flags F-1, F-2, F-5, F-8, F-9. A code review report for plan 05-22 exists (`5056a8e`); I did not re-read it.
 
-Bookkeeping note (not a gap): the ROADMAP Phase 5 header line still says "05-20 and 05-21 planned" and the phase checkbox is unchecked while both plans are ticked; update it when the phase closes.
+Bookkeeping note (not a gap): the ROADMAP Phase 5 header line still says "05-22 planned" and the phase checkbox is unchecked; update when the phase closes.
 
 ### Human Verification Required
 
-Five items, listed in the frontmatter `human_verification`. None is marked passed. Already confirmed by the owner in `05-UAT.md` and therefore not repeated here: touch drag (test 1), SPA navigation (test 2), Mailpit of the 05-16 mails (test 3), Czech copy as of then (test 4), visual check as of then (test 6) and the owner decision (test 7). UAT test 5 is still recorded as `issue` until the owner re-walks it.
+Five items, listed in the frontmatter `human_verification`, all still open and none marked passed:
+
+1. Browser walk of the description edit (05-21 Task 3), including whether the TipTap editor re-serialises an unchanged text as a change.
+2. Re-walk of UAT test 5 (G-05-5) by the owner; it is still recorded as `issue` in `05-UAT.md`.
+3. Mailpit and bell rendering of markup titles, now including the new Admin description-change mail.
+4. Czech copy review of nine strings added by 05-20 and 05-21.
+5. Light and dark mode look of the new modal, button and profile row.
+
+Already confirmed by the owner in `05-UAT.md` and not repeated: touch drag (test 1), SPA navigation (test 2), Mailpit of the 05-16 mails (test 3), Czech copy as of then (test 4), visual check as of then (test 6) and the owner decision (test 7).
 
 ### Gaps Summary
 
-The phase goal and all ten requirements are met in the code. G-05-5 is implemented as the owner specified (D-16): a description-only Partner action guarded twice by one policy ability, status re-checked on the locked row, sanitised, stale and unchanged saves handled, history without text, Admin and assignee notified without any description text, Admin profile switch added, and the Partner write paths documented and pinned by a documentation test. Isolation, concurrency, schema and notification suites are green, and so are Pint, PHPStan and the sensitive scan.
-
-One gap remains and it is in a test, not in the product: `PartnerTaskDescriptionTest` has an order-dependent assertion that fails about half of the time when the `tests/Feature/Tasks` directory runs, which contradicts the plan 05-21 truth that the closing gate is green. Fix the helper ordering (a one-line change), re-run the Tasks directory several times and the full suite, then re-verify. Independently of that fix, the browser walk of 05-21 Task 3 and the re-walk of UAT test 5 are needed before G-05-5 can be marked closed.
+No gaps remain. The previous gap was in a test, not in the product: an order-dependent assertion over whole-second timestamps. Plan 05-22 fixed it correctly (deterministic `created_at, id` ordering in both affected helpers, plus an order-independent new-row proof), changed no production code, and I reproduced the closing gate independently: five green runs of `tests/Feature/Tasks` (365 tests), a green full suite (2047 tests), Pint, PHPStan and the sensitive scan clean. The phase goal and all ten requirements are met in the code; only the five human checks above stand between this phase and closure of G-05-5.
 
 ---
 
-_Verified: 2026-10-09T10:05:00Z_
+_Verified: 2026-10-09T10:50:00Z_
 _Verifier: Claude (gsd-verifier)_
