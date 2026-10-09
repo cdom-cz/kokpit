@@ -234,15 +234,18 @@ final class TaskResource extends Resource
             Section::make(__('kokpit.tasks.sections.people'))
                 ->columns(2)
                 ->schema([
-                    // Only the active Admin and the active Partners of the project's client (D-05).
+                    // The active Admin and the active Partners of the project's client, plus the
+                    // field's current person (D-05): UpdateTask keeps an unchanged person even
+                    // when deactivated since and re-checks every changed one, so the list must
+                    // still contain the stored value or the form would refuse every save.
                     Select::make('assignee_id')
                         ->label(__('kokpit.tasks.fields.assignee'))
-                        ->options(static fn (?Task $record): array => self::peopleOptions($record))
+                        ->options(static fn (?Task $record): array => self::peopleOptions($record, 'assignee_id'))
                         ->required()
                         ->native(false),
                     Select::make('requester_id')
                         ->label(__('kokpit.tasks.fields.requester'))
-                        ->options(static fn (?Task $record): array => self::peopleOptions($record))
+                        ->options(static fn (?Task $record): array => self::peopleOptions($record, 'requester_id'))
                         ->required()
                         ->native(false),
                 ]),
@@ -609,15 +612,29 @@ final class TaskResource extends Resource
 
     /**
      * The people a task of the record's project may be assigned to or requested by:
-     * TaskPeople::options of the project, the same set UpdateTask enforces (D-05).
+     * TaskPeople::options of the project, the set UpdateTask enforces for a changed
+     * person (D-05), plus the task's current person of `$field` when that account is no
+     * longer active. UpdateTask does not check an unchanged person again, so the stored
+     * value stays selectable; no other inactive account is ever offered.
      *
      * @return array<string, string>
      */
-    private static function peopleOptions(?Task $task): array
+    private static function peopleOptions(?Task $task, string $field): array
     {
         $project = self::projectOf($task);
 
-        return $project === null ? [] : app(TaskPeople::class)->options($project);
+        if ($project === null) {
+            return [];
+        }
+
+        $options = app(TaskPeople::class)->options($project);
+        $current = $task?->getAttribute($field);
+
+        if (is_string($current) && ! array_key_exists($current, $options)) {
+            $options[$current] = (string) User::query()->whereKey($current)->value('name');
+        }
+
+        return $options;
     }
 
     /**
