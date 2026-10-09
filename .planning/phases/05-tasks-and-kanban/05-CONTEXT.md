@@ -42,6 +42,9 @@ Already fixed in earlier phases (not re-opened): Partner isolation via `users.cl
 - **D-13:** Billing type, fixed price, rate override and estimate live in a separate 1:1 table `task_billing`, Admin-only (`#[DeniesPartners]`), same pattern as `project_billing`. A Partner query on tasks never loads these columns (selects, search, exports, error output, activity log). — **Reversibility:** costly — every task form, list and the later billing read goes through this relation.
 - **D-14:** Empty values mean inherit at read time (no copy): subtask empty falls back to the parent task, then the project, then the client (rate resolution order from the brief). A subtask has its own `task_billing` row when it overrides anything.
 
+### Partner description edit (added 2026-10-09 from UAT gap G-05-5, owner decision)
+- **D-16:** A Partner may edit the description of a task (and nothing else of it) only when the task belongs to a client-visible project of the Partner's own client and its status is "K upřesnění" (`ProjectStatus::ToClarify`, value `to_clarify`) or "Plánovaný" (`ProjectStatus::Planned`, value `planned`). Every other status (In progress, In review, Ready to release, Done) and every archived task deny it. The status is checked again on the row locked for the save, so a status change between opening the editor and saving refuses the save. The Admin keeps editing descriptions in every status through the Admin edit page. Source: 05-UAT.md test 5, gap G-05-5; implemented by plans 05-20 and 05-21.
+
 ### Claude's Discretion
 Class and file names, exact number of cards shown in the Done column if config differs, escalation flag column names, notification and mailable wording, Czech label wording (including "Escalate"), sanitiser configuration, card layout details, list column set and default sort, checklist storage shape, tag handling (same Spatie tags as projects).
 

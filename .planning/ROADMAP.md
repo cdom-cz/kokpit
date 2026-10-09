@@ -360,7 +360,7 @@ Gap closure (from 05-REVIEW.md CR-01 and WR-02, 05-SECURITY.md T-05-44 and G-1, 
 Gap closure (from 05-UAT.md G-05-5, test 5: the Partner should be able to edit the task description):
 
 **Wave 20** *(blocked on Wave 19 completion)*
-- [ ] 05-20-PLAN.md — A Partner edits only the description of a task they may open: editDescription ability, UpdateTaskDescription (sanitised, row-locked, stale and unchanged saves refused or skipped, history row without the text), "Upravit popis" header action (G-05-5; TA-07, TA-01, KB-03)
+- [ ] 05-20-PLAN.md — A Partner edits only the description of an own visible task in "Plánovaný" or "K upřesnění" (owner decision D-16): editDescription ability, UpdateTaskDescription (status re-checked under the row lock, sanitised, stale and unchanged saves refused or skipped, history row without the text), "Upravit popis" header action (G-05-5; TA-07, TA-01, KB-03)
 
 **Wave 21** *(blocked on Wave 20 completion)*
 - [ ] 05-21-PLAN.md — The Admin and the assignee are told of a Partner's description edit, the Admin's "Změna úkolu" switch, markup proof for the new audience, Partner write paths documented, closing gate (G-05-5; TA-07)
