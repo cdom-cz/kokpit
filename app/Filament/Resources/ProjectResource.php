@@ -22,6 +22,7 @@ use App\Filament\Resources\ProjectResource\Pages\EditProject;
 use App\Filament\Resources\ProjectResource\Pages\ListProjects;
 use App\Filament\Resources\ProjectResource\Pages\ProjectBoard;
 use App\Filament\Resources\ProjectResource\Pages\ViewProject;
+use App\Filament\Resources\ProjectResource\Widgets\ProjectTimeStats;
 use App\Filament\Support\ProjectColumns;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
@@ -332,6 +333,20 @@ final class ProjectResource extends Resource
     {
         return [
             ProjectHistoryRelationManager::class,
+        ];
+    }
+
+    /**
+     * The widgets of the project pages. Registered here and not discovered at panel level, so the
+     * panel's own widget list stays empty (a discovered widget would also be offered to a dashboard
+     * without a record).
+     *
+     * @return array<class-string>
+     */
+    public static function getWidgets(): array
+    {
+        return [
+            ProjectTimeStats::class,
         ];
     }
 

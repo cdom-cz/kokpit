@@ -1086,6 +1086,18 @@ return [
             'callout_heading' => 'Časovač běží příliš dlouho',
             'callout_body' => 'Běží déle než :hours h. Zkontrolujte, jestli ho nemáte zastavit.',
         ],
+        'project' => [
+            'stats' => [
+                'estimate' => 'Odhad',
+                'worked' => 'Odpracováno',
+                'billed' => 'Vyfakturováno',
+                'unbilled' => 'Nevyfakturováno',
+            ],
+            'estimate_percent' => ':percent % odhadu',
+            'estimate_exceeded' => 'Překročeno o :duration',
+            'estimate_missing' => 'Odhad není zadaný',
+            'non_billable' => 'Nefakturovatelné: :duration',
+        ],
         'timesheet' => [
             'navigation' => 'Výkaz',
             'title' => 'Výkaz',

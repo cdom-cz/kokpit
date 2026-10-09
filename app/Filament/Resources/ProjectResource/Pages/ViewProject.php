@@ -6,6 +6,7 @@ namespace App\Filament\Resources\ProjectResource\Pages;
 
 use App\Domain\Projects\Models\Project;
 use App\Filament\Resources\ProjectResource;
+use App\Filament\Resources\ProjectResource\Widgets\ProjectTimeStats;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
@@ -32,6 +33,16 @@ final class ViewProject extends ViewRecord
             ProjectResource::archiveAction(DeleteAction::make()),
             ProjectResource::restoreAction(RestoreAction::make()),
         ];
+    }
+
+    /**
+     * The time row of the project (PR-05); the widget refuses everybody but the Admin.
+     *
+     * @return array<class-string>
+     */
+    protected function getHeaderWidgets(): array
+    {
+        return [ProjectTimeStats::class];
     }
 
     /**

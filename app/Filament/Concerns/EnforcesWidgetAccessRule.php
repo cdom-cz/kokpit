@@ -17,8 +17,6 @@ use App\Domain\Shared\Auth\AccessRules;
  * boot hook below asks the declaration as well and cannot be widened: a user
  * the declaration refuses never reaches the widget's own code (research
  * Pitfall 1).
- *
- * @phpstan-ignore trait.unused (first real Widget arrives with the dashboard content; tests use it today)
  */
 trait EnforcesWidgetAccessRule
 {

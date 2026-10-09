@@ -13,6 +13,7 @@ use App\Domain\Shared\Auth\IsolatesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use ArrayAccess;
 use Carbon\CarbonInterface;
 use Database\Factories\ProjectFactory;
@@ -176,6 +177,17 @@ final class Project extends KokpitModel implements PartnerIsolated
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class);
+    }
+
+    /**
+     * The tracked time of the project, with or without a task, newest first. Admin-only: TimeEntry is
+     * closed to every Partner, so the relation is empty for a Partner.
+     *
+     * @return HasMany<TimeEntry, $this>
+     */
+    public function timeEntries(): HasMany
+    {
+        return $this->hasMany(TimeEntry::class)->orderByDesc('started_at')->orderByDesc('id');
     }
 
     /**
