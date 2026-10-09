@@ -273,6 +273,138 @@ it('saves a rename of a task whose assignee was deactivated and keeps the assign
         ->and($task->assignee_id)->toBe($partner->id);
 });
 
+it('keeps a deactivated requester when the Admin saves another change', function (): void {
+    $project = taskUpdProject(visible: true);
+    $task = taskUpdTask($project);
+    $requester = Canary::partnerFor($project->client_id);
+    app(UpdateTask::class)->handle($this->admin, $task, ['requester_id' => $requester->id]);
+    $requester->forceFill(['deactivated_at' => now()])->save();
+
+    Livewire::test(EditTask::class, ['record' => $task->reference])
+        ->fillForm(['priority' => 'high'])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($task->refresh()->requester_id)->toBe($requester->id)
+        ->and($task->assignee_id)->toBe($this->admin->id)
+        ->and($task->priority->value)->toBe('high');
+});
+
+it('offers a deactivated person only in the field that holds it', function (): void {
+    $project = taskUpdProject(visible: true);
+    $task = taskUpdTask($project);
+    $held = Canary::partnerFor($project->client_id);
+    $other = Canary::partnerFor($project->client_id);
+    $foreign = Canary::partnerFor(Client::factory()->create()->id);
+    app(UpdateTask::class)->handle($this->admin, $task, ['assignee_id' => $held->id]);
+    $held->forceFill(['deactivated_at' => now()])->save();
+    $other->forceFill(['deactivated_at' => now()])->save();
+
+    $offered = static fn (Select $select): array => array_keys($select->getOptions());
+
+    $page = Livewire::test(EditTask::class, ['record' => $task->reference]);
+    $page->assertFormFieldExists('assignee_id', static function (Select $select) use ($offered, $held, $other, $foreign): bool {
+        $ids = $offered($select);
+
+        return in_array($held->id, $ids, true) && ! in_array($other->id, $ids, true) && ! in_array($foreign->id, $ids, true);
+    });
+    $page->assertFormFieldExists('requester_id', static function (Select $select) use ($offered, $held, $other, $foreign): bool {
+        $ids = $offered($select);
+
+        return ! in_array($held->id, $ids, true) && ! in_array($other->id, $ids, true) && ! in_array($foreign->id, $ids, true);
+    });
+});
+
+it('refuses a new pick of a deactivated or foreign account', function (): void {
+    $project = taskUpdProject(visible: true);
+    $task = taskUpdTask($project);
+    $held = Canary::partnerFor($project->client_id);
+    $other = Canary::partnerFor($project->client_id);
+    $foreign = Canary::partnerFor(Client::factory()->create()->id);
+    app(UpdateTask::class)->handle($this->admin, $task, ['assignee_id' => $held->id]);
+    $held->forceFill(['deactivated_at' => now()])->save();
+    $other->forceFill(['deactivated_at' => now()])->save();
+
+    Livewire::test(EditTask::class, ['record' => $task->reference])
+        ->fillForm(['assignee_id' => $other->id])
+        ->call('save')
+        ->assertHasFormErrors(['assignee_id']);
+
+    Livewire::test(EditTask::class, ['record' => $task->reference])
+        ->fillForm(['requester_id' => $held->id])
+        ->call('save')
+        ->assertHasFormErrors(['requester_id']);
+
+    Livewire::test(EditTask::class, ['record' => $task->reference])
+        ->fillForm(['requester_id' => $foreign->id])
+        ->call('save')
+        ->assertHasFormErrors(['requester_id']);
+
+    $action = app(UpdateTask::class);
+
+    expect(taskUpdErrors(fn () => $action->handle($this->admin, $task, ['assignee_id' => $other->id])))->toHaveKey('assignee_id')
+        ->and(taskUpdErrors(fn () => $action->handle($this->admin, $task, ['requester_id' => $held->id])))->toHaveKey('requester_id')
+        ->and(taskUpdErrors(fn () => $action->handle($this->admin, $task, ['requester_id' => $foreign->id])))->toHaveKey('requester_id');
+
+    $task->refresh();
+
+    expect($task->assignee_id)->toBe($held->id)
+        ->and($task->requester_id)->toBe($this->admin->id);
+});
+
+it('refuses picking a deactivated person again after the task moved away from them', function (): void {
+    $project = taskUpdProject(visible: true);
+    $task = taskUpdTask($project);
+    $partner = Canary::partnerFor($project->client_id);
+    app(UpdateTask::class)->handle($this->admin, $task, ['assignee_id' => $partner->id]);
+    $partner->forceFill(['deactivated_at' => now()])->save();
+
+    Livewire::test(EditTask::class, ['record' => $task->reference])
+        ->fillForm(['assignee_id' => $this->admin->id])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($task->refresh()->assignee_id)->toBe($this->admin->id);
+
+    Livewire::test(EditTask::class, ['record' => $task->reference])
+        ->assertFormFieldExists('assignee_id', static fn (Select $select): bool => ! array_key_exists($partner->id, $select->getOptions()))
+        ->fillForm(['assignee_id' => $partner->id])
+        ->call('save')
+        ->assertHasFormErrors(['assignee_id']);
+
+    expect(taskUpdErrors(fn () => app(UpdateTask::class)->handle($this->admin, $task, ['assignee_id' => $partner->id])))->toHaveKey('assignee_id')
+        ->and($task->refresh()->assignee_id)->toBe($this->admin->id);
+});
+
+it('refuses a person deactivated between page load and save', function (): void {
+    $project = taskUpdProject(visible: true);
+    $task = taskUpdTask($project);
+    $picked = Canary::partnerFor($project->client_id);
+
+    $page = Livewire::test(EditTask::class, ['record' => $task->reference])
+        ->fillForm(['assignee_id' => $picked->id]);
+
+    $picked->forceFill(['deactivated_at' => now()])->save();
+
+    $page->call('save')->assertHasFormErrors(['assignee_id']);
+
+    expect($task->refresh()->assignee_id)->toBe($this->admin->id);
+
+    $current = Canary::partnerFor($project->client_id);
+    app(UpdateTask::class)->handle($this->admin, $task, ['assignee_id' => $current->id]);
+
+    $page = Livewire::test(EditTask::class, ['record' => $task->reference]);
+
+    $current->forceFill(['deactivated_at' => now()])->save();
+
+    $page->fillForm(['title' => 'Example renamed during offboarding'])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($task->refresh()->assignee_id)->toBe($current->id)
+        ->and($task->title)->toBe('Example renamed during offboarding');
+});
+
 it('saves the people chosen on the edit page', function (): void {
     $project = taskUpdProject(visible: true);
     $task = taskUpdTask($project);
