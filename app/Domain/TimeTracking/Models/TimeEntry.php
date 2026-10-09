@@ -15,8 +15,10 @@ use App\Domain\Shared\Models\KokpitModel;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Enums\BillingState;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Database\Factories\TimeEntryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -58,6 +60,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $long_running_notified_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
+ * @property-read int|null $elapsed_seconds only on rows read through the withElapsedSeconds scope
  */
 #[Fillable(['description', 'billable'])]
 #[LoggedAttributes(['client_id', 'project_id', 'task_id', 'started_at', 'ended_at', 'billable', 'billing_state', 'billed_at'])]
@@ -69,6 +72,26 @@ final class TimeEntry extends KokpitModel implements PartnerIsolated
     public function isRunning(): bool
     {
         return $this->ended_at === null;
+    }
+
+    /**
+     * Adds `elapsed_seconds` to every row: the exact stored duration of a finished
+     * entry, the seconds from the start to `$now` of a running one (never negative).
+     *
+     * The instant is bound from the PHP clock, never SQL `now()`, because
+     * PostgreSQL's `now()` ignores a frozen test clock and would make the screens
+     * disagree with the timer.
+     *
+     * @param  Builder<TimeEntry>  $query
+     */
+    public function scopeWithElapsedSeconds(Builder $query, CarbonInterface $now): void
+    {
+        $query
+            ->addSelect($this->qualifyColumn('*'))
+            ->selectRaw(
+                'COALESCE(time_entries.duration_seconds, GREATEST(0, EXTRACT(EPOCH FROM (?::timestamptz - time_entries.started_at))::int)) AS elapsed_seconds',
+                [$now->utc()->format('Y-m-d H:i:sP')],
+            );
     }
 
     /**
