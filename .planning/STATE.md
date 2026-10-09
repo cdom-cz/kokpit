@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: time-tracking
 status: executing
-stopped_at: Completed 06-03-PLAN.md
-last_updated: "2026-10-09T13:36:03.656Z"
+stopped_at: Completed 06-04-PLAN.md
+last_updated: "2026-10-09T13:46:49.093Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 06 execution started
-state_head: 4a14c312445a50d0a0e9e8a50d7a7bc7a259b077
+state_head: 1e3e1958d24a96b7f5791bd691075c274d7368df
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 100
-  completed_plans: 89
+  completed_plans: 90
   percent: 42
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 06 (time-tracking) — EXECUTING
-Plan: 4 of 14
+Plan: 5 of 14
 Status: Ready to execute
 Last activity: 2026-10-09 — Phase 06 execution started
 
@@ -149,6 +149,7 @@ Progress: [████░░░░░░] 42%
 | Phase 06 P01 | 30 min | 3 tasks | 13 files |
 | Phase 06 P02 | 35min | 3 tasks | 8 files |
 | Phase 06 P03 | 40 min | 2 tasks | 8 files |
+| Phase 06 P04 | 30 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -328,6 +329,8 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-03: TimerLock is a plain class resolved from the container so UnlockedTimerLock can extend it; the production Actions carry no test hook
 - [Phase 06]: 06-03: the lock-less mutation run is forced deterministically by an arrival rendezvous on eloquent.creating between the running-row read and the insert (1 started, 7 TimerRaceLost per round, no retry)
 - [Phase 06]: 06-03: StartTimer translates a violation of time_entries_one_running_per_user to TimerRaceLost outside the rolled-back transaction by constraint name and rethrows any other unique violation
+- [Phase 06]: Manual entries are always finished (Konec required); an update re-checks the context only when a named id changes, and a billed entry is refused under the row lock with KP001 translated to the same message
+- [Phase 06]: Update checks end-after-start only when the start or end changes, so a zero-length timer entry can still have its description edited
 
 ### Pending Todos
 
@@ -367,6 +370,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T13:36:03.514Z
-Stopped at: Completed 06-03-PLAN.md
+Last session: 2026-10-09T13:46:48.940Z
+Stopped at: Completed 06-04-PLAN.md
 Resume file: None

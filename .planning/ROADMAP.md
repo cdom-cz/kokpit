@@ -382,7 +382,7 @@ Gap closure (from 05-VERIFICATION.md gap 1: the closing-gate test of G-05-5 is f
   4. Admin sees a daily and weekly timesheet with totals, and a timer left running unusually long is flagged to the user
   5. Project detail (Admin only) shows tasks, estimate versus actual and billed versus unbilled time, and a Partner sees no time, rates or prices anywhere, proven by the canary tests
 
-**Plans:** 3/14 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 5 rule; each plan modifies at most 13 files)
+**Plans:** 4/14 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 5 rule; each plan modifies at most 13 files)
 **UI hint**: yes
 
 Plans:
@@ -396,7 +396,7 @@ Plans:
 - [x] 06-03-PLAN.md — TimerLock and the parallel-process proof with a mutation run; typed lost-race error (TI-07)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 06-04-PLAN.md — Manual entries: Create/Update/DeleteTimeEntry, billed refusal, overlap finder, DurationFormat (TI-02, TI-03, TI-07, TI-08)
+- [x] 06-04-PLAN.md — Manual entries: Create/Update/DeleteTimeEntry, billed refusal, overlap finder, DurationFormat (TI-02, TI-03, TI-07, TI-08)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 06-05-PLAN.md — Mark billed and cancel billing with audit; effective rate resolver task, project, client, default (TI-05, TI-08)
@@ -528,7 +528,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
 | 4. Clients and Projects | 21/21 | Complete    | 2026-10-09 |
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
-| 6. Time Tracking | 3/14 | In Progress | - |
+| 6. Time Tracking | 4/14 | In Progress | - |
 | 7. REST API | 0/0 | Not started | - |
 | 8. Exchange Rates and Reports | 0/0 | Not started | - |
 | 9. Documents and Finance | 0/0 | Not started | - |
