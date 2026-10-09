@@ -294,7 +294,7 @@ Plans:
   4. Admin drags cards on the per-project and the global kanban board; status and position persist immediately and survive a reload, and the global board filters by client, assignee, tag and priority
   5. A Partner creates tasks and comments in visible projects but cannot change status or priority or move cards, sees a read-only task list, never sees internal comments or another client's tasks, and Admin is notified of Partner tasks and comments
 
-**Plans:** 19/19 plans executed: 17/17 executed, 2 gap-closure plans planned (05-18 and 05-19; one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 4 rule; each plan modifies at most 14 files)
+**Plans:** 19/21 plans executed: 17/17 executed, gap-closure plans 05-18 and 05-19 executed, 05-20 and 05-21 planned for UAT gap G-05-5 (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 4 rule; each plan modifies at most 14 files)
 **UI hint**: yes
 
 Plans:
@@ -356,6 +356,14 @@ Gap closure (from 05-REVIEW.md CR-01 and WR-02, 05-SECURITY.md T-05-44 and G-1, 
 
 **Wave 19** *(blocked on Wave 18 completion)*
 - [x] 05-19-PLAN.md — Every task notification value escaped once in the TaskNotification base, markup canary for every class and audience, closing gate (T-05-44, WR-02; TA-07, TA-04)
+
+Gap closure (from 05-UAT.md G-05-5, test 5: the Partner should be able to edit the task description):
+
+**Wave 20** *(blocked on Wave 19 completion)*
+- [ ] 05-20-PLAN.md — A Partner edits only the description of a task they may open: editDescription ability, UpdateTaskDescription (sanitised, row-locked, stale and unchanged saves refused or skipped, history row without the text), "Upravit popis" header action (G-05-5; TA-07, TA-01, KB-03)
+
+**Wave 21** *(blocked on Wave 20 completion)*
+- [ ] 05-21-PLAN.md — The Admin and the assignee are told of a Partner's description edit, the Admin's "Změna úkolu" switch, markup proof for the new audience, Partner write paths documented, closing gate (G-05-5; TA-07)
 
 ### Phase 6: Time Tracking
 
