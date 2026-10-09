@@ -62,7 +62,9 @@ function partnerDescRow(Task $task): Task
 }
 
 /**
- * The activity rows of the task, read as system.
+ * The activity rows of the task, read as system, oldest first. The created_at column is
+ * stored at whole-second resolution, so the UUID v7 id, built by the single test
+ * process, breaks ties in the order the rows were written.
  *
  * @return list<Activity>
  */
@@ -71,6 +73,7 @@ function partnerDescHistory(Task $task): array
     return partnerDescSystem(static fn (): array => Activity::query()
         ->where('subject_id', $task->id)
         ->orderBy('created_at')
+        ->orderBy('id')
         ->get()
         ->all());
 }
@@ -243,14 +246,21 @@ it('lets any Partner of the client edit the description of a task in an editable
     foreach ($cases as [$partner, $task]) {
         $typed = '<p>Edited '.Canary::canary('by_partner').'</p>';
         $this->actingAs($partner);
+        $editIdsBefore = array_map(static fn (Activity $row): string => (string) $row->id, partnerDescEdits($task));
 
         Livewire::test(ViewPartnerTask::class, ['record' => $task->reference])
             ->assertActionVisible('editDescription')
             ->callAction('editDescription', ['description' => $typed])
             ->assertHasNoActionErrors();
 
+        $newEdits = array_values(array_filter(
+            partnerDescEdits($task),
+            static fn (Activity $row): bool => ! in_array((string) $row->id, $editIdsBefore, true),
+        ));
+
         expect(partnerDescRow($task)->description)->toBe(RichText::clean($typed))
-            ->and(partnerDescEdits($task))->not->toBeEmpty()
+            ->and($newEdits)->toHaveCount(1)
+            ->and($newEdits[0]->causer_id)->toBe($partner->id)
             ->and(array_last(partnerDescEdits($task))->causer_id)->toBe($partner->id);
     }
 })->with(['planned' => ['planned'], 'to clarify' => ['to_clarify']]);
