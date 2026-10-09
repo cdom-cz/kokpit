@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 05
-current_phase_name: tasks-and-kanban
+current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Phase 5 executed; verification human_needed (7 items); CR-01 and T-05-44 open
-last_updated: "2026-10-09T04:44:44.873Z"
-last_activity: 2026-10-08
+stopped_at: Completed 05-18-PLAN.md
+last_updated: "2026-10-09T05:45:22.755Z"
+last_activity: 2026-10-09
 last_activity_desc: Phase 05 execution started
-state_head: 06bb3cd9912ba3f93f10275d06ec5561931fb23b
+state_head: 7676201f79c2255ad5dbcddc0324dfa4c4bdb36c
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 83
-  completed_plans: 81
+  completed_plans: 82
   percent: 25
 ---
 
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 ## Current Position
 
-Phase: 05 (tasks-and-kanban) — READY TO EXECUTE
-Plan: 17 of 17
+Phase: 05 (Tasks and Kanban) — EXECUTING
+Plan: 2 of 19
 Status: Ready to execute
-Last activity: 2026-10-08 — Phase 05 execution started
+Last activity: 2026-10-09 — Phase 05 execution started
 
 Progress: [███░░░░░░░] 25%
 
@@ -139,6 +139,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 05 P15 | 25 min | 2 tasks | 8 files |
 | Phase 05 P16 | 20 min | 3 tasks | 10 files |
 | Phase 05 P17 | 9 min | 2 tasks | 5 files |
+| Phase 05 P18 | 12 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -302,6 +303,8 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-16: change notifications go only for an Admin actor to the current Partner requester and assignee, one per save; the old assignee is not told (A5)
 - [Phase 05]: The Phase 5 documentation test also checks methods and constants, not only class names, because the CONTRIBUTING conventions rely on them
 - [Phase 05]: The .gitignore review for Phase 5 found no new tool output; no rule or test case added
+- [Phase 05]: 05-18: TaskResource peopleOptions adds only the record's current person of the same field; TaskPeople and UpdateTask unchanged so every changed person is still re-checked (CR-01, D-05) — UpdateTask keeps an unchanged person, so the form must still offer the stored value or every save of a task with a deactivated person is refused
+- [Phase 05]: 05-18: CreateTask drops Partner tags before any parsing, like status, priority and people (G-1, D-04) — Tags are Admin-only; the drop must hold for any caller of the Action, not only the Partner create page
 
 ### Pending Todos
 
@@ -341,6 +344,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T01:36:54.330Z
-Stopped at: Phase 5 executed; verification human_needed (7 items); CR-01 and T-05-44 open
-Resume file: .planning/phases/05-tasks-and-kanban/05-UAT.md
+Last session: 2026-10-09T05:45:22.616Z
+Stopped at: Completed 05-18-PLAN.md
+Resume file: None
