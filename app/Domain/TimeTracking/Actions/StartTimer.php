@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\TimeTracking\Actions;
 
-use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
+use App\Domain\TimeTracking\Billing\BillableDefault;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\TimerClock;
+use App\Domain\TimeTracking\TimeEntryInput;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -28,16 +28,23 @@ use Illuminate\Validation\ValidationException;
  * `ended_at >= started_at` check cannot fail. A start in the same second as the
  * running entry therefore keeps a zero-length entry.
  *
- * A start needs only a client. A client that is malformed, unknown or archived
- * is the single field error `client_id`; a description over 1000 characters is
- * the field error `description`. Ids and instants are set with `forceFill`, so
- * the payload can never smuggle them in.
+ * A start names a client, a project or a task. A task is enough: the project and
+ * the client are derived from the task row read under a share lock, so a forged
+ * combination can never be stored. The context rules and their field errors live
+ * in TimeEntryInput::context(); a description over 1000 characters is the field
+ * error `description`. `billable` is the given bool, or the D-03 default of the
+ * task when it is null. Ids and instants are set with `forceFill`, so the
+ * payload can never smuggle them in.
  *
- * @phpstan-type TimerData array{client_id?: mixed, description?: mixed}
+ * Lock order: the per-user timer lock, then the task, project and client rows
+ * FOR SHARE, then the running entry FOR UPDATE. ArchiveTask takes the board lock
+ * and then the task row FOR UPDATE and never the timer lock, so there is no cycle.
+ *
+ * @phpstan-type TimerData array{client_id?: mixed, project_id?: mixed, task_id?: mixed, description?: mixed, billable?: mixed}
  */
 final class StartTimer
 {
-    private const int DESCRIPTION_MAX_LENGTH = 1000;
+    public function __construct(private readonly BillableDefault $billableDefault) {}
 
     /**
      * @param  TimerData  $data
@@ -55,8 +62,11 @@ final class StartTimer
             // Read after the lock, so a waiting start sees the instant of its own turn.
             $now = TimerClock::now();
 
-            $clientId = $this->clientId($data['client_id'] ?? null);
-            $description = $this->description($data['description'] ?? null);
+            $context = TimeEntryInput::context($data);
+            $description = TimeEntryInput::description($data['description'] ?? null);
+            $billable = is_bool($data['billable'] ?? null)
+                ? $data['billable']
+                : $this->billableDefault->for($context['task']);
 
             $running = TimeEntry::query()
                 ->where('user_id', $actor->getKey())
@@ -69,9 +79,11 @@ final class StartTimer
                 $running->refresh();
             }
 
-            $entry = (new TimeEntry(['description' => $description, 'billable' => true]))->forceFill([
+            $entry = (new TimeEntry(['description' => $description, 'billable' => $billable]))->forceFill([
                 'user_id' => $actor->getKey(),
-                'client_id' => $clientId,
+                'client_id' => $context['client']->getKey(),
+                'project_id' => $context['project']?->getKey(),
+                'task_id' => $context['task']?->getKey(),
                 'started_at' => $now,
             ]);
             $entry->save();
@@ -87,37 +99,5 @@ final class StartTimer
     private function lockTimerOf(User $user): void
     {
         DB::select('select pg_advisory_xact_lock(hashtextextended(?, 0))', ['kokpit:timer:'.$user->getKey()]);
-    }
-
-    /**
-     * The id of a live client, read again under a share lock so an archive in
-     * flight cannot slip past the check.
-     */
-    private function clientId(mixed $value): string
-    {
-        $client = is_string($value) && Str::isUuid($value)
-            ? Client::query()->whereKey($value)->sharedLock()->first()
-            : null;
-
-        if ($client === null) {
-            throw ValidationException::withMessages(['client_id' => __('kokpit.time.errors.client_required')]);
-        }
-
-        return $client->getKey();
-    }
-
-    private function description(mixed $value): ?string
-    {
-        if (! is_string($value)) {
-            return null;
-        }
-
-        $description = trim($value);
-
-        if (mb_strlen($description) > self::DESCRIPTION_MAX_LENGTH) {
-            throw ValidationException::withMessages(['description' => __('kokpit.time.errors.description_too_long')]);
-        }
-
-        return $description === '' ? null : $description;
     }
 }

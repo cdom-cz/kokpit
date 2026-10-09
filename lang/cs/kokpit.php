@@ -920,6 +920,9 @@ return [
     'time' => [
         'errors' => [
             'client_required' => 'Vyberte klienta.',
+            'task_unavailable' => 'Úkol je archivovaný. Vyberte jiný úkol.',
+            'project_unavailable' => 'Projekt je archivovaný. Vyberte jiný projekt.',
+            'inconsistent_context' => 'Klient, projekt a úkol k sobě nepatří. Vyberte je znovu.',
             'description_too_long' => 'Popis je příliš dlouhý. Zkraťte ho na nejvýše 1000 znaků.',
         ],
     ],

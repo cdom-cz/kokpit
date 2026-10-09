@@ -4,12 +4,18 @@ declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
+use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Money\Money;
+use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Actions\StartTimer;
+use App\Domain\TimeTracking\Actions\StopTimer;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
+use Database\Factories\ProjectFactory;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -69,6 +75,47 @@ function timerCount(User $user, bool $runningOnly = false): int
 
         return $runningOnly ? $query->whereNull('ended_at')->count() : $query->count();
     });
+}
+
+/**
+ * A project of a client with an hourly billing row, written through the domain
+ * Action like the Admin form does, so the billing resolver finds its rows.
+ *
+ * @param  array<string, mixed>  $projectData
+ */
+function timerProject(?Client $client = null, array $projectData = []): Project
+{
+    $client ??= timerSystem(static fn (): Client => Client::factory()->create([
+        'currency' => 'CZK',
+        'hourly_rate' => Money::fromMajor('800', 'CZK'),
+    ]));
+
+    return app(CreateProject::class)->handle($client, [
+        'name' => 'Example timer project',
+        'key' => ProjectFactory::randomKey(),
+        'billing_type' => 'hourly',
+        'hourly_rate' => '900',
+        ...$projectData,
+    ]);
+}
+
+/**
+ * A task or subtask of the project as the signed-in Admin; the billing keys go
+ * through UpdateTask like on the edit page.
+ *
+ * @param  array<string, mixed>  $billing
+ */
+function timerTask(User $admin, Project $project, array $billing = [], ?Task $parent = null): Task
+{
+    test()->actingAs($admin);
+
+    $task = app(CreateTask::class)->handle($admin, $project, ['title' => 'Example timer task'], $parent);
+
+    if ($billing !== []) {
+        $task = app(UpdateTask::class)->handle($admin, $task, $billing);
+    }
+
+    return $task->refresh();
 }
 
 it('starts a client-only timer at the current second', function (): void {
@@ -350,4 +397,57 @@ it('freezes a billed entry but lets its billing state flip and its duration reco
     DB::table('time_entries')->where('id', $entry->id)->update(['ended_at' => $entry->ended_at?->addHour()]);
 
     expect($entry->refresh()->duration_seconds)->toBe(7200);
+});
+
+/*
+ * Start from a task, stop (TI-01, TI-04, D-02, D-03).
+ */
+
+it('starts a timer from only a task id and derives its project and client', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $project = timerProject();
+    $task = timerTask($admin, $project);
+
+    $entry = app(StartTimer::class)->handle($admin, ['task_id' => $task->id])['entry'];
+
+    expect($entry->task_id)->toBe($task->id)
+        ->and($entry->project_id)->toBe($project->id)
+        ->and($entry->client_id)->toBe($project->client_id)
+        ->and($entry->billable)->toBeTrue()
+        ->and($entry->isRunning())->toBeTrue();
+});
+
+it('pre-sets billable to false when the task is non-billable', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $task = timerTask($admin, timerProject(), ['billing_type' => 'non_billable']);
+
+    $entry = app(StartTimer::class)->handle($admin, ['task_id' => $task->id])['entry'];
+
+    expect($entry->billable)->toBeFalse();
+});
+
+it('stops the running timer at the current second and is a no-op the next time', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $task = timerTask($admin, timerProject());
+    $started = app(StartTimer::class)->handle($admin, ['task_id' => $task->id])['entry'];
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:25:30', 'UTC'));
+    $stopped = app(StopTimer::class)->handle($admin);
+
+    expect($stopped)->not->toBeNull()
+        ->and($stopped?->id)->toBe($started->id)
+        ->and($stopped?->isRunning())->toBeFalse()
+        ->and($stopped?->ended_at?->equalTo(CarbonImmutable::parse('2026-10-12 08:25:30', 'UTC')))->toBeTrue()
+        ->and($stopped?->duration_seconds)->toBe(1530);
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 09:00:00', 'UTC'));
+
+    expect(app(StopTimer::class)->handle($admin))->toBeNull()
+        ->and(timerSystem(static fn (): ?CarbonImmutable => TimeEntry::query()->findOrFail($started->id)->ended_at)?->equalTo(CarbonImmutable::parse('2026-10-12 08:25:30', 'UTC')))->toBeTrue();
 });
