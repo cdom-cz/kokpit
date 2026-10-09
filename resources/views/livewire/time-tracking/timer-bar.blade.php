@@ -10,13 +10,19 @@
     $tooLong = $running !== null && $running['long_running'];
     $runningColor = $tooLong ? 'danger' : 'warning';
     $runningTooltip = $tooLong ? __('kokpit.time.timer.long_running_tooltip', ['hours' => $running['hours']]) : null;
+
+    // The state of the side panel as the server knows it (never chosen counts as open, the default
+    // from 80rem up); the panel reports its real state in the browser and the label follows it.
+    $panelOpen = auth()->user()?->time_panel_open !== false;
+    $panelHide = __('kokpit.time.panel.hide');
+    $panelShow = __('kokpit.time.panel.show');
 @endphp
 
 {{-- The refresh of a persisted region: the poll runs only while the tab is visible. --}}
 <div class="kokpit-timer-bar" wire:poll.visible.60s="refreshState">
     {{-- Only the spacing tokens of the design contract (0.25, 0.5, 1, 1.5, 2 rem) and the colour roles of the panel. --}}
     <style>
-        .kokpit-timer-bar { display: flex; align-items: center; }
+        .kokpit-timer-bar { display: flex; align-items: center; gap: 0.5rem; }
         .kokpit-timer-pill { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0.5rem; border-radius: 0.5rem; background-color: var(--color-50); color: var(--color-700); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-600) 20%, transparent); }
         .dark .kokpit-timer-pill { background-color: color-mix(in oklab, var(--color-400) 10%, transparent); color: var(--color-400); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-400) 30%, transparent); }
         .kokpit-timer-trigger { display: inline-flex; align-items: center; gap: 0.5rem; background: none; border: 0; padding: 0; color: inherit; cursor: pointer; font-size: 0.875rem; line-height: 1.25rem; }
@@ -187,6 +193,24 @@
             />
         </div>
     @endif
+
+    {{-- 3. The toggle of the side panel "Poslední záznamy". The panel owns the state; the label follows its report. --}}
+    <span
+        class="kokpit-timer-toggle"
+        x-data="{ open: @js($panelOpen) }"
+        x-on:kokpit-time-panel-state.window="open = $event.detail.open"
+    >
+        <x-filament::icon-button
+            color="gray"
+            size="sm"
+            :icon="Heroicon::OutlinedBars3BottomRight"
+            :label="$panelOpen ? $panelHide : $panelShow"
+            x-bind:aria-label="open ? @js($panelHide) : @js($panelShow)"
+            x-bind:title="open ? @js($panelHide) : @js($panelShow)"
+            x-bind:aria-expanded="open"
+            x-on:click="$dispatch('kokpit-time-panel-toggle')"
+        />
+    </span>
 
     <x-filament-actions::modals />
 </div>

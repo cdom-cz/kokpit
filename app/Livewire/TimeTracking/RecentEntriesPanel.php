@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\TimeTracking;
 
+use App\Domain\TimeTracking\Actions\SetTimePanelOpen;
 use App\Domain\TimeTracking\Queries\RecentEntries;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
@@ -22,7 +23,9 @@ use Livewire\Component;
  * refreshes on the same four events and by a 60-second visible-tab poll; the clock ticks in the
  * browser. The days come from RecentEntries in pages of seven days that contain entries; the view
  * keeps the number of days shown (a scalar), not the rows, so the snapshot stays small and every
- * refresh reads the shown days again. Every request is refused for anybody but the Admin
+ * refresh reads the shown days again. The open or closed choice at docked width is stored per user
+ * on the server (SetTimePanelOpen) and applied in the first render; the overlay below 80rem lives in
+ * the browser only. Every request is refused for anybody but the Admin
  * (RequiresAdmin), and the Actions authorize again.
  *
  * @property-read array{days: list<array{date: string, label: string, total_seconds: int, entries: list<array<string, scalar|null>>}>, has_more: bool} $recent
@@ -35,6 +38,14 @@ final class RecentEntriesPanel extends Component implements HasActions, HasSchem
 
     /** The number of days that contain entries and are shown, a multiple of the page size. */
     public int $visibleDays = self::PAGE_DAYS;
+
+    /** The stored choice at docked width: true open, false closed, null never chosen (default open). */
+    public ?bool $open = null;
+
+    public function mount(): void
+    {
+        $this->open = $this->actor()->time_panel_open;
+    }
 
     /**
      * The days shown and whether older ones exist.
@@ -55,6 +66,17 @@ final class RecentEntriesPanel extends Component implements HasActions, HasSchem
         $this->visibleDays += self::PAGE_DAYS;
 
         unset($this->recent);
+    }
+
+    /**
+     * Stores the choice made at docked width. The overlay below 80rem is client-side only and is
+     * never stored (U-5), so the browser calls this only while the panel is docked.
+     */
+    public function setOpen(bool $open): void
+    {
+        app(SetTimePanelOpen::class)->handle($this->actor(), $open);
+
+        $this->open = $open;
     }
 
     public function render(): View

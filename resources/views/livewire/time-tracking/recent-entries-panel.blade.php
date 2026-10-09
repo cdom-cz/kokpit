@@ -12,18 +12,27 @@
     // Normal running is the warning role; too long (D-07) is the danger role.
     $tooLong = $running !== null && $running['long_running'];
     $runningColor = $tooLong ? 'danger' : 'warning';
+
+    // The stored choice, applied in the first render: no client-side flash (U-5).
+    $pref = $open === null ? 'default' : ($open ? 'open' : 'closed');
 @endphp
 
 {{-- The Livewire root is layout-neutral, so the aside is the flex child of the panel layout. --}}
 <div class="kokpit-panel-root" wire:poll.visible.60s="refreshState">
     {{-- Only the spacing tokens of the design contract (0.25, 0.5, 1, 1.5, 2 rem) and the colour roles of the panel. --}}
     <style>
-        .kokpit-panel-root { display: contents; }
-        .kokpit-panel { display: none; flex-direction: column; width: min(20rem, 100vw); background-color: var(--color-white); color: inherit; box-shadow: inset 1px 0 0 color-mix(in oklab, currentColor 12%, transparent); overflow-y: auto; overscroll-behavior: contain; }
+        .kokpit-panel-root, .kokpit-panel-shell { display: contents; }
+        .kokpit-panel { display: none; flex-direction: column; width: min(20rem, 100vw); max-width: 100vw; background-color: var(--color-white); color: inherit; box-shadow: inset 1px 0 0 color-mix(in oklab, currentColor 12%, transparent); overflow-y: auto; overscroll-behavior: contain; }
         .dark .kokpit-panel { background-color: var(--gray-900); }
-        /* Docked from 80rem (xl): a flex child under the top bar that shrinks the main content. */
+        /* Below 80rem (xl) the panel is an overlay sheet on the right edge, closed on every page load. */
+        .kokpit-panel.is-overlay { display: flex; position: fixed; top: var(--topbar-height, 4rem); right: 0; bottom: 0; z-index: 40; }
+        .kokpit-panel-backdrop { display: none; }
+        .kokpit-panel-backdrop.is-open { display: block; position: fixed; top: var(--topbar-height, 4rem); right: 0; bottom: 0; left: 0; z-index: 39; background-color: color-mix(in oklab, black 50%, transparent); }
+        /* From 80rem the panel is docked: a flex child under the top bar that shrinks the main content. */
         @media (min-width: 80rem) {
             .kokpit-panel { display: flex; flex: 0 0 20rem; position: sticky; top: var(--topbar-height, 4rem); height: calc(100dvh - var(--topbar-height, 4rem)); }
+            .kokpit-panel[data-pref="closed"] { display: none; }
+            .kokpit-panel-backdrop.is-open { display: none; }
         }
         .kokpit-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 1rem; }
         .kokpit-panel-heading { font-size: 1rem; line-height: 1.5rem; font-weight: 600; margin: 0; }
@@ -53,9 +62,79 @@
         .kokpit-panel-empty { display: grid; gap: 0.25rem; }
     </style>
 
-    <aside class="kokpit-panel" aria-label="{{ __('kokpit.time.panel.heading') }}">
+    {{--
+        The shell holds the Alpine state of the panel: the stored choice (pref), the overlay and the
+        docked width. The aside ignores the morph of its own attributes, so a refresh of the timer or
+        the list never undoes the class and data attribute Alpine set.
+    --}}
+    <div
+        class="kokpit-panel-shell"
+        x-data="{
+            pref: @js($open),
+            overlay: false,
+            docked: false,
+            get isOpen() {
+                return this.docked ? this.pref !== false : this.overlay
+            },
+            announce() {
+                this.$dispatch('kokpit-time-panel-state', { open: this.isOpen })
+            },
+            toggle() {
+                if (this.docked) {
+                    this.pref = ! this.isOpen
+                    this.$wire.setOpen(this.pref)
+                } else {
+                    this.overlay = ! this.overlay
+                }
+
+                this.announce()
+            },
+            close() {
+                if (this.isOpen) {
+                    this.toggle()
+                }
+            },
+            closeOverlay() {
+                if (this.overlay) {
+                    this.overlay = false
+                    this.announce()
+                }
+            },
+            init() {
+                const query = window.matchMedia('(min-width: 80rem)')
+
+                this.docked = query.matches
+                query.addEventListener('change', (event) => {
+                    this.docked = event.matches
+                    this.overlay = false
+                    this.announce()
+                })
+                this.announce()
+            },
+        }"
+        x-on:kokpit-time-panel-toggle.window="toggle()"
+        x-on:keydown.escape.window="closeOverlay()"
+    >
+    <div class="kokpit-panel-backdrop" wire:ignore x-bind:class="{ 'is-open': overlay }" x-on:click="closeOverlay()"></div>
+
+    <aside
+        class="kokpit-panel"
+        wire:ignore.self
+        data-pref="{{ $pref }}"
+        x-bind:data-pref="pref === null ? 'default' : (pref ? 'open' : 'closed')"
+        x-bind:class="{ 'is-overlay': overlay }"
+        aria-label="{{ __('kokpit.time.panel.heading') }}"
+    >
         <div class="kokpit-panel-header">
             <h2 class="kokpit-panel-heading">{{ __('kokpit.time.panel.heading') }}</h2>
+            <x-filament::icon-button
+                color="gray"
+                size="sm"
+                :icon="Heroicon::OutlinedChevronDoubleRight"
+                :label="__('kokpit.time.panel.hide')"
+                :tooltip="__('kokpit.time.panel.hide')"
+                x-on:click="close()"
+            />
         </div>
 
         {{-- 1. The timer block: the same single running entry as the bar. --}}
@@ -222,6 +301,7 @@
             </x-filament::link>
         </div>
     </aside>
+    </div>
 
     <x-filament-actions::modals />
 </div>

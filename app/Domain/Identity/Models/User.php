@@ -40,6 +40,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string|null $app_authentication_secret
  * @property array<int, string>|null $app_authentication_recovery_codes
  * @property array<string, array<string, bool>>|null $notification_preferences
+ * @property bool|null $time_panel_open
  */
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'remember_token'])]
@@ -61,6 +62,7 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             'deactivated_at' => 'datetime',
             'password' => 'hashed',
             'notification_preferences' => 'array',
+            'time_panel_open' => 'boolean',
         ];
     }
 

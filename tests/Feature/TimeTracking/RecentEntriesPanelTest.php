@@ -6,11 +6,14 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Actions\SetTimePanelOpen;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Livewire\TimeTracking\RecentEntriesPanel;
+use App\Livewire\TimeTracking\TimerBar;
 use Carbon\CarbonImmutable;
 use Database\Factories\ProjectFactory;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -166,4 +169,86 @@ it('refuses a Partner who mounts the panel', function (): void {
     $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
 
     Livewire::test(RecentEntriesPanel::class)->assertForbidden();
+});
+
+it('renders the panel in its default state for a user who never chose', function (): void {
+    expect($this->admin->time_panel_open)->toBeNull();
+
+    $this->get('/admin')
+        ->assertOk()
+        ->assertSee('data-pref="default"', false);
+
+    // Never chosen counts as open for the label; the panel corrects it in the browser below 80rem.
+    Livewire::test(TimerBar::class)
+        ->assertSeeHtml('aria-label="Skrýt poslední záznamy"')
+        ->assertDontSeeHtml('aria-label="Zobrazit poslední záznamy"');
+});
+
+it('stores the closed choice and starts the next page closed, without a client round trip', function (): void {
+    Livewire::test(RecentEntriesPanel::class)->call('setOpen', false)->assertSet('open', false);
+
+    expect($this->admin->refresh()->time_panel_open)->toBeFalse();
+
+    $this->get('/admin')
+        ->assertOk()
+        ->assertSee('data-pref="closed"', false);
+
+    // The toggle of the bar is named for the state it will cause; the close button of the panel
+    // keeps its own name, so the bar is read on its own.
+    Livewire::test(TimerBar::class)
+        ->assertSeeHtml('aria-label="Zobrazit poslední záznamy"')
+        ->assertDontSeeHtml('aria-label="Skrýt poslední záznamy"');
+
+    $this->get('/admin/time-entries')->assertOk()->assertSee('data-pref="closed"', false);
+});
+
+it('stores the open choice and names the toggle accordingly', function (): void {
+    $this->admin->forceFill(['time_panel_open' => false])->save();
+
+    Livewire::test(RecentEntriesPanel::class)->call('setOpen', true)->assertSet('open', true);
+
+    expect($this->admin->refresh()->time_panel_open)->toBeTrue();
+
+    $this->get('/admin')
+        ->assertOk()
+        ->assertSee('data-pref="open"', false);
+
+    Livewire::test(TimerBar::class)->assertSeeHtml('aria-label="Skrýt poslední záznamy"');
+});
+
+it('keeps the toggle of the bar and the panel client-side below the docked width', function (): void {
+    $html = $this->get('/admin')->assertOk()->getContent();
+
+    // The bar dispatches a browser event; the panel's Alpine state listens to it and reports its
+    // state back. Only a toggle at docked width calls the server, so the overlay is never stored.
+    expect($html)->toContain('kokpit-time-panel-toggle')
+        ->and($html)->toContain('kokpit-time-panel-toggle.window')
+        ->and($html)->toContain('kokpit-time-panel-state')
+        ->and($html)->toContain('matchMedia')
+        ->and($html)->toContain('x-on:keydown.escape.window');
+});
+
+it('lets only the Admin write the preference and only on the own row', function (): void {
+    $partner = Canary::partnerFor(Canary::twoClients()[0]);
+    $other = Canary::admin();
+
+    expect(fn () => app(SetTimePanelOpen::class)->handle($partner, true))->toThrow(AuthorizationException::class);
+
+    app(SetTimePanelOpen::class)->handle($this->admin, false);
+
+    expect($partner->refresh()->time_panel_open)->toBeNull()
+        ->and($other->refresh()->time_panel_open)->toBeNull()
+        ->and($this->admin->refresh()->time_panel_open)->toBeFalse();
+});
+
+it('refuses a forged setOpen by a Partner and writes nothing', function (): void {
+    $forged = Livewire::test(RecentEntriesPanel::class);
+    $partner = Canary::partnerFor(Canary::twoClients()[0]);
+
+    $this->actingAs($partner);
+
+    $forged->call('setOpen', false)->assertForbidden();
+
+    expect($partner->refresh()->time_panel_open)->toBeNull()
+        ->and($this->admin->refresh()->time_panel_open)->toBeNull();
 });
