@@ -9,21 +9,27 @@ use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Billing\BillableDefault;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Queries\EntryContextOptions;
+use App\Domain\TimeTracking\Queries\OverlapFinder;
 use App\Domain\TimeTracking\Support\DurationFormat;
 use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Resources\TimeEntryResource\Pages\CreateTimeEntry;
+use App\Filament\Resources\TimeEntryResource\Pages\EditTimeEntry;
 use App\Filament\Resources\TimeEntryResource\Pages\ListTimeEntries;
 use App\Filament\Resources\TimeEntryResource\Pages\ViewTimeEntry;
 use App\Providers\LocalisationServiceProvider;
+use Carbon\CarbonImmutable;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -35,6 +41,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
+use Throwable;
 
 /**
  * The Admin time entry screens: the list, the create page and the entry page
@@ -153,7 +160,7 @@ final class TimeEntryResource extends Resource
                         ->live()
                         ->validationMessages(['in' => __('kokpit.time.errors.inconsistent_context')])
                         ->afterStateUpdated(static function (Get $get, Set $set, mixed $state): void {
-                            self::taskChanged($set, is_string($state) && $state !== '' ? $state : null);
+                            self::taskChanged($get, $set, is_string($state) && $state !== '' ? $state : null);
                         })
                         ->native(false),
                     Textarea::make('description')
@@ -168,18 +175,50 @@ final class TimeEntryResource extends Resource
                     DateTimePicker::make('started_at')
                         ->label(__('kokpit.time.fields.started_at'))
                         ->seconds()
-                        ->required(),
+                        ->required()
+                        ->live(),
                     DateTimePicker::make('ended_at')
                         ->label(__('kokpit.time.fields.ended_at'))
                         ->seconds()
                         ->required()
+                        ->live()
                         ->hidden($running),
+                    // A running entry has no end: the badge stands in the place of Konec.
+                    TextEntry::make('running_badge')
+                        ->label(__('kokpit.time.fields.ended_at'))
+                        ->state(__('kokpit.time.running_badge'))
+                        ->badge()
+                        ->color('warning')
+                        ->visible($running),
+                    TextEntry::make('duration_display')
+                        ->label(__('kokpit.time.fields.duration'))
+                        ->state(static fn (Get $get): string => self::liveDuration($get('started_at'), $get('ended_at'), $running)),
+                    // The overlap never blocks a save (D-04); it only tells the Admin about it.
+                    Callout::make(static fn (?TimeEntry $record, Get $get): string => self::overlapText($record, $get('started_at'), $get('ended_at'), $running) ?? '')
+                        ->warning()
+                        ->icon(Heroicon::OutlinedExclamationTriangle)
+                        ->visible(static fn (?TimeEntry $record, Get $get): bool => self::overlapText($record, $get('started_at'), $get('ended_at'), $running) !== null)
+                        ->columnSpanFull(),
                 ]),
             Section::make(__('kokpit.time.sections.billing'))
                 ->schema([
+                    // Set by hand once, the toggle is the user's: a task change no longer presets it (D-03).
+                    Hidden::make('billable_touched')
+                        ->default(false)
+                        ->afterStateHydrated(static function (Hidden $component, ?TimeEntry $record): void {
+                            $component->state($record !== null && $record->billable !== app(BillableDefault::class)->for($record->task));
+                        })
+                        ->dehydrated(false),
                     Toggle::make('billable')
                         ->label(__('kokpit.time.fields.billable'))
-                        ->default(true),
+                        ->default(true)
+                        ->live()
+                        ->afterStateUpdated(static function (Set $set): void {
+                            $set('billable_touched', true);
+                        })
+                        ->helperText(static fn (Get $get): ?string => $get('billable_touched') !== true && $get('billable') === false && self::id($get('task_id')) !== null
+                            ? (string) __('kokpit.time.billable_preset_helper')
+                            : null),
                 ]),
         ];
     }
@@ -280,6 +319,7 @@ final class TimeEntryResource extends Resource
             'index' => ListTimeEntries::route('/'),
             'create' => CreateTimeEntry::route('/create'),
             'view' => ViewTimeEntry::route('/{record}'),
+            'edit' => EditTimeEntry::route('/{record}/edit'),
         ];
     }
 
@@ -361,6 +401,7 @@ final class TimeEntryResource extends Resource
 
         if ($clientId === null || $taskClientId !== $clientId || ($projectId !== null && $taskProjectId !== $projectId)) {
             $set('task_id', null);
+            self::presetBillable($get, $set, null);
         }
     }
 
@@ -384,14 +425,18 @@ final class TimeEntryResource extends Resource
 
         if ($taskId !== null && ($projectId === null || $options->projectIdOfTask($taskId) !== $projectId)) {
             $set('task_id', null);
+            self::presetBillable($get, $set, null);
         }
     }
 
     /**
-     * Choosing a task sets its project and its client.
+     * Choosing a task sets its project and its client, and presets the billable toggle
+     * from the task (D-03); clearing the task presets it back.
      */
-    private static function taskChanged(Set $set, ?string $taskId): void
+    private static function taskChanged(Get $get, Set $set, ?string $taskId): void
     {
+        self::presetBillable($get, $set, $taskId);
+
         if ($taskId === null) {
             return;
         }
@@ -410,6 +455,91 @@ final class TimeEntryResource extends Resource
         if ($clientId !== null) {
             $set('client_id', $clientId);
         }
+    }
+
+    /**
+     * Presets the billable toggle from the task, unless the user already touched it. Only a
+     * task that resolves as non-billable turns it off; a project, a fixed price or a
+     * client never does (D-03).
+     */
+    private static function presetBillable(Get $get, Set $set, ?string $taskId): void
+    {
+        if ($get('billable_touched') === true) {
+            return;
+        }
+
+        $task = $taskId === null ? null : Task::query()->withTrashed()->find($taskId);
+
+        $set('billable', app(BillableDefault::class)->for($task));
+    }
+
+    /**
+     * The duration `H:MM:SS` shown live beside the pickers: from the start to the end, or to
+     * now for a running entry. Anything that does not form a positive interval shows a dash.
+     */
+    private static function liveDuration(mixed $start, mixed $end, bool $running): string
+    {
+        $from = self::pickerInstant($start);
+        $to = $running ? TimerClock::now() : self::pickerInstant($end);
+
+        if ($from === null || $to === null || $to->lessThanOrEqualTo($from)) {
+            return __('kokpit.time.empty_value');
+        }
+
+        return DurationFormat::hoursMinutesSeconds((int) $from->diffInSeconds($to, true));
+    }
+
+    /**
+     * The warning for the first other entry of the same user that overlaps the typed interval, or
+     * null. A finished entry needs both ends; a running one is open-ended.
+     */
+    private static function overlapText(?TimeEntry $record, mixed $start, mixed $end, bool $running): ?string
+    {
+        $from = self::pickerInstant($start);
+        $to = self::pickerInstant($end);
+
+        if ($from === null || (! $running && $to === null)) {
+            return null;
+        }
+
+        $userId = $record instanceof TimeEntry ? $record->user_id : auth()->id();
+
+        if (! is_string($userId)) {
+            return null;
+        }
+
+        $other = app(OverlapFinder::class)->first($userId, $from, $running ? null : $to, $record?->getKey());
+
+        if (! $other instanceof TimeEntry) {
+            return null;
+        }
+
+        $zone = FilamentTimezone::get();
+
+        return __('kokpit.time.overlap_callout', [
+            'label' => $other->task instanceof Task ? $other->task->reference.' · '.$other->task->title : (string) $other->client?->name,
+            'from' => $other->started_at->setTimezone($zone)->format(LocalisationServiceProvider::TIME_FORMAT),
+            'to' => $other->ended_at?->setTimezone($zone)->format(LocalisationServiceProvider::TIME_FORMAT) ?? '',
+        ]);
+    }
+
+    /**
+     * The instant of a date-time picker value as `$get()` returns it: `Y-m-d H:i:s` in the
+     * application timezone (the picker shows the panel timezone, its state cast converts back).
+     */
+    private static function pickerInstant(mixed $state): ?CarbonImmutable
+    {
+        if (! is_string($state) || trim($state) === '') {
+            return null;
+        }
+
+        try {
+            $instant = CarbonImmutable::createFromFormat('Y-m-d H:i:s', trim($state), (string) config('app.timezone'));
+        } catch (Throwable) {
+            return null;
+        }
+
+        return $instant;
     }
 
     /**

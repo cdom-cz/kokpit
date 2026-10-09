@@ -941,6 +941,8 @@ return [
         'empty_value' => '—',
         'yes' => 'ano',
         'no' => 'ne',
+        'billable_preset_helper' => 'Předvyplněno podle úkolu. Můžete to změnit.',
+        'overlap_callout' => 'Tento čas se překrývá s jiným záznamem (:label, :from–:to). Uložit ho můžete i tak.',
         'empty_heading' => 'Zatím tu nejsou žádné časové záznamy',
         'empty_description' => 'Spusťte časovač nebo vytvořte záznam tlačítkem Nový záznam.',
         'sections' => [

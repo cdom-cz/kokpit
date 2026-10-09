@@ -7,8 +7,11 @@ namespace App\Filament\Resources\TimeEntryResource\Pages;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Resources\TimeEntryResource;
 use App\Providers\LocalisationServiceProvider;
+use Filament\Actions\Action;
+use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Facades\FilamentTimezone;
+use Filament\Support\Icons\Heroicon;
 
 /**
  * The page of one entry. The heading is the date and the time range.
@@ -38,5 +41,17 @@ final class ViewTimeEntry extends ViewRecord
 
         return $entry->started_at->setTimezone(FilamentTimezone::get())->format(LocalisationServiceProvider::DATE_FORMAT)
             .' '.TimeEntryResource::timeRangeText($entry);
+    }
+
+    /**
+     * @return array<Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            EditAction::make()
+                ->label(__('kokpit.time.edit_entry'))
+                ->icon(Heroicon::OutlinedPencilSquare),
+        ];
     }
 }

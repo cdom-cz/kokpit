@@ -3,15 +3,19 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
-use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Resources\TimeEntryResource;
 use App\Filament\Resources\TimeEntryResource\Pages\CreateTimeEntry;
+use App\Filament\Resources\TimeEntryResource\Pages\EditTimeEntry;
 use App\Filament\Resources\TimeEntryResource\Pages\ListTimeEntries;
 use App\Filament\Resources\TimeEntryResource\Pages\ViewTimeEntry;
+use Carbon\CarbonImmutable;
+use Database\Factories\ProjectFactory;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -31,9 +35,11 @@ function entryFormWorld(): array
     $admin = test()->admin;
     $a = Client::factory()->create(['name' => 'Cihla']);
     $b = Client::factory()->create(['name' => 'Dub']);
-    $project = static fn (Client $client, string $key): Project => app(PartnerContext::class)->runAsSystem(
-        static fn (): Project => Project::factory()->create(['client_id' => $client->id, 'key' => $key]),
-    );
+    $project = static fn (Client $client, string $key): Project => app(CreateProject::class)->handle($client, [
+        'name' => 'Example project '.$key,
+        'key' => $key,
+        'billing_type' => 'hourly',
+    ]);
     $pa = $project($a, 'AAA');
     $pa2 = $project($a, 'AAB');
     $pb = $project($b, 'BBB');
@@ -153,6 +159,7 @@ it('refuses a Partner every time entry route', function (): void {
     $this->get('/admin/time-entries')->assertForbidden();
     $this->get('/admin/time-entries/create')->assertForbidden();
     $this->get('/admin/time-entries/'.$entry->id)->assertForbidden();
+    $this->get('/admin/time-entries/'.$entry->id.'/edit')->assertForbidden();
 });
 
 it('is not globally searchable', function (): void {
@@ -271,4 +278,226 @@ it('reports a missing client as a field error under the client and stores nothin
 
     expect($component->errors()->get('data.client_id'))->toContain('Vyberte klienta.')
         ->and(TimeEntry::query()->count())->toBe(0);
+});
+
+/**
+ * A task of a new project, with the given billing keys written through UpdateTask like the edit page does.
+ *
+ * @param  array<string, mixed>  $projectData
+ * @param  array<string, mixed>  $billing
+ */
+function entryFormTask(array $projectData = [], array $billing = []): Task
+{
+    $project = app(CreateProject::class)->handle(Client::factory()->create(), [
+        'name' => 'Example billing project',
+        'key' => ProjectFactory::randomKey(),
+        'billing_type' => 'hourly',
+        ...$projectData,
+    ]);
+    $task = app(CreateTask::class)->handle(test()->admin, $project, ['title' => 'Example billing task']);
+
+    return $billing === [] ? $task : app(UpdateTask::class)->handle(test()->admin, $task, $billing)->refresh();
+}
+
+it('edits the description and the times of a finished entry through the Action', function (): void {
+    $entry = TimeEntry::factory()->create(['description' => 'Example before']);
+
+    Livewire::test(EditTimeEntry::class, ['record' => $entry->id])
+        ->fillForm(['description' => 'Example after', 'started_at' => '2026-10-12 09:00:00', 'ended_at' => '2026-10-12 10:15:30'])
+        ->call('save')
+        ->assertHasNoFormErrors()
+        ->assertNotified('Záznam byl uložen');
+
+    $entry->refresh();
+
+    expect($entry->description)->toBe('Example after')
+        ->and($entry->started_at->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-12 07:00:00')
+        ->and($entry->duration_seconds)->toBe(4530);
+});
+
+it('refuses an end before the start as a field error under Konec and leaves the row unchanged', function (): void {
+    $entry = TimeEntry::factory()->create(['description' => 'Example kept']);
+    $before = $entry->only(['started_at', 'ended_at']);
+
+    $component = Livewire::test(EditTimeEntry::class, ['record' => $entry->id])
+        ->fillForm(['description' => 'Example changed', 'started_at' => '2026-10-12 10:00:00', 'ended_at' => '2026-10-12 09:00:00'])
+        ->call('save')
+        ->assertHasFormErrors(['ended_at']);
+
+    $entry->refresh();
+
+    expect($component->errors()->get('data.ended_at'))->toContain('Konec musí být později než začátek.')
+        ->and($entry->description)->toBe('Example kept')
+        ->and($entry->started_at->equalTo($before['started_at']))->toBeTrue()
+        ->and($entry->ended_at?->equalTo($before['ended_at']))->toBeTrue();
+});
+
+it('refuses an over-long description as a field error and leaves the row unchanged', function (): void {
+    $entry = TimeEntry::factory()->create(['description' => 'Example kept']);
+
+    Livewire::test(EditTimeEntry::class, ['record' => $entry->id])
+        ->fillForm(['description' => str_repeat('x', 1001)])
+        ->call('save')
+        ->assertHasFormErrors(['description']);
+
+    expect($entry->refresh()->description)->toBe('Example kept');
+});
+
+it('shows a running entry without Konec and with the badge, and keeps it running when a task is saved', function (): void {
+    $task = entryFormTask();
+    $entry = TimeEntry::factory()->running()->create(['client_id' => $task->project?->client_id]);
+
+    Livewire::test(EditTimeEntry::class, ['record' => $entry->id])
+        ->assertSee('Běží')
+        ->assertFormFieldIsHidden('ended_at')
+        ->set('data.task_id', $task->id)
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    $entry->refresh();
+
+    expect($entry->task_id)->toBe($task->id)
+        ->and($entry->project_id)->toBe($task->project_id)
+        ->and($entry->ended_at)->toBeNull();
+});
+
+it('keeps a running entry editable after its task, project and client were archived', function (): void {
+    $task = entryFormTask();
+    $entry = TimeEntry::factory()->running()->create(['client_id' => $task->project?->client_id, 'project_id' => $task->project_id, 'task_id' => $task->id]);
+    $task->delete();
+    Project::query()->whereKey($task->project_id)->firstOrFail()->delete();
+    Client::query()->whereKey($entry->client_id)->firstOrFail()->delete();
+
+    Livewire::test(EditTimeEntry::class, ['record' => $entry->id])
+        ->assertSee('Běží')
+        ->fillForm(['description' => 'Example still saved'])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($entry->refresh()->description)->toBe('Example still saved')
+        ->and($entry->task_id)->toBe($task->id);
+});
+
+it('shows the duration live from the two pickers', function (): void {
+    $client = Client::factory()->create();
+
+    Livewire::test(CreateTimeEntry::class)
+        ->fillForm(['client_id' => $client->id, 'started_at' => '2026-10-12 10:00:00', 'ended_at' => '2026-10-12 11:25:07'])
+        ->assertSee('1:25:07')
+        ->fillForm(['ended_at' => '2026-10-12 09:00:00'])
+        ->assertDontSee('1:25:07');
+});
+
+it('warns about an overlap with another entry and still saves', function (): void {
+    $client = Client::factory()->create(['name' => 'Cihla']);
+    $other = TimeEntry::factory()->create([
+        'user_id' => $this->admin->id,
+        'client_id' => $client->id,
+        'started_at' => CarbonImmutable::parse('2026-10-12 09:00:00', 'Europe/Prague')->utc(),
+        'ended_at' => CarbonImmutable::parse('2026-10-12 10:00:00', 'Europe/Prague')->utc(),
+    ]);
+
+    Livewire::test(CreateTimeEntry::class)
+        ->fillForm(['client_id' => $client->id, 'started_at' => '2026-10-12 09:30:00', 'ended_at' => '2026-10-12 10:30:00'])
+        ->assertSee('Tento čas se překrývá s jiným záznamem (Cihla, 09:00–10:00). Uložit ho můžete i tak.')
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    expect(TimeEntry::query()->count())->toBe(2)
+        ->and($other->refresh()->id)->not->toBeNull();
+});
+
+it('shows no overlap warning for entries that only touch, for another user or for the entry being edited', function (): void {
+    $client = Client::factory()->create();
+    $entry = TimeEntry::factory()->create([
+        'user_id' => $this->admin->id,
+        'client_id' => $client->id,
+        'started_at' => CarbonImmutable::parse('2026-10-12 09:00:00', 'Europe/Prague')->utc(),
+        'ended_at' => CarbonImmutable::parse('2026-10-12 10:00:00', 'Europe/Prague')->utc(),
+    ]);
+    TimeEntry::factory()->create([
+        'client_id' => $client->id,
+        'started_at' => CarbonImmutable::parse('2026-10-12 12:00:00', 'Europe/Prague')->utc(),
+        'ended_at' => CarbonImmutable::parse('2026-10-12 13:00:00', 'Europe/Prague')->utc(),
+    ]);
+
+    Livewire::test(CreateTimeEntry::class)
+        ->fillForm(['client_id' => $client->id, 'started_at' => '2026-10-12 10:00:00', 'ended_at' => '2026-10-12 11:00:00'])
+        ->assertDontSee('Tento čas se překrývá')
+        ->fillForm(['started_at' => '2026-10-12 12:15:00', 'ended_at' => '2026-10-12 12:45:00'])
+        ->assertDontSee('Tento čas se překrývá');
+
+    Livewire::test(EditTimeEntry::class, ['record' => $entry->id])
+        ->assertDontSee('Tento čas se překrývá');
+});
+
+it('presets the billable toggle off for a non-billable task and says so', function (): void {
+    $task = entryFormTask(billing: ['billing_type' => 'non_billable']);
+
+    Livewire::test(CreateTimeEntry::class)
+        ->assertSet('data.billable', true)
+        ->assertDontSee('Předvyplněno podle úkolu. Můžete to změnit.')
+        ->set('data.task_id', $task->id)
+        ->assertSet('data.billable', false)
+        ->assertSee('Předvyplněno podle úkolu. Můžete to změnit.');
+});
+
+it('puts the toggle back on when the non-billable task is cleared before the user touched it', function (): void {
+    $task = entryFormTask(billing: ['billing_type' => 'non_billable']);
+
+    Livewire::test(CreateTimeEntry::class)
+        ->set('data.task_id', $task->id)
+        ->assertSet('data.billable', false)
+        ->set('data.task_id', null)
+        ->assertSet('data.billable', true);
+});
+
+it('keeps the toggle the user set when another task is chosen', function (): void {
+    $first = entryFormTask(billing: ['billing_type' => 'non_billable']);
+    $second = entryFormTask(billing: ['billing_type' => 'non_billable']);
+    $hourly = entryFormTask();
+
+    Livewire::test(CreateTimeEntry::class)
+        ->set('data.task_id', $first->id)
+        ->assertSet('data.billable', false)
+        ->set('data.billable', true)
+        ->set('data.task_id', $second->id)
+        ->assertSet('data.billable', true)
+        ->set('data.task_id', $hourly->id)
+        ->assertSet('data.billable', true);
+});
+
+it('keeps the toggle on for a task of a fixed-price project and stores the toggle', function (): void {
+    $task = entryFormTask(['billing_type' => 'fixed_price', 'hourly_rate' => null, 'fixed_price' => '5000']);
+
+    Livewire::test(CreateTimeEntry::class)
+        ->set('data.task_id', $task->id)
+        ->assertSet('data.billable', true)
+        ->fillForm(['started_at' => '2026-10-12 10:00:00', 'ended_at' => '2026-10-12 10:30:00'])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    expect(TimeEntry::query()->firstOrFail()->billable)->toBeTrue();
+
+    $nonBillable = entryFormTask(billing: ['billing_type' => 'non_billable']);
+
+    Livewire::test(CreateTimeEntry::class)
+        ->set('data.task_id', $nonBillable->id)
+        ->fillForm(['started_at' => '2026-10-13 10:00:00', 'ended_at' => '2026-10-13 10:30:00'])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    expect(TimeEntry::query()->where('task_id', $nonBillable->id)->firstOrFail()->billable)->toBeFalse();
+});
+
+it('refuses an edit of a billed entry with a danger notification and leaves it unchanged', function (): void {
+    $entry = TimeEntry::factory()->create(['description' => 'Example billed']);
+    $entry->forceFill(['billing_state' => 'billed', 'billed_at' => now()])->save();
+
+    Livewire::test(EditTimeEntry::class, ['record' => $entry->id])
+        ->fillForm(['description' => 'Example changed'])
+        ->call('save')
+        ->assertNotified('Záznam je vyfakturovaný a nelze ho upravit. Nejdřív zrušte fakturaci.');
+
+    expect($entry->refresh()->description)->toBe('Example billed');
 });
