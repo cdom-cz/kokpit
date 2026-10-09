@@ -13,6 +13,7 @@ use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\IsolatesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use ArrayAccess;
 use Carbon\CarbonInterface;
 use Database\Factories\TaskFactory;
@@ -202,6 +203,18 @@ final class Task extends KokpitModel implements PartnerIsolated, Sortable
     public function checklistItems(): HasMany
     {
         return $this->hasMany(TaskChecklistItem::class)->orderBy('position')->orderBy('id');
+    }
+
+    /**
+     * The tracked time logged to this task, newest first. Admin-only: TimeEntry is closed to every
+     * Partner, so the relation is empty for a Partner. A parent task does not include the entries of
+     * its subtasks.
+     *
+     * @return HasMany<TimeEntry, $this>
+     */
+    public function timeEntries(): HasMany
+    {
+        return $this->hasMany(TimeEntry::class)->orderByDesc('started_at')->orderByDesc('id');
     }
 
     /**

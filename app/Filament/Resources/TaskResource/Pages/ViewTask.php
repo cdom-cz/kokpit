@@ -14,7 +14,11 @@ use App\Domain\Tasks\Billing\EffectiveBilling;
 use App\Domain\Tasks\Billing\TaskBillingResolver;
 use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Queries\TimeTotals;
+use App\Domain\TimeTracking\Support\DurationFormat;
+use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Resources\TaskResource;
+use App\Filament\Resources\TimeEntryResource;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
@@ -32,6 +36,13 @@ use Illuminate\Validation\ValidationException;
 final class ViewTask extends ViewRecord
 {
     protected static string $resource = TaskResource::class;
+
+    /**
+     * The time sums of the task in this request; not a public property, so it is never in the snapshot.
+     *
+     * @var array{worked: int, billed: int, unbilled: int, non_billable: int}|null
+     */
+    private ?array $timeTotals = null;
 
     public function getTitle(): string
     {
@@ -62,7 +73,46 @@ final class ViewTask extends ViewRecord
         return $schema->components([
             ...$components,
             $this->effectiveBillingSection(),
+            $this->timeSection(),
         ]);
+    }
+
+    /**
+     * The tracked time of this task (UI-SPEC Surface C): worked and still unbilled hours and the
+     * link to the entries of the task. No money. Checked for the Admin before anything is read, like
+     * the billing section, so it never renders, or even queries, for anybody else. The time of the
+     * subtasks is not added: each subtask shows its own.
+     */
+    private function timeSection(): Section
+    {
+        return Section::make(__('kokpit.time.task.section'))
+            ->columns(3)
+            ->visible(static fn (): bool => app(PartnerContext::class)->isAdmin())
+            ->schema([
+                TextEntry::make('time_worked')
+                    ->label(__('kokpit.time.task.worked'))
+                    ->state(fn (Task $record): string => DurationFormat::hoursMinutes($this->timeTotals($record)['worked'])),
+                TextEntry::make('time_unbilled')
+                    ->label(__('kokpit.time.task.unbilled'))
+                    ->state(fn (Task $record): string => DurationFormat::hoursMinutes($this->timeTotals($record)['unbilled'])),
+                TextEntry::make('time_entries_link')
+                    ->hiddenLabel()
+                    ->state(__('kokpit.time.task.show_entries'))
+                    ->color('primary')
+                    ->url(static fn (Task $record): string => TimeEntryResource::getUrl('index', [
+                        'filters' => ['task_id' => ['value' => $record->getKey()]],
+                    ])),
+            ]);
+    }
+
+    /**
+     * The sums of the task, read once per request for both figures.
+     *
+     * @return array{worked: int, billed: int, unbilled: int, non_billable: int}
+     */
+    private function timeTotals(Task $task): array
+    {
+        return $this->timeTotals ??= app(TimeTotals::class)->forTask($task, TimerClock::now());
     }
 
     /**

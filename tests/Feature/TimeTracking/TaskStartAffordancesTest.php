@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Actions\ArchiveTask;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
@@ -15,6 +16,8 @@ use App\Filament\Resources\ProjectResource\Pages\ProjectBoard;
 use App\Filament\Resources\TaskResource\Pages\EditTask;
 use App\Filament\Resources\TaskResource\Pages\ListTasks;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
+use App\Filament\Resources\TimeEntryResource;
+use App\Filament\Resources\TimeEntryResource\Pages\ListTimeEntries;
 use Carbon\CarbonImmutable;
 use Database\Factories\ProjectFactory;
 use Filament\Facades\Filament;
@@ -345,4 +348,129 @@ it('refuses a forged card toggle by a Partner on a board the Admin mounted and w
     $board->call('toggleTimer', $task->id)->assertForbidden();
 
     expect(TimeEntry::query()->count())->toBe(0);
+});
+
+it('shows the worked and the unbilled time of the task with a running entry at its elapsed time', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 12:00:00', 'UTC'));
+    $task = taskStartTask();
+    $at = static fn (string $time): CarbonImmutable => CarbonImmutable::parse('2026-10-12 '.$time, 'UTC');
+
+    TimeEntry::factory()->forTask($task)->create(['user_id' => test()->admin->id, 'started_at' => $at('06:00:00'), 'ended_at' => $at('07:30:00')]);
+    TimeEntry::factory()->forTask($task)->billed()->create(['user_id' => test()->admin->id, 'started_at' => $at('08:00:00'), 'ended_at' => $at('08:45:00')]);
+    TimeEntry::factory()->forTask($task)->create(['user_id' => test()->admin->id, 'billable' => false, 'started_at' => $at('09:00:00'), 'ended_at' => $at('09:20:00')]);
+    TimeEntry::factory()->forTask($task)->create(['user_id' => test()->admin->id, 'started_at' => $at('11:50:00'), 'ended_at' => null]);
+    // Another task of the same project carries its own time and is not counted here.
+    TimeEntry::factory()->forTask(taskStartTask(project: Project::query()->findOrFail($task->project_id)))->create(['user_id' => test()->admin->id, 'started_at' => $at('05:00:00'), 'ended_at' => $at('05:50:00')]);
+
+    $html = (string) Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->assertSee('Odpracováno')
+        ->assertSee('Nevyfakturováno')
+        ->html();
+
+    expect(preg_replace('/\s+/', ' ', strip_tags($html)))
+        ->toContain('Odpracováno 2:45')
+        ->toContain('Nevyfakturováno 1:40');
+});
+
+it('shows zero time for a task without entries', function (): void {
+    $task = taskStartTask();
+
+    $html = (string) Livewire::test(ViewTask::class, ['record' => $task->reference])->html();
+
+    expect(preg_replace('/\s+/', ' ', strip_tags($html)))
+        ->toContain('Odpracováno 0:00')
+        ->toContain('Nevyfakturováno 0:00');
+});
+
+it('reads the time of the task with one aggregate query and shows no money', function (): void {
+    $task = taskStartTask();
+    TimeEntry::factory()->forTask($task)->create(['user_id' => $this->admin->id]);
+
+    DB::enableQueryLog();
+    $html = (string) Livewire::test(ViewTask::class, ['record' => $task->reference])->html();
+    $sums = collect(DB::getQueryLog())->filter(static fn (array $query): bool => str_contains($query['query'], 'FILTER'))->count();
+    DB::disableQueryLog();
+
+    $section = substr($html, (int) strpos($html, 'Odpracováno'));
+
+    expect($sums)->toBe(1)
+        ->and(substr($section, 0, 1500))->not->toContain('Kč');
+});
+
+it('links to the entries list filtered to the task and that list shows only its entries', function (): void {
+    $task = taskStartTask();
+    $own = TimeEntry::factory()->forTask($task)->create(['user_id' => $this->admin->id]);
+    $foreign = TimeEntry::factory()->forTask(taskStartTask())->create(['user_id' => $this->admin->id]);
+    $url = TimeEntryResource::getUrl('index', ['filters' => ['task_id' => ['value' => $task->id]]]);
+
+    $html = (string) Livewire::test(ViewTask::class, ['record' => $task->reference])->assertSee('Zobrazit záznamy')->html();
+
+    expect(html_entity_decode($html))->toContain($url);
+
+    Livewire::withQueryParams(['filters' => ['task_id' => ['value' => $task->id]]])
+        ->test(ListTimeEntries::class)
+        ->assertCanSeeTableRecords([$own])
+        ->assertCanNotSeeTableRecords([$foreign]);
+});
+
+/**
+ * A task of a client-visible project of the client, written by the Admin.
+ */
+function taskStartPartnerTask(string $clientId): Task
+{
+    return app(PartnerContext::class)->runAsSystem(static function () use ($clientId): Task {
+        $project = app(CreateProject::class)->handle(Client::query()->findOrFail($clientId), [
+            'name' => 'Example partner project',
+            'key' => ProjectFactory::randomKey(),
+            'billing_type' => 'hourly',
+            'client_visible' => true,
+        ]);
+
+        return app(CreateTask::class)->handle(test()->admin, $project, ['title' => 'Example partner task']);
+    });
+}
+
+it('shows a Partner none of the timer controls or time figures on the task list and the task page', function (): void {
+    $partner = Canary::partnerFor(Canary::twoClients()[0]);
+    $task = taskStartPartnerTask((string) $partner->client_id);
+    TimeEntry::factory()->forTask($task)->create(['user_id' => $this->admin->id]);
+
+    $this->actingAs($partner);
+
+    foreach (['/admin/my-tasks', '/admin/my-tasks/'.$task->reference] as $url) {
+        $body = (string) $this->get($url)->assertOk()->getContent();
+
+        expect($body)->toContain('Example partner task');
+
+        foreach (['Spustit časovač', 'Zastavit časovač', 'Odpracováno', 'Nevyfakturováno', 'toggleTimer'] as $text) {
+            expect($body)->not->toContain($text, $url);
+        }
+    }
+});
+
+it('refuses a Partner the Admin task page and the board toggle', function (): void {
+    $partner = Canary::partnerFor(Canary::twoClients()[0]);
+    $task = taskStartPartnerTask((string) $partner->client_id);
+
+    $this->actingAs($partner);
+
+    $this->get('/admin/tasks/'.$task->reference)->assertForbidden();
+    Livewire::test(ViewTask::class, ['record' => $task->reference])->assertForbidden();
+    Livewire::test(TaskBoardPage::class)->assertForbidden();
+});
+
+it('shows no timer control in the preview slide-over of a board card', function (): void {
+    $task = taskStartBoardTask();
+
+    $component = Livewire::test(TaskBoardPage::class)->mountAction('preview', ['task' => $task->id]);
+    $action = $component->instance()->getMountedAction();
+    $html = $action->getModalHeading().' '.$action->getModalContent()?->render().' '.implode(' ', array_map(
+        static fn ($extra): string => (string) $extra->getLabel(),
+        array_values($action->getExtraModalFooterActions()),
+    ));
+
+    expect($html)->toContain($task->reference)
+        ->not->toContain('časovač')
+        ->not->toContain('toggleTimer')
+        ->not->toContain('Odpracováno');
 });
