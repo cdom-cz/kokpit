@@ -28,6 +28,7 @@ use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use App\Filament\Resources\TaskResource\RelationManagers\SubtasksRelationManager;
 use App\Filament\Resources\TaskResource\RelationManagers\TaskCommentsRelationManager;
 use App\Filament\Support\TaskColumns;
+use App\Filament\Support\TaskTimerToggle;
 use BackedEnum;
 use Carbon\CarbonImmutable;
 use Closure;
@@ -59,7 +60,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Component;
 use Throwable;
+use WeakMap;
 
 /**
  * The Admin task screens: the list with its quick create modal and the full task
@@ -88,6 +91,14 @@ final class TaskResource extends Resource
     protected static bool $isGloballySearchable = true;
 
     protected static ?int $navigationSort = 30;
+
+    /**
+     * The running task id read for a Livewire component in this request; the key is weak, so the
+     * entry dies with the component.
+     *
+     * @var WeakMap<Component, array{id: string|null}>|null
+     */
+    private static ?WeakMap $runningTasks = null;
 
     public static function getNavigationLabel(): string
     {
@@ -362,6 +373,8 @@ final class TaskResource extends Resource
                 ->orderByDesc($query->qualifyColumn('updated_at'))
                 ->orderByDesc($query->qualifyColumn('id')))
             ->recordActions([
+                // One click, outside any group; it turns into the stop icon on the running task (TI-01).
+                self::timerAction()->iconButton(),
                 ViewAction::make(),
                 self::archiveAction(),
                 self::restoreAction(),
@@ -437,6 +450,70 @@ final class TaskResource extends Resource
 
                 $record->refresh();
             });
+    }
+
+    /**
+     * Starts the timer for the task, or stops it while this task is the running one (TI-01, D-01).
+     *
+     * One click on the task page, the edit page and the list row. The task id is the only input of
+     * StartTimer, so the project, the client and the billable default (D-03) come from the task, and
+     * a running timer is stopped and kept (D-02). Hidden for an archived task. The label, icon and
+     * colour follow whether the record is the running task of the signed-in user, read once per
+     * request and surface. The start and the stop themselves are StartTimer and StopTimer, called
+     * through TaskTimerToggle, which every task surface shares. The other timer surfaces refresh on
+     * the event.
+     */
+    public static function timerAction(): Action
+    {
+        $running = static fn (?Model $record, Component $livewire): bool => $record instanceof Task
+            && self::runningTaskId($livewire) === $record->getKey();
+
+        return Action::make('toggleTimer')
+            ->label(static fn (?Model $record, Component $livewire): string => (string) __($running($record, $livewire) ? 'kokpit.time.timer.stop' : 'kokpit.time.timer.start'))
+            ->tooltip(static fn (?Model $record, Component $livewire): string => (string) __($running($record, $livewire) ? 'kokpit.time.timer.stop' : 'kokpit.time.timer.start'))
+            ->icon(static fn (?Model $record, Component $livewire): Heroicon => $running($record, $livewire) ? Heroicon::OutlinedStop : Heroicon::OutlinedPlay)
+            ->color(static fn (?Model $record, Component $livewire): string => $running($record, $livewire) ? 'warning' : 'gray')
+            ->visible(static fn (?Model $record): bool => $record instanceof Task && ! $record->trashed())
+            ->action(static function (Model $record, Component $livewire): void {
+                abort_unless(self::canAccess(), 403);
+                assert($record instanceof Task);
+
+                $actor = auth()->user();
+                assert($actor instanceof User);
+
+                $event = app(TaskTimerToggle::class)->handle($actor, $record);
+
+                // The running task changed (or was found stale): read it again on the next render.
+                self::forgetRunningTask($livewire);
+
+                if ($event !== null) {
+                    $livewire->dispatch($event);
+                }
+            });
+    }
+
+    /**
+     * The id of the signed-in user's running task, one query per request and component however
+     * many rows and actions ask.
+     */
+    private static function runningTaskId(Component $livewire): ?string
+    {
+        $cache = self::$runningTasks ??= new WeakMap;
+
+        if (! isset($cache[$livewire])) {
+            $actor = auth()->user();
+
+            $cache[$livewire] = ['id' => $actor instanceof User ? app(TaskTimerToggle::class)->runningTaskId($actor) : null];
+        }
+
+        return $cache[$livewire]['id'];
+    }
+
+    private static function forgetRunningTask(Component $livewire): void
+    {
+        if (self::$runningTasks instanceof WeakMap) {
+            unset(self::$runningTasks[$livewire]);
+        }
     }
 
     /**

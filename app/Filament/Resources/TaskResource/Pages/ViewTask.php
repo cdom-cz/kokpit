@@ -132,6 +132,8 @@ final class ViewTask extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            // One click to start or stop tracking this task; hidden while it is archived (TI-01).
+            TaskResource::timerAction()->record($this->getRecord()),
             // An archived task is read-only until it is restored.
             EditAction::make()
                 ->hidden(fn (): bool => $this->getRecord() instanceof Task && $this->getRecord()->trashed()),

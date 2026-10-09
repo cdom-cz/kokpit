@@ -950,6 +950,12 @@ return [
             'time' => 'Čas',
             'billing' => 'Fakturace',
         ],
+        'task' => [
+            'section' => 'Čas',
+            'worked' => 'Odpracováno',
+            'unbilled' => 'Nevyfakturováno',
+            'show_entries' => 'Zobrazit záznamy',
+        ],
         'fields' => [
             'client' => 'Klient',
             'project' => 'Projekt',

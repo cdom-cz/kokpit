@@ -38,6 +38,7 @@ final class EditTask extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            TaskResource::timerAction()->record($this->getRecord()),
             ViewAction::make(),
         ];
     }
