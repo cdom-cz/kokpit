@@ -85,6 +85,12 @@ Refined by the planner to the 17 plans (one plan per wave). Every test file is c
 | 05-16-03 | 05-16 | 16 | TA-07 | T-05-39, T-05-40, T-05-43 | Canary leak proof over every Partner notification | isolation | `ddev exec vendor/bin/pest tests/Isolation/NotificationLeakTest.php` | ✅ | ✅ green |
 | 05-17-01 | 05-17 | 17 | all | T-05-41 | Documented Phase 5 classes exist | feature | `ddev exec vendor/bin/pest tests/Feature/Repo/RepositoryFilesTest.php` | ✅ | ✅ green |
 | 05-17-02 | 05-17 | 17 | all | T-05-41 | Full phase gate | full | `ddev exec vendor/bin/pest` | ✅ | ✅ green |
+| 05-18-01 | 05-18 | 18 | TA-01 | CR-01 | Edit form keeps the stored (deactivated) person of its own field; a rename saves | feature | `ddev exec vendor/bin/pest tests/Feature/Tasks/TaskUpdateTest.php` | ✅ | ✅ green |
+| 05-18-02 | 05-18 | 18 | TA-01 | CR-01 | New inactive or foreign picks refused as a field error; kept person offered only in its own field | feature | `ddev exec vendor/bin/pest tests/Feature/Tasks/TaskUpdateTest.php` | ✅ | ✅ green |
+| 05-18-03 | 05-18 | 18 | TA-07 | G-1 | A Partner create payload cannot attach tags; the Admin payload stores them | feature | `ddev exec vendor/bin/pest tests/Feature/Tasks/TaskActionsTest.php` | ✅ | ✅ green |
+| 05-19-01 | 05-19 | 19 | TA-07, TA-04 | T-05-44 | Task title and actor name escaped once in the TaskNotification base (mail and bell) | isolation | `ddev exec vendor/bin/pest tests/Isolation/NotificationMarkupTest.php` | ✅ | ✅ green |
+| 05-19-02 | 05-19 | 19 | TA-07, TA-04 | T-05-44 | Markup matrix over every notification class and audience; idempotency; 120/300 cuts; completeness and structure pins | isolation | `ddev exec vendor/bin/pest tests/Isolation/NotificationMarkupTest.php tests/Feature/Tasks/TaskNotificationsTest.php tests/Isolation/NotificationLeakTest.php` | ✅ | ✅ green |
+| 05-19-03 | 05-19 | 19 | TA-07 | T-05-44 | CONTRIBUTING escaping rule pinned; closing gate of the gap closure | feature + full | `ddev exec vendor/bin/pest tests/Feature/Repo/RepositoryFilesTest.php` | ✅ | ✅ green |
 
 *Status: ✅ green · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -111,6 +117,7 @@ Each item is created by the plan that first needs it (tracer-first; no separate 
 | Czech copy review | TA-07 | Wording judgement | Read all new `lang/cs` strings (plan 05-17) |
 | Mail rendering in Mailpit | TA-07 | Visual check | Trigger a Partner comment, an escalation to the Admin and an escalation to a Partner assignee, open the mails (plan 05-16) |
 | End-to-end walk as Admin and Partner | all | Whole-flow judgement | Plan 05-17 human check |
+| Markup in a task title or display name renders as plain text in Mailpit and the bell | TA-07 | Visual check of the mail clients and the bell | Restart the worker, comment as a fictional Partner on a task whose title holds a Markdown link and an HTML anchor, open the Admin mails and bell (plan 05-19, extends UAT test 3) |
 
 ---
 
@@ -131,4 +138,12 @@ Each item is created by the plan that first needs it (tracer-first; no separate 
 |---|---|
 | Gaps found | 0 |
 | Resolved | 0 |
+| Escalated | 0 |
+
+## Validation Audit 2026-10-09
+
+| Metric | Count |
+|---|---|
+| Gaps found | 6 |
+| Resolved | 6 |
 | Escalated | 0 |
