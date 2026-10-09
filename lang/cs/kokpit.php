@@ -1059,6 +1059,27 @@ return [
             'complete' => 'Doplnit záznam',
             'complete_heading' => 'Doplnit běžící záznam',
         ],
+        'panel' => [
+            'heading' => 'Poslední záznamy',
+            'show' => 'Zobrazit poslední záznamy',
+            'hide' => 'Skrýt poslední záznamy',
+            'today' => 'Dnes',
+            'weekdays' => [
+                1 => 'Pondělí',
+                2 => 'Úterý',
+                3 => 'Středa',
+                4 => 'Čtvrtek',
+                5 => 'Pátek',
+                6 => 'Sobota',
+                7 => 'Neděle',
+            ],
+            'load_older' => 'Načíst starší záznamy',
+            'show_all' => 'Zobrazit všechny záznamy',
+            'empty_heading' => 'Zatím tu nejsou žádné záznamy',
+            'empty_body' => 'Spusťte časovač výše. Záznam můžete přidat i ručně v nabídce Časové záznamy.',
+            'callout_heading' => 'Časovač běží příliš dlouho',
+            'callout_body' => 'Běží déle než :hours h. Zkontrolujte, jestli ho nemáte zastavit.',
+        ],
     ],
 
 ];

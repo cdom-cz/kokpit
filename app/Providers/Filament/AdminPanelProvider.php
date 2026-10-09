@@ -103,6 +103,14 @@ class AdminPanelProvider extends PanelProvider
                     ? Blade::render('@livewire(\App\Livewire\TimeTracking\TimerBar::class)')
                     : '',
             )
+            // The side panel "Poslední záznamy" at the end of the layout row, next to the page
+            // content (D-08). Same guard as the bar: nothing is rendered for a Partner.
+            ->renderHook(
+                PanelsRenderHook::LAYOUT_END,
+                static fn (): string => app(PartnerContext::class)->isAdmin()
+                    ? Blade::render('@livewire(\App\Livewire\TimeTracking\RecentEntriesPanel::class)')
+                    : '',
+            )
             ->colors([
                 'primary' => Color::Amber,
             ])
