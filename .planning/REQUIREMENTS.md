@@ -80,7 +80,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 ### Time Tracking
 
 - [x] **TI-01**: A timer is visible throughout the app and can be started from a task in at most two clicks
-- [ ] **TI-02**: Manual creation and editing of entries (from, to, client, project, task, description)
+- [x] **TI-02**: Manual creation and editing of entries (from, to, client, project, task, description)
 - [ ] **TI-03**: Entries can have only a client (no project or task); client is always required
 - [x] **TI-04**: Billable flag defaults to true and is pre-set to false for non-billable projects/tasks; user can override
 - [x] **TI-05**: Entries can be marked billed manually, in bulk, or automatically by invoicing; billed entries are locked until billing is cancelled
@@ -247,7 +247,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | KB-02 | Phase 5 | Complete |
 | KB-03 | Phase 5 | Complete |
 | TI-01 | Phase 6 | Complete |
-| TI-02 | Phase 6 | Pending |
+| TI-02 | Phase 6 | Complete |
 | TI-03 | Phase 6 | Pending |
 | TI-04 | Phase 6 | Complete |
 | TI-05 | Phase 6 | Complete |

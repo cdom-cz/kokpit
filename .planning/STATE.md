@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: time-tracking
 status: executing
-stopped_at: Completed 06-06-PLAN.md
-last_updated: "2026-10-09T14:18:19.996Z"
+stopped_at: Completed 06-07-PLAN.md
+last_updated: "2026-10-09T14:40:48.830Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 06 execution started
-state_head: 8c50306aa589ecdeab48bebc75dfde84f781df05
+state_head: e80aec071c22e9df82aafc6cb9a6cfd6690736c3
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 100
-  completed_plans: 92
+  completed_plans: 93
   percent: 42
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 06 (time-tracking) — EXECUTING
-Plan: 7 of 14
+Plan: 8 of 14
 Status: Ready to execute
 Last activity: 2026-10-09 — Phase 06 execution started
 
@@ -152,6 +152,7 @@ Progress: [████░░░░░░] 42%
 | Phase 06 P04 | 30 min | 3 tasks | 9 files |
 | Phase 06 P05 | 10 min | 3 tasks | 11 files |
 | Phase 06 P06 | 33min | 3 tasks | 13 files |
+| Phase 06 P07 | 55min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -338,6 +339,7 @@ Recent decisions affecting current work:
 - [Phase 06]: Time entry form: a failed Select option check ('in') shows the domain copy (inconsistent context under project and task, Vyberte klienta under client), because options only narrow the UI and the Actions re-validate
 - [Phase 06]: DateTimePicker values read through a Get closure are in the application timezone (UTC); the raw form state is the Prague wall clock, so server-side interval logic parses in config app.timezone
 - [Phase 06]: Text sorted for people goes through CzechCollation::orderBy (cs-CZ-x-icu); the production availability check is added to kokpit:deploy:verify in plan 06-14
+- [Phase 06]: 06-07: footer totals render only the whole-filtered-set row (summaries(pageCondition: false)); a stale edit page of a billed entry answers 403 (lock via hydrate); extra Úkol filter on the entry list for the task page link
 
 ### Pending Todos
 
@@ -377,6 +379,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T14:18:19.857Z
-Stopped at: Completed 06-06-PLAN.md
+Last session: 2026-10-09T14:40:48.685Z
+Stopped at: Completed 06-07-PLAN.md
 Resume file: None
