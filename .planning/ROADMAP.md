@@ -294,7 +294,7 @@ Plans:
   4. Admin drags cards on the per-project and the global kanban board; status and position persist immediately and survive a reload, and the global board filters by client, assignee, tag and priority
   5. A Partner creates tasks and comments in visible projects but cannot change status or priority or move cards, sees a read-only task list, never sees internal comments or another client's tasks, and Admin is notified of Partner tasks and comments
 
-**Plans:** 18/19 plans executed: 17/17 executed, 2 gap-closure plans planned (05-18 and 05-19; one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 4 rule; each plan modifies at most 14 files)
+**Plans:** 19/19 plans executed: 17/17 executed, 2 gap-closure plans planned (05-18 and 05-19; one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 4 rule; each plan modifies at most 14 files)
 **UI hint**: yes
 
 Plans:
@@ -355,7 +355,7 @@ Gap closure (from 05-REVIEW.md CR-01 and WR-02, 05-SECURITY.md T-05-44 and G-1, 
 - [x] 05-18-PLAN.md — The edit form keeps a deactivated assignee or requester and refuses new inactive picks; a Partner payload can no longer attach task tags (CR-01, G-1; TA-01, TA-07)
 
 **Wave 19** *(blocked on Wave 18 completion)*
-- [ ] 05-19-PLAN.md — Every task notification value escaped once in the TaskNotification base, markup canary for every class and audience, closing gate (T-05-44, WR-02; TA-07, TA-04)
+- [x] 05-19-PLAN.md — Every task notification value escaped once in the TaskNotification base, markup canary for every class and audience, closing gate (T-05-44, WR-02; TA-07, TA-04)
 
 ### Phase 6: Time Tracking
 
@@ -471,7 +471,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
 | 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
 | 4. Clients and Projects | 21/21 | In Progress | - |
-| 5. Tasks and Kanban | 18/19 | In Progress | - |
+| 5. Tasks and Kanban | 19/19 | In Progress | - |
 | 6. Time Tracking | 0/0 | Not started | - |
 | 7. REST API | 0/0 | Not started | - |
 | 8. Exchange Rates and Reports | 0/0 | Not started | - |
