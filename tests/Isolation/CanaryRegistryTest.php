@@ -18,6 +18,7 @@ use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskBilling;
 use App\Domain\Tasks\Models\TaskChecklistItem;
 use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Tests\Support\Canary;
@@ -104,6 +105,7 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         TaskBilling::class,
         TaskChecklistItem::class,
         TaskComment::class,
+        TimeEntry::class,
         WebhookCall::class,
     ]);
 });

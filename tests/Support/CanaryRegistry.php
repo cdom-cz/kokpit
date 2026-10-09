@@ -25,6 +25,8 @@ use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskBilling;
 use App\Domain\Tasks\Models\TaskChecklistItem;
 use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Domain\TimeTracking\Support\TimerClock;
 use Closure;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\Probes\PackageProbe;
@@ -184,6 +186,26 @@ final class CanaryRegistry
 
                     app(AddTaskComment::class)->handle($admin, $task, '<p>'.$canary.'</p>');
                     app(AddTaskComment::class)->handle($admin, $task, '<p>'.$canary.'</p>', internal: true);
+                });
+            },
+
+            // One finished time entry of the Admin on the canary project and canary task of
+            // that client (found by the project name; the Task fixture runs before this
+            // one). The canary is the description, so a Partner reading any entry would be
+            // caught: measured time is closed to Partners.
+            TimeEntry::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+                    $task = Task::query()->where('project_id', $project->getKey())->firstOrFail();
+
+                    (new TimeEntry(['description' => $canary]))->forceFill([
+                        'user_id' => Canary::admin()->getKey(),
+                        'client_id' => $clientId,
+                        'project_id' => $project->getKey(),
+                        'task_id' => $task->getKey(),
+                        'started_at' => TimerClock::now()->subHours(2),
+                        'ended_at' => TimerClock::now()->subHour(),
+                    ])->save();
                 });
             },
 

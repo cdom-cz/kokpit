@@ -21,6 +21,7 @@ use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskBilling;
 use App\Domain\Tasks\Models\TaskChecklistItem;
 use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\TimeTracking\Models\TimeEntry;
 
 /**
  * The single source of morph aliases.
@@ -50,5 +51,6 @@ final class MorphMap
         'task_billing' => TaskBilling::class,
         'task_checklist_item' => TaskChecklistItem::class,
         'task_comment' => TaskComment::class,
+        'time_entry' => TimeEntry::class,
     ];
 }
