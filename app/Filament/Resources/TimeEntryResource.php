@@ -9,12 +9,14 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
+use App\Domain\Shared\Database\CzechCollation;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Actions\CancelEntriesBilling;
 use App\Domain\TimeTracking\Actions\DeleteTimeEntry;
 use App\Domain\TimeTracking\Actions\MarkEntriesBilled;
 use App\Domain\TimeTracking\Billing\BillableDefault;
 use App\Domain\TimeTracking\Enums\BillingBadge;
+use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Queries\EntryContextOptions;
 use App\Domain\TimeTracking\Queries\OverlapFinder;
@@ -27,11 +29,13 @@ use App\Filament\Resources\TimeEntryResource\Pages\ListTimeEntries;
 use App\Filament\Resources\TimeEntryResource\Pages\ViewTimeEntry;
 use App\Providers\LocalisationServiceProvider;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use DomainException;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
@@ -47,11 +51,15 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Facades\FilamentTimezone;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\Summarizers\Sum;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
 use Livewire\Component;
@@ -109,7 +117,7 @@ final class TimeEntryResource extends Resource
     {
         return parent::getEloquentQuery()
             ->with(['client', 'project', 'task'])
-            ->scopes(['withElapsedSeconds' => [TimerClock::now()]]);
+            ->scopes(['withElapsedSeconds' => [TimerClock::now()], 'withOverlapFlag' => []]);
     }
 
     /**
@@ -352,12 +360,40 @@ final class TimeEntryResource extends Resource
             TextColumn::make('elapsed_seconds')
                 ->label(__('kokpit.time.fields.duration'))
                 ->state(static fn (TimeEntry $record): string => DurationFormat::hoursMinutes((int) $record->elapsed_seconds))
-                ->sortable(),
+                ->sortable()
+                ->summarize([
+                    // The exact seconds of the whole filtered set, formatted once (U-9).
+                    Sum::make('total')
+                        ->label(__('kokpit.time.totals.total'))
+                        ->formatStateUsing(static fn (mixed $state): string => DurationFormat::hoursMinutes((int) $state)),
+                    Sum::make('billable')
+                        ->label(__('kokpit.time.totals.billable'))
+                        ->query(static fn (QueryBuilder $query): QueryBuilder => $query->where('billable', true))
+                        ->formatStateUsing(static fn (mixed $state): string => DurationFormat::hoursMinutes((int) $state)),
+                    Sum::make('non_billable')
+                        ->label(__('kokpit.time.totals.non_billable'))
+                        ->query(static fn (QueryBuilder $query): QueryBuilder => $query->where('billable', false))
+                        ->formatStateUsing(static fn (mixed $state): string => DurationFormat::hoursMinutes((int) $state)),
+                ]),
             // The lock icon of a billed row explains why it has no edit or delete action.
             TextColumn::make('billing_badge')
                 ->label(__('kokpit.time.fields.billing_state'))
                 ->state(static fn (TimeEntry $record): BillingBadge => $record->billingBadge())
                 ->badge(),
+            // Overlaps are allowed (D-04); the badge only tells the Admin, and the tooltip names the other entry.
+            TextColumn::make('overlap')
+                ->label(__('kokpit.time.fields.overlap'))
+                ->state(static fn (TimeEntry $record): ?string => $record->overlaps === true ? (string) __('kokpit.time.overlap_badge') : null)
+                ->badge()
+                ->color('warning')
+                ->icon(Heroicon::OutlinedExclamationTriangle)
+                ->tooltip(static fn (TimeEntry $record): ?string => $record->overlaps === true && $record->overlap_label !== null
+                    ? (string) __('kokpit.time.overlap_tooltip', ['label' => $record->overlap_label])
+                    : null),
+            TextColumn::make('updated_at')
+                ->label(__('kokpit.time.fields.updated_at'))
+                ->dateTime(LocalisationServiceProvider::DATE_TIME_FORMAT)
+                ->toggleable(isToggledHiddenByDefault: true),
         ];
     }
 
@@ -371,6 +407,10 @@ final class TimeEntryResource extends Resource
                 ->orderByDesc($query->qualifyColumn('started_at'))
                 ->orderByDesc($query->qualifyColumn('id')))
             ->defaultPaginationPageOption(25)
+            ->filters(self::filters())
+            // Only the row over the whole filtered set: a second row for the visible page would
+            // read as the total of the list (U-9).
+            ->summaries(pageCondition: false)
             ->recordUrl(static fn (TimeEntry $record): string => self::getUrl('view', ['record' => $record]))
             ->recordActions([
                 EditAction::make()
@@ -383,6 +423,212 @@ final class TimeEntryResource extends Resource
             ])
             ->emptyStateHeading(__('kokpit.time.empty_heading'))
             ->emptyStateDescription(__('kokpit.time.empty_description'));
+    }
+
+    /**
+     * The filters of the list (UI-SPEC Surface D), combined with AND, none on by default: the
+     * period, the client, the project, the task and the billing state. Every active one shows an
+     * indicator chip. The task filter is not in the UI-SPEC's list: the task page links to the
+     * entries of one task ("Zobrazit záznamy"), and that link needs it.
+     *
+     * @return list<Filter|SelectFilter>
+     */
+    public static function filters(): array
+    {
+        return [
+            Filter::make('period')
+                ->label(__('kokpit.time.filters.period'))
+                ->schema([
+                    Select::make('preset')
+                        ->label(__('kokpit.time.filters.period'))
+                        ->options(self::periodPresets())
+                        ->live()
+                        ->native(false),
+                    DatePicker::make('from')
+                        ->label(__('kokpit.time.filters.from'))
+                        ->visible(static fn (Get $get): bool => $get('preset') === 'custom'),
+                    DatePicker::make('until')
+                        ->label(__('kokpit.time.filters.until'))
+                        ->visible(static fn (Get $get): bool => $get('preset') === 'custom'),
+                ])
+                ->query(static function (Builder $query, array $data): Builder {
+                    [$from, $until] = self::periodBounds($data);
+
+                    // Half-open range on the UTC instants of the Prague day boundaries: sargable on the start index.
+                    return $query
+                        ->when($from instanceof CarbonImmutable, static fn (Builder $query): Builder => $query->whereRaw('time_entries.started_at >= ?::timestamptz', [$from?->format('Y-m-d H:i:sP')]))
+                        ->when($until instanceof CarbonImmutable, static fn (Builder $query): Builder => $query->whereRaw('time_entries.started_at < ?::timestamptz', [$until?->format('Y-m-d H:i:sP')]));
+                })
+                ->indicateUsing(static function (array $data): array {
+                    $preset = $data['preset'] ?? null;
+                    $label = __('kokpit.time.filters.period');
+
+                    if ($preset !== 'custom') {
+                        return is_string($preset) && array_key_exists($preset, self::periodPresets())
+                            ? [$label.': '.self::periodPresets()[$preset]]
+                            : [];
+                    }
+
+                    $from = self::day($data['from'] ?? null);
+                    $until = self::day($data['until'] ?? null);
+
+                    return array_values(array_filter([
+                        $from === null ? null : $label.' '.mb_strtolower(__('kokpit.time.filters.from')).': '.self::dayText($from),
+                        $until === null ? null : $label.' '.mb_strtolower(__('kokpit.time.filters.until')).': '.self::dayText($until),
+                    ]));
+                }),
+            SelectFilter::make('client_id')
+                ->label(__('kokpit.time.filters.client'))
+                ->options(static fn (): array => self::clientFilterOptions())
+                ->searchable(),
+            SelectFilter::make('project_id')
+                ->label(__('kokpit.time.filters.project'))
+                ->options(static fn (): array => self::projectFilterOptions())
+                ->searchable(),
+            SelectFilter::make('task_id')
+                ->label(__('kokpit.time.filters.task'))
+                ->options(static fn (): array => self::taskFilterOptions())
+                ->searchable(),
+            SelectFilter::make('billing')
+                ->label(__('kokpit.time.filters.billing'))
+                ->options(BillingBadge::class)
+                ->query(static function (Builder $query, array $data): Builder {
+                    $badge = BillingBadge::tryFrom(is_string($data['value'] ?? null) ? $data['value'] : '');
+
+                    return match ($badge) {
+                        BillingBadge::NonBillable => $query->where('time_entries.billable', false),
+                        BillingBadge::Billed => $query->where('time_entries.billing_state', BillingState::Billed->value),
+                        BillingBadge::Unbilled => $query->where('time_entries.billable', true)->where('time_entries.billing_state', BillingState::Unbilled->value),
+                        null => $query,
+                    };
+                }),
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function periodPresets(): array
+    {
+        return [
+            'today' => __('kokpit.time.filters.presets.today'),
+            'this_week' => __('kokpit.time.filters.presets.this_week'),
+            'last_week' => __('kokpit.time.filters.presets.last_week'),
+            'this_month' => __('kokpit.time.filters.presets.this_month'),
+            'last_month' => __('kokpit.time.filters.presets.last_month'),
+            'custom' => __('kokpit.time.filters.presets.custom'),
+        ];
+    }
+
+    /**
+     * The first instant of the period and the first instant after it, both UTC and either one
+     * null: the midnights of the panel timezone (Europe/Prague) that bound the chosen days. The calendar arithmetic runs on
+     * plain dates, so a 23- or 25-hour day cannot shift a boundary.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{0: ?CarbonImmutable, 1: ?CarbonImmutable}
+     */
+    private static function periodBounds(array $data): array
+    {
+        $preset = is_string($data['preset'] ?? null) ? $data['preset'] : '';
+        $today = CarbonImmutable::createFromFormat('!Y-m-d', TimerClock::now()->setTimezone(FilamentTimezone::get())->format('Y-m-d'), 'UTC');
+
+        if (! $today instanceof CarbonImmutable) {
+            return [null, null];
+        }
+
+        $week = $today->startOfWeek(CarbonInterface::MONDAY);
+        $month = $today->startOfMonth();
+
+        [$from, $until] = match ($preset) {
+            'today' => [$today, $today->addDay()],
+            'this_week' => [$week, $week->addDays(7)],
+            'last_week' => [$week->subDays(7), $week],
+            'this_month' => [$month, $month->addMonthNoOverflow()],
+            'last_month' => [$month->subMonthNoOverflow(), $month],
+            // Both days are inclusive: the end is the midnight after the last day.
+            'custom' => [
+                ($day = self::day($data['from'] ?? null)) === null ? null : CarbonImmutable::createFromFormat('!Y-m-d', $day, 'UTC'),
+                ($day = self::day($data['until'] ?? null)) === null ? null : CarbonImmutable::createFromFormat('!Y-m-d', $day, 'UTC')?->addDay(),
+            ],
+            default => [null, null],
+        };
+
+        return [self::pragueMidnight($from), self::pragueMidnight($until)];
+    }
+
+    /**
+     * The UTC instant at which the calendar day of `$day` begins in the panel timezone.
+     */
+    private static function pragueMidnight(?CarbonImmutable $day): ?CarbonImmutable
+    {
+        if (! $day instanceof CarbonImmutable) {
+            return null;
+        }
+
+        return CarbonImmutable::createFromFormat('!Y-m-d', $day->format('Y-m-d'), FilamentTimezone::get())?->utc();
+    }
+
+    /**
+     * A real calendar day as `Y-m-d`, or null for anything else.
+     */
+    private static function day(mixed $value): ?string
+    {
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        try {
+            $day = CarbonImmutable::createFromFormat('!Y-m-d', $value);
+        } catch (Throwable) {
+            return null;
+        }
+
+        return $day instanceof CarbonImmutable && $day->format('Y-m-d') === $value ? $value : null;
+    }
+
+    private static function dayText(string $day): string
+    {
+        return CarbonImmutable::createFromFormat('!Y-m-d', $day)?->format(LocalisationServiceProvider::DATE_FORMAT) ?? $day;
+    }
+
+    /**
+     * Every client, archived ones included, in Czech order: an archived client still owns entries.
+     *
+     * @return array<string, string>
+     */
+    private static function clientFilterOptions(): array
+    {
+        /** @var array<string, string> */
+        return CzechCollation::orderBy(Client::query()->withTrashed(), 'name')->pluck('name', 'id')->all();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function projectFilterOptions(): array
+    {
+        $options = [];
+
+        foreach (Project::query()->withTrashed()->orderBy('key')->get(['id', 'key', 'name']) as $project) {
+            $options[$project->id] = $project->key.' · '.$project->name;
+        }
+
+        return $options;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function taskFilterOptions(): array
+    {
+        $options = [];
+
+        foreach (Task::query()->withTrashed()->orderBy('reference')->get(['id', 'reference', 'title']) as $task) {
+            $options[$task->id] = $task->reference.' · '.$task->title;
+        }
+
+        return $options;
     }
 
     /**

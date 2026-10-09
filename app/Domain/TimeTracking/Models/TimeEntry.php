@@ -62,6 +62,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read int|null $elapsed_seconds only on rows read through the withElapsedSeconds scope
+ * @property-read bool|null $overlaps only on rows read through the withOverlapFlag scope
+ * @property-read string|null $overlap_label only on rows read through the withOverlapFlag scope
  */
 #[Fillable(['description', 'billable'])]
 #[LoggedAttributes(['client_id', 'project_id', 'task_id', 'started_at', 'ended_at', 'billable', 'billing_state', 'billed_at'])]
@@ -105,6 +107,45 @@ final class TimeEntry extends KokpitModel implements PartnerIsolated
             ->selectRaw(
                 'COALESCE(time_entries.duration_seconds, GREATEST(0, EXTRACT(EPOCH FROM (?::timestamptz - time_entries.started_at))::int)) AS elapsed_seconds',
                 [$now->utc()->format('Y-m-d H:i:sP')],
+            );
+    }
+
+    /**
+     * Adds `overlaps` and `overlap_label` to every row, in the one query (D-04).
+     *
+     * `overlaps` is true when another entry of the same user overlaps this one; `overlap_label`
+     * names the first such entry in start order, as the task reference and title, or the client
+     * when it has no task. Two intervals overlap when each starts strictly before the other
+     * ends, a running entry is open-ended, and a zero-length entry holds no time and overlaps
+     * nothing, on either side: the same rule as OverlapFinder, here as correlated sub-selects
+     * so a list of any size costs no extra query. Archived clients and tasks still name it.
+     *
+     * @param  Builder<TimeEntry>  $query
+     */
+    public function scopeWithOverlapFlag(Builder $query): void
+    {
+        $where = <<<'SQL'
+            other.user_id = time_entries.user_id
+              AND other.id <> time_entries.id
+              AND other.started_at < COALESCE(time_entries.ended_at, 'infinity'::timestamptz)
+              AND time_entries.started_at < COALESCE(other.ended_at, 'infinity'::timestamptz)
+              AND (other.ended_at IS NULL OR other.ended_at > other.started_at)
+              AND (time_entries.ended_at IS NULL OR time_entries.ended_at > time_entries.started_at)
+            SQL;
+
+        if ($query->getQuery()->columns === null) {
+            $query->addSelect($this->qualifyColumn('*'));
+        }
+
+        $query
+            ->selectRaw('EXISTS (SELECT 1 FROM time_entries AS other WHERE '.$where.') AS overlaps')
+            ->selectRaw(
+                "(SELECT COALESCE(task.reference || ' · ' || task.title, client.name)"
+                .' FROM time_entries AS other'
+                .' LEFT JOIN tasks AS task ON task.id = other.task_id'
+                .' LEFT JOIN clients AS client ON client.id = other.client_id'
+                .' WHERE '.$where
+                .' ORDER BY other.started_at, other.id LIMIT 1) AS overlap_label',
             );
     }
 
