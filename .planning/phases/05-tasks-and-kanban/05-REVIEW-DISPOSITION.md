@@ -3,6 +3,30 @@ phase: 05
 review: 05-REVIEW.md
 titles: json
 findings:
+  - id: WR-05
+    severity: warning
+    disposition: open
+    title: "The Admin edit path silently overwrites a Partner's description edit (lost update)"
+  - id: WR-06
+    severity: warning
+    disposition: open
+    title: "A Partner whose task left the editable statuses while the editor was open gets no feedback and loses the text; the documented field error is unreachable from the UI"
+  - id: IN-08
+    severity: info
+    disposition: open
+    title: "A forged non-string `based_on` raises an ErrorException"
+  - id: IN-09
+    severity: info
+    disposition: open
+    title: "The unchanged-text check depends on the editor round-tripping the stored HTML unchanged (unverified)"
+  - id: IN-10
+    severity: info
+    disposition: open
+    title: "`TaskChangedNotification` still defaults `recipientIsPartner` to `true`"
+  - id: IN-11
+    severity: info
+    disposition: open
+    title: "Partner-side helper text and one test are less precise than the behaviour"
   - id: WR-01
     severity: warning
     disposition: open
@@ -45,21 +69,27 @@ findings:
   - id: IN-07
     severity: info
     disposition: open
-open: 10
-total: 12
-recorded: 2026-10-09T06:07:33.948Z
+open: 16
+total: 18
+recorded: 2026-10-09T09:33:30.055Z
 ---
 
 # Phase 05: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
-| IN-04 | info | open | - |
-| IN-05 | info | open | - |
+| WR-05 | warning | open | - |
+| WR-06 | warning | open | - |
+| IN-08 | info | open | - |
+| IN-09 | info | open | - |
+| IN-10 | info | open | - |
+| IN-11 | info | open | - |
+| WR-01 | warning | open | - (not in the current review) |
+| IN-01 | info | open | - (not in the current review) |
+| IN-02 | info | open | - (not in the current review) |
+| IN-03 | info | open | - (not in the current review) |
+| IN-04 | info | open | - (not in the current review) |
+| IN-05 | info | open | - (not in the current review) |
 | CR-01 | critical | fixed | Fixed by plan 05-18 (commits cfae73c, 9d6c8a5; TaskResource::peopleOptions keeps the stored person). Deactivated assignee or requester makes the Admin edit page reject every save of that task (Select options list active people only) (not in the current review) |
 | WR-02 | warning | fixed | Fixed by plan 05-19 (commits fc767ca, 2c3c63b; escaping in the TaskNotification base class). Unescaped title and actor name also reach mails to Partner recipients (widens T-05-44 / U-1 of 05-SECURITY.md) (not in the current review) |
 | WR-03 | warning | open | AddTaskComment never re-reads the task; a comment can land on a task archived after page load (not in the current review) |
