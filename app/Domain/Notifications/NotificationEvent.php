@@ -25,14 +25,14 @@ enum NotificationEvent: string implements HasLabel
     /**
      * The events a role can receive. A Partner is told of an escalation because a
      * Partner can be the assignee of the task (D-07); the Admin is told when a
-     * Partner creates a task, comments or escalates.
+     * Partner creates a task, comments, escalates or changes a description.
      *
      * @return list<self>
      */
     public static function forRole(RoleName $role): array
     {
         return match ($role) {
-            RoleName::Admin => [self::TaskCreated, self::Comment, self::Escalation],
+            RoleName::Admin => [self::TaskCreated, self::Comment, self::Escalation, self::AssignmentChange],
             RoleName::Partner => [self::Comment, self::Escalation, self::AssignmentChange],
         };
     }
@@ -43,10 +43,16 @@ enum NotificationEvent: string implements HasLabel
     }
 
     /**
-     * The one-line explanation shown under the label on the profile page.
+     * The one-line explanation shown under the label on the profile page. Only the
+     * Admin's task change row has a role-specific helper (it reports a Partner's
+     * description edit); every other helper is the same for both roles.
      */
-    public function helper(): string
+    public function helper(RoleName $role): string
     {
+        if ($role === RoleName::Admin && $this === self::AssignmentChange) {
+            return __('kokpit.notifications.profile.helpers.assignment_change_admin');
+        }
+
         return __('kokpit.notifications.profile.helpers.'.$this->value);
     }
 }

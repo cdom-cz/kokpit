@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Notifications\NotificationEvent;
+use App\Domain\Notifications\UpdateNotificationPreferences;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -806,5 +807,31 @@ it('sends no notification when the Admin saves only the description through Upda
     partnerDescSystem(fn (): Task => app(UpdateTask::class)->handle($this->admin, Task::query()->findOrFail($this->task->id), ['description' => $typed]));
 
     expect(partnerDescRow($this->task)->description)->toBe(RichText::clean($typed));
+    Notification::assertNothingSent();
+});
+
+it('lets the Admin narrow the description edit notice per channel', function (): void {
+    $edit = static fn (): Task => partnerDescSave(test()->partnerA, test()->task, '<p>Edited '.Canary::canary('narrow').'</p>');
+
+    // E-mail off: only the bell remains.
+    app(UpdateNotificationPreferences::class)->handle($this->admin, $this->admin, ['assignment_change' => ['mail' => false]]);
+    Notification::fake();
+    $edit();
+
+    Notification::assertSentTo($this->admin, TaskChangedNotification::class, static fn ($n, array $channels): bool => $channels === ['database']);
+    Notification::assertCount(1);
+
+    // The bell off, e-mail on: only the e-mail remains.
+    app(UpdateNotificationPreferences::class)->handle($this->admin, $this->admin, ['assignment_change' => ['mail' => true, 'database' => false]]);
+    Notification::fake();
+    $edit();
+
+    Notification::assertSentTo($this->admin, TaskChangedNotification::class, static fn ($n, array $channels): bool => $channels === ['mail']);
+
+    // Both off: nothing is delivered and no other recipient is chosen in the Admin's place.
+    app(UpdateNotificationPreferences::class)->handle($this->admin, $this->admin, ['assignment_change' => ['mail' => false, 'database' => false]]);
+    Notification::fake();
+    $edit();
+
     Notification::assertNothingSent();
 });

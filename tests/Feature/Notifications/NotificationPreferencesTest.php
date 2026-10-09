@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Identity\RoleName;
 use App\Domain\Notifications\NotificationChannel;
 use App\Domain\Notifications\NotificationEvent;
 use App\Domain\Notifications\NotificationPreferences;
@@ -69,6 +70,8 @@ it('shows a Partner the three Partner rows with both switches on', function (): 
         ->assertSee(NotificationEvent::Escalation->getLabel())
         ->assertSee(NotificationEvent::AssignmentChange->getLabel())
         ->assertDontSee(NotificationEvent::TaskCreated->getLabel())
+        ->assertSee(__('kokpit.notifications.profile.helpers.assignment_change'))
+        ->assertDontSee(__('kokpit.notifications.profile.helpers.assignment_change_admin'))
         ->assertFormSet([
             'notifications.comment.mail' => true,
             'notifications.comment.database' => true,
@@ -79,18 +82,36 @@ it('shows a Partner the three Partner rows with both switches on', function (): 
         ]);
 });
 
-it('shows the Admin the task created, comment and escalation rows', function (): void {
+it('shows the Admin the task created, comment, escalation and task change rows with the Admin helper', function (): void {
     $this->actingAs($this->admin);
 
     Livewire::test(EditProfile::class)
         ->assertSee(NotificationEvent::TaskCreated->getLabel())
         ->assertSee(NotificationEvent::Comment->getLabel())
         ->assertSee(NotificationEvent::Escalation->getLabel())
-        ->assertDontSee(NotificationEvent::AssignmentChange->getLabel())
+        ->assertSee(NotificationEvent::AssignmentChange->getLabel())
+        ->assertSee(__('kokpit.notifications.profile.helpers.assignment_change_admin'))
+        ->assertDontSee(__('kokpit.notifications.profile.helpers.assignment_change'))
         ->assertFormSet([
             'notifications.task_created.mail' => true,
             'notifications.task_created.database' => true,
+            'notifications.assignment_change.mail' => true,
+            'notifications.assignment_change.database' => true,
         ]);
+});
+
+it('keeps the Partner task change helper and gives only the Admin row its own helper', function (): void {
+    expect(NotificationEvent::AssignmentChange->helper(RoleName::Partner))->toBe('U vašeho úkolu se změnil stav, priorita nebo řešitel.')
+        ->and(NotificationEvent::AssignmentChange->helper(RoleName::Admin))->toBe('Klient upravil popis úkolu.')
+        ->and(__('kokpit.notifications.profile.helpers.assignment_change'))->toBe('U vašeho úkolu se změnil stav, priorita nebo řešitel.');
+
+    foreach ([NotificationEvent::TaskCreated, NotificationEvent::Comment, NotificationEvent::Escalation] as $event) {
+        expect($event->helper(RoleName::Admin))->toBe($event->helper(RoleName::Partner))
+            ->and($event->helper(RoleName::Admin))->toBe(__('kokpit.notifications.profile.helpers.'.$event->value));
+    }
+
+    expect(NotificationEvent::forRole(RoleName::Admin))->toBe([NotificationEvent::TaskCreated, NotificationEvent::Comment, NotificationEvent::Escalation, NotificationEvent::AssignmentChange])
+        ->and(NotificationEvent::forRole(RoleName::Partner))->toBe([NotificationEvent::Comment, NotificationEvent::Escalation, NotificationEvent::AssignmentChange]);
 });
 
 it('stores a Partner switching e-mail off for comments and reads it back as a narrowed channel', function (): void {

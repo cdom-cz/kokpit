@@ -912,6 +912,7 @@ return [
                 'comment' => 'K úkolu, kterého se týkáte, přibyl komentář.',
                 'escalation' => 'Úkol byl eskalován.',
                 'assignment_change' => 'U vašeho úkolu se změnil stav, priorita nebo řešitel.',
+                'assignment_change_admin' => 'Klient upravil popis úkolu.',
             ],
         ],
     ],

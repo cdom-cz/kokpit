@@ -61,7 +61,7 @@ final class EditProfile extends BaseEditProfile
             $rows[] = Fieldset::make($event->getLabel())
                 ->columns(['default' => 1, 'sm' => 2])
                 ->schema([
-                    Text::make($event->helper())->color('gray')->columnSpanFull(),
+                    Text::make($event->helper($this->role()))->color('gray')->columnSpanFull(),
                     ...array_map(
                         static fn (NotificationChannel $channel): Toggle => Toggle::make('notifications.'.$event->value.'.'.$channel->value)
                             ->label($channel->getLabel()),
