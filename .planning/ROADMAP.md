@@ -294,7 +294,7 @@ Plans:
   4. Admin drags cards on the per-project and the global kanban board; status and position persist immediately and survive a reload, and the global board filters by client, assignee, tag and priority
   5. A Partner creates tasks and comments in visible projects but cannot change status or priority or move cards, sees a read-only task list, never sees internal comments or another client's tasks, and Admin is notified of Partner tasks and comments
 
-**Plans:** 14/17 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 4 rule; each plan modifies at most 14 files)
+**Plans:** 15/17 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 4 rule; each plan modifies at most 14 files)
 **UI hint**: yes
 
 Plans:
@@ -341,7 +341,7 @@ Plans:
 - [x] 05-14-PLAN.md — Per-user notification preferences on the profile page, bell for Partners (TA-07)
 
 **Wave 15** *(blocked on Wave 14 completion)*
-- [ ] 05-15-PLAN.md — Queued mail and bell for Partner tasks and comments both ways, unconditional internal guard (TA-07)
+- [x] 05-15-PLAN.md — Queued mail and bell for Partner tasks and comments both ways, unconditional internal guard (TA-07)
 
 **Wave 16** *(blocked on Wave 15 completion)*
 - [ ] 05-16-PLAN.md — Escalation and change notifications, canary proof of no notification leak (TA-07)
@@ -463,7 +463,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
 | 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
 | 4. Clients and Projects | 21/21 | In Progress | - |
-| 5. Tasks and Kanban | 14/17 | In Progress | - |
+| 5. Tasks and Kanban | 15/17 | In Progress | - |
 | 6. Time Tracking | 0/0 | Not started | - |
 | 7. REST API | 0/0 | Not started | - |
 | 8. Exchange Rates and Reports | 0/0 | Not started | - |

@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Tasks and Kanban
 status: executing
-stopped_at: Completed 05-14-PLAN.md
-last_updated: "2026-10-09T00:10:43.214Z"
+stopped_at: Completed 05-15-PLAN.md
+last_updated: "2026-10-09T00:28:20.183Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 05 execution started
-state_head: cdc431d1420e511df13f740f6edffb396028f4a2
+state_head: c910d409737a359250de3190a0ab2128e0905825
 progress:
   total_phases: 12
   completed_phases: 3
   total_plans: 81
-  completed_plans: 78
+  completed_plans: 79
   percent: 25
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 05 (Tasks and Kanban) — EXECUTING
-Plan: 15 of 17
+Plan: 16 of 17
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 05 execution started
 
@@ -136,6 +136,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 05 P12 | 10 min | 3 tasks | 9 files |
 | Phase 05 P13 | 45min | 3 tasks | 12 files |
 | Phase 05 P14 | 10 min | 2 tasks | 11 files |
+| Phase 05 P15 | 25 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -293,6 +294,8 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-13: clearEscalation granted to a Partner only on an own-client task they are assigned to (D-06); ClearEscalation and EscalateTask check the right and the flag on the row re-read under lockForUpdate
 - [Phase 05]: 05-13: the Partner comments tab hands only the body to AddTaskComment; the server-side forcing keeps a Partner comment non-internal
 - [Phase 05]: 05-14: notification switches live in users.notification_preferences (jsonb object, missing key means on), written only by UpdateNotificationPreferences for the owner; the profile save button reads Uložit nastavení; the bell is available to any signed-in panel user
+- [Phase 05]: 05-15: an escalation comment is not announced by AddTaskComment; plan 05-16 announces the escalation itself so nobody is told twice
+- [Phase 05]: 05-15: a Partner notification recipient must belong to the project's client, and the project must be client-visible and not archived, and the client not archived
 
 ### Pending Todos
 
@@ -332,6 +335,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T00:10:43.092Z
-Stopped at: Completed 05-14-PLAN.md
+Last session: 2026-10-09T00:28:20.070Z
+Stopped at: Completed 05-15-PLAN.md
 Resume file: None
