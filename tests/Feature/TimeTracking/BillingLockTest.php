@@ -8,12 +8,18 @@ use App\Domain\TimeTracking\Actions\CancelEntriesBilling;
 use App\Domain\TimeTracking\Actions\DeleteTimeEntry;
 use App\Domain\TimeTracking\Actions\MarkEntriesBilled;
 use App\Domain\TimeTracking\Actions\UpdateTimeEntry;
+use App\Domain\TimeTracking\Enums\BillingBadge;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\TimeEntryInput;
+use App\Filament\Resources\TimeEntryResource\Pages\EditTimeEntry;
+use App\Filament\Resources\TimeEntryResource\Pages\ListTimeEntries;
+use App\Filament\Resources\TimeEntryResource\Pages\ViewTimeEntry;
 use Carbon\CarbonImmutable;
+use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Livewire\Livewire;
 use Tests\Support\Canary;
 
 /*
@@ -441,3 +447,136 @@ it('keeps the billed_finished check as the backstop for every writer', function 
         ->and($refusal->getPrevious()?->getCode())->toBe('23514')
         ->and(lockReload($entry)->billing_state->value)->toBe('unbilled');
 })->with(['a non-billable entry' => ['non_billable'], 'a running entry' => ['running']]);
+
+/*
+ * The lock on the Admin screens (TI-05, D-06): bulk billing with an honest confirmation, locked
+ * rows, the redirect of the edit URL and the unlock from the view page.
+ */
+
+/**
+ * Signs in an Admin on the admin panel.
+ */
+function lockScreenAdmin(): User
+{
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    $admin = Canary::admin();
+    test()->actingAs($admin);
+
+    return $admin;
+}
+
+it('bills the eligible entries of a selection in bulk, says what it skips and locks the rows', function (): void {
+    $admin = lockScreenAdmin();
+    $first = lockEntry($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+    $second = lockEntry($admin, '2026-10-12 09:30:00', '2026-10-12 10:00:00');
+    $nonBillable = lockEntry($admin, '2026-10-12 11:00:00', '2026-10-12 11:30:00', ['billable' => false]);
+    $selection = [$first, $second, $nonBillable];
+
+    $list = Livewire::test(ListTimeEntries::class)
+        ->mountTableBulkAction('markBilled', $selection)
+        ->assertMountedActionModalSee([
+            'Označit jako vyfakturované?',
+            '2 záznamy s časem 1:30 se uzamknou',
+            'Přeskočí se 1 záznam, který je nefakturovatelný, už vyfakturovaný nebo běží.',
+        ]);
+
+    $list->callMountedTableBulkAction()
+        ->assertNotified('Označeno jako vyfakturované (2)');
+
+    expect(lockReload($first)->billing_state->value)->toBe('billed')
+        ->and(lockReload($second)->billing_state->value)->toBe('billed')
+        ->and(lockReload($nonBillable)->billing_state->value)->toBe('unbilled');
+
+    // A locked row has neither the edit nor the delete action and shows the lock badge.
+    Livewire::test(ListTimeEntries::class)
+        ->assertTableActionHidden('edit', $first)
+        ->assertTableActionHidden('delete', $first)
+        ->assertTableActionVisible('edit', $nonBillable)
+        ->assertTableActionVisible('delete', $nonBillable)
+        ->assertTableColumnStateSet('billing_badge', BillingBadge::Billed, $first)
+        ->assertTableColumnStateSet('billing_badge', BillingBadge::NonBillable, $nonBillable)
+        ->assertSee('Vyfakturováno');
+});
+
+it('shows a danger toast and changes nothing when the selection has nothing to bill or to unlock', function (): void {
+    $admin = lockScreenAdmin();
+    $nonBillable = lockEntry($admin, '2026-10-12 11:00:00', '2026-10-12 11:30:00', ['billable' => false]);
+    $running = lockEntry($admin, '2026-10-12 12:00:00', '');
+    $unbilled = lockEntry($admin, '2026-10-12 13:00:00', '2026-10-12 13:30:00');
+    $history = lockHistoryCount(lockIds([$nonBillable, $running, $unbilled]));
+
+    Livewire::test(ListTimeEntries::class)
+        ->callTableBulkAction('markBilled', [$nonBillable, $running])
+        ->assertNotified('V označených záznamech není nic k vyfakturování.')
+        ->callTableBulkAction('cancelBilling', [$unbilled])
+        ->assertNotified('V označených záznamech není nic, co by šlo odemknout.');
+
+    expect(lockReload($nonBillable)->billing_state->value)->toBe('unbilled')
+        ->and(lockReload($running)->billing_state->value)->toBe('unbilled')
+        ->and(lockReload($unbilled)->billing_state->value)->toBe('unbilled')
+        ->and(lockHistoryCount(lockIds([$nonBillable, $running, $unbilled])))->toBe($history);
+});
+
+it('sends the edit URL of a billed entry to its view page and shows the callout there', function (): void {
+    $admin = lockScreenAdmin();
+    $billed = lockEntry($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+    app(MarkEntriesBilled::class)->handle($admin, [$billed->id]);
+
+    $this->get('/admin/time-entries/'.$billed->id.'/edit')->assertRedirect('/admin/time-entries/'.$billed->id);
+
+    $this->get('/admin/time-entries/'.$billed->id)
+        ->assertOk()
+        ->assertSee('Záznam je uzamčený')
+        ->assertSee('Vyfakturovaný záznam nejde upravit ani smazat.')
+        ->assertSee('Zrušit fakturaci')
+        ->assertDontSee('Upravit záznam')
+        ->assertDontSee('Smazat záznam');
+});
+
+it('still opens the edit page of an unbilled entry', function (): void {
+    $admin = lockScreenAdmin();
+    $entry = lockEntry($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+
+    $this->get('/admin/time-entries/'.$entry->id.'/edit')->assertOk();
+    $this->get('/admin/time-entries/'.$entry->id)
+        ->assertOk()
+        ->assertSee('Upravit záznam')
+        ->assertDontSee('Záznam je uzamčený');
+});
+
+it('unlocks a billed entry from its view page and it is editable again', function (): void {
+    $admin = lockScreenAdmin();
+    $billed = lockEntry($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+    app(MarkEntriesBilled::class)->handle($admin, [$billed->id]);
+
+    Livewire::test(ViewTimeEntry::class, ['record' => $billed->id])
+        ->assertSee('Záznam je uzamčený')
+        ->assertActionVisible('cancelBilling')
+        ->assertActionHidden('edit')
+        ->callAction('cancelBilling')
+        ->assertNotified('Fakturace byla zrušena (1)')
+        ->assertDontSee('Záznam je uzamčený')
+        ->assertActionHidden('cancelBilling')
+        ->assertActionVisible('edit');
+
+    expect(lockReload($billed)->billing_state->value)->toBe('unbilled');
+
+    Livewire::test(EditTimeEntry::class, ['record' => $billed->id])->assertOk();
+});
+
+it('unlocks a selection in bulk, announces it to the timer components and asks with the right count', function (): void {
+    $admin = lockScreenAdmin();
+    $entries = lockThree($admin);
+    app(MarkEntriesBilled::class)->handle($admin, lockIds($entries));
+
+    Livewire::test(ListTimeEntries::class)
+        ->mountTableBulkAction('cancelBilling', $entries)
+        ->assertMountedActionModalSee(['Zrušit fakturaci?', 'Odemknou se 3 záznamy a vrátí se mezi nevyfakturované.'])
+        ->callMountedTableBulkAction()
+        ->assertNotified('Fakturace byla zrušena (3)')
+        ->assertDispatched('time-entry-saved');
+
+    foreach ($entries as $entry) {
+        expect(lockReload($entry)->billing_state->value)->toBe('unbilled');
+    }
+});

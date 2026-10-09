@@ -38,6 +38,17 @@ final class EditTimeEntry extends EditRecord
     {
         abort_unless(TimeEntryResource::canAccess(), 403);
 
+        // A billed entry has no edit page (D-06): its URL shows the view page. This runs before
+        // `parent::mount()`, which would authorize the edit and answer 403 first (Pitfall 4).
+        $entry = $this->resolveRecord($record);
+
+        if ($entry instanceof TimeEntry && $entry->isBilled()) {
+            $this->record = $entry;
+            $this->redirect(TimeEntryResource::getUrl('view', ['record' => $entry]));
+
+            return;
+        }
+
         parent::mount($record);
     }
 

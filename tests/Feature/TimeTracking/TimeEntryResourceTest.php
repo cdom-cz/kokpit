@@ -490,14 +490,16 @@ it('keeps the toggle on for a task of a fixed-price project and stores the toggl
     expect(TimeEntry::query()->where('task_id', $nonBillable->id)->firstOrFail()->billable)->toBeFalse();
 });
 
-it('refuses an edit of a billed entry with a danger notification and leaves it unchanged', function (): void {
+it('refuses a save from an edit page left open after the entry was billed and leaves it unchanged', function (): void {
     $entry = TimeEntry::factory()->create(['description' => 'Example billed']);
+
+    $page = Livewire::test(EditTimeEntry::class, ['record' => $entry->id])
+        ->fillForm(['description' => 'Example changed']);
+
+    // The entry is billed while the form is open: the page authorizes again on every request.
     $entry->forceFill(['billing_state' => 'billed', 'billed_at' => now()])->save();
 
-    Livewire::test(EditTimeEntry::class, ['record' => $entry->id])
-        ->fillForm(['description' => 'Example changed'])
-        ->call('save')
-        ->assertNotified('Záznam je vyfakturovaný a nelze ho upravit. Nejdřív zrušte fakturaci.');
+    $page->call('save')->assertForbidden();
 
     expect($entry->refresh()->description)->toBe('Example billed');
 });

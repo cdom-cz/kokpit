@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\TimeEntryResource\Pages;
 
+use App\Domain\Identity\Models\User;
+use App\Domain\TimeTracking\Actions\CancelEntriesBilling;
+use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Resources\TimeEntryResource;
 use App\Providers\LocalisationServiceProvider;
+use DomainException;
 use Filament\Actions\Action;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Facades\FilamentTimezone;
 use Filament\Support\Icons\Heroicon;
@@ -44,6 +50,9 @@ final class ViewTimeEntry extends ViewRecord
     }
 
     /**
+     * An unbilled entry offers "Upravit záznam" and, when it is finished, "Smazat záznam"; a
+     * billed one offers only "Zrušit fakturaci", the one way to unlock it (D-06).
+     *
      * @return array<Action>
      */
     protected function getHeaderActions(): array
@@ -51,7 +60,52 @@ final class ViewTimeEntry extends ViewRecord
         return [
             EditAction::make()
                 ->label(__('kokpit.time.edit_entry'))
-                ->icon(Heroicon::OutlinedPencilSquare),
+                ->icon(Heroicon::OutlinedPencilSquare)
+                ->visible(fn (): bool => $this->entry() instanceof TimeEntry && TimeEntryResource::canEdit($this->entry())),
+            TimeEntryResource::deleteAction(DeleteAction::make())
+                ->successRedirectUrl(TimeEntryResource::getUrl('index')),
+            Action::make('cancelBilling')
+                ->label(__('kokpit.time.billing.cancel.action'))
+                ->icon(Heroicon::OutlinedLockOpen)
+                ->color('warning')
+                ->requiresConfirmation()
+                ->modalHeading(__('kokpit.time.billing.cancel.heading'))
+                ->modalDescription(trans_choice('kokpit.time.billing.cancel.body', 1, ['count' => 1]))
+                ->modalSubmitActionLabel(__('kokpit.time.billing.cancel.action'))
+                ->visible(fn (): bool => $this->entry()?->isBilled() === true)
+                ->action(fn () => $this->cancelBilling()),
         ];
+    }
+
+    /**
+     * Unlocks this one entry through the same Action as the bulk cancel and updates the page's
+     * record, so the callout, the badge and the header actions follow the new state.
+     */
+    private function cancelBilling(): void
+    {
+        $entry = $this->entry();
+        $actor = auth()->user();
+        assert($entry instanceof TimeEntry && $actor instanceof User);
+
+        try {
+            $count = app(CancelEntriesBilling::class)->handle($actor, [$entry->getKey()]);
+        } catch (DomainException $e) {
+            Notification::make()->danger()->title($e->getMessage())->send();
+
+            return;
+        }
+
+        // The schemas of the page hold this very instance, so the record is changed in place.
+        $entry->setRawAttributes([...$entry->getAttributes(), 'billing_state' => BillingState::Unbilled->value, 'billed_at' => null], sync: true);
+        $this->dispatch('time-entry-saved');
+
+        Notification::make()->success()->title(__('kokpit.time.billing.cancel.done', ['count' => $count]))->send();
+    }
+
+    private function entry(): ?TimeEntry
+    {
+        $record = $this->getRecord();
+
+        return $record instanceof TimeEntry ? $record : null;
     }
 }

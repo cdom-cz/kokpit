@@ -81,6 +81,12 @@ return [
         'client' => 'Klient',
     ],
 
+    'time_billing_state' => [
+        'unbilled' => 'Nevyfakturováno',
+        'billed' => 'Vyfakturováno',
+        'non_billable' => 'Nefakturovatelné',
+    ],
+
     'activity_source_label' => [
         'web' => 'Web',
         'console' => 'Konzole',

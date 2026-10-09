@@ -5,11 +5,16 @@ declare(strict_types=1);
 namespace App\Filament\Resources;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Actions\CancelEntriesBilling;
+use App\Domain\TimeTracking\Actions\DeleteTimeEntry;
+use App\Domain\TimeTracking\Actions\MarkEntriesBilled;
 use App\Domain\TimeTracking\Billing\BillableDefault;
+use App\Domain\TimeTracking\Enums\BillingBadge;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Queries\EntryContextOptions;
 use App\Domain\TimeTracking\Queries\OverlapFinder;
@@ -22,12 +27,18 @@ use App\Filament\Resources\TimeEntryResource\Pages\ListTimeEntries;
 use App\Filament\Resources\TimeEntryResource\Pages\ViewTimeEntry;
 use App\Providers\LocalisationServiceProvider;
 use Carbon\CarbonImmutable;
+use DomainException;
+use Filament\Actions\BulkAction;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\EditAction;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Section;
@@ -37,10 +48,13 @@ use Filament\Schemas\Schema;
 use Filament\Support\Facades\FilamentTimezone;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
+use Livewire\Component;
 use Throwable;
 
 /**
@@ -96,6 +110,25 @@ final class TimeEntryResource extends Resource
         return parent::getEloquentQuery()
             ->with(['client', 'project', 'task'])
             ->scopes(['withElapsedSeconds' => [TimerClock::now()]]);
+    }
+
+    /**
+     * A billed entry is locked (D-06): the policy cannot say so, because the Admin passes
+     * `KokpitPolicy::before()` for every ability, so the screens add the condition here. The
+     * real guards stay the Actions and the database trigger.
+     */
+    public static function canEdit(Model $record): bool
+    {
+        return parent::canEdit($record) && ! ($record instanceof TimeEntry && $record->isBilled());
+    }
+
+    /**
+     * Neither a billed nor a running entry is deleted from the screens: the stop of the timer is
+     * the way to end a running one.
+     */
+    public static function canDelete(Model $record): bool
+    {
+        return parent::canDelete($record) && ! ($record instanceof TimeEntry && ($record->isBilled() || $record->isRunning()));
     }
 
     /**
@@ -231,6 +264,12 @@ final class TimeEntryResource extends Resource
     public static function infolist(Schema $schema): Schema
     {
         return $schema->components([
+            // A billed entry is locked on every screen (D-06): this says why and what to do.
+            Callout::make(__('kokpit.time.locked_callout.heading'))
+                ->description(__('kokpit.time.locked_callout.body'))
+                ->warning()
+                ->icon(Heroicon::OutlinedLockClosed)
+                ->visible(static fn (?TimeEntry $record): bool => $record instanceof TimeEntry && $record->isBilled()),
             Section::make()
                 ->columns(2)
                 ->schema([
@@ -265,43 +304,67 @@ final class TimeEntryResource extends Resource
                     TextEntry::make('billable')
                         ->label(__('kokpit.time.fields.billable'))
                         ->state(static fn (TimeEntry $record): string => $record->billable ? __('kokpit.time.yes') : __('kokpit.time.no')),
+                    TextEntry::make('billing_badge')
+                        ->label(__('kokpit.time.fields.billing_state'))
+                        ->state(static fn (TimeEntry $record): BillingBadge => $record->billingBadge())
+                        ->badge(),
+                    TextEntry::make('billed_at')
+                        ->label(__('kokpit.time.fields.billed_at'))
+                        ->dateTime(LocalisationServiceProvider::DATE_TIME_FORMAT)
+                        ->visible(static fn (TimeEntry $record): bool => $record->isBilled()),
                 ]),
         ]);
+    }
+
+    /**
+     * The columns of an entry list, shared with the other lists of entries: Datum, Čas, Klient,
+     * Projekt, Úkol, Popis, Trvání and the billing badge.
+     *
+     * @return list<TextColumn>
+     */
+    public static function tableColumns(): array
+    {
+        return [
+            TextColumn::make('started_at')
+                ->label(__('kokpit.time.fields.date'))
+                ->date()
+                ->sortable(),
+            TextColumn::make('time_range')
+                ->label(__('kokpit.time.fields.time_range'))
+                ->state(static fn (TimeEntry $record): HtmlString => self::timeRange($record))
+                ->html(),
+            TextColumn::make('client.name')
+                ->label(__('kokpit.time.fields.client')),
+            TextColumn::make('project.key')
+                ->label(__('kokpit.time.fields.project'))
+                ->placeholder(__('kokpit.time.empty_value')),
+            TextColumn::make('task.reference')
+                ->label(__('kokpit.time.fields.task'))
+                ->placeholder(__('kokpit.time.empty_value'))
+                ->url(static fn (TimeEntry $record): ?string => $record->task instanceof Task
+                    ? TaskResource::getUrl('view', ['record' => $record->task])
+                    : null),
+            TextColumn::make('description')
+                ->label(__('kokpit.time.fields.description'))
+                ->placeholder(__('kokpit.time.empty_value'))
+                ->limit(80)
+                ->wrap(),
+            TextColumn::make('elapsed_seconds')
+                ->label(__('kokpit.time.fields.duration'))
+                ->state(static fn (TimeEntry $record): string => DurationFormat::hoursMinutes((int) $record->elapsed_seconds))
+                ->sortable(),
+            // The lock icon of a billed row explains why it has no edit or delete action.
+            TextColumn::make('billing_badge')
+                ->label(__('kokpit.time.fields.billing_state'))
+                ->state(static fn (TimeEntry $record): BillingBadge => $record->billingBadge())
+                ->badge(),
+        ];
     }
 
     public static function table(Table $table): Table
     {
         return $table
-            ->columns([
-                TextColumn::make('started_at')
-                    ->label(__('kokpit.time.fields.date'))
-                    ->date()
-                    ->sortable(),
-                TextColumn::make('time_range')
-                    ->label(__('kokpit.time.fields.time_range'))
-                    ->state(static fn (TimeEntry $record): HtmlString => self::timeRange($record))
-                    ->html(),
-                TextColumn::make('client.name')
-                    ->label(__('kokpit.time.fields.client')),
-                TextColumn::make('project.key')
-                    ->label(__('kokpit.time.fields.project'))
-                    ->placeholder(__('kokpit.time.empty_value')),
-                TextColumn::make('task.reference')
-                    ->label(__('kokpit.time.fields.task'))
-                    ->placeholder(__('kokpit.time.empty_value'))
-                    ->url(static fn (TimeEntry $record): ?string => $record->task instanceof Task
-                        ? TaskResource::getUrl('view', ['record' => $record->task])
-                        : null),
-                TextColumn::make('description')
-                    ->label(__('kokpit.time.fields.description'))
-                    ->placeholder(__('kokpit.time.empty_value'))
-                    ->limit(80)
-                    ->wrap(),
-                TextColumn::make('elapsed_seconds')
-                    ->label(__('kokpit.time.fields.duration'))
-                    ->state(static fn (TimeEntry $record): string => DurationFormat::hoursMinutes((int) $record->elapsed_seconds))
-                    ->sortable(),
-            ])
+            ->columns(self::tableColumns())
             // Newest start first. The id is the tie-breaker, so rows with equal starts keep one
             // order across pages; it also stays the last key when a column sort is chosen.
             ->defaultSort(static fn (Builder $query): Builder => $query
@@ -309,8 +372,168 @@ final class TimeEntryResource extends Resource
                 ->orderByDesc($query->qualifyColumn('id')))
             ->defaultPaginationPageOption(25)
             ->recordUrl(static fn (TimeEntry $record): string => self::getUrl('view', ['record' => $record]))
+            ->recordActions([
+                EditAction::make()
+                    ->label(__('kokpit.time.edit_entry'))
+                    ->visible(static fn (TimeEntry $record): bool => self::canEdit($record)),
+                self::deleteAction(DeleteAction::make()),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make(self::billingBulkActions()),
+            ])
             ->emptyStateHeading(__('kokpit.time.empty_heading'))
             ->emptyStateDescription(__('kokpit.time.empty_description'));
+    }
+
+    /**
+     * "Smazat záznam" for an unbilled, finished entry, through the domain Action: danger, with
+     * the confirmation that names the duration. A refusal (the entry was billed meanwhile) is a
+     * danger toast and changes nothing.
+     */
+    public static function deleteAction(DeleteAction $action): DeleteAction
+    {
+        return $action
+            ->label(__('kokpit.time.delete.action'))
+            ->modalHeading(__('kokpit.time.delete.heading'))
+            ->modalDescription(static fn (TimeEntry $record): string => __('kokpit.time.delete.body', [
+                'duration' => DurationFormat::hoursMinutes((int) $record->elapsed_seconds),
+            ]))
+            ->modalSubmitActionLabel(__('kokpit.time.delete.action'))
+            ->successNotificationTitle(__('kokpit.time.delete.done'))
+            ->visible(static fn (TimeEntry $record): bool => self::canDelete($record))
+            ->using(static function (TimeEntry $record, Component $livewire): bool {
+                $actor = auth()->user();
+                assert($actor instanceof User);
+
+                try {
+                    app(DeleteTimeEntry::class)->handle($actor, $record);
+                } catch (DomainException $e) {
+                    Notification::make()->danger()->title($e->getMessage())->send();
+
+                    return false;
+                }
+
+                $livewire->dispatch('time-entry-deleted');
+
+                return true;
+            });
+    }
+
+    /**
+     * The two bulk billing actions (TI-05, D-06), shared by every list of entries. The closures
+     * hand only the selected keys to the Actions, which read the rows again under a lock and
+     * decide the eligibility themselves; the confirmation text comes from `preview()`, the same
+     * eligibility query, so the modal and the write cannot disagree.
+     *
+     * @return list<BulkAction>
+     */
+    public static function billingBulkActions(): array
+    {
+        return [
+            BulkAction::make('markBilled')
+                ->label(__('kokpit.time.billing.mark.action'))
+                ->icon(Heroicon::OutlinedLockClosed)
+                ->color('primary')
+                ->fetchSelectedRecords(false)
+                ->requiresConfirmation()
+                ->modalHeading(__('kokpit.time.billing.mark.heading'))
+                ->modalDescription(static fn (HasTable $livewire): string => self::markDescription(self::selectedKeys($livewire)))
+                ->modalSubmitActionLabel(__('kokpit.time.billing.mark.action'))
+                ->action(static function (HasTable&Component $livewire): void {
+                    $actor = auth()->user();
+                    assert($actor instanceof User);
+
+                    try {
+                        $result = app(MarkEntriesBilled::class)->handle($actor, self::selectedKeys($livewire));
+                    } catch (DomainException $e) {
+                        Notification::make()->danger()->title($e->getMessage())->send();
+
+                        return;
+                    }
+
+                    Notification::make()->success()->title(__('kokpit.time.billing.mark.done', ['count' => $result['billed']]))->send();
+                    $livewire->dispatch('time-entry-saved');
+                })
+                ->deselectRecordsAfterCompletion(),
+            BulkAction::make('cancelBilling')
+                ->label(__('kokpit.time.billing.cancel.action'))
+                ->icon(Heroicon::OutlinedLockOpen)
+                ->color('warning')
+                ->fetchSelectedRecords(false)
+                ->requiresConfirmation()
+                ->modalHeading(__('kokpit.time.billing.cancel.heading'))
+                ->modalDescription(static fn (HasTable $livewire): string => self::cancelDescription(self::selectedKeys($livewire)))
+                ->modalSubmitActionLabel(__('kokpit.time.billing.cancel.action'))
+                ->action(static function (HasTable&Component $livewire): void {
+                    $actor = auth()->user();
+                    assert($actor instanceof User);
+
+                    try {
+                        $count = app(CancelEntriesBilling::class)->handle($actor, self::selectedKeys($livewire));
+                    } catch (DomainException $e) {
+                        Notification::make()->danger()->title($e->getMessage())->send();
+
+                        return;
+                    }
+
+                    Notification::make()->success()->title(__('kokpit.time.billing.cancel.done', ['count' => $count]))->send();
+                    $livewire->dispatch('time-entry-saved');
+                })
+                ->deselectRecordsAfterCompletion(),
+        ];
+    }
+
+    /**
+     * The confirmation text of "Označit jako vyfakturované" for the selected keys: how many
+     * entries are locked and for how long, and, when some are skipped, how many and why.
+     *
+     * @param  list<string>  $keys
+     */
+    private static function markDescription(array $keys): string
+    {
+        $preview = app(MarkEntriesBilled::class)->preview($keys);
+
+        $text = $preview['eligible'] === 0
+            ? __('kokpit.time.errors.nothing_to_bill')
+            : trans_choice('kokpit.time.billing.mark.body', $preview['eligible'], [
+                'count' => $preview['eligible'],
+                'duration' => DurationFormat::hoursMinutes($preview['eligible_seconds']),
+            ]);
+
+        if ($preview['skipped'] > 0) {
+            $text .= ' '.trans_choice('kokpit.time.billing.mark.skipped', $preview['skipped'], ['skipped' => $preview['skipped']]);
+        }
+
+        return $text;
+    }
+
+    /**
+     * @param  list<string>  $keys
+     */
+    private static function cancelDescription(array $keys): string
+    {
+        $count = app(CancelEntriesBilling::class)->preview($keys)['eligible'];
+
+        return $count === 0
+            ? __('kokpit.time.errors.nothing_to_unbill')
+            : trans_choice('kokpit.time.billing.cancel.body', $count, ['count' => $count]);
+    }
+
+    /**
+     * The keys of the selected rows, without loading them: the browser's selection, which the
+     * Actions treat as untrusted input.
+     *
+     * @return list<string>
+     */
+    private static function selectedKeys(HasTable $livewire): array
+    {
+        $keys = [];
+
+        foreach ($livewire->getSelectedTableRecords(false) as $key) {
+            $keys[] = (string) ($key instanceof Model ? $key->getKey() : $key);
+        }
+
+        return $keys;
     }
 
     public static function getPages(): array

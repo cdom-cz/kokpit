@@ -13,6 +13,7 @@ use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Enums\BillingBadge;
 use App\Domain\TimeTracking\Enums\BillingState;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -72,6 +73,19 @@ final class TimeEntry extends KokpitModel implements PartnerIsolated
     public function isRunning(): bool
     {
         return $this->ended_at === null;
+    }
+
+    public function isBilled(): bool
+    {
+        return $this->billing_state === BillingState::Billed;
+    }
+
+    /**
+     * How the entry reads on the screens: to bill, billed, or not billable.
+     */
+    public function billingBadge(): BillingBadge
+    {
+        return BillingBadge::for($this);
     }
 
     /**
