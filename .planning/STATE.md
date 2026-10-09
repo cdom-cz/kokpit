@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: time-tracking
 status: executing
-stopped_at: Completed 06-10-PLAN.md
-last_updated: "2026-10-09T15:26:52.087Z"
+stopped_at: Completed 06-11-PLAN.md
+last_updated: "2026-10-09T15:42:41.734Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 06 execution started
-state_head: 603dd226a7c64a42b2a9fda116e5e9dcf0a3f87e
+state_head: b47934c2159b2bb1a64b72eded0f1e79a73b043d
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 100
-  completed_plans: 96
+  completed_plans: 97
   percent: 42
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 06 (time-tracking) — EXECUTING
-Plan: 11 of 14
+Plan: 12 of 14
 Status: Ready to execute
 Last activity: 2026-10-09 — Phase 06 execution started
 
@@ -156,6 +156,7 @@ Progress: [████░░░░░░] 42%
 | Phase 06 P08 | 15min | 3 tasks | 10 files |
 | Phase 06 P09 | 17 min | 3 tasks | 12 files |
 | Phase 06 P10 | 10 min | 3 tasks | 10 files |
+| Phase 06 P11 | 40 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -350,6 +351,9 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-09: users.time_panel_open (nullable, null = default open from 80rem) is written only by SetTimePanelOpen for the actor's own row; the overlay below 80rem is client-side and never stored
 - [Phase 06]: 06-10: the start-or-stop of every task surface lives once in TaskTimerToggle; the board's toggleTimer looks the task up withTrashed (Partner scope and view Gate stay) so a stale card gets the task error toast and can still stop its own timer
 - [Phase 06]: 06-10: Nevyfakturováno counts billable unbilled entries with a running one at its elapsed time; the task page figures cover task_id = this task only, a parent does not add its subtasks
+- [Phase 06]: Timesheet view URL property is $mode with #[Url(as: 'view')] because Filament Page owns $view; every read re-validates mode and date, so a forged Livewire property falls back to the day view of today
+- [Phase 06]: Timesheet week grid reads names of archived clients, projects and tasks by joining them into the one grouped query, so the page costs the same number of queries at any volume; an entry belongs to the Prague day it started
+- [Phase 06]: Timesheet day footer reuses the entry list's total summarizer relabelled Celkem za den and hides the billable split summarizers, leaving TimeEntryResource::tableColumns() unchanged
 
 ### Pending Todos
 
@@ -389,6 +393,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T15:26:51.933Z
-Stopped at: Completed 06-10-PLAN.md
+Last session: 2026-10-09T15:42:41.587Z
+Stopped at: Completed 06-11-PLAN.md
 Resume file: None
