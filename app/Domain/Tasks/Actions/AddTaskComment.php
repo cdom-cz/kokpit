@@ -9,6 +9,8 @@ use App\Domain\Identity\RoleName;
 use App\Domain\Shared\Text\RichText;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\Tasks\Notifications\TaskNotifier;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -29,10 +31,17 @@ use InvalidArgumentException;
  * contradict the check constraint or hide a Partner's words. The Partner form
  * has no such field; this is the server-side guarantee behind it.
  *
+ * Notification (TA-07, D-07): after the insert, inside the transaction, TaskNotifier
+ * tells the other side of the task (delivered after commit). An internal comment
+ * reaches no Partner. The comment of an escalation is not announced here: the
+ * escalation notification of EscalateTask covers it, so nobody is told twice.
+ *
  * Comments are append-only and never written to the activity log.
  */
 final class AddTaskComment
 {
+    public function __construct(private readonly TaskNotifier $notifier) {}
+
     public function handle(User $actor, Task $task, string $body, bool $internal = false, bool $escalation = false): TaskComment
     {
         Gate::forUser($actor)->authorize('comment', $task);
@@ -40,15 +49,21 @@ final class AddTaskComment
         $clean = $this->cleanBody($body);
         $internal = $internal && ! $escalation && $actor->hasRole(RoleName::Admin->value);
 
-        $comment = new TaskComment(['body' => $clean]);
-        $comment->forceFill([
-            'task_id' => $task->getKey(),
-            'author_id' => $actor->getKey(),
-            'is_internal' => $internal,
-            'is_escalation' => $escalation,
-        ])->save();
+        return DB::transaction(function () use ($actor, $task, $clean, $internal, $escalation): TaskComment {
+            $comment = new TaskComment(['body' => $clean]);
+            $comment->forceFill([
+                'task_id' => $task->getKey(),
+                'author_id' => $actor->getKey(),
+                'is_internal' => $internal,
+                'is_escalation' => $escalation,
+            ])->save();
 
-        return $comment;
+            if (! $escalation) {
+                $this->notifier->commented($comment, $actor);
+            }
+
+            return $comment;
+        });
     }
 
     /**

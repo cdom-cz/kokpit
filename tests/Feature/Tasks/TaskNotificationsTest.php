@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
+use App\Domain\Notifications\NotificationEvent;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
-use App\Domain\Notifications\NotificationEvent;
 use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\EscalateTask;
@@ -130,7 +130,7 @@ it('renders the mail and the bell payload complete with no signed-in user', func
         ->and($html)->toContain($this->partnerA->name)
         ->and($html)->toContain('/admin/tasks/'.$task->reference);
 
-    $payload = json_encode($notification->toDatabase($this->admin), JSON_THROW_ON_ERROR);
+    $payload = json_encode($notification->toDatabase($this->admin), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
 
     expect($payload)->toContain($task->reference)
         ->and($payload)->toContain($task->title)
@@ -260,6 +260,17 @@ describe('comment notifications', function (): void {
 
         expect(taskNotifSent($this->partnerA2))->toHaveCount(0)
             ->and(taskNotifSent($this->admin))->toHaveCount(1);
+    });
+
+    it('never tells a Partner assignee of the own comment', function (): void {
+        taskNotifPeople($this->task, assignee: $this->partnerA2);
+        Notification::fake();
+
+        taskNotifComment($this->partnerA2, $this->task, '<p>Example own remark</p>');
+
+        expect(taskNotifSent($this->partnerA2))->toHaveCount(0)
+            ->and(taskNotifSent($this->admin))->toHaveCount(1)
+            ->and(taskNotifSent($this->partnerA))->toHaveCount(0);
     });
 
     it('tells the Partner requester of a non-internal Admin comment, not the Admin author', function (): void {
@@ -417,7 +428,7 @@ describe('comment notifications', function (): void {
 
         $mail = $notification->toMail($this->admin);
         $html = (string) $mail->render();
-        $payload = json_encode($notification->toDatabase($this->admin), JSON_THROW_ON_ERROR);
+        $payload = json_encode($notification->toDatabase($this->admin), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
 
         expect($mail->subject)->toContain($this->task->reference)
             ->and($html)->toContain('Example bold remark')
