@@ -413,6 +413,7 @@ it('only names Phase 5 classes in CONTRIBUTING.md that exist in app/', function 
         'TaskColumns' => 'App\Filament\Support\TaskColumns',
         'TaskBillingResolver' => 'App\Domain\Tasks\Billing\TaskBillingResolver',
         'TaskNotifier' => 'App\Domain\Tasks\Notifications\TaskNotifier',
+        'TaskNotification' => 'App\Domain\Tasks\Notifications\TaskNotification',
         'NotificationPreferences' => 'App\Domain\Notifications\NotificationPreferences',
         'TaskComment' => 'App\Domain\Tasks\Models\TaskComment',
         'TaskBilling' => 'App\Domain\Tasks\Models\TaskBilling',
@@ -440,7 +441,9 @@ it('only names Phase 5 classes in CONTRIBUTING.md that exist in app/', function 
         ->and($contributing)->toContain('KP002')
         ->and($contributing)->toContain('projects_key_frozen_guard')
         ->and($contributing)->toContain('PARTNER_COLUMN_NAMES')
-        ->and($contributing)->toContain('PARTNER_ENTRY_NAMES');
+        ->and($contributing)->toContain('PARTNER_ENTRY_NAMES')
+        // The backticked name: a plain substring would also match TaskNotificationsTest.
+        ->and($contributing)->toContain('`TaskNotification`');
 });
 
 it('names the Phase 5 enforcing tests and the hand-over notes for Phases 6, 7, 9 and 10', function () {
@@ -449,7 +452,7 @@ it('names the Phase 5 enforcing tests and the hand-over notes for Phases 6, 7, 9
     foreach ([
         'TaskActionsTest', 'TaskKeyTest', 'TaskNumberConcurrencyTest', 'TasksTableTest', 'TaskBoardTest',
         'TaskBoardConcurrencyTest', 'RichTextSanitiserTest', 'PartnerSafeColumnsTest', 'PartnerTaskVisibilityTest',
-        'TaskBillingResolverTest', 'TaskNotificationsTest', 'NotificationLeakTest',
+        'TaskBillingResolverTest', 'TaskNotificationsTest', 'NotificationLeakTest', 'NotificationMarkupTest',
     ] as $test) {
         expect($contributing)->toContain($test);
     }
