@@ -944,6 +944,13 @@ return [
             'nothing_to_bill' => 'V označených záznamech není nic k vyfakturování.',
             'nothing_to_unbill' => 'V označených záznamech není nic, co by šlo odemknout.',
         ],
+        'rate_source' => [
+            'task' => 'úkol',
+            'parent_task' => 'nadřazený úkol',
+            'project' => 'projekt',
+            'client' => 'klient',
+            'default' => 'výchozí nastavení',
+        ],
     ],
 
 ];
