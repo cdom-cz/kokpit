@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: time-tracking
 status: executing
-stopped_at: Completed 06-09-PLAN.md
-last_updated: "2026-10-09T15:15:34.199Z"
+stopped_at: Completed 06-10-PLAN.md
+last_updated: "2026-10-09T15:26:52.087Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 06 execution started
-state_head: a0160f42ef77405d8cc194c8a7f4e3a7e49de4af
+state_head: 603dd226a7c64a42b2a9fda116e5e9dcf0a3f87e
 progress:
   total_phases: 12
   completed_phases: 5
   total_plans: 100
-  completed_plans: 95
+  completed_plans: 96
   percent: 42
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 06 (time-tracking) — EXECUTING
-Plan: 10 of 14
+Plan: 11 of 14
 Status: Ready to execute
 Last activity: 2026-10-09 — Phase 06 execution started
 
@@ -155,6 +155,7 @@ Progress: [████░░░░░░] 42%
 | Phase 06 P07 | 55min | 3 tasks | 11 files |
 | Phase 06 P08 | 15min | 3 tasks | 10 files |
 | Phase 06 P09 | 17 min | 3 tasks | 12 files |
+| Phase 06 P10 | 10 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -347,6 +348,8 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-08: TI-09 stays open after the visible danger state; the scheduled job and the bell notification are in 06-13
 - [Phase 06]: 06-09: the bar and the side panel share one ControlsTimer trait (two views of the single running entry); the panel keeps the number of shown days (visibleDays) and re-reads them on every refresh instead of a cursor
 - [Phase 06]: 06-09: users.time_panel_open (nullable, null = default open from 80rem) is written only by SetTimePanelOpen for the actor's own row; the overlay below 80rem is client-side and never stored
+- [Phase 06]: 06-10: the start-or-stop of every task surface lives once in TaskTimerToggle; the board's toggleTimer looks the task up withTrashed (Partner scope and view Gate stay) so a stale card gets the task error toast and can still stop its own timer
+- [Phase 06]: 06-10: Nevyfakturováno counts billable unbilled entries with a running one at its elapsed time; the task page figures cover task_id = this task only, a parent does not add its subtasks
 
 ### Pending Todos
 
@@ -386,6 +389,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T15:15:34.052Z
-Stopped at: Completed 06-09-PLAN.md
+Last session: 2026-10-09T15:26:51.933Z
+Stopped at: Completed 06-10-PLAN.md
 Resume file: None
