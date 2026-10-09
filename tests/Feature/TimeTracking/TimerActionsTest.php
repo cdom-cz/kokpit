@@ -181,6 +181,97 @@ it('refuses a malformed or missing client id with the field error client_id', fu
 ]);
 
 /*
+ * Exact seconds at the edges (TI-08, research A1, Pitfalls 2 and 8).
+ */
+
+it('keeps a zero-length entry when a start comes in the same second as the running one', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00.400', 'UTC'));
+    $admin = Canary::admin();
+    $client = Client::factory()->create();
+
+    $first = timerStart($admin, $client->id)['entry'];
+    $second = timerStart($admin, $client->id);
+
+    $stopped = $second['stopped'];
+
+    expect($stopped?->id)->toBe($first->id)
+        ->and($stopped?->ended_at?->equalTo($stopped->started_at))->toBeTrue()
+        ->and($stopped?->duration_seconds)->toBe(0)
+        ->and($second['entry']->isRunning())->toBeTrue()
+        ->and(timerCount($admin))->toBe(2)
+        ->and(timerCount($admin, runningOnly: true))->toBe(1);
+});
+
+it('stops a running entry that lies ahead of the clock at its own start, never before it (clock skew)', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $admin = Canary::admin();
+    $client = Client::factory()->create();
+    $skewedStart = CarbonImmutable::parse('2026-10-12 08:00:05', 'UTC');
+
+    timerSystem(static fn () => TimeEntry::factory()->running()->create([
+        'user_id' => $admin->id,
+        'client_id' => $client->id,
+        'started_at' => $skewedStart,
+    ]));
+
+    $result = timerStart($admin, $client->id);
+
+    expect($result['stopped']?->ended_at?->equalTo($skewedStart))->toBeTrue()
+        ->and($result['stopped']?->duration_seconds)->toBe(0)
+        ->and($result['entry']->started_at->equalTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC')))->toBeTrue()
+        ->and(timerCount($admin, runningOnly: true))->toBe(1);
+});
+
+it('truncates a fractional start and stop instead of rounding them up', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 10:00:00.700', 'UTC'));
+    $admin = Canary::admin();
+    $client = Client::factory()->create();
+
+    $first = timerStart($admin, $client->id)['entry'];
+
+    expect($first->started_at->format('Y-m-d H:i:s'))->toBe('2026-10-12 10:00:00');
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 11:25:30.200', 'UTC'));
+    $stopped = timerStart($admin, $client->id)['stopped'];
+
+    expect($stopped?->ended_at?->format('Y-m-d H:i:s'))->toBe('2026-10-12 11:25:30')
+        ->and($stopped?->duration_seconds)->toBe(5130);
+});
+
+it('returns the stopped entry with its duration loaded from the database', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $admin = Canary::admin();
+    $client = Client::factory()->create();
+
+    timerStart($admin, $client->id);
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:42', 'UTC'));
+    $stopped = timerStart($admin, $client->id)['stopped'];
+
+    expect($stopped?->duration_seconds)->toBe(42)
+        ->and($stopped?->isRunning())->toBeFalse();
+});
+
+it('stores a description of exactly 1000 characters and refuses 1001', function (): void {
+    $admin = Canary::admin();
+    $client = Client::factory()->create();
+
+    $stored = timerStart($admin, $client->id, ['description' => str_repeat('a', 1000)])['entry'];
+
+    expect(mb_strlen((string) $stored->description))->toBe(1000);
+
+    $count = timerCount($admin);
+
+    try {
+        app(StartTimer::class)->handle($admin, ['client_id' => $client->id, 'description' => str_repeat('a', 1001)]);
+        $this->fail('A description of 1001 characters was accepted.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toHaveKey('description');
+    }
+
+    expect(timerCount($admin))->toBe($count);
+});
+
+/*
  * What the database itself refuses, whatever code writes the row (TI-07).
  */
 
