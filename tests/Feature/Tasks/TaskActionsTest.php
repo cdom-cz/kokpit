@@ -8,6 +8,8 @@ use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Tag;
+use App\Domain\Shared\Tags\TagType;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
 use Illuminate\Support\Facades\DB;
@@ -269,6 +271,43 @@ it('gives a Partner task the Partner as requester, the Admin as assignee, planne
         ->and($task->status)->toBe(ProjectStatus::Planned)
         ->and($task->priority)->toBe(ProjectPriority::Normal)
         ->and($task->completed_at)->toBeNull();
+});
+
+it('drops the tags of a Partner payload and stores the same tags for the Admin', function (): void {
+    $admin = Canary::admin();
+    $client = taskSystem(static fn (): Client => Client::factory()->create());
+    $partner = taskPartner($client);
+    $project = taskProject($client);
+    $name = Canary::canary('tag');
+
+    $byPartner = taskCreate($partner, $project, ['tags' => [$name]]);
+
+    // Read in a system run: the Partner tag scope would hide every task tag and make this vacuous.
+    $partnerTags = taskSystem(static fn (): array => $byPartner->tags()->pluck('name')->all());
+    $partnerRows = taskSystem(static fn (): int => Tag::query()->where('type', TagType::Task->value)->count());
+
+    expect($byPartner->requester_id)->toBe($partner->id)
+        ->and($partnerTags)->toBe([])
+        ->and($partnerRows)->toBe(0);
+
+    $byAdmin = taskCreate($admin, $project, ['tags' => [$name]]);
+
+    expect(taskSystem(static fn (): array => $byAdmin->tags()->pluck('name')->all()))->toBe([$name])
+        ->and(taskSystem(static fn (): int => Tag::query()->where('type', TagType::Task->value)->count()))->toBe(1);
+});
+
+it('writes no tag when a Partner creation with tags is refused', function (): void {
+    Canary::admin();
+    $client = taskSystem(static fn (): Client => Client::factory()->create());
+    $partner = taskPartner($client);
+    $foreign = taskProject(Client::factory()->create(), 'ABC');
+    $name = Canary::canary('tag');
+
+    $errors = taskErrors(fn () => taskCreate($partner, $foreign, ['tags' => [$name]]));
+
+    expect($errors)->toHaveKey('project_id')
+        ->and(taskSystem(static fn (): int => Task::query()->count()))->toBe(0)
+        ->and(taskSystem(static fn (): int => Tag::query()->count()))->toBe(0);
 });
 
 it('takes the oldest active Admin as the assignee of a Partner task', function (): void {
