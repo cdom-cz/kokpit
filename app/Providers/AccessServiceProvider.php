@@ -19,6 +19,13 @@ use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Shared\Policies\AdminOnlyPolicy;
+use App\Domain\Signal\Models\SignalDayOverride;
+use App\Domain\Signal\Models\SignalDeepWorkDay;
+use App\Domain\Signal\Models\SignalRecurringTask;
+use App\Domain\Signal\Models\SignalSetting;
+use App\Domain\Signal\Models\SignalTask;
+use App\Domain\Signal\Models\SignalWeeklyGoal;
+use App\Domain\Signal\Models\SignalWeeklyRecap;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskBilling;
 use App\Domain\Tasks\Models\TaskChecklistItem;
@@ -83,5 +90,11 @@ final class AccessServiceProvider extends ServiceProvider
 
         // Tracked time, its rates and its billing are Admin-only (TI-07): a Partner is granted nothing.
         Gate::policy(TimeEntry::class, AdminOnlyPolicy::class);
+
+        // The personal planner "Signal" belongs to one Admin and is closed to Partners; the owner scope
+        // of the models keeps every Admin to the own rows.
+        foreach ([SignalDayOverride::class, SignalDeepWorkDay::class, SignalRecurringTask::class, SignalSetting::class, SignalTask::class, SignalWeeklyGoal::class, SignalWeeklyRecap::class] as $model) {
+            Gate::policy($model, AdminOnlyPolicy::class);
+        }
     }
 }

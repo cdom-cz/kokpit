@@ -122,4 +122,11 @@ return [
         'database' => 'Zvonek',
     ],
 
+    'signal_category' => [
+        'main' => 'Hlavní',
+        'medium' => 'Střední',
+        'other' => 'Ostatní',
+        'extra' => 'Dodatečný',
+    ],
+
 ];

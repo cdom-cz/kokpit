@@ -18,6 +18,13 @@ use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Shared\Tags\TagType;
+use App\Domain\Signal\Models\SignalDayOverride;
+use App\Domain\Signal\Models\SignalDeepWorkDay;
+use App\Domain\Signal\Models\SignalRecurringTask;
+use App\Domain\Signal\Models\SignalSetting;
+use App\Domain\Signal\Models\SignalTask;
+use App\Domain\Signal\Models\SignalWeeklyGoal;
+use App\Domain\Signal\Models\SignalWeeklyRecap;
 use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Enums\TaskBillingType;
@@ -27,6 +34,7 @@ use App\Domain\Tasks\Models\TaskChecklistItem;
 use App\Domain\Tasks\Models\TaskComment;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\TimerClock;
+use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\Probes\PackageProbe;
@@ -46,6 +54,14 @@ use Tests\Support\Probes\PackageProbe;
 final class CanaryRegistry
 {
     private static ?PackageProbe $host = null;
+
+    /**
+     * A Monday derived from the canary string, so two canaries never share a day or a week.
+     */
+    private static function signalMonday(string $canary): string
+    {
+        return CarbonImmutable::parse('2020-01-06')->addWeeks(crc32($canary) % 400)->toDateString();
+    }
 
     /**
      * Creates what the fixtures need inside the test transaction: the canary
@@ -206,6 +222,62 @@ final class CanaryRegistry
                         'started_at' => TimerClock::now()->subHours(2),
                         'ended_at' => TimerClock::now()->subHour(),
                     ])->save();
+                });
+            },
+
+            // The planner "Signal" belongs to one Admin and is closed to Partners (OwnedByUser +
+            // DeniesPartners). Each fixture writes one row of the Admin that carries the canary in a
+            // title or a text field, so a Partner reading any of them would be caught. The day or
+            // week is derived from the canary, so the two clients of one test never collide on the
+            // unique keys of a day or a week (the base is a Monday).
+            SignalTask::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new SignalTask(['title' => $canary, 'for_date' => self::signalMonday($canary), 'category' => 'main']))
+                        ->forceFill(['user_id' => Canary::admin()->getKey()])->save();
+                });
+            },
+
+            SignalRecurringTask::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new SignalRecurringTask(['title' => $canary, 'category' => 'main', 'weekday_mask' => 1]))
+                        ->forceFill(['user_id' => Canary::admin()->getKey()])->save();
+                });
+            },
+
+            SignalSetting::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function (): void {
+                    if (! SignalSetting::query()->where('user_id', Canary::admin()->getKey())->exists()) {
+                        (new SignalSetting(['deep_work_weekday_blocks' => 4, 'deep_work_weekend_blocks' => 1]))
+                            ->forceFill(['user_id' => Canary::admin()->getKey()])->save();
+                    }
+                });
+            },
+
+            SignalDeepWorkDay::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new SignalDeepWorkDay(['for_date' => self::signalMonday($canary), 'planned' => 3, 'completed' => 1]))
+                        ->forceFill(['user_id' => Canary::admin()->getKey()])->save();
+                });
+            },
+
+            SignalDayOverride::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new SignalDayOverride(['for_date' => self::signalMonday($canary)]))
+                        ->forceFill(['user_id' => Canary::admin()->getKey()])->save();
+                });
+            },
+
+            SignalWeeklyGoal::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new SignalWeeklyGoal(['week_start' => self::signalMonday($canary), 'title' => $canary, 'position' => 1]))
+                        ->forceFill(['user_id' => Canary::admin()->getKey()])->save();
+                });
+            },
+
+            SignalWeeklyRecap::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new SignalWeeklyRecap(['week_start' => self::signalMonday($canary), 'what_went_well' => $canary, 'what_to_change' => $canary]))
+                        ->forceFill(['user_id' => Canary::admin()->getKey()])->save();
                 });
             },
 
