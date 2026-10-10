@@ -97,7 +97,7 @@ class SignalSettingsPage extends Page
                 'label' => $template->category->getLabel(),
                 'color' => $template->category->getColor(),
                 'active' => $template->active,
-                'weekdays' => $template->weekdays(),
+                'weekdays' => $template->weekdays,
             ])
             ->values()
             ->all();

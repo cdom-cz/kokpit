@@ -239,7 +239,7 @@ final class CanaryRegistry
 
             SignalRecurringTask::class => static function (string $clientId, string $canary): void {
                 app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
-                    (new SignalRecurringTask(['title' => $canary, 'category' => 'main', 'weekday_mask' => 1]))
+                    (new SignalRecurringTask(['title' => $canary, 'category' => 'main', 'weekdays' => [0]]))
                         ->forceFill(['user_id' => Canary::admin()->getKey()])->save();
                 });
             },

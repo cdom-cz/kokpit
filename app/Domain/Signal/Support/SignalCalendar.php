@@ -75,7 +75,7 @@ final class SignalCalendar
     }
 
     /**
-     * Monday = 0 ... Sunday = 6, the convention of the recurring weekday mask.
+     * Monday = 0 ... Sunday = 6, the convention of the recurring weekdays.
      */
     public static function weekdayIndex(string $day): int
     {

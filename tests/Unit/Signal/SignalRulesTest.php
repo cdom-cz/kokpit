@@ -53,23 +53,12 @@ it('lets a task be ticked today and on past days, even locked ones, never in the
         ->and(SignalRules::canToggleDone('2026-10-13', '2026-10-12'))->toBeFalse();
 });
 
-it('converts weekdays to a mask and back, ignoring what is out of range', function (): void {
-    expect(SignalRules::maskFromWeekdays([0, 2, 4]))->toBe(0b0010101)
-        ->and(SignalRules::maskFromWeekdays([0, 1, 2, 3, 4, 5, 6]))->toBe(127)
-        ->and(SignalRules::maskFromWeekdays([7, -1, 99]))->toBe(0)
-        ->and(SignalRules::maskFromWeekdays([6, 6]))->toBe(64)
-        ->and(SignalRules::weekdaysFromMask(0b0010101))->toBe([0, 2, 4])
-        ->and(SignalRules::weekdaysFromMask(127))->toBe([0, 1, 2, 3, 4, 5, 6])
-        ->and(SignalRules::weekdaysFromMask(0))->toBe([]);
-});
-
-it('tells which days a mask fires on, Monday being the lowest bit', function (): void {
-    $mondayAndFriday = SignalRules::maskFromWeekdays([0, 4]);
-
-    expect(SignalRules::maskFiresOn($mondayAndFriday, '2026-10-12'))->toBeTrue() // Monday
-        ->and(SignalRules::maskFiresOn($mondayAndFriday, '2026-10-13'))->toBeFalse()
-        ->and(SignalRules::maskFiresOn($mondayAndFriday, '2026-10-16'))->toBeTrue() // Friday
-        ->and(SignalRules::maskFiresOn($mondayAndFriday, '2026-10-18'))->toBeFalse(); // Sunday
+it('tells which days a template fires on, Monday being index 0', function (): void {
+    expect(SignalRules::firesOn([0, 4], '2026-10-12'))->toBeTrue() // Monday
+        ->and(SignalRules::firesOn([0, 4], '2026-10-13'))->toBeFalse()
+        ->and(SignalRules::firesOn([0, 4], '2026-10-16'))->toBeTrue() // Friday
+        ->and(SignalRules::firesOn([0, 4], '2026-10-18'))->toBeFalse() // Sunday
+        ->and(SignalRules::firesOn([], '2026-10-12'))->toBeFalse();
 });
 
 it('plans deep-work blocks by weekday or weekend and clamps what is completed', function (): void {

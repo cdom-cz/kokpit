@@ -286,7 +286,7 @@ it('needs a plannable colour and at least one weekday for a template', function 
     $updated = $save->handle($this->admin, $template->id, 'Example renamed', SignalCategory::Medium, [1]);
 
     expect($updated->is($template))->toBeTrue()
-        ->and($updated->weekdays())->toBe([1])
+        ->and($updated->weekdays)->toBe([1])
         ->and($updated->category)->toBe(SignalCategory::Medium)
         ->and(SignalRecurringTask::query()->count())->toBe(1);
 });

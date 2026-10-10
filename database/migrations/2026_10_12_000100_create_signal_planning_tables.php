@@ -18,12 +18,12 @@ use Illuminate\Support\Facades\Schema;
  * - a template yields at most one task per day: the partial unique index on (recurring_id, for_date)
  *   is what makes the lazy materialization idempotent under parallel requests;
  * - is_done and completed_at never disagree;
- * - categories and the weekday mask are closed sets (CHECK), titles are never blank;
+ * - categories and the weekdays are closed sets (CHECK), titles are never blank;
  * - a deep-work day has 0 <= completed <= planned <= 12, one row per user and day;
  * - one settings row and one unlock row per user (and day).
  *
- * The weekdays of a template are a bit mask, Monday = bit 0 ... Sunday = bit 6 (1..127), so the
- * "fires on this weekday" test is one bitwise AND and needs no array type.
+ * The weekdays of a template are a smallint[] of indexes 0 (Monday) .. 6 (Sunday), 1 to 7 of them, read
+ * and written through WeekdaysCast; "fires on this weekday" is the array operator @>.
  *
  * A date column holds a calendar day of the Europe/Prague planner, never an instant.
  */
@@ -46,7 +46,7 @@ return new class extends Migration
             $table->foreignUuid('user_id')->constrained('users')->restrictOnDelete();
             $table->string('title', 255);
             $table->string('category', 16);
-            $table->smallInteger('weekday_mask');
+            // The weekdays column (smallint[]) is added below: Blueprint has no array type.
             $table->boolean('active')->default(true);
             $table->timestampsTz();
 
@@ -55,7 +55,8 @@ return new class extends Migration
 
         DB::statement('ALTER TABLE signal_recurring_tasks ADD CONSTRAINT signal_recurring_tasks_id_user_unique UNIQUE (id, user_id)');
         DB::statement("ALTER TABLE signal_recurring_tasks ADD CONSTRAINT signal_recurring_tasks_category_check CHECK (category IN ('main', 'medium', 'other'))");
-        DB::statement('ALTER TABLE signal_recurring_tasks ADD CONSTRAINT signal_recurring_tasks_mask_check CHECK (weekday_mask BETWEEN 1 AND 127)');
+        DB::statement('ALTER TABLE signal_recurring_tasks ADD COLUMN weekdays smallint[] NOT NULL');
+        DB::statement('ALTER TABLE signal_recurring_tasks ADD CONSTRAINT signal_recurring_tasks_weekdays_check CHECK (cardinality(weekdays) BETWEEN 1 AND 7 AND weekdays <@ ARRAY[0, 1, 2, 3, 4, 5, 6]::smallint[])');
         DB::statement("ALTER TABLE signal_recurring_tasks ADD CONSTRAINT signal_recurring_tasks_title_check CHECK (btrim(title) <> '')");
 
         Schema::create('signal_tasks', function (Blueprint $table): void {

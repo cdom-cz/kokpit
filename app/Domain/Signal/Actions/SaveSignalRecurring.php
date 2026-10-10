@@ -8,7 +8,6 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Signal\Enums\SignalCategory;
 use App\Domain\Signal\Exceptions\SignalRuleViolation;
 use App\Domain\Signal\Models\SignalRecurringTask;
-use App\Domain\Signal\Support\SignalRules;
 
 /**
  * Creates a recurring template, or updates the one with the given id (title, colour, weekdays).
@@ -34,16 +33,17 @@ final class SaveSignalRecurring
             throw SignalRuleViolation::because('category_required');
         }
 
-        $mask = SignalRules::maskFromWeekdays($weekdays);
+        // Anything that is no weekday index is dropped; nothing left means no day was chosen.
+        $weekdays = array_values(array_unique(array_filter($weekdays, static fn (int $weekday): bool => $weekday >= 0 && $weekday <= 6)));
 
-        if ($mask === 0) {
+        if ($weekdays === []) {
             throw SignalRuleViolation::because('weekdays_required');
         }
 
         $template = $id === null ? new SignalRecurringTask : $this->findOwned(SignalRecurringTask::class, $id);
         $template->title = $title;
         $template->category = $category;
-        $template->weekday_mask = $mask;
+        $template->weekdays = $weekdays;
         $template->save();
 
         return $template;

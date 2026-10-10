@@ -45,7 +45,7 @@ function signalIsolationRows(string $userId, string $label): array
         $own(new SignalWeeklyRecap(['week_start' => '2026-10-12', 'what_went_well' => $label, 'what_to_change' => $label]))->save();
 
         $task = new SignalTask(['title' => $label, 'for_date' => '2026-10-13', 'category' => SignalCategory::Main, 'position' => 0]);
-        $template = new SignalRecurringTask(['title' => $label, 'category' => SignalCategory::Main, 'weekday_mask' => 1, 'active' => true]);
+        $template = new SignalRecurringTask(['title' => $label, 'category' => SignalCategory::Main, 'weekdays' => [0], 'active' => true]);
         $goal = new SignalWeeklyGoal(['week_start' => '2026-10-12', 'title' => $label, 'position' => 1]);
 
         foreach ([$task, $template, $goal] as $model) {

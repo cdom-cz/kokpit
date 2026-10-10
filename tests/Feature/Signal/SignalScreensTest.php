@@ -108,7 +108,7 @@ it('ticks, edits and deletes a task of today', function (): void {
 });
 
 it('materializes the recurring templates of today when the day is shown', function (): void {
-    SignalRecurringTask::query()->create(['title' => 'Example standup', 'category' => SignalCategory::Main, 'weekday_mask' => 0b1111111, 'active' => true]);
+    SignalRecurringTask::query()->create(['title' => 'Example standup', 'category' => SignalCategory::Main, 'weekdays' => [0, 1, 2, 3, 4, 5, 6], 'active' => true]);
 
     Livewire::test(SignalDay::class, ['forDate' => '2026-10-12'])->assertSee('Example standup');
 
@@ -116,7 +116,7 @@ it('materializes the recurring templates of today when the day is shown', functi
 });
 
 it('shows the templates of a later day as read-only shadows without storing them', function (): void {
-    SignalRecurringTask::query()->create(['title' => 'Example standup', 'category' => SignalCategory::Main, 'weekday_mask' => 0b1111111, 'active' => true]);
+    SignalRecurringTask::query()->create(['title' => 'Example standup', 'category' => SignalCategory::Main, 'weekdays' => [0, 1, 2, 3, 4, 5, 6], 'active' => true]);
 
     Livewire::test(SignalDay::class, ['forDate' => '2026-10-13'])
         ->assertSee('Example standup')
@@ -246,7 +246,7 @@ it('saves the settings and manages the recurring templates', function (): void {
 
     $template = SignalRecurringTask::query()->firstOrFail();
 
-    expect($template->weekdays())->toBe([0, 2]);
+    expect($template->weekdays)->toBe([0, 2]);
 
     $page->call('editTemplate', $template->id)
         ->assertSet('templateTitle', 'Example standup')

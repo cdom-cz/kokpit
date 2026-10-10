@@ -79,39 +79,13 @@ final class SignalRules
     }
 
     /**
-     * Whether the weekday mask (Monday = bit 0) fires on the day.
-     */
-    public static function maskFiresOn(int $mask, string $day): bool
-    {
-        return ($mask & (1 << SignalCalendar::weekdayIndex($day))) !== 0;
-    }
-
-    /**
-     * The mask of the given weekday indexes 0..6; indexes outside the range are ignored.
+     * Whether a recurring template with these weekdays (0 = Monday ... 6 = Sunday) fires on the day.
      *
      * @param  list<int>  $weekdays
      */
-    public static function maskFromWeekdays(array $weekdays): int
+    public static function firesOn(array $weekdays, string $day): bool
     {
-        $mask = 0;
-
-        foreach ($weekdays as $weekday) {
-            if ($weekday >= 0 && $weekday <= 6) {
-                $mask |= 1 << $weekday;
-            }
-        }
-
-        return $mask;
-    }
-
-    /**
-     * The weekday indexes 0..6 set in the mask, ascending.
-     *
-     * @return list<int>
-     */
-    public static function weekdaysFromMask(int $mask): array
-    {
-        return array_values(array_filter(range(0, 6), static fn (int $weekday): bool => ($mask & (1 << $weekday)) !== 0));
+        return in_array(SignalCalendar::weekdayIndex($day), $weekdays, true);
     }
 
     /**

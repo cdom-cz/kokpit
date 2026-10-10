@@ -55,7 +55,7 @@ function signalSchemaTemplate(string $userId, array $overrides = []): string
         'user_id' => $userId,
         'title' => 'Example template',
         'category' => 'main',
-        'weekday_mask' => 1,
+        'weekdays' => '{0}',
         'active' => true,
         'created_at' => now(),
         'updated_at' => now(),
@@ -82,12 +82,12 @@ it('refuses a task with a blank title, an unknown colour or a done flag that dis
         ->and(signalSchemaState(fn () => signalSchemaTask($this->userId, ['is_done' => true, 'completed_at' => now()])))->toBeNull();
 });
 
-it('refuses a template with a grey colour, an empty or out-of-range weekday mask or a blank title', function (): void {
+it('refuses a template with a grey colour, an empty or out-of-range weekday list or a blank title', function (): void {
     expect(signalSchemaState(fn () => signalSchemaTemplate($this->userId, ['category' => 'extra'])))->toBe('23514')
-        ->and(signalSchemaState(fn () => signalSchemaTemplate($this->userId, ['weekday_mask' => 0])))->toBe('23514')
-        ->and(signalSchemaState(fn () => signalSchemaTemplate($this->userId, ['weekday_mask' => 128])))->toBe('23514')
+        ->and(signalSchemaState(fn () => signalSchemaTemplate($this->userId, ['weekdays' => '{}'])))->toBe('23514')
+        ->and(signalSchemaState(fn () => signalSchemaTemplate($this->userId, ['weekdays' => '{7}'])))->toBe('23514')
         ->and(signalSchemaState(fn () => signalSchemaTemplate($this->userId, ['title' => ''])))->toBe('23514')
-        ->and(signalSchemaState(fn () => signalSchemaTemplate($this->userId, ['weekday_mask' => 127])))->toBeNull();
+        ->and(signalSchemaState(fn () => signalSchemaTemplate($this->userId, ['weekdays' => '{0,1,2,3,4,5,6}'])))->toBeNull();
 });
 
 it('lets a template yield one task a day, whoever inserts it', function (): void {
