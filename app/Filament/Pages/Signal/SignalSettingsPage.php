@@ -11,7 +11,9 @@ use App\Domain\Signal\Actions\SaveSignalRecurring;
 use App\Domain\Signal\Actions\SaveSignalSettings;
 use App\Domain\Signal\Actions\ToggleSignalRecurring;
 use App\Domain\Signal\Enums\SignalCategory;
+use App\Domain\Signal\Exceptions\SignalRuleViolation;
 use App\Domain\Signal\Models\SignalRecurringTask;
+use App\Domain\Signal\Models\SignalSetting;
 use App\Domain\Signal\Queries\SignalDayReader;
 use App\Domain\Signal\Queries\SignalOverviewReader;
 use App\Filament\Concerns\EnforcesPageAccessRule;
@@ -39,9 +41,11 @@ class SignalSettingsPage extends Page
 
     protected string $view = 'filament.pages.signal.settings';
 
-    public int $weekdayBlocks = 3;
+    /** @var int|string|null A number input: the browser can send an empty or a non-numeric value, so the type is open and saveBlocks() checks it. */
+    public int|string|null $weekdayBlocks = 3;
 
-    public int $weekendBlocks = 0;
+    /** @var int|string|null See. */
+    public int|string|null $weekendBlocks = 0;
 
     /** The template being edited; null while a new one is entered. */
     public ?string $editingTemplateId = null;
@@ -77,7 +81,7 @@ class SignalSettingsPage extends Page
 
     public function saveBlocks(): void
     {
-        if ($this->attempt(fn ($actor) => app(SaveSignalSettings::class)->handle($actor, $this->weekdayBlocks, $this->weekendBlocks))) {
+        if ($this->attempt(fn ($actor) => app(SaveSignalSettings::class)->handle($actor, $this->blockCount($this->weekdayBlocks), $this->blockCount($this->weekendBlocks)))) {
             Notification::make()->title(__('kokpit.signal.settings.saved'))->success()->send();
             $this->dispatch('signal-changed');
         }
@@ -105,7 +109,8 @@ class SignalSettingsPage extends Page
 
     public function saveTemplate(): void
     {
-        $weekdays = array_map(intval(...), $this->templateWeekdays);
+        // What is no whole number is dropped, never turned into Monday (index 0).
+        $weekdays = array_values(array_map(intval(...), array_filter($this->templateWeekdays, static fn (mixed $weekday): bool => filter_var($weekday, FILTER_VALIDATE_INT) !== false)));
 
         if ($this->attempt(fn ($actor) => app(SaveSignalRecurring::class)->handle($actor, $this->editingTemplateId, $this->templateTitle, SignalCategory::tryFrom($this->templateCategory), $weekdays))) {
             $this->resetForm();
@@ -159,6 +164,25 @@ class SignalSettingsPage extends Page
         return [
             'categories' => collect(SignalCategory::plannable())->mapWithKeys(static fn (SignalCategory $category): array => [$category->value => $category->getLabel()])->all(),
         ];
+    }
+
+    /**
+     * The number of a block field: an integer, or a string of digits (surrounding blanks and a sign
+     * allowed). Anything else is refused as out of range; the Action enforces the range itself.
+     *
+     * @throws SignalRuleViolation
+     */
+    private function blockCount(int|string|null $value): int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && preg_match('/^[+-]?\d+$/', trim($value)) === 1) {
+            return (int) trim($value);
+        }
+
+        throw SignalRuleViolation::because('blocks_range', ['max' => SignalSetting::MAX_BLOCKS]);
     }
 
     private function changed(): void

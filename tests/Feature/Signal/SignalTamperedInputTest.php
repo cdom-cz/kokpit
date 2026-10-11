@@ -9,14 +9,18 @@ use App\Domain\Signal\Actions\SetSignalDayUnlocked;
 use App\Domain\Signal\Actions\SetSignalDeepWork;
 use App\Domain\Signal\Enums\SignalCategory;
 use App\Domain\Signal\Exceptions\SignalRuleViolation;
+use App\Domain\Signal\Models\SignalRecurringTask;
+use App\Domain\Signal\Models\SignalSetting;
 use App\Domain\Signal\Models\SignalTask;
 use App\Filament\Pages\Signal\SignalReflectionPage;
+use App\Filament\Pages\Signal\SignalSettingsPage;
 use App\Filament\Pages\Signal\SignalTodayPage;
 use App\Filament\Pages\Signal\SignalWeekPage;
 use App\Livewire\Signal\SignalDay;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -101,4 +105,53 @@ it('ignores an id that is no UUID when starting an edit or dropping a task', fun
     $component->call('reorder', 'not-a-uuid', 0)->assertDispatched('signal-changed');
 
     expect(SignalTask::query()->count())->toBe(0);
+});
+
+/**
+ * What the browser does on submit: the deferred model values and the method call travel in ONE request,
+ * so a value that the property type cannot keep between two requests (null) still reaches the method.
+ *
+ * @param  Testable  $page
+ */
+function tamperedSubmitBlocks(object $page, mixed $weekday, mixed $weekend): object
+{
+    return $page->update(calls: [['method' => 'saveBlocks', 'params' => [], 'path' => '']], updates: ['weekdayBlocks' => $weekday, 'weekendBlocks' => $weekend]);
+}
+
+it('refuses an empty, a non-numeric or an out-of-range block count with the translated message and stores nothing', function (mixed $value): void {
+    $message = __('kokpit.signal.errors.blocks_range', ['max' => 12]);
+
+    tamperedSubmitBlocks(Livewire::test(SignalSettingsPage::class), $value, 0)->assertNotified($message);
+    tamperedSubmitBlocks(Livewire::test(SignalSettingsPage::class), 3, $value)->assertNotified($message);
+
+    expect(SignalSetting::query()->count())->toBe(0);
+})->with([
+    'an empty field' => [''],
+    'blanks' => ['   '],
+    'text' => ['abc'],
+    'a decimal' => ['2.5'],
+    'nothing' => [null],
+    'too many' => ['13'],
+    'negative' => ['-1'],
+]);
+
+it('saves a block count that arrives as a numeric string', function (): void {
+    tamperedSubmitBlocks(Livewire::test(SignalSettingsPage::class), ' 5 ', '12')->assertNotified(__('kokpit.signal.settings.saved'));
+
+    $setting = SignalSetting::query()->firstOrFail();
+
+    expect([$setting->deep_work_weekday_blocks, $setting->deep_work_weekend_blocks])->toBe([5, 12]);
+});
+
+it('drops a ticked weekday that is no number instead of turning it into Monday', function (): void {
+    $page = Livewire::test(SignalSettingsPage::class);
+
+    $page->set('templateTitle', 'Example garbage')->set('templateWeekdays', ['abc'])->call('saveTemplate')
+        ->assertNotified(__('kokpit.signal.errors.weekdays_required'));
+
+    expect(SignalRecurringTask::query()->count())->toBe(0);
+
+    $page->set('templateWeekdays', ['abc', '2', ''])->call('saveTemplate');
+
+    expect(SignalRecurringTask::query()->firstOrFail()->weekdays)->toBe([2]);
 });
