@@ -16,7 +16,7 @@ zerops:
       siteConfigPath: site.conf.tmpl
       prepareCommands:
         - sudo apk update
-        - sudo apk add --no-cache supervisor php85-pcntl php85-posix
+        - sudo apk add --no-cache supervisor php85-pcntl php85-posix icu-data-full
         - sudo rc-update add supervisord default
         - sudo mkdir -p /etc/supervisor.d
         - sudo mkdir -p /var/log/supervisor
