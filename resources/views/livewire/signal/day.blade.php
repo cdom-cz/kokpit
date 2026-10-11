@@ -192,12 +192,16 @@
                             @endforeach
                         </x-filament::input.select>
                     </x-filament::input.wrapper>
-                @else
-                    <x-filament::badge color="gray" size="sm">{{ __('kokpit.signal.day.adds_extra') }}</x-filament::badge>
                 @endif
 
                 <x-filament::button type="submit" icon="heroicon-m-plus">{{ __('kokpit.signal.day.add') }}</x-filament::button>
             </form>
+
+            @if ($day['adds_extra'])
+                <div style="margin-top: 0.5rem;">
+                    <x-filament::badge color="gray" size="sm">{{ __('kokpit.signal.day.adds_extra') }}</x-filament::badge>
+                </div>
+            @endif
         @endif
     </div>
 </x-filament::section>
