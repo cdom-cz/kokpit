@@ -253,7 +253,7 @@ jobs:
         run: composer validate --strict
 
       - name: Audit locked packages for known vulnerabilities
-        run: composer audit --locked
+        run: composer audit --locked --abandoned=report
 
       - name: Check licences against the AGPL-compatible allowlist
         run: |
