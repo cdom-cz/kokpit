@@ -153,10 +153,44 @@ it('carries the DDEV-ready values the application relies on', function () {
         'APP_LOCALE' => 'cs',
         'KOKPIT_REQUIRE_ADMIN_2FA' => 'true',
         'KOKPIT_CANARY_HARNESS' => 'false',
-        'AWS_USE_PATH_STYLE_ENDPOINT' => 'true',
+        'FILESYSTEM_DISK' => 's3',
+        'S3_USE_PATH_STYLE_ENDPOINT' => 'true',
     ]);
 
     expect($values['MAIL_FROM_ADDRESS'])->toEndWith('@example.com"');
+});
+
+it('keeps the AWS credentials commented out because they belong to AWS services, not the object storage', function () {
+    $contents = realEnvExample();
+
+    expect(array_keys(envExampleValues($contents)))->not->toContain(
+        'AWS_ACCESS_KEY_ID',
+        'AWS_SECRET_ACCESS_KEY',
+        'AWS_DEFAULT_REGION',
+        'AWS_BUCKET',
+        'AWS_ENDPOINT',
+        'AWS_USE_PATH_STYLE_ENDPOINT',
+        'AWS_URL',
+    )
+        ->and(envExampleKeys($contents))->toContain('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY');
+});
+
+it('reads only S3 keys for the object storage', function () {
+    $reads = array_keys(configEnvReads([(string) file_get_contents(base_path('config/filesystems.php'))]));
+
+    expect($reads)->toContain(
+        'S3_ACCESS_KEY_ID',
+        'S3_SECRET_ACCESS_KEY',
+        'S3_DEFAULT_REGION',
+        'S3_BUCKET',
+        'S3_URL',
+        'S3_ENDPOINT',
+        'S3_USE_PATH_STYLE_ENDPOINT',
+    );
+
+    foreach ($reads as $key) {
+        expect($key)->not->toStartWith('AWS_');
+    }
 });
 
 it('keeps the install-only admin password commented out', function () {

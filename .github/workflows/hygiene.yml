@@ -136,8 +136,8 @@ jobs:
           --health-timeout 5s
           --health-retries 12
       # S3-compatible object storage for the s3 Pest group (php artisan kokpit:storage:check). The image tag is
-      # kept equal to .ddev/docker-compose.rustfs.yaml, and the key pair equals AWS_ACCESS_KEY_ID and
-      # AWS_SECRET_ACCESS_KEY of .env.example (tests/Feature/Repo/CiParityTest.php). It is the publicly documented
+      # kept equal to .ddev/docker-compose.rustfs.yaml, and the key pair equals S3_ACCESS_KEY_ID and
+      # S3_SECRET_ACCESS_KEY of .env.example (tests/Feature/Repo/CiParityTest.php). It is the publicly documented
       # RustFS development default, valid only for this job's throwaway container. The tests create their own bucket.
       rustfs:
         image: rustfs/rustfs:1.0.1
@@ -161,7 +161,7 @@ jobs:
       DB_USERNAME: kokpit
       DB_PASSWORD: kokpit-ci-only
       REDIS_HOST: 127.0.0.1
-      AWS_ENDPOINT: http://127.0.0.1:9000
+      S3_ENDPOINT: http://127.0.0.1:9000
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

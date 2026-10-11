@@ -138,7 +138,7 @@ it('gives every job a pinned runner, least-privilege token and SHA-pinned action
 });
 
 /**
- * The AWS_* values of .env.example, which the tests job boots from.
+ * The S3_* values of .env.example, which the tests job boots from.
  *
  * @return array<string, string>
  */
@@ -169,12 +169,12 @@ it('gives the RustFS service the key pair of .env.example and points the job at 
     $ddev = ciParseYaml('.ddev/docker-compose.rustfs.yaml')['services']['rustfs']['environment'] ?? [];
 
     expect((string) ($service['RUSTFS_ACCESS_KEY'] ?? ''))->not->toBe('')
-        ->and($service['RUSTFS_ACCESS_KEY'])->toBe($env['AWS_ACCESS_KEY_ID'])
-        ->and($service['RUSTFS_SECRET_KEY'] ?? null)->toBe($env['AWS_SECRET_ACCESS_KEY'])
-        ->and($ddev['RUSTFS_ACCESS_KEY'] ?? null)->toBe($env['AWS_ACCESS_KEY_ID'])
-        ->and($ddev['RUSTFS_SECRET_KEY'] ?? null)->toBe($env['AWS_SECRET_ACCESS_KEY'])
-        ->and($job['env']['AWS_ENDPOINT'] ?? null)->toBe('http://127.0.0.1:9000')
-        ->and($env['AWS_USE_PATH_STYLE_ENDPOINT'])->toBe('true');
+        ->and($service['RUSTFS_ACCESS_KEY'])->toBe($env['S3_ACCESS_KEY_ID'])
+        ->and($service['RUSTFS_SECRET_KEY'] ?? null)->toBe($env['S3_SECRET_ACCESS_KEY'])
+        ->and($ddev['RUSTFS_ACCESS_KEY'] ?? null)->toBe($env['S3_ACCESS_KEY_ID'])
+        ->and($ddev['RUSTFS_SECRET_KEY'] ?? null)->toBe($env['S3_SECRET_ACCESS_KEY'])
+        ->and($job['env']['S3_ENDPOINT'] ?? null)->toBe('http://127.0.0.1:9000')
+        ->and($env['S3_USE_PATH_STYLE_ENDPOINT'])->toBe('true');
 });
 
 it('keeps the aggregator needs list unchanged because RustFS lives inside the tests job', function () {

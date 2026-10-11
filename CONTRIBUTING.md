@@ -263,10 +263,10 @@ Zerops:
   - database: `DB_CONNECTION` `pgsql`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (references to the PostgreSQL service)
   - Redis: `REDIS_CLIENT` `phpredis`, `REDIS_HOST`, `REDIS_PORT`, `QUEUE_CONNECTION` `redis` (guard), `CACHE_STORE` `redis` (guard: the `onOneServer` locks, the heartbeats and the alert throttling live in the cache), `SESSION_DRIVER` `redis`
   - mail: `MAIL_MAILER` (a real transport, never `log` or `array`; guard), `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`
-  - storage: `FILESYSTEM_DISK` `s3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_BUCKET`, `AWS_ENDPOINT`, `AWS_USE_PATH_STYLE_ENDPOINT` `true` (references to the object storage service)
+  - storage: `FILESYSTEM_DISK` `s3`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_DEFAULT_REGION`, `S3_BUCKET`, `S3_ENDPOINT`, `S3_USE_PATH_STYLE_ENDPOINT` `true` (references to the object storage service). The storage key pair goes into the `S3_*` names only, and any old `AWS_*` storage variable must be removed from the Zerops UI, because the `AWS_*` names belong to AWS services (SES) and the AWS SDK reads them from the environment.
   - Kokpit: `KOKPIT_REQUIRE_ADMIN_2FA` `true` and `KOKPIT_CANARY_HARNESS` `false` (guard), `ACTIVITYLOG_ENABLED` unset or `true` (guard)
 
-  The secrets (`APP_KEY`, `DB_PASSWORD`, `MAIL_PASSWORD`, `AWS_SECRET_ACCESS_KEY`, later the Stripe keys) are Zerops secrets.
+  The secrets (`APP_KEY`, `DB_PASSWORD`, `MAIL_PASSWORD`, `S3_SECRET_ACCESS_KEY`, later the Stripe keys) are Zerops secrets.
 - [ ] Valkey `maxmemory-policy` is `volatile-lru` or `noeviction`. Queue keys carry no TTL, so the default `allkeys-lru` could evict waiting jobs. The DDEV Redis keeps the default of its add-on because it is for development only.
 - [ ] object storage policy is `private`, PostgreSQL backups are enabled, and the `kokpit` service may run more than one container: the crontab runs `schedule:run` on every container, every scheduled task uses `onOneServer` and the lock lives in the shared Redis cache
 - [ ] the project services are named `db`, `redis` and `storage`, or the `${...}` references you set in the Zerops UI are adjusted to the chosen names

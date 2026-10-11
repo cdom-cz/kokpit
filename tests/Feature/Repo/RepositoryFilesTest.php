@@ -399,7 +399,7 @@ it('names the production environment variables for the Zerops UI and each is a d
 
     foreach ([
         'APP_KEY', 'APP_URL', 'APP_ENV', 'APP_DEBUG', 'DB_HOST', 'DB_PASSWORD', 'REDIS_HOST', 'QUEUE_CONNECTION',
-        'CACHE_STORE', 'SESSION_DRIVER', 'MAIL_MAILER', 'FILESYSTEM_DISK', 'AWS_BUCKET', 'AWS_ENDPOINT',
+        'CACHE_STORE', 'SESSION_DRIVER', 'MAIL_MAILER', 'FILESYSTEM_DISK', 'S3_ACCESS_KEY_ID', 'S3_BUCKET', 'S3_ENDPOINT',
         'KOKPIT_REQUIRE_ADMIN_2FA', 'KOKPIT_CANARY_HARNESS',
     ] as $name) {
         expect($contributing)->toContain("`{$name}`")
