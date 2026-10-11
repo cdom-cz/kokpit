@@ -197,7 +197,7 @@
     {{-- 3. The toggle of the side panel "Poslední záznamy". The panel owns the state; the label follows its report. --}}
     <span
         class="kokpit-timer-toggle"
-        x-data="{ open: @js($panelOpen) }"
+        x-data="{ open: @js($panelOpen), hide: @js($panelHide), show: @js($panelShow) }"
         x-on:kokpit-time-panel-state.window="open = $event.detail.open"
     >
         <x-filament::icon-button
@@ -205,8 +205,8 @@
             size="sm"
             :icon="Heroicon::OutlinedBars3BottomRight"
             :label="$panelOpen ? $panelHide : $panelShow"
-            x-bind:aria-label="open ? @js($panelHide) : @js($panelShow)"
-            x-bind:title="open ? @js($panelHide) : @js($panelShow)"
+            x-bind:aria-label="open ? hide : show"
+            x-bind:title="open ? hide : show"
             x-bind:aria-expanded="open"
             x-on:click="$dispatch('kokpit-time-panel-toggle')"
         />

@@ -194,6 +194,7 @@ final class TaskResource extends Resource
     {
         return $schema->components([
             Section::make(__('kokpit.tasks.sections.main'))
+                ->columnSpanFull()
                 ->columns(2)
                 ->schema([
                     TextInput::make('title')

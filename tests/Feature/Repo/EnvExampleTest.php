@@ -17,6 +17,7 @@ declare(strict_types=1);
  * @var array<string, string>
  */
 const ENV_EXAMPLE_ALLOWLIST = [
+    'DEBUGBAR_ENABLED' => 'read by the vendor config of the dev-only fruitcake/laravel-debugbar, which the project does not publish',
     'KOKPIT_ADMIN_PASSWORD' => 'read only by the kokpit:install command, never by a config file',
 ];
 

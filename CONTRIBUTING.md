@@ -46,6 +46,8 @@ The application runs in a DDEV project (PHP 8.5, PostgreSQL 18, Redis, RustFS, M
 
 Run every PHP command through DDEV (`ddev composer ...`, `ddev artisan ...`, `ddev exec vendor/bin/pest ...`). The tests use the separate `kokpit_test` database that DDEV creates on start; `tests/TestCase.php` refuses any database whose name does not end in `_test`.
 
+[Laravel Debugbar](https://github.com/fruitcake/laravel-debugbar) (`fruitcake/laravel-debugbar`, MIT) is a dev-only dependency for spotting N+1 queries, slow queries and Livewire round-trips. It is auto-discovered, follows `APP_DEBUG` locally (override with `DEBUGBAR_ENABLED` in your own `.env`), is forced off in `phpunit.xml` and is absent from production installs (`composer install --no-dev`). Its request history lands in `storage/debugbar/`, which is git-ignored; it can hold query bindings, so never share or commit it.
+
 Composer scripts (the PHP gates; `composer ci` runs the first four in order):
 
 | Script | What it runs |
