@@ -10,6 +10,7 @@ use App\Domain\Signal\Models\SignalDeepWorkDay;
 use App\Domain\Signal\Models\SignalRecurringTask;
 use App\Domain\Signal\Models\SignalSetting;
 use App\Domain\Signal\Models\SignalTask;
+use App\Domain\Signal\Support\SignalCalendar;
 use App\Domain\Signal\Support\SignalRules;
 use Illuminate\Support\Collection;
 
@@ -52,20 +53,49 @@ final class SignalDayReader
     }
 
     /**
-     * The number of active recurring templates per category that fire on the day. Each one reserves a
-     * slot of the day's limit, whether or not it was materialized yet.
+     * The reserved slots of the day's limit: the number of active recurring templates per category that
+     * fire on the day and have no task on it yet. A template that was materialized already holds its slot
+     * as a real task, which categoryCounts() counts, so it is not reserved a second time.
      *
      * @return array<string, int>
      */
     public function recurringCounts(string $day): array
     {
         $counts = array_fill_keys(array_column(SignalCategory::cases(), 'value'), 0);
+        $materialized = SignalTask::query()->where('for_date', $day)->whereNotNull('recurring_id')->pluck('recurring_id')->all();
 
-        foreach (SignalRecurringTask::query()->firingOn($day)->get(['id', 'category']) as $template) {
+        foreach (SignalRecurringTask::query()->firingOn($day)->whereNotIn('id', $materialized)->get(['id', 'category']) as $template) {
             $counts[$template->category->value]++;
         }
 
         return $counts;
+    }
+
+    /**
+     * The ids of those tasks that cannot be deleted: they carry a template that is still active and fires
+     * on the day, and the day is today. The next materialization would generate such a task again, so
+     * deleting it would only make it come back with a new id. The past is never materialized again and a
+     * future day has no instances, so nothing is pinned there.
+     *
+     * @param  Collection<int, SignalTask>  $tasks  the tasks to check, all of the given day
+     * @return list<string>
+     */
+    public function pinnedTaskIds(string $day, Collection $tasks): array
+    {
+        $templateIds = $tasks->pluck('recurring_id')->filter()->unique()->values()->all();
+
+        if ($day !== SignalCalendar::today() || $templateIds === []) {
+            return [];
+        }
+
+        $firing = SignalRecurringTask::query()->firingOn($day)->whereIn('id', $templateIds)->pluck('id')->all();
+
+        return array_values(
+            $tasks
+                ->filter(static fn (SignalTask $task): bool => $task->recurring_id !== null && in_array($task->recurring_id, $firing, true))
+                ->map(static fn (SignalTask $task): string => $task->id)
+                ->all(),
+        );
     }
 
     /**

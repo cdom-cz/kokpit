@@ -130,14 +130,16 @@
                                             wire:click="startEdit('{{ $task['id'] }}')"
                                             :label="__('kokpit.signal.day.edit')"
                                         />
-                                        <x-filament::icon-button
-                                            icon="heroicon-m-trash"
-                                            size="sm"
-                                            color="danger"
-                                            wire:click="deleteTask('{{ $task['id'] }}')"
-                                            wire:confirm="{{ __('kokpit.signal.day.delete_confirm') }}"
-                                            :label="__('kokpit.signal.day.delete')"
-                                        />
+                                        @if ($task['deletable'])
+                                            <x-filament::icon-button
+                                                icon="heroicon-m-trash"
+                                                size="sm"
+                                                color="danger"
+                                                wire:click="deleteTask('{{ $task['id'] }}')"
+                                                wire:confirm="{{ __('kokpit.signal.day.delete_confirm') }}"
+                                                :label="__('kokpit.signal.day.delete')"
+                                            />
+                                        @endif
                                     </div>
                                 @endif
                             @endif

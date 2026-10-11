@@ -12,7 +12,10 @@ use App\Domain\Signal\Support\SignalCalendar;
 use App\Domain\Signal\Support\SignalRules;
 
 /**
- * Deletes a task. Only on a day that is not locked.
+ * Deletes a task. Only on a day that is not locked, and not a task of today that its recurring template
+ * still produces: the next materialization would generate it again with a new id. The user skips such a
+ * task by switching the template off. The rule is the one the view uses to hide the button
+ * (SignalDayReader::pinnedTaskIds).
  */
 final class DeleteSignalTask
 {
@@ -31,6 +34,10 @@ final class DeleteSignalTask
 
         if (! SignalRules::canEditDay($task->for_date, $this->reader->isUnlocked($task->for_date), SignalCalendar::today())) {
             throw SignalRuleViolation::because('day_locked');
+        }
+
+        if ($this->reader->pinnedTaskIds($task->for_date, collect([$task])) !== []) {
+            throw SignalRuleViolation::because('recurring_pinned');
         }
 
         $task->delete();

@@ -146,13 +146,17 @@ it('lets the Admin read the canary of both clients in every registered model, so
     CanaryRegistry::seedAll($clientA, $canaryA);
     CanaryRegistry::seedAll($clientB, $canaryB);
 
-    $this->actingAs(Canary::admin());
+    // The owner scope limits even the Admin to the own rows, so the Admin acts as the one owner of the Signal fixture rows.
+    $this->actingAs(CanaryRegistry::plannerOwner());
 
     foreach (array_keys(CanaryRegistry::fixtures()) as $model) {
         $rows = visibleRows($model);
 
-        expect(str_contains($rows['json'], $canaryA))->toBeTrue("{$model}: Admin must see the client A canary")
-            ->and(str_contains($rows['json'], $canaryB))->toBeTrue("{$model}: Admin must see the client B canary");
+        foreach ([['A', $canaryA], ['B', $canaryB]] as [$label, $canary]) {
+            foreach (CanaryRegistry::needles($model, $canary) as $needle) {
+                expect(str_contains($rows['json'], $needle))->toBeTrue("{$model}: Admin must see the client {$label} canary");
+            }
+        }
     }
 });
 

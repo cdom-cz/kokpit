@@ -1299,6 +1299,7 @@ return [
             'weekdays_required' => 'Vyberte aspoň jeden den v týdnu.',
             'blocks_range' => 'Zadejte počet bloků od 0 do :max.',
             'not_found' => 'Záznam už neexistuje.',
+            'recurring_pinned' => 'Úkol vznikl z opakující se šablony a ten den by vznikl znovu. Vypněte nebo smažte šablonu v Nastavení.',
         ],
     ],
 

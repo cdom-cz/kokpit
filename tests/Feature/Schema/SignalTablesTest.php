@@ -6,6 +6,7 @@ use App\Domain\Identity\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\Uuids;
 
 /*
  * The planner tables refuse what the Actions and the owner scope cannot: every rule below is a
@@ -71,7 +72,7 @@ beforeEach(function (): void {
 it('gives every planner table a version 7 id from the column default', function (): void {
     signalSchemaTask($this->userId);
 
-    expect(DB::table('signal_tasks')->value('id'))->toMatch(\Tests\Support\Uuids::V7_PATTERN);
+    expect(DB::table('signal_tasks')->value('id'))->toMatch(Uuids::V7_PATTERN);
 });
 
 it('refuses a task with a blank title, an unknown colour or a done flag that disagrees with its time', function (): void {
@@ -177,5 +178,7 @@ it('keeps one recap per user and week, and only for a Monday', function (): void
 it('does not let a user with planner rows be deleted', function (): void {
     signalSchemaTask($this->userId);
 
-    expect(signalSchemaState(fn () => DB::table('users')->where('id', $this->userId)->delete()))->toBe('23503');
+    // The user foreign key is restrictOnDelete, which PostgreSQL reports as 23001 (restrict_violation),
+    // the same as the project billing test and the Phase 2 decision (02-07).
+    expect(signalSchemaState(fn () => DB::table('users')->where('id', $this->userId)->delete()))->toBe('23001');
 });

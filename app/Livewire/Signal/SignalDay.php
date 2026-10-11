@@ -192,7 +192,7 @@ final class SignalDay extends Component
      *     can_edit: bool,
      *     can_toggle: bool,
      *     adds_extra: bool,
-     *     groups: list<array{category: string, label: string, color: string, limit: int|null, tasks: list<array{id: string, title: string, done: bool, recurring: bool}>}>,
+     *     groups: list<array{category: string, label: string, color: string, limit: int|null, tasks: list<array{id: string, title: string, done: bool, recurring: bool, deletable: bool}>}>,
      *     shadows: list<array{id: string, title: string, category: string, label: string, color: string}>,
      *     options: array<string, string>,
      *     blocks: array{planned: int, completed: int},
@@ -211,6 +211,7 @@ final class SignalDay extends Component
         }
 
         $tasks = $reader->tasks($this->forDate);
+        $pinned = $reader->pinnedTaskIds($this->forDate, $tasks);
         $unlocked = $reader->isUnlocked($this->forDate);
         $reserved = $reader->recurringCounts($this->forDate);
         $addsExtra = SignalRules::isExtra($this->forDate, $today);
@@ -241,6 +242,7 @@ final class SignalDay extends Component
                     'title' => $task->title,
                     'done' => $task->is_done,
                     'recurring' => $task->recurring_id !== null,
+                    'deletable' => ! in_array($task->id, $pinned, true),
                 ])->values()->all(),
             ];
         }
