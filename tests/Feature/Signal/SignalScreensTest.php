@@ -8,6 +8,7 @@ use App\Domain\Signal\Models\SignalRecurringTask;
 use App\Domain\Signal\Models\SignalTask;
 use App\Domain\Signal\Models\SignalWeeklyGoal;
 use App\Domain\Signal\Models\SignalWeeklyRecap;
+use App\Domain\Signal\Support\SignalCalendar;
 use App\Filament\Pages\Signal\SignalDashboardPage;
 use App\Filament\Pages\Signal\SignalReflectionPage;
 use App\Filament\Pages\Signal\SignalSettingsPage;
@@ -321,4 +322,22 @@ it('shows the overview figures and refreshes them when the planner changes', fun
         ->assertSee(trans_choice('kokpit.signal.dashboard.streak_days', 1, ['count' => 1]))
         ->dispatch('signal-changed')
         ->assertOk();
+});
+
+it('reports a streak of main tasks that is longer than the 30 days of the other figures', function (): void {
+    foreach (range(0, 44) as $back) {
+        SignalTask::query()->create([
+            'title' => 'Example main '.$back,
+            'for_date' => SignalCalendar::addDays('2026-10-12', -$back),
+            'category' => SignalCategory::Main,
+            'is_done' => true,
+            'completed_at' => CarbonImmutable::now(),
+            'position' => 0,
+        ]);
+    }
+
+    $overview = Livewire::test(SignalDashboardPage::class)->instance()->overview;
+
+    expect($overview['streak'])->toBe(45)
+        ->and($overview['split']['total'])->toBe(30);
 });

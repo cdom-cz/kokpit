@@ -21,6 +21,9 @@ final class SignalCalendar
 {
     public const string ZONE = 'Europe/Prague';
 
+    /** The most days range() lists; a forged range cannot allocate without bound, and the main-task streak looks back this far. */
+    public const int MAX_RANGE_DAYS = 400;
+
     /** Czech weekday names, Monday first. */
     private const array WEEKDAY_NAMES = ['pondělí', 'úterý', 'středa', 'čtvrtek', 'pátek', 'sobota', 'neděle'];
 
@@ -97,7 +100,7 @@ final class SignalCalendar
      *
      * @return list<string>
      */
-    public static function range(string $from, string $to, int $max = 400): array
+    public static function range(string $from, string $to, int $max = self::MAX_RANGE_DAYS): array
     {
         $days = [];
         $cursor = $from;

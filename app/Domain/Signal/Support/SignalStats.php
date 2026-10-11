@@ -18,6 +18,9 @@ final class SignalStats
 {
     public const array CATEGORIES = ['main', 'medium', 'other', 'extra'];
 
+    /** How many days back the streak is counted: the same cap as the longest range of days. */
+    public const int MAX_STREAK_DAYS = SignalCalendar::MAX_RANGE_DAYS;
+
     /**
      * Done and total per category.
      *
@@ -127,7 +130,8 @@ final class SignalStats
     /**
      * The number of consecutive days, ending today or yesterday, on which every main task was done.
      * A day counts only when it had main tasks. Today is included only if it already qualifies, so
-     * a day in progress does not reset the streak.
+     * a day in progress does not reset the streak. The count stops at MAX_STREAK_DAYS on purpose, so the
+     * caller needs to read the main tasks of that many days at most.
      *
      * @param  iterable<TaskRow>  $tasks
      */
@@ -149,7 +153,7 @@ final class SignalStats
         $streak = 0;
         $cursor = $qualifies($today) ? $today : SignalCalendar::addDays($today, -1);
 
-        for ($i = 0; $i < 400 && $qualifies($cursor); $i++) {
+        for ($i = 0; $i < self::MAX_STREAK_DAYS && $qualifies($cursor); $i++) {
             $streak++;
             $cursor = SignalCalendar::addDays($cursor, -1);
         }

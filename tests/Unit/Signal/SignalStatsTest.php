@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Signal\Support\SignalCalendar;
 use App\Domain\Signal\Support\SignalStats;
 
 /*
@@ -101,4 +102,16 @@ it('breaks the streak at a day with an open main task or without main tasks', fu
         ], '2026-10-12'))->toBe(1)
         ->and(SignalStats::mainStreak([signalRow('2026-10-11', 'other', true)], '2026-10-12'))->toBe(0)
         ->and(SignalStats::mainStreak([], '2026-10-12'))->toBe(0);
+});
+
+it('counts a streak up to the shared cap and stops there', function (): void {
+    $rows = [];
+
+    foreach (range(0, SignalStats::MAX_STREAK_DAYS + 20) as $back) {
+        $rows[] = signalRow(SignalCalendar::addDays('2026-10-12', -$back), 'main', true);
+    }
+
+    expect(SignalStats::mainStreak(array_slice($rows, 0, 45), '2026-10-12'))->toBe(45)
+        ->and(SignalStats::mainStreak($rows, '2026-10-12'))->toBe(SignalStats::MAX_STREAK_DAYS)
+        ->and(SignalStats::MAX_STREAK_DAYS)->toBe(SignalCalendar::MAX_RANGE_DAYS);
 });

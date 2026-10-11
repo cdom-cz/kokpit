@@ -111,7 +111,7 @@ class SignalDashboardPage extends Page
             'blocks30' => $blocks30,
             'blocksDone' => array_sum(array_column($blocks30, 'done')),
             'split' => SignalStats::plannedVsExtra($rows30),
-            'streak' => SignalStats::mainStreak($rows30, $today),
+            'streak' => SignalStats::mainStreak($overview->mainTaskRows(SignalCalendar::addDays($today, -SignalStats::MAX_STREAK_DAYS), $today), $today),
             'recaps' => $overview->recentRecaps(4)->map(static fn (SignalWeeklyRecap $recap): array => [
                 'week' => $recap->week_start,
                 'label' => SignalCalendar::format($recap->week_start),

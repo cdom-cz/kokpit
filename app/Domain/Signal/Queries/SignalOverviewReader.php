@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Signal\Queries;
 
+use App\Domain\Signal\Enums\SignalCategory;
 use App\Domain\Signal\Models\SignalDeepWorkDay;
 use App\Domain\Signal\Models\SignalRecurringTask;
 use App\Domain\Signal\Models\SignalTask;
@@ -25,6 +26,21 @@ final class SignalOverviewReader
     public function taskRows(string $from, string $to): array
     {
         return SignalTask::query()
+            ->whereBetween('for_date', [$from, $to])
+            ->get(['for_date', 'category', 'is_done'])
+            ->map(static fn (SignalTask $task): array => ['for_date' => $task->for_date, 'category' => $task->category->value, 'is_done' => $task->is_done])
+            ->all();
+    }
+
+    /**
+     * Like taskRows(), but only the main (red) tasks: what the streak needs over a long range.
+     *
+     * @return list<array{for_date: string, category: string, is_done: bool}>
+     */
+    public function mainTaskRows(string $from, string $to): array
+    {
+        return SignalTask::query()
+            ->where('category', SignalCategory::Main->value)
             ->whereBetween('for_date', [$from, $to])
             ->get(['for_date', 'category', 'is_done'])
             ->map(static fn (SignalTask $task): array => ['for_date' => $task->for_date, 'category' => $task->category->value, 'is_done' => $task->is_done])
