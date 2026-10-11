@@ -239,8 +239,9 @@ it('documents the manual GitHub and Zerops deploy settings in CONTRIBUTING.md', 
         'volatile-lru',
         'backward compatible',
         'rollback',
+        'ZEROPS_PROJECT_ID',
         'ZEROPS_SERVICE_ID',
-        'backend',
+        '`kokpit`',
         'Zerops UI',
     ] as $phrase) {
         expect($contributing)->toContain($phrase);
@@ -374,14 +375,18 @@ it('documents the audit step in the add-a-model checklist and the operations sec
         ->and(repoCodeBlockLines($readme))->toContain('ddev artisan kokpit:storage:check');
 });
 
-it('documents the service id variable the deploy workflow reads', function () {
+it('documents the project and service id variables the deploy workflow reads', function () {
     $workflow = repoFile('.github/workflows/deploy.yml');
     $contributing = repoFile('CONTRIBUTING.md');
 
     preg_match_all('/vars\.(ZEROPS_[A-Z_]+)/', $workflow, $matches);
 
-    // One backend service, one push, one variable; the per-setup variables of the earlier three-service layout are gone.
-    expect(array_values(array_unique($matches[1])))->toBe(['ZEROPS_SERVICE_ID'])
+    $names = array_values(array_unique($matches[1]));
+    sort($names);
+
+    // One service, one push, a project id and a service id variable; the per-setup variables of the earlier three-service layout are gone.
+    expect($names)->toBe(['ZEROPS_PROJECT_ID', 'ZEROPS_SERVICE_ID'])
+        ->and($contributing)->toContain('ZEROPS_PROJECT_ID')
         ->and($contributing)->toContain('ZEROPS_SERVICE_ID')
         ->and($contributing)->not->toMatch('/ZEROPS_('.implode('|', ['APP', 'WORKER', 'SCHEDULER']).')_SERVICE_ID/');
 });

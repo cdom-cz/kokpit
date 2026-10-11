@@ -349,8 +349,11 @@ function deployInstallProblems(array $workflow): array
 }
 
 /**
- * One push of the backend setup, after the login: the whole application (web, Horizon, scheduler cron) deploys
- * from one setup, so there is exactly one push step, one service-id variable and a version name derived from the ref.
+ * One push of the single kokpit setup, after the login: the whole application (web, Horizon, scheduler cron) deploys
+ * from one setup, so there is exactly one push step, one project-id variable, one service-id variable and a version
+ * name derived from the ref. The push names no setup and no manifest path: zcli selects the setup whose name equals
+ * the service hostname and reads zerops.yml from the checkout root, which is exactly what ZeropsConfigTest guards; an
+ * explicit setup or manifest path would deploy something no test guards.
  *
  * @param  array<string|int, mixed>  $workflow
  * @return list<string>
@@ -393,10 +396,20 @@ function deployPushProblems(array $workflow): array
             $problems[] = "push step {$index} runs before the login step";
         }
 
-        foreach (['--service-id "${SERVICE_ID}"', '--setup backend', '--version-name "${VERSION}"', '--workspace-state clean', '--zerops-yaml-path zerops.yml', 'refs/tags/v*', 'refs/heads/main', 'GITHUB_SHA'] as $needle) {
+        foreach (['--project-id "${PROJECT_ID}"', '--service-id "${SERVICE_ID}"', '--version-name "${VERSION}"', '--workspace-state clean', 'refs/tags/v*', 'refs/heads/main', 'GITHUB_SHA'] as $needle) {
             if (! str_contains($run, $needle)) {
                 $problems[] = "push step {$index} does not contain {$needle}";
             }
+        }
+
+        foreach (['--setup', '--zerops-yaml-path'] as $forbidden) {
+            if (str_contains($run, $forbidden)) {
+                $problems[] = "push step {$index} must not contain {$forbidden}, the setup is selected by the service hostname";
+            }
+        }
+
+        if (($step['env']['PROJECT_ID'] ?? null) !== '${{ vars.ZEROPS_PROJECT_ID }}') {
+            $problems[] = "push step {$index} must receive PROJECT_ID from vars.ZEROPS_PROJECT_ID through its env";
         }
 
         if (($step['env']['SERVICE_ID'] ?? null) !== '${{ vars.ZEROPS_SERVICE_ID }}') {
@@ -407,8 +420,8 @@ function deployPushProblems(array $workflow): array
     preg_match_all('/vars\.([A-Za-z0-9_]+)/', (string) json_encode($workflow), $matches);
 
     foreach (array_unique($matches[1]) as $name) {
-        if ($name !== 'ZEROPS_SERVICE_ID') {
-            $problems[] = "the workflow reads vars.{$name}, only vars.ZEROPS_SERVICE_ID is allowed";
+        if (! in_array($name, ['ZEROPS_PROJECT_ID', 'ZEROPS_SERVICE_ID'], true)) {
+            $problems[] = "the workflow reads vars.{$name}, only vars.ZEROPS_PROJECT_ID and vars.ZEROPS_SERVICE_ID are allowed";
         }
     }
 
@@ -471,7 +484,7 @@ it('installs zcli by version against a hard-coded digest', function (): void {
     expect(deployInstallProblems(deployWorkflow()))->toBe([]);
 });
 
-it('logs in with the environment secret and pushes the backend setup once', function (): void {
+it('logs in with the environment secret and pushes the kokpit service once', function (): void {
     expect(deployPushProblems(deployWorkflow()))->toBe([]);
 });
 
@@ -633,9 +646,27 @@ it('reports every weakening of the workflow', function (): void {
 
             return $w;
         }],
-        'another setup name' => ['push', function (array $w): array {
+        'an explicit setup' => ['push', function (array $w): array {
             $last = count($w['jobs']['deploy']['steps']) - 1;
-            $w['jobs']['deploy']['steps'][$last]['run'] = str_replace('--setup backend', '--setup other', $w['jobs']['deploy']['steps'][$last]['run']);
+            $w['jobs']['deploy']['steps'][$last]['run'] = str_replace('--workspace-state clean', '--workspace-state clean --setup other', $w['jobs']['deploy']['steps'][$last]['run']);
+
+            return $w;
+        }],
+        'a manifest path override' => ['push', function (array $w): array {
+            $last = count($w['jobs']['deploy']['steps']) - 1;
+            $w['jobs']['deploy']['steps'][$last]['run'] = str_replace('--workspace-state clean', '--workspace-state clean --zerops-yaml-path other.yml', $w['jobs']['deploy']['steps'][$last]['run']);
+
+            return $w;
+        }],
+        'a push without a project id' => ['push', function (array $w): array {
+            $last = count($w['jobs']['deploy']['steps']) - 1;
+            $w['jobs']['deploy']['steps'][$last]['run'] = str_replace(' --project-id "${PROJECT_ID}"', '', $w['jobs']['deploy']['steps'][$last]['run']);
+
+            return $w;
+        }],
+        'a project id from another variable' => ['push', function (array $w): array {
+            $last = count($w['jobs']['deploy']['steps']) - 1;
+            $w['jobs']['deploy']['steps'][$last]['env']['PROJECT_ID'] = '${{ vars.ZEROPS_OTHER_PROJECT_ID }}';
 
             return $w;
         }],
@@ -911,7 +942,7 @@ it('asks the check runs of exactly the deployed commit', function (): void {
 
 /**
  * Runs the push step of the deploy job with a fake zcli that only logs its arguments, and returns the process and
- * the zcli calls. The runner variables the script reads are set explicitly, the service id is fictional.
+ * the zcli calls. The runner variables the script reads are set explicitly, the project and service ids are fictional.
  *
  * @return array{Process, list<string>}
  */
@@ -940,6 +971,7 @@ function deployRunPushScript(string $ref, string $sha): array
 
     $process = new Process(['bash', '-c', $script], $work, [
         'PATH' => $bin.':'.(string) getenv('PATH'),
+        'PROJECT_ID' => 'example-project-id',
         'SERVICE_ID' => 'example-service-id',
         'GITHUB_REF' => $ref,
         'GITHUB_SHA' => $sha,
@@ -957,11 +989,11 @@ function deployFictionalSha(): string
     return str_repeat('0123456789abcdef', 2).str_repeat('ab', 4);
 }
 
-it('pushes the backend setup once with the release tag as the version name', function (): void {
+it('pushes once with the release tag as the version name', function (): void {
     [$process, $calls] = deployRunPushScript('refs/tags/v1.2.0', deployFictionalSha());
 
     expect($process->getExitCode())->toBe(0)
-        ->and($calls)->toBe(['service push --service-id example-service-id --setup backend --version-name v1.2.0 --workspace-state clean --zerops-yaml-path zerops.yml']);
+        ->and($calls)->toBe(['service push --project-id example-project-id --service-id example-service-id --version-name v1.2.0 --workspace-state clean']);
 });
 
 it('pushes a dispatch from main with main and the first 12 characters of the commit as the version name', function (): void {
@@ -969,7 +1001,7 @@ it('pushes a dispatch from main with main and the first 12 characters of the com
     [$process, $calls] = deployRunPushScript('refs/heads/main', $sha);
 
     expect($process->getExitCode())->toBe(0)
-        ->and($calls)->toBe(['service push --service-id example-service-id --setup backend --version-name main-'.substr($sha, 0, 12).' --workspace-state clean --zerops-yaml-path zerops.yml']);
+        ->and($calls)->toBe(['service push --project-id example-project-id --service-id example-service-id --version-name main-'.substr($sha, 0, 12).' --workspace-state clean']);
 });
 
 it('refuses to push from any other ref or with a version name outside the allowed characters', function (string $ref): void {
