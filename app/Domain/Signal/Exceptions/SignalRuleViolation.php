@@ -12,6 +12,9 @@ use RuntimeException;
  */
 final class SignalRuleViolation extends RuntimeException
 {
+    /**
+     * @param  array<string, int|string>  $replace  the values of the placeholders of the message (`:max`, `:limit` ...)
+     */
     public static function because(string $translationKey, array $replace = []): self
     {
         return new self(__('kokpit.signal.errors.'.$translationKey, $replace));

@@ -46,7 +46,7 @@
 
                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
                     <x-filament::input.wrapper style="flex: 1 1 14rem;">
-                        <x-filament::input type="text" maxlength="255" wire:model="templateTitle" placeholder="{{ __('kokpit.signal.day.new_placeholder') }}" aria-label="{{ __('kokpit.signal.day.new_placeholder') }}" />
+                        <x-filament::input type="text" maxlength="{{ \App\Domain\Signal\Support\SignalRules::MAX_TITLE_LENGTH }}" wire:model="templateTitle" placeholder="{{ __('kokpit.signal.day.new_placeholder') }}" aria-label="{{ __('kokpit.signal.day.new_placeholder') }}" />
                     </x-filament::input.wrapper>
 
                     <x-filament::input.wrapper>

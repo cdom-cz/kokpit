@@ -71,7 +71,7 @@ it('lists the days of a range, both ends included, and nothing for a reversed on
         ->and(SignalCalendar::range('2026-01-01', '2030-01-01', 10))->toHaveCount(10);
 });
 
-it('formats days the Czech way', function (): void {
-    expect(SignalCalendar::format('2026-10-05'))->toBe('5. 10. 2026')
-        ->and(SignalCalendar::formatLong('2026-10-12'))->toBe('pondělí 12. 10. 2026');
+it('formats a day the Czech way without the application', function (): void {
+    // The long form with the weekday name goes through the translator: see SignalCalendarLocaleTest.
+    expect(SignalCalendar::format('2026-10-05'))->toBe('5. 10. 2026');
 });

@@ -7,6 +7,7 @@ namespace App\Domain\Signal\Actions;
 use App\Domain\Identity\Models\User;
 use App\Domain\Signal\Exceptions\SignalRuleViolation;
 use App\Domain\Signal\Models\SignalTask;
+use App\Domain\Signal\Support\SignalRules;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -64,8 +65,8 @@ trait AuthorizesSignal
             throw SignalRuleViolation::because('title_required');
         }
 
-        if (mb_strlen($title) > 255) {
-            throw SignalRuleViolation::because('title_too_long');
+        if (mb_strlen($title) > SignalRules::MAX_TITLE_LENGTH) {
+            throw SignalRuleViolation::because('title_too_long', ['max' => SignalRules::MAX_TITLE_LENGTH]);
         }
 
         return $title;

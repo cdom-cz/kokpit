@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Signal\Support;
 
+use App\Providers\LocalisationServiceProvider;
 use Carbon\CarbonImmutable;
 use DateTimeImmutable;
 use DateTimeZone;
@@ -23,9 +24,6 @@ final class SignalCalendar
 
     /** The most days range() lists; a forged range cannot allocate without bound, and the main-task streak looks back this far. */
     public const int MAX_RANGE_DAYS = 400;
-
-    /** Czech weekday names, Monday first. */
-    private const array WEEKDAY_NAMES = ['pondělí', 'úterý', 'středa', 'čtvrtek', 'pátek', 'sobota', 'neděle'];
 
     public static function today(): string
     {
@@ -114,19 +112,19 @@ final class SignalCalendar
     }
 
     /**
-     * "12. 10. 2026".
+     * "12. 10. 2026": the date format of the whole application.
      */
     public static function format(string $day): string
     {
-        return self::parse($day)->format('j. n. Y');
+        return self::parse($day)->format(LocalisationServiceProvider::DATE_FORMAT);
     }
 
     /**
-     * "pondělí 12. 10. 2026".
+     * "pondělí 12. 10. 2026": the weekday name comes from the translations (`signal.calendar.weekdays`).
      */
     public static function formatLong(string $day): string
     {
-        return self::WEEKDAY_NAMES[self::weekdayIndex($day)].' '.self::format($day);
+        return (string) __('kokpit.signal.calendar.weekdays.'.self::weekdayIndex($day)).' '.self::format($day);
     }
 
     private static function parse(string $day): DateTimeImmutable

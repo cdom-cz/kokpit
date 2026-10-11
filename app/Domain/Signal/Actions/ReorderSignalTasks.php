@@ -26,7 +26,7 @@ final class ReorderSignalTasks
     public function __construct(private readonly SignalDayReader $reader) {}
 
     /**
-     * @param  list<string>  $orderedIds
+     * @param  array<int, string>  $orderedIds
      *
      * @throws SignalRuleViolation
      */

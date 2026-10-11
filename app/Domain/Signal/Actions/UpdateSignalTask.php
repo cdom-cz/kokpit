@@ -59,7 +59,7 @@ final class UpdateSignalTask
                 $reserved = $this->reader->recurringCounts($task->for_date);
 
                 if (! SignalRules::canAdd($target, $counts[$target->value], $reserved[$target->value])) {
-                    throw SignalRuleViolation::because('limit_'.$target->value, ['limit' => SignalRules::effectiveLimit($target, $reserved[$target->value])]);
+                    throw SignalRuleViolation::because('limit_'.$target->value, ['limit' => SignalRules::effectiveLimit($target, $reserved[$target->value]) ?? 0]);
                 }
 
                 $max = SignalTask::query()->where('for_date', $task->for_date)->where('category', $target->value)->max('position');

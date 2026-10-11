@@ -135,7 +135,7 @@ final class SignalDayReader
             return [];
         }
 
-        return SignalDayOverride::query()->whereIn('for_date', $days)->pluck('for_date')->map(static fn ($day): string => (string) $day)->all();
+        return array_values(SignalDayOverride::query()->whereIn('for_date', $days)->pluck('for_date')->map(static fn ($day): string => (string) $day)->all());
     }
 
     /**

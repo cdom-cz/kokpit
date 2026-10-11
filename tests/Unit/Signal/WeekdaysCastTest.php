@@ -17,8 +17,12 @@ it('reads the array literal of PostgreSQL as a list of integers', function (): v
 
 it('writes a sorted list without duplicates and accepts numeric strings', function (): void {
     expect(WeekdaysCast::format([4, 0, 2]))->toBe('{0,2,4}')
-        ->and(WeekdaysCast::format(['2', 2, 0]))->toBe('{0,2}')
-        ->and(WeekdaysCast::format([]))->toBe('{}');
+        ->and(WeekdaysCast::format(['2', 2, 0]))->toBe('{0,2}');
+});
+
+it('refuses an empty list, which the database would refuse as well, but still reads one', function (): void {
+    expect(fn () => WeekdaysCast::format([]))->toThrow(InvalidArgumentException::class)
+        ->and(WeekdaysCast::parse('{}'))->toBe([]);
 });
 
 it('refuses an index that is no weekday', function (): void {

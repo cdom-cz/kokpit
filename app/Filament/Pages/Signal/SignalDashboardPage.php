@@ -104,7 +104,7 @@ class SignalDashboardPage extends Page
         return [
             'today' => $today,
             'progress' => $progress,
-            'goals' => $goals->map(static fn ($goal): array => ['title' => $goal->title, 'done' => $goal->is_done])->values()->all(),
+            'goals' => array_values($goals->map(static fn ($goal): array => ['title' => $goal->title, 'done' => $goal->is_done])->all()),
             'goalsDone' => $goals->where('is_done', true)->count(),
             'trend7' => SignalStats::dailyTrend(array_filter($rows30, static fn (array $row): bool => $row['for_date'] >= $from7), $from7, $today),
             'trend30' => SignalStats::dailyTrend($rows30, $from30, $today),
@@ -112,11 +112,11 @@ class SignalDashboardPage extends Page
             'blocksDone' => array_sum(array_column($blocks30, 'done')),
             'split' => SignalStats::plannedVsExtra($rows30),
             'streak' => SignalStats::mainStreak($overview->mainTaskRows(SignalCalendar::addDays($today, -SignalStats::MAX_STREAK_DAYS), $today), $today),
-            'recaps' => $overview->recentRecaps(4)->map(static fn (SignalWeeklyRecap $recap): array => [
+            'recaps' => array_values($overview->recentRecaps(4)->map(static fn (SignalWeeklyRecap $recap): array => [
                 'week' => $recap->week_start,
                 'label' => SignalCalendar::format($recap->week_start),
                 'text' => $recap->what_went_well,
-            ])->values()->all(),
+            ])->all()),
         ];
     }
 }

@@ -13,7 +13,9 @@ use App\Domain\Signal\Support\SignalRules;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Adds a goal to a week (the Monday that identifies it), at the lowest free position 1..3.
+ * Adds a goal to a week (the Monday that identifies it), at the lowest free position 1..3. Deleting a goal
+ * through DeleteSignalGoal renumbers the rest, so the lowest free position is the end of the list; a gap
+ * made outside the Action is filled all the same.
  * A week holds at most three goals; the count and the insert run under a lock of the week, and the
  * position key of the database is the last line.
  */

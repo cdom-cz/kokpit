@@ -13,7 +13,8 @@ use InvalidArgumentException;
  *
  * The database holds the array literal `{0,2,4}`; the model sees `[0, 2, 4]`. Writing normalizes the
  * list: values are cast to integers, duplicates dropped and the list sorted, so `[4, "0", 0]` is stored
- * as `{0,4}`. An index outside 0..6 is refused here, before the database CHECK would refuse it.
+ * as `{0,4}`. An index outside 0..6 and an empty list are refused here, before the database CHECK
+ * (`cardinality(weekdays) BETWEEN 1 AND 7`) would refuse them. Reading an empty array is still possible.
  *
  * @implements CastsAttributes<list<int>, iterable<int|string>>
  */
@@ -58,10 +59,16 @@ final class WeekdaysCast implements CastsAttributes
     /**
      * Writes the normalized array literal `{0,2,4}`.
      *
-     * @param  list<int|string>  $weekdays
+     * @param  array<int|string>  $weekdays
+     *
+     * @throws InvalidArgumentException for an empty list or an index outside 0..6
      */
     public static function format(array $weekdays): string
     {
+        if ($weekdays === []) {
+            throw new InvalidArgumentException('A template needs at least one weekday.');
+        }
+
         $indexes = [];
 
         foreach ($weekdays as $weekday) {

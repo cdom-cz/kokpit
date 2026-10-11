@@ -93,7 +93,7 @@ class SignalSettingsPage extends Page
     #[Computed]
     public function templates(): array
     {
-        return app(SignalOverviewReader::class)->recurringTemplates()
+        return array_values(app(SignalOverviewReader::class)->recurringTemplates()
             ->map(static fn (SignalRecurringTask $template): array => [
                 'id' => $template->id,
                 'title' => $template->title,
@@ -103,8 +103,7 @@ class SignalSettingsPage extends Page
                 'active' => $template->active,
                 'weekdays' => $template->weekdays,
             ])
-            ->values()
-            ->all();
+            ->all());
     }
 
     public function saveTemplate(): void

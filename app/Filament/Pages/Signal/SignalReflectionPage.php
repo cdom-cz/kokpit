@@ -87,7 +87,7 @@ class SignalReflectionPage extends Page
             [$from, $to] = [$to, $from];
         }
 
-        $recaps = app(SignalOverviewReader::class)->recapsBetween($from, $to)
+        $recaps = array_values(app(SignalOverviewReader::class)->recapsBetween($from, $to)
             ->map(static fn (SignalWeeklyRecap $recap): array => [
                 'id' => $recap->id,
                 'week' => $recap->week_start,
@@ -96,8 +96,7 @@ class SignalReflectionPage extends Page
                 'well' => $recap->what_went_well,
                 'change' => $recap->what_to_change,
             ])
-            ->values()
-            ->all();
+            ->all());
 
         return [
             'from' => $from,

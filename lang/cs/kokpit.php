@@ -1257,6 +1257,18 @@ return [
             'empty' => 'V tomto období nejsou žádné rekapitulace.',
         ],
 
+        'calendar' => [
+            'weekdays' => [
+                0 => 'pondělí',
+                1 => 'úterý',
+                2 => 'středa',
+                3 => 'čtvrtek',
+                4 => 'pátek',
+                5 => 'sobota',
+                6 => 'neděle',
+            ],
+        ],
+
         'settings' => [
             'navigation_label' => 'Nastavení',
             'title' => 'Nastavení',
@@ -1286,7 +1298,7 @@ return [
 
         'errors' => [
             'title_required' => 'Zadejte název.',
-            'title_too_long' => 'Název smí mít nejvýše 255 znaků.',
+            'title_too_long' => 'Název smí mít nejvýše :max znaků.',
             'invalid_date' => 'Neplatné datum.',
             'invalid_week' => 'Neplatný týden.',
             'day_locked' => 'Den je zamčený. Nejdřív ho odemkněte.',

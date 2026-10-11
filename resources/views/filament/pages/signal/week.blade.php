@@ -43,7 +43,7 @@
                         @if ($editingGoalId === $goal['id'])
                             <div wire:sort:ignore style="display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
                                 <x-filament::input.wrapper style="flex: 1 1 12rem;">
-                                    <x-filament::input type="text" maxlength="255" wire:model="editGoalTitle" wire:keydown.enter="saveGoalEdit" wire:keydown.escape="cancelGoalEdit" autofocus />
+                                    <x-filament::input type="text" maxlength="{{ \App\Domain\Signal\Support\SignalRules::MAX_TITLE_LENGTH }}" wire:model="editGoalTitle" wire:keydown.enter="saveGoalEdit" wire:keydown.escape="cancelGoalEdit" autofocus />
                                 </x-filament::input.wrapper>
                                 <x-filament::button size="xs" wire:click="saveGoalEdit">{{ __('kokpit.signal.day.save') }}</x-filament::button>
                                 <x-filament::button size="xs" color="gray" wire:click="cancelGoalEdit">{{ __('kokpit.signal.day.cancel') }}</x-filament::button>
@@ -62,7 +62,7 @@
             @if (count($this->goals) < 3)
                 <form wire:submit="addGoal" style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
                     <x-filament::input.wrapper style="flex: 1 1 14rem;">
-                        <x-filament::input type="text" maxlength="255" wire:model="newGoal" placeholder="{{ __('kokpit.signal.week.new_goal') }}" aria-label="{{ __('kokpit.signal.week.new_goal') }}" />
+                        <x-filament::input type="text" maxlength="{{ \App\Domain\Signal\Support\SignalRules::MAX_TITLE_LENGTH }}" wire:model="newGoal" placeholder="{{ __('kokpit.signal.week.new_goal') }}" aria-label="{{ __('kokpit.signal.week.new_goal') }}" />
                     </x-filament::input.wrapper>
                     <x-filament::button type="submit" icon="heroicon-m-plus">{{ __('kokpit.signal.day.add') }}</x-filament::button>
                 </form>

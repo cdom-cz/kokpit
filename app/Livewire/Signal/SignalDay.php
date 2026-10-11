@@ -255,13 +255,13 @@ final class SignalDay extends Component
                 'label' => $category->getLabel(),
                 'color' => $category->getColor(),
                 'limit' => $category->dailyLimit(),
-                'tasks' => $inGroup->map(static fn (SignalTask $task): array => [
+                'tasks' => array_values($inGroup->map(static fn (SignalTask $task): array => [
                     'id' => $task->id,
                     'title' => $task->title,
                     'done' => $task->is_done,
                     'recurring' => $task->recurring_id !== null,
                     'deletable' => ! in_array($task->id, $pinned, true),
-                ])->values()->all(),
+                ])->all()),
             ];
         }
 

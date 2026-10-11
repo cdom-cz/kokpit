@@ -9,6 +9,7 @@ use App\Domain\Signal\Models\SignalTask;
 use App\Domain\Signal\Models\SignalWeeklyGoal;
 use App\Domain\Signal\Models\SignalWeeklyRecap;
 use App\Domain\Signal\Support\SignalCalendar;
+use App\Domain\Signal\Support\SignalRules;
 use App\Filament\Pages\Signal\SignalDashboardPage;
 use App\Filament\Pages\Signal\SignalReflectionPage;
 use App\Filament\Pages\Signal\SignalSettingsPage;
@@ -340,4 +341,16 @@ it('reports a streak of main tasks that is longer than the 30 days of the other 
 
     expect($overview['streak'])->toBe(45)
         ->and($overview['split']['total'])->toBe(30);
+});
+
+it('takes the title limit from one constant: no view hard-codes it, every title input carries it', function (): void {
+    foreach (['livewire/signal/day.blade.php', 'filament/pages/signal/week.blade.php', 'filament/pages/signal/settings.blade.php'] as $view) {
+        expect(file_get_contents(resource_path('views/'.$view)))->not->toContain('maxlength="255"');
+    }
+
+    $week = Livewire::test(SignalWeekPage::class)->html();
+
+    expect(substr_count($week, 'maxlength="'.SignalRules::MAX_TITLE_LENGTH.'"'))->toBeGreaterThanOrEqual(1)
+        ->and(substr_count(Livewire::test(SignalSettingsPage::class)->html(), 'maxlength="'.SignalRules::MAX_TITLE_LENGTH.'"'))->toBe(1)
+        ->and(substr_count(Livewire::test(SignalDay::class, ['forDate' => '2026-10-13'])->html(), 'maxlength="'.SignalRules::MAX_TITLE_LENGTH.'"'))->toBe(1);
 });

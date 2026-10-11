@@ -89,7 +89,7 @@
                                     <x-filament::input.wrapper style="flex: 1 1 12rem;">
                                         <x-filament::input
                                             type="text"
-                                            maxlength="255"
+                                            maxlength="{{ \App\Domain\Signal\Support\SignalRules::MAX_TITLE_LENGTH }}"
                                             wire:model="editTitle"
                                             wire:keydown.enter="saveEdit"
                                             wire:keydown.escape="cancelEdit"
@@ -176,7 +176,7 @@
                 <x-filament::input.wrapper style="flex: 1 1 14rem;">
                     <x-filament::input
                         type="text"
-                        maxlength="255"
+                        maxlength="{{ \App\Domain\Signal\Support\SignalRules::MAX_TITLE_LENGTH }}"
                         wire:model="newTitle"
                         placeholder="{{ __('kokpit.signal.day.new_placeholder') }}"
                         aria-label="{{ __('kokpit.signal.day.new_placeholder') }}"

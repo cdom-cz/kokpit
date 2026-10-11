@@ -75,7 +75,7 @@ final class AddSignalTask
         $reserved = $this->reader->recurringCounts($forDate);
 
         if (! SignalRules::canAdd($category, $counts[$category->value], $reserved[$category->value])) {
-            throw SignalRuleViolation::because('limit_'.$category->value, ['limit' => SignalRules::effectiveLimit($category, $reserved[$category->value])]);
+            throw SignalRuleViolation::because('limit_'.$category->value, ['limit' => SignalRules::effectiveLimit($category, $reserved[$category->value]) ?? 0]);
         }
     }
 }

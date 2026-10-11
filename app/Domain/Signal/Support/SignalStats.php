@@ -29,14 +29,17 @@ final class SignalStats
      */
     public static function categoryProgress(iterable $tasks): array
     {
-        $progress = array_fill_keys(self::CATEGORIES, ['done' => 0, 'total' => 0]);
+        $progress = [];
+
+        foreach (self::CATEGORIES as $category) {
+            $progress[$category] = ['done' => 0, 'total' => 0];
+        }
 
         foreach ($tasks as $task) {
-            $progress[$task['category']]['total']++;
-
-            if ($task['is_done']) {
-                $progress[$task['category']]['done']++;
-            }
+            $row = $progress[$task['category']] ?? ['done' => 0, 'total' => 0];
+            $row['total']++;
+            $row['done'] += $task['is_done'] ? 1 : 0;
+            $progress[$task['category']] = $row;
         }
 
         return $progress;
@@ -148,7 +151,7 @@ final class SignalStats
             $byDay[$task['for_date']]['done'] = ($byDay[$task['for_date']]['done'] ?? 0) + ($task['is_done'] ? 1 : 0);
         }
 
-        $qualifies = static fn (string $day): bool => isset($byDay[$day]) && $byDay[$day]['total'] > 0 && $byDay[$day]['done'] === $byDay[$day]['total'];
+        $qualifies = static fn (string $day): bool => isset($byDay[$day]) && $byDay[$day]['done'] === $byDay[$day]['total'];
 
         $streak = 0;
         $cursor = $qualifies($today) ? $today : SignalCalendar::addDays($today, -1);

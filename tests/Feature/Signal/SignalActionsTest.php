@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Signal\Actions\AddSignalGoal;
 use App\Domain\Signal\Actions\AddSignalTask;
+use App\Domain\Signal\Actions\DeleteSignalGoal;
 use App\Domain\Signal\Actions\DeleteSignalRecurring;
 use App\Domain\Signal\Actions\DeleteSignalTask;
 use App\Domain\Signal\Actions\MaterializeSignalRecurring;
@@ -84,13 +85,26 @@ it('makes a task added during its own day grey whatever colour was asked for', f
     expect(SignalTask::query()->where('for_date', SIGNAL_TODAY)->count())->toBe(6);
 });
 
+it('keeps a title of 255 characters, refuses 256 and names the limit in the message', function (): void {
+    $add = app(AddSignalTask::class);
+
+    expect($add->handle($this->admin, str_repeat('x', 255), SIGNAL_TOMORROW, SignalCategory::Other)->title)->toHaveLength(255)
+        ->and(fn () => $add->handle($this->admin, str_repeat('x', 256), SIGNAL_TOMORROW, SignalCategory::Other))
+        ->toThrow(SignalRuleViolation::class, __('kokpit.signal.errors.title_too_long', ['max' => 255]))
+        ->and(__('kokpit.signal.errors.title_too_long', ['max' => 255]))->toContain('255');
+});
+
+it('refuses an empty list of weekdays when a template is written to the model', function (): void {
+    expect(fn () => (new SignalRecurringTask)->forceFill(['weekdays' => []]))->toThrow(InvalidArgumentException::class);
+});
+
 it('refuses a planned task without a plannable colour, a blank title and a bad date', function (): void {
     $add = app(AddSignalTask::class);
 
     expect(fn () => $add->handle($this->admin, 'Example', SIGNAL_TOMORROW, null))->toThrow(SignalRuleViolation::class, __('kokpit.signal.errors.category_required'))
         ->and(fn () => $add->handle($this->admin, 'Example', SIGNAL_TOMORROW, SignalCategory::Extra))->toThrow(SignalRuleViolation::class, __('kokpit.signal.errors.category_required'))
         ->and(fn () => $add->handle($this->admin, '   ', SIGNAL_TOMORROW, SignalCategory::Main))->toThrow(SignalRuleViolation::class, __('kokpit.signal.errors.title_required'))
-        ->and(fn () => $add->handle($this->admin, str_repeat('x', 256), SIGNAL_TOMORROW, SignalCategory::Main))->toThrow(SignalRuleViolation::class, __('kokpit.signal.errors.title_too_long'))
+        ->and(fn () => $add->handle($this->admin, str_repeat('x', 256), SIGNAL_TOMORROW, SignalCategory::Main))->toThrow(SignalRuleViolation::class, __('kokpit.signal.errors.title_too_long', ['max' => 255]))
         ->and(fn () => $add->handle($this->admin, 'Example', '2026-02-31', SignalCategory::Main))->toThrow(SignalRuleViolation::class, __('kokpit.signal.errors.invalid_date'))
         ->and(SignalTask::query()->count())->toBe(0);
 });
@@ -349,6 +363,24 @@ it('holds at most three goals a week and fills the lowest free position', functi
     expect($one->position)->toBe(1)
         ->and($again->position)->toBe(2)
         ->and(SignalWeeklyGoal::query()->where('week_start', $week)->count())->toBe(3);
+});
+
+it('renumbers the remaining goals to 1..n when a goal is deleted, so a new goal always lands last', function (): void {
+    $add = app(AddSignalGoal::class);
+    $week = '2026-10-12';
+    $one = $add->handle($this->admin, $week, 'Example one');
+    $add->handle($this->admin, $week, 'Example two');
+    $add->handle($this->admin, $week, 'Example three');
+
+    app(DeleteSignalGoal::class)->handle($this->admin, $one->id);
+
+    $titles = static fn (): array => SignalWeeklyGoal::query()->where('week_start', $week)->orderBy('position')->get()->map(fn ($goal): array => [$goal->title, $goal->position])->all();
+
+    expect($titles())->toBe([['Example two', 1], ['Example three', 2]]);
+
+    $add->handle($this->admin, $week, 'Example four');
+
+    expect($titles())->toBe([['Example two', 1], ['Example three', 2], ['Example four', 3]]);
 });
 
 it('accepts a week only by its Monday', function (): void {

@@ -103,10 +103,9 @@ class SignalWeekPage extends Page
     #[Computed]
     public function goals(): array
     {
-        return app(SignalOverviewReader::class)->goals($this->week)
+        return array_values(app(SignalOverviewReader::class)->goals($this->week)
             ->map(static fn (SignalWeeklyGoal $goal): array => ['id' => $goal->id, 'title' => $goal->title, 'done' => $goal->is_done])
-            ->values()
-            ->all();
+            ->all());
     }
 
     public function addGoal(): void

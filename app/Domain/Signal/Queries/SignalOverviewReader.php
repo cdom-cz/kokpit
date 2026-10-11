@@ -25,11 +25,11 @@ final class SignalOverviewReader
      */
     public function taskRows(string $from, string $to): array
     {
-        return SignalTask::query()
+        return array_values(SignalTask::query()
             ->whereBetween('for_date', [$from, $to])
             ->get(['for_date', 'category', 'is_done'])
             ->map(static fn (SignalTask $task): array => ['for_date' => $task->for_date, 'category' => $task->category->value, 'is_done' => $task->is_done])
-            ->all();
+            ->all());
     }
 
     /**
@@ -39,12 +39,12 @@ final class SignalOverviewReader
      */
     public function mainTaskRows(string $from, string $to): array
     {
-        return SignalTask::query()
+        return array_values(SignalTask::query()
             ->where('category', SignalCategory::Main->value)
             ->whereBetween('for_date', [$from, $to])
             ->get(['for_date', 'category', 'is_done'])
             ->map(static fn (SignalTask $task): array => ['for_date' => $task->for_date, 'category' => $task->category->value, 'is_done' => $task->is_done])
-            ->all();
+            ->all());
     }
 
     /**

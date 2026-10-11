@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\Signal\Models;
 
-use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Auth\OwnedByUser;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
 use App\Domain\Signal\Enums\SignalCategory;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * One task of the daily planner of a user (not a Kokpit task; the two never link).
@@ -49,21 +47,5 @@ final class SignalTask extends KokpitModel implements PartnerIsolated
             'completed_at' => 'immutable_datetime',
             'position' => 'integer',
         ];
-    }
-
-    /**
-     * @return BelongsTo<User, $this>
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
-
-    /**
-     * @return BelongsTo<SignalRecurringTask, $this>
-     */
-    public function recurring(): BelongsTo
-    {
-        return $this->belongsTo(SignalRecurringTask::class, 'recurring_id');
     }
 }

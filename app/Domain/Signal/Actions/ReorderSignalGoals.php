@@ -21,7 +21,7 @@ final class ReorderSignalGoals
     use AuthorizesSignal;
 
     /**
-     * @param  list<string>  $orderedIds
+     * @param  array<int, string>  $orderedIds
      *
      * @throws SignalRuleViolation
      */
