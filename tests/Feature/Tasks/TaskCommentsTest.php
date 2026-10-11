@@ -15,7 +15,6 @@ use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskComment;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use App\Filament\Resources\TaskResource\RelationManagers\TaskCommentsRelationManager;
-use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Validation\ValidationException;
@@ -59,10 +58,14 @@ it('adds a comment from the task page, once visible and once internal, with auth
     $task = commentTask($this->admin);
 
     $manager = Livewire::test(TaskCommentsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => ViewTask::class])
-        ->callAction(TestAction::make('create')->table(), ['body' => '<p>Example <strong>bold</strong> remark</p>', 'is_internal' => false])
-        ->assertHasNoActionErrors()
-        ->callAction(TestAction::make('create')->table(), ['body' => '<p>Example internal remark</p>', 'is_internal' => true])
-        ->assertHasNoActionErrors();
+        ->set('commentData.body', '<p>Example <strong>bold</strong> remark</p>')
+        ->set('commentData.is_internal', false)
+        ->call('addComment')
+        ->assertHasNoErrors()
+        ->set('commentData.body', '<p>Example internal remark</p>')
+        ->set('commentData.is_internal', true)
+        ->call('addComment')
+        ->assertHasNoErrors();
 
     $comments = $task->comments()->get();
 
@@ -79,13 +82,29 @@ it('adds a comment from the task page, once visible and once internal, with auth
         ->assertSee($this->admin->name);
 });
 
-it('lists the comments newest last', function (): void {
+it('lists the comments one under another, newest last', function (): void {
     $task = commentTask($this->admin);
     $first = app(AddTaskComment::class)->handle($this->admin, $task, '<p>Example first remark</p>');
     $second = app(AddTaskComment::class)->handle($this->admin, $task, '<p>Example second remark</p>');
 
     Livewire::test(TaskCommentsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => ViewTask::class])
-        ->assertCanSeeTableRecords([$first, $second], inOrder: true);
+        ->assertSeeInOrder(['Example first remark', 'Example second remark'])
+        ->assertSeeHtml('task-comment-'.$first->id)
+        ->assertSeeHtml('task-comment-'.$second->id);
+
+    expect(Livewire::test(TaskCommentsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => ViewTask::class])->instance()->comments()->pluck('id')->all())
+        ->toBe([$first->id, $second->id]);
+});
+
+it('clears the inline form after a comment is added', function (): void {
+    $task = commentTask($this->admin);
+
+    Livewire::test(TaskCommentsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => ViewTask::class])
+        ->set('commentData.body', '<p>Example cleared remark</p>')
+        ->call('addComment')
+        ->assertHasNoErrors()
+        ->assertSet('commentData.body', null)
+        ->assertSee('Example cleared remark');
 });
 
 it('cleans the body before it is stored and renders it without markup that could run', function (): void {
@@ -122,8 +141,10 @@ it('comments on a subtask the same way', function (): void {
     $subtask = app(CreateTask::class)->handle($this->admin, Project::query()->findOrFail($parent->project_id), ['title' => 'Example comment subtask'], $parent);
 
     Livewire::test(TaskCommentsRelationManager::class, ['ownerRecord' => $subtask, 'pageClass' => ViewTask::class])
-        ->callAction(TestAction::make('create')->table(), ['body' => '<p>Example subtask remark</p>', 'is_internal' => true])
-        ->assertHasNoActionErrors();
+        ->set('commentData.body', '<p>Example subtask remark</p>')
+        ->set('commentData.is_internal', true)
+        ->call('addComment')
+        ->assertHasNoErrors();
 
     expect($subtask->comments()->count())->toBe(1)
         ->and($parent->comments()->count())->toBe(0)
@@ -225,12 +246,13 @@ it('refuses a body over the length limit as a field error on body', function ():
     expect(TaskComment::query()->count())->toBe(0);
 });
 
-it('shows the Admin the empty body error under the editor of the modal', function (): void {
+it('shows the Admin the empty body error under the inline editor', function (): void {
     $task = commentTask($this->admin);
 
     Livewire::test(TaskCommentsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => ViewTask::class])
-        ->callAction(TestAction::make('create')->table(), ['body' => '<p></p>'])
-        ->assertHasActionErrors(['body']);
+        ->set('commentData.body', '<p></p>')
+        ->call('addComment')
+        ->assertHasErrors(['commentData.body']);
 
     expect(TaskComment::query()->count())->toBe(0);
 });
@@ -269,11 +291,14 @@ it('offers no edit, delete or bulk action on the comments tab', function (): voi
     $task = commentTask($this->admin);
     app(AddTaskComment::class)->handle($this->admin, $task, '<p>Example append-only remark</p>');
 
-    $table = Livewire::test(TaskCommentsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => ViewTask::class])
-        ->instance()
-        ->getTable();
+    $manager = Livewire::test(TaskCommentsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => ViewTask::class]);
+    $instance = $manager->instance();
 
-    expect($table->getRecordActions())->toBe([])
-        ->and($table->getFlatBulkActions())->toBe([])
-        ->and(array_map(static fn ($action): string => (string) $action->getName(), $table->getHeaderActions()))->toBe(['create']);
+    // The thread has one write, the inline form; nothing edits or removes a comment.
+    expect(method_exists($instance, 'addComment'))->toBeTrue()
+        ->and(method_exists($instance, 'updateComment'))->toBeFalse()
+        ->and(method_exists($instance, 'deleteComment'))->toBeFalse();
+
+    $manager->assertDontSeeHtml('wire:click="deleteComment')
+        ->assertDontSeeHtml('wire:click="editComment');
 });

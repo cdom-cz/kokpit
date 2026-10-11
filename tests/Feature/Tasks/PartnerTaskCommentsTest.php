@@ -16,7 +16,6 @@ use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ViewPartnerTask;
 use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerTaskCommentsRelationManager;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use App\Filament\Resources\TaskResource\RelationManagers\TaskCommentsRelationManager;
-use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -83,11 +82,11 @@ it('shows a Partner the non-internal comment of an own task and not the internal
     $internal = app(AddTaskComment::class)->handle($this->admin, $this->task, '<p>'.Canary::canary('internal').'</p>', internal: true);
     $this->actingAs($this->partnerA);
 
-    partnerCommentManager($this->task)
-        ->assertCanSeeTableRecords([$visible])
-        ->assertCanNotSeeTableRecords([$internal])
+    $manager = partnerCommentManager($this->task)
         ->assertSee(strip_tags($visible->body))
         ->assertDontSee(strip_tags($internal->body));
+
+    expect($manager->instance()->comments()->pluck('id')->all())->toBe([$visible->id]);
 });
 
 it('registers the comments tab on the Partner task page', function (): void {
@@ -103,8 +102,9 @@ it('lets a Partner add a rich-text comment that is stored for the Partner as a p
     $this->actingAs($this->partnerA);
 
     partnerCommentManager($this->task)
-        ->callAction(TestAction::make('create')->table(), ['body' => '<p>Example <strong>bold</strong> remark</p>'])
-        ->assertHasNoActionErrors();
+        ->set('commentData.body', '<p>Example <strong>bold</strong> remark</p>')
+        ->call('addComment')
+        ->assertHasNoErrors();
 
     $comment = app(PartnerContext::class)->runAsSystem(fn (): TaskComment => $this->task->comments()->firstOrFail());
 
@@ -117,7 +117,8 @@ it('lets a Partner add a rich-text comment that is stored for the Partner as a p
 it('shows the Partner comment to the Admin in the comments tab of the task page', function (): void {
     $this->actingAs($this->partnerA);
     partnerCommentManager($this->task)
-        ->callAction(TestAction::make('create')->table(), ['body' => '<p>Example partner remark</p>']);
+        ->set('commentData.body', '<p>Example partner remark</p>')
+        ->call('addComment');
 
     $this->actingAs($this->admin);
 
@@ -130,8 +131,11 @@ it('stores a forged internal flag in the create data as not internal', function 
     $this->actingAs($this->partnerA);
 
     partnerCommentManager($this->task)
-        ->callAction(TestAction::make('create')->table(), ['body' => '<p>Example forged remark</p>', 'is_internal' => true, 'is_escalation' => true])
-        ->assertHasNoActionErrors();
+        ->set('commentData.body', '<p>Example forged remark</p>')
+        ->set('commentData.is_internal', true)
+        ->set('commentData.is_escalation', true)
+        ->call('addComment')
+        ->assertHasNoErrors();
 
     $comment = app(PartnerContext::class)->runAsSystem(fn (): TaskComment => $this->task->comments()->firstOrFail());
 
@@ -139,19 +143,20 @@ it('stores a forged internal flag in the create data as not internal', function 
         ->and($comment->is_escalation)->toBeFalse();
 });
 
-it('offers a Partner no internal column, toggle, edit, delete or bulk action', function (): void {
+it('offers a Partner no internal badge, toggle, edit or delete', function (): void {
     app(AddTaskComment::class)->handle($this->admin, $this->task, '<p>Example append-only remark</p>');
     $this->actingAs($this->partnerA);
 
     $manager = partnerCommentManager($this->task);
-    $table = $manager->instance()->getTable();
+    $instance = $manager->instance();
 
-    expect(array_keys($table->getColumns()))->toBe(['author.name', 'created_at', 'body', 'is_escalation'])
-        ->and($table->getRecordActions())->toBe([])
-        ->and($table->getFlatBulkActions())->toBe([])
-        ->and(array_map(static fn ($action): string => (string) $action->getName(), $table->getHeaderActions()))->toBe(['create']);
+    expect(method_exists($instance, 'updateComment'))->toBeFalse()
+        ->and(method_exists($instance, 'deleteComment'))->toBeFalse();
 
-    $schema = $manager->instance()->form(Schema::make($manager->instance()));
+    $manager->assertDontSee(__('kokpit.tasks.comments.badges.internal'))
+        ->assertDontSee(__('kokpit.tasks.comments.fields.is_internal'));
+
+    $schema = $instance->commentForm(Schema::make($instance));
     $fields = array_map(static fn ($component): ?string => method_exists($component, 'getName') ? $component->getName() : null, $schema->getComponents());
 
     expect($fields)->toBe(['body']);
@@ -208,8 +213,9 @@ it('stores and renders a Partner comment without script, handler, script link or
     $this->actingAs($this->partnerA);
 
     $html = partnerCommentManager($this->task)
-        ->callAction(TestAction::make('create')->table(), ['body' => implode('', partnerCommentPayloadParts())])
-        ->assertHasNoActionErrors()
+        ->set('commentData.body', implode('', partnerCommentPayloadParts()))
+        ->call('addComment')
+        ->assertHasNoErrors()
         ->html();
 
     $stored = app(PartnerContext::class)->runAsSystem(fn (): string => $this->task->comments()->firstOrFail()->body);
@@ -278,7 +284,7 @@ it('reveals no internal comment of an own task on any Partner surface, in a quer
     $pageLivewire = Livewire::test(ViewPartnerTask::class, ['record' => $this->task->reference])->html();
     $manager = partnerCommentManager($this->task)->assertSee($visible);
     $managerHtml = $manager->html();
-    $records = $manager->instance()->getTable()->getRecords();
+    $records = $manager->instance()->comments();
 
     expect($page)->not->toContain($canary)
         ->and($pageLivewire)->not->toContain($canary)
