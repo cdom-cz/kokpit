@@ -221,6 +221,54 @@ it('moves between weeks and loads the recap of the week shown', function (): voi
         ->assertSet('week', '2026-10-12');
 });
 
+it('saves the recap that was typed before the week changes, on the week that was shown', function (): void {
+    SignalWeeklyRecap::query()->create(['week_start' => '2026-10-05', 'what_went_well' => 'Example earlier', 'what_to_change' => '']);
+
+    Livewire::test(SignalWeekPage::class)
+        ->set('wentWell', '  Example typed on Friday  ')
+        ->set('toChange', 'Example typed change')
+        ->call('goToWeek', '2026-10-05')
+        ->assertNotified(__('kokpit.signal.week.recap_saved'))
+        ->assertSet('week', '2026-10-05')
+        ->assertSet('wentWell', 'Example earlier')
+        ->assertSet('toChange', '');
+
+    $saved = SignalWeeklyRecap::query()->where('week_start', '2026-10-12')->firstOrFail();
+
+    expect($saved->what_went_well)->toBe('Example typed on Friday')
+        ->and($saved->what_to_change)->toBe('Example typed change');
+});
+
+it('writes nothing when the recap fields did not change, and creates no row for an empty week', function (): void {
+    SignalWeeklyRecap::query()->create(['week_start' => '2026-10-05', 'what_went_well' => 'Example earlier', 'what_to_change' => '']);
+
+    Livewire::test(SignalWeekPage::class)
+        ->call('goToWeek', '2026-10-05')
+        ->assertNotNotified(__('kokpit.signal.week.recap_saved'))
+        ->set('wentWell', ' Example earlier ')
+        ->call('goToWeek', '2026-10-12');
+
+    expect(SignalWeeklyRecap::query()->count())->toBe(1)
+        ->and(SignalWeeklyRecap::query()->firstOrFail()->what_went_well)->toBe('Example earlier');
+});
+
+it('stays on the week with the typed text when the recap cannot be saved', function (): void {
+    Livewire::test(SignalWeekPage::class)
+        ->set('wentWell', str_repeat('x', 5001))
+        ->call('goToWeek', '2026-10-05')
+        ->assertNotified(__('kokpit.signal.errors.recap_too_long', ['max' => 5000]))
+        ->assertSet('week', '2026-10-12')
+        ->assertSet('wentWell', str_repeat('x', 5001));
+
+    expect(SignalWeeklyRecap::query()->count())->toBe(0);
+});
+
+it('limits both recap textareas to 5000 characters', function (): void {
+    Livewire::test(SignalWeekPage::class)->assertSeeHtml('maxlength="5000"');
+
+    expect(substr_count(Livewire::test(SignalWeekPage::class)->html(), 'maxlength="5000"'))->toBe(2);
+});
+
 it('shows the recaps of a range and turns a reversed range around', function (): void {
     SignalWeeklyRecap::query()->create(['week_start' => '2026-09-28', 'what_went_well' => 'Example in range', 'what_to_change' => 'Example change']);
     SignalWeeklyRecap::query()->create(['week_start' => '2025-01-06', 'what_went_well' => 'Example too old', 'what_to_change' => '']);

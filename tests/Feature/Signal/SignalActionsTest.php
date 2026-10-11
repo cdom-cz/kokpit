@@ -428,3 +428,16 @@ it('takes the per-user lock of the settings before reading them, so two first sa
 
     expect(signalSettingsLockIsFree((string) $this->admin->getKey()))->toBeFalse();
 });
+
+it('keeps a recap of 5000 characters, counted in characters, and refuses 5001 in either field', function (): void {
+    $save = app(SaveSignalRecap::class);
+    $message = __('kokpit.signal.errors.recap_too_long', ['max' => 5000]);
+
+    $recap = $save->handle($this->admin, '2026-10-12', '  '.str_repeat('á', 5000).'  ', str_repeat('x', 5000));
+
+    expect(mb_strlen($recap->what_went_well))->toBe(5000)
+        ->and(mb_strlen($recap->what_to_change))->toBe(5000)
+        ->and(fn () => $save->handle($this->admin, '2026-10-12', str_repeat('á', 5001), ''))->toThrow(SignalRuleViolation::class, $message)
+        ->and(fn () => $save->handle($this->admin, '2026-10-12', '', str_repeat('x', 5001)))->toThrow(SignalRuleViolation::class, $message)
+        ->and(SignalWeeklyRecap::query()->firstOrFail()->what_went_well)->toBe(str_repeat('á', 5000));
+});

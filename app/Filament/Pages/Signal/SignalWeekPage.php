@@ -72,32 +72,29 @@ class SignalWeekPage extends Page
 
     public function mount(): void
     {
-        $this->goToWeek($this->week);
+        $this->loadWeek($this->week);
     }
 
     /**
      * The property is bound to the URL, so the browser can write anything into it: normalise it and
-     * load the week the way goToWeek() does.
+     * load the week. It never saves, because the typed text no longer belongs to the week the property
+     * now names.
      */
     public function updatedWeek(): void
     {
-        $this->goToWeek($this->week);
+        $this->loadWeek($this->week);
     }
 
     /**
-     * Shows the week that contains the given day; anything that is no day shows the current week.
+     * Shows the week that contains the given day; anything that is no day shows the current week. A
+     * recap that was typed or changed is saved first, on the week that was shown; when that is refused
+     * the page stays on the week with the typed text and shows why.
      */
     public function goToWeek(string $day): void
     {
-        $this->week = SignalCalendar::isValidDay($day) ? SignalCalendar::weekStart($day) : SignalCalendar::currentWeekStart();
-        $this->cancelGoalEdit();
-        $this->newGoal = '';
-
-        $recap = app(SignalOverviewReader::class)->recap($this->week);
-        $this->wentWell = $recap->what_went_well ?? '';
-        $this->toChange = $recap->what_to_change ?? '';
-
-        unset($this->goals);
+        if ($this->saveRecapIfChanged()) {
+            $this->loadWeek($day);
+        }
     }
 
     /**
@@ -197,6 +194,44 @@ class SignalWeekPage extends Page
             'next' => SignalCalendar::addDays($this->week, 7),
             'current' => $current,
         ];
+    }
+
+    /**
+     * Shows the week that contains the day (or the current week) with its stored recap. Reads only.
+     */
+    private function loadWeek(string $day): void
+    {
+        $this->week = SignalCalendar::isValidDay($day) ? SignalCalendar::weekStart($day) : SignalCalendar::currentWeekStart();
+        $this->cancelGoalEdit();
+        $this->newGoal = '';
+
+        $recap = app(SignalOverviewReader::class)->recap($this->week);
+        $this->wentWell = $recap->what_went_well ?? '';
+        $this->toChange = $recap->what_to_change ?? '';
+
+        unset($this->goals);
+    }
+
+    /**
+     * Saves the recap of the shown week when the typed text differs from the stored one (a week without
+     * a recap counts as two empty texts, so an untouched week writes nothing). Returns false when the
+     * save was refused.
+     */
+    private function saveRecapIfChanged(): bool
+    {
+        $stored = app(SignalOverviewReader::class)->recap($this->week);
+
+        if (trim($this->wentWell) === ($stored->what_went_well ?? '') && trim($this->toChange) === ($stored->what_to_change ?? '')) {
+            return true;
+        }
+
+        if (! $this->attempt(fn ($actor) => app(SaveSignalRecap::class)->handle($actor, $this->week, $this->wentWell, $this->toChange))) {
+            return false;
+        }
+
+        Notification::make()->title(__('kokpit.signal.week.recap_saved'))->success()->send();
+
+        return true;
     }
 
     private function changed(): void

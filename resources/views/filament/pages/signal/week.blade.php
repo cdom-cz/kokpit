@@ -75,14 +75,14 @@
             <label style="display: grid; gap: 0.25rem;">
                 <span style="font-size: 0.875rem; font-weight: 600;">{{ __('kokpit.signal.week.went_well') }}</span>
                 <x-filament::input.wrapper>
-                    <textarea wire:model="wentWell" rows="4" class="fi-input" style="width: 100%; padding: 0.5rem 0.75rem; background: transparent;"></textarea>
+                    <textarea wire:model="wentWell" rows="4" maxlength="{{ \App\Domain\Signal\Support\SignalRules::MAX_RECAP_LENGTH }}" class="fi-input" style="width: 100%; padding: 0.5rem 0.75rem; background: transparent;"></textarea>
                 </x-filament::input.wrapper>
             </label>
 
             <label style="display: grid; gap: 0.25rem;">
                 <span style="font-size: 0.875rem; font-weight: 600;">{{ __('kokpit.signal.week.to_change') }}</span>
                 <x-filament::input.wrapper>
-                    <textarea wire:model="toChange" rows="4" class="fi-input" style="width: 100%; padding: 0.5rem 0.75rem; background: transparent;"></textarea>
+                    <textarea wire:model="toChange" rows="4" maxlength="{{ \App\Domain\Signal\Support\SignalRules::MAX_RECAP_LENGTH }}" class="fi-input" style="width: 100%; padding: 0.5rem 0.75rem; background: transparent;"></textarea>
                 </x-filament::input.wrapper>
             </label>
 

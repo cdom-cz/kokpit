@@ -14,6 +14,12 @@ final class SignalRules
 {
     public const int MAX_GOALS_PER_WEEK = 3;
 
+    /** The longest title of a task, a template or a goal, in characters. */
+    public const int MAX_TITLE_LENGTH = 255;
+
+    /** The longest text of either field of a weekly recap, in characters. */
+    public const int MAX_RECAP_LENGTH = 5000;
+
     /**
      * A task is added "during the day" when it is created on or after the day it is for; it was
      * "planned ahead" when it is created before it.
