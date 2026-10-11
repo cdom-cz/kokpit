@@ -14,6 +14,13 @@ use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\SettingsProperty;
 use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
+use App\Domain\Signal\Models\SignalDayOverride;
+use App\Domain\Signal\Models\SignalDeepWorkDay;
+use App\Domain\Signal\Models\SignalRecurringTask;
+use App\Domain\Signal\Models\SignalSetting;
+use App\Domain\Signal\Models\SignalTask;
+use App\Domain\Signal\Models\SignalWeeklyGoal;
+use App\Domain\Signal\Models\SignalWeeklyRecap;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskBilling;
 use App\Domain\Tasks\Models\TaskChecklistItem;
@@ -107,6 +114,13 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         TaskComment::class,
         TimeEntry::class,
         WebhookCall::class,
+        SignalDayOverride::class,
+        SignalDeepWorkDay::class,
+        SignalRecurringTask::class,
+        SignalSetting::class,
+        SignalTask::class,
+        SignalWeeklyGoal::class,
+        SignalWeeklyRecap::class,
     ]);
 });
 
