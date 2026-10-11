@@ -17,6 +17,8 @@ zerops:
       prepareCommands:
         - sudo apk update
         - sudo apk add --no-cache supervisor
+        # Horizon needs pcntl (async signals) and posix (process control); the base image has neither.
+        - sudo apk add --no-cache php85-pcntl php85-posix
         - sudo rc-update add supervisord default
         - sudo mkdir -p /etc/supervisor.d
         - sudo mkdir -p /var/log/supervisor
