@@ -335,7 +335,7 @@ it('keeps the canary resource out of the panel while the harness is off', functi
 
 it('refuses to start a production process while the canary harness is on', function (): void {
     $run = fn (string $harness): Process => artisanProcess(
-        ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => 'true', 'KOKPIT_CANARY_HARNESS' => $harness, 'QUEUE_CONNECTION' => 'redis', 'CACHE_STORE' => 'redis', 'MAIL_MAILER' => 'smtp', 'APP_URL' => 'https://kokpit.example.com'],
+        ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => 'true', 'KOKPIT_CANARY_HARNESS' => $harness, 'QUEUE_CONNECTION' => 'redis', 'CACHE_STORE' => 'redis', 'MAIL_MAILER' => 'smtp', 'APP_URL' => 'https://kokpit.example.com', 'FILESYSTEM_DISK' => 's3', 'MEDIA_DISK' => 's3', 'S3_ACCESS_KEY_ID' => implode('-', ['example', 'storage', 'key']), 'S3_SECRET_ACCESS_KEY' => implode('-', ['example', 'storage', 'secret']), 'S3_BUCKET' => implode('-', ['example', 'storage', 'bucket'])],
         ['--version'],
     );
 

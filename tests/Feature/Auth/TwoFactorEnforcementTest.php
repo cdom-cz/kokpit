@@ -189,13 +189,28 @@ it('refuses to boot the application provider in production with enforcement off'
 
 it('boots the application provider in production with enforcement on', function (): void {
     // The test suite runs with the canary harness on; production must not (D-04).
-    config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'redis', 'mail.default' => 'smtp', 'app.url' => 'https://kokpit.example.com', 'cache.default' => 'redis']);
+    config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'redis', 'mail.default' => 'smtp', 'app.url' => 'https://kokpit.example.com', 'cache.default' => 'redis',
+        'filesystems.default' => 's3', 'filament.default_filesystem_disk' => 's3', 'media-library.disk_name' => 's3',
+        'filesystems.disks.s3.key' => implode('-', ['example', 'storage', 'key']),
+        'filesystems.disks.s3.secret' => implode('-', ['example', 'storage', 'secret']),
+        'filesystems.disks.s3.bucket' => implode('-', ['example', 'storage', 'bucket']),
+    ]);
     $this->app['env'] = 'production';
 
     (new AppServiceProvider($this->app))->boot();
 
     expect(true)->toBeTrue();
 });
+
+it('refuses to boot the application provider in production with a local default disk', function (): void {
+    config([
+        'kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'redis', 'mail.default' => 'smtp',
+        'app.url' => 'https://kokpit.example.com', 'cache.default' => 'redis', 'filesystems.default' => 'local',
+    ]);
+    $this->app['env'] = 'production';
+
+    (new AppServiceProvider($this->app))->boot();
+})->throws(RuntimeException::class, 'FILESYSTEM_DISK');
 
 it('refuses to boot the application provider in production with the array cache store', function (): void {
     config(['kokpit.require_admin_two_factor' => true, 'kokpit.canary_harness' => false, 'queue.default' => 'redis', 'mail.default' => 'smtp', 'app.url' => 'https://kokpit.example.com', 'cache.default' => 'array']);
@@ -230,7 +245,7 @@ it('refuses to start a real production process with enforcement off and starts w
         $process = new Process(
             [PHP_BINARY, 'artisan', '--version'],
             base_path(),
-            ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => $enforcement, 'KOKPIT_CANARY_HARNESS' => 'false', 'QUEUE_CONNECTION' => 'redis', 'CACHE_STORE' => $cacheStore, 'MAIL_MAILER' => 'smtp', 'APP_URL' => 'https://kokpit.example.com'],
+            ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'KOKPIT_REQUIRE_ADMIN_2FA' => $enforcement, 'KOKPIT_CANARY_HARNESS' => 'false', 'QUEUE_CONNECTION' => 'redis', 'CACHE_STORE' => $cacheStore, 'MAIL_MAILER' => 'smtp', 'APP_URL' => 'https://kokpit.example.com', 'FILESYSTEM_DISK' => 's3', 'MEDIA_DISK' => 's3', 'S3_ACCESS_KEY_ID' => implode('-', ['example', 'storage', 'key']), 'S3_SECRET_ACCESS_KEY' => implode('-', ['example', 'storage', 'secret']), 'S3_BUCKET' => implode('-', ['example', 'storage', 'bucket'])],
         );
         $process->run();
 
