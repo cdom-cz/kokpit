@@ -7,8 +7,10 @@ namespace App\Filament\Concerns;
 use App\Domain\Identity\Models\User;
 use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskComment;
 use Filament\Actions\Action;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\View;
@@ -40,7 +42,7 @@ trait RendersTaskCommentThread
     /**
      * The form fields of the inline comment form.
      *
-     * @return array<int, \Filament\Schemas\Components\Component>
+     * @return array<int, Component>
      */
     abstract protected function commentFields(): array;
 
@@ -73,7 +75,7 @@ trait RendersTaskCommentThread
      * The comments of the task, oldest first, with their authors. The relation goes
      * through the Partner-scoped model, so a Partner never gets an internal row.
      *
-     * @return Collection<int, \App\Domain\Tasks\Models\TaskComment>
+     * @return Collection<int, TaskComment>
      */
     public function comments(): Collection
     {
