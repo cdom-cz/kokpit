@@ -17,6 +17,9 @@ zerops:
       prepareCommands:
         - sudo apk update
         - sudo apk add --no-cache supervisor php85-pcntl php85-posix
+        # Alpine ships only English ICU data by default (icu-data-en); without the full set
+        # intl has no data for the "cs" locale and Money::format('cs') throws.
+        - sudo apk add --no-cache icu-data-full
         - sudo rc-update add supervisord default
         - sudo mkdir -p /etc/supervisor.d
         - sudo mkdir -p /var/log/supervisor
