@@ -155,6 +155,25 @@ it('moves the scheduler boundary with the configured threshold', function (): vo
     expect((new SchedulerHeartbeatIndicator)->check()->status)->toBe(HealthStatus::Error);
 });
 
+it('reads a heartbeat the cache returns as a numeric string, as the Redis store does', function (): void {
+    Carbon::setTestNow('2026-07-01 10:00:00 UTC');
+    $timestamp = Carbon::now()->getTimestamp();
+    Cache::forever('kokpit:heartbeat:scheduler', (string) $timestamp);
+    Cache::forever('kokpit:heartbeat:worker', (string) $timestamp);
+
+    $heartbeats = app(Heartbeats::class);
+
+    expect($heartbeats->scheduler())->toBe($timestamp)
+        ->and($heartbeats->worker())->toBe($timestamp)
+        ->and((new SchedulerHeartbeatIndicator)->check()->status)->toBe(HealthStatus::Ok);
+});
+
+it('treats a non-numeric heartbeat value as never recorded', function (): void {
+    Cache::forever('kokpit:heartbeat:scheduler', 'garbage');
+
+    expect(app(Heartbeats::class)->scheduler())->toBeNull();
+});
+
 it('keeps the two heartbeats apart', function (): void {
     Carbon::setTestNow('2026-07-01 10:00:00 UTC');
     $heartbeats = app(Heartbeats::class);
