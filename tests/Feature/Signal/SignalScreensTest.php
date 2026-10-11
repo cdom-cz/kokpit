@@ -43,6 +43,15 @@ it('renders the five pages for the Admin in their own menu group', function (): 
         ->and(SignalDashboardPage::getNavigationGroup())->toBe(SignalReflectionPage::getNavigationGroup());
 });
 
+it('orders the menu group overview, today, week, reflection, settings', function (): void {
+    $sorted = collect([SignalTodayPage::class, SignalWeekPage::class, SignalDashboardPage::class, SignalReflectionPage::class, SignalSettingsPage::class])
+        ->sortBy(static fn (string $page): ?int => $page::getNavigationSort())
+        ->values()
+        ->all();
+
+    expect($sorted)->toBe([SignalDashboardPage::class, SignalTodayPage::class, SignalWeekPage::class, SignalReflectionPage::class, SignalSettingsPage::class]);
+});
+
 it('refuses every page and the day component to a Partner, as a request and as a component', function (): void {
     $partner = Canary::partnerFor(Canary::twoClients()[0]);
     $this->actingAs($partner);
