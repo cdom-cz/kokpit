@@ -6,7 +6,7 @@ zerops:
         - alpine/nodejs@24
       os: alpine
       buildCommands:
-        - composer install --optimize-autoloader --no-dev --ignore-platform-reqs
+        - composer install --optimize-autoloader --no-dev --no-scripts --ignore-platform-reqs
       deployFiles: ./
       cache:
         - vendor
@@ -25,6 +25,11 @@ zerops:
         - sudo rc-service supervisord status
         - sudo supervisorctl status
       initCommands:
+        # The build runs composer with --no-scripts: the post-autoload-dump scripts boot the
+        # application, and the build has no service-level environment, so ProductionConfigGuard
+        # would refuse. They run here instead, with the real environment (and the guard).
+        - php artisan package:discover --ansi
+        - php artisan filament:upgrade
         - php artisan optimize:clear
         - php artisan optimize
         - php artisan icons:cache
