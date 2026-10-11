@@ -13,12 +13,14 @@ use App\Domain\Signal\Actions\SetSignalDeepWork;
 use App\Domain\Signal\Actions\ToggleSignalTaskDone;
 use App\Domain\Signal\Actions\UpdateSignalTask;
 use App\Domain\Signal\Enums\SignalCategory;
+use App\Domain\Signal\Models\SignalRecurringTask;
 use App\Domain\Signal\Models\SignalTask;
 use App\Domain\Signal\Queries\SignalDayReader;
 use App\Domain\Signal\Support\SignalCalendar;
 use App\Domain\Signal\Support\SignalRules;
 use App\Livewire\TimeTracking\RequiresAdmin;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
@@ -66,6 +68,12 @@ final class SignalDay extends Component
 
         $this->forDate = $forDate;
         $this->heading = $heading;
+
+        // The only place that writes while a day is shown: once, when the day of today is opened.
+        // Rendering and every later request only read.
+        if ($forDate === SignalCalendar::today()) {
+            app(MaterializeSignalRecurring::class)->handle($this->actor(), $forDate);
+        }
     }
 
     public function addTask(): void
@@ -220,10 +228,6 @@ final class SignalDay extends Component
         $reader = app(SignalDayReader::class);
         $today = SignalCalendar::today();
 
-        if ($this->forDate === $today) {
-            app(MaterializeSignalRecurring::class)->handle($this->actor(), $today);
-        }
-
         $tasks = $reader->tasks($this->forDate);
         $pinned = $reader->pinnedTaskIds($this->forDate, $tasks);
         $unlocked = $reader->isUnlocked($this->forDate);
@@ -261,15 +265,7 @@ final class SignalDay extends Component
             ];
         }
 
-        $shadows = $this->forDate > $today
-            ? $reader->shadows($this->forDate, $tasks)->map(static fn ($template): array => [
-                'id' => $template->id,
-                'title' => $template->title,
-                'category' => $template->category->value,
-                'label' => $template->category->getLabel(),
-                'color' => $template->category->getColor(),
-            ])->all()
-            : [];
+        $shadows = $this->forDate > $today ? $this->shadows($reader->shadows($this->forDate, $tasks), $tasks) : [];
 
         return [
             'date_label' => SignalCalendar::formatLong($this->forDate),
@@ -287,6 +283,41 @@ final class SignalDay extends Component
             'total' => $tasks->count(),
             'done' => $tasks->where('is_done', true)->count(),
         ];
+    }
+
+    /**
+     * The shadows of a later day in the colour their task will get: the templates are placed in the
+     * order of their materialization on top of the tasks the day already holds, and a colour that is
+     * full turns grey.
+     *
+     * @param  Collection<int, SignalRecurringTask>  $templates
+     * @param  Collection<int, SignalTask>  $tasks
+     * @return list<array{id: string, title: string, category: string, label: string, color: string}>
+     */
+    private function shadows(Collection $templates, Collection $tasks): array
+    {
+        $count = [];
+
+        foreach ($tasks as $task) {
+            $count[$task->category->value] = ($count[$task->category->value] ?? 0) + 1;
+        }
+
+        $shadows = [];
+
+        foreach ($templates as $template) {
+            $category = SignalRules::materializedCategory($template->category, $count[$template->category->value] ?? 0);
+            $count[$category->value] = ($count[$category->value] ?? 0) + 1;
+
+            $shadows[] = [
+                'id' => $template->id,
+                'title' => $template->title,
+                'category' => $category->value,
+                'label' => $category->getLabel(),
+                'color' => $category->getColor(),
+            ];
+        }
+
+        return $shadows;
     }
 
     public function render(): View

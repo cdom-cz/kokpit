@@ -28,6 +28,14 @@ it('limits main and medium to three a day and leaves the rest unlimited', functi
         ->and(SignalRules::canAdd(SignalCategory::Extra, 50))->toBeTrue();
 });
 
+it('turns the task of a template into a grey one when its colour is already full on the day', function (): void {
+    expect(SignalRules::materializedCategory(SignalCategory::Main, 2))->toBe(SignalCategory::Main)
+        ->and(SignalRules::materializedCategory(SignalCategory::Main, 3))->toBe(SignalCategory::Extra)
+        ->and(SignalRules::materializedCategory(SignalCategory::Medium, 3))->toBe(SignalCategory::Extra)
+        ->and(SignalRules::materializedCategory(SignalCategory::Medium, 0))->toBe(SignalCategory::Medium)
+        ->and(SignalRules::materializedCategory(SignalCategory::Other, 50))->toBe(SignalCategory::Other);
+});
+
 it('reserves a slot for every recurring template of the colour that fires on the day', function (): void {
     expect(SignalRules::effectiveLimit(SignalCategory::Main, 0))->toBe(3)
         ->and(SignalRules::effectiveLimit(SignalCategory::Main, 2))->toBe(1)

@@ -55,6 +55,18 @@ final class SignalRules
     }
 
     /**
+     * The colour of the task that a recurring template generates on a day that already holds
+     * `$alreadyInGroup` tasks of the template's colour: the template's own colour while one more
+     * fits (no reserved slots are taken into account, the template is about to become the task),
+     * grey (`extra`) otherwise, so no day ever holds more coloured tasks than its limit. This is the
+     * single rule the materialization and the shadow view of a later day share.
+     */
+    public static function materializedCategory(SignalCategory $template, int $alreadyInGroup): SignalCategory
+    {
+        return self::canAdd($template, $alreadyInGroup) ? $template : SignalCategory::Extra;
+    }
+
+    /**
      * A past day is locked unless the user unlocked it; today and the future never are.
      */
     public static function isDayLocked(string $forDate, bool $unlocked, string $today): bool

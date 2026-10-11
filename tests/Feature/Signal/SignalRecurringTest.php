@@ -16,7 +16,9 @@ use App\Livewire\Signal\SignalDay;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -203,3 +205,109 @@ it('survives a template that is deleted or switched off right after the day lock
     expect($done)->toBeTrue()
         ->and(SignalTask::query()->count())->toBe(0);
 })->with(['the template is deleted' => ['delete'], 'the template is switched off' => ['off']]);
+
+it('turns the task of a template into a grey one when three main tasks are planned already, and stores it once', function (): void {
+    foreach (range(0, 2) as $position) {
+        recurringTask('2026-10-12', SignalCategory::Main, "Example planned {$position}", position: $position);
+    }
+
+    $template = recurringTemplate($this, 'Example overflow', SignalCategory::Main);
+
+    app(MaterializeSignalRecurring::class)->handle($this->admin, '2026-10-12');
+    app(MaterializeSignalRecurring::class)->handle($this->admin, '2026-10-12');
+
+    $generated = SignalTask::query()->where('recurring_id', $template->id)->get();
+
+    expect($generated)->toHaveCount(1)
+        ->and($generated[0]->category)->toBe(SignalCategory::Extra)
+        ->and(SignalTask::query()->where('category', 'main')->count())->toBe(3);
+});
+
+it('keeps the colour of a template task while the day has a free slot of that colour', function (): void {
+    recurringTask('2026-10-12', SignalCategory::Main, 'Example planned');
+    $template = recurringTemplate($this, 'Example fits', SignalCategory::Main);
+
+    app(MaterializeSignalRecurring::class)->handle($this->admin, '2026-10-12');
+
+    expect(SignalTask::query()->where('recurring_id', $template->id)->firstOrFail()->category)->toBe(SignalCategory::Main);
+});
+
+it('fills the slots in the order of the templates and makes the rest grey', function (): void {
+    recurringTask('2026-10-12', SignalCategory::Main, 'Example planned one');
+    recurringTask('2026-10-12', SignalCategory::Main, 'Example planned two', position: 1);
+    $first = recurringTemplate($this, 'Example first', SignalCategory::Main);
+    $second = recurringTemplate($this, 'Example second', SignalCategory::Main);
+
+    app(MaterializeSignalRecurring::class)->handle($this->admin, '2026-10-12');
+
+    expect(SignalTask::query()->where('recurring_id', $first->id)->firstOrFail()->category)->toBe(SignalCategory::Main)
+        ->and(SignalTask::query()->where('recurring_id', $second->id)->firstOrFail()->category)->toBe(SignalCategory::Extra)
+        ->and(SignalTask::query()->where('category', 'main')->count())->toBe(3);
+});
+
+it('shows the shadow of a template on a full day in the colour its task will get', function (): void {
+    foreach (range(0, 2) as $position) {
+        recurringTask('2026-10-13', SignalCategory::Main, "Example planned {$position}", position: $position);
+    }
+
+    // Tuesday (index 1).
+    recurringTemplate($this, 'Example overflow', SignalCategory::Main, [1]);
+    recurringTemplate($this, 'Example fits', SignalCategory::Other, [1]);
+
+    $shadows = Livewire::test(SignalDay::class, ['forDate' => '2026-10-13'])->instance()->day['shadows'];
+
+    expect(array_column($shadows, 'category'))->toBe(['extra', 'other'])
+        ->and($shadows[0]['label'])->toBe(SignalCategory::Extra->getLabel());
+});
+
+it('materializes when the day component is mounted for today, and never again while it renders', function (): void {
+    $template = recurringTemplate($this, 'Example standup', SignalCategory::Other);
+
+    $component = Livewire::test(SignalDay::class, ['forDate' => '2026-10-12']);
+
+    expect(SignalTask::query()->where('recurring_id', $template->id)->count())->toBe(1);
+
+    // The row disappears behind the back of the component: reading again must not write.
+    DB::table('signal_tasks')->delete();
+    $component->call('$refresh')->call('setBlocks', 1);
+
+    expect(SignalTask::query()->count())->toBe(0);
+});
+
+it('materializes nothing when the component shows a day that is not today', function (): void {
+    recurringTemplate($this, 'Example standup', SignalCategory::Other);
+
+    Livewire::test(SignalDay::class, ['forDate' => '2026-10-11']);
+    Livewire::test(SignalDay::class, ['forDate' => '2026-10-13']);
+
+    expect(SignalTask::query()->count())->toBe(0);
+});
+
+it('opens no transaction and takes no lock when no template is pending', function (): void {
+    $lockQueries = 0;
+    $transactions = 0;
+    DB::listen(function (QueryExecuted $query) use (&$lockQueries): void {
+        $lockQueries += str_contains($query->sql, 'pg_advisory_xact_lock') ? 1 : 0;
+    });
+    Event::listen(TransactionBeginning::class, function () use (&$transactions): void {
+        $transactions++;
+    });
+    $materialize = app(MaterializeSignalRecurring::class);
+
+    // No template at all, then a template that fires on Tuesdays only.
+    $materialize->handle($this->admin, '2026-10-12');
+    recurringTemplate($this, 'Example tuesday', SignalCategory::Other, [1]);
+    $materialize->handle($this->admin, '2026-10-12');
+
+    expect([$lockQueries, $transactions])->toBe([0, 0]);
+
+    // One that is pending takes the lock once; afterwards it is done and nothing is opened again.
+    recurringTemplate($this, 'Example monday', SignalCategory::Other, [0]);
+    $materialize->handle($this->admin, '2026-10-12');
+
+    expect([$lockQueries, $transactions])->toBe([1, 1]);
+
+    $materialize->handle($this->admin, '2026-10-12');
+
+    expect([$lockQueries, $transactions])->toBe([1, 1]);
+});

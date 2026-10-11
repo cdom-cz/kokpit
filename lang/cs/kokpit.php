@@ -1266,7 +1266,7 @@ return [
             'weekend_blocks' => 'Víkend',
             'saved' => 'Nastavení bylo uloženo.',
             'recurring' => 'Opakující se úkoly',
-            'recurring_hint' => 'Šablona vytvoří úkol v každý zvolený den v týdnu. Každá šablona zabere jedno místo z denního limitu své kategorie.',
+            'recurring_hint' => 'Šablona vytvoří úkol v každý zvolený den v týdnu. Každá šablona zabere jedno místo z denního limitu své kategorie. Když je den při vzniku úkolu už plný, úkol vznikne jako dodatečný (šedý).',
             'no_templates' => 'Zatím žádné šablony.',
             'new_template' => 'Nová šablona',
             'edit_template' => 'Úprava šablony',
