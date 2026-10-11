@@ -113,3 +113,7 @@ None. No new network endpoint or trust boundary beyond the SES API client planne
 
 - Created file `tests/Feature/Operations/AwsCredentialSeparationTest.php` exists.
 - Commits 7303eaf, aa48dfa and b60da59 are on HEAD.
+
+## Follow-up: guard reopened
+
+The owner asked to keep `ProductionConfigGuard` open: neither S3 nor AWS configuration may be a boot condition. The five storage and SES refusals were removed again (guard, its tests, the two production-boot tests and the matching CONTRIBUTING.md text restored to the state before this task). Consequences: follow-up 2 (renaming the Zerops variables) is no longer enforced by the guard, but leftover `AWS_*` storage values would still be read as SES credentials, so the rename remains advisable.
