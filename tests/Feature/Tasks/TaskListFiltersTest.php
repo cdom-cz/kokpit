@@ -19,7 +19,8 @@ use Tests\Support\Canary;
 /*
  * The filters of the Admin task list (TA-05): client, project, status, priority,
  * assignee, task tag and an inclusive due date range, their combination, the
- * empty state and the stable default order. Every name and key is fictional.
+ * empty state, the Done tasks hidden by default, the multi-state filter and the
+ * default order by priority and due date. Every name and key is fictional.
  */
 
 /**
@@ -81,7 +82,7 @@ it('narrows the list by status and by priority', function (): void {
     $done = taskFilterTask($project, ['status' => 'done', 'priority' => 'high']);
 
     Livewire::test(ListTasks::class)
-        ->filterTable('status', 'done')
+        ->filterTable('status', ['done'])
         ->assertCanSeeTableRecords([$done])
         ->assertCanNotSeeTableRecords([$planned])
         ->removeTableFilter('status')
@@ -134,7 +135,7 @@ it('combines two filters with AND', function (): void {
 
     Livewire::test(ListTasks::class)
         ->filterTable('project', $projectA->id)
-        ->filterTable('status', 'done')
+        ->filterTable('status', ['done'])
         ->assertCanSeeTableRecords([$match])
         ->assertCanNotSeeTableRecords([$wrongStatus, $wrongProject]);
 });
@@ -185,16 +186,77 @@ it('shows the Czech empty state when the filters match nothing', function (): vo
     taskFilterTask($project, ['status' => 'planned']);
 
     Livewire::test(ListTasks::class)
-        ->filterTable('status', 'done')
+        ->filterTable('status', ['done'])
         ->assertSee('Zatím tu nejsou žádné úkoly');
 });
 
-it('orders by update time descending and by id descending for equal timestamps, on every page', function (): void {
+it('hides Done tasks by default and lists them once Done is picked or the status filter is cleared', function (): void {
     $project = taskFilterProject(Client::factory()->create(), 'AAA');
-    $tasks = collect(range(1, 7))->map(static fn (): Task => taskFilterTask($project));
-    $same = '2030-01-01 10:00:00+00';
+    $open = taskFilterTask($project, ['status' => 'in_review']);
+    $done = taskFilterTask($project, ['status' => 'done']);
 
-    DB::table('tasks')->whereIn('id', $tasks->pluck('id')->all())->update(['updated_at' => $same]);
+    Livewire::test(ListTasks::class)
+        ->assertCanSeeTableRecords([$open])
+        ->assertCanNotSeeTableRecords([$done])
+        ->filterTable('status', ['in_review', 'done'])
+        ->assertCanSeeTableRecords([$open, $done])
+        ->filterTable('status', [])
+        ->assertCanSeeTableRecords([$open, $done]);
+});
+
+it('preselects every status except Done', function (): void {
+    $filter = Livewire::test(ListTasks::class)->instance()->getTable()->getFilter('status');
+
+    expect($filter->isMultiple())->toBeTrue()
+        ->and($filter->getDefaultState())->toBe(['planned', 'to_clarify', 'in_progress', 'in_review', 'ready_to_release']);
+});
+
+it('narrows the list by several states at once', function (): void {
+    $project = taskFilterProject(Client::factory()->create(), 'AAA');
+    $planned = taskFilterTask($project, ['status' => 'planned']);
+    $inProgress = taskFilterTask($project, ['status' => 'in_progress']);
+    $done = taskFilterTask($project, ['status' => 'done']);
+
+    Livewire::test(ListTasks::class)
+        ->filterTable('status', ['planned', 'done'])
+        ->assertCanSeeTableRecords([$planned, $done])
+        ->assertCanNotSeeTableRecords([$inProgress]);
+});
+
+it('orders by priority from Urgent to Low', function (): void {
+    $project = taskFilterProject(Client::factory()->create(), 'AAA');
+    $low = taskFilterTask($project, ['priority' => 'low', 'due_date' => '2030-03-10']);
+    $normal = taskFilterTask($project, ['priority' => 'normal', 'due_date' => '2030-03-10']);
+    $urgent = taskFilterTask($project, ['priority' => 'urgent', 'due_date' => '2030-03-10']);
+    $high = taskFilterTask($project, ['priority' => 'high', 'due_date' => '2030-03-10']);
+
+    Livewire::test(ListTasks::class)
+        ->assertCanSeeTableRecords([$urgent, $high, $normal, $low], inOrder: true);
+});
+
+it('orders by the nearest due date within one priority and puts a task without one last', function (): void {
+    $project = taskFilterProject(Client::factory()->create(), 'AAA');
+    $undated = taskFilterTask($project, ['priority' => 'normal', 'due_date' => null]);
+    $later = taskFilterTask($project, ['priority' => 'normal', 'due_date' => '2030-03-12']);
+    $sooner = taskFilterTask($project, ['priority' => 'normal', 'due_date' => '2030-03-10']);
+
+    Livewire::test(ListTasks::class)
+        ->assertCanSeeTableRecords([$sooner, $later, $undated], inOrder: true);
+});
+
+it('puts the priority before the due date', function (): void {
+    $project = taskFilterProject(Client::factory()->create(), 'AAA');
+    $normalSoon = taskFilterTask($project, ['priority' => 'normal', 'due_date' => '2030-03-01']);
+    $highLate = taskFilterTask($project, ['priority' => 'high', 'due_date' => '2030-12-31']);
+    $urgentUndated = taskFilterTask($project, ['priority' => 'urgent', 'due_date' => null]);
+
+    Livewire::test(ListTasks::class)
+        ->assertCanSeeTableRecords([$urgentUndated, $highLate, $normalSoon], inOrder: true);
+});
+
+it('orders by id descending for equal priority and due date, on every page', function (): void {
+    $project = taskFilterProject(Client::factory()->create(), 'AAA');
+    $tasks = collect(range(1, 7))->map(static fn (): Task => taskFilterTask($project, ['priority' => 'normal', 'due_date' => '2030-03-10']));
 
     $ordered = $tasks->sortByDesc('id')->values();
 
@@ -206,16 +268,18 @@ it('orders by update time descending and by id descending for equal timestamps, 
         ->assertCanSeeTableRecords($ordered->slice(5)->values(), inOrder: true);
 });
 
-it('puts the most recently updated task first', function (): void {
+it('sorts the priority column by weight, not alphabetically', function (): void {
     $project = taskFilterProject(Client::factory()->create(), 'AAA');
-    $older = taskFilterTask($project);
-    $newer = taskFilterTask($project);
-
-    DB::table('tasks')->where('id', $older->id)->update(['updated_at' => '2030-01-01 10:00:00+00']);
-    DB::table('tasks')->where('id', $newer->id)->update(['updated_at' => '2030-01-02 10:00:00+00']);
+    $high = taskFilterTask($project, ['priority' => 'high']);
+    $low = taskFilterTask($project, ['priority' => 'low']);
+    $urgent = taskFilterTask($project, ['priority' => 'urgent']);
+    $normal = taskFilterTask($project, ['priority' => 'normal']);
 
     Livewire::test(ListTasks::class)
-        ->assertCanSeeTableRecords([$newer, $older], inOrder: true);
+        ->sortTable('priority')
+        ->assertCanSeeTableRecords([$urgent, $high, $normal, $low], inOrder: true)
+        ->sortTable('priority', 'desc')
+        ->assertCanSeeTableRecords([$low, $normal, $high, $urgent], inOrder: true);
 });
 
 it('never shows a task tag to a Partner through the Tag query', function (): void {
