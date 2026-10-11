@@ -372,6 +372,7 @@ final class TaskResource extends Resource
             // last within its priority. The id is the tie-breaker, so rows with equal keys keep
             // one order across pages; it also stays the last key when a column sort is chosen.
             ->defaultSort(static fn (Builder $query): Builder => TaskColumns::orderByPriority($query)
+                // @phpstan-ignore argument.type (a column qualified by the model, never input)
                 ->orderByRaw($query->qualifyColumn('due_date').' ASC NULLS LAST')
                 ->orderByDesc($query->qualifyColumn('id')))
             ->recordActions([
@@ -786,10 +787,10 @@ final class TaskResource extends Resource
                 ->label(__('kokpit.tasks.filters.status'))
                 ->options(ProjectStatus::class)
                 ->multiple()
-                ->default(array_values(array_map(
+                ->default(array_map(
                     static fn (ProjectStatus $status): string => $status->value,
                     array_filter(ProjectStatus::cases(), static fn (ProjectStatus $status): bool => $status !== ProjectStatus::Done),
-                ))),
+                )),
             SelectFilter::make('priority')
                 ->label(__('kokpit.tasks.filters.priority'))
                 ->options(ProjectPriority::class),

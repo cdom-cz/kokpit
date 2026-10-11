@@ -127,6 +127,11 @@ final class TaskColumns
     /**
      * Orders the query by the weight of the priority: Urgent, High, Normal, Low
      * for `asc`. The values in the CASE are the enum constants, never input.
+     *
+     * @template TModel of Model
+     *
+     * @param  Builder<TModel>  $query
+     * @return Builder<TModel>
      */
     public static function orderByPriority(Builder $query, string $direction = 'asc'): Builder
     {
@@ -138,6 +143,7 @@ final class TaskColumns
             array_keys($ranks),
         ));
 
+        // @phpstan-ignore argument.type (the column is qualified by the model, the CASE is built from enum constants)
         return $query->orderByRaw("CASE {$column} {$cases} END ".($direction === 'desc' ? 'DESC' : 'ASC'));
     }
 
