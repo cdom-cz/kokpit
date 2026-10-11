@@ -76,6 +76,15 @@ class SignalWeekPage extends Page
     }
 
     /**
+     * The property is bound to the URL, so the browser can write anything into it: normalise it and
+     * load the week the way goToWeek() does.
+     */
+    public function updatedWeek(): void
+    {
+        $this->goToWeek($this->week);
+    }
+
+    /**
      * Shows the week that contains the given day; anything that is no day shows the current week.
      */
     public function goToWeek(string $day): void

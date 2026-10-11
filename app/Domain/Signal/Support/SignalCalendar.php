@@ -44,9 +44,13 @@ final class SignalCalendar
         return self::parse($day)->modify(sprintf('%+d days', $days))->format('Y-m-d');
     }
 
+    /**
+     * Whether the value is a real day of the form `YYYY-MM-DD` that a PostgreSQL date column accepts.
+     * PHP knows a year 0000, PostgreSQL does not (SQLSTATE 22008), so the year must be at least 1.
+     */
     public static function isValidDay(string $value): bool
     {
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) !== 1) {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) !== 1 || (int) substr($value, 0, 4) < 1) {
             return false;
         }
 

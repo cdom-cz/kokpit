@@ -27,6 +27,7 @@ use App\Domain\Signal\Models\SignalWeeklyGoal;
 use App\Domain\Signal\Models\SignalWeeklyRecap;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\Canary;
 
 /*
@@ -402,4 +403,28 @@ it('refuses an actor who is not the signed-in user', function (): void {
 
     expect(fn () => app(AddSignalTask::class)->handle($other, 'Example', SIGNAL_TOMORROW, SignalCategory::Main))->toThrow(AuthorizationException::class)
         ->and(SignalTask::query()->count())->toBe(0);
+});
+
+/**
+ * Whether another database session could take the transaction lock of the planner settings of the user
+ * right now. The test transaction stays open, so a lock that an Action took is held by this session.
+ */
+function signalSettingsLockIsFree(string $userId): bool
+{
+    config(['database.connections.signal_lock_probe' => config('database.connections.pgsql')]);
+    DB::purge('signal_lock_probe');
+
+    try {
+        return (bool) DB::connection('signal_lock_probe')->selectOne('select pg_try_advisory_xact_lock(hashtextextended(?, 0)) as free', ['signal:'.$userId.':settings'])->free;
+    } finally {
+        DB::purge('signal_lock_probe');
+    }
+}
+
+it('takes the per-user lock of the settings before reading them, so two first saves cannot both insert', function (): void {
+    expect(signalSettingsLockIsFree((string) $this->admin->getKey()))->toBeTrue();
+
+    app(SaveSignalSettings::class)->handle($this->admin, 4, 2);
+
+    expect(signalSettingsLockIsFree((string) $this->admin->getKey()))->toBeFalse();
 });

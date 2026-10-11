@@ -19,7 +19,9 @@ use App\Domain\Signal\Support\SignalCalendar;
 use App\Domain\Signal\Support\SignalRules;
 use App\Livewire\TimeTracking\RequiresAdmin;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
@@ -40,10 +42,12 @@ final class SignalDay extends Component
 {
     use RequiresAdmin, RunsSignalActions;
 
-    /** The day shown, `YYYY-MM-DD`. */
+    /** The day shown, `YYYY-MM-DD`. Set by mount, never by the browser. */
+    #[Locked]
     public string $forDate = '';
 
-    /** The heading of the card ("Dnes", "Zítra" ...). */
+    /** The heading of the card ("Dnes", "Zítra" ...). Set by the parent view, never by the browser. */
+    #[Locked]
     public string $heading = '';
 
     public string $newTitle = '';
@@ -83,6 +87,10 @@ final class SignalDay extends Component
 
     public function startEdit(string $id): void
     {
+        if (! Str::isUuid($id)) {
+            return;
+        }
+
         $task = SignalTask::query()->whereKey($id)->where('for_date', $this->forDate)->first();
 
         if ($task === null) {
@@ -131,6 +139,12 @@ final class SignalDay extends Component
      */
     public function reorder(string $item, int $position): void
     {
+        if (! Str::isUuid($item)) {
+            $this->changed();
+
+            return;
+        }
+
         $task = SignalTask::query()->whereKey($item)->where('for_date', $this->forDate)->first();
 
         if ($task === null) {

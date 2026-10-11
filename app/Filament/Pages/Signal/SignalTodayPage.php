@@ -55,6 +55,15 @@ class SignalTodayPage extends Page
     }
 
     /**
+     * The property is bound to the URL, so the browser can write anything into it: normalise it the
+     * way goTo() does.
+     */
+    public function updatedDate(): void
+    {
+        $this->goTo($this->date);
+    }
+
+    /**
      * Shows the given day; today (or anything that is no day) goes back to today and tomorrow.
      */
     public function goTo(string $day): void

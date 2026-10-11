@@ -19,8 +19,9 @@ use Illuminate\Support\Str;
  * Only today is materialized: the past is never backfilled, and a later day shows its templates as
  * read-only shadows until it becomes today. The partial unique index on (recurring_id, for_date) makes
  * the insert idempotent, so parallel requests that both see "missing" create one row; the insert
- * names no conflict target on purpose, because it runs outside the model events. New tasks go to the
- * end of their colour group.
+ * names no conflict target on purpose, because it runs outside the model events. The templates are read
+ * after the day lock was taken and held with a shared row lock, so a template that changes meanwhile
+ * cannot make the insert fail. New tasks go to the end of their colour group.
  */
 final class MaterializeSignalRecurring
 {
@@ -34,15 +35,17 @@ final class MaterializeSignalRecurring
             return;
         }
 
-        $templates = SignalRecurringTask::query()->firingOn($day)->orderBy('created_at')->orderBy('id')->get();
-
-        if ($templates->isEmpty()) {
+        if (! SignalRecurringTask::query()->firingOn($day)->exists()) {
             return;
         }
 
-        DB::transaction(function () use ($actor, $day, $templates): void {
+        DB::transaction(function () use ($actor, $day): void {
             SignalLock::take((string) $actor->getKey(), $day);
 
+            // Read under the lock and hold the templates with a shared row lock: a template that is deleted
+            // or switched off in the meantime waits for the commit, so the composite foreign key of the
+            // new task cannot fail and no task is made from stale data.
+            $templates = SignalRecurringTask::query()->firingOn($day)->orderBy('created_at')->orderBy('id')->sharedLock()->get();
             $done = SignalTask::query()->where('for_date', $day)->whereIn('recurring_id', $templates->pluck('id')->all())->pluck('recurring_id')->all();
             $pending = $templates->reject(static fn (SignalRecurringTask $template): bool => in_array($template->id, $done, true));
 

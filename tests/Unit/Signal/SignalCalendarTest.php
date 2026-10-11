@@ -39,6 +39,14 @@ it('accepts only real days', function (): void {
         ->and(SignalCalendar::isValidDay(''))->toBeFalse();
 });
 
+it('accepts only the years PostgreSQL knows: year 0000 is no day, year 1 and 9999 are', function (): void {
+    expect(SignalCalendar::isValidDay('0000-01-01'))->toBeFalse()
+        ->and(SignalCalendar::isValidDay('0000-12-31'))->toBeFalse()
+        ->and(SignalCalendar::isValidDay('0001-01-01'))->toBeTrue()
+        ->and(SignalCalendar::isValidDay('9999-12-31'))->toBeTrue()
+        ->and(SignalCalendar::isWeekStart('0000-01-03'))->toBeFalse();
+});
+
 it('starts the ISO week on Monday, also for a Sunday', function (): void {
     expect(SignalCalendar::weekStart('2026-10-12'))->toBe('2026-10-12') // Monday
         ->and(SignalCalendar::weekStart('2026-10-14'))->toBe('2026-10-12')

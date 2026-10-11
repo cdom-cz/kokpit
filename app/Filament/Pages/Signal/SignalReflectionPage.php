@@ -53,6 +53,20 @@ class SignalReflectionPage extends Page
         return __('kokpit.signal.reflection.title');
     }
 
+    /**
+     * The range is bound to the URL, so the browser can write anything into it: a value that is no
+     * day the database accepts is blanked (the default applies).
+     */
+    public function updatedFrom(): void
+    {
+        $this->from = SignalCalendar::isValidDay($this->from) ? $this->from : '';
+    }
+
+    public function updatedTo(): void
+    {
+        $this->to = SignalCalendar::isValidDay($this->to) ? $this->to : '';
+    }
+
     public function resetRange(): void
     {
         $this->from = '';

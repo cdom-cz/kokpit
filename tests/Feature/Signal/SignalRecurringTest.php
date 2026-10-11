@@ -15,6 +15,8 @@ use App\Domain\Signal\Queries\SignalDayReader;
 use App\Livewire\Signal\SignalDay;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -180,3 +182,24 @@ it('does not bring back a task of a switched-off template that was deleted', fun
 
     expect(SignalTask::query()->count())->toBe(0);
 });
+
+it('survives a template that is deleted or switched off right after the day lock was taken', function (string $change): void {
+    $template = recurringTemplate($this, 'Example vanishing', SignalCategory::Other);
+    $done = false;
+
+    DB::listen(function (QueryExecuted $query) use (&$done, $template, $change): void {
+        if ($done || ! str_contains($query->sql, 'pg_advisory_xact_lock')) {
+            return;
+        }
+
+        $done = true;
+        $change === 'delete'
+            ? DB::table('signal_recurring_tasks')->where('id', $template->id)->delete()
+            : DB::table('signal_recurring_tasks')->where('id', $template->id)->update(['active' => false]);
+    });
+
+    app(MaterializeSignalRecurring::class)->handle($this->admin, '2026-10-12');
+
+    expect($done)->toBeTrue()
+        ->and(SignalTask::query()->count())->toBe(0);
+})->with(['the template is deleted' => ['delete'], 'the template is switched off' => ['off']]);
