@@ -19,6 +19,7 @@ use App\Domain\Signal\Models\SignalWeeklyRecap;
 use App\Livewire\Signal\SignalDay;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -59,7 +60,7 @@ function signalIsolationRows(string $userId, string $label): array
 /**
  * The models of every planner table.
  *
- * @return list<class-string<Illuminate\Database\Eloquent\Model>>
+ * @return list<class-string<Model>>
  */
 function signalIsolationModels(): array
 {

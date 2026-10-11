@@ -18,8 +18,10 @@ use App\Domain\Signal\Actions\ToggleSignalTaskDone;
 use App\Domain\Signal\Actions\UpdateSignalTask;
 use App\Domain\Signal\Enums\SignalCategory;
 use App\Domain\Signal\Exceptions\SignalRuleViolation;
+use App\Domain\Signal\Models\SignalDayOverride;
 use App\Domain\Signal\Models\SignalDeepWorkDay;
 use App\Domain\Signal\Models\SignalRecurringTask;
+use App\Domain\Signal\Models\SignalSetting;
 use App\Domain\Signal\Models\SignalTask;
 use App\Domain\Signal\Models\SignalWeeklyGoal;
 use App\Domain\Signal\Models\SignalWeeklyRecap;
@@ -145,7 +147,7 @@ it('never locks today or the future, and unlocking them stores nothing', functio
     app(SetSignalDayUnlocked::class)->handle($this->admin, SIGNAL_TODAY, true);
     app(SetSignalDayUnlocked::class)->handle($this->admin, SIGNAL_TOMORROW, true);
 
-    expect(\App\Domain\Signal\Models\SignalDayOverride::query()->count())->toBe(0);
+    expect(SignalDayOverride::query()->count())->toBe(0);
 });
 
 it('renames a task, moves a planned one to another colour and keeps a grey one grey', function (): void {
@@ -326,7 +328,7 @@ it('accepts 0 to 12 deep-work blocks in the settings and refuses the rest', func
     // One row per user, updated in place.
     $save->handle($this->admin, 4, 2);
 
-    expect(\App\Domain\Signal\Models\SignalSetting::query()->count())->toBe(1);
+    expect(SignalSetting::query()->count())->toBe(1);
 });
 
 it('holds at most three goals a week and fills the lowest free position', function (): void {

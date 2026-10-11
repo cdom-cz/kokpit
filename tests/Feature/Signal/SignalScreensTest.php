@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Signal\Enums\SignalCategory;
+use App\Domain\Signal\Models\SignalDeepWorkDay;
 use App\Domain\Signal\Models\SignalRecurringTask;
 use App\Domain\Signal\Models\SignalTask;
 use App\Domain\Signal\Models\SignalWeeklyGoal;
@@ -164,7 +165,7 @@ it('sets the deep-work blocks and takes the last one back on a second click', fu
         ->call('setBlocks', 2)
         ->call('setBlocks', 2);
 
-    expect(\App\Domain\Signal\Models\SignalDeepWorkDay::query()->value('completed'))->toBe(1);
+    expect(SignalDeepWorkDay::query()->value('completed'))->toBe(1);
 });
 
 it('browses days on the Today page through one property', function (): void {
