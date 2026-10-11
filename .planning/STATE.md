@@ -395,6 +395,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261011-cx0 | Fix all findings from the Signal merge code review (261011-cqm) | 2026-10-11 | f6e2d94 | [261011-cx0-fix-all-findings-from-the-signal-merge-c](./quick/261011-cx0-fix-all-findings-from-the-signal-merge-c/) |
 | 261011-dqq | Fix the tests to match the current source code and configuration | 2026-10-11 | 3a1f008 | [261011-dqq-fix-the-tests-to-match-the-current-sourc](./quick/261011-dqq-fix-the-tests-to-match-the-current-sourc/) |
 | 261011-ekq | Prefix S3 storage env vars with S3_, keep all files on the S3 disk, add AWS SES mailer | 2026-10-11 | b60da59 | [261011-ekq-prefix-s3-storage-env-vars-with-s3-store](./quick/261011-ekq-prefix-s3-storage-env-vars-with-s3-store/) |
+| 261012-tsk | Admin task list: order by priority and due date, hide Done by default, multi-state status filter | 2026-10-12 | — | [261012-tsk-task-list-priority-due-order-hide-done](./quick/261012-tsk-task-list-priority-due-order-hide-done/) |
 
 ## Deferred Items
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Support;
 
+use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Shared\Tags\TagType;
 use App\Domain\Shared\Text\RichText;
 use App\Domain\Tasks\Models\Task;
@@ -124,6 +125,29 @@ final class TaskColumns
     }
 
     /**
+     * Orders the query by the weight of the priority: Urgent, High, Normal, Low
+     * for `asc`. The values in the CASE are the enum constants, never input.
+     *
+     * @template TModel of Model
+     *
+     * @param  Builder<TModel>  $query
+     * @return Builder<TModel>
+     */
+    public static function orderByPriority(Builder $query, string $direction = 'asc'): Builder
+    {
+        $column = $query->qualifyColumn('priority');
+        $ranks = [ProjectPriority::Urgent, ProjectPriority::High, ProjectPriority::Normal, ProjectPriority::Low];
+        $cases = implode(' ', array_map(
+            static fn (ProjectPriority $priority, int $rank): string => "WHEN '{$priority->value}' THEN {$rank}",
+            $ranks,
+            array_keys($ranks),
+        ));
+
+        // @phpstan-ignore argument.type (the column is qualified by the model, the CASE is built from enum constants)
+        return $query->orderByRaw("CASE {$column} {$cases} END ".($direction === 'desc' ? 'DESC' : 'ASC'));
+    }
+
+    /**
      * List columns of the Admin task list.
      *
      * @return list<TextColumn>
@@ -149,7 +173,8 @@ final class TaskColumns
             TextColumn::make('priority')
                 ->label(__('kokpit.tasks.fields.priority'))
                 ->badge()
-                ->sortable(),
+                // By weight, not by the stored text, which would put High before Low before Urgent.
+                ->sortable(query: static fn (Builder $query, string $direction): Builder => self::orderByPriority($query, $direction)),
             TextColumn::make('assignee.name')
                 ->label(__('kokpit.tasks.fields.assignee'))
                 ->placeholder(__('kokpit.tasks.empty_value')),
