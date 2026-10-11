@@ -15,6 +15,7 @@ use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\RichEditor;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
+use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Validation\ValidationException;
 
@@ -55,6 +56,7 @@ final class ViewPartnerTask extends ViewRecord
             ->icon(Heroicon::OutlinedPencilSquare)
             ->color('gray')
             ->modalHeading(__('kokpit.partner_tasks.actions.edit_description_heading'))
+            ->modalWidth(Width::Full)
             ->modalSubmitActionLabel(__('kokpit.partner_tasks.actions.edit_description_submit'))
             ->fillForm(function (): array {
                 $task = $this->getRecord();
