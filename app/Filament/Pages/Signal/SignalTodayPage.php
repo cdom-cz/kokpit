@@ -26,7 +26,7 @@ class SignalTodayPage extends Page
 
     protected static ?string $slug = 'signal';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 2;
 
     protected string $view = 'filament.pages.signal.today';
 
