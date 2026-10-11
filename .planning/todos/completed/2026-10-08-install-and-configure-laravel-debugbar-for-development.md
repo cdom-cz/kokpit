@@ -1,5 +1,6 @@
 ---
 created: 2026-10-08T21:17:42.000Z
+completed: 2026-10-11
 title: Install and configure Laravel Debugbar for development
 area: tooling
 severity: minor
@@ -16,3 +17,7 @@ There is no in-browser profiler for the local DDEV environment. With Filament in
 ## Solution
 
 TBD. Starting point: add `fruitcake/laravel-debugbar` as a **dev-only** dependency (`composer require --dev`), check that its license is AGPL-compatible (`ddev composer check-licenses` must stay green), enable it only for the local environment (`DEBUGBAR_ENABLED` driven by `APP_ENV=local` and `APP_DEBUG`, never in production or testing), set it to off in `phpunit.xml` so the test suite and the concurrency worker processes are unaffected, and verify it works with Filament SPA navigation and Livewire requests (query, model and Livewire collectors, no leakage of Partner data into any stored debugbar output). Keep `.env` values out of git (only document the variable in `.env.example`), and mention the tool in the contributor docs (`CONTRIBUTING.md`). Candidate for a quick task.
+
+## Resolution
+
+`fruitcake/laravel-debugbar` ^4.4 (MIT, with `php-debugbar/php-debugbar` and `php-debugbar/symfony-bridge`, both MIT) added to `require-dev`. Auto-discovered; follows `APP_DEBUG` locally, `DEBUGBAR_ENABLED=false` in `phpunit.xml`, absent from production (`composer install --no-dev`). `DEBUGBAR_ENABLED` documented in `.env.example` (allowlisted in `EnvExampleTest`, as the vendor config reads it), `/storage/debugbar` git-ignored, tool described in `CONTRIBUTING.md`. Not verified in a running DDEV (no PHP 8.5 / DDEV in the authoring session): check Filament SPA navigation and the Livewire collector once locally.

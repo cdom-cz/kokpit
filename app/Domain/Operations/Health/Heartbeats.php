@@ -51,6 +51,7 @@ final class Heartbeats
     {
         $value = Cache::get($key);
 
-        return is_int($value) ? $value : null;
+        // The Redis store hands a stored integer back as a numeric string, the array store as an int.
+        return is_int($value) || (is_string($value) && ctype_digit($value)) ? (int) $value : null;
     }
 }

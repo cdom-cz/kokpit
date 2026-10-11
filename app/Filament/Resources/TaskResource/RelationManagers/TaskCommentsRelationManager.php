@@ -4,60 +4,42 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\TaskResource\RelationManagers;
 
-use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
-use App\Domain\Shared\Text\RichText;
-use App\Domain\Tasks\Actions\AddTaskComment;
-use App\Domain\Tasks\Models\Task;
-use App\Domain\Tasks\Models\TaskComment;
 use App\Filament\Concerns\EnforcesRelationManagerAccessRule;
-use Filament\Actions\CreateAction;
+use App\Filament\Concerns\RendersTaskCommentThread;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Schemas\Schema;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Table;
-use Illuminate\Contracts\Support\Htmlable;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Validation\ValidationException;
 
 /**
  * The "Komentáře" tab of the task page (TA-04, D-08): the discussion on a task or
- * a subtask, oldest first, for the Admin.
+ * a subtask for the Admin, as a thread of comments one under another, oldest first,
+ * with an inline form below it (RendersTaskCommentThread).
  *
  * A comment is written only through the domain Action AddTaskComment, which
- * cleans the body. The tab is append-only: it offers a create action and no
- * edit, delete or bulk action. The Admin may mark a comment internal; a Partner
- * never reads such a comment (the model is Partner-scoped). The bodies are
- * rendered through RichText::render, so even a row written around the Action
- * cannot inject markup.
+ * cleans the body. The tab is append-only: there is no edit or delete. The Admin
+ * may mark a comment internal; a Partner never reads such a comment (the model is
+ * Partner-scoped). The bodies are rendered through RichText::render, so even a row
+ * written around the Action cannot inject markup.
  */
 #[AccessRule(Audience::AdminOnly, reason: 'The Admin tab shows internal comments and the internal flag; the Partner has its own comments tab on its task page.')]
 final class TaskCommentsRelationManager extends RelationManager
 {
     use EnforcesRelationManagerAccessRule;
+    use RendersTaskCommentThread;
 
     protected static string $relationship = 'comments';
-
-    /**
-     * The tab is on the read-only task page, but the Admin comments there.
-     */
-    public function isReadOnly(): bool
-    {
-        return false;
-    }
 
     public static function getTitle(Model $ownerRecord, string $pageClass): string
     {
         return __('kokpit.tasks.comments.relation_title');
     }
 
-    public function form(Schema $schema): Schema
+    protected function commentFields(): array
     {
-        return $schema->components([
+        return [
             // No file attachments and no attach button: nothing an upload could land on (A10).
             // The Action cleans the value again, so the editor is only a convenience.
             RichEditor::make('body')
@@ -73,80 +55,21 @@ final class TaskCommentsRelationManager extends RelationManager
                 ->label(__('kokpit.tasks.comments.fields.is_internal'))
                 ->helperText(__('kokpit.tasks.comments.hints.is_internal'))
                 ->default(false),
-        ]);
+        ];
     }
 
-    public function table(Table $table): Table
+    protected function acceptsInternalFlag(): bool
     {
-        return $table
-            ->recordTitleAttribute('id')
-            ->modifyQueryUsing(static fn (Builder $query): Builder => $query->with('author'))
-            ->columns([
-                TextColumn::make('author.name')
-                    ->label(__('kokpit.tasks.comments.fields.author'))
-                    ->weight('bold'),
-                TextColumn::make('created_at')
-                    ->label(__('kokpit.tasks.comments.fields.created_at'))
-                    ->dateTime(),
-                TextColumn::make('body')
-                    ->label(__('kokpit.tasks.comments.fields.body'))
-                    ->html()
-                    ->formatStateUsing(static fn (?string $state): Htmlable => RichText::render($state))
-                    ->wrap(),
-                TextColumn::make('is_internal')
-                    ->label(__('kokpit.tasks.comments.fields.visibility'))
-                    ->badge()
-                    ->color('warning')
-                    ->state(static fn (TaskComment $record): ?string => $record->is_internal ? (string) __('kokpit.tasks.comments.badges.internal') : null),
-                TextColumn::make('is_escalation')
-                    ->label(__('kokpit.tasks.comments.fields.kind'))
-                    ->badge()
-                    ->color('danger')
-                    ->state(static fn (TaskComment $record): ?string => $record->is_escalation ? (string) __('kokpit.tasks.comments.badges.escalation') : null),
-            ])
-            ->defaultSort('created_at')
-            ->paginated(false)
-            ->headerActions([
-                CreateAction::make()
-                    ->label(__('kokpit.tasks.comments.actions.create'))
-                    ->modalHeading(__('kokpit.tasks.comments.actions.create_heading'))
-                    ->modalSubmitActionLabel(__('kokpit.tasks.comments.actions.create_submit'))
-                    ->createAnother(false)
-                    ->using(function (array $data): Model {
-                        $owner = $this->getOwnerRecord();
-                        assert($owner instanceof Task);
-
-                        $actor = auth()->user();
-                        assert($actor instanceof User);
-
-                        try {
-                            return app(AddTaskComment::class)->handle(
-                                $actor,
-                                $owner,
-                                (string) ($data['body'] ?? ''),
-                                (bool) ($data['is_internal'] ?? false),
-                            );
-                        } catch (ValidationException $e) {
-                            throw $this->underModal($e);
-                        }
-                    }),
-            ])
-            ->emptyStateHeading(__('kokpit.tasks.comments.empty_heading'))
-            ->emptyStateDescription(__('kokpit.tasks.comments.empty_description'));
+        return true;
     }
 
-    /**
-     * The Action reports plain data keys; the modal form lives under the action state path.
-     */
-    private function underModal(ValidationException $e): ValidationException
+    protected function emptyHeading(): string
     {
-        $mapped = [];
+        return (string) __('kokpit.tasks.comments.empty_heading');
+    }
 
-        foreach ($e->errors() as $key => $messages) {
-            $path = "mountedActions.0.data.{$key}";
-            $mapped[$path] = [...($mapped[$path] ?? []), ...$messages];
-        }
-
-        return ValidationException::withMessages($mapped);
+    protected function emptyDescription(): string
+    {
+        return (string) __('kokpit.tasks.comments.empty_description');
     }
 }

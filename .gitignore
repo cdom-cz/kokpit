@@ -37,6 +37,7 @@ CLAUDE.local.md
 # re-include the child directory, content-ignore the child, re-include the child's .gitignore.
 /storage/*.key
 /storage/pail
+/storage/debugbar
 /storage/logs/*
 !/storage/logs/.gitignore
 /storage/app/*

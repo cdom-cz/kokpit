@@ -3,10 +3,9 @@ zerops:
     build:
       base:
         - alpine/php@8.5
-        - alpine/nodejs@24
       os: alpine
       buildCommands:
-        - composer install --optimize-autoloader --no-dev --ignore-platform-reqs
+        - composer install --optimize-autoloader --no-dev --no-scripts --ignore-platform-reqs
       deployFiles: ./
       cache:
         - vendor
@@ -17,7 +16,7 @@ zerops:
       siteConfigPath: site.conf.tmpl
       prepareCommands:
         - sudo apk update
-        - sudo apk add --no-cache supervisor
+        - sudo apk add --no-cache supervisor php85-pcntl php85-posix icu-data-full
         - sudo rc-update add supervisord default
         - sudo mkdir -p /etc/supervisor.d
         - sudo mkdir -p /var/log/supervisor
@@ -25,6 +24,11 @@ zerops:
         - sudo rc-service supervisord status
         - sudo supervisorctl status
       initCommands:
+        # The build runs composer with --no-scripts: the post-autoload-dump scripts boot the
+        # application, and the build has no service-level environment, so ProductionConfigGuard
+        # would refuse. They run here instead, with the real environment (and the guard).
+        - php artisan package:discover --ansi
+        - php artisan filament:upgrade
         - php artisan optimize:clear
         - php artisan optimize
         - php artisan icons:cache
@@ -35,12 +39,6 @@ zerops:
         # deliberately without execOnce.
         - php artisan kokpit:deploy:verify
         - php artisan filament:optimize
-        # Runs per container, deliberately WITHOUT execOnce: horizon:terminate only
-        # signals Horizon masters on the same hostname, so an execOnce run on one
-        # container could never reach the masters of the other containers. On a
-        # fresh container it is a no-op; if a container is ever reused in place it
-        # gracefully restarts the old-code master.
-        - php artisan horizon:terminate
         - sudo cp supervisor-horizon.ini /etc/supervisor.d/
         # Clean up the pre-Horizon worker program if the container is reused.
         - sudo rm -f /etc/supervisor.d/supervisor-laravel.ini

@@ -540,7 +540,7 @@ return [
                 'create_submit' => 'Přidat komentář',
             ],
             'empty_heading' => 'Úkol zatím nemá žádné komentáře',
-            'empty_description' => 'Přidejte první komentář tlačítkem Přidat komentář.',
+            'empty_description' => 'Napište první komentář do formuláře níže.',
         ],
         'subtasks' => [
             'relation_title' => 'Podúkoly',
@@ -783,7 +783,7 @@ return [
         'comments' => [
             'relation_title' => 'Komentáře',
             'empty_heading' => 'Úkol zatím nemá žádné komentáře',
-            'empty_description' => 'Napište správci poznámku tlačítkem Přidat komentář.',
+            'empty_description' => 'Napište správci poznámku do formuláře níže.',
         ],
     ],
 

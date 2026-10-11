@@ -200,7 +200,7 @@ Open items for the owner to confirm or decide. None of them blocks the phase gat
 2. **UI-SPEC F-9:** label changes on the built Admin task pages ("Uložit úkol" and the object-bearing header action labels) were not made; only the profile page got its specific save label ("Uložit nastavení").
 3. **UI-SPEC E-5:** a refused or stale board move (a card archived or moved by another session) still ends in the framework error instead of the planned toast "Úkol už není dostupný. Nástěnka se obnovila.".
 4. The UI-SPEC was force-approved after the maximum of 2 revision rounds; the one open copywriting point (the profile save label) was fixed in plan 05-14.
-5. Two owner todos captured during the phase are still pending: sort tasks by priority, then nearest due date, by default (todo `2026-10-08-sort-tasks-by-priority-then-nearest-due-date-by-default`; the lists are ordered by update time, the Partner list by creation time) and install and configure `fruitcake/laravel-debugbar` for development (todo `2026-10-08-install-and-configure-laravel-debugbar-for-development`).
+5. Two owner todos captured during the phase are still pending: sort tasks by priority, then nearest due date, by default (todo `2026-10-08-sort-tasks-by-priority-then-nearest-due-date-by-default`; the lists are ordered by update time, the Partner list by creation time) and install and configure `fruitcake/laravel-debugbar` for development (todo `2026-10-08-install-and-configure-laravel-debugbar-for-development`, since completed).
 6. The codebase map in `.planning/codebase` is stale (a codebase-drift advisory has been shown since wave 1); it is also gitignored by design. Recommended: run `/gsd-map-codebase`.
 
 **Smaller behaviours worth knowing (from the plan SUMMARIES):**

@@ -71,6 +71,7 @@ final class ViewPartnerTask extends ViewRecord
                 RichEditor::make('description')
                     ->label(__('kokpit.tasks.fields.description'))
                     ->fileAttachments(false)
+                    ->columnSpanFull()
                     ->toolbarButtons([
                         ['bold', 'italic', 'underline', 'strike', 'link'],
                         ['h2', 'h3'],
@@ -125,6 +126,7 @@ final class ViewPartnerTask extends ViewRecord
                     ->label(__('kokpit.tasks.escalation.reason'))
                     ->required()
                     ->fileAttachments(false)
+                    ->columnSpanFull()
                     ->toolbarButtons([
                         ['bold', 'italic', 'underline', 'strike', 'link'],
                         ['blockquote', 'bulletList', 'orderedList'],
