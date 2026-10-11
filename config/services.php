@@ -29,10 +29,11 @@ return [
         'key' => env('RESEND_API_KEY'),
     ],
 
+    // The standard AWS names are read by AWS services only; the object storage uses its own S3_* keys.
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),
-        'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+        'region' => env('AWS_SES_REGION', env('AWS_DEFAULT_REGION', 'us-east-1')),
     ],
 
     'slack' => [
