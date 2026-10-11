@@ -29,6 +29,8 @@ use Illuminate\Validation\ValidationException;
  *
  * The using manager supplies the form fields and the texts; it decides whether the
  * internal switch exists at all (the Partner form has none).
+ *
+ * @property-read Schema $commentForm The form schema Filament's InteractsWithSchemas resolves from commentForm().
  */
 trait RendersTaskCommentThread
 {
