@@ -54,8 +54,17 @@ return [
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
+        // Amazon SES API. Credentials and region come from services.ses (AWS_* keys). The options below are
+        // AWS SDK client arguments. The SDK default has no request timeout, and the Admin alert for a failed job
+        // is sent synchronously inside the queue worker and must stay far below the job timeout (60 s): two
+        // attempts at MAIL_TIMEOUT seconds stay well inside that limit.
         'ses' => [
             'transport' => 'ses',
+            'http' => [
+                'timeout' => (int) env('MAIL_TIMEOUT', 10),
+                'connect_timeout' => (int) env('MAIL_TIMEOUT', 10),
+            ],
+            'retries' => 1,
         ],
 
         'postmark' => [

@@ -4,10 +4,10 @@ current_phase: 06
 current_phase_name: time-tracking
 status: verifying
 stopped_at: Completed 06-14-PLAN.md
-last_updated: "2026-10-09T16:21:37.316Z"
-last_activity: 2026-10-09
+last_updated: "2026-10-11T08:52:18.757Z"
+last_activity: 2026-10-11
 last_activity_desc: Phase 06 execution started
-state_head: 3c9e525751285e8ce29708a6781a7b97d24c9dee
+state_head: b60da59e264772fd51a6b9641c81e66eb5a1996d
 progress:
   total_phases: 12
   completed_phases: 5
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 Phase: 06 (time-tracking) — EXECUTING
 Plan: 14 of 14
 Status: Phase complete — ready for verification
-Last activity: 2026-10-09 — Phase 06 execution started
+Last activity: 2026-10-11 - Completed quick task 261011-ekq: Prefix S3 storage env vars with S3_, keep all files on the S3 disk, add AWS SES mailer
 
 Progress: [████░░░░░░] 42%
 
@@ -391,6 +391,11 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261008-bec | Install and configure laravel/horizon | 2026-10-08 | 8f37d5c | [261008-bec-install-and-configure-laravel-horizon](./quick/261008-bec-install-and-configure-laravel-horizon/) |
 | 261008-bp0 | Adapt Zerops tests and deploy workflow to the single backend setup | 2026-10-08 | 66bb759 | [261008-bp0-adapt-zerops-tests-and-deploy-workflow-t](./quick/261008-bp0-adapt-zerops-tests-and-deploy-workflow-t/) |
 | 261008-c7i | Wire kokpit:deploy:verify into zerops initCommands, onOneServer schedules, drop pnpm build | 2026-10-08 | 9948a80 | [261008-c7i-wire-kokpit-deploy-verify-into-zerops-in](./quick/261008-c7i-wire-kokpit-deploy-verify-into-zerops-in/) |
+| 5 | Run composer install in CI with APP_ENV=testing so the production config guard does not fail package:discover | 2026-10-09 | d6f8d86 | — |
+| 261011-cqm | Code review of the Signal merge and test coverage check | 2026-10-11 | 0f9f45a | [261011-cqm-code-review-of-the-signal-feature-merge-](./quick/261011-cqm-code-review-of-the-signal-feature-merge-/) |
+| 261011-cx0 | Fix all findings from the Signal merge code review (261011-cqm) | 2026-10-11 | f6e2d94 | [261011-cx0-fix-all-findings-from-the-signal-merge-c](./quick/261011-cx0-fix-all-findings-from-the-signal-merge-c/) |
+| 261011-dqq | Fix the tests to match the current source code and configuration | 2026-10-11 | 3a1f008 | [261011-dqq-fix-the-tests-to-match-the-current-sourc](./quick/261011-dqq-fix-the-tests-to-match-the-current-sourc/) |
+| 261011-ekq | Prefix S3 storage env vars with S3_, keep all files on the S3 disk, add AWS SES mailer | 2026-10-11 | b60da59 | [261011-ekq-prefix-s3-storage-env-vars-with-s3-store](./quick/261011-ekq-prefix-s3-storage-env-vars-with-s3-store/) |
 
 ## Deferred Items
 

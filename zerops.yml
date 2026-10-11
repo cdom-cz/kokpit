@@ -1,8 +1,9 @@
 zerops:
-  - setup: backend
+  - setup: kokpit
     build:
       base:
         - alpine/php@8.5
+        - alpine/nodejs@24
       os: alpine
       buildCommands:
         - composer install --optimize-autoloader --no-dev --ignore-platform-reqs

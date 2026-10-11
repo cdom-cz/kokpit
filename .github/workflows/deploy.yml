@@ -147,6 +147,7 @@ jobs:
       # only, so no event data and no expression enters the script.
       - name: Push the backend setup
         env:
+          PROJECT_ID: ${{ vars.ZEROPS_PROJECT_ID }}
           SERVICE_ID: ${{ vars.ZEROPS_SERVICE_ID }}
         run: |
           set -euo pipefail
@@ -169,4 +170,4 @@ jobs:
               exit 1
               ;;
           esac
-          zcli service push --service-id "${SERVICE_ID}" --setup backend --version-name "${VERSION}" --workspace-state clean --zerops-yaml-path zerops.yml
+          zcli service push --project-id "${PROJECT_ID}" --service-id "${SERVICE_ID}" --version-name "${VERSION}" --workspace-state clean

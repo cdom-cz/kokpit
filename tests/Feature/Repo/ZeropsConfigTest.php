@@ -111,7 +111,9 @@ function zeropsCommandGroups(array $setup): array
 }
 
 /**
- * The manifest has exactly one setup, named backend.
+ * The manifest has exactly one setup, named kokpit. The deploy workflow pushes without --setup, so zcli selects the
+ * setup whose name equals the Zerops service hostname exactly and refuses a non-interactive push when none matches;
+ * therefore the setup and the service must both be named kokpit.
  *
  * @param  array<string|int, mixed>  $manifest
  * @return list<string>
@@ -120,7 +122,7 @@ function zeropsSetupProblems(array $manifest): array
 {
     $names = array_keys(zeropsSetups($manifest));
 
-    return $names === ['backend'] ? [] : ['the setups are ['.implode(', ', $names).'], expected exactly backend'];
+    return $names === ['kokpit'] ? [] : ['the setups are ['.implode(', ', $names).'], expected exactly kokpit'];
 }
 
 /**
@@ -365,10 +367,11 @@ function zeropsCrontabProblems(array $manifest): array
 }
 
 /**
- * The repository has no package.json and no lockfile, so the build carries no frontend toolchain: no Node, Bun or Deno
- * base image, no package-manager or Node command in any command group, no build environment map (its only entry was
- * the Vite app name) and no cache entry for node_modules or a lockfile. The maintainer re-adds a toolchain together
- * with this check when a frontend exists.
+ * The repository has no package.json and no lockfile. Since commit 64b854b the build image carries a Node runtime
+ * pinned to a numeric major version (alpine/nodejs@24) next to PHP, but nothing in the build uses it yet, so the build
+ * still runs no frontend step and reads no environment: no Bun, Deno or unpinned Node base image, no package-manager
+ * or Node command in any command group, no build environment map (its only entry was the Vite app name) and no cache
+ * entry for node_modules or a lockfile. A frontend build is added together with this check when a package.json exists.
  *
  * @param  array<string|int, mixed>  $manifest
  * @return list<string>
@@ -379,8 +382,8 @@ function zeropsFrontendProblems(array $manifest): array
 
     foreach (zeropsSetups($manifest) as $name => $setup) {
         foreach (zeropsList(zeropsGet($setup, 'build.base')) as $base) {
-            if (preg_match('#(?:^|/)(?:nodejs|bun|deno)@#', $base) === 1) {
-                $problems[] = "setup {$name} build.base has a frontend runtime: {$base}";
+            if (preg_match('#(?:^|/)(?:nodejs|bun|deno)@#', $base) === 1 && preg_match('#^(?:.*/)?nodejs@\d+$#', $base) !== 1) {
+                $problems[] = "setup {$name} build.base is a frontend runtime that is not a Node runtime pinned to a major version: {$base}";
             }
         }
 
@@ -543,7 +546,7 @@ function zeropsAllProblems(array $manifest, string $raw, callable $reader): arra
     ];
 }
 
-it('describes exactly one setup, named backend', function (): void {
+it('describes exactly one setup, named kokpit', function (): void {
     expect(zeropsSetupProblems(zeropsManifest()))->toBe([]);
 });
 
@@ -579,7 +582,7 @@ it('runs the scheduler from the crontab every minute', function (): void {
     expect(zeropsCrontabProblems(zeropsManifest()))->toBe([]);
 });
 
-it('builds without a frontend toolchain and without a build environment', function (): void {
+it('builds with at most a pinned Node runtime, no frontend step and no build environment', function (): void {
     expect(zeropsFrontendProblems(zeropsManifest()))->toBe([]);
 });
 
@@ -803,8 +806,13 @@ it('reports every weakening of the manifest', function (): void {
 
             return $m;
         }],
-        'a node base in the build' => ['frontend', function (array $m): array {
-            $m['zerops'][0]['build']['base'][] = 'alpine/nodejs@24';
+        'a bun base in the build' => ['frontend', function (array $m): array {
+            $m['zerops'][0]['build']['base'][] = 'alpine/bun@1';
+
+            return $m;
+        }],
+        'a node base without a pinned major version' => ['frontend', function (array $m): array {
+            $m['zerops'][0]['build']['base'][] = 'alpine/nodejs@latest';
 
             return $m;
         }],

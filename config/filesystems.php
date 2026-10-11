@@ -15,7 +15,7 @@ return [
     |
     */
 
-    'default' => env('FILESYSTEM_DISK', 'local'),
+    'default' => env('FILESYSTEM_DISK', 's3'),
 
     /*
     |--------------------------------------------------------------------------
@@ -49,15 +49,18 @@ return [
             'report' => false,
         ],
 
+        // The object storage is S3-compatible, not AWS. Its keys carry the S3_ prefix so the AWS SDK
+        // never mixes them with the AWS_* credentials of AWS services such as SES.
         's3' => [
             'driver' => 's3',
-            'key' => env('AWS_ACCESS_KEY_ID'),
-            'secret' => env('AWS_SECRET_ACCESS_KEY'),
-            'region' => env('AWS_DEFAULT_REGION'),
-            'bucket' => env('AWS_BUCKET'),
-            'url' => env('AWS_URL'),
-            'endpoint' => env('AWS_ENDPOINT'),
-            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            'key' => env('S3_ACCESS_KEY_ID'),
+            'secret' => env('S3_SECRET_ACCESS_KEY'),
+            // An own default, so the SDK never takes the AWS_REGION / AWS_DEFAULT_REGION meant for SES.
+            'region' => env('S3_DEFAULT_REGION', 'us-east-1'),
+            'bucket' => env('S3_BUCKET'),
+            'url' => env('S3_URL'),
+            'endpoint' => env('S3_ENDPOINT'),
+            'use_path_style_endpoint' => env('S3_USE_PATH_STYLE_ENDPOINT', false),
             // A failed write must raise, not return false (research Pitfall 5): a silent
             // failure would lose documents and invoice PDFs without anyone noticing.
             'throw' => true,

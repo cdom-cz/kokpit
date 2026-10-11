@@ -7,6 +7,7 @@ namespace Tests\Support;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
@@ -18,6 +19,13 @@ use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Shared\Tags\TagType;
+use App\Domain\Signal\Models\SignalDayOverride;
+use App\Domain\Signal\Models\SignalDeepWorkDay;
+use App\Domain\Signal\Models\SignalRecurringTask;
+use App\Domain\Signal\Models\SignalSetting;
+use App\Domain\Signal\Models\SignalTask;
+use App\Domain\Signal\Models\SignalWeeklyGoal;
+use App\Domain\Signal\Models\SignalWeeklyRecap;
 use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Enums\TaskBillingType;
@@ -27,6 +35,7 @@ use App\Domain\Tasks\Models\TaskChecklistItem;
 use App\Domain\Tasks\Models\TaskComment;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\TimerClock;
+use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\Probes\PackageProbe;
@@ -47,6 +56,49 @@ final class CanaryRegistry
 {
     private static ?PackageProbe $host = null;
 
+    private static ?User $plannerOwner = null;
+
+    /** @var array<string, string> canary => its own Monday */
+    private static array $signalMondays = [];
+
+    /**
+     * The one Admin that owns every Signal fixture row of the current test. The owner scope limits even
+     * the Admin to the own rows, so all Signal rows of one test must belong to one Admin, and a test that
+     * wants to see them must act as this Admin. Memoised, and reset by prepare() and cleanup() because the
+     * test transaction rolls the user back after every test.
+     */
+    public static function plannerOwner(): User
+    {
+        return self::$plannerOwner ??= Canary::admin();
+    }
+
+    /**
+     * A Monday of the canary: the next unused one, counted from a fixed base, so the same canary has the
+     * same Monday in every Signal fixture and two canaries never share a day or a week (the unique keys
+     * of a day or a week would collide otherwise).
+     */
+    private static function signalMonday(string $canary): string
+    {
+        return self::$signalMondays[$canary] ??= CarbonImmutable::parse('2020-01-06')->addWeeks(count(self::$signalMondays))->toDateString();
+    }
+
+    /**
+     * The strings the Admin must find in the visible rows of a model for one canary: the canary itself
+     * for every model that stores text; the Monday of the canary for the two models that have a date but
+     * no text column; the id of the planner owner for the settings (one row per user, no text column).
+     *
+     * @param  class-string  $model
+     * @return list<string>
+     */
+    public static function needles(string $model, string $canary): array
+    {
+        return match ($model) {
+            SignalDeepWorkDay::class, SignalDayOverride::class => [self::signalMonday($canary)],
+            SignalSetting::class => [(string) self::plannerOwner()->getKey()],
+            default => [$canary],
+        };
+    }
+
     /**
      * Creates what the fixtures need inside the test transaction: the canary
      * table, a fake media disk and the probe host for media and activity.
@@ -54,6 +106,9 @@ final class CanaryRegistry
      */
     public static function prepare(): void
     {
+        self::$plannerOwner = null;
+        self::$signalMondays = [];
+
         Canary::createTable();
         config(['media-library.disk_name' => 'local']);
         Storage::fake('local');
@@ -64,6 +119,8 @@ final class CanaryRegistry
     public static function cleanup(): void
     {
         self::$host = null;
+        self::$plannerOwner = null;
+        self::$signalMondays = [];
         PackageProbe::restoreMorphMap();
     }
 
@@ -206,6 +263,63 @@ final class CanaryRegistry
                         'started_at' => TimerClock::now()->subHours(2),
                         'ended_at' => TimerClock::now()->subHour(),
                     ])->save();
+                });
+            },
+
+            // The planner "Signal" belongs to one Admin and is closed to Partners (OwnedByUser +
+            // DeniesPartners). Each fixture writes one row of the Admin that carries the canary in a
+            // title or a text field, so a Partner reading any of them would be caught. All rows belong to
+            // plannerOwner(), because the owner scope limits even an Admin to the own rows. The day or
+            // week is the Monday of the canary, so the two clients of one test never collide on the
+            // unique keys of a day or a week.
+            SignalTask::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new SignalTask(['title' => $canary, 'for_date' => self::signalMonday($canary), 'category' => 'main']))
+                        ->forceFill(['user_id' => self::plannerOwner()->getKey()])->save();
+                });
+            },
+
+            SignalRecurringTask::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new SignalRecurringTask(['title' => $canary, 'category' => 'main', 'weekdays' => [0]]))
+                        ->forceFill(['user_id' => self::plannerOwner()->getKey()])->save();
+                });
+            },
+
+            SignalSetting::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function (): void {
+                    if (! SignalSetting::query()->where('user_id', self::plannerOwner()->getKey())->exists()) {
+                        (new SignalSetting(['deep_work_weekday_blocks' => 4, 'deep_work_weekend_blocks' => 1]))
+                            ->forceFill(['user_id' => self::plannerOwner()->getKey()])->save();
+                    }
+                });
+            },
+
+            SignalDeepWorkDay::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new SignalDeepWorkDay(['for_date' => self::signalMonday($canary), 'planned' => 3, 'completed' => 1]))
+                        ->forceFill(['user_id' => self::plannerOwner()->getKey()])->save();
+                });
+            },
+
+            SignalDayOverride::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new SignalDayOverride(['for_date' => self::signalMonday($canary)]))
+                        ->forceFill(['user_id' => self::plannerOwner()->getKey()])->save();
+                });
+            },
+
+            SignalWeeklyGoal::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new SignalWeeklyGoal(['week_start' => self::signalMonday($canary), 'title' => $canary, 'position' => 1]))
+                        ->forceFill(['user_id' => self::plannerOwner()->getKey()])->save();
+                });
+            },
+
+            SignalWeeklyRecap::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new SignalWeeklyRecap(['week_start' => self::signalMonday($canary), 'what_went_well' => $canary, 'what_to_change' => $canary]))
+                        ->forceFill(['user_id' => self::plannerOwner()->getKey()])->save();
                 });
             },
 
