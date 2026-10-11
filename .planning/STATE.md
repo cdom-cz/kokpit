@@ -4,10 +4,10 @@ current_phase: 06
 current_phase_name: time-tracking
 status: verifying
 stopped_at: Completed 06-14-PLAN.md
-last_updated: "2026-10-09T16:21:37.316Z"
+last_updated: "2026-10-11T07:15:59.760Z"
 last_activity: 2026-10-09
 last_activity_desc: Phase 06 execution started
-state_head: 3c9e525751285e8ce29708a6781a7b97d24c9dee
+state_head: 0f9f45ac817f78bd7d73b4e0498eeaa94bc8510e
 progress:
   total_phases: 12
   completed_phases: 5
@@ -391,6 +391,8 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261008-bec | Install and configure laravel/horizon | 2026-10-08 | 8f37d5c | [261008-bec-install-and-configure-laravel-horizon](./quick/261008-bec-install-and-configure-laravel-horizon/) |
 | 261008-bp0 | Adapt Zerops tests and deploy workflow to the single backend setup | 2026-10-08 | 66bb759 | [261008-bp0-adapt-zerops-tests-and-deploy-workflow-t](./quick/261008-bp0-adapt-zerops-tests-and-deploy-workflow-t/) |
 | 261008-c7i | Wire kokpit:deploy:verify into zerops initCommands, onOneServer schedules, drop pnpm build | 2026-10-08 | 9948a80 | [261008-c7i-wire-kokpit-deploy-verify-into-zerops-in](./quick/261008-c7i-wire-kokpit-deploy-verify-into-zerops-in/) |
+| 5 | Run composer install in CI with APP_ENV=testing so the production config guard does not fail package:discover | 2026-10-09 | d6f8d86 | — |
+| 261011-cqm | Code review of the Signal merge and test coverage check | 2026-10-11 | 0f9f45a | [261011-cqm-code-review-of-the-signal-feature-merge-](./quick/261011-cqm-code-review-of-the-signal-feature-merge-/) |
 
 ## Deferred Items
 
