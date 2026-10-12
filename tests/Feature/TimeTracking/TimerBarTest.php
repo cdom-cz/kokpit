@@ -80,6 +80,24 @@ it('shows the running pill with the warning colour, the clock and the stop butto
         ->assertDontSee('Vyberte klienta');
 });
 
+it('opens the start form and the running detail as click popovers that a refresh does not close', function (): void {
+    $client = Client::factory()->create();
+
+    // The Filament dropdown opened on mousedown and lost its open state on a morph, so the panel
+    // flashed and closed. The popover holds its state in Alpine, which survives a re-render.
+    $idle = Livewire::test(TimerBar::class)
+        ->assertSeeHtml('class="kokpit-timer-popover"')
+        ->assertSeeHtml('x-on:click="open = ! open"')
+        ->assertDontSeeHtml('fi-dropdown');
+
+    TimeEntry::factory()->running()->create(['user_id' => $this->admin->id, 'client_id' => $client->id]);
+
+    $idle->dispatch('timer-started')
+        ->assertSeeHtml('class="kokpit-timer-panel kokpit-timer-detail"')
+        ->assertSeeHtml('x-on:click="open = ! open"')
+        ->assertDontSeeHtml('fi-dropdown');
+});
+
 it('stops the running timer without a question and tells the duration', function (): void {
     $client = Client::factory()->create();
     $entry = TimeEntry::factory()->running()->create(['user_id' => $this->admin->id, 'client_id' => $client->id]);
