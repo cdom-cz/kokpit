@@ -30,8 +30,9 @@
         .kokpit-timer-readout { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 7ch; white-space: nowrap; text-align: end; }
         .kokpit-timer-description { display: none; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .kokpit-timer-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-        .kokpit-timer-popover { position: relative; display: inline-flex; }
-        .kokpit-timer-panel { position: absolute; top: calc(100% + 0.5rem); right: 0; z-index: 40; width: min(20rem, calc(100vw - 2rem)); border-radius: 0.75rem; background-color: var(--color-white); color: var(--gray-950); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1), 0 0 0 1px color-mix(in oklab, var(--gray-950) 5%, transparent); }
+        .kokpit-timer-popover { display: inline-flex; }
+        /* Fixed, not absolute: the top bar clips its overflow (overflow-x: clip), which Safari applies to both axes. */
+        .kokpit-timer-panel { position: fixed; z-index: 40; width: min(20rem, calc(100vw - 2rem)); border-radius: 0.75rem; background-color: var(--color-white); color: var(--gray-950); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1), 0 0 0 1px color-mix(in oklab, var(--gray-950) 5%, transparent); }
         .dark .kokpit-timer-panel { background-color: var(--gray-900); color: var(--color-white); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 0 0 1px color-mix(in oklab, var(--color-white) 10%, transparent); }
         .kokpit-timer-form, .kokpit-timer-detail { display: grid; gap: 1rem; padding: 1rem; }
         .kokpit-timer-heading { font-size: 1rem; line-height: 1.5rem; font-weight: 600; margin: 0; }
@@ -46,7 +47,7 @@
         @media (max-width: 639px) {
             .kokpit-timer-label { display: none; }
             /* On a phone the panel spans the screen under the top bar instead of hanging off its trigger. */
-            .kokpit-timer-panel { position: fixed; top: calc(var(--topbar-height, 4rem) + 0.5rem); left: 1rem; right: 1rem; width: auto; }
+            .kokpit-timer-panel { left: 1rem !important; right: 1rem !important; width: auto; }
         }
     </style>
 
@@ -54,16 +55,31 @@
         Both popovers below are plain Alpine, not <x-filament::dropdown>: that one toggles on
         mousedown and keeps its open state on the panel element, so its form flashed and closed
         again. Here the state lives in x-data, which a Livewire re-render keeps, and a click
-        toggles it; a click outside or Escape closes it.
+        toggles it; a click outside or Escape closes it. The panel is placed from the trigger's
+        position when it opens and on a resize.
     --}}
     @if ($running === null)
         {{-- 1. Idle: the quick start. Starting needs only a client (D-02). --}}
         <div
             class="kokpit-timer-popover"
             wire:key="timer-idle"
-            x-data="{ open: false }"
+            x-data="{
+                open: false,
+                top: 0,
+                right: 0,
+                place() {
+                    const box = this.$refs.trigger.getBoundingClientRect()
+                    this.top = box.bottom + 8
+                    this.right = window.innerWidth - box.right
+                },
+                toggle() {
+                    this.open = ! this.open
+                    if (this.open) this.place()
+                },
+            }"
             x-on:click.outside="open = false"
             x-on:keydown.escape.window="open = false"
+            x-on:resize.window="open && place()"
         >
             <x-filament::button
                 color="gray"
@@ -72,12 +88,13 @@
                 :aria-label="__('kokpit.time.timer.start')"
                 aria-haspopup="dialog"
                 x-bind:aria-expanded="open"
-                x-on:click="open = ! open"
+                x-ref="trigger"
+                x-on:click="toggle()"
             >
                 <span class="kokpit-timer-label">{{ __('kokpit.time.timer.start') }}</span>
             </x-filament::button>
 
-            <form class="kokpit-timer-panel kokpit-timer-form" x-cloak x-show="open" x-transition.opacity wire:submit="start">
+            <form class="kokpit-timer-panel kokpit-timer-form" x-cloak x-show="open" x-transition.opacity x-bind:style="{ top: top + 'px', right: right + 'px' }" wire:submit="start">
                 <h2 class="kokpit-timer-heading">{{ __('kokpit.time.timer.start') }}</h2>
 
                 @if ($hasClients)
@@ -132,17 +149,31 @@
         <div
             class="kokpit-timer-popover"
             wire:key="running-{{ $running['id'] }}"
-            x-data="{ open: false }"
+            x-data="{
+                open: false,
+                top: 0,
+                right: 0,
+                place() {
+                    const box = this.$refs.trigger.getBoundingClientRect()
+                    this.top = box.bottom + 8
+                    this.right = window.innerWidth - box.right
+                },
+                toggle() {
+                    this.open = ! this.open
+                    if (this.open) this.place()
+                },
+            }"
             x-on:click.outside="open = false"
             x-on:keydown.escape.window="open = false"
+            x-on:resize.window="open && place()"
         >
-            <div class="kokpit-timer-pill fi-color-{{ $runningColor }}" data-state="{{ $tooLong ? 'too-long' : 'running' }}">
+            <div class="kokpit-timer-pill fi-color-{{ $runningColor }}" x-ref="trigger" data-state="{{ $tooLong ? 'too-long' : 'running' }}">
                 <button
                     type="button"
                     class="kokpit-timer-trigger"
                     aria-haspopup="dialog"
                     x-bind:aria-expanded="open"
-                    x-on:click="open = ! open"
+                    x-on:click="toggle()"
                     @if ($tooLong) title="{{ $runningTooltip }}" @endif
                 >
                     <x-filament::icon :icon="$tooLong ? Heroicon::OutlinedExclamationTriangle : Heroicon::OutlinedClock" />
@@ -190,7 +221,7 @@
             </div>
 
             {{-- The detail of the running entry; a missing part reads as a dash. Outside the pill, so it keeps the panel colours. --}}
-            <div class="kokpit-timer-panel kokpit-timer-detail" x-cloak x-show="open" x-transition.opacity>
+            <div class="kokpit-timer-panel kokpit-timer-detail" x-cloak x-show="open" x-transition.opacity x-bind:style="{ top: top + 'px', right: right + 'px' }">
                 <h2 class="kokpit-timer-heading">
                     @if ($running['task_url'] !== null)
                         <a class="kokpit-timer-link" href="{{ $running['task_url'] }}" wire:navigate>{{ $running['task_reference'] }} · {{ $running['task_title'] }}</a>
