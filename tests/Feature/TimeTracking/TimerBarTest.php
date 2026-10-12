@@ -87,14 +87,14 @@ it('opens the start form and the running detail as click popovers that a refresh
     // flashed and closed. The popover holds its state in Alpine, which survives a re-render.
     $idle = Livewire::test(TimerBar::class)
         ->assertSeeHtml('class="kokpit-timer-popover"')
-        ->assertSeeHtml('x-on:click="open = ! open"')
+        ->assertSeeHtml('x-on:click="toggle()"')
         ->assertDontSeeHtml('fi-dropdown');
 
     TimeEntry::factory()->running()->create(['user_id' => $this->admin->id, 'client_id' => $client->id]);
 
     $idle->dispatch('timer-started')
         ->assertSeeHtml('class="kokpit-timer-panel kokpit-timer-detail"')
-        ->assertSeeHtml('x-on:click="open = ! open"')
+        ->assertSeeHtml('x-on:click="toggle()"')
         ->assertDontSeeHtml('fi-dropdown');
 });
 
