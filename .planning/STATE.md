@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: REST API
 status: executing
-stopped_at: Completed 07-17-PLAN.md
-last_updated: "2026-10-14T13:27:32.770Z"
+stopped_at: Completed 07-18-PLAN.md
+last_updated: "2026-10-14T13:29:31.920Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 07 execution started
-state_head: 20bc5540230bc64503e77a734d8b4fdd950ccbfd
+state_head: 144f732d96137604b6362cec0bc034b3c1ae2770
 progress:
   total_phases: 12
   completed_phases: 6
   total_plans: 118
-  completed_plans: 116
+  completed_plans: 117
   percent: 50
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 07 (REST API) — EXECUTING
-Plan: 5 of 18
+Plan: 6 of 18
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 07 execution started
 
@@ -177,6 +177,7 @@ Progress: [█████░░░░░] 50%
 | Phase 07 P16 | 12 min | 2 tasks | 9 files |
 | Phase 07 P14 | 25 min | 2 tasks | 8 files |
 | Phase 07 P17 | 20min | 3 tasks | 8 files |
+| Phase 07 P18 | 10 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -412,6 +413,7 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-14: PragueDay::midnight builds from day components (no formatted-year re-parse); 0001-01-01 is not a supported day, 9999-12-31 is; out-of-range panel period days are ignored
 - [Phase 07]: 07-17: key patterns match the whole string (D modifier); the HTTP 422 test switches TrimStrings off because the middleware already strips a trailing line feed from query values
 - [Phase 07]: 07-17: documented limits are pinned to config/kokpit.php by a test with a failing self-check, not by building intro_text from config()
+- [Phase 07]: 07-18: example cursor is a literal from Cursor::encode() (second item's fictional values); forged-cursor guard derives parameterless GET routes from apiWalkRoutes()
 
 ### Pending Todos
 
@@ -457,6 +459,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T13:27:32.608Z
-Stopped at: Completed 07-17-PLAN.md
+Last session: 2026-10-14T13:29:31.753Z
+Stopped at: Completed 07-18-PLAN.md
 Resume file: None

@@ -91,7 +91,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### API
 
-- [ ] **AP-01**: REST API `/api/v1` with Sanctum tokens carrying abilities (`time:read`, `time:write`); only Admin creates tokens
+- [x] **AP-01**: REST API `/api/v1` with Sanctum tokens carrying abilities (`time:read`, `time:write`); only Admin creates tokens
 - [ ] **AP-02**: Time entries list with filters, detail, create, update, delete; same domain actions and rules as the UI
 - [ ] **AP-04**: Read-only lookups of clients, projects and tasks (UUID, key, name); tasks addressable by key
 - [ ] **AP-05**: Token management UI, rate limiting, idempotency key support, OpenAPI documentation
@@ -255,7 +255,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TI-07 | Phase 6 | Complete |
 | TI-08 | Phase 6 | Complete |
 | TI-09 | Phase 6 | Complete |
-| AP-01 | Phase 7 | Gaps Found |
+| AP-01 | Phase 7 | Complete |
 | AP-02 | Phase 7 | Gaps Found |
 | AP-03 | Backlog (999.1) | Deferred |
 | AP-04 | Phase 7 | Gaps Found |
