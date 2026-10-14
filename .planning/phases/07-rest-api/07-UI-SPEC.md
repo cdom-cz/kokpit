@@ -230,7 +230,7 @@ On close: the Livewire property holding the token is cleared, the list refreshes
 
 ### Surface E: API documentation page `/docs/api` — specified at the edge only (AP-05; D-17)
 
-No Kokpit-designed UI: the page is the stock Scribe documentation UI (D-17 revised: generated at release, assets served locally, no CDN). The contract is limited to:
+No Kokpit-designed UI: the page is the stock Scribe documentation UI (D-17 revised: generated at release, stock theme, may load CDN assets). The contract is limited to:
 
 - Reached from "Dokumentace API" on Surface A and Surface C; opens in a new tab.
 - Public: reachable by anyone on a public URL, with no login and no gate (owner decision; exact route path set by the plan). The OpenAPI spec route is public as well. Because both are public they carry fictional example values only.
