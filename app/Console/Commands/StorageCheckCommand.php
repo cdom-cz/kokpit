@@ -30,7 +30,8 @@ class StorageCheckCommand extends Command
 
     private function check(StorageCheck $check): int
     {
-        $disk = (string) $this->option('disk');
+        $option = $this->option('disk');
+        $disk = is_string($option) ? $option : 's3';
 
         if (config('filesystems.disks.'.$disk.'.driver') !== 's3') {
             $this->components->error(__('kokpit.storage_check.not_s3', ['disk' => $disk]));
