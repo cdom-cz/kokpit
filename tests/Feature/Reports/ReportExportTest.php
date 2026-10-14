@@ -33,12 +33,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
+use OpenSpout\Reader\XLSX\Reader as XlsxReader;
 use Tests\Support\Canary;
 
 /*
- * The CSV export of the time report (RE-03, D-09; UI-SPEC C1, C3, H): the Admin asks for it on the report page,
- * a queued job writes the file to the private disk and the bell says where it is. Every name, rate and amount
- * below is invented.
+ * The CSV and XLSX exports of the time report (RE-03, D-09; UI-SPEC C1, C3, H): the Admin asks for them on the
+ * report page, a queued job writes the file to the private disk and the bell says where it is. Every name, rate
+ * and amount below is invented.
  */
 
 const EXPORT_CSV_HEADER = ['Datum', 'Klient', 'Projekt', 'Úkol', 'Uživatel', 'Sekundy', 'Hodiny', 'Fakturovatelné', 'Vyfakturováno', 'Částka', 'Měna', 'Částka v Kč'];
@@ -198,11 +199,12 @@ function exportBuildRows(ReportExport $export): array
 }
 
 /**
- * Asks for the CSV export on the report page for the given filters, as the Admin does with the menu item.
+ * Asks for an export on the report page for the given filters, as the Admin does with the menu item.
  *
  * @param  array<string, string>  $filters  keys client, project, period, from, to
+ * @param  string  $action  the menu item, `exportCsv` or `exportXlsx`
  */
-function exportBuildRequest(array $filters): ReportExport
+function exportBuildRequest(array $filters, string $action = 'exportCsv'): ReportExport
 {
     $page = Livewire::test(TimeReportPage::class);
 
@@ -210,7 +212,7 @@ function exportBuildRequest(array $filters): ReportExport
         $page->set($key, $value);
     }
 
-    $page->callAction('exportCsv')->assertHasNoActionErrors();
+    $page->callAction($action)->assertHasNoActionErrors();
 
     return ReportExport::query()->latest('created_at')->latest('id')->firstOrFail();
 }
@@ -594,5 +596,215 @@ describe('the bell notices', function (): void {
             ->and($failed->via($this->admin))->toBe(['database'])
             ->and($ready)->not->toBeInstanceOf(ShouldQueue::class)
             ->and($failed)->not->toBeInstanceOf(ShouldQueue::class);
+    });
+});
+
+/**
+ * A stored XLSX written to a temporary file, for the readers below; the caller removes the file.
+ */
+function exportXlsxTemp(ReportExport $export): string
+{
+    $path = tempnam(sys_get_temp_dir(), 'kokpit-test-xlsx-');
+    file_put_contents((string) $path, (string) Storage::disk()->get((string) $export->path));
+
+    return (string) $path;
+}
+
+/**
+ * The sheets of a stored XLSX by name, in workbook order, each as a list of rows. A date becomes `Y-m-d`, a
+ * number a float and a missing cell an empty string, so a test compares plain values.
+ *
+ * @return array<string, list<list<string|float>>>
+ */
+function exportXlsxSheets(ReportExport $export): array
+{
+    $path = exportXlsxTemp($export);
+    $reader = new XlsxReader;
+    $reader->open($path);
+    $sheets = [];
+
+    try {
+        foreach ($reader->getSheetIterator() as $sheet) {
+            $rows = [];
+
+            foreach ($sheet->getRowIterator() as $row) {
+                $rows[] = array_map(static fn (mixed $value): string|float => match (true) {
+                    $value instanceof DateTimeInterface => $value->format('Y-m-d'),
+                    is_int($value), is_float($value) => (float) $value,
+                    default => (string) $value,
+                }, $row->toArray());
+            }
+
+            $sheets[$sheet->getName()] = $rows;
+        }
+    } finally {
+        $reader->close();
+        unlink($path);
+    }
+
+    return $sheets;
+}
+
+/**
+ * One part of the stored XLSX package, such as `xl/worksheets/sheet1.xml`.
+ */
+function exportXlsxPart(ReportExport $export, string $part): string
+{
+    $path = exportXlsxTemp($export);
+    $zip = new ZipArchive;
+    $zip->open($path);
+    $xml = $zip->getFromName($part);
+    $zip->close();
+    unlink($path);
+
+    return $xml === false ? '' : $xml;
+}
+
+/**
+ * Whether a worksheet part holds a formula element.
+ */
+function exportXlsxHasFormula(string $sheetXml): bool
+{
+    return preg_match('/<f[\s>\/]/', $sheetXml) === 1;
+}
+
+/**
+ * The rows of the "Souhrn" sheet by their label: each value is the list of rows with that label, each row the
+ * cells after the label.
+ *
+ * @param  list<list<string|float>>  $rows
+ * @return array<string, list<list<string|float>>>
+ */
+function exportXlsxSummaryRows(array $rows): array
+{
+    $byLabel = [];
+
+    foreach ($rows as $row) {
+        $byLabel[(string) $row[0]][] = array_slice($row, 1);
+    }
+
+    return $byLabel;
+}
+
+describe('the XLSX export of the report page', function (): void {
+    it('queues the export like the CSV and delivers a workbook with the entries and a summary sheet', function (): void {
+        $set = exportBuildArrangement();
+
+        Livewire::test(TimeReportPage::class)
+            ->set('client', $set['client']->id)
+            ->set('period', 'last_month')
+            ->callAction('exportXlsx')
+            ->assertHasNoActionErrors()
+            ->assertNotified('Export se připravuje');
+
+        $export = ReportExport::query()->sole();
+
+        expect($export->format)->toBe(ReportExportFormat::Xlsx)
+            ->and($export->status)->toBe(ReportExportStatus::Ready)
+            ->and($export->row_count)->toBe(3)
+            ->and($export->path)->toBe('report-exports/'.$export->id.'.xlsx')
+            ->and($export->summary)->toBe('Example Client Alpha, Všechny projekty, 1. 9. 2026 – 30. 9. 2026');
+
+        $sheets = exportXlsxSheets($export);
+        $name = $this->admin->name;
+
+        expect(array_keys($sheets))->toBe(['Záznamy', 'Souhrn'])
+            ->and($sheets['Záznamy'])->toHaveCount(4)
+            ->and($sheets['Záznamy'][0])->toBe(EXPORT_CSV_HEADER)
+            ->and($sheets['Záznamy'][1])->toBe(['2026-09-15', 'Example Client Alpha', 'Example Project Web', 'Landing page', $name, 5400.0, 1.5, 'ano', 'ne', 180.0, 'EUR', 4500.0])
+            ->and($sheets['Záznamy'][2])->toBe(['2026-09-16', 'Example Client Alpha', 'Example Project Web', 'Contact form', $name, 2700.0, 0.75, 'ano', 'ne', 90.0, 'EUR', 2295.0])
+            ->and($sheets['Záznamy'][3])->toBe(['2026-09-19', 'Example Client Alpha', 'Example Project Web', 'Landing page', $name, 3600.0, 1.0, 'ano', 'ne', 120.0, 'EUR', 2880.0]);
+
+        $bell = exportBuildBell($this->admin);
+        expect($bell)->toHaveCount(1)
+            ->and($bell[0]['body'])->toBe('XLSX, 1. 9. 2026 – 30. 9. 2026. Soubor je ke stažení do 21. 10. 2026.');
+
+        Livewire::test(ListReportExports::class)
+            ->assertCanSeeTableRecords([$export])
+            ->callTableAction('download', $export)
+            ->assertFileDownloaded('report-casu-2026-09-01_2026-09-30.xlsx');
+    });
+
+    it('offers "Tabulka XLSX" in the export menu', function (): void {
+        Livewire::test(TimeReportPage::class)
+            ->assertActionExists('exportXlsx', static fn ($action): bool => $action->getLabel() === 'Tabulka XLSX');
+
+        expect((string) $this->get('/admin/time-report')->assertOk()->getContent())->toContain('Tabulka XLSX');
+    });
+
+    it('styles the entry sheet: bold frozen header row, auto filter, column widths and number formats', function (): void {
+        $set = exportBuildArrangement();
+        $export = exportBuildRequest(['client' => $set['client']->id, 'period' => 'last_month'], 'exportXlsx');
+
+        $sheet = exportXlsxPart($export, 'xl/worksheets/sheet1.xml');
+        $styles = exportXlsxPart($export, 'xl/styles.xml');
+
+        expect($sheet)->toContain('state="frozen"')
+            ->and($sheet)->toContain('ySplit="1"')
+            ->and($sheet)->toContain('<autoFilter ref="A1:L4"')
+            ->and($sheet)->toContain('<cols>')
+            ->and($sheet)->toContain('inlineStr')
+            ->and($styles)->toContain('<b/>')
+            ->and($styles)->toContain('formatCode="0.0000"')
+            ->and($styles)->toContain('formatCode="d.m.yyyy"')
+            // "#,##0.00" is the built-in format 4 and needs no declaration.
+            ->and($styles)->toContain('numFmtId="4"');
+    });
+
+    it('keeps an auto filter over the header row of an empty period', function (): void {
+        $export = exportBuildRequest(['period' => 'last_month'], 'exportXlsx');
+        $sheets = exportXlsxSheets($export);
+
+        expect($export->status)->toBe(ReportExportStatus::Ready)
+            ->and($export->row_count)->toBe(0)
+            ->and($sheets['Záznamy'])->toBe([EXPORT_CSV_HEADER])
+            ->and(exportXlsxPart($export, 'xl/worksheets/sheet1.xml'))->toContain('<autoFilter ref="A1:L1"');
+
+        $summary = exportXlsxSummaryRows($sheets['Souhrn']);
+
+        expect($summary['Klient'][0][0])->toBe('Všichni klienti')
+            ->and($summary['Projekt'][0][0])->toBe('Všechny projekty')
+            ->and($summary['Odpracováno'][0][0])->toBe(0.0)
+            ->and($summary['Nevyfakturováno'][0][0])->toBe(0.0)
+            ->and($summary['Částka v Kč'][0][0])->toBe(0.0);
+    });
+
+    it('summarises the same filters as the report: hours, amounts per currency and the CZK total', function (): void {
+        $set = exportBuildArrangement();
+        // One entry of a billed state and one non-billable one, so the hour lines differ.
+        exportBuildEntry($set['first'], '2026-09-20 08:00:00', '2026-09-20 08:30:00', ['billing_state' => 'billed', 'billed_at' => CarbonImmutable::parse('2026-09-21 08:00:00', 'UTC')]);
+        exportBuildEntry($set['first'], '2026-09-21 08:00:00', '2026-09-21 08:15:00', ['billable' => false]);
+
+        $export = exportBuildRequest(['client' => $set['client']->id, 'project' => $set['project']->id, 'period' => 'last_month'], 'exportXlsx');
+        $summary = TimeReport::build(ReportFilters::period('2026-09-01', '2026-09-30', $set['client']->id, $set['project']->id), CarbonImmutable::now())->summary;
+        $rows = exportXlsxSummaryRows(exportXlsxSheets($export)['Souhrn']);
+
+        expect($rows['Klient'][0][0])->toBe('Example Client Alpha')
+            ->and($rows['Projekt'][0][0])->toBe('Example Project Web')
+            ->and($rows['Období'][0][0])->toBe('1. 9. 2026 – 30. 9. 2026')
+            ->and($rows['Odpracováno'][0][0])->toBe($summary['worked'] / 3600.0)
+            ->and($rows['Fakturovatelné'][0][0])->toBe($summary['billable'] / 3600.0)
+            ->and($rows['Nefakturovatelné'][0][0])->toBe($summary['non_billable'] / 3600.0)
+            ->and($rows['Vyfakturováno'][0][0])->toBe($summary['billed'] / 3600.0)
+            ->and($rows['Nevyfakturováno'][0][0])->toBe($summary['unbilled'] / 3600.0)
+            ->and($rows['Částky po měnách'])->toHaveCount(1)
+            ->and($rows['Částky po měnách'][0])->toBe([(float) $summary['amounts']['billable']['EUR']->toMajor(), 'EUR'])
+            ->and($rows['Částka v Kč'][0][0])->toBe((float) $summary['czk']['billable']->toMajor())
+            // The identity of the report: worked = billed + unbilled + non-billable.
+            ->and($summary['worked'])->toBe($summary['billed'] + $summary['unbilled'] + $summary['non_billable']);
+    });
+
+    it('lists one amount row per currency', function (): void {
+        $alpha = exportBuildClient('Example Client Alpha');
+        $beta = exportBuildClient('Example Client Beta', 'CZK', '1000');
+        exportBuildEntry($alpha, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+        exportBuildEntry($beta, '2026-09-16 08:00:00', '2026-09-16 09:00:00');
+        exportBuildRate('2026-09-15', 'EUR', '25.000');
+
+        $export = exportBuildRequest(['period' => 'last_month'], 'exportXlsx');
+        $rows = exportXlsxSummaryRows(exportXlsxSheets($export)['Souhrn']);
+
+        expect($rows['Částky po měnách'])->toBe([[1000.0, 'CZK'], [100.0, 'EUR']])
+            ->and($rows['Částka v Kč'][0][0])->toBe(3500.0);
     });
 });

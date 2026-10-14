@@ -79,6 +79,29 @@ it('writes whole seconds as a numeric cell', function (): void {
         ->and($cell->getValue())->toBe(5400);
 });
 
+it('writes an exact decimal string as a numeric cell, a negative one included', function (string $exact, float $expected): void {
+    $cell = SpreadsheetCells::number($exact);
+
+    expect($cell)->toBeInstanceOf(NumericCell::class)
+        ->and($cell->getValue())->toBe($expected);
+})->with([
+    'whole' => ['5400', 5400.0],
+    'two decimals' => ['180.00', 180.0],
+    'four decimals' => ['0.0169', 0.0169],
+    'negative' => ['-3.25', -3.25],
+]);
+
+it('refuses a number that is not a plain decimal, so text can never become a numeric or formula cell', function (string $text): void {
+    expect(fn () => SpreadsheetCells::number($text))->toThrow(InvalidArgumentException::class);
+})->with([
+    'formula' => ['='.'1+1'],
+    'text' => ['abc'],
+    'decimal comma' => ['1,5'],
+    'empty' => [''],
+    'exponent' => ['1e5'],
+    'trailing newline' => ["1\n"],
+]);
+
 it('proves the canary: the value-inferring factory of OpenSpout makes a formula of the same text', function (): void {
     $canary = '='.'1+1';
 

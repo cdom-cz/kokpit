@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Reports\Jobs;
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\ExchangeRates\RateBook;
 use App\Domain\Identity\Models\User;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Reports\EntryAmounts;
+use App\Domain\Reports\Enums\ReportExportFormat;
 use App\Domain\Reports\Enums\ReportExportStatus;
 use App\Domain\Reports\Exports\SpreadsheetCells;
 use App\Domain\Reports\Models\ReportExport;
@@ -18,25 +21,33 @@ use App\Domain\Reports\Queries\TimeReportReader;
 use App\Domain\Reports\ReportEntry;
 use App\Domain\Reports\ReportFilters;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Support\PragueDay;
 use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Resources\ReportExportResource;
 use App\Providers\LocalisationServiceProvider;
 use Carbon\CarbonImmutable;
+use DateTimeImmutable;
 use Illuminate\Queue\Attributes\Timeout;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use OpenSpout\Common\Entity\Cell;
+use OpenSpout\Common\Entity\Cell\DateTimeCell;
+use OpenSpout\Common\Entity\Cell\EmptyCell;
 use OpenSpout\Common\Entity\Cell\StringCell;
 use OpenSpout\Common\Entity\Row;
+use OpenSpout\Common\Entity\Style\Style;
+use OpenSpout\Writer\AutoFilter;
 use OpenSpout\Writer\CSV\Options;
 use OpenSpout\Writer\CSV\Writer;
+use OpenSpout\Writer\XLSX\Entity\SheetView;
+use OpenSpout\Writer\XLSX\Writer as XlsxWriter;
 use RuntimeException;
 use Throwable;
 
 /**
- * Builds the CSV file of a report export in the background and tells the Admin where it is (RE-03, D-09; UI-SPEC
- * C3 and Surface H).
+ * Builds the CSV or XLSX file of a report export in the background and tells the Admin where it is (RE-03, D-09;
+ * UI-SPEC C3 and Surface H).
  *
  * The record is read in the system context (the job middleware), skipped when it is no longer pending, and its
  * stored filters are validated again like any client-controlled value. The entries come lazily from the same
@@ -45,9 +56,15 @@ use Throwable;
  * to the default (private) disk under the server-generated path of the record; memory does not grow with the
  * number of entries (research Pitfall 16). The timeout stays under the 300 s of the Horizon supervisor.
  *
- * Numbers are written as text from exact values: whole seconds, hours from integer arithmetic to four decimals
- * (half up) and amounts from `Money::toMajor()`, each with the decimal sign of the configuration, never from a
- * float. Every text goes through {@see SpreadsheetCells::text()}.
+ * In the CSV numbers are written as text from exact values: whole seconds, hours from integer arithmetic to four
+ * decimals (half up) and amounts from `Money::toMajor()`, each with the decimal sign of the configuration, never
+ * from a float. Every text goes through {@see SpreadsheetCells::text()}.
+ *
+ * The XLSX workbook holds the same entries as real numeric and date cells on the sheet "Záznamy" (hours
+ * `0.0000`, amounts `#,##0.00`, a bold frozen header row, an auto filter and column widths) and, on the sheet
+ * "Souhrn", the summary of the same filters. The summary is accumulated while the entries stream, so the reader
+ * is read once; its figures are the sums of the very amounts written on the entry rows. A number is built from
+ * the exact string only at the cell ({@see SpreadsheetCells::number()}); no cell of either sheet is a formula.
  *
  * The record is marked ready and the owner notified in one transaction, after the file is stored (pattern of
  * `NotifyLongRunningTimers`). A final failure is handled by {@see self::failed()}; the Phase 3 failed-job
@@ -61,6 +78,20 @@ final class BuildReportExport extends KokpitJob
      * The keys of the twelve columns in file order; the header texts are `kokpit.exports.file.columns.<key>`.
      */
     public const array COLUMNS = ['date', 'client', 'project', 'task', 'user', 'seconds', 'hours', 'billable', 'billed', 'amount', 'currency', 'amount_czk'];
+
+    /**
+     * The widths of the twelve entry columns of the workbook, in characters, in the order of the columns.
+     *
+     * @var list<float>
+     */
+    private const array ENTRY_COLUMN_WIDTHS = [12.0, 28.0, 28.0, 36.0, 24.0, 10.0, 10.0, 16.0, 16.0, 14.0, 8.0, 14.0];
+
+    /**
+     * The widths of the three columns of the summary sheet: label, value, currency.
+     *
+     * @var list<float>
+     */
+    private const array SUMMARY_COLUMN_WIDTHS = [24.0, 40.0, 10.0];
 
     /** The time zone the dates of the notices are shown in. */
     private const string DISPLAY_TIMEZONE = 'Europe/Prague';
@@ -94,7 +125,10 @@ final class BuildReportExport extends KokpitJob
         }
 
         try {
-            $count = $this->writeCsv($temporary, $reader, $filters, $now, $rates);
+            $count = match ($export->format) {
+                ReportExportFormat::Csv => $this->writeCsv($temporary, $reader, $filters, $now, $rates),
+                ReportExportFormat::Xlsx => $this->writeXlsx($temporary, $reader, $filters, $now, $rates),
+            };
             $this->store($export, $temporary);
         } finally {
             if (is_file($temporary)) {
@@ -166,7 +200,7 @@ final class BuildReportExport extends KokpitJob
             )));
 
             foreach ($reader->entries($filters, $now) as $entry) {
-                $writer->addRow(new Row($this->entryCells($entry, $rates)));
+                $writer->addRow(new Row($this->entryCells($entry, EntryAmounts::of($entry, $rates))));
                 $count++;
             }
         } finally {
@@ -177,14 +211,178 @@ final class BuildReportExport extends KokpitJob
     }
 
     /**
+     * Streams the entry sheet and then the summary sheet into the workbook and returns the number of entry rows.
+     * The summary is accumulated in the same pass over the entries.
+     */
+    private function writeXlsx(string $file, TimeReportReader $reader, ReportFilters $filters, CarbonImmutable $now, RateBook $rates): int
+    {
+        $styles = self::styles();
+        $writer = new XlsxWriter;
+        $writer->openToFile($file);
+
+        $count = 0;
+
+        try {
+            $sheet = $writer->getCurrentSheet();
+            $sheet->setName((string) __('kokpit.exports.file.sheets.entries'));
+            $sheet->setSheetView((new SheetView)->setFreezeRow(2));
+
+            foreach (self::ENTRY_COLUMN_WIDTHS as $index => $width) {
+                $sheet->setColumnWidth($width, $index + 1);
+            }
+
+            $writer->addRow(new Row(array_map(
+                static fn (string $key): StringCell => SpreadsheetCells::text((string) __('kokpit.exports.file.columns.'.$key)),
+                self::COLUMNS,
+            ), $styles['bold']));
+
+            $hours = ['worked' => 0, 'billable' => 0, 'non_billable' => 0, 'billed' => 0, 'unbilled' => 0];
+            $amounts = [];
+            $czk = null;
+
+            foreach ($reader->entries($filters, $now) as $entry) {
+                $priced = EntryAmounts::of($entry, $rates);
+                $writer->addRow(new Row($this->xlsxEntryCells($entry, $priced, $styles)));
+                $count++;
+
+                $hours['worked'] += $entry->seconds;
+                $hours[$entry->billable ? 'billable' : 'non_billable'] += $entry->seconds;
+
+                if ($entry->billable) {
+                    $hours[$entry->billed ? 'billed' : 'unbilled'] += $entry->seconds;
+                }
+
+                if ($priced['amount'] !== null) {
+                    $amounts[$priced['amount']->currency] = isset($amounts[$priced['amount']->currency])
+                        ? $amounts[$priced['amount']->currency]->plus($priced['amount'])
+                        : $priced['amount'];
+                }
+
+                if ($priced['czk'] !== null) {
+                    $czk = $czk === null ? $priced['czk'] : $czk->plus($priced['czk']);
+                }
+            }
+
+            // The filter spans the header and every entry row, so it still has a range for an empty period.
+            $sheet->setAutoFilter(new AutoFilter(0, 1, count(self::COLUMNS) - 1, $count + 1));
+
+            ksort($amounts);
+            $this->writeSummarySheet($writer, $filters, $hours, $amounts, $czk, $styles);
+        } finally {
+            $writer->close();
+        }
+
+        return $count;
+    }
+
+    /**
+     * The sheet "Souhrn": a label in the first column, the value in the second and, for an amount, its currency
+     * in the third. Hours are numeric hours (`0.0000`), amounts numeric (`#,##0.00`).
+     *
+     * @param  array{worked: int, billable: int, non_billable: int, billed: int, unbilled: int}  $hours  whole seconds
+     * @param  array<string, Money>  $amounts  the billable amounts per currency
+     * @param  array{bold: Style, date: Style, hours: Style, amount: Style}  $styles
+     */
+    private function writeSummarySheet(XlsxWriter $writer, ReportFilters $filters, array $hours, array $amounts, ?Money $czk, array $styles): void
+    {
+        $sheet = $writer->addNewSheetAndMakeItCurrent();
+        $sheet->setName((string) __('kokpit.exports.file.sheets.summary'));
+
+        foreach (self::SUMMARY_COLUMN_WIDTHS as $index => $width) {
+            $sheet->setColumnWidth($width, $index + 1);
+        }
+
+        $label = static function (string $key) use ($styles): StringCell {
+            $cell = SpreadsheetCells::text((string) __('kokpit.exports.file.summary_rows.'.$key));
+            $cell->setStyle($styles['bold']);
+
+            return $cell;
+        };
+
+        $clientName = $filters->clientId === null ? null : Client::query()->withTrashed()->whereKey($filters->clientId)->value('name');
+        $projectName = $filters->projectId === null ? null : Project::query()->withTrashed()->whereKey($filters->projectId)->value('name');
+
+        $writer->addRow(new Row([$label('client'), SpreadsheetCells::text(is_string($clientName) ? $clientName : (string) __('kokpit.exports.summary.all_clients'))]));
+        $writer->addRow(new Row([$label('project'), SpreadsheetCells::text(is_string($projectName) ? $projectName : (string) __('kokpit.exports.summary.all_projects'))]));
+        $writer->addRow(new Row([$label('period'), SpreadsheetCells::text(self::periodText($filters->from, $filters->to))]));
+
+        foreach (['worked', 'billable', 'non_billable', 'billed', 'unbilled'] as $key) {
+            $writer->addRow(new Row([$label($key), SpreadsheetCells::number(self::hours($hours[$key]), $styles['hours'])]));
+        }
+
+        foreach ($amounts === [] ? [null] : array_values($amounts) as $amount) {
+            $writer->addRow(new Row([
+                $label('amounts'),
+                SpreadsheetCells::number($amount === null ? '0.00' : $amount->toMajor(), $styles['amount']),
+                SpreadsheetCells::text($amount?->currency),
+            ]));
+        }
+
+        $writer->addRow(new Row([$label('amount_czk'), SpreadsheetCells::number($czk === null ? '0.00' : $czk->toMajor(), $styles['amount'])]));
+    }
+
+    /**
+     * The twelve cells of one entry for the workbook, in the order of {@see self::COLUMNS}: the day as a date
+     * cell, the seconds, the hours and the amounts as numeric cells, every text as an explicit string cell and
+     * the cells that have no value, as in the CSV, really empty.
+     *
+     * @param  array{amount: Money|null, czk: Money|null, czk_missing: bool}  $priced
+     * @param  array{bold: Style, date: Style, hours: Style, amount: Style}  $styles
+     * @return list<Cell>
+     */
+    private function xlsxEntryCells(ReportEntry $entry, array $priced, array $styles): array
+    {
+        $yes = (string) __('kokpit.exports.file.yes');
+        $no = (string) __('kokpit.exports.file.no');
+
+        return [
+            new DateTimeCell(new DateTimeImmutable($entry->workDate), $styles['date']),
+            self::xlsxText($entry->clientName),
+            self::xlsxText($entry->projectName),
+            self::xlsxText($entry->taskTitle),
+            self::xlsxText($entry->userName),
+            SpreadsheetCells::integer($entry->seconds),
+            SpreadsheetCells::number(self::hours($entry->seconds), $styles['hours']),
+            SpreadsheetCells::text($entry->billable ? $yes : $no),
+            SpreadsheetCells::text($entry->billed ? $yes : $no),
+            $priced['amount'] === null ? new EmptyCell(null, null) : SpreadsheetCells::number($priced['amount']->toMajor(), $styles['amount']),
+            self::xlsxText($priced['amount']?->currency),
+            $priced['czk'] === null ? new EmptyCell(null, null) : SpreadsheetCells::number($priced['czk']->toMajor(), $styles['amount']),
+        ];
+    }
+
+    /**
+     * A text cell of the workbook: spreadsheet-safe, and a missing or empty text a really empty cell.
+     */
+    private static function xlsxText(?string $value): Cell
+    {
+        return $value === null || $value === '' ? new EmptyCell(null, null) : SpreadsheetCells::text($value);
+    }
+
+    /**
+     * The styles of the workbook: the bold header and label, the date and the two number formats.
+     *
+     * @return array{bold: Style, date: Style, hours: Style, amount: Style}
+     */
+    private static function styles(): array
+    {
+        return [
+            'bold' => (new Style)->setFontBold(),
+            'date' => (new Style)->setFormat('d.m.yyyy'),
+            'hours' => (new Style)->setFormat('0.0000'),
+            'amount' => (new Style)->setFormat('#,##0.00'),
+        ];
+    }
+
+    /**
      * The twelve cells of one entry, in the order of {@see self::COLUMNS}. A fixed-price or non-billable entry has
      * empty amount cells and an entry without a CNB rate an empty CZK cell: never a zero.
      *
+     * @param  array{amount: Money|null, czk: Money|null, czk_missing: bool}  $priced
      * @return list<Cell>
      */
-    private function entryCells(ReportEntry $entry, RateBook $rates): array
+    private function entryCells(ReportEntry $entry, array $priced): array
     {
-        $priced = EntryAmounts::of($entry, $rates);
         $yes = (string) __('kokpit.exports.file.yes');
         $no = (string) __('kokpit.exports.file.no');
 

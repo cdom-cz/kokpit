@@ -99,6 +99,9 @@ class TimeReportPage extends Page
                 Action::make('exportCsv')
                     ->label(__('kokpit.report.export.csv'))
                     ->action(fn () => $this->queueExport(ReportExportFormat::Csv)),
+                Action::make('exportXlsx')
+                    ->label(__('kokpit.report.export.xlsx'))
+                    ->action(fn () => $this->queueExport(ReportExportFormat::Xlsx)),
             ])
                 ->label(__('kokpit.report.export.group'))
                 ->icon(Heroicon::OutlinedArrowDownTray)
