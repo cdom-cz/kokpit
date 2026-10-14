@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 08
-current_phase_name: exchange-rates-and-reports
+current_phase: 07
+current_phase_name: REST API
 status: executing
-stopped_at: Phase 8 context gathered
-last_updated: "2026-10-14T17:11:16.446Z"
+stopped_at: Completed 07-20-PLAN.md
+last_updated: "2026-10-14T18:26:43.866Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 07 execution started
-state_head: aef2e36dd11fbbe84e232c56113b6fd544834a49
+state_head: dc1268e89a33a26910763cc9c055d20f012f836f
 progress:
   total_phases: 12
   completed_phases: 6
-  total_plans: 135
-  completed_plans: 119
+  total_plans: 136
+  completed_plans: 120
   percent: 50
 ---
 
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 ## Current Position
 
-Phase: 08 (exchange-rates-and-reports) — READY TO EXECUTE
-Plan: 2 of 19
+Phase: 07 (REST API) — EXECUTING
+Plan: 2 of 20
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 07 execution started
 
@@ -180,6 +180,7 @@ Progress: [█████░░░░░] 50%
 | Phase 07 P18 | 10 min | 2 tasks | 3 files |
 | Phase 07 P15 | 20 min | 2 tasks | 4 files |
 | Phase 07 P19 | 45 min | 2 tasks | 8 files |
+| Phase 07 P20 | 3 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -420,6 +421,7 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-19: running elapsed seconds computed as bigint, floored at 0, capped at MAX_DURATION_SECONDS then cast to int in one shared TimeEntry::elapsedSecondsSql; the 07-13 write bound stays as a sanity bound
 - [Phase 07]: 07-19: StopTimer on an entry already run past 2147483647 s is left to the owner (T-07-77); recovery is to correct the start through UpdateTimeEntry, then stop
 - [Quick 261014-o13]: a running time entry that has run longer than kokpit.time.max_running_hours (48) is ended every hour by kokpit:time:end-overrun (kokpit-end-overrun-timers, onOneServer) through EndOverrunTimers at started_at + 48 h, never at now, so the stored duration is capped and cannot overflow the integer column; narrows Phase 06 D-07 on the owner's request, the 12-hour bell notice is unchanged
+- [Phase 07]: 07-20: empty-state newToken opens createToken with replaceMountedAction (not a nested mount) and a canAccess guard; ListApiTokens unchanged
 
 ### Pending Todos
 
@@ -466,6 +468,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T15:46:07.938Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-exchange-rates-and-reports/08-CONTEXT.md
+Last session: 2026-10-14T18:26:43.496Z
+Stopped at: Completed 07-20-PLAN.md
+Resume file: None

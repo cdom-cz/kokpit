@@ -440,7 +440,7 @@ Plans:
   4. An API client resolves clients, projects and tasks by UUID, key and name through read-only lookups, and addresses a task by its `KEY-N`
   5. Excess requests receive a rate-limit response, and published OpenAPI documentation describes every endpoint
 
-**Plans:** 19/20 plans executed
+**Plans:** 20/20 plans executed
 
 Plans:
 **Wave 1**
@@ -485,7 +485,7 @@ Plans:
 **Gap wave 3** *(blocked on gap wave 2 completion)*
 - [x] 07-15-PLAN.md — Batch item faults reported as failed items, so the Idempotency-Key is never released after partial commits (gap 3)
 - [x] 07-19-PLAN.md — Overflow-proof elapsed seconds: one clamped bigint expression for the entry list and the time totals, so a running start at the edge of the limit never breaks the Admin screens (07-UAT.md G-07-1, WR-02)
-- [ ] 07-20-PLAN.md — Empty-state "Nový API token" opens the create modal: the table action replaces the mounted stack with the page action instead of a nested mount, with a Livewire click test and a both-ability token created from it (07-UAT.md G-07-3; depends only on 07-03)
+- [x] 07-20-PLAN.md — Empty-state "Nový API token" opens the create modal: the table action replaces the mounted stack with the page action instead of a nested mount, with a Livewire click test and a both-ability token created from it (07-UAT.md G-07-3; depends only on 07-03)
 
 **UI hint**: yes
 
@@ -617,7 +617,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Clients and Projects | 21/21 | Complete    | 2026-10-09 |
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
-| 7. REST API | 19/20 | In Progress | - |
+| 7. REST API | 20/20 | In Progress | - |
 | 8. Exchange Rates and Reports | 0/0 | Not started | - |
 | 9. Documents and Finance | 0/0 | Not started | - |
 | 10. Invoicing | 0/0 | Not started | - |
