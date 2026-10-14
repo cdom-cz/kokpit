@@ -46,6 +46,9 @@ it('accepts only a real calendar day as Y-m-d', function (mixed $value, ?string 
     'an empty string' => ['', null],
     'null' => [null, null],
     'an integer' => [2026, null],
+    'the first day of year 1, whose Prague midnight is in UTC year 0' => ['0001-01-01', null],
+    'the second day of year 1' => ['0001-01-02', '0001-01-02'],
+    'the last day of year 9999' => ['9999-12-31', '9999-12-31'],
 ]);
 
 it('turns a plain day into the UTC instant of its Prague midnight', function (): void {
@@ -53,4 +56,19 @@ it('turns a plain day into the UTC instant of its Prague midnight', function ():
 
     expect(PragueDay::midnight($day)?->format('Y-m-d\TH:i:s\Z'))->toBe('2026-10-24T22:00:00Z')
         ->and(PragueDay::midnight(null))->toBeNull();
+});
+
+it('keeps every supported day inside UTC years 1 to 9999 and refuses the days outside', function (): void {
+    expect(PragueDay::start('0001-01-02')->utc()->year)->toBe(1)
+        ->and(PragueDay::endExclusive('9999-12-31')->utc()->format('Y-m-d\TH:i:s\Z'))->toBe('9999-12-31T23:00:00Z')
+        ->and(fn () => PragueDay::start('0001-01-01'))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => PragueDay::endExclusive('0001-01-01'))->toThrow(InvalidArgumentException::class);
+});
+
+it('builds a midnight for a plain day past year 9999 and refuses one before year 1', function (): void {
+    $last = CarbonImmutable::createFromFormat('!Y-m-d', '9999-12-31', 'UTC');
+
+    expect(PragueDay::midnight($last?->addDay())?->format('Y-m-d\TH:i:s\Z'))->toBe('9999-12-31T23:00:00Z')
+        ->and(PragueDay::midnight($last?->addDays(2)))->toBeNull()
+        ->and(PragueDay::midnight(CarbonImmutable::createFromFormat('!Y-m-d', '0001-01-01', 'UTC')))->toBeNull();
 });

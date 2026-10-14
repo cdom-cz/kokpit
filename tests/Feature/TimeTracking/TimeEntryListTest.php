@@ -112,6 +112,21 @@ it('filters a custom period inclusive of both days and shows an indicator for ea
         ->assertSee('Období do: 13. 10. 2026');
 });
 
+it('ignores a custom period day outside UTC years 1 to 9999 and still filters on the last supported day', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-25 11:00:00', 'UTC'));
+    $entry = listEntry('2026-10-12 08:00:00', '2026-10-12 08:30:00');
+
+    Livewire::test(ListTimeEntries::class)
+        ->filterTable('period', ['preset' => 'custom', 'from' => '0001-01-01', 'until' => '2026-10-12'])
+        ->assertCanSeeTableRecords([$entry])
+        ->assertDontSee('Období od:')
+        ->assertSee('Období do: 12. 10. 2026')
+        ->filterTable('period', ['preset' => 'custom', 'from' => '2026-10-01', 'until' => '9999-12-31'])
+        ->assertCanSeeTableRecords([$entry])
+        ->filterTable('period', ['preset' => 'custom', 'from' => '2026-10-13', 'until' => '9999-12-31'])
+        ->assertCanNotSeeTableRecords([$entry]);
+});
+
 it('narrows the rows by client, project, task and billing state, all combined with AND', function (): void {
     $a = listWorld('AAA');
     $b = listWorld('BBB');

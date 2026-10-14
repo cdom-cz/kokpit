@@ -201,7 +201,24 @@ it('answers 422 under the filter key for a malformed value, never 400 or 500', f
     'a billable word' => ['filter[billable]=maybe', 'filter.billable'],
     'a billed word' => ['filter[billed]=yes', 'filter.billed'],
     'an unknown filter' => ['filter[unknown]=1', 'filter'],
+    'filter from of a year 1 day whose Prague midnight is in UTC year 0' => ['filter[from]=0001-01-01', 'filter.from'],
+    'filter from of a year 1 instant with a positive offset (UTC year 0)' => ['filter[from]=0001-01-01T00:00:00%2B02:00', 'filter.from'],
+    'filter from of a year 9999 instant with a negative offset (UTC year 10000)' => ['filter[from]=9999-12-31T23:59:59-12:00', 'filter.from'],
+    'filter from of the instant of year 0' => ['filter[from]=0000-01-01T00:00:00Z', 'filter.from'],
+    'filter to of a year 1 day whose Prague midnight is in UTC year 0' => ['filter[to]=0001-01-01', 'filter.to'],
+    'filter to of a year 1 instant with a positive offset (UTC year 0)' => ['filter[to]=0001-01-01T00:00:00%2B02:00', 'filter.to'],
+    'filter to of a year 9999 instant with a negative offset (UTC year 10000)' => ['filter[to]=9999-12-31T23:59:59-12:00', 'filter.to'],
+    'filter to of the instant of year 0' => ['filter[to]=0000-01-01T00:00:00Z', 'filter.to'],
 ]);
+
+it('accepts the first day of UTC year 1 as a lower bound and the last day of year 9999 as an upper bound', function (): void {
+    $entry = listEntryAt('2026-10-12T08:00:00Z', ['client_id' => ApiFixtures::client()->id]);
+
+    expect(listIds($this, 'filter[from]=0001-01-02'))->toBe([$entry->id])
+        ->and(listIds($this, 'filter[to]=9999-12-31'))->toBe([$entry->id])
+        ->and(listIds($this, 'filter[from]=9999-12-31'))->toBe([])
+        ->and(listIds($this, 'filter[to]=0001-01-02'))->toBe([]);
+});
 
 /**
  * Inserts the given number of finished entries that all share one start (and one creation time),
