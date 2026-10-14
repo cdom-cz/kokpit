@@ -33,6 +33,10 @@ return [
 
             Each token may send 120 read requests and 60 write requests a minute. Over the limit the API answers `429` with a `Retry-After` header; every response carries `X-RateLimit-Limit` and `X-RateLimit-Remaining`.
 
+            ## Lists and pagination
+
+            List endpoints are cursor paginated and answer `{"data": [...], "links": {...}, "meta": {...}}`. A page holds 50 items; ask for another size with `per_page` (1 to 200). To read the next page send the `meta.next_cursor` of the previous answer as `cursor`; when it is `null` there is no further page. The time entry list is newest first by start and breaks ties by id, so paging never skips or repeats an entry.
+
             ## Formats and errors
 
             - Instants are ISO 8601 with an offset, for example `2026-10-12T08:00:00+00:00`. Responses are in UTC.

@@ -6,12 +6,18 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Domain\Identity\ApiAbility;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Http\Requests\Api\V1\ListTimeEntriesRequest;
 use App\Http\Resources\Api\V1\TimeEntryResource;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Knuckles\Scribe\Attributes\Endpoint;
 use Knuckles\Scribe\Attributes\Group;
+use Knuckles\Scribe\Attributes\QueryParam;
 use Knuckles\Scribe\Attributes\Response;
 use Knuckles\Scribe\Attributes\ResponseField;
 use Knuckles\Scribe\Attributes\UrlParam;
+use Spatie\QueryBuilder\AllowedFilter;
+use Spatie\QueryBuilder\QueryBuilder;
 
 /**
  * Time entries of the Admin over the REST API.
@@ -26,6 +32,46 @@ use Knuckles\Scribe\Attributes\UrlParam;
 #[Response(ApiExamples::TOO_MANY_REQUESTS, 429, 'Too many requests for this token. Wait for the number of seconds in the Retry-After header; X-RateLimit-Limit and X-RateLimit-Remaining show the limit and what is left.')]
 final class TimeEntryController
 {
+    /**
+     * The filters of the list, `filter[<name>]`. The query-builder allow-list, the request rules and the
+     * generated documentation all read this one list.
+     */
+    public const array FILTERS = ['client'];
+
+    /**
+     * The columns the list can be sorted by; a leading `-` sorts descending.
+     */
+    public const array SORTS = ['started_at', 'created_at'];
+
+    #[Endpoint(
+        'List time entries',
+        'Requires ability `'.ApiAbility::TimeRead->value.'`. Returns the time entries newest first (by start), a page at a time. Follow `meta.next_cursor` with the `cursor` parameter until it is `null`. The entries carry no rate, price or amount.',
+    )]
+    #[QueryParam('filter[client]', 'string', 'Only entries of this client (UUID).', required: false, example: '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9')]
+    #[QueryParam('cursor', 'string', 'The `meta.next_cursor` of the previous page.', required: false, example: 'No-example')]
+    #[QueryParam('per_page', 'integer', 'Entries per page, 1 to 200. Default 50.', required: false, example: 50)]
+    #[QueryParam('sort', 'string', 'Sort by `started_at` (default, newest first as `-started_at`) or `created_at`; a leading `-` sorts descending.', required: false, example: '-started_at', enum: ['started_at', '-started_at', 'created_at', '-created_at'])]
+    #[Response(ApiExamples::TIME_ENTRY_LIST, 200, 'A page of time entries.')]
+    #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A filter, the page size, the cursor or the sort is not valid.')]
+    public function index(ListTimeEntriesRequest $request): AnonymousResourceCollection
+    {
+        $descending = str_starts_with($request->sortExpression(), '-');
+
+        $entries = QueryBuilder::for(TimeEntry::query()->with(['project', 'task']))
+            ->allowedFilters(
+                AllowedFilter::callback('client', static fn (Builder $query, mixed $value): Builder => $query->where('time_entries.client_id', $value)),
+            )
+            ->allowedSorts(...self::SORTS)
+            ->defaultSort('-started_at')
+            // The id breaks ties between entries that share a start, in the direction of the sort,
+            // so a cursor page never skips or repeats a row.
+            ->orderBy('time_entries.id', $descending ? 'desc' : 'asc')
+            ->cursorPaginate($request->perPage())
+            ->withQueryString();
+
+        return TimeEntryResource::collection($entries);
+    }
+
     #[Endpoint(
         'Show a time entry',
         'Requires ability `'.ApiAbility::TimeRead->value.'`. Returns one time entry by its UUID. The entry carries no rate, price or amount. `project_key` and `task_reference` are read-only. A running entry returns `null` for `ended_at` and `duration_seconds`; `project_id`, `project_key`, `task_id`, `task_reference`, `description` and `billed_at` are `null` when the entry has none.',

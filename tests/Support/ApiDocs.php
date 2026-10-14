@@ -161,8 +161,8 @@ final class ApiDocs
     /**
      * Documentation rules over the given routes, derived from the route table and the spec: a route is
      * documented with its method, the 401, 403 and 429 responses, the ability it requires, the status
-     * codes its method implies, the query parameters its controller declares (a FILTERS and a SORTS
-     * constant, the convention of the list controllers) and the Idempotency-Key header when it uses the
+     * codes its method implies, the query parameters its controller declares on a list route (a FILTERS and a
+     * SORTS constant, the convention of the list controllers) and the Idempotency-Key header when it uses the
      * EnsureIdempotency middleware. Returns one sentence per violation; an empty list means documented.
      *
      * @param  list<LaravelRoute>  $routes
@@ -223,7 +223,8 @@ final class ApiDocs
             }
 
             $controller = $route->getControllerClass();
-            if ($controller !== null && defined($controller.'::FILTERS')) {
+            // Only a collection route (GET without a path parameter) is a list; the detail route of the same controller has no filters.
+            if ($method === 'GET' && ! str_contains($route->uri(), '{') && $controller !== null && defined($controller.'::FILTERS')) {
                 $filters = constant($controller.'::FILTERS');
                 $wanted = ['cursor', 'per_page'];
                 foreach (is_array($filters) ? $filters : [] as $filter) {

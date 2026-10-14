@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\Route;
 
 // Reads: GET routes, ability time:read.
 Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeRead->value, 'throttle:api-read'])->group(function (): void {
+    Route::get('time-entries', [TimeEntryController::class, 'index'])
+        ->name('api.v1.time-entries.index');
     Route::get('time-entries/{timeEntry}', [TimeEntryController::class, 'show'])
         ->whereUuid('timeEntry')
         ->name('api.v1.time-entries.show');
