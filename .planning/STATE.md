@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-05-PLAN.md
-last_updated: "2026-10-14T19:46:19.813Z"
+stopped_at: Completed 08-06-PLAN.md
+last_updated: "2026-10-14T20:06:38.739Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: 404fc2c5fe4b7901f8e4d44bae046c3f56ba81da
+state_head: 467901b24bd458b95d0c4c6fa662a17d17bac45d
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 125
+  completed_plans: 126
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 6 of 22
+Plan: 7 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -187,6 +187,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P03 | 45 min | 2 tasks | 10 files |
 | Phase 08 P04 | 35min | 3 tasks | 12 files |
 | Phase 08 P05 | 8 min | 3 tasks | 6 files |
+| Phase 08 P06 | 19 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -437,6 +438,8 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-04: rates schedule 15/16/17 plus final 18 Prague, health warning 1 and error 2 working days, gap lookback 31 days, backfill from 2000-01-01 up to 3660 days live in config/kokpit.php rates
 - [Phase 08]: 08-05: weekends, holidays and outages resolve by lookup of the newest stored CNB list not after the day, never stored copies; a missing rate throws ExchangeRateMissing, never zero
 - [Phase 08]: 08-05: converted durations are one exact rational rounded once (Money::forDurationConverted); the converter has no role check, the fail-closed ExchangeRate scope gives a Partner ExchangeRateMissing
+- [Phase 08]: 08-06: work report page header and footer are a Dompdf page script class (WorkReportPageDecoration), unit-tested against a recording Canvas — pdftotext is absent from DDEV; isPhpEnabled stays off
+- [Phase 08]: 08-06: WorkReportSource::fromEntryIds takes one client's listed entries; period is first and last Prague day, project named only when shared — Phase 10 attaches the report for exactly the billed entries
 
 ### Pending Todos
 
@@ -483,6 +486,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T19:46:19.619Z
-Stopped at: Completed 08-05-PLAN.md
+Last session: 2026-10-14T20:06:32.798Z
+Stopped at: Completed 08-06-PLAN.md
 Resume file: None
