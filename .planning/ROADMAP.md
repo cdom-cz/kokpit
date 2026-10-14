@@ -29,7 +29,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Clients and Projects** - Clients, contacts, ARES lookup, Partner invitations, and projects with keys, billing terms and client visibility (completed 2026-10-09)
 - [x] **Phase 5: Tasks and Kanban** - Tasks and subtasks with per-project keys, comments, list filters, drag-and-drop boards and Partner task access (completed 2026-10-09)
 - [x] **Phase 6: Time Tracking** - Always-visible timer, manual entries, exact durations, billed locking, timesheet and project time totals (completed 2026-10-14)
-- [ ] **Phase 7: REST API** - Token-secured `/api/v1` for time entries (single and batch) and lookups with the same rules as the UI
+- [x] **Phase 7: REST API** - Token-secured `/api/v1` for time entries (single and batch) and lookups with the same rules as the UI (completed 2026-10-14)
 - [ ] **Phase 8: Exchange Rates and Reports** - Daily CNB rates, time and billing reports in client currency and CZK, exports, work report PDF and dashboard
 - [ ] **Phase 9: Documents and Finance** - Files on private S3 with Partner visibility rules, central document listing, and income/expense overview in CZK
 - [ ] **Phase 10: Invoicing** - Bill-from-time drafts, numbered immutable invoices, proformas and credit notes, PDF with QR, e-mail, manual payment and Partner invoice view
@@ -440,7 +440,7 @@ Plans:
   4. An API client resolves clients, projects and tasks by UUID, key and name through read-only lookups, and addresses a task by its `KEY-N`
   5. Excess requests receive a rate-limit response, and published OpenAPI documentation describes every endpoint
 
-**Plans:** 20/20 plans executed
+**Plans:** 20/20 plans complete
 
 Plans:
 **Wave 1**
@@ -617,7 +617,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Clients and Projects | 21/21 | Complete    | 2026-10-09 |
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
-| 7. REST API | 20/20 | In Progress | - |
+| 7. REST API | 20/20 | Complete    | 2026-10-14 |
 | 8. Exchange Rates and Reports | 0/0 | Not started | - |
 | 9. Documents and Finance | 0/0 | Not started | - |
 | 10. Invoicing | 0/0 | Not started | - |
