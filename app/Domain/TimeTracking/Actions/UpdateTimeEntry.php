@@ -25,6 +25,9 @@ use Illuminate\Validation\ValidationException;
  * through the cancel action of the billing). A KP001 from the guard trigger,
  * the writer-independent backstop, is translated to the same message.
  *
+ * `external` (D-15) follows the same rule: absent keeps, null clears, an object replaces the stored
+ * one whole, nothing is merged. It is not in the activity log.
+ *
  * Context: the three ids are checked again only when one of them changes, so
  * the description of an entry whose task was archived later still saves. A
  * changed context goes through the rules of a start (TimeEntryInput::context).
@@ -42,7 +45,7 @@ use Illuminate\Validation\ValidationException;
  * Lock order: the task, project and client rows FOR SHARE (a changed context
  * only), after the entry row FOR UPDATE.
  *
- * @phpstan-type EntryChanges array{client_id?: mixed, project_id?: mixed, task_id?: mixed, description?: mixed, started_at?: mixed, ended_at?: mixed, billable?: mixed}
+ * @phpstan-type EntryChanges array{client_id?: mixed, project_id?: mixed, task_id?: mixed, description?: mixed, started_at?: mixed, ended_at?: mixed, billable?: mixed, external?: mixed}
  */
 final class UpdateTimeEntry
 {
@@ -59,9 +62,10 @@ final class UpdateTimeEntry
         Gate::forUser($actor)->authorize('update', $entry);
 
         $description = array_key_exists('description', $data) ? TimeEntryInput::description($data['description']) : null;
+        $external = array_key_exists('external', $data) ? TimeEntryInput::external($data['external']) : null;
 
         try {
-            return DB::transaction(function () use ($entry, $data, $description): TimeEntry {
+            return DB::transaction(function () use ($entry, $data, $description, $external): TimeEntry {
                 $locked = TimeEntry::query()->whereKey($entry->getKey())->lockForUpdate()->firstOrFail();
 
                 if ($locked->billing_state === BillingState::Billed) {
@@ -82,6 +86,11 @@ final class UpdateTimeEntry
 
                 if (array_key_exists('description', $data)) {
                     $locked->description = $description;
+                }
+
+                // The optional import object (D-15): an absent key keeps it, null clears it, an object replaces it whole.
+                if (array_key_exists('external', $data)) {
+                    $locked->forceFill(['external' => $external]);
                 }
 
                 if (is_bool($data['billable'] ?? null)) {
