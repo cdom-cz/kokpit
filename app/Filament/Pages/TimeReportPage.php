@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages;
 
+use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Reports\Enums\ReportExportFormat;
@@ -11,6 +12,8 @@ use App\Domain\Reports\Jobs\BuildReportExport;
 use App\Domain\Reports\Models\ReportExport;
 use App\Domain\Reports\ReportFilters;
 use App\Domain\Reports\TimeReport;
+use App\Domain\Reports\WorkReport\WorkReportPdf;
+use App\Domain\Reports\WorkReport\WorkReportSource;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Database\CzechCollation;
@@ -25,6 +28,8 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Livewire\Attributes\Url;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 /**
  * The time report "Report času": where the time went and what it is worth, per client, project and task, with the
@@ -38,8 +43,10 @@ use Livewire\Attributes\Url;
  * request and SPA navigation shows the stock progress bar while a slow period loads.
  *
  * The header holds the export menu "Exportovat report" and the link "Exporty" to the list of finished exports
- * (RE-03, D-09). An export item records the request for the current filters, queues the build and answers with
- * the info toast; the file is built in the background and announced in the bell.
+ * (RE-03, D-09). A table export item records the request for the current filters, queues the build and answers
+ * with the info toast; the file is built in the background and announced in the bell. The item "Pracovní výkaz
+ * PDF" exists only while a client is chosen and downloads the work report of that client, project and period at
+ * once (D-10).
  */
 #[AccessRule(Audience::AdminOnly, reason: 'The time report shows measured time, rates and amounts, which are closed to Partners.')]
 class TimeReportPage extends Page
@@ -102,6 +109,11 @@ class TimeReportPage extends Page
                 Action::make('exportXlsx')
                     ->label(__('kokpit.report.export.xlsx'))
                     ->action(fn () => $this->queueExport(ReportExportFormat::Xlsx)),
+                // Rendered only with a client (UI-SPEC B1): hidden, never disabled.
+                Action::make('workReport')
+                    ->label(__('kokpit.report.export.pdf'))
+                    ->visible(fn (): bool => $this->filters()->clientId !== null)
+                    ->action(fn (): ?StreamedResponse => $this->downloadWorkReport()),
             ])
                 ->label(__('kokpit.report.export.group'))
                 ->icon(Heroicon::OutlinedArrowDownTray)
@@ -138,6 +150,62 @@ class TimeReportPage extends Page
             ->title(__('kokpit.exports.queued.title'))
             ->body(__('kokpit.exports.queued.body'))
             ->send();
+    }
+
+    /**
+     * Renders the work report of the chosen client, project and period in the invoice language of the client
+     * and offers it as a download (D-10). The PDF is built in full before anything is sent, so a failure leaves
+     * no partial file: it is reported to the log, the Admin sees the fixed danger toast and no exception text.
+     * The access rule is asked again on the action request.
+     */
+    private function downloadWorkReport(): ?StreamedResponse
+    {
+        abort_unless(static::canAccess(), 403);
+
+        $filters = $this->filters();
+
+        if ($filters->clientId === null) {
+            return null;
+        }
+
+        try {
+            $language = Client::query()->withTrashed()->findOrFail($filters->clientId)->invoice_language;
+            $now = TimerClock::now();
+            $pdf = app(WorkReportPdf::class)->render(
+                WorkReportSource::forPeriod($filters->clientId, $filters->from, $filters->to, $filters->projectId, $now),
+                $language,
+                $now,
+            );
+        } catch (Throwable $exception) {
+            report($exception);
+
+            Notification::make()
+                ->danger()
+                ->title(__('kokpit.report.export.pdf_failed.title'))
+                ->body(__('kokpit.report.export.pdf_failed.body'))
+                ->send();
+
+            return null;
+        }
+
+        return response()->streamDownload(
+            static function () use ($pdf): void {
+                echo $pdf;
+            },
+            self::workReportFileName($language, $filters),
+            ['Content-Type' => 'application/pdf'],
+        );
+    }
+
+    /**
+     * The generated name of the work report file: a fixed word per language and the two ISO days of the period,
+     * `pracovni-vykaz-2026-09-01_2026-09-30.pdf`. No user text reaches it (the days are validated by the filters).
+     */
+    private static function workReportFileName(InvoiceLanguage $language, ReportFilters $filters): string
+    {
+        $prefix = $language === InvoiceLanguage::English ? 'work-report' : 'pracovni-vykaz';
+
+        return $prefix.'-'.$filters->from.'_'.$filters->to.'.pdf';
     }
 
     /**

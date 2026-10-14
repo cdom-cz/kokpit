@@ -13,6 +13,7 @@ use App\Filament\Pages\TimeReportPage;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Filament\Facades\Filament;
+use Filament\Notifications\Notification;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -192,15 +193,15 @@ describe('a failure', function (): void {
             ->set('client', $this->client->id)
             ->set('period', 'last_month')
             ->callAction('workReport')
-            ->assertNotified('Pracovní výkaz se nepodařilo vytvořit')
+            ->assertNotified(
+                Notification::make()
+                    ->danger()
+                    ->title('Pracovní výkaz se nepodařilo vytvořit')
+                    ->body('Zkuste to znovu. Pokud chyba přetrvá, zkuste jiné období.'),
+            )
             ->assertNoFileDownloaded();
 
-        $notifications = collect(session('filament.notifications', []));
-        $body = $notifications->firstWhere('title', 'Pracovní výkaz se nepodařilo vytvořit');
-
-        expect($body['body'] ?? null)->toBe('Zkuste to znovu. Pokud chyba přetrvá, zkuste jiné období.')
-            ->and($body['status'] ?? null)->toBe('danger')
-            ->and(json_encode($notifications->all(), JSON_THROW_ON_ERROR))->not->toContain($detail)
+        expect(json_encode(session('filament.notifications', []), JSON_THROW_ON_ERROR))->not->toContain($detail)
             ->and(data_get($page->effects, 'download'))->toBeNull();
     });
 });
