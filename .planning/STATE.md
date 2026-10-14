@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-12-PLAN.md
-last_updated: "2026-10-14T21:14:04.159Z"
+stopped_at: Completed 08-13-PLAN.md
+last_updated: "2026-10-14T21:27:28.695Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: 26c70e447ae096867b8e48a2f4baf63854137a0a
+state_head: e8ea6e69f749abd0dfa4bdb2759ae17e55894115
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 132
+  completed_plans: 133
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 13 of 22
+Plan: 14 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -194,6 +194,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P10 | 30 min | 2 tasks | 10 files |
 | Phase 08 P11 | 10 min | 2 tasks | 3 files |
 | Phase 08 P12 | 25 min | 2 tasks | 5 files |
+| Phase 08 P13 | 18 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -455,6 +456,8 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-10: last rate date health lag is counted in Czech working days against the expected list date (today only from the final hour on a working day); error threshold is max(warning, error); never downloaded is Error; System page shows a dash for any empty value
 - [Phase 08]: 08-11: the exports download re-reads the row through the owner scope and re-checks isDownloadable() and the stored file at click time; an expired-after-render click is refused by Filament's server-side visibility (no file), a missing file shows the gone toast
 - [Phase 08]: 08-12: the export prune runs as system, deletes the private-disk file before the record (a failed delete is retried next day, a missing file is fine) and only ever deletes the stored path of an expired record
+- [Phase 08]: 08-13: the Czech currency name is a gray description under the ISO code, and the Staženo stat reads the fetched_at of the newest list, not the overall newest
+- [Phase 08]: 08-13: a manual download that inserted nothing for today after a lost race answers 'already stored', like the console command
 
 ### Pending Todos
 
@@ -501,6 +504,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T21:14:03.975Z
-Stopped at: Completed 08-12-PLAN.md
+Last session: 2026-10-14T21:27:28.473Z
+Stopped at: Completed 08-13-PLAN.md
 Resume file: None
