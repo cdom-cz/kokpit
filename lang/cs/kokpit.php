@@ -450,18 +450,116 @@ return [
             'alive' => 'Plánovač běží',
             'late' => 'Plánovač se dlouho nezapsal, pravděpodobně neběží',
         ],
+        // The detail of the last rate date slot; :count is the number of working days the newest list is behind.
+        'last_rate_date' => [
+            'ok' => 'Kurzy jsou aktuální.',
+            'warning' => '{1} Chybí kurzy za :count pracovní den.|[2,4] Chybí kurzy za :count pracovní dny.|[5,*] Chybí kurzy za :count pracovních dní.',
+            'error' => '{1} Kurzy chybí už :count pracovní den.|[2,4] Kurzy chybí už :count pracovní dny.|[5,*] Kurzy chybí už :count pracovních dní.',
+            'never' => 'Kurzy ještě nebyly staženy. Stáhněte je v přehledu Kurzy ČNB.',
+        ],
     ],
 
-    // The CNB rates area. The console and failure lines are written for the command and the download action;
-    // the rest is the UI-SPEC copywriting contract.
+    // The CNB rates area (EX-01, EX-02): the UI-SPEC copywriting contract, formal address. The console and
+    // failure lines and alert.body_none are planner-written in the same tone; they are not UI-SPEC surfaces.
     'rates' => [
+        'navigation' => 'Kurzy ČNB',
+        'model_label' => 'Kurz',
+        'plural_label' => 'Kurzy',
+
+        'stats' => [
+            'last_list' => 'Poslední kurzy',
+            'fetched_at' => 'Staženo :datetime',
+            'never' => 'Kurzy ještě nebyly staženy',
+            'status' => 'Stav',
+            'currencies' => 'Měn v seznamu',
+            'currencies_description' => 'Jednotka a kurz podle ČNB',
+        ],
+
+        'columns' => [
+            'date' => 'Datum',
+            'currency' => 'Měna',
+            'unit' => 'Jednotka',
+            'rate' => 'Kurz',
+            'fetched_at' => 'Staženo',
+        ],
+
+        'filters' => [
+            'date' => 'Datum',
+            'currency' => 'Měna',
+        ],
+
+        'empty' => [
+            'heading' => 'Zatím tu nejsou žádné kurzy',
+            'description' => 'Stáhněte první seznam tlačítkem Stáhnout dnešní kurzy. Kurzy se pak stahují samy každý pracovní den odpoledne.',
+        ],
+
+        'empty_day' => [
+            'heading' => 'Pro tento den ČNB kurzy nevyhlásila',
+            'description' => 'Platí poslední vyhlášené kurzy ze dne :date.',
+        ],
+
+        'actions' => [
+            'download' => 'Stáhnout dnešní kurzy',
+            'backfill' => 'Doplnit historii',
+        ],
+
+        'download' => [
+            'stored' => [
+                'title' => 'Kurzy byly staženy',
+                'body' => 'Platnost ke dni :date, :count měn.',
+            ],
+            'already_stored' => [
+                'title' => 'Dnešní kurzy už jsou stažené.',
+                'body' => 'Platnost ke dni :date.',
+            ],
+            'not_published' => [
+                'title' => 'Nové kurzy zatím nejsou k dispozici.',
+                'body' => 'Poslední platné kurzy jsou ze dne :date. ČNB je vyhlašuje v pracovní dny po 14:30.',
+            ],
+            'failed' => [
+                'title' => 'Kurzy se nepodařilo stáhnout',
+                'body' => 'Server ČNB neodpovídá nebo vrátil neplatná data. Zkuste to později. Do té doby se používají poslední známé kurzy.',
+            ],
+        ],
+
+        'backfill' => [
+            'heading' => 'Doplnit historii kurzů',
+            'from' => 'Od',
+            'to' => 'Do',
+            'helper' => 'Víkendy a svátky se stahovat nemusí, platí pro ně poslední vyhlášený kurz.',
+            'submit' => 'Doplnit historii',
+            'cancel' => 'Nedoplňovat',
+            'queued' => [
+                'title' => 'Doplnění historie je ve frontě',
+                'body' => 'Zpracuje se na pozadí. Výsledek uvidíte v přehledu kurzů.',
+            ],
+            'errors' => [
+                'order' => 'Datum Od nesmí být později než Do.',
+                'earliest' => 'Nejdřívější možné datum je 1. 1. 2000.',
+                'future' => 'Datum Do nemůže být v budoucnosti.',
+                'span' => 'Zvolené období je příliš dlouhé. Zvolte nejvýše :days dní.',
+            ],
+        ],
+
+        // The alert of the final attempt of the day (bell and e-mail): dates only, no URL, host or exception text.
+        'alert' => [
+            'title' => 'Kurzy ČNB se nepodařilo stáhnout',
+            'body' => 'Dnešní kurzy ČNB (:date) se ani po opakovaných pokusech nepodařilo stáhnout. Do doby, než se stáhnou, se používají poslední známé kurzy ze dne :last.',
+            // No list has ever been stored, so there is no last known date to name.
+            'body_none' => 'Dnešní kurzy ČNB (:date) se ani po opakovaných pokusech nepodařilo stáhnout. Zatím není uložen žádný seznam kurzů.',
+            'action' => 'Otevřít kurzy ČNB',
+        ],
+
         'console' => [
             'stored' => 'Kurzy ČNB byly staženy: platnost ke dni :date, :count měn.',
             'already_stored' => 'Kurzy ČNB za :date už jsou stažené.',
             'not_published' => 'ČNB nové kurzy zatím nevyhlásila. Poslední platné kurzy jsou ze dne :date.',
             'failed' => 'Kurzy ČNB se nepodařilo stáhnout: :reason',
             'status' => 'Stavový kód odpovědi: :status.',
+            'not_working_day' => 'Dnes není pracovní den, kurzy se nestahují.',
+            'healed' => 'Doplněno chybějících seznamů kurzů: :count.',
         ],
+
         'failure' => [
             'unavailable' => 'Server ČNB neodpovídá.',
             'rejected' => 'Server ČNB požadavek odmítl.',
