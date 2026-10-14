@@ -14,7 +14,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Sleep;
 use Tests\Support\Canary;
 use Tests\Support\CnbFixtures;
@@ -75,13 +74,10 @@ function rateAlertServes(string $validFor): void
 }
 
 /**
- * Gives the overview route a name the alert can resolve, as plan 08-13 will.
+ * The URL of the rates overview (plan 08-13), which the alert's action opens.
  */
 function rateAlertRoute(): string
 {
-    Route::get('/fictional/exchange-rates', static fn (): string => '')->name(RATE_ALERT_ROUTE);
-    Route::getRoutes()->refreshNameLookups();
-
     return route(RATE_ALERT_ROUTE);
 }
 
@@ -169,18 +165,6 @@ describe('the final run that could not download today\'s list', function (): voi
 
         expect(rateAlertBell($admin))->toHaveCount(1)
             ->and(rateAlertMails())->toHaveCount(1);
-    });
-
-    it('keeps the action out of the alert while the overview route does not exist', function (): void {
-        $admin = Canary::admin();
-        rateAlertAt('2026-10-14 18:00:00');
-        rateAlertDown(503);
-
-        Artisan::call('kokpit:rates:download', ['--final' => true]);
-
-        $data = rateAlertBellData(rateAlertBell($admin)->first());
-
-        expect($data['actions'] ?? [])->toBe([]);
     });
 });
 

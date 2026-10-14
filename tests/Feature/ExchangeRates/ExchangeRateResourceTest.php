@@ -11,8 +11,12 @@ use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Livewire\Livewire;
+use Tests\Support\ApiFixtures;
 use Tests\Support\Canary;
 use Tests\Support\CnbFixtures;
 
@@ -289,5 +293,231 @@ describe('the empty states', function (): void {
             ->assertSee('Zatím tu nejsou žádné kurzy')
             ->assertSee('Stáhněte první seznam tlačítkem Stáhnout dnešní kurzy. Kurzy se pak stahují samy každý pracovní den odpoledne.')
             ->assertActionVisible('downloadToday');
+    });
+});
+
+/**
+ * The CNB host answers every request with the given status and a canary body.
+ */
+function rateResourceDown(int $status, string $body): void
+{
+    Http::fake(['*' => Http::response($body, $status)]);
+}
+
+/**
+ * How many rows the stored lists hold, read in the system context.
+ */
+function rateResourceCount(): int
+{
+    return app(PartnerContext::class)->runAsSystem(static fn (): int => ExchangeRate::query()->count());
+}
+
+/**
+ * The navigation as `group/label` strings for the signed-in user.
+ *
+ * @return list<string>
+ */
+function rateResourceNavigation(): array
+{
+    return collect(Filament::getNavigation())
+        ->flatMap(static fn ($group): array => $group->getItems()->map(static fn ($item): string => $group->getLabel().'/'.$item->getLabel())->all())
+        ->values()
+        ->all();
+}
+
+describe('every outcome of the download', function (): void {
+    it('says the list is already stored and makes no request', function (): void {
+        rateResourceStore('2026-10-14');
+        Http::fake();
+
+        Livewire::test(ListExchangeRates::class)
+            ->callAction('downloadToday')
+            ->assertNotified(
+                Notification::make()->info()->title('Dnešní kurzy už jsou stažené.')->body('Platnost ke dni 14. 10. 2026.'),
+            );
+
+        Http::assertNothingSent();
+        expect(rateResourceCount())->toBe(1);
+    });
+
+    it('says the list is already stored when a concurrent run stored it during the request', function (): void {
+        // The rows appear between the stored-day check and the insert, so this run inserts nothing.
+        Http::fake(static function (): mixed {
+            rateResourceStore('2026-10-14');
+
+            return Http::response(CnbFixtures::dailyJson('2026-10-14', [['currencyCode' => 'EUR', 'amount' => 1, 'rate' => '25.125']]), 200, ['Content-Type' => 'application/json']);
+        });
+
+        Livewire::test(ListExchangeRates::class)
+            ->callAction('downloadToday')
+            ->assertNotified(
+                Notification::make()->info()->title('Dnešní kurzy už jsou stažené.')->body('Platnost ke dni 14. 10. 2026.'),
+            );
+    });
+
+    it('says the CNB has no newer list yet and names the list that applies', function (): void {
+        // The CNB still answers Tuesday's list at noon on Wednesday.
+        rateResourceServes('2026-10-13');
+
+        Livewire::test(ListExchangeRates::class)
+            ->callAction('downloadToday')
+            ->assertNotified(
+                Notification::make()
+                    ->info()
+                    ->title('Nové kurzy zatím nejsou k dispozici.')
+                    ->body('Poslední platné kurzy jsou ze dne 13. 10. 2026. ČNB je vyhlašuje v pracovní dny po 14:30.'),
+            );
+    });
+
+    it('answers a failure with the fixed danger text, stores nothing and alerts nobody', function (): void {
+        $canary = Canary::canary('cnb-body');
+        rateResourceDown(503, $canary);
+
+        $page = Livewire::test(ListExchangeRates::class)
+            ->callAction('downloadToday')
+            ->assertNotified(
+                Notification::make()
+                    ->danger()
+                    ->title('Kurzy se nepodařilo stáhnout')
+                    ->body('Server ČNB neodpovídá nebo vrátil neplatná data. Zkuste to později. Do té doby se používají poslední známé kurzy.'),
+            );
+
+        // The toast is the fixed copy: no status code, no host, no body of the response.
+        $page->assertDontSee($canary)->assertDontSee('503')->assertDontSee('cnb.cz');
+
+        expect(rateResourceCount())->toBe(0)
+            ->and(DB::table('notifications')->where('notifiable_id', $this->admin->getKey())->count())->toBe(0)
+            ->and(Mail::getSymfonyTransport()->messages())->toHaveCount(0);
+    });
+
+    it('answers an invalid payload with the same danger text', function (): void {
+        Http::fake(['*' => Http::response('{"rates":[]}', 200, ['Content-Type' => 'application/json'])]);
+
+        Livewire::test(ListExchangeRates::class)
+            ->callAction('downloadToday')
+            ->assertNotified(
+                Notification::make()
+                    ->danger()
+                    ->title('Kurzy se nepodařilo stáhnout')
+                    ->body('Server ČNB neodpovídá nebo vrátil neplatná data. Zkuste to později. Do té doby se používají poslední známé kurzy.'),
+            );
+
+        expect(rateResourceCount())->toBe(0);
+    });
+
+    it('is still allowed on a Saturday and answers with the not-yet-published text', function (): void {
+        // Saturday 2026-10-10: the CNB answers Friday's list, and the action is never gated by the calendar.
+        $this->travelTo(CarbonImmutable::parse('2026-10-10 10:00:00', 'UTC'));
+        rateResourceServes('2026-10-09');
+
+        Livewire::test(ListExchangeRates::class)
+            ->callAction('downloadToday')
+            ->assertNotified(
+                Notification::make()
+                    ->info()
+                    ->title('Nové kurzy zatím nejsou k dispozici.')
+                    ->body('Poslední platné kurzy jsou ze dne 9. 10. 2026. ČNB je vyhlašuje v pracovní dny po 14:30.'),
+            );
+
+        Http::assertSentCount(1);
+    });
+
+    it('asks the CNB once per click when nothing is stored for today', function (): void {
+        rateResourceServes('2026-10-14');
+
+        Livewire::test(ListExchangeRates::class)->callAction('downloadToday');
+
+        Http::assertSentCount(1);
+    });
+});
+
+describe('the alert link', function (): void {
+    it('leads the final-run alert to this overview', function (): void {
+        Http::fake(['*' => Http::response('down', 503)]);
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 16:00:00', 'UTC'));
+        rateResourceStore('2026-10-13');
+
+        $exit = Artisan::call('kokpit:rates:download', ['--final' => true]);
+
+        $row = DB::table('notifications')->where('notifiable_id', $this->admin->getKey())->first();
+        $data = json_decode((string) $row->data, true, 512, JSON_THROW_ON_ERROR);
+
+        expect($exit)->toBe(1)
+            ->and($data['actions'][0]['label'])->toBe('Otevřít kurzy ČNB')
+            ->and($data['actions'][0]['url'])->toBe(ExchangeRateResource::getUrl('index'));
+    });
+});
+
+describe('who may use it', function (): void {
+    it('refuses a Partner the page, its Livewire component and the stats widget', function (): void {
+        $this->actingAs(Canary::partnerFor(ApiFixtures::client()->id));
+
+        $this->get(ExchangeRateResource::getUrl('index'))->assertForbidden();
+
+        Livewire::test(ListExchangeRates::class)->assertForbidden();
+        Livewire::test(ExchangeRateStats::class)->assertForbidden();
+    });
+
+    it('refuses a forged download call by a Partner on a page mounted by the Admin', function (): void {
+        rateResourceServes('2026-10-14');
+        $partner = Canary::partnerFor(ApiFixtures::client()->id);
+
+        foreach ([
+            ['mountAction', ['downloadToday']],
+            ['callMountedAction', []],
+        ] as [$method, $arguments]) {
+            $this->actingAs($this->admin);
+            $page = Livewire::test(ListExchangeRates::class);
+            $this->actingAs($partner);
+
+            $page->call($method, ...$arguments)->assertForbidden();
+        }
+
+        Http::assertNothingSent();
+        expect(rateResourceCount())->toBe(0);
+    });
+
+    it('sends a guest to the login', function (): void {
+        auth()->logout();
+
+        $this->get(ExchangeRateResource::getUrl('index'))->assertRedirect();
+    });
+
+    it('shows the Admin the item in the group Správa', function (): void {
+        expect(rateResourceNavigation())->toContain('Správa/Kurzy ČNB')
+            ->and(ExchangeRateResource::getNavigationSort())->toBe(84);
+    });
+
+    it('shows a Partner no navigation item', function (): void {
+        $this->actingAs(Canary::partnerFor(ApiFixtures::client()->id));
+
+        expect(rateResourceNavigation())->not->toContain('Správa/Kurzy ČNB');
+    });
+});
+
+describe('immutable lists and no calculator', function (): void {
+    it('has no create, edit, delete or bulk action and no other page', function (): void {
+        rateResourceTwoLists();
+
+        $page = Livewire::test(ListExchangeRates::class);
+        $table = $page->instance()->getTable();
+
+        expect(array_keys(ExchangeRateResource::getPages()))->toBe(['index'])
+            ->and(ExchangeRateResource::canCreate())->toBeFalse()
+            ->and($table->getBulkActions())->toBe([])
+            ->and($table->getFlatRecordActions())->toBe([])
+            ->and($table->getHeaderActions())->toBe([])
+            ->and(array_map(static fn ($action) => $action->getName(), $page->instance()->getCachedHeaderActions()))->toBe(['downloadToday']);
+    });
+
+    it('is not globally searchable and has no conversion calculator', function (): void {
+        rateResourceTwoLists();
+
+        expect(ExchangeRateResource::canGloballySearch())->toBeFalse();
+
+        $this->get(ExchangeRateResource::getUrl('index'))
+            ->assertOk()
+            ->assertDontSee('Přepočet')
+            ->assertDontSee('Převést');
     });
 });
