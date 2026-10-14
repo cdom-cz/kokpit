@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-10-14T18:58:51.240Z"
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-10-14T19:11:16.552Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: e02929401122b5f4a6258d2554279e51704a7db0
+state_head: ed62ddcf542ae88fdfb7da1b3d52c0dfd42d102b
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 121
+  completed_plans: 122
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 2 of 22
+Plan: 3 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -183,6 +183,7 @@ Progress: [██████░░░░] 58%
 | Phase 07 P19 | 45 min | 2 tasks | 8 files |
 | Phase 07 P20 | 3 min | 2 tasks | 2 files |
 | Phase 08 P01 | 16 min | 2 tasks | 8 files |
+| Phase 08 P02 | 12 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -425,6 +426,8 @@ Recent decisions affecting current work:
 - [Quick 261014-o13]: a running time entry that has run longer than kokpit.time.max_running_hours (48) is ended every hour by kokpit:time:end-overrun (kokpit-end-overrun-timers, onOneServer) through EndOverrunTimers at started_at + 48 h, never at now, so the stored duration is capped and cannot overflow the integer column; narrows Phase 06 D-07 on the owner's request, the 12-hour bell notice is unchanged
 - [Phase 07]: 07-20: empty-state newToken opens createToken with replaceMountedAction (not a nested mount) and a canAccess guard; ListApiTokens unchanged
 - [Phase 08]: 08-01: exchange_rates holds one row per currency and published CNB day with the unit amount; weekends and holidays are never stored, resolved by lookup (08-05); lists are immutable (insert-or-ignore); ExchangeRate is Admin-only with a canary fixture whose needle is the published day
+- [Phase 08]: 08-02: Partner widgets (PartnerTasks, PartnerProjects) narrow the PartnerAllowed declaration with canView() to a non-Admin Partner with a client; a forged Admin mount answers 403
+- [Phase 08]: 08-02: Partner dashboard keeps the stock empty state only when the Partner has neither an open task nor a visible project; otherwise each empty widget shows its own empty state
 
 ### Pending Todos
 
@@ -471,6 +474,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T18:58:51.033Z
-Stopped at: Completed 08-01-PLAN.md
+Last session: 2026-10-14T19:11:16.346Z
+Stopped at: Completed 08-02-PLAN.md
 Resume file: None
