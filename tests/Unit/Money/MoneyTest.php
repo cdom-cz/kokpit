@@ -268,3 +268,56 @@ it('knows exactly the upper-case ISO codes', function () {
 it('refuses 12,345 CZK because a third decimal would need rounding', function () {
     Money::fromMajor('12,345', 'CZK');
 })->throws(InvalidArgumentException::class, 'more decimals');
+
+it('prices a converted duration from one exact rational', function (int $rateMinor, string $rateCurrency, int $seconds, string $decimalRate, int $unit, int $expectedMinor) {
+    $converted = Money::forDurationConverted(Money::ofMinor($rateMinor, $rateCurrency), $seconds, $decimalRate, 'CZK', $unit);
+
+    expect($converted->minor)->toBe($expectedMinor)
+        ->and($converted->currency)->toBe('CZK');
+})->with([
+    'an hour and a half at 80.00 EUR per hour' => [8000, 'EUR', 5400, '25.125', 1, 301500],
+    'a single second still counts' => [1000, 'EUR', 1, '25.125', 1, 7],
+    'a rate quoted per 100 units' => [5000, 'JPY', 3600, '15.064', 100, 75320],
+    'zero seconds is zero' => [8000, 'EUR', 0, '25.125', 1, 0],
+]);
+
+it('rounds a converted duration once, not once for the client currency and again for CZK (Pitfall 6)', function () {
+    $rate = Money::ofMinor(10000, 'EUR');
+
+    // 100.00 EUR per hour for 61 s is 1.69444 EUR; at 25.125 that is 42.5729 CZK, so 4257 minor.
+    // Rounding the client amount first gives 1.69 EUR, and 1.69 * 25.125 is 42.46125 CZK, so 4246 minor.
+    $once = Money::forDurationConverted($rate, 61, '25.125', 'CZK');
+    $twice = Money::forDuration($rate, 61)->convert('25.125', 'CZK');
+
+    expect($once->minor)->toBe(4257)
+        ->and($twice->minor)->toBe(4246);
+});
+
+it('refuses a bad rate, unit amount, target currency or negative seconds for a converted duration', function (string $rate, int $unit, string $target, int $seconds) {
+    Money::forDurationConverted(Money::ofMinor(8000, 'EUR'), $seconds, $rate, $target, $unit);
+})->with([
+    'zero rate' => ['0', 1, 'CZK', 60],
+    'exponent rate' => ['1e2', 1, 'CZK', 60],
+    'negative rate' => ['-1', 1, 'CZK', 60],
+    'decimal comma' => ['25,125', 1, 'CZK', 60],
+    'unit amount zero' => ['25.125', 0, 'CZK', 60],
+    'unknown target currency' => ['25.125', 1, 'XX', 60],
+    'negative seconds' => ['25.125', 1, 'CZK', -1],
+])->throws(InvalidArgumentException::class);
+
+it('states the effective hourly rate of a fixed price, rounded once', function (int $priceMinor, string $currency, int $seconds, int $expectedMinor) {
+    $rate = Money::hourlyRateFor(Money::ofMinor($priceMinor, $currency), $seconds);
+
+    expect($rate->minor)->toBe($expectedMinor)
+        ->and($rate->currency)->toBe($currency);
+})->with([
+    '50000.00 CZK over 37 hours' => [5000000, 'CZK', 133200, 135135],
+    '1000.00 EUR over two hours' => [100000, 'EUR', 7200, 50000],
+]);
+
+it('refuses an effective hourly rate over no time', function (int $seconds) {
+    Money::hourlyRateFor(Money::ofMinor(100000, 'EUR'), $seconds);
+})->with([
+    'zero seconds' => [0],
+    'negative seconds' => [-60],
+])->throws(InvalidArgumentException::class);
