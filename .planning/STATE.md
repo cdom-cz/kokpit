@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 07
-current_phase_name: rest-api
+current_phase_name: REST API
 status: executing
-stopped_at: Completed 07-12-PLAN.md
-last_updated: "2026-10-14T13:08:58.614Z"
+stopped_at: Completed 07-13-PLAN.md
+last_updated: "2026-10-14T13:15:10.597Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 07 execution started
-state_head: 56a1f59e509a8189e9ca3cc604380e2490641e37
+state_head: eb6db9e2122e29e2dea11c888b679b6bbd13f1ba
 progress:
   total_phases: 12
   completed_phases: 6
   total_plans: 118
-  completed_plans: 112
+  completed_plans: 113
   percent: 50
 ---
 
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 ## Current Position
 
-Phase: 07 (rest-api) — READY TO EXECUTE
-Plan: 12 of 12
+Phase: 07 (REST API) — EXECUTING
+Plan: 2 of 18
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 07 execution started
 
@@ -173,6 +173,7 @@ Progress: [█████░░░░░] 50%
 | Phase 07 P10 | 30min | 2 tasks | 8 files |
 | Phase 07 P11 | 40 min | 3 tasks | 8 files |
 | Phase 07 P12 | 15 min | 3 tasks | 12 files |
+| Phase 07 P13 | 25 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -402,6 +403,7 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-11: batch answers 201 / 207 / 422 with {saved, failed, errors:[{index, errors}]}, 422 adds message first; item limit is a closure rule so Scribe adds no rule sentence
 - [Phase 07]: Plan 07-12: docs generation is the plain last run.initCommands entry on every container; a failing generation fails the deploy (D-17)
 - [Phase 07]: Plan 07-12: public docs are generated with the app locale switched to English for scribe:generate only; API answers stay Czech, wire contract unchanged
+- [Phase 07]: 07-13: interval bound is abs(to - start) <= 2147483647 s in TimeEntryInput::assertDurationFits, shared by UpdateTimeEntry, CreateTimeEntry and TimeEntryPayload; running entries measured against TimerClock::now()
 
 ### Pending Todos
 
@@ -447,6 +449,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T11:49:30.581Z
-Stopped at: Completed 07-12-PLAN.md
+Last session: 2026-10-14T13:15:10.422Z
+Stopped at: Completed 07-13-PLAN.md
 Resume file: None
