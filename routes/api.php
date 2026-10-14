@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Identity\ApiAbility;
+use App\Http\Controllers\Api\V1\ClientController;
+use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TimeEntryController;
 use Illuminate\Support\Facades\Route;
@@ -27,6 +29,14 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeRead->value, 'th
 
     // Lookups (D-12): read-only; the reference is checked by the resolver, so a malformed one answers the
     // same Czech 404 as an unknown one instead of a router 404.
+    Route::get('clients', [ClientController::class, 'index'])
+        ->name('api.v1.clients.index');
+    Route::get('clients/{client}', [ClientController::class, 'show'])
+        ->name('api.v1.clients.show');
+    Route::get('projects', [ProjectController::class, 'index'])
+        ->name('api.v1.projects.index');
+    Route::get('projects/{project}', [ProjectController::class, 'show'])
+        ->name('api.v1.projects.show');
     Route::get('tasks/{task}', [TaskController::class, 'show'])
         ->name('api.v1.tasks.show');
 });

@@ -24,6 +24,17 @@ use Knuckles\Scribe\Attributes\UrlParam;
 #[Response(ApiExamples::TOO_MANY_REQUESTS, 429, 'Too many requests for this token. Wait for the number of seconds in the Retry-After header; X-RateLimit-Limit and X-RateLimit-Remaining show the limit and what is left.')]
 final class TaskController
 {
+    /**
+     * The filters of the list, `filter[<name>]`; `name` matches the title. The query-builder allow-list, the
+     * request rules and the generated documentation all read this one list.
+     */
+    public const array FILTERS = ['name', 'project'];
+
+    /**
+     * The columns the list can be sorted by; a leading `-` sorts descending.
+     */
+    public const array SORTS = ['title', 'created_at'];
+
     #[Endpoint(
         'Show a task',
         'Requires ability `'.ApiAbility::TimeRead->value.'`. Returns one task by its UUID or its reference, for example `DEMO-1`. Archived tasks, tasks of archived projects and tasks of archived clients are not found. The answer carries no description, dates or billing value.',
