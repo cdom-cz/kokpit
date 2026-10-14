@@ -237,3 +237,113 @@ it('describes validation rules in English, with no raw translation placeholder l
     expect($properties['duration_seconds']['description'])->toContain('Must be at least 1.')
         ->and($properties['duration_seconds']['description'])->toContain('Must not be greater than 2147483647.');
 });
+
+/**
+ * The problems of the limits the public docs state, compared with the `kokpit.api` configuration (IN-02).
+ *
+ * Every sentence of the intro that names a number is matched and its number compared with the configured one;
+ * a sentence that cannot be found is a problem too, so a reworded intro cannot silently skip the check.
+ *
+ * @param  list<string>  $perPageDescriptions  the description of the per_page parameter of every list operation
+ * @param  array<string, mixed>  $api  the `kokpit.api` configuration array
+ * @return list<string>
+ */
+function documentedLimitProblems(string $intro, array $perPageDescriptions, array $api): array
+{
+    $configured = static function (string $path) use ($api): int {
+        $value = data_get($api, $path);
+        expect($value)->toBeInt();
+
+        return (int) $value;
+    };
+
+    $sentences = [
+        'kokpit.api.rate_limit.read' => '/(\d+) read requests/',
+        'kokpit.api.rate_limit.write' => '/(\d+) write requests/',
+        'kokpit.api.page_size.default' => '/A page holds (\d+) items/',
+        'kokpit.api.page_size.max' => '/`per_page` \(1 to (\d+)\)/',
+        'kokpit.api.batch_max_items' => '/records up to (\d+) entries/',
+        'kokpit.api.idempotency_ttl_hours' => '/kept for (\d+) hours/',
+    ];
+    $problems = [];
+
+    foreach ($sentences as $key => $pattern) {
+        $expected = $configured(substr($key, strlen('kokpit.api.')));
+
+        if (preg_match($pattern, $intro, $found) !== 1) {
+            $problems[] = "the intro has no sentence for {$key}";
+        } elseif ((int) $found[1] !== $expected) {
+            $problems[] = "{$key} is {$expected} but the intro says {$found[1]}";
+        }
+    }
+
+    // The batch limit is stated a second time, for the list that is refused.
+    if (preg_match('/more than (\d+), answers `422`/', $intro, $found) !== 1) {
+        $problems[] = 'the intro has no refusal sentence for kokpit.api.batch_max_items';
+    } elseif ((int) $found[1] !== $configured('batch_max_items')) {
+        $problems[] = "kokpit.api.batch_max_items is {$configured('batch_max_items')} but the intro refuses at {$found[1]}";
+    }
+
+    foreach ($perPageDescriptions as $description) {
+        if (! str_contains($description, '1 to '.$configured('page_size.max').'.')) {
+            $problems[] = "kokpit.api.page_size.max is {$configured('page_size.max')} but a per_page description says: {$description}";
+        }
+
+        if (! str_contains($description, 'Default '.$configured('page_size.default').'.')) {
+            $problems[] = "kokpit.api.page_size.default is {$configured('page_size.default')} but a per_page description says: {$description}";
+        }
+    }
+
+    return $problems;
+}
+
+/**
+ * The per_page descriptions of every documented GET list operation of the spec.
+ *
+ * @return list<string>
+ */
+function documentedPerPageDescriptions(): array
+{
+    $descriptions = [];
+
+    foreach (ApiDocs::apiRoutes() as $route) {
+        $operation = ApiDocs::method($route) === 'GET' ? ApiDocs::operation($route) : null;
+
+        foreach (is_array($operation) ? ($operation['parameters'] ?? []) : [] as $parameter) {
+            if (is_array($parameter) && ($parameter['name'] ?? null) === 'per_page' && is_string($parameter['description'] ?? null)) {
+                $descriptions[] = $parameter['description'];
+            }
+        }
+    }
+
+    return $descriptions;
+}
+
+it('states exactly the limits of config/kokpit.php in the intro and in every per_page description (IN-02)', function (): void {
+    $intro = config('scribe.intro_text');
+    $descriptions = documentedPerPageDescriptions();
+
+    expect($intro)->toBeString()
+        ->and($descriptions)->toHaveCount(4)
+        ->and(documentedLimitProblems((string) $intro, $descriptions, (array) config('kokpit.api')))->toBe([]);
+});
+
+it('reports a documented limit that differs from the configuration (the limits check can fail)', function (): void {
+    $intro = (string) config('scribe.intro_text');
+    $descriptions = documentedPerPageDescriptions();
+    $api = (array) config('kokpit.api');
+
+    $readChanged = $api;
+    $readChanged['rate_limit']['read'] = 121;
+
+    $maxChanged = $api;
+    $maxChanged['page_size']['max'] = 201;
+
+    $batchChanged = $api;
+    $batchChanged['batch_max_items'] = 101;
+
+    expect(documentedLimitProblems($intro, $descriptions, $readChanged))->toBe(['kokpit.api.rate_limit.read is 121 but the intro says 120'])
+        ->and(implode("\n", documentedLimitProblems($intro, $descriptions, $maxChanged)))->toContain('kokpit.api.page_size.max is 201')
+        ->and(implode("\n", documentedLimitProblems($intro, $descriptions, $batchChanged)))->toContain('kokpit.api.batch_max_items is 101')
+        ->and(documentedLimitProblems('A reworded intro.', $descriptions, $api))->toContain('the intro has no sentence for kokpit.api.rate_limit.read');
+});

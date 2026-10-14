@@ -23,6 +23,11 @@ use Symfony\Component\Yaml\Yaml;
  * the database unreachable and the base URL set to a placeholder, so the tests prove both that generation
  * needs no database and what the documented host is. It runs once per PHP process; the output lands in the
  * gitignored paths of the real application (spec in storage/app/private/scribe, view in resources/views/scribe).
+ *
+ * Side effects: the suite overwrites the real generated docs output (`storage/app/private/scribe`,
+ * `resources/views/scribe`, `public/vendor/scribe`, `.scribe`) with the example.com base URL, so after a test run a
+ * local `/docs` shows that host until `ddev exec php artisan scribe:generate` runs again. The suite must not run
+ * with `--parallel`: parallel processes would write the same files at the same time.
  */
 final class ApiDocs
 {
