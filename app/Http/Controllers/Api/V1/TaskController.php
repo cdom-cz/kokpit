@@ -6,11 +6,19 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Domain\Api\ReferenceResolver;
 use App\Domain\Identity\ApiAbility;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Tasks\Models\Task;
+use App\Http\Requests\Api\V1\ListLookupsRequest;
 use App\Http\Resources\Api\V1\TaskResource;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Knuckles\Scribe\Attributes\Endpoint;
 use Knuckles\Scribe\Attributes\Group;
+use Knuckles\Scribe\Attributes\QueryParam;
 use Knuckles\Scribe\Attributes\Response;
 use Knuckles\Scribe\Attributes\UrlParam;
+use Spatie\QueryBuilder\AllowedFilter;
+use Spatie\QueryBuilder\QueryBuilder;
 
 /**
  * Read-only lookup of tasks (D-12): the tasks an importer may write time against, found by UUID or `KEY-N`.
@@ -34,6 +42,43 @@ final class TaskController
      * The columns the list can be sorted by; a leading `-` sorts descending.
      */
     public const array SORTS = ['title', 'created_at'];
+
+    #[Endpoint(
+        'List tasks',
+        'Requires ability `'.ApiAbility::TimeRead->value.'`. Returns the tasks an entry can be recorded against (archived tasks and tasks of archived projects or clients are left out), newest first, a page at a time. Follow `meta.next_cursor` with the `cursor` parameter until it is `null`. A task carries no description, dates or billing value.',
+    )]
+    #[QueryParam('filter[name]', 'string', 'Only tasks whose title contains this text, ignoring case. A comma, a percent sign or an underscore is matched literally. A title finds a task; it never identifies one for a write, use the UUID or the reference.', required: false, example: 'ukáz')]
+    #[QueryParam('filter[project]', 'string', 'Only tasks of this project: its UUID or its key, for example `DEMO`. An unknown key matches no task.', required: false, example: 'DEMO')]
+    #[QueryParam('cursor', 'string', 'The `meta.next_cursor` of the previous page.', required: false, example: 'No-example')]
+    #[QueryParam('per_page', 'integer', 'Tasks per page, 1 to 200. Default 50.', required: false, example: 50)]
+    #[QueryParam('sort', 'string', 'Sort by `created_at` (default, newest first as `-created_at`) or `title`; a leading `-` sorts descending.', required: false, example: '-created_at', enum: ['created_at', '-created_at', 'title', '-title'])]
+    #[Response(LookupExamples::TASK_LIST, 200, 'A page of tasks.')]
+    #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A filter, the page size, the cursor or the sort is not valid.')]
+    public function index(ListLookupsRequest $request, ReferenceResolver $refs): AnonymousResourceCollection
+    {
+        $descending = str_starts_with($request->sortExpression(), '-');
+
+        $tasks = QueryBuilder::for(Task::query()->whereIn('tasks.project_id', Project::query()->selectable()->select('projects.id')))
+            ->allowedFilters(
+                // The name of the list is the title of a task.
+                AllowedFilter::partial('name', 'title'),
+                // A key that matches nothing narrows the list to nothing; it is not an error.
+                AllowedFilter::callback('project', static function (Builder $query, mixed $value) use ($refs): Builder {
+                    $id = is_string($value) ? $refs->projectId($value) : null;
+
+                    return $id === null ? $query->whereRaw('false') : $query->where('tasks.project_id', $id);
+                }),
+            )
+            ->allowedSorts(...self::SORTS)
+            ->defaultSort('-created_at')
+            // The id breaks ties between tasks that share the sorted value, in the direction of the sort,
+            // so a cursor page never skips or repeats a row.
+            ->orderBy('tasks.id', $descending ? 'desc' : 'asc')
+            ->cursorPaginate($request->perPage())
+            ->withQueryString();
+
+        return TaskResource::collection($tasks);
+    }
 
     #[Endpoint(
         'Show a task',

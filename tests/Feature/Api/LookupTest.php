@@ -3,9 +3,16 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Money\Money;
+use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Models\Task;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\ApiFixtures;
+use Tests\Support\Canary;
 
 /*
  * AP-04, D-12: read-only lookups of clients, projects and tasks, so an importer can resolve what it writes
@@ -230,4 +237,199 @@ it('sorts the lists by name when asked and keeps the default newest first', func
     expect(lookupIds($this, '/api/v1/clients?sort=name'))->toBe([$a->id, $b->id])
         ->and(lookupIds($this, '/api/v1/clients?sort=-name'))->toBe([$b->id, $a->id])
         ->and(lookupIds($this, '/api/v1/clients'))->toBe([$a->id, $b->id]);
+});
+
+/**
+ * A task with the given title in the project, written through the domain Action like the fixtures do.
+ */
+function lookupTask(Project $project, string $title): Task
+{
+    $admin = ApiFixtures::admin();
+
+    Auth::shouldUse('web');
+    Auth::guard('web')->setUser($admin);
+
+    try {
+        return app(CreateTask::class)->handle($admin, $project, ['title' => $title])->refresh();
+    } finally {
+        Auth::forgetGuards();
+    }
+}
+
+it('lists the tasks of selectable projects newest first and narrows them by project key or uuid', function (): void {
+    $client = ApiFixtures::client();
+    $demo = ApiFixtures::project($client, 'DEMO');
+    $other = ApiFixtures::project($client, 'OTHR');
+    $archivedProject = ApiFixtures::project($client, 'GONE');
+    $first = lookupTask($demo, 'Example first');
+    $second = lookupTask($other, 'Example second');
+    $third = lookupTask($demo, 'Example third');
+    $archivedTask = lookupTask($demo, 'Example archived');
+    $ofArchivedProject = lookupTask($archivedProject, 'Example hidden');
+    lookupArchive($archivedTask);
+    lookupArchive($archivedProject);
+
+    $all = lookupIds($this, '/api/v1/tasks');
+
+    expect($all)->toBe([$third->id, $second->id, $first->id])
+        ->and($all)->not->toContain($archivedTask->id, $ofArchivedProject->id)
+        ->and(lookupIds($this, '/api/v1/tasks?filter[project]=DEMO'))->toBe([$third->id, $first->id])
+        ->and(lookupIds($this, '/api/v1/tasks?filter[project]='.$other->id))->toBe([$second->id])
+        ->and(lookupIds($this, '/api/v1/tasks?filter[project]=NONE'))->toBe([])
+        ->and(lookupIds($this, '/api/v1/tasks?filter[project]=GONE'))->toBe([]);
+
+    $item = $this->withToken(lookupToken())->getJson('/api/v1/tasks?filter[project]=OTHR')->json('data.0');
+
+    expect($item)->toBe([
+        'id' => $second->id,
+        'project_id' => $other->id,
+        'reference' => 'OTHR-1',
+        'title' => 'Example second',
+        'status' => $second->status->value,
+        'priority' => $second->priority->value,
+    ]);
+});
+
+it('matches filter[name] as a case-insensitive part of the title and a percent sign literally', function (): void {
+    $project = ApiFixtures::project(ApiFixtures::client(), 'DEMO');
+    $match = lookupTask($project, 'Fiktivní úkol, první');
+    $percent = lookupTask($project, 'Example 100% done');
+    lookupTask($project, 'Example other');
+
+    expect(lookupIds($this, '/api/v1/tasks?filter[name]='.urlencode('ÚKOL')))->toBe([$match->id])
+        ->and(lookupIds($this, '/api/v1/tasks?filter[name]='.urlencode('úkol, první')))->toBe([$match->id])
+        ->and(lookupIds($this, '/api/v1/tasks?filter[name]='.urlencode('%')))->toBe([$percent->id])
+        ->and(lookupIds($this, '/api/v1/tasks?filter[name]='.urlencode('xyz')))->toBe([])
+        ->and(lookupIds($this, '/api/v1/tasks?filter[name]=example&filter[project]=DEMO'))->toHaveCount(2);
+});
+
+it('pages 120 tasks that share one creation time in 50, 50 and 20 without a skipped or repeated task', function (): void {
+    $project = ApiFixtures::project(ApiFixtures::client(), 'DEMO');
+    $admin = ApiFixtures::admin();
+
+    app(PartnerContext::class)->runAsSystem(static function () use ($project, $admin): void {
+        Task::factory()->count(120)->create(['project_id' => $project->id, 'assignee_id' => $admin->id, 'requester_id' => $admin->id]);
+    });
+    DB::table('tasks')->update(['created_at' => '2026-10-01 10:00:00']);
+
+    $token = lookupToken();
+    $seen = [];
+    $sizes = [];
+    $url = '/api/v1/tasks';
+
+    while ($url !== null) {
+        $page = $this->withToken($token)->getJson($url)->assertOk();
+        $sizes[] = count($page->json('data'));
+        array_push($seen, ...array_column($page->json('data'), 'id'));
+        $cursor = $page->json('meta.next_cursor');
+        $url = is_string($cursor) ? '/api/v1/tasks?cursor='.urlencode($cursor) : null;
+    }
+
+    expect($sizes)->toBe([50, 50, 20])
+        ->and($seen)->toHaveCount(120)
+        ->and(array_unique($seen))->toHaveCount(120);
+});
+
+it('reveals no rate, price, billing, contact or tax data of a client, project or task', function (): void {
+    $canaries = [
+        'street' => Canary::canary('street'),
+        'city' => Canary::canary('city'),
+        'mail' => Canary::canary('mail'),
+        'tax' => Canary::canary('tax'),
+        'projectDescription' => Canary::canary('projectdescription'),
+        'taskDescription' => Canary::canary('taskdescription'),
+        'taskNote' => Canary::canary('tasknote'),
+    ];
+
+    $client = app(PartnerContext::class)->runAsSystem(static fn (): Client => Client::factory()->create([
+        'name' => 'Fiktivní klient',
+        'street' => $canaries['street'],
+        'city' => $canaries['city'],
+        'invoice_email' => strtolower($canaries['mail']).'@'.implode('.', ['example', 'com']),
+        'tax_number' => $canaries['tax'],
+        'hourly_rate' => Money::ofMinor(123456, 'CZK'),
+        'payment_terms_days' => 37,
+    ]));
+    $project = ApiFixtures::project($client, 'DEMO');
+    $task = lookupTask($project, 'Fiktivní úkol');
+
+    app(PartnerContext::class)->runAsSystem(static function () use ($project, $task, $canaries): void {
+        $project->forceFill(['description' => $canaries['projectDescription']])->save();
+        $task->forceFill(['description' => $canaries['taskDescription']])->save();
+        $task->billing()->create([
+            'billing_type' => 'hourly',
+            'hourly_rate' => Money::ofMinor(98765, 'CZK'),
+            'internal_note' => $canaries['taskNote'],
+        ]);
+    });
+
+    $urls = [
+        '/api/v1/clients' => ['id', 'name'],
+        '/api/v1/clients/'.$client->id => ['id', 'name'],
+        '/api/v1/projects' => ['id', 'client_id', 'key', 'name', 'status', 'priority'],
+        '/api/v1/projects/DEMO' => ['id', 'client_id', 'key', 'name', 'status', 'priority'],
+        '/api/v1/projects/'.$project->id => ['id', 'client_id', 'key', 'name', 'status', 'priority'],
+        '/api/v1/tasks' => ['id', 'project_id', 'reference', 'title', 'status', 'priority'],
+        '/api/v1/tasks/DEMO-1' => ['id', 'project_id', 'reference', 'title', 'status', 'priority'],
+        '/api/v1/tasks/'.$task->id => ['id', 'project_id', 'reference', 'title', 'status', 'priority'],
+    ];
+    $token = lookupToken();
+
+    foreach ($urls as $url => $keys) {
+        $response = $this->withToken($token)->getJson($url)->assertOk();
+        $body = (string) $response->getContent();
+        $data = $response->json('data');
+        $item = array_is_list($data) ? $data[0] : $data;
+
+        expect(array_keys($item))->toBe($keys, $url);
+
+        foreach ([...array_values($canaries), 'hourly_rate', 'price', 'billing', '123456', '98765', 'payment_terms', 'tax_number', 'invoice_email', 'description'] as $needle) {
+            expect($body)->not->toContain($needle, $url);
+        }
+    }
+});
+
+it('has no write route for clients, projects or tasks', function (): void {
+    $token = lookupToken();
+    $paths = ['/api/v1/clients', '/api/v1/projects', '/api/v1/tasks'];
+
+    foreach ($paths as $path) {
+        foreach (['POST', 'PUT', 'PATCH', 'DELETE'] as $method) {
+            $this->withToken($token)->json($method, $path, ['name' => 'Example'])->assertStatus(405);
+            $this->withToken($token)->json($method, $path.'/'.Str::uuid(), ['name' => 'Example'])->assertStatus(405);
+        }
+    }
+
+    $this->withToken($token)->json('PATCH', '/api/v1/tasks/DEMO-1', ['title' => 'Example'])->assertStatus(405);
+});
+
+it('answers 422 for a task list filter or sort it does not know and for a malformed project key', function (): void {
+    $token = lookupToken();
+
+    $cases = [
+        '/api/v1/tasks?filter[client]='.Str::uuid() => 'filter',
+        '/api/v1/tasks?filter[unknown]=1' => 'filter',
+        '/api/v1/tasks?filter[project]=demo' => 'filter.project',
+        '/api/v1/tasks?filter[project]=DEMO-1' => 'filter.project',
+        '/api/v1/tasks?per_page=201' => 'per_page',
+        '/api/v1/tasks?sort=description' => 'sort',
+    ];
+
+    foreach ($cases as $url => $key) {
+        $this->withToken($token)->getJson($url)->assertStatus(422)->assertJsonValidationErrors([$key]);
+    }
+});
+
+it('refuses the lookups to a token without the read ability', function (): void {
+    $writeOnly = ApiFixtures::token(ApiFixtures::admin(), ['time:write']);
+
+    foreach (['/api/v1/clients', '/api/v1/projects', '/api/v1/tasks', '/api/v1/tasks/DEMO-1'] as $url) {
+        $this->withToken($writeOnly)->getJson($url)->assertForbidden();
+    }
+});
+
+it('refuses the lookups to a guest', function (): void {
+    foreach (['/api/v1/clients', '/api/v1/projects', '/api/v1/tasks', '/api/v1/tasks/DEMO-1'] as $url) {
+        $this->getJson($url)->assertUnauthorized();
+    }
 });

@@ -37,6 +37,8 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeRead->value, 'th
         ->name('api.v1.projects.index');
     Route::get('projects/{project}', [ProjectController::class, 'show'])
         ->name('api.v1.projects.show');
+    Route::get('tasks', [TaskController::class, 'index'])
+        ->name('api.v1.tasks.index');
     Route::get('tasks/{task}', [TaskController::class, 'show'])
         ->name('api.v1.tasks.show');
 });

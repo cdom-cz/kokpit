@@ -105,4 +105,40 @@ final class LookupExamples
             'prev_cursor' => null,
         ],
     ];
+
+    /**
+     * A page of tasks, newest first; the last page.
+     */
+    public const array TASK_LIST = [
+        'data' => [
+            [
+                'id' => '0199e39f-f1b2-7e4a-a3c6-f6a7b8c9d0e1',
+                'project_id' => '0199e39f-d8a1-7c3e-b2f5-e5f6a7b8c9d0',
+                'reference' => 'DEMO-1',
+                'title' => 'Ukázkový úkol',
+                'status' => 'planned',
+                'priority' => 'high',
+            ],
+            [
+                'id' => '0199e39e-c3d4-7e5f-a061-c7d8e9f0a1b2',
+                'project_id' => '0199e39e-b2c3-7d4e-9f50-b6c7d8e9f0a1',
+                'reference' => 'SAMP-1',
+                'title' => 'Druhý ukázkový úkol',
+                'status' => 'in_progress',
+                'priority' => 'normal',
+            ],
+        ],
+        'links' => [
+            'first' => null,
+            'last' => null,
+            'prev' => null,
+            'next' => null,
+        ],
+        'meta' => [
+            'path' => 'https://kokpit.example.com/api/v1/tasks',
+            'per_page' => 50,
+            'next_cursor' => null,
+            'prev_cursor' => null,
+        ],
+    ];
 }
