@@ -42,8 +42,8 @@ final class HoursStats extends StatsOverviewWidget
     /** The page tests and the Admin's first look read the widget as rendered, not as a placeholder. */
     protected static bool $isLazy = false;
 
-    /** No live ticking: the figures are read again every minute while the tab is visible. */
-    protected ?string $pollingInterval = '60s';
+    /** No live ticking: the figures are read again every 60 seconds, while the widget is visible (`wire:poll.visible.60s`). */
+    protected ?string $pollingInterval = 'visible.60s';
 
     /** @var int|string|array<string, int|null> */
     protected int|string|array $columnSpan = 'full';
