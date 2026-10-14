@@ -6,6 +6,9 @@ namespace App\Filament\Pages;
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Reports\Enums\ReportExportFormat;
+use App\Domain\Reports\Jobs\BuildReportExport;
+use App\Domain\Reports\Models\ReportExport;
 use App\Domain\Reports\ReportFilters;
 use App\Domain\Reports\TimeReport;
 use App\Domain\Shared\Auth\AccessRule;
@@ -13,8 +16,12 @@ use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Database\CzechCollation;
 use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Concerns\EnforcesPageAccessRule;
+use App\Filament\Resources\ReportExportResource;
 use App\Providers\LocalisationServiceProvider;
 use Carbon\CarbonImmutable;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
+use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Livewire\Attributes\Url;
@@ -29,6 +36,10 @@ use Livewire\Attributes\Url;
  * a forged array or number reaches the validation instead of a type error, and anything invalid falls back to
  * its default. The strip is a plain GET form that submits on every change, so the report is built once per
  * request and SPA navigation shows the stock progress bar while a slow period loads.
+ *
+ * The header holds the export menu "Exportovat report" and the link "Exporty" to the list of finished exports
+ * (RE-03, D-09). An export item records the request for the current filters, queues the build and answers with
+ * the info toast; the file is built in the background and announced in the bell.
  */
 #[AccessRule(Audience::AdminOnly, reason: 'The time report shows measured time, rates and amounts, which are closed to Partners.')]
 class TimeReportPage extends Page
@@ -74,6 +85,73 @@ class TimeReportPage extends Page
     public function getTitle(): string
     {
         return __('kokpit.report.title');
+    }
+
+    /**
+     * The export menu and the link to the exports list (UI-SPEC C1). The menu items are added one per format.
+     *
+     * @return array<int, Action|ActionGroup>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            ActionGroup::make([
+                Action::make('exportCsv')
+                    ->label(__('kokpit.report.export.csv'))
+                    ->action(fn () => $this->queueExport(ReportExportFormat::Csv)),
+            ])
+                ->label(__('kokpit.report.export.group'))
+                ->icon(Heroicon::OutlinedArrowDownTray)
+                ->color('gray')
+                ->button(),
+            Action::make('exports')
+                ->label(__('kokpit.report.export.exports_link'))
+                ->icon(Heroicon::OutlinedArrowDownTray)
+                ->color('gray')
+                ->url(ReportExportResource::getUrl('index')),
+        ];
+    }
+
+    /**
+     * Records an export of the current filters, queues its build and tells the Admin it is under way. The access
+     * rule is asked again on the action request, like the resource asks it on a download.
+     */
+    private function queueExport(ReportExportFormat $format): void
+    {
+        abort_unless(static::canAccess(), 403);
+
+        $filters = $this->filters();
+
+        $export = ReportExport::query()->create([
+            'format' => $format,
+            'summary' => $this->exportSummary($filters),
+            'filters' => $filters->toArray(),
+        ]);
+
+        BuildReportExport::dispatch($export->getKey());
+
+        Notification::make()
+            ->info()
+            ->title(__('kokpit.exports.queued.title'))
+            ->body(__('kokpit.exports.queued.body'))
+            ->send();
+    }
+
+    /**
+     * The "Zadání" text of an export, built here from stored names and days only: the client name or "Všichni
+     * klienti", the project name or "Všechny projekty" and the period.
+     */
+    private function exportSummary(ReportFilters $filters): string
+    {
+        $client = $filters->clientId === null ? null : Client::query()->withTrashed()->whereKey($filters->clientId)->value('name');
+        $project = $filters->projectId === null ? null : Project::query()->withTrashed()->whereKey($filters->projectId)->value('name');
+        $format = static fn (string $day): string => CarbonImmutable::parse($day)->format(LocalisationServiceProvider::DATE_FORMAT);
+
+        return implode(', ', [
+            is_string($client) ? $client : __('kokpit.exports.summary.all_clients'),
+            is_string($project) ? $project : __('kokpit.exports.summary.all_projects'),
+            __('kokpit.report.range', ['from' => $format($filters->from), 'to' => $format($filters->to)]),
+        ]);
     }
 
     /**
