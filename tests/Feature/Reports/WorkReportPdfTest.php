@@ -18,8 +18,8 @@ use Carbon\CarbonImmutable;
 use Dompdf\Canvas;
 use Dompdf\Dompdf;
 use Illuminate\Auth\Access\AuthorizationException;
-use Symfony\Component\Process\ExecutableFinder;
 use Illuminate\Support\Facades\Process;
+use Symfony\Component\Process\ExecutableFinder;
 use Tests\Support\Canary;
 use Tests\Support\FictionalCompanyId;
 
@@ -696,7 +696,8 @@ describe('the page decoration', function (): void {
 
     it('ends the page label at the right margin', function (): void {
         $drawn = decorate(decoration(), 3, 3);
-        $label = $drawn['texts'][1];
+        $label = $drawn['texts'][2];
+        expect($label['text'])->toBe('Strana 3 / 3');
         $width = (new Dompdf)->getFontMetrics()->getTextWidth($label['text'], (new Dompdf)->getFontMetrics()->getFont('DejaVu Sans'), 8);
 
         expect($label['x'] + $width)->toEqualWithDelta(595.28 - 48.0, 0.01);

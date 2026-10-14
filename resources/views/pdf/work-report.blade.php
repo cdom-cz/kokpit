@@ -14,12 +14,13 @@
         .label { color: #52525b; font-size: 10pt; margin-bottom: 4pt; }
         .name { font-weight: 700; }
         .period { margin-top: 16pt; }
-        table.entries { width: 100%; border-collapse: collapse; }
+        table.entries { width: 100%; border-collapse: collapse; table-layout: fixed; }
         table.entries th { text-align: left; font-weight: 700; background-color: #f4f4f5; border-bottom: 1pt solid #d4d4d8; padding: 4pt 8pt; }
-        table.entries td { border-bottom: 1pt solid #d4d4d8; padding: 4pt 8pt; vertical-align: top; }
+        table.entries td { border-bottom: 1pt solid #d4d4d8; padding: 4pt 8pt; vertical-align: top; overflow-wrap: break-word; word-wrap: break-word; }
         table.entries thead { display: table-header-group; }
         table.entries tr { page-break-inside: avoid; }
         .hours { text-align: right; width: 20%; }
+        table.entries th.hours { text-align: right; }
         .date { width: 22%; }
         table.entries tr.day td { background-color: #f4f4f5; }
         table.entries tr.project td { font-weight: 700; }

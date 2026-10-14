@@ -7,8 +7,10 @@ namespace App\Domain\Reports\WorkReport;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\TimeTracking\Support\DurationFormat;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Dompdf\Dompdf;
 use Dompdf\Options;
+use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Traits\Localizable;
 
@@ -33,11 +35,13 @@ final class WorkReportPdf
     private const string MEMORY_FLOOR = '256M';
 
     /**
-     * The PDF bytes of the report, starting `%PDF-`.
+     * The PDF bytes of the report, starting `%PDF-`. The footer date is the day of `$generatedAt` in the panel
+     * timezone, now when not given.
      */
-    public function render(WorkReportSource $source, InvoiceLanguage $language): string
+    public function render(WorkReportSource $source, InvoiceLanguage $language, ?CarbonInterface $generatedAt = null): string
     {
         $html = $this->html($source, $language);
+        $decoration = $this->decoration($source, $language, $generatedAt ?? CarbonImmutable::now());
 
         $this->raiseMemoryLimit();
 
@@ -45,6 +49,11 @@ final class WorkReportPdf
         $dompdf->setPaper('A4', 'portrait');
         $dompdf->loadHtml($html, 'UTF-8');
         $dompdf->render();
+
+        // The page count is known only after the layout. The decoration is a page script that receives the page
+        // number and the page count (what the canvas placeholders PAGE_NUM and PAGE_COUNT stand for), because
+        // the right-aligned label needs its own text width.
+        $dompdf->getCanvas()->page_script($decoration);
 
         return (string) $dompdf->output();
     }
@@ -144,6 +153,20 @@ final class WorkReportPdf
         }
 
         return $lines;
+    }
+
+    /**
+     * The footer and running header texts, resolved inside the client's language.
+     */
+    private function decoration(WorkReportSource $source, InvoiceLanguage $language, CarbonInterface $generatedAt): WorkReportPageDecoration
+    {
+        return $this->withLocale($language->value, fn (): WorkReportPageDecoration => new WorkReportPageDecoration(
+            title: __('work_report.title'),
+            client: $source->clientName,
+            period: $this->date($source->from, $language).' – '.$this->date($source->to, $language),
+            generated: __('work_report.generated', ['date' => $this->date($generatedAt->toImmutable()->setTimezone(FilamentTimezone::get())->format('Y-m-d'), $language)]),
+            pageTemplate: __('work_report.page', ['n' => '{n}', 'total' => '{total}']),
+        ));
     }
 
     private function options(): Options
