@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use App\Domain\Identity\ApiAbility;
+use Filament\Facades\Filament;
 use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\Support\ApiFixtures;
 use Tests\Support\Canary;
+use Tests\Support\CanaryRegistry;
 
 /*
  * D-01, D-16, T-07-56: a route walk over every /api/v1 route. Everything is derived from the
@@ -159,4 +161,58 @@ it('answers 403 to an Admin token that lacks the ability of the route', function
         $this->withToken($token)->json(apiWalkMethod($route), apiWalkPath($route))
             ->assertForbidden();
     }
+});
+
+/*
+ * The API line of the canary harness (T-07-54): rows of two clients carry canary strings in every model, and a guest
+ * and a Partner token of client A, who is allowed nothing, request every api/v1 route. Each answer is 401 and no
+ * body holds a canary of either client. The control proves the canaries would show up if authentication let a
+ * request through: an Admin token reads them from the time entry list.
+ */
+describe('with canaries of two clients seeded', function (): void {
+    beforeEach(function (): void {
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        CanaryRegistry::prepare();
+
+        [$this->clientA, $this->clientB] = Canary::twoClients();
+        $this->canaryA = Canary::canary('client_a');
+        $this->canaryB = Canary::canary('client_b');
+
+        CanaryRegistry::seedAll($this->clientA, $this->canaryA);
+        CanaryRegistry::seedAll($this->clientB, $this->canaryB);
+    });
+
+    afterEach(function (): void {
+        CanaryRegistry::cleanup();
+    });
+
+    it('lets an Admin token read the seeded canaries, so the proof below is not vacuous', function (): void {
+        $token = ApiFixtures::token(Canary::admin(), ApiAbility::values());
+        $body = $this->withToken($token)->getJson('/api/v1/time-entries?per_page=200')->assertOk()->getContent();
+
+        expect($body)->toContain($this->canaryA)
+            ->and($body)->toContain($this->canaryB);
+    });
+
+    it('answers a guest 401 on every api/v1 route and leaks no canary', function (): void {
+        foreach (apiWalkRoutes() as $route) {
+            $response = $this->json(apiWalkMethod($route), apiWalkPath($route))->assertUnauthorized();
+
+            expect($response->getContent())->not->toContain($this->canaryA)
+                ->and($response->getContent())->not->toContain($this->canaryB);
+        }
+    });
+
+    it('answers the token of a Partner of client A 401 on every api/v1 route and leaks no canary', function (): void {
+        $token = ApiFixtures::token(Canary::partnerFor($this->clientA), ApiAbility::values());
+
+        foreach (apiWalkRoutes() as $route) {
+            Auth::forgetGuards();
+
+            $response = $this->withToken($token)->json(apiWalkMethod($route), apiWalkPath($route))->assertUnauthorized();
+
+            expect($response->getContent())->not->toContain($this->canaryA)
+                ->and($response->getContent())->not->toContain($this->canaryB);
+        }
+    });
 });
