@@ -13,7 +13,10 @@ use App\Domain\Shared\Database\CzechCollation;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\PragueDay;
 use Carbon\CarbonInterface;
+use Closure;
+use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -136,11 +139,7 @@ final readonly class WorkReportSource
      */
     public static function forPeriod(string $clientId, string $from, string $to, ?string $projectId, CarbonInterface $now): self
     {
-        $context = app(PartnerContext::class);
-
-        if (! $context->isAdmin() && ! $context->isSystem()) {
-            throw new AuthorizationException('The work report is available to the Admin only.');
-        }
+        self::authorise();
 
         $start = PragueDay::day($from) ?? throw new InvalidArgumentException('Not a calendar day: '.$from);
         $end = PragueDay::day($to) ?? throw new InvalidArgumentException('Not a calendar day: '.$to);
@@ -163,6 +162,107 @@ final readonly class WorkReportSource
                 ?? throw new InvalidArgumentException('There is no such project of the client.');
         }
 
+        $first = PragueDay::start($start);
+        $last = PragueDay::endExclusive($end);
+
+        return self::build(
+            $client,
+            $start,
+            $end,
+            $project?->name,
+            static fn (Builder $query): Builder => $query
+                ->where('time_entries.started_at', '>=', $first)
+                ->where('time_entries.started_at', '<', $last)
+                ->when($project !== null, static fn (Builder $query): Builder => $query->where('time_entries.project_id', $project?->id)),
+            $now,
+        );
+    }
+
+    /**
+     * The report of exactly the listed time entries of one client, for the work report Phase 10 attaches to
+     * the invoice of those entries. The period is the first and the last Prague day of the entries; the
+     * project line appears when all entries belong to one project. An entry is counted once, however often
+     * its id is listed.
+     *
+     * @param  list<string>  $entryIds
+     *
+     * @throws AuthorizationException when neither the Admin nor a system run asks
+     * @throws InvalidArgumentException for an empty list, an id that is no id or names no entry, or entries of more than one client
+     */
+    public static function fromEntryIds(array $entryIds, CarbonInterface $now): self
+    {
+        self::authorise();
+
+        $ids = array_values(array_unique($entryIds));
+
+        if ($ids === []) {
+            throw new InvalidArgumentException('A work report needs at least one time entry.');
+        }
+
+        foreach ($ids as $id) {
+            if (! Str::isUuid($id)) {
+                throw new InvalidArgumentException('Time entries are identified by UUIDs.');
+            }
+        }
+
+        $entries = TimeEntry::query()->whereIn('id', $ids)->reorder()->get(['id', 'client_id', 'project_id', 'started_at']);
+
+        if ($entries->count() !== count($ids)) {
+            throw new InvalidArgumentException('Some of the time entries do not exist.');
+        }
+
+        $clientIds = $entries->pluck('client_id')->unique()->values();
+
+        if ($clientIds->count() !== 1) {
+            throw new InvalidArgumentException('A work report covers the time entries of one client.');
+        }
+
+        $client = Client::query()->withTrashed()->find((string) $clientIds->first())
+            ?? throw new InvalidArgumentException('There is no such client.');
+
+        $days = $entries
+            ->map(static fn (TimeEntry $entry): string => $entry->started_at->toImmutable()->setTimezone(FilamentTimezone::get())->format('Y-m-d'))
+            ->sort()
+            ->values();
+
+        $projectIds = $entries->pluck('project_id')->unique()->values();
+        $projectName = null;
+
+        if ($projectIds->count() === 1 && is_string($projectIds->first())) {
+            $projectName = Project::query()->withTrashed()->where('client_id', $client->id)->find($projectIds->first())?->name;
+        }
+
+        return self::build(
+            $client,
+            (string) $days->first(),
+            (string) $days->last(),
+            $projectName,
+            static fn (Builder $query): Builder => $query->whereIn('time_entries.id', $ids),
+            $now,
+        );
+    }
+
+    /**
+     * Only the Admin and a system run read a work report.
+     *
+     * @throws AuthorizationException
+     */
+    private static function authorise(): void
+    {
+        $context = app(PartnerContext::class);
+
+        if (! $context->isAdmin() && ! $context->isSystem()) {
+            throw new AuthorizationException('The work report is available to the Admin only.');
+        }
+    }
+
+    /**
+     * The source of one client's entries chosen by `$constrain`, written in the client's invoice language.
+     *
+     * @param  Closure(Builder<TimeEntry>): Builder<TimeEntry>  $constrain
+     */
+    private static function build(Client $client, string $from, string $to, ?string $projectName, Closure $constrain, CarbonInterface $now): self
+    {
         $language = $client->invoice_language;
 
         // The label inside a line (the company ID line) is a word of the client's language. App::withLocale does
@@ -176,10 +276,10 @@ final readonly class WorkReportSource
                 clientName: $client->name,
                 clientLines: self::clientLines($client),
                 clientLanguage: $language,
-                from: $start,
-                to: $end,
-                projectName: $project?->name,
-                rows: self::rows($client->id, $start, $end, $project?->id, $now),
+                from: $from,
+                to: $to,
+                projectName: $projectName,
+                rows: self::rows($client->id, $constrain, $now),
             );
         } finally {
             App::setLocale($original);
@@ -239,19 +339,19 @@ final readonly class WorkReportSource
      * One grouped query: names, the Prague day, the billable flag and the summed seconds. The tables joined
      * are projects and tasks, for names only. Archived projects and tasks are read too.
      *
+     * @param  Closure(Builder<TimeEntry>): Builder<TimeEntry>  $constrain  chooses the entries of the client
      * @return list<array{billable: bool, project: ?string, date: string, task: ?string, seconds: int}>
      */
-    private static function rows(string $clientId, string $from, string $to, ?string $projectId, CarbonInterface $now): array
+    private static function rows(string $clientId, Closure $constrain, CarbonInterface $now): array
     {
         $day = "(time_entries.started_at AT TIME ZONE 'Europe/Prague')::date";
 
-        $query = TimeEntry::query()
-            ->leftJoin('projects', 'projects.id', '=', 'time_entries.project_id')
-            ->leftJoin('tasks', 'tasks.id', '=', 'time_entries.task_id')
-            ->where('time_entries.client_id', $clientId)
-            ->where('time_entries.started_at', '>=', PragueDay::start($from))
-            ->where('time_entries.started_at', '<', PragueDay::endExclusive($to))
-            ->when($projectId !== null, fn ($query) => $query->where('time_entries.project_id', $projectId))
+        $query = $constrain(
+            TimeEntry::query()
+                ->leftJoin('projects', 'projects.id', '=', 'time_entries.project_id')
+                ->leftJoin('tasks', 'tasks.id', '=', 'time_entries.task_id')
+                ->where('time_entries.client_id', $clientId),
+        )
             ->reorder()
             ->selectRaw(
                 'time_entries.billable AS billable, projects.name AS project_name, '.$day.' AS day, '

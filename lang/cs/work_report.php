@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /*
  * The Czech words of the work report PDF (Copywriting Contract "Work report PDF"). The English column
- * lives in lang/en/work_report.php (plan 08-06).
+ * lives in lang/en/work_report.php.
  */
 return [
     'title' => 'Pracovní výkaz',

@@ -196,14 +196,25 @@ final class WorkReportPdf
     }
 
     /**
+     * The memory limit the renderer needs, or null when `$current` already suffices: lower than the floor and
+     * not unlimited (`-1`) means the floor, anything else stays as it is.
+     */
+    public static function raisedMemoryLimit(string $current): ?string
+    {
+        $bytes = (int) ini_parse_quantity($current);
+
+        return $bytes !== -1 && $bytes < ini_parse_quantity(self::MEMORY_FLOOR) ? self::MEMORY_FLOOR : null;
+    }
+
+    /**
      * Raises the memory limit to the floor, only when it is lower and not unlimited.
      */
     private function raiseMemoryLimit(): void
     {
-        $current = (int) ini_parse_quantity((string) ini_get('memory_limit'));
+        $raised = self::raisedMemoryLimit((string) ini_get('memory_limit'));
 
-        if ($current !== -1 && $current < ini_parse_quantity(self::MEMORY_FLOOR)) {
-            ini_set('memory_limit', self::MEMORY_FLOOR);
+        if ($raised !== null) {
+            ini_set('memory_limit', $raised);
         }
     }
 }
