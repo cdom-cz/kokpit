@@ -290,6 +290,33 @@ it('shows the empty state with the create action reachable from it', function ()
         ->assertActionExists('createToken');
 });
 
+it('opens the create modal from the empty-state button and creates a token with both abilities (G-07-3)', function (): void {
+    $page = Livewire::test(ListApiTokens::class)
+        ->assertSee('Zatím tu nejsou žádné API tokeny')
+        ->mountTableAction('newToken')
+        ->assertActionMounted('createToken');
+
+    // The page action is the only one on the stack: no table action is left underneath it.
+    expect($page->instance()->mountedActions)->toHaveCount(1);
+
+    $page->fillForm(screenCreateData($this, ['abilities' => ['time:read', 'time:write'], 'expiry' => 'none']))
+        ->callMountedAction()
+        ->assertHasNoFormErrors()
+        ->assertActionMounted('showToken');
+
+    $plain = (string) $page->get('plainToken');
+    $row = PersonalAccessToken::query()->sole();
+
+    expect($row->abilities)->toBe(['time:read', 'time:write'])
+        ->and($row->expires_at)->toBeNull()
+        ->and($row->name)->toBe('Example tool')
+        ->and(str_starts_with($plain, $row->getKey().'|'))->toBeTrue();
+
+    Auth::forgetGuards();
+
+    $this->withToken($plain)->getJson('/api/v1/time-entries')->assertOk();
+});
+
 it('shows a token without expiry as active and a token expiring in 30 days as active', function (): void {
     $token = $this->admin->createToken('Example tool', ['time:read'], now()->addDays(30));
 

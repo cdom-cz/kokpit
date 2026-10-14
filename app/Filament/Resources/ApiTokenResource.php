@@ -25,10 +25,10 @@ use Illuminate\Database\Eloquent\Builder;
 /**
  * The API tokens of the signed-in Admin (AP-01, AP-05).
  *
- * A list page only: tokens are created by the header action of the page and revoked by a
- * row action, so there is no create, edit or view page. The query shows the tokens of the
- * signed-in user and nobody else's. A token never shows its plain text, its hash, an IP
- * address or a user agent here.
+ * A list page only: tokens are created by the header action of the page (the empty-state
+ * button opens that same page action) and revoked by a row action, so there is no create,
+ * edit or view page. The query shows the tokens of the signed-in user and nobody else's. A
+ * token never shows its plain text, its hash, an IP address or a user agent here.
  */
 #[AccessRule(Audience::AdminOnly, reason: 'API tokens grant access to measured time; only the Admin creates and revokes them.')]
 final class ApiTokenResource extends Resource
@@ -126,11 +126,17 @@ final class ApiTokenResource extends Resource
             ->emptyStateHeading(__('kokpit.api_tokens.empty.heading'))
             ->emptyStateDescription(__('kokpit.api_tokens.empty.description'))
             ->emptyStateActions([
-                // The create action lives on the page; this opens it from the empty state.
+                // The create action lives on the page, so this button swaps the mounted stack for
+                // it. A mount nested inside this table action's handler would be resolved as a
+                // child of the table action and dropped (G-07-3).
                 Action::make('newToken')
                     ->label(__('kokpit.api_tokens.actions.create'))
                     ->icon(Heroicon::OutlinedPlus)
-                    ->action(static fn (ListApiTokens $livewire): mixed => $livewire->mountAction('createToken')),
+                    ->action(static function (ListApiTokens $livewire): void {
+                        abort_unless(self::canAccess(), 403);
+
+                        $livewire->replaceMountedAction('createToken');
+                    }),
             ]);
     }
 
