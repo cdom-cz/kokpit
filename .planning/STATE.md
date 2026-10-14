@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
-status: executing
-stopped_at: Completed 08-21-PLAN.md
-last_updated: "2026-10-14T23:36:30.950Z"
+status: verifying
+stopped_at: Completed 08-22-PLAN.md
+last_updated: "2026-10-14T23:52:36.067Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: f9fb8aae4bc99feac7c67def1ff34c41e2c043e9
+state_head: b18e23af8556e4139d86bd2d3ddef37294edf8f5
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 141
+  completed_plans: 142
   percent: 58
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
 Plan: 22 of 22
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-14 — Phase 08 execution started
 
 Progress: [██████░░░░] 58%
@@ -203,6 +203,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P19 | 10 min | 2 tasks | 5 files |
 | Phase 08 P20 | 33 min | 2 tasks | 8 files |
 | Phase 08 P21 | 35 min | 3 tasks | 6 files |
+| Phase 08 P22 | 14 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -481,6 +482,9 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-20: tomorrow plan block is read-only, owner-scoped via SignalDayReader, collapsed to three items by an Alpine toggle with aria-expanded and aria-controls
 - [Phase 08]: 08-21: the XLSX summary lists billable amounts per currency and an unconvertible CZK total is an empty commented cell, never a zero
 - [Phase 08]: 08-21: SpreadsheetCells::number() builds XLSX numeric cells from plain decimal strings only, so text can never become a numeric or formula cell
+- [Phase 08]: 08-22: the canary task of every client is created in status in_review, so every isolation test that renders the Partner dashboard exercises the review highlight
+- [Phase 08]: 08-22: the Phase 8 hand-over note is replaced by four convention bullets in CONTRIBUTING (Exchange rates, Reports and exports, Work report, Dashboard); Phases 9 and 10 notes gain the converter, snapshot, work report and dashboard-band hand-over
+- [Phase 08]: 08-22: Filament 5 picks button text colour by contrast, so the primary buttons measure 5.29:1 (light) and 4.70:1 (dark), not the white-on-Amber 3.2:1 of UI-SPEC flag F-1
 
 ### Pending Todos
 
@@ -528,6 +532,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T23:36:30.757Z
-Stopped at: Completed 08-21-PLAN.md
+Last session: 2026-10-14T23:52:35.878Z
+Stopped at: Completed 08-22-PLAN.md
 Resume file: None
