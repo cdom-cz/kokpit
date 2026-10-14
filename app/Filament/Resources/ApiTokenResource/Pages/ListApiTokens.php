@@ -18,6 +18,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Callout;
@@ -27,6 +28,7 @@ use Filament\Support\Enums\Width;
 use Filament\Support\Facades\FilamentTimezone;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
 
@@ -41,6 +43,12 @@ use Livewire\Attributes\Locked;
 final class ListApiTokens extends ListRecords
 {
     protected static string $resource = ApiTokenResource::class;
+
+    /** The rate limiter key prefix of the identity confirmation, one bucket per user (D-04). */
+    private const string LIMITER_PREFIX = 'api-token-confirm:';
+
+    /** Confirmation attempts a minute and a user the create modal accepts (UI-SPEC U-5). */
+    private const int ATTEMPTS_PER_MINUTE = 5;
 
     /** The plain-text token, held only while the one-time modal is open. */
     #[Locked]
@@ -232,19 +240,35 @@ final class ListApiTokens extends ListRecords
      */
     private function issueToken(array $data): void
     {
+        // Order of checks: authorization, throttle, password, code, then the rest of the form.
         abort_unless(ApiTokenResource::canAccess(), 403);
 
         $user = auth()->user();
         assert($user instanceof User);
 
+        $limiterKey = self::LIMITER_PREFIX.$user->getKey();
+
+        if (RateLimiter::tooManyAttempts($limiterKey, self::ATTEMPTS_PER_MINUTE)) {
+            $this->failUnderModal(['password' => __('kokpit.api_tokens.errors.throttled', ['seconds' => RateLimiter::availableIn($limiterKey)])]);
+        }
+
+        RateLimiter::hit($limiterKey, 60);
+
+        // Fails closed: without a stored authenticator secret there is nothing to confirm against.
+        if (blank($user->getAppAuthenticationSecret())) {
+            Notification::make()->danger()->title(__('kokpit.api_tokens.errors.failed'))->send();
+
+            return;
+        }
+
         if (! Hash::check((string) ($data['password'] ?? ''), $user->password)) {
-            $this->failUnderModal('password', __('kokpit.api_tokens.errors.password_wrong'));
+            $this->failUnderModal(['password' => __('kokpit.api_tokens.errors.password_wrong')]);
         }
 
         $code = (string) ($data['code'] ?? '');
 
         if (preg_match('/\A\d{6}\z/', $code) !== 1 || ! AppAuthentication::make()->verifyCode($code, null, shouldPreventCodeReuse: true)) {
-            $this->failUnderModal('code', __('kokpit.api_tokens.errors.code_wrong'));
+            $this->failUnderModal(['code' => __('kokpit.api_tokens.errors.code_wrong')]);
         }
 
         $abilities = [];
@@ -255,7 +279,7 @@ final class ListApiTokens extends ListRecords
             $ability = $value instanceof ApiAbility ? $value : (is_string($value) ? ApiAbility::tryFrom($value) : null);
 
             if ($ability === null) {
-                $this->failUnderModal('abilities', __('kokpit.api_tokens.errors.abilities_required'));
+                $this->failUnderModal(['abilities' => __('kokpit.api_tokens.errors.abilities_required')]);
             }
 
             $abilities[] = $ability;
@@ -263,7 +287,11 @@ final class ListApiTokens extends ListRecords
 
         $expiry = self::asExpiry($data['expiry'] ?? null) ?? ApiTokenExpiry::None;
 
-        $issued = app(IssueApiToken::class)->handle($user, (string) ($data['name'] ?? ''), $abilities, $expiry);
+        try {
+            $issued = app(IssueApiToken::class)->handle($user, (string) ($data['name'] ?? ''), $abilities, $expiry);
+        } catch (ValidationException $e) {
+            $this->failUnderModal(array_map(static fn (array $messages): string => (string) ($messages[0] ?? ''), $e->errors()));
+        }
 
         $this->plainToken = $issued->plainTextToken;
         $this->createdSummary = [
@@ -276,11 +304,25 @@ final class ListApiTokens extends ListRecords
     }
 
     /**
-     * Stops the create action with a field error under its modal form.
+     * Stops the create action with field errors under its modal form. The modal stays open with the
+     * name, abilities and validity kept, and the password and the code cleared: a secret that failed
+     * is never left in the form.
+     *
+     * @param  array<string, string>  $errors  message by field of the form
      */
-    private function failUnderModal(string $field, string $message): never
+    private function failUnderModal(array $errors): never
     {
-        throw ValidationException::withMessages(["mountedActions.0.data.{$field}" => $message]);
+        foreach (['password', 'code'] as $secret) {
+            data_set($this->mountedActions, "0.data.{$secret}", null);
+        }
+
+        $mapped = [];
+
+        foreach ($errors as $field => $message) {
+            $mapped["mountedActions.0.data.{$field}"] = $message;
+        }
+
+        throw ValidationException::withMessages($mapped);
     }
 
     /**

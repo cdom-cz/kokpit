@@ -6,8 +6,8 @@ use App\Domain\Identity\ApiTokenStatus;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Shared\Models\Activity;
 use App\Filament\Resources\ApiTokenResource\Pages\ListApiTokens;
-use Filament\Facades\Filament;
 use Carbon\CarbonImmutable;
+use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
@@ -232,7 +232,9 @@ it('refuses a forged ability such as an asterisk and creates nothing', function 
     $page = Livewire::test(ListApiTokens::class)
         ->callAction('createToken', screenCreateData($this, ['abilities' => ['*']]));
 
-    expect($page->errors()->get('mountedActions.0.data.abilities'))->not->toBe([])
+    $keys = array_filter($page->errors()->keys(), static fn (string $key): bool => str_starts_with($key, 'mountedActions.0.data.abilities'));
+
+    expect($keys)->not->toBe([])
         ->and(PersonalAccessToken::query()->count())->toBe(0);
 });
 

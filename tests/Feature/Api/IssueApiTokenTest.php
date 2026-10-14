@@ -7,6 +7,7 @@ use App\Domain\Identity\ApiAbility;
 use App\Domain\Identity\ApiTokenExpiry;
 use App\Domain\Identity\ApiTokenStatus;
 use App\Domain\Identity\Models\PersonalAccessToken;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -95,7 +96,7 @@ it('writes one activity row with the name and abilities and neither the token no
 
     $issued = app(IssueApiToken::class)->handle($admin, 'Example tool', [ApiAbility::TimeRead, ApiAbility::TimeWrite], ApiTokenExpiry::Days30);
 
-    $row = Activity::query()->sole();
+    $row = app(PartnerContext::class)->runAsSystem(static fn (): Activity => Activity::query()->sole());
     $encoded = json_encode($row->getAttributes(), JSON_THROW_ON_ERROR);
 
     expect($row->event)->toBe('api_token.created')

@@ -294,6 +294,10 @@ return [
             'updated' => 'Změněno',
             'deleted' => 'Smazáno',
             'description_changed' => 'Popis upraven',
+            'api_token' => [
+                'created' => 'API token vytvořen',
+                'revoked' => 'API token zneplatněn',
+            ],
         ],
         'filters' => [
             'event' => 'Událost',
@@ -317,6 +321,7 @@ return [
             'contact' => 'Kontakt',
             'task' => 'Úkol',
             'time_entry' => 'Časový záznam',
+            'personal_access_token' => 'API token',
         ],
         'attributes' => [
             'client' => [

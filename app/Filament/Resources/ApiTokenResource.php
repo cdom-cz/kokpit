@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Filament\Resources;
 
 use App\Domain\Identity\ApiAbility;
+use App\Domain\Identity\ApiTokenStatus;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Resources\ApiTokenResource\Pages\ListApiTokens;
+use Carbon\CarbonImmutable;
+use Filament\Actions\Action;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -98,10 +101,32 @@ final class ApiTokenResource extends Resource
                     ->label(__('kokpit.api_tokens.columns.created_at'))
                     ->dateTime('j. n. Y H:i')
                     ->sortable(),
+                TextColumn::make('last_used_at')
+                    ->label(__('kokpit.api_tokens.columns.last_used_at'))
+                    ->dateTime('j. n. Y H:i')
+                    ->placeholder(__('kokpit.api_tokens.never')),
+                TextColumn::make('expires_at')
+                    ->label(__('kokpit.api_tokens.columns.expires_at'))
+                    ->date('j. n. Y')
+                    ->placeholder(__('kokpit.api_tokens.no_limit')),
+                TextColumn::make('status')
+                    ->label(__('kokpit.api_tokens.columns.status'))
+                    ->badge()
+                    ->state(static fn (PersonalAccessToken $record): ApiTokenStatus => ApiTokenStatus::for($record->expires_at, CarbonImmutable::now())),
             ])
             ->defaultSort('created_at', 'desc')
             ->defaultPaginationPageOption(25)
-            ->paginated([25]);
+            ->paginated([25])
+            ->emptyStateIcon(Heroicon::OutlinedKey)
+            ->emptyStateHeading(__('kokpit.api_tokens.empty.heading'))
+            ->emptyStateDescription(__('kokpit.api_tokens.empty.description'))
+            ->emptyStateActions([
+                // The create action lives on the page; this opens it from the empty state.
+                Action::make('newToken')
+                    ->label(__('kokpit.api_tokens.actions.create'))
+                    ->icon(Heroicon::OutlinedPlus)
+                    ->action(static fn (ListApiTokens $livewire): mixed => $livewire->mountAction('createToken')),
+            ]);
     }
 
     public static function getPages(): array
