@@ -34,6 +34,29 @@ final class ApiExamples
         ],
     ];
 
+    /**
+     * A running entry of a timer started with only a client: no project, task, description, end or duration.
+     */
+    public const array TIME_ENTRY_RUNNING = [
+        'data' => [
+            'id' => '0199e3a1-6c8d-7e3f-9a52-b2c3d4e5f6a7',
+            'client_id' => '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9',
+            'project_id' => null,
+            'project_key' => null,
+            'task_id' => null,
+            'task_reference' => null,
+            'description' => null,
+            'started_at' => '2026-10-12T10:00:00+00:00',
+            'ended_at' => null,
+            'duration_seconds' => null,
+            'billable' => true,
+            'billing_state' => 'unbilled',
+            'billed_at' => null,
+            'created_at' => '2026-10-12T10:00:00+00:00',
+            'updated_at' => '2026-10-12T10:00:00+00:00',
+        ],
+    ];
+
     public const array UNAUTHENTICATED = [
         'message' => 'Unauthenticated.',
     ];

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Middleware\EnsureApiDocsGenerated;
 use Knuckles\Scribe\Config\AuthIn;
 use Knuckles\Scribe\Config\Defaults;
 use Knuckles\Scribe\Extracting\Strategies;
@@ -35,6 +36,7 @@ return [
             ## Formats and errors
 
             - Instants are ISO 8601 with an offset, for example `2026-10-12T08:00:00+00:00`. Responses are in UTC.
+            - Every key is always present. A value that does not exist is `null`: for example `ended_at` and `duration_seconds` of a running time entry, or `project_id` of an entry that has only a client.
             - A validation error answers `422` with `{"message": "...", "errors": {"field": ["..."]}}`.
             - A conflict (for example a locked or running entry) answers `409` with `{"message": "...", "code": "..."}`.
             INTRO,
@@ -95,8 +97,10 @@ return [
         'assets_directory' => null,
 
         // Middleware to attach to the docs endpoint (if `add_routes` is true).
-        // Filled in once the public-delivery middleware exists (it answers 404 before the first generation).
-        'middleware' => [],
+        // Public by owner decision: no `web` (no session or cookie) and no `auth` (no `login` route exists,
+        // so a guest would get a 500). The limiter is per IP address; the middleware answers 404 before the
+        // first generation and sets the noindex header.
+        'middleware' => ['throttle:api-docs', EnsureApiDocsGenerated::class],
     ],
 
     'external' => [

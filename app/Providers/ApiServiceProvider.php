@@ -42,6 +42,11 @@ final class ApiServiceProvider extends ServiceProvider
             ->by(self::bucketKey($request)));
         RateLimiter::for('api-write', static fn (Request $request): Limit => Limit::perMinute((int) config('kokpit.api.rate_limit.write'))
             ->by(self::bucketKey($request)));
+
+        // The public documentation has no token, so its bucket is the client address (behind the balancer
+        // the trusted-proxy configuration makes it the real one).
+        RateLimiter::for('api-docs', static fn (Request $request): Limit => Limit::perMinute((int) config('kokpit.api.docs_rate_limit'))
+            ->by((string) $request->ip()));
     }
 
     /**
