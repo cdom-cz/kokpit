@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Providers\AccessServiceProvider;
+use App\Providers\ApiServiceProvider;
 use App\Providers\AppServiceProvider;
 use App\Providers\Filament\AdminPanelProvider;
 use App\Providers\HorizonServiceProvider;
@@ -13,6 +14,7 @@ use App\Providers\OperationsServiceProvider;
 return [
     AppServiceProvider::class,
     AccessServiceProvider::class,
+    ApiServiceProvider::class,
     AdminPanelProvider::class,
     ModelConventionsServiceProvider::class,
     LocalisationServiceProvider::class,
