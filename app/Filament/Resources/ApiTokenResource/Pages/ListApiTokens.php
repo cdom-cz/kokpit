@@ -29,6 +29,7 @@ use Filament\Support\Facades\FilamentTimezone;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
 
@@ -233,6 +234,29 @@ final class ListApiTokens extends ListRecords
                 $this->plainToken = null;
                 $this->createdSummary = [];
             });
+    }
+
+    /**
+     * Filament cannot resolve the row of a revoke confirmation that was deleted in the meantime (in
+     * another tab) and would drop the submit without a word. The component hook runs before Filament
+     * resolves the mounted actions, so it can say so instead (UI-SPEC Surface D): the confirmation
+     * closes, the info toast shows, and the list refreshes with the response.
+     */
+    public function hydrate(): void
+    {
+        $mounted = $this->mountedActions[0] ?? [];
+        $recordKey = $mounted['context']['recordKey'] ?? null;
+
+        if (
+            ($mounted['name'] ?? null) === 'revoke'
+            && is_string($recordKey)
+            && Str::isUuid($recordKey)
+            && ! ApiTokenResource::getEloquentQuery()->whereKey($recordKey)->exists()
+        ) {
+            $this->mountedActions = [];
+
+            Notification::make()->info()->title(__('kokpit.api_tokens.toasts.already_gone'))->send();
+        }
     }
 
     /**

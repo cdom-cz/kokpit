@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources;
 
+use App\Domain\Identity\Actions\RevokeApiToken;
 use App\Domain\Identity\ApiAbility;
 use App\Domain\Identity\ApiTokenStatus;
 use App\Domain\Identity\Models\PersonalAccessToken;
@@ -14,6 +15,7 @@ use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Resources\ApiTokenResource\Pages\ListApiTokens;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -117,6 +119,9 @@ final class ApiTokenResource extends Resource
             ->defaultSort('created_at', 'desc')
             ->defaultPaginationPageOption(25)
             ->paginated([25])
+            ->recordActions([
+                self::revokeAction(),
+            ])
             ->emptyStateIcon(Heroicon::OutlinedKey)
             ->emptyStateHeading(__('kokpit.api_tokens.empty.heading'))
             ->emptyStateDescription(__('kokpit.api_tokens.empty.description'))
@@ -127,6 +132,48 @@ final class ApiTokenResource extends Resource
                     ->icon(Heroicon::OutlinedPlus)
                     ->action(static fn (ListApiTokens $livewire): mixed => $livewire->mountAction('createToken')),
             ]);
+    }
+
+    /**
+     * The row action: a labelled danger button with a confirmation. It hands the record key to
+     * RevokeApiToken, which re-checks on the server that the token is the signed-in Admin's; a
+     * token that is already gone shows an info toast and the list refreshes.
+     */
+    private static function revokeAction(): Action
+    {
+        return Action::make('revoke')
+            ->label(__('kokpit.api_tokens.actions.revoke'))
+            ->icon(Heroicon::OutlinedNoSymbol)
+            ->color('danger')
+            ->button()
+            ->requiresConfirmation()
+            ->modalHeading(__('kokpit.api_tokens.revoke.heading'))
+            ->modalDescription(static function (PersonalAccessToken $record): string {
+                $expired = ApiTokenStatus::for($record->expires_at, CarbonImmutable::now()) === ApiTokenStatus::Expired;
+
+                return __($expired ? 'kokpit.api_tokens.revoke.body_expired' : 'kokpit.api_tokens.revoke.body_active', ['name' => $record->name]);
+            })
+            ->modalSubmitActionLabel(__('kokpit.api_tokens.revoke.submit'))
+            ->modalCancelActionLabel(__('kokpit.api_tokens.revoke.cancel'))
+            ->extraModalWindowAttributes(['style' => 'overflow-wrap: anywhere;'])
+            ->action(static function (PersonalAccessToken $record): void {
+                abort_unless(self::canAccess(), 403);
+
+                $actor = auth()->user();
+                assert($actor instanceof User);
+
+                $revoked = app(RevokeApiToken::class)->handle($actor, (string) $record->getKey());
+
+                $notification = Notification::make();
+
+                if ($revoked) {
+                    $notification->success()->title(__('kokpit.api_tokens.toasts.revoked'))->send();
+
+                    return;
+                }
+
+                $notification->info()->title(__('kokpit.api_tokens.toasts.already_gone'))->send();
+            });
     }
 
     public static function getPages(): array
