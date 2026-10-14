@@ -42,3 +42,9 @@ Schedule::job(new NotifyLongRunningTimers)
     ->everyFiveMinutes()
     ->name('kokpit-long-running-timers')
     ->onOneServer();
+
+// Deletes activity rows older than activitylog.clean_after_days (365) once a night; retention lives in config only.
+Schedule::command('activitylog:clean', ['--force'])
+    ->daily()
+    ->name('kokpit-activity-log-prune')
+    ->onOneServer();
