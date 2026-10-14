@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 2
+open_count: 3
 waived_count: 0
 fixed_count: 1
-total_count: 3
-last_updated: 2026-10-14T21:27:38.175Z
+total_count: 4
+last_updated: 2026-10-14T21:39:50.714Z
 ---
 
 # Broken Windows Ledger
@@ -18,6 +18,7 @@ last_updated: 2026-10-14T21:27:38.175Z
 | 1 | 07 | deviation | config/scribe.php |  | Scribe docs show untranslated rule sentences on earlier endpoints; see deferred-items.md | fixed |  | 2026-10-14T11:34:16.656Z | 2026-10-14T11:48:33.136Z |
 | 2 | 08 | unrun-verify | app/Filament/Pages/TimeReportPage.php |  | 08-09 Task 3 human check not run: open /admin/time-report in DDEV with a year of entries and confirm the SPA progress bar shows while it loads and the filter strip stays usable | open |  | 2026-10-14T20:47:55.575Z |  |
 | 3 | 08 | unrun-verify | app/Filament/Resources/ExchangeRateResource/Pages/ListExchangeRates.php |  | 08-13 human-check: in-flight state of the download button with a slowed CNB answer and white-on-primary contrast in light and dark mode (UI-SPEC F-1) were not run | open |  | 2026-10-14T21:27:38.175Z |  |
+| 4 | 08 | unrun-verify | app/Filament/Widgets/UnbilledPerClient.php |  | 08-15: the Admin dashboard layout (one column below lg, two from lg, widgets side by side), the Pevná cena and Chybí kurz badges in the unbilled table and the contrast of the running-timer text were not looked at in a browser; the markup and figures are asserted by tests | open |  | 2026-10-14T21:39:50.714Z |  |
 
 ````json
 [
@@ -57,6 +58,19 @@ last_updated: 2026-10-14T21:27:38.175Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-14T21:27:38.175Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 4,
+    "kind": "unrun-verify",
+    "phase": "08",
+    "file": "app/Filament/Widgets/UnbilledPerClient.php",
+    "line": null,
+    "description": "08-15: the Admin dashboard layout (one column below lg, two from lg, widgets side by side), the Pevná cena and Chybí kurz badges in the unbilled table and the contrast of the running-timer text were not looked at in a browser; the markup and figures are asserted by tests",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T21:39:50.714Z",
     "resolved_at": null,
     "milestone": null
   }
