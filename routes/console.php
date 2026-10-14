@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Api\Jobs\PurgeExpiredIdempotencyKeys;
 use App\Domain\Operations\Health\Heartbeats;
 use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
+use App\Domain\Reports\Jobs\PruneExpiredReportExports;
 use App\Domain\TimeTracking\Jobs\NotifyLongRunningTimers;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -78,4 +79,11 @@ Schedule::command('kokpit:rates:download', ['--final'])
     ->cron('0 '.(int) config('kokpit.rates.final_hour').' * * 1-5')
     ->timezone('Europe/Prague')
     ->name('kokpit-cnb-rates-final')
+    ->onOneServer();
+
+// Deletes the file and the record of every report export past kokpit.exports.ttl_days (7), so no export outlives
+// the promise of D-09. Runs as system, so it prunes the exports of every Admin.
+Schedule::job(new PruneExpiredReportExports)
+    ->daily()
+    ->name('kokpit-report-export-prune')
     ->onOneServer();

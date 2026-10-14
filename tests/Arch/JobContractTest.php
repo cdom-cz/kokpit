@@ -6,6 +6,7 @@ use App\Domain\Api\Jobs\PurgeExpiredIdempotencyKeys;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
 use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
+use App\Domain\Reports\Jobs\PruneExpiredReportExports;
 use App\Domain\TimeTracking\Jobs\NotifyLongRunningTimers;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Tests\Support\JobDeclaration;
@@ -25,7 +26,7 @@ use Tests\Support\Probes\SettingsReadingProbeJob;
  *
  * @var list<class-string<KokpitJob>>
  */
-const EXPECTED_APPLICATION_JOBS = [RecordWorkerHeartbeat::class, NotifyLongRunningTimers::class, PurgeExpiredIdempotencyKeys::class];
+const EXPECTED_APPLICATION_JOBS = [RecordWorkerHeartbeat::class, NotifyLongRunningTimers::class, PurgeExpiredIdempotencyKeys::class, PruneExpiredReportExports::class];
 
 /** A concrete job that a self-check subclasses, to prove the declaration is not inherited. */
 #[Idempotent(how: 'Does nothing, so a second run changes nothing')]
