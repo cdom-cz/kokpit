@@ -10,7 +10,6 @@ return [
 
     'errors' => [
         'not_found' => 'Záznam neexistuje.',
-        'duration_too_long' => 'Záznam je příliš dlouhý.',
         'running_entry_end' => 'Běžící záznam se ukončuje časovačem v aplikaci.',
         'running_entry_delete' => 'Běžící záznam nelze smazat. Nejdřív ho v aplikaci zastavte.',
         'idempotency_key_invalid' => 'Hlavička Idempotency-Key musí mít 1 až 255 viditelných znaků bez mezer.',

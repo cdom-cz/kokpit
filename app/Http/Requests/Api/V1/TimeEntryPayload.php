@@ -19,8 +19,8 @@ use stdClass;
  * The write payload of a time entry: the shape rules and the mapping to the data of the domain Actions.
  *
  * The rules check shape only (types, uuid or key syntax, an ISO 8601 instant with an offset, exactly one
- * of `ended_at` and `duration_seconds`, the integer bound). Every business rule, the context agreement,
- * the end after the start and the billed lock, stays in the Actions, so the API refuses what the panel
+ * of `ended_at` and `duration_seconds`, the integer bound owned by `TimeEntryInput`). Every business rule,
+ * the context agreement, the end after the start and the billed lock, stays in the Actions, so the API refuses what the panel
  * refuses with the same field keys and messages. The mapping builds only the allow-listed Action keys:
  * a smuggled `user_id`, `billing_state`, `billed_at` or `id` never leaves this class.
  *
@@ -39,13 +39,6 @@ final class TimeEntryPayload
      * instead of crashing the insert.
      */
     public const string INSTANT = '/^(?!0000)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/';
-
-    /**
-     * The largest interval the generated `duration_seconds` column (a PostgreSQL integer) can hold. It is
-     * the column limit, not a product cap: the API refuses nothing the panel accepts except what would
-     * crash the database.
-     */
-    public const int MAX_DURATION_SECONDS = 2147483647;
 
     private const string RAW_BODY = 'kokpit.api.raw_body';
 
@@ -79,7 +72,7 @@ final class TimeEntryPayload
             'ended_at' => $create
                 ? ['nullable', 'required_without:duration_seconds', 'prohibits:duration_seconds', self::instant()]
                 : ['nullable', 'prohibits:duration_seconds', self::instant()],
-            'duration_seconds' => ['integer', 'min:1', 'max:'.self::MAX_DURATION_SECONDS],
+            'duration_seconds' => ['integer', 'min:1', 'max:'.TimeEntryInput::MAX_DURATION_SECONDS],
             'description' => ['nullable', 'string'],
             'billable' => ['nullable', 'boolean'],
             // Shape and size are decided by TimeEntryInput::external() on the raw body (D-15).
@@ -204,7 +197,9 @@ final class TimeEntryPayload
 
     /**
      * The end of the entry: the named `ended_at`, or the start plus `duration_seconds`. An interval beyond
-     * the column limit is refused under `ended_at` before the database sees it.
+     * the column limit is refused under `ended_at` before the database sees it. The bound is the domain
+     * rule `TimeEntryInput::assertDurationFits()`, applied here first so the answer comes before the
+     * Action runs.
      *
      * @param  array<string, mixed>  $validated
      *
@@ -218,8 +213,8 @@ final class TimeEntryPayload
             ? $start?->addSeconds((int) $duration)
             : TimeEntryInput::instant($validated['ended_at'] ?? null, 'ended_at');
 
-        if ($start !== null && $end !== null && $end->getTimestamp() - $start->getTimestamp() > self::MAX_DURATION_SECONDS) {
-            throw ValidationException::withMessages(['ended_at' => __('api.errors.duration_too_long')]);
+        if ($start !== null && $end !== null) {
+            TimeEntryInput::assertDurationFits($start, $end, 'ended_at');
         }
 
         return $end;

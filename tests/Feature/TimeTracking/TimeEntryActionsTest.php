@@ -478,6 +478,37 @@ it('edits a running entry and keeps it running even when the payload names an en
         ->and($updated->description)->toBe('Still going');
 });
 
+it('refuses a manual entry spanning more than the column limit under ended_at and stores nothing', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $client = entrySystem(static fn (): Client => Client::factory()->create());
+
+    $errors = entryRefused(fn () => entryCreate($admin, [
+        'client_id' => $client->id,
+        'started_at' => '1900-01-01 00:00:00',
+        'ended_at' => '2026-10-12 09:00:00',
+    ]));
+
+    expect($errors)->toHaveKey('ended_at')
+        ->and($errors['ended_at'][0])->toBe(__('kokpit.time.errors.duration_too_long'))
+        ->and(entryCount())->toBe(0);
+});
+
+it('stores a manual entry of exactly 2147483647 seconds', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $client = entrySystem(static fn (): Client => Client::factory()->create());
+    $end = CarbonImmutable::parse('2026-10-12 09:00:00', 'UTC');
+
+    $entry = entryCreate($admin, [
+        'client_id' => $client->id,
+        'started_at' => $end->subSeconds(2147483647)->format('Y-m-d H:i:s'),
+        'ended_at' => $end->format('Y-m-d H:i:s'),
+    ]);
+
+    expect($entry->duration_seconds)->toBe(2147483647);
+});
+
 it('bounds the start of a running entry against the current second in both directions, exactly at the column limit', function (): void {
     $now = CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC');
     $this->travelTo($now);

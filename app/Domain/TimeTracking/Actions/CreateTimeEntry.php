@@ -28,8 +28,9 @@ use Illuminate\Validation\ValidationException;
  *
  * `billable` is the given bool, or the D-03 default of the task when it is
  * absent or null. Ids and instants are set with `forceFill`, so the payload can
- * never smuggle them in. There is no cap on the duration and no ban on a
- * future time: a typo is corrected by editing.
+ * never smuggle them in. The only cap on the duration is the integer column limit
+ * `TimeEntryInput::MAX_DURATION_SECONDS` (about 68 years), refused under `ended_at`;
+ * there is still no ban on a time ahead of now: a typo is corrected by editing.
  *
  * Lock order: the task, project and client rows FOR SHARE. A manual entry never
  * touches the running timer, so it takes no timer lock.
@@ -66,6 +67,7 @@ final class CreateTimeEntry
             }
 
             TimeEntryInput::assertEndAfterStart($start, $end);
+            TimeEntryInput::assertDurationFits($start, $end, 'ended_at');
 
             $billable = is_bool($data['billable'] ?? null)
                 ? $data['billable']

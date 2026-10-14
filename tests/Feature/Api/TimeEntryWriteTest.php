@@ -402,7 +402,8 @@ it('refuses an interval beyond the column limit under ended_at, never a database
     $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, ['ended_at' => '9999-12-31T23:59:59Z']))
         ->assertStatus(422)
         ->assertJsonValidationErrors(['ended_at'])
-        ->assertJsonPath('errors.ended_at.0', __('api.errors.duration_too_long'));
+        ->assertJsonPath('errors.ended_at.0', __('kokpit.time.errors.duration_too_long'))
+        ->assertJsonPath('errors.ended_at.0', 'Záznam je příliš dlouhý.');
 
     $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, [
         'started_at' => '0000-01-01T00:00:00Z',
@@ -418,7 +419,7 @@ it('refuses an interval beyond the column limit under ended_at, never a database
     $this->withToken($token)->patchJson('/api/v1/time-entries/'.$edit->id, ['ended_at' => '9999-12-31T23:59:59Z'])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['ended_at'])
-        ->assertJsonPath('errors.ended_at.0', __('api.errors.duration_too_long'));
+        ->assertJsonPath('errors.ended_at.0', __('kokpit.time.errors.duration_too_long'));
 
     expect(TimeEntry::query()->count())->toBe(1);
 });
