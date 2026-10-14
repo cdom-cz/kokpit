@@ -33,7 +33,11 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
+use OpenSpout\Common\Entity\Cell;
+use OpenSpout\Common\Entity\Cell\FormulaCell;
+use OpenSpout\Common\Entity\Row;
 use OpenSpout\Reader\XLSX\Reader as XlsxReader;
+use OpenSpout\Writer\XLSX\Writer as XlsxWriter;
 use Tests\Support\Canary;
 
 /*
@@ -806,5 +810,105 @@ describe('the XLSX export of the report page', function (): void {
 
         expect($rows['Částky po měnách'])->toBe([[1000.0, 'CZK'], [100.0, 'EUR']])
             ->and($rows['Částka v Kč'][0][0])->toBe(3500.0);
+    });
+});
+
+describe('spreadsheet-safe cells in the workbook', function (): void {
+    it('writes no formula in either sheet and keeps each canary as an inline string with the apostrophe prefix', function (): void {
+        // Each name starts with a different dangerous character; the texts are assembled from fragments.
+        $client = exportBuildClient('='.'ClientCanary');
+        $project = exportBuildProject($client, '+'.'ProjectCanary', 'CAN');
+        $task = exportBuildTask($this->admin, $project, '-'.'TaskCanary');
+        $tabbed = exportBuildTask($this->admin, $project, 'Tab canary');
+        $tabbed->forceFill(['title' => "\t".'TabCanary'])->save();
+        $this->admin->forceFill(['name' => '@'.'UserCanary'])->save();
+        exportBuildEntry($task, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+        exportBuildEntry($tabbed, '2026-09-16 08:00:00', '2026-09-16 09:00:00');
+
+        $export = exportBuildRequest(['client' => $client->id, 'project' => $project->id, 'period' => 'last_month'], 'exportXlsx');
+        $sheets = exportXlsxSheets($export);
+
+        expect(exportXlsxHasFormula(exportXlsxPart($export, 'xl/worksheets/sheet1.xml')))->toBeFalse()
+            ->and(exportXlsxHasFormula(exportXlsxPart($export, 'xl/worksheets/sheet2.xml')))->toBeFalse()
+            ->and($sheets['Záznamy'][1][1])->toBe("'=ClientCanary")
+            ->and($sheets['Záznamy'][1][2])->toBe("'+ProjectCanary")
+            ->and($sheets['Záznamy'][1][3])->toBe("'-TaskCanary")
+            ->and($sheets['Záznamy'][1][4])->toBe("'@UserCanary")
+            ->and($sheets['Záznamy'][2][3])->toBe("'\tTabCanary")
+            ->and($sheets['Souhrn'][0])->toBe(['Klient', "'=ClientCanary"])
+            ->and($sheets['Souhrn'][1])->toBe(['Projekt', "'+ProjectCanary"]);
+    });
+
+    it('proves the check is able to fail: the value-inferring factory of OpenSpout writes a formula element', function (): void {
+        $path = tempnam(sys_get_temp_dir(), 'kokpit-test-xlsx-');
+        $writer = new XlsxWriter;
+        $writer->openToFile((string) $path);
+        $writer->addRow(Row::fromValues(['=1+1']));
+        $writer->close();
+
+        $zip = new ZipArchive;
+        $zip->open((string) $path);
+        $xml = (string) $zip->getFromName('xl/worksheets/sheet1.xml');
+        $zip->close();
+        unlink((string) $path);
+
+        expect(exportXlsxHasFormula($xml))->toBeTrue()
+            ->and(Cell::fromValue('=1+1'))->toBeInstanceOf(FormulaCell::class);
+    });
+
+    it('writes seconds, hours and amounts as numeric cells and never as text', function (): void {
+        $set = exportBuildArrangement();
+        $export = exportBuildRequest(['client' => $set['client']->id, 'period' => 'last_month'], 'exportXlsx');
+        $sheet = exportXlsxPart($export, 'xl/worksheets/sheet1.xml');
+
+        // Row 2 of the entry sheet: F seconds, G hours, J amount and L CZK amount are plain `<v>` cells.
+        foreach (['F2' => '5400', 'G2' => '1.5', 'J2' => '180', 'L2' => '4500'] as $ref => $value) {
+            expect(preg_match('/<c r="'.$ref.'" s="\d+"><v>'.preg_quote($value, '/').'<\/v><\/c>/', $sheet))->toBe(1, $ref);
+        }
+
+        // The date is a date cell: a number with a date format, not a string.
+        expect(preg_match('/<c r="A2" s="\d+"><v>\d+<\/v><\/c>/', $sheet))->toBe(1);
+    });
+
+    it('leaves the CZK cell empty and attaches the comment "Chybí kurz ČNB" when the rate is missing', function (): void {
+        $client = exportBuildClient('Example Client Alpha');
+        // No CNB list exists before this day: priced in EUR, without a CZK amount.
+        exportBuildEntry($client, '2026-09-01 08:00:00', '2026-09-01 09:00:00');
+        exportBuildRate('2026-09-15', 'EUR', '25.000');
+        exportBuildEntry($client, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+
+        $export = exportBuildRequest(['client' => $client->id, 'period' => 'last_month'], 'exportXlsx');
+        $rows = exportXlsxSheets($export)['Záznamy'];
+        $comments = exportXlsxPart($export, 'xl/comments1.xml');
+
+        expect(array_pad($rows[1], 12, ''))->toBe(['2026-09-01', 'Example Client Alpha', '', '', $this->admin->name, 3600.0, 1.0, 'ano', 'ne', 100.0, 'EUR', ''])
+            ->and($rows[2][11])->toBe(2500.0)
+            ->and($comments)->toContain('ref="L2"')
+            ->and($comments)->not->toContain('ref="L3"')
+            ->and($comments)->toContain('Chybí kurz ČNB');
+    });
+
+    it('adds a Poznámka row with the fixed-price and the missing-rate notes only where they apply', function (): void {
+        $client = exportBuildClient('Example Client Alpha');
+        $fixed = exportBuildProject($client, 'Example Project Fixed', 'FIX', ['billing_type' => 'fixed_price', 'hourly_rate' => null, 'fixed_price' => '5000']);
+        // 1:00 priced in EUR on a day before the first stored list, and 2:00 of fixed-price hours.
+        exportBuildEntry($client, '2026-09-01 08:00:00', '2026-09-01 09:00:00');
+        exportBuildEntry($fixed, '2026-09-02 08:00:00', '2026-09-02 10:00:00');
+
+        $both = exportXlsxSummaryRows(exportXlsxSheets(exportBuildRequest(['client' => $client->id, 'period' => 'last_month'], 'exportXlsx'))['Souhrn']);
+
+        expect($both['Poznámka'])->toHaveCount(1)
+            ->and($both['Poznámka'][0][0])->toBe('Hodiny projektů a úkolů s pevnou cenou jsou bez částky. Součet v Kč nezahrnuje 1 záznamů bez kurzu ČNB.');
+
+        $only = exportXlsxSummaryRows(exportXlsxSheets(exportBuildRequest(['client' => $client->id, 'project' => $fixed->id, 'period' => 'last_month'], 'exportXlsx'))['Souhrn']);
+
+        expect($only['Poznámka'][0][0])->toBe('Hodiny projektů a úkolů s pevnou cenou jsou bez částky.');
+    });
+
+    it('has no Poznámka row when neither note applies', function (): void {
+        $set = exportBuildArrangement();
+        $rows = exportXlsxSummaryRows(exportXlsxSheets(exportBuildRequest(['client' => $set['client']->id, 'period' => 'last_month'], 'exportXlsx'))['Souhrn']);
+
+        expect($rows)->not->toHaveKey('Poznámka');
     });
 });
