@@ -287,7 +287,10 @@ it('shows the empty state with the create action reachable from it', function ()
     Livewire::test(ListApiTokens::class)
         ->assertSee('Zatím tu nejsou žádné API tokeny')
         ->assertSee('Vytvořte token pro nástroj, který má číst nebo zapisovat časové záznamy.')
-        ->assertActionExists('createToken');
+        ->assertActionExists('createToken')
+        ->assertTableEmptyStateActionsExistInOrder(['newToken'])
+        ->assertTableActionVisible('newToken')
+        ->assertTableActionHasLabel('newToken', 'Nový API token');
 });
 
 it('opens the create modal from the empty-state button and creates a token with both abilities (G-07-3)', function (): void {
@@ -315,6 +318,31 @@ it('opens the create modal from the empty-state button and creates a token with 
     Auth::forgetGuards();
 
     $this->withToken($plain)->getJson('/api/v1/time-entries')->assertOk();
+});
+
+it('keeps a wrong password under the modal opened from the empty state (G-07-3)', function (): void {
+    $page = Livewire::test(ListApiTokens::class)
+        ->mountTableAction('newToken')
+        ->fillForm(screenCreateData($this, ['password' => Str::password(20)]))
+        ->callMountedAction()
+        ->assertActionMounted('createToken');
+
+    expect($page->instance()->mountedActions)->toHaveCount(1)
+        ->and($page->errors()->get('mountedActions.0.data.password'))->toBe(['Heslo není správné.'])
+        ->and($page->get('mountedActions.0.data.password'))->toBeNull()
+        ->and($page->get('mountedActions.0.data.code'))->toBeNull()
+        ->and($page->get('mountedActions.0.data.name'))->toBe('Example tool')
+        ->and(PersonalAccessToken::query()->count())->toBe(0);
+});
+
+it('leaves no mounted action when the modal opened from the empty state is cancelled (G-07-3)', function (): void {
+    $page = Livewire::test(ListApiTokens::class)
+        ->mountTableAction('newToken')
+        ->assertActionMounted('createToken')
+        ->call('unmountAction');
+
+    expect($page->instance()->mountedActions)->toBe([])
+        ->and(PersonalAccessToken::query()->count())->toBe(0);
 });
 
 it('shows a token without expiry as active and a token expiring in 30 days as active', function (): void {
@@ -477,6 +505,7 @@ it('refuses a forged Livewire mount, create and revoke by a Partner and writes n
     foreach ([
         ['mountAction', ['createToken']],
         ['callMountedAction', []],
+        ['mountTableAction', ['newToken']],
         ['mountTableAction', ['revoke', (string) $token->accessToken->getKey()]],
         ['callMountedTableAction', []],
     ] as [$method, $arguments]) {
