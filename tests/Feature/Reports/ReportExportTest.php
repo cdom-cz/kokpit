@@ -279,3 +279,23 @@ describe('the CSV export of the report page', function (): void {
         expect($html)->toContain('Exportovat report')->toContain('Tabulka CSV')->toContain('Exporty');
     });
 });
+
+describe('spreadsheet-safe cells in the file', function (): void {
+    it('writes a client, project, task and user name that start like formulas with a leading apostrophe', function (): void {
+        // Each name starts with a different dangerous character; the texts are assembled from fragments.
+        $client = exportBuildClient('='.'ClientCanary');
+        $project = exportBuildProject($client, '+'.'ProjectCanary', 'CAN');
+        $task = exportBuildTask($this->admin, $project, '-'.'TaskCanary');
+        $this->admin->forceFill(['name' => '@'.'UserCanary'])->save();
+        exportBuildEntry($task, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+
+        $export = exportBuildRequest(['period' => 'last_month']);
+        $rows = exportBuildRows($export);
+
+        expect($rows)->toHaveCount(2)
+            ->and($rows[1][1])->toBe("'=ClientCanary")
+            ->and($rows[1][2])->toBe("'+ProjectCanary")
+            ->and($rows[1][3])->toBe("'-TaskCanary")
+            ->and($rows[1][4])->toBe("'@UserCanary");
+    });
+});
