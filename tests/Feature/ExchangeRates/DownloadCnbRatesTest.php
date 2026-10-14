@@ -9,11 +9,13 @@ use App\Domain\ExchangeRates\Cnb\CnbFailure;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Shared\Auth\PartnerContext;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 use Tests\Support\CnbFixtures;
+use Tests\Support\RawSql;
 
 /*
  * The CNB daily download (EX-01, D-02): the whole list stored once, under the day the payload names, with the
@@ -281,3 +283,213 @@ describe('the client', function (): void {
             ->and($failure->getMessage())->toBe('server_error');
     });
 });
+
+describe('refusing a bad payload', function (): void {
+    it('ends a poisoned row in a malformed failure and stores nothing', function (array $row): void {
+        cnbAt('2026-10-14');
+        cnbServes('2026-10-14', [
+            ['currencyCode' => 'USD', 'amount' => 1, 'rate' => '22.5'],
+            $row,
+        ]);
+
+        expect(cnbFailureOf('2026-10-14')->failure)->toBe(CnbFailure::Malformed)
+            ->and(Artisan::call('kokpit:rates:download'))->toBe(1)
+            ->and(cnbStored())->toBe([]);
+    })->with([
+        'zero rate' => [['currencyCode' => 'EUR', 'amount' => 1, 'rate' => '0']],
+        'zero with a fraction' => [['currencyCode' => 'EUR', 'amount' => 1, 'rate' => '0.0']],
+        'negative rate' => [['currencyCode' => 'EUR', 'amount' => 1, 'rate' => '-1']],
+        'eleven fraction digits' => [['currencyCode' => 'EUR', 'amount' => 1, 'rate' => '1.12345678901']],
+        'eleven integer digits' => [['currencyCode' => 'EUR', 'amount' => 1, 'rate' => '12345678901']],
+        'exponent rate' => [['currencyCode' => 'EUR', 'amount' => 1, 'rate' => '1.0E-5']],
+        'exponent without a fraction' => [['currencyCode' => 'EUR', 'amount' => 1, 'rate' => '5e2']],
+        'null rate' => [['currencyCode' => 'EUR', 'amount' => 1, 'rate' => 'null']],
+        'text rate' => [['currencyCode' => 'EUR', 'amount' => 1, 'rate' => '"abc"']],
+        'amount zero' => [['currencyCode' => 'EUR', 'amount' => 0, 'rate' => '25.1']],
+        'amount negative' => [['currencyCode' => 'EUR', 'amount' => -100, 'rate' => '25.1']],
+        'amount with a fraction' => [['currencyCode' => 'EUR', 'amount' => 1.5, 'rate' => '25.1']],
+        'amount as text' => [['currencyCode' => 'EUR', 'amount' => '100', 'rate' => '25.1']],
+        'amount beyond the integer column' => [['currencyCode' => 'EUR', 'amount' => 2147483648, 'rate' => '25.1']],
+        'lower-case currency' => [['currencyCode' => 'eur', 'amount' => 1, 'rate' => '25.1']],
+        'four-letter currency' => [['currencyCode' => 'EURO', 'amount' => 1, 'rate' => '25.1']],
+        'currency with a digit' => [['currencyCode' => 'E1R', 'amount' => 1, 'rate' => '25.1']],
+        'a second validFor' => [['currencyCode' => 'EUR', 'amount' => 1, 'rate' => '25.1', 'validFor' => '2026-10-13']],
+        'validFor after the requested day' => [['currencyCode' => 'EUR', 'amount' => 1, 'rate' => '25.1', 'validFor' => '2026-10-15']],
+        'impossible validFor' => [['currencyCode' => 'EUR', 'amount' => 1, 'rate' => '25.1', 'validFor' => '2026-02-30']],
+        'the currency twice' => [['currencyCode' => 'USD', 'amount' => 1, 'rate' => '22.6']],
+    ]);
+
+    it('refuses a payload whose every row is after the requested day, so a future list is never stored', function (): void {
+        cnbAt('2026-10-14');
+        cnbServes('2026-10-15');
+
+        expect(cnbFailureOf('2026-10-14')->failure)->toBe(CnbFailure::Malformed)
+            ->and(Artisan::call('kokpit:rates:download'))->toBe(1)
+            ->and(cnbStored())->toBe([]);
+    });
+
+    it('refuses a body that is not a daily list', function (string $body): void {
+        cnbAt('2026-10-14');
+        Http::fake(['*' => Http::response($body, 200)]);
+
+        expect(cnbFailureOf('2026-10-14')->failure)->toBe(CnbFailure::Malformed)
+            ->and(Artisan::call('kokpit:rates:download'))->toBe(1)
+            ->and(cnbStored())->toBe([]);
+    })->with([
+        'html page' => '<html>Maintenance</html>',
+        'empty body' => '',
+        'truncated json' => '{"rates":[{"validFor":"2026-10-14"',
+        'empty rates list' => '{"rates":[]}',
+        'no rates key' => '{"data":[]}',
+        'rates is not a list' => '{"rates":{"a":1}}',
+        'rates is a string' => '{"rates":"EUR"}',
+        'a row that is not an object' => '{"rates":[1]}',
+        'a bare list' => '[]',
+        'a bare string' => '"EUR"',
+    ]);
+
+    it('accepts the whole list only when every row is valid, so one bad row stores no row of the list', function (): void {
+        cnbAt('2026-10-14');
+        cnbServes('2026-10-14', [
+            ['currencyCode' => 'EUR', 'amount' => 1, 'rate' => '25.125'],
+            ['currencyCode' => 'USD', 'amount' => 1, 'rate' => '-22.5'],
+        ]);
+
+        Artisan::call('kokpit:rates:download');
+
+        expect(cnbStored())->toBe([]);
+    });
+});
+
+describe('refusing a bad answer', function (): void {
+    it('maps a connection error to unavailable', function (): void {
+        Http::fake(static function (): never {
+            throw new ConnectionException('cURL error 6: could not resolve host');
+        });
+
+        $failure = cnbFailureOf('2026-10-14');
+
+        expect($failure->failure)->toBe(CnbFailure::Unavailable)
+            ->and($failure->status)->toBeNull();
+    });
+
+    it('asks once and maps a 4xx to rejected with the status', function (int $status): void {
+        Http::fake(['*' => Http::response('{"errorCode":"VALIDATION_ERROR"}', $status)]);
+
+        $failure = cnbFailureOf('2026-10-14');
+
+        expect($failure->failure)->toBe(CnbFailure::Rejected)
+            ->and($failure->status)->toBe($status);
+
+        Http::assertSentCount(1);
+    })->with([400, 404, 429]);
+
+    it('retries a 5xx three times and maps it to a server error with the status', function (): void {
+        Http::fake(['*' => Http::response('', 503)]);
+
+        $failure = cnbFailureOf('2026-10-14');
+
+        expect($failure->failure)->toBe(CnbFailure::ServerError)
+            ->and($failure->status)->toBe(503);
+
+        Http::assertSentCount(3);
+    });
+
+    it('succeeds on the third request after two server errors', function (): void {
+        Http::fake(['*' => Http::sequence()
+            ->push('', 500)
+            ->push('', 502)
+            ->push(CnbFixtures::dailyJson('2026-10-14'), 200)]);
+
+        expect(cnbFailureOrList('2026-10-14'))->toBe('2026-10-14');
+
+        Http::assertSentCount(3);
+    });
+
+    it('prints the Czech label and the status and never the response body', function (): void {
+        cnbAt('2026-10-14');
+        $canary = implode('-', ['body', 'leak', bin2hex(random_bytes(6))]);
+        Http::fake(['*' => Http::response($canary, 503)]);
+
+        expect(Artisan::call('kokpit:rates:download'))->toBe(1);
+
+        $output = Artisan::output();
+
+        expect($output)->toContain(__('kokpit.rates.console.failed', ['reason' => CnbFailure::ServerError->label()]))
+            ->and($output)->toContain(__('kokpit.rates.console.status', ['status' => 503]))
+            ->and($output)->not->toContain($canary)
+            ->and(cnbStored())->toBe([]);
+    });
+
+    it('prints no exception text for a connection error', function (): void {
+        cnbAt('2026-10-14');
+        $canary = implode('-', ['conn', 'leak', bin2hex(random_bytes(6))]);
+        Http::fake(static function () use ($canary): never {
+            throw new ConnectionException($canary);
+        });
+
+        expect(Artisan::call('kokpit:rates:download'))->toBe(1);
+
+        $output = Artisan::output();
+
+        expect($output)->toContain(CnbFailure::Unavailable->label())
+            ->and($output)->not->toContain($canary)
+            ->and($output)->not->toContain(__('kokpit.rates.console.status', ['status' => 0]));
+    });
+
+    it('prints no body text for a malformed list', function (): void {
+        cnbAt('2026-10-14');
+        $canary = implode('-', ['malformed', 'leak', bin2hex(random_bytes(6))]);
+        Http::fake(['*' => Http::response('<html>'.$canary.'</html>', 200)]);
+
+        expect(Artisan::call('kokpit:rates:download'))->toBe(1)
+            ->and(Artisan::output())->toContain(CnbFailure::Malformed->label())
+            ->and(Artisan::output())->not->toContain($canary);
+    });
+
+    it('carries only the failure value in the exception, never body or transport text', function (): void {
+        $canary = implode('-', ['exc', 'leak', bin2hex(random_bytes(6))]);
+        Http::fake(['*' => Http::response($canary, 500)]);
+
+        $failure = cnbFailureOf('2026-10-14');
+
+        expect($failure->getMessage())->toBe('server_error')
+            ->and($failure->getMessage())->not->toContain($canary)
+            ->and($failure->getPrevious())->toBeNull();
+    });
+});
+
+describe('mutation self-check: the Action keeps ignoring conflicts', function (): void {
+    it('refuses the same list twice by plain insert, while the Action inserts zero rows', function (): void {
+        cnbAt('2026-10-14');
+        cnbServes('2026-10-14');
+
+        $rows = app(CnbClient::class)->daily('2026-10-14')->rows(now());
+
+        app(PartnerContext::class)->runAsSystem(static function () use ($rows): void {
+            ExchangeRate::query()->insert($rows);
+
+            // The unique key is what the Action leans on: a plain second insert is a unique violation.
+            RawSql::expectSqlState('23505', static fn () => ExchangeRate::query()->insert($rows));
+
+            // The same answer through the Action: a different run day whose answer is the stored list.
+            $result = app(DownloadCnbRates::class)->handle('2026-10-15');
+
+            expect($result['inserted'])->toBe(0)
+                ->and($result['skipped'])->toBeFalse()
+                ->and(ExchangeRate::query()->count())->toBe(6);
+        });
+    });
+});
+
+/**
+ * The validity day of the list a download returns; a failure is reported as its value.
+ */
+function cnbFailureOrList(string $day): string
+{
+    try {
+        return app(CnbClient::class)->daily($day)->validFor;
+    } catch (CnbDownloadFailed $failure) {
+        return $failure->failure->value;
+    }
+}
