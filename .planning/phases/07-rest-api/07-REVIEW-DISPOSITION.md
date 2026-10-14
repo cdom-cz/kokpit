@@ -1,13 +1,15 @@
 # Phase 07 — Review disposition
 
-Source: 07-REVIEW.md (standard depth, 68 files; 0 critical, 3 warning, 4 info). Advisory ledger, default disposition `open`.
+Source: 07-REVIEW.md (standard depth, 31 files changed by gap plans 07-13 to 07-18; 0 critical, 3 warning, 4 info). Advisory ledger, default disposition `open`.
+
+The findings of the first review (also numbered WR-01 to WR-03 and IN-01 to IN-04, see git history of 07-REVIEW.md at 9f345e4) were closed by plans 07-13 to 07-18; the evidence is in the matching SUMMARY files. The ids below refer to the second review only.
 
 | Finding | Severity | Disposition | Note |
 |---------|----------|-------------|------|
-| WR-01 | warning | open | PATCH of started_at alone to a far-past instant gives 500 (integer overflow); same threat as T-07-26 in 07-SECURITY.md |
-| WR-02 | warning | open | Instants outside UTC years 1 to 9999 give 500 (create, update, filter[from]); a bad batch item can leave earlier items committed |
-| WR-03 | warning | open | Malformed or wrong-typed cursor gives 500; the sample cursor in ApiExamples is itself malformed |
-| IN-01 | info | open | CONTRIBUTING.md ordering rule needs an exception for lookup lists |
-| IN-02 | info | open | Scribe intro hard-codes limits that live in config/kokpit.php |
-| IN-03 | info | open | PROJECT_KEY and TASK_REFERENCE regexes should end in \z |
-| IN-04 | info | open | Docs tests regenerate the real docs output with a placeholder host |
+| WR-01 | warning | open | Uppercase UUID next to task_id or project_id gives a false 422 inconsistent_context (TimeEntryInput, UpdateTimeEntry); lowercase in id() |
+| WR-02 | warning | open | Running-entry span guard checked only at edit time; EXTRACT(EPOCH)::int in TimeEntry can overflow on later reads near the limit |
+| WR-03 | warning | open | Batch where every item hits a server fault answers 422; a 5xx would not hide an outage as a client error |
+| IN-01 | info | open | D modifier added only to key patterns; instant patterns still end in a bare $ |
+| IN-02 | info | open | SORT_VALUES duplicates TimeEntryController::SORTS; ListLookupsRequest repeats the controller match |
+| IN-03 | info | open | Prose paragraph between tags in the TimeEntryInput::instant() docblock |
+| IN-04 | info | open | Endpoint descriptions omit span and year bounds; one test asserts the same Czech message twice |
