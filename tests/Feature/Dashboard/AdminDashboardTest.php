@@ -472,7 +472,7 @@ describe('the upcoming task deadlines', function (): void {
         $this->deadlineProject = adminDashProject($this->deadlineClient, 'DLN', 'Example Project Deadline');
     });
 
-    it('lists the ten nearest of twelve open tasks with a due date, nearest first', function (): void {
+    it('lists the ten nearest of twelve open tasks of one priority with a due date, nearest first', function (): void {
         // Today is 2026-10-14. Twelve tasks due on the 15th to the 26th, created in reverse order.
         for ($day = 26; $day >= 15; $day--) {
             adminDashDeadlineTask($this->deadlineProject, '2026-10-'.$day, 'Example due '.$day);
@@ -489,7 +489,7 @@ describe('the upcoming task deadlines', function (): void {
             ->and(strpos($text, 'Example due 23'))->toBeLessThan((int) strpos($text, 'Example due 24'));
     });
 
-    it('breaks a tie of the due day by priority, the most urgent first', function (): void {
+    it('puts the most urgent first among tasks due on the same day', function (): void {
         adminDashDeadlineTask($this->deadlineProject, '2026-10-20', 'Example low', ['priority' => 'low']);
         adminDashDeadlineTask($this->deadlineProject, '2026-10-20', 'Example urgent', ['priority' => 'urgent']);
         adminDashDeadlineTask($this->deadlineProject, '2026-10-20', 'Example normal', ['priority' => 'normal']);
@@ -498,6 +498,41 @@ describe('the upcoming task deadlines', function (): void {
 
         expect(strpos($text, 'Example urgent'))->toBeLessThan((int) strpos($text, 'Example normal'))
             ->and(strpos($text, 'Example normal'))->toBeLessThan((int) strpos($text, 'Example low'));
+    });
+
+    it('puts the higher priority first and orders by the nearest due date within a priority', function (): void {
+        // Today is 2026-10-14. Priority weighs first, like the task list and the Partner dashboard.
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-15', 'Example low soon', ['priority' => 'low']);
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-30', 'Example urgent far', ['priority' => 'urgent']);
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-16', 'Example normal near', ['priority' => 'normal']);
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-20', 'Example normal later', ['priority' => 'normal']);
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-17', 'Example high', ['priority' => 'high']);
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-12', 'Example urgent overdue', ['priority' => 'urgent']);
+
+        $html = adminDashDeadlinesHtml();
+        $text = adminDashText($html);
+        $order = array_map(static fn (string $title): int => (int) strpos($text, $title), [
+            'Example urgent overdue',
+            'Example urgent far',
+            'Example high',
+            'Example normal near',
+            'Example normal later',
+            'Example low soon',
+        ]);
+
+        expect($order)->toBe(collect($order)->sort()->values()->all())
+            ->and(count(array_unique($order)))->toBe(6)
+            // The overdue task keeps its highlight wherever the order puts it.
+            ->and($text)->toContain('Po termínu o 2 dny');
+    });
+
+    it('lists a task without a due date nowhere, so no undated task can take a place', function (): void {
+        adminDashDeadlineTask($this->deadlineProject, null, 'Example undated urgent', ['priority' => 'urgent']);
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-30', 'Example dated low', ['priority' => 'low']);
+
+        $text = adminDashText(adminDashDeadlinesHtml());
+
+        expect($text)->toContain('Example dated low')->not->toContain('Example undated urgent');
     });
 
     it('highlights an overdue task with the danger date, the badge and the day count, and a task due today with "Dnes"', function (): void {

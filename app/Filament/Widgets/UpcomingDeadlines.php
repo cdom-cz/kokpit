@@ -22,8 +22,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Livewire\Attributes\On;
 
 /**
- * "Nejbližší termíny" on the Admin dashboard: the first ten open tasks that have a due date, nearest date first,
- * then the more urgent priority (RE-04 upcoming task deadlines; D-11, UI-SPEC E3).
+ * "Nejbližší termíny" on the Admin dashboard: the first ten open tasks that have a due date, the more urgent
+ * priority first, then the nearest due date (RE-04 upcoming task deadlines; D-11, UI-SPEC E3). The plan and the
+ * UI-SPEC say due date first; the owner's requirement for priority-aware ordering wins and is the order of the task
+ * list and the Partner dashboard.
  *
  * An open task is any task whose status is not `done`; an archived task is gone with the soft delete scope, and a
  * task without a due date is not a deadline. A task is overdue when its due day is before today in Prague, and the
@@ -104,8 +106,10 @@ final class UpcomingDeadlines extends TableWidget
     }
 
     /**
-     * The ten nearest open tasks with a due date: by due day, then priority weight, then reference and id, so the
-     * order is the same on every render.
+     * The ten first open tasks with a due date, in the default order of every task list (owner requirement, the todo
+     * "Sort tasks by priority then nearest due date by default"): priority weight first (urgent, high, normal, low,
+     * the same builder as the Partner dashboard and the task list), then the nearest due day with an undated task
+     * last, then reference and id, so the order is the same on every render.
      *
      * @return Builder<Task>
      */
@@ -113,10 +117,10 @@ final class UpcomingDeadlines extends TableWidget
     {
         $query = Task::query()
             ->whereNotNull('tasks.due_date')
-            ->where('tasks.status', '!=', ProjectStatus::Done->value)
-            ->orderBy('tasks.due_date');
+            ->where('tasks.status', '!=', ProjectStatus::Done->value);
 
         return TaskColumns::orderByPriority($query)
+            ->orderByRaw('"tasks"."due_date" ASC NULLS LAST')
             ->orderBy('tasks.reference')
             ->orderBy('tasks.id')
             ->with(['project' => static fn (BelongsTo $project): BelongsTo => $project
