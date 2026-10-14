@@ -179,11 +179,30 @@ it('filters the overview by source', function (): void {
     $console = activityViewsRow(['source' => 'console']);
     $job = activityViewsRow(['source' => 'job']);
     $webhook = activityViewsRow(['source' => 'webhook']);
+    $api = activityViewsRow(['source' => 'api']);
 
     Livewire::test(ListActivities::class)
         ->filterTable('source', 'job')
         ->assertCanSeeTableRecords([$job])
-        ->assertCanNotSeeTableRecords([$web, $console, $webhook]);
+        ->assertCanNotSeeTableRecords([$web, $console, $webhook, $api]);
+});
+
+it('offers API in the source filter and lists only API rows for it, labelled API', function (): void {
+    $this->actingAs(Canary::admin());
+    $web = activityViewsRow(['source' => 'web']);
+    $console = activityViewsRow(['source' => 'console']);
+    $job = activityViewsRow(['source' => 'job']);
+    $webhook = activityViewsRow(['source' => 'webhook']);
+    $api = activityViewsRow(['source' => 'api']);
+
+    Livewire::test(ListActivities::class)
+        ->assertTableFilterExists('source', fn ($filter): bool => ($filter->getOptions()['api'] ?? null) === 'API')
+        ->filterTable('source', 'api')
+        ->assertCanSeeTableRecords([$api])
+        ->assertCanNotSeeTableRecords([$web, $console, $job, $webhook])
+        ->assertSee('API');
+
+    expect(ActivityPresenter::causerLabel($api))->toBe('API');
 });
 
 it('filters the overview by event', function (): void {

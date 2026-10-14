@@ -165,6 +165,16 @@ it('rejects an unknown source value with a check violation', function (): void {
     });
 });
 
+it('accepts the api source and still refuses cli, which is no label', function (): void {
+    RawSql::expectAllowed(function (): void {
+        DB::table('activity_log')->insert(['description' => 'Fictional api row', 'source' => 'api']);
+    });
+
+    RawSql::expectSqlState('23514', function (): void {
+        DB::table('activity_log')->insert(['description' => 'Fictional cli row', 'source' => 'cli']);
+    });
+});
+
 it('accepts each label and a row without a label', function (): void {
     foreach ([...array_column(ActivitySourceLabel::cases(), 'value'), null] as $value) {
         RawSql::expectAllowed(function () use ($value): void {
