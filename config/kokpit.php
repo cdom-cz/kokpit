@@ -236,4 +236,35 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Report exports
+    |--------------------------------------------------------------------------
+    |
+    | Fixed settings of the exports area (RE-03, D-09). Literal starting points,
+    | not editable in the UI.
+    |
+    | ttl_days (D-09): how many days a finished export file is kept on the
+    |   private disk, counted from its completion. The scheduled prune then
+    |   deletes the file and the record. A pending or failed record expires the
+    |   same number of days after its creation, so stale records go too. The
+    |   value is never read below 1.
+    |
+    | csv.delimiter / csv.decimal_separator (research A1): the CSV is written
+    |   for Czech Excel, which reads a semicolon as the column separator and a
+    |   comma as the decimal sign (a comma delimiter would split every amount
+    |   such as 1234,50 in two). The file starts with a UTF-8 byte order mark so
+    |   Excel reads the Czech characters, and every text cell is neutralised
+    |   against spreadsheet formulas.
+    |
+    */
+
+    'exports' => [
+        'ttl_days' => 7,
+        'csv' => [
+            'delimiter' => ';',
+            'decimal_separator' => ',',
+        ],
+    ],
+
 ];

@@ -568,6 +568,108 @@ return [
         ],
     ],
 
+    // The exports area (RE-03, D-09): the UI-SPEC copywriting contract "Exports" and Surface C and H, formal
+    // address. The file texts (column headers, sheet and row names, notes) are what the CSV and XLSX builders
+    // write; the summary texts feed the "Zadání" column. :days, :format, :period and :date are filled by the caller.
+    'exports' => [
+        'navigation' => 'Exporty',
+        'model_label' => 'Export',
+        'plural_label' => 'Exporty',
+        'subheading' => 'Hotové exporty se uchovávají :days dní, potom se smažou.',
+
+        'columns' => [
+            'created_at' => 'Vytvořeno',
+            'format' => 'Formát',
+            'summary' => 'Zadání',
+            'status' => 'Stav',
+            'expires_at' => 'Platí do',
+        ],
+
+        'actions' => [
+            'download' => 'Stáhnout export',
+        ],
+
+        'queued' => [
+            'title' => 'Export se připravuje',
+            'body' => 'Až bude hotový, přijde upozornění. Soubor najdete v nabídce Exporty.',
+        ],
+
+        'gone' => 'Soubor už není k dispozici. Spusťte export znovu.',
+        'failure_reason' => 'Export se nepodařilo vytvořit. Spusťte ho znovu v Reportu času.',
+
+        'empty' => [
+            'heading' => 'Zatím tu nejsou žádné exporty',
+            'description' => 'Export spustíte v Reportu času tlačítkem Exportovat report.',
+        ],
+
+        // The bell notifications name the format and the period only: no client name, amount or path.
+        'bell' => [
+            'ready' => [
+                'title' => 'Export je připraven',
+                'body' => ':format, :period. Soubor je ke stažení do :date.',
+            ],
+            'failed' => [
+                'title' => 'Export se nepodařil',
+                'body' => 'Export za :period se nepodařilo vytvořit. Zkuste ho spustit znovu.',
+            ],
+            'action' => 'Otevřít exporty',
+        ],
+
+        // The parts of the "Zadání" text when no client or project is chosen.
+        'summary' => [
+            'all_clients' => 'Všichni klienti',
+            'all_projects' => 'Všechny projekty',
+        ],
+
+        // What the CSV and XLSX files contain (UI-SPEC C3). The column order is the order of the keys.
+        'file' => [
+            'columns' => [
+                'date' => 'Datum',
+                'client' => 'Klient',
+                'project' => 'Projekt',
+                'task' => 'Úkol',
+                'user' => 'Uživatel',
+                'seconds' => 'Sekundy',
+                'hours' => 'Hodiny',
+                'billable' => 'Fakturovatelné',
+                'billed' => 'Vyfakturováno',
+                'amount' => 'Částka',
+                'currency' => 'Měna',
+                'amount_czk' => 'Částka v Kč',
+            ],
+
+            'yes' => 'ano',
+            'no' => 'ne',
+
+            'sheets' => [
+                'entries' => 'Záznamy',
+                'summary' => 'Souhrn',
+            ],
+
+            'summary_rows' => [
+                'client' => 'Klient',
+                'project' => 'Projekt',
+                'period' => 'Období',
+                'worked' => 'Odpracováno',
+                'billable' => 'Fakturovatelné',
+                'non_billable' => 'Nefakturovatelné',
+                'billed' => 'Vyfakturováno',
+                'unbilled' => 'Nevyfakturováno',
+                'amounts' => 'Částky po měnách',
+                'amount_czk' => 'Částka v Kč',
+                'note' => 'Poznámka',
+            ],
+
+            // The same sentences as the report page notes, without the asterisk of the on-screen footnote.
+            'notes' => [
+                'fixed_price' => 'Hodiny projektů a úkolů s pevnou cenou jsou bez částky.',
+                'missing_rate' => 'Součet v Kč nezahrnuje :count záznamů bez kurzu ČNB.',
+            ],
+
+            'missing_rate_comment' => 'Chybí kurz ČNB',
+        ],
+    ],
+
     'ares' => [
         'button' => 'Načíst z ARES',
         'filled' => 'Načteno z ARES',

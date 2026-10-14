@@ -240,3 +240,81 @@ describe('lifecycle', function (): void {
             ->and($export->expires_at->greaterThan(CarbonImmutable::now()->addDay()))->toBeTrue();
     });
 });
+
+describe('the exports contract', function (): void {
+    it('keeps the finished files seven days and writes the CSV the way Czech Excel reads it', function (): void {
+        expect(config('kokpit.exports.ttl_days'))->toBe(7)
+            ->and(config('kokpit.exports.csv.delimiter'))->toBe(';')
+            ->and(config('kokpit.exports.csv.decimal_separator'))->toBe(',');
+    });
+
+    it('words the subheading with the retention from the configuration', function (): void {
+        expect(__('kokpit.exports.subheading', ['days' => 7]))->toBe('Hotové exporty se uchovávají 7 dní, potom se smažou.');
+    });
+
+    it('words the bell without a client name, an amount or a path', function (): void {
+        $period = '1. 9. 2026 – 30. 9. 2026';
+
+        expect(__('kokpit.exports.bell.ready.title'))->toBe('Export je připraven')
+            ->and(__('kokpit.exports.bell.ready.body', ['format' => 'CSV', 'period' => $period, 'date' => '7. 10. 2026']))
+            ->toBe('CSV, 1. 9. 2026 – 30. 9. 2026. Soubor je ke stažení do 7. 10. 2026.')
+            ->and(__('kokpit.exports.bell.failed.title'))->toBe('Export se nepodařil')
+            ->and(__('kokpit.exports.bell.failed.body', ['period' => $period]))
+            ->toBe('Export za 1. 9. 2026 – 30. 9. 2026 se nepodařilo vytvořit. Zkuste ho spustit znovu.')
+            ->and(__('kokpit.exports.bell.action'))->toBe('Otevřít exporty');
+    });
+
+    it('words the list, the toast and the file texts verbatim from the UI contract', function (): void {
+        expect(__('kokpit.exports.gone'))->toBe('Soubor už není k dispozici. Spusťte export znovu.')
+            ->and(__('kokpit.exports.file.missing_rate_comment'))->toBe('Chybí kurz ČNB')
+            ->and(__('kokpit.exports.navigation'))->toBe('Exporty')
+            ->and(__('kokpit.exports.model_label'))->toBe('Export')
+            ->and(__('kokpit.exports.plural_label'))->toBe('Exporty')
+            ->and(__('kokpit.exports.actions.download'))->toBe('Stáhnout export')
+            ->and(__('kokpit.exports.queued.title'))->toBe('Export se připravuje')
+            ->and(__('kokpit.exports.queued.body'))->toBe('Až bude hotový, přijde upozornění. Soubor najdete v nabídce Exporty.')
+            ->and(__('kokpit.exports.failure_reason'))->toBe('Export se nepodařilo vytvořit. Spusťte ho znovu v Reportu času.')
+            ->and(__('kokpit.exports.empty.heading'))->toBe('Zatím tu nejsou žádné exporty')
+            ->and(__('kokpit.exports.empty.description'))->toBe('Export spustíte v Reportu času tlačítkem Exportovat report.')
+            ->and(__('kokpit.exports.summary.all_clients'))->toBe('Všichni klienti')
+            ->and(__('kokpit.exports.summary.all_projects'))->toBe('Všechny projekty')
+            ->and(__('kokpit.exports.file.yes'))->toBe('ano')
+            ->and(__('kokpit.exports.file.no'))->toBe('ne')
+            ->and(__('kokpit.exports.file.sheets.entries'))->toBe('Záznamy')
+            ->and(__('kokpit.exports.file.sheets.summary'))->toBe('Souhrn');
+    });
+
+    it('names the list columns', function (): void {
+        expect(array_values((array) trans('kokpit.exports.columns')))->toBe(['Vytvořeno', 'Formát', 'Zadání', 'Stav', 'Platí do'])
+            ->and(array_keys((array) trans('kokpit.exports.columns')))->toBe(['created_at', 'format', 'summary', 'status', 'expires_at']);
+    });
+
+    it('names the twelve file columns in order', function (): void {
+        expect(array_values((array) trans('kokpit.exports.file.columns')))->toBe([
+            'Datum', 'Klient', 'Projekt', 'Úkol', 'Uživatel', 'Sekundy', 'Hodiny', 'Fakturovatelné', 'Vyfakturováno', 'Částka', 'Měna', 'Částka v Kč',
+        ])->and(array_keys((array) trans('kokpit.exports.file.columns')))->toBe([
+            'date', 'client', 'project', 'task', 'user', 'seconds', 'hours', 'billable', 'billed', 'amount', 'currency', 'amount_czk',
+        ]);
+    });
+
+    it('names the summary sheet rows and the notes', function (): void {
+        expect(array_values((array) trans('kokpit.exports.file.summary_rows')))->toBe([
+            'Klient', 'Projekt', 'Období', 'Odpracováno', 'Fakturovatelné', 'Nefakturovatelné', 'Vyfakturováno', 'Nevyfakturováno', 'Částky po měnách', 'Částka v Kč', 'Poznámka',
+        ])->and(__('kokpit.exports.file.notes.fixed_price'))->toBe('Hodiny projektů a úkolů s pevnou cenou jsou bez částky.')
+            ->and(__('kokpit.exports.file.notes.missing_rate', ['count' => 3]))->toBe('Součet v Kč nezahrnuje 3 záznamů bez kurzu ČNB.');
+    });
+
+    it('has a real translation behind every key of the contract', function (string $key): void {
+        expect(__($key))->not->toBe($key);
+    })->with([
+        'kokpit.exports.navigation', 'kokpit.exports.model_label', 'kokpit.exports.plural_label', 'kokpit.exports.subheading',
+        'kokpit.exports.columns.created_at', 'kokpit.exports.columns.format', 'kokpit.exports.columns.summary', 'kokpit.exports.columns.status', 'kokpit.exports.columns.expires_at',
+        'kokpit.exports.actions.download', 'kokpit.exports.queued.title', 'kokpit.exports.queued.body', 'kokpit.exports.gone', 'kokpit.exports.failure_reason',
+        'kokpit.exports.empty.heading', 'kokpit.exports.empty.description',
+        'kokpit.exports.bell.ready.title', 'kokpit.exports.bell.ready.body', 'kokpit.exports.bell.failed.title', 'kokpit.exports.bell.failed.body', 'kokpit.exports.bell.action',
+        'kokpit.exports.summary.all_clients', 'kokpit.exports.summary.all_projects',
+        'kokpit.exports.file.yes', 'kokpit.exports.file.no', 'kokpit.exports.file.sheets.entries', 'kokpit.exports.file.sheets.summary',
+        'kokpit.exports.file.notes.fixed_price', 'kokpit.exports.file.notes.missing_rate', 'kokpit.exports.file.missing_rate_comment',
+        'kokpit.exports.file.summary_rows.client', 'kokpit.exports.file.summary_rows.note', 'kokpit.exports.file.columns.amount_czk',
+    ]);
+});
