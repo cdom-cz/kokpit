@@ -7,11 +7,15 @@ use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Reports\ReportFilters;
+use App\Domain\Reports\TimeReport;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Domain\TimeTracking\Queries\TimeTotals;
+use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Pages\TimeReportPage;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
@@ -252,5 +256,254 @@ describe('who may open the report', function (): void {
         $this->actingAs(Canary::partnerFor($clientId));
 
         Livewire::test(TimeReportPage::class)->assertForbidden();
+    });
+});
+
+describe('the summary', function (): void {
+    it('keeps worked equal to billed plus unbilled plus non billable and equal to the project time totals', function (): void {
+        $client = timeReportClient('Example Client Alpha', 'EUR', '100');
+        $project = timeReportProject($client, 'Example Project Web', 'WEB', ['hourly_rate' => '120']);
+        $task = timeReportTask($this->admin, $project, 'Landing page');
+        timeReportRate('2026-09-15', 'EUR', '25.000');
+
+        timeReportEntry($task, '2026-09-15 08:00:00', '2026-09-15 09:30:00');
+        timeReportEntry($task, '2026-09-15 10:00:00', '2026-09-15 10:45:00', ['billing_state' => 'billed', 'billed_at' => CarbonImmutable::parse('2026-09-16 08:00:00', 'UTC')]);
+        timeReportEntry($task, '2026-09-15 11:00:00', '2026-09-15 11:20:00', ['billable' => false]);
+        // A project-only entry still running at the frozen clock (09:00 UTC to 10:00 UTC today) counts at its elapsed time.
+        timeReportEntry($project, '2026-10-14 09:00:00', '');
+
+        $now = TimerClock::now();
+        $summary = TimeReport::build(ReportFilters::period('2026-09-01', '2026-10-31', $client->id), $now)->summary;
+        $totals = app(TimeTotals::class)->forProject($project, $now);
+
+        // 1:30 unbilled + 1:00 running unbilled + 0:45 billed + 0:20 non billable.
+        expect($summary['worked'])->toBe(5400 + 3600 + 2700 + 1200)
+            ->and($summary['unbilled'])->toBe(5400 + 3600)
+            ->and($summary['billed'])->toBe(2700)
+            ->and($summary['non_billable'])->toBe(1200)
+            ->and($summary['billable'])->toBe(5400 + 3600 + 2700)
+            ->and($summary['worked'])->toBe($summary['billed'] + $summary['unbilled'] + $summary['non_billable'])
+            ->and($summary['worked'])->toBe($totals['worked'])
+            ->and($summary['billed'])->toBe($totals['billed'])
+            ->and($summary['unbilled'])->toBe($totals['unbilled'])
+            ->and($summary['non_billable'])->toBe($totals['non_billable']);
+    });
+
+    it('adds amounts only for billable hourly entries and keeps billable equal to billed plus unbilled', function (): void {
+        $client = timeReportClient('Example Client Alpha', 'EUR', '100');
+        $hourly = timeReportProject($client, 'Example Project Web', 'WEB', ['hourly_rate' => '120']);
+        $fixed = timeReportProject($client, 'Example Project Fixed', 'FIX', ['billing_type' => 'fixed_price', 'hourly_rate' => null, 'fixed_price' => '5000']);
+        $nonBillableTask = timeReportTask($this->admin, $hourly, 'Internal');
+        timeReportRate('2026-09-15', 'EUR', '25.000');
+
+        // 1:00 unbilled = 120.00 EUR = 3 000,00 Kč; 0:30 billed = 60.00 EUR = 1 500,00 Kč.
+        timeReportEntry($hourly, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+        timeReportEntry($hourly, '2026-09-15 10:00:00', '2026-09-15 10:30:00', ['billing_state' => 'billed', 'billed_at' => CarbonImmutable::parse('2026-09-16 08:00:00', 'UTC')]);
+        // Hours without an amount: a fixed-price project (2:00) and a non billable entry (0:15).
+        timeReportEntry($fixed, '2026-09-15 11:00:00', '2026-09-15 13:00:00');
+        timeReportEntry($nonBillableTask, '2026-09-15 14:00:00', '2026-09-15 14:15:00', ['billable' => false]);
+
+        $summary = TimeReport::build(ReportFilters::period('2026-09-01', '2026-09-30', $client->id), TimerClock::now())->summary;
+
+        expect($summary['amounts']['unbilled']['EUR']->minor)->toBe(12000)
+            ->and($summary['amounts']['billed']['EUR']->minor)->toBe(6000)
+            ->and($summary['amounts']['billable']['EUR']->minor)->toBe(18000)
+            ->and($summary['czk']['unbilled']?->minor)->toBe(300000)
+            ->and($summary['czk']['billed']?->minor)->toBe(150000)
+            ->and($summary['czk']['billable']?->minor)->toBe(450000)
+            ->and($summary['fixed'])->toBe(7200)
+            ->and($summary['non_billable'])->toBe(900)
+            ->and($summary['czk_missing'])->toBe(0);
+    });
+
+    it('counts an entry without a CNB rate in czk_missing and leaves it out of the CZK sum', function (): void {
+        $client = timeReportClient('Example Client Alpha', 'EUR', '100');
+        timeReportRate('2026-09-15', 'EUR', '25.000');
+        // Before the first stored list: no rate for that day.
+        timeReportEntry($client, '2026-09-01 08:00:00', '2026-09-01 09:00:00');
+        timeReportEntry($client, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+
+        $summary = TimeReport::build(ReportFilters::period('2026-09-01', '2026-09-30', $client->id), TimerClock::now())->summary;
+
+        expect($summary['amounts']['unbilled']['EUR']->minor)->toBe(20000)
+            ->and($summary['czk']['unbilled']?->minor)->toBe(250000)
+            ->and($summary['czk_missing'])->toBe(1);
+    });
+
+    it('prices a CZK client without a lookup', function (): void {
+        $client = timeReportClient('Example Client Alpha', 'CZK', '800');
+        timeReportEntry($client, '2026-09-15 08:00:00', '2026-09-15 09:30:00');
+
+        $report = TimeReport::build(ReportFilters::period('2026-09-01', '2026-09-30', $client->id), TimerClock::now());
+
+        expect($report->summary['czk']['unbilled']?->minor)->toBe(120000)
+            ->and($report->summary['amounts']['unbilled']['CZK']->minor)->toBe(120000)
+            ->and($report->summary['czk_missing'])->toBe(0);
+    });
+});
+
+describe('the filter strip', function (): void {
+    it('shows only the chosen client and keeps archived clients, projects and tasks in the report', function (): void {
+        $alpha = timeReportClient('Example Client Alpha');
+        $beta = timeReportClient('Example Client Beta');
+        $project = timeReportProject($alpha, 'Example Project Web', 'WEB');
+        $task = timeReportTask($this->admin, $project, 'Landing page');
+        timeReportEntry($task, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+        timeReportEntry($beta, '2026-09-15 08:00:00', '2026-09-15 10:00:00');
+        timeReportSystem(static function () use ($task, $project, $alpha): void {
+            $task->delete();
+            $project->delete();
+            $alpha->delete();
+        });
+
+        $text = timeReportText((string) $this->get('/admin/time-report?client='.$alpha->id.'&period=last_month')->assertOk()->getContent());
+
+        expect($text)
+            ->toContain('Example Client Alpha 1:00 ')
+            ->toContain('Example Project Web 1:00 ')
+            ->toContain($task->reference.' · Landing page 1:00 ')
+            ->not->toContain('Example Client Beta 2:00');
+    });
+
+    it('lists an archived client marked as archived and a client without projects', function (): void {
+        $active = timeReportClient('Example Client Alpha');
+        $archived = timeReportClient('Example Client Beta');
+        timeReportSystem(static fn () => $archived->delete());
+
+        $text = timeReportText((string) $this->get('/admin/time-report')->assertOk()->getContent());
+
+        expect($text)
+            ->toContain('Všichni klienti')
+            ->toContain('Example Client Alpha')
+            ->toContain('Example Client Beta (archivovaný)')
+            ->not->toContain('Example Client Alpha (archivovaný)');
+    });
+
+    it('keeps the project select disabled with the hint until a client is chosen', function (): void {
+        $client = timeReportClient('Example Client Alpha');
+        $project = timeReportProject($client, 'Example Project Web', 'WEB');
+
+        $without = (string) $this->get('/admin/time-report')->assertOk()->getContent();
+        $with = (string) $this->get('/admin/time-report?client='.$client->id)->assertOk()->getContent();
+
+        preg_match('/<select[^>]*name="project"[^>]*>/', $without, $disabled);
+        preg_match('/<select[^>]*name="project"[^>]*>/', $with, $enabled);
+
+        expect($disabled[0] ?? '')->toContain('disabled')
+            ->and(timeReportText($without))->toContain('Nejdřív vyberte klienta')
+            ->and($enabled[0] ?? '')->not->toContain('disabled')
+            ->and(timeReportText($with))->toContain('Všechny projekty')->toContain('Example Project Web')
+            ->and(timeReportText($with))->not->toContain('Nejdřív vyberte klienta')
+            ->and($with)->toContain('value="'.$project->id.'"');
+    });
+
+    it('submits on every change and keeps the state in the URL', function (): void {
+        $html = (string) $this->get('/admin/time-report?period=last_month&split=day')->assertOk()->getContent();
+
+        expect($html)
+            ->toContain('requestSubmit')
+            ->toContain('method="get"')
+            ->toContain('name="period" value="last_month"')
+            ->toContain('name="split" value="day"');
+    });
+
+    it('prints the active range and marks the active period', function (): void {
+        $text = timeReportText((string) $this->get('/admin/time-report?period=last_month')->assertOk()->getContent());
+        $html = (string) $this->get('/admin/time-report?period=last_month')->assertOk()->getContent();
+
+        expect($text)->toContain('1. 9. 2026 – 30. 9. 2026')
+            ->and(timeReportText((string) $this->get('/admin/time-report')->getContent()))->toContain('1. 10. 2026 – 31. 10. 2026')
+            ->and(timeReportText((string) $this->get('/admin/time-report?period=custom&from=2026-10-05&to=2026-10-11')->getContent()))->toContain('5. 10. 2026 – 11. 10. 2026')
+            ->and($html)->toContain('aria-current="true"');
+    });
+
+    it('shows the date inputs only for a custom period', function (): void {
+        $custom = (string) $this->get('/admin/time-report?period=custom&from=2026-10-05&to=2026-10-11')->assertOk()->getContent();
+        $preset = (string) $this->get('/admin/time-report')->assertOk()->getContent();
+
+        expect($custom)->toContain('name="from"')->toContain('value="2026-10-05"')->toContain('name="to"')->toContain('value="2026-10-11"')
+            ->and($preset)->not->toContain('name="from"');
+    });
+
+    it('says why a reversed custom range was refused and shows this month', function (): void {
+        $text = timeReportText((string) $this->get('/admin/time-report?period=custom&from=2026-10-20&to=2026-10-05')->assertOk()->getContent());
+
+        expect($text)->toContain('Datum Od nesmí být později než Do.')
+            ->toContain('1. 10. 2026 – 31. 10. 2026');
+    });
+
+    it('does not show the range error for a valid range', function (): void {
+        $text = timeReportText((string) $this->get('/admin/time-report?period=custom&from=2026-10-05&to=2026-10-20')->assertOk()->getContent());
+
+        expect($text)->not->toContain('Datum Od nesmí být později než Do.');
+    });
+
+    it('falls back to the defaults for forged values of every filter', function (): void {
+        $text = timeReportText((string) $this->get('/admin/time-report?client[]=x&project=abc&period[]=custom&from=2026-13-45&to=nope&split=week')->assertOk()->getContent());
+
+        expect($text)->toContain('1. 10. 2026 – 31. 10. 2026')
+            ->not->toContain('Datum Od nesmí být později než Do.');
+    });
+
+    it('drops a project of another client and keeps the client', function (): void {
+        $alpha = timeReportClient('Example Client Alpha');
+        $beta = timeReportClient('Example Client Beta');
+        timeReportProject($alpha, 'Example Project Web', 'WEB');
+        $other = timeReportProject($beta, 'Example Project Other', 'OTH');
+        timeReportEntry($alpha, '2026-10-02 08:00:00', '2026-10-02 09:00:00');
+
+        $text = timeReportText((string) $this->get('/admin/time-report?client='.$alpha->id.'&project='.$other->id)->assertOk()->getContent());
+
+        // The foreign project is neither selected nor filtered on: the client's hour still shows.
+        expect($text)->toContain('Example Client Alpha 1:00 ')->toContain('Všechny projekty');
+    });
+});
+
+describe('a period without entries', function (): void {
+    it('shows the tiles at 0:00 and a dash, the empty state and no tree, and keeps the strip usable', function (): void {
+        $client = timeReportClient('Example Client Alpha');
+
+        $text = timeReportText((string) $this->get('/admin/time-report?client='.$client->id.'&period=last_month')->assertOk()->getContent());
+
+        expect($text)
+            ->toContain('Odpracováno 0:00 Fakturovatelné 0:00 Nefakturovatelné 0:00')
+            ->toContain('Nevyfakturováno 0:00 —')
+            ->toContain('Vyfakturováno 0:00 —')
+            ->toContain('Nefakturovatelné 0:00 Bez částky')
+            ->toContain('Za zvolené období nejsou žádné záznamy')
+            ->toContain('Zkuste jiné období nebo jiného klienta. Do reportu se počítá i nefakturovatelný čas.')
+            ->toContain('Example Client Alpha')
+            ->toContain('Tento měsíc')
+            ->not->toContain('Přehled podle klientů a projektů');
+    });
+});
+
+describe('the Livewire calls of the page', function (): void {
+    it('refuses an update of the page once the user is not the Admin', function (): void {
+        [$clientId] = Canary::twoClients();
+        $component = Livewire::test(TimeReportPage::class)->assertSuccessful();
+
+        $this->actingAs(Canary::partnerFor($clientId));
+        app()->forgetScopedInstances();
+
+        $component->set('period', 'last_month')->assertForbidden();
+    });
+
+    it('reads the filters again from the properties on every request', function (): void {
+        $component = Livewire::test(TimeReportPage::class)
+            ->set('period', 'bogus')
+            ->set('split', ['x'])
+            ->set('client', 12345)
+            ->assertSuccessful();
+
+        expect($component->instance()->filters()->period)->toBe('this_month')
+            ->and($component->instance()->filters()->split)->toBe('none')
+            ->and($component->instance()->filters()->clientId)->toBeNull();
+    });
+});
+
+describe('the row cap setting', function (): void {
+    it('is a documented config value of 1000 rendered rows', function (): void {
+        expect(config('kokpit.report.max_rendered_rows'))->toBe(1000);
     });
 });
