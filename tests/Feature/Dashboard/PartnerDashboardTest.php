@@ -337,13 +337,14 @@ describe('the empty states', function (): void {
             ->not->toContain(__('kokpit.dashboard.empty_heading'));
     });
 
-    it('keeps the Admin dashboard and the refusal of a Partner without a client unchanged', function (): void {
+    it('gives the Admin the time dashboard, no Partner widget, and keeps the refusal of a Partner without a client', function (): void {
         partnerDashTask($this->admin, $this->projectA);
 
         $this->actingAs($this->admin)->get('/admin')->assertOk()
-            ->assertSee(__('kokpit.dashboard.empty_heading'))
-            ->assertSee(__('kokpit.dashboard.empty_description_admin'))
-            ->assertDontSee('fi-wi-widget', false);
+            ->assertSee(__('kokpit.dashboard.hours.today'))
+            ->assertDontSee(__('kokpit.dashboard.empty_heading'))
+            ->assertDontSee(__('kokpit.dashboard.partner_tasks.heading'))
+            ->assertDontSee(__('kokpit.dashboard.partner_projects.heading'));
 
         $this->actingAs(Canary::partnerFor(null))->get('/admin')->assertForbidden();
     });

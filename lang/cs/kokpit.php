@@ -176,8 +176,57 @@ return [
 
     'dashboard' => [
         'empty_heading' => 'Zatím tu nic není',
-        'empty_description_admin' => 'Nástěnka se naplní, jakmile v Kokpitu přibudou klienti, projekty a odpracovaný čas.',
         'empty_description_partner' => 'Jakmile pro vás bude něco připraveno, objeví se to tady.',
+
+        // The Admin dashboard (RE-04; D-11, UI-SPEC Surface E): hours, unbilled time, deadlines and the plan for tomorrow.
+        'hours' => [
+            'today' => 'Dnes',
+            'week' => 'Tento týden',
+            'month' => 'Tento měsíc',
+            'today_done' => 'Odpracováno dnes',
+            'today_running' => 'Včetně běžícího časovače',
+            'week_range' => ':from – :to',
+            'month_billable' => 'Fakturovatelné :duration',
+        ],
+        'unbilled' => [
+            'heading' => 'Nevyfakturováno tento měsíc',
+            'report_link' => 'Zobrazit v reportu',
+            'columns' => [
+                'client' => 'Klient',
+                'hours' => 'Hodiny',
+                'amount' => 'Částka',
+                'amount_czk' => 'Částka v Kč',
+            ],
+            'total' => 'Celkem',
+            'fixed_badge' => 'Pevná cena',
+            'fixed_note' => 'Hodiny s pevnou cenou jsou bez částky.',
+            'missing_rate' => 'Chybí kurz',
+            'missing_rate_note' => 'Součet v Kč nezahrnuje :count záznamů bez kurzu ČNB.',
+            'empty_heading' => 'Nic k vyfakturování',
+            'empty_description' => 'Tento měsíc nemáte žádný nevyfakturovaný fakturovatelný čas.',
+        ],
+        'deadlines' => [
+            'heading' => 'Nejbližší termíny',
+            'columns' => [
+                'task' => 'Úkol',
+                'due' => 'Termín',
+            ],
+            'today' => 'Dnes',
+            'overdue_badge' => 'Po termínu',
+            'overdue_days' => '{1} Po termínu o :count den|[2,4] Po termínu o :count dny|[5,*] Po termínu o :count dní',
+            'empty_heading' => 'Žádné nadcházející termíny',
+            'empty_description' => 'Otevřené úkoly zatím nemají termín.',
+        ],
+        'plan' => [
+            'heading' => 'Plán na zítřek',
+            'count' => '{0} :count úkolů|{1} :count úkol|[2,4] :count úkoly|[5,*] :count úkolů',
+            'open_link' => 'Otevřít plán',
+            'show_more' => 'Zobrazit dalších :count',
+            'hide_more' => 'Skrýt dalších :count',
+            'recurring' => 'Opakuje se',
+            'empty_heading' => 'Na zítřek zatím nic nenaplánováno',
+            'empty_description' => 'Plán si můžete připravit v nabídce Signal, Dnes a zítra.',
+        ],
         'partner_tasks' => [
             'heading' => 'Otevřené úkoly',
             'description' => 'Nejdřív úkoly, které čekají na vaši kontrolu.',
