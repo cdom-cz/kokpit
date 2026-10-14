@@ -134,7 +134,8 @@ class DownloadCnbRatesCommand extends Command
     }
 
     /**
-     * The rates overview (plan 08-13); the alert carries no action until that route exists.
+     * The rates overview (`ExchangeRateResource`), which the alert's action opens; no action when the panel's routes
+     * are not registered.
      */
     private static function overviewUrl(): ?string
     {

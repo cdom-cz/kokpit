@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\ExchangeRateResource\Pages;
 
 use App\Domain\ExchangeRates\Actions\DownloadCnbRates;
+use App\Domain\ExchangeRates\Cnb\CnbDownloadFailed;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Resources\ExchangeRateResource;
 use App\Filament\Resources\ExchangeRateResource\Widgets\ExchangeRateStats;
@@ -60,23 +61,67 @@ final class ListExchangeRates extends ListRecords
 
                 $today = CarbonImmutable::now('Europe/Prague')->format('Y-m-d');
 
-                // The stored-day check reads a table whose scope is closed without an explicit context, like
-                // the scheduled run: the whole run is an explicit system run.
-                $result = app(PartnerContext::class)->runAsSystem(
-                    static fn (): array => app(DownloadCnbRates::class)->handle($today),
-                );
-
-                if ($result['inserted'] > 0 && $result['valid_for'] === $today) {
+                try {
+                    // The stored-day check reads a table whose scope is closed without an explicit context, like
+                    // the scheduled run: the whole run is an explicit system run.
+                    $result = app(PartnerContext::class)->runAsSystem(
+                        static fn (): array => app(DownloadCnbRates::class)->handle($today),
+                    );
+                } catch (CnbDownloadFailed) {
+                    // A manual failure stores nothing and alerts nobody (the Admin is looking at the page). The
+                    // toast is the fixed copy: neither the reason class, the status nor the host reaches it.
                     Notification::make()
-                        ->success()
-                        ->title(__('kokpit.rates.download.stored.title'))
-                        ->body(__('kokpit.rates.download.stored.body', [
-                            'date' => self::display($today),
-                            'count' => $result['inserted'],
-                        ]))
+                        ->danger()
+                        ->title(__('kokpit.rates.download.failed.title'))
+                        ->body(__('kokpit.rates.download.failed.body'))
                         ->send();
+
+                    return;
                 }
+
+                $this->notifyOutcome($result, $today);
             });
+    }
+
+    /**
+     * The toast of a download that got an answer: the list of today was already stored (info), was stored now
+     * (success), or the CNB still answers an earlier day's list because it has not published today's yet (info).
+     *
+     * @param  array{valid_for: string|null, inserted: int, skipped: bool}  $result
+     */
+    private function notifyOutcome(array $result, string $today): void
+    {
+        $validFor = $result['valid_for'] ?? ExchangeRateResource::newestDate() ?? $today;
+
+        // A run that inserted nothing for today lost the race to another run that stored the list meanwhile.
+        if ($result['skipped'] || ($validFor === $today && $result['inserted'] === 0)) {
+            Notification::make()
+                ->info()
+                ->title(__('kokpit.rates.download.already_stored.title'))
+                ->body(__('kokpit.rates.download.already_stored.body', ['date' => self::display($today)]))
+                ->send();
+
+            return;
+        }
+
+        if ($validFor === $today) {
+            Notification::make()
+                ->success()
+                ->title(__('kokpit.rates.download.stored.title'))
+                ->body(__('kokpit.rates.download.stored.body', [
+                    'date' => self::display($today),
+                    'count' => $result['inserted'],
+                ]))
+                ->send();
+
+            return;
+        }
+
+        Notification::make()
+            ->info()
+            ->title(__('kokpit.rates.download.not_published.title'))
+            ->body(__('kokpit.rates.download.not_published.body', ['date' => self::display($validFor)]))
+            ->send();
     }
 
     /**
