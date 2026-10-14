@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 4
+open_count: 5
 waived_count: 0
 fixed_count: 1
-total_count: 5
-last_updated: 2026-10-14T21:55:19.520Z
+total_count: 6
+last_updated: 2026-10-14T22:36:17.164Z
 ---
 
 # Broken Windows Ledger
@@ -20,6 +20,7 @@ last_updated: 2026-10-14T21:55:19.520Z
 | 3 | 08 | unrun-verify | app/Filament/Resources/ExchangeRateResource/Pages/ListExchangeRates.php |  | 08-13 human-check: in-flight state of the download button with a slowed CNB answer and white-on-primary contrast in light and dark mode (UI-SPEC F-1) were not run | open |  | 2026-10-14T21:27:38.175Z |  |
 | 4 | 08 | unrun-verify | app/Filament/Widgets/UnbilledPerClient.php |  | 08-15: the Admin dashboard layout (one column below lg, two from lg, widgets side by side), the Pevná cena and Chybí kurz badges in the unbilled table and the contrast of the running-timer text were not looked at in a browser; the markup and figures are asserted by tests | open |  | 2026-10-14T21:39:50.714Z |  |
 | 5 | 08 | unrun-verify | app/Domain/Reports/Notifications/ReportExportReadyNotification.php |  | Plan 08-16 human check not run: open the export bell and a CSV export in a Czech spreadsheet in DDEV (stock bell styling with long period text, columns split at semicolon, decimal commas) | open |  | 2026-10-14T21:55:19.520Z |  |
+| 6 | 08 | unrun-verify | resources/views/filament/pages/time-report.blade.php |  | Plan 08-14 task 3 human-check not run: the 375px visual pass of /admin/time-report (horizontal scroll inside the tree, toggles with Tab/Enter/Space and focus ring, long names wrapping) and the Alpine expand/collapse behaviour are untested in a browser | open |  | 2026-10-14T22:36:17.164Z |  |
 
 ````json
 [
@@ -85,6 +86,19 @@ last_updated: 2026-10-14T21:55:19.520Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-14T21:55:19.520Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 6,
+    "kind": "unrun-verify",
+    "phase": "08",
+    "file": "resources/views/filament/pages/time-report.blade.php",
+    "line": null,
+    "description": "Plan 08-14 task 3 human-check not run: the 375px visual pass of /admin/time-report (horizontal scroll inside the tree, toggles with Tab/Enter/Space and focus ring, long names wrapping) and the Alpine expand/collapse behaviour are untested in a browser",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T22:36:17.164Z",
     "resolved_at": null,
     "milestone": null
   }
