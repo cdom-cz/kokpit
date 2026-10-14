@@ -8,6 +8,7 @@ use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
+use Illuminate\Pagination\Cursor;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -431,5 +432,102 @@ it('refuses the lookups to a token without the read ability', function (): void 
 it('refuses the lookups to a guest', function (): void {
     foreach (['/api/v1/clients', '/api/v1/projects', '/api/v1/tasks', '/api/v1/tasks/DEMO-1'] as $url) {
         $this->getJson($url)->assertUnauthorized();
+    }
+});
+
+/**
+ * The cursor of the given parameters, encoded the way the paginator does it.
+ *
+ * @param  array<string, mixed>  $parameters
+ */
+function lookupCursor(array $parameters): string
+{
+    return (new Cursor($parameters, true))->encode();
+}
+
+/**
+ * The status and the validation keys of a lookup list asked with a cursor.
+ */
+function lookupCursorAnswer(mixed $test, string $url, string $cursor): mixed
+{
+    $separator = str_contains($url, '?') ? '&' : '?';
+
+    return $test->withToken(lookupToken())->getJson($url.$separator.'cursor='.urlencode($cursor));
+}
+
+it('answers 422 under cursor for a cursor without parameters on every lookup list', function (string $url): void {
+    lookupCursorAnswer($this, $url, lookupCursor([]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['cursor']);
+})->with(['/api/v1/clients', '/api/v1/projects', '/api/v1/tasks']);
+
+it('answers 422 under cursor for a cursor of another list or of another sort', function (string $url, array $parameters): void {
+    $id = '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9';
+    $resolved = array_map(static fn (mixed $value): mixed => $value === '{id}' ? $id : $value, $parameters);
+
+    lookupCursorAnswer($this, $url, lookupCursor($resolved))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['cursor']);
+})->with([
+    'a time entry cursor on clients' => ['/api/v1/clients', ['started_at' => '2026-10-12 08:00:00', 'time_entries.id' => '{id}']],
+    'a time entry cursor on projects' => ['/api/v1/projects', ['started_at' => '2026-10-12 08:00:00', 'time_entries.id' => '{id}']],
+    'a time entry cursor on tasks' => ['/api/v1/tasks', ['started_at' => '2026-10-12 08:00:00', 'time_entries.id' => '{id}']],
+    'a clients cursor on projects' => ['/api/v1/projects', ['created_at' => '2026-10-12 08:00:00', 'clients.id' => '{id}']],
+    'a clients cursor on tasks' => ['/api/v1/tasks', ['created_at' => '2026-10-12 08:00:00', 'clients.id' => '{id}']],
+    'a projects cursor on clients' => ['/api/v1/clients', ['created_at' => '2026-10-12 08:00:00', 'projects.id' => '{id}']],
+    'a name cursor on the created_at sort' => ['/api/v1/clients?sort=created_at', ['name' => 'Example', 'clients.id' => '{id}']],
+    'a created_at cursor on the name sort' => ['/api/v1/clients?sort=name', ['created_at' => '2026-10-12 08:00:00', 'clients.id' => '{id}']],
+    'a name cursor on the title sort of tasks' => ['/api/v1/tasks?sort=title', ['name' => 'Example', 'tasks.id' => '{id}']],
+]);
+
+it('answers 422 under cursor for a wrong-typed value in a lookup cursor', function (string $url, array $parameters): void {
+    lookupCursorAnswer($this, $url, lookupCursor($parameters))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['cursor']);
+})->with([
+    'a non-uuid client id' => ['/api/v1/clients', ['created_at' => '2026-10-12 08:00:00', 'clients.id' => 'x']],
+    'a numeric name' => ['/api/v1/clients?sort=name', ['name' => 5, 'clients.id' => '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9']],
+    'a title with a NUL byte' => ['/api/v1/tasks?sort=title', ['title' => "Example\0title", 'tasks.id' => '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9']],
+    'an unparseable instant' => ['/api/v1/projects', ['created_at' => 'x', 'projects.id' => '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9']],
+    'a year 0000 instant' => ['/api/v1/tasks', ['created_at' => '0000-01-01 00:00:00', 'tasks.id' => '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9']],
+]);
+
+it('answers 422 under cursor for a lookup cursor that is not base64url JSON of an object', function (string $cursor): void {
+    lookupCursorAnswer($this, '/api/v1/clients', $cursor)
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['cursor']);
+})->with(['abc', 'WzEsMl0', 'NQ']);
+
+it('follows the next cursor of every lookup list for every sort', function (string $path, string $sort): void {
+    $client = lookupClient('Example client one');
+    lookupClient('Example client two');
+    lookupClient('Example client three');
+    $project = ApiFixtures::project($client, 'DEMO');
+    ApiFixtures::project($client, 'OTHR');
+    ApiFixtures::project($client, 'THIR');
+    lookupTask($project, 'Example first');
+    lookupTask($project, 'Example second');
+    lookupTask($project, 'Example third');
+
+    $first = $this->withToken(lookupToken())->getJson('/api/v1/'.$path.'?per_page=1&sort='.$sort)->assertOk();
+    $cursor = $first->json('meta.next_cursor');
+
+    expect($cursor)->toBeString();
+
+    $second = $this->withToken(lookupToken())
+        ->getJson('/api/v1/'.$path.'?per_page=1&sort='.$sort.'&cursor='.urlencode($cursor))
+        ->assertOk();
+
+    expect($second->json('data'))->toHaveCount(1)
+        ->and($second->json('data.0.id'))->not->toBe($first->json('data.0.id'));
+})->with(function (): iterable {
+    $sorts = ['clients' => ['name', 'created_at'], 'projects' => ['name', 'created_at'], 'tasks' => ['title', 'created_at']];
+
+    foreach ($sorts as $path => $columns) {
+        foreach ($columns as $column) {
+            foreach (['', '-'] as $direction) {
+                yield $path.' sorted by '.$direction.$column => [$path, $direction.$column];
+            }
+        }
     }
 });

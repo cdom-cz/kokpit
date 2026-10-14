@@ -43,13 +43,18 @@ final class TaskController
      */
     public const array SORTS = ['title', 'created_at'];
 
+    /**
+     * The tiebreaker of every sort and a key of every cursor of the list.
+     */
+    public const string ID_COLUMN = 'tasks.id';
+
     #[Endpoint(
         'List tasks',
         'Requires ability `'.ApiAbility::TimeRead->value.'`. Returns the tasks an entry can be recorded against (archived tasks and tasks of archived projects or clients are left out), newest first, a page at a time. Follow `meta.next_cursor` with the `cursor` parameter until it is `null`. A task carries no description, dates or billing value.',
     )]
     #[QueryParam('filter[name]', 'string', 'Only tasks whose title contains this text, ignoring case. A comma, a percent sign or an underscore is matched literally. A title finds a task; it never identifies one for a write, use the UUID or the reference.', required: false, example: 'ukáz')]
     #[QueryParam('filter[project]', 'string', 'Only tasks of this project: its UUID or its key, for example `DEMO`. An unknown key matches no task.', required: false, example: 'DEMO')]
-    #[QueryParam('cursor', 'string', 'The `meta.next_cursor` of the previous page.', required: false, example: 'No-example')]
+    #[QueryParam('cursor', 'string', 'The `meta.next_cursor` of the previous page of this list, sent with the same `sort`. Any other value answers 422.', required: false, example: 'No-example')]
     #[QueryParam('per_page', 'integer', 'Tasks per page, 1 to 200. Default 50.', required: false, example: 50)]
     #[QueryParam('sort', 'string', 'Sort by `created_at` (default, newest first as `-created_at`) or `title`; a leading `-` sorts descending.', required: false, example: '-created_at', enum: ['created_at', '-created_at', 'title', '-title'])]
     #[Response(LookupExamples::TASK_LIST, 200, 'A page of tasks.')]
@@ -73,7 +78,7 @@ final class TaskController
             ->defaultSort('-created_at')
             // The id breaks ties between tasks that share the sorted value, in the direction of the sort,
             // so a cursor page never skips or repeats a row.
-            ->orderBy('tasks.id', $descending ? 'desc' : 'asc')
+            ->orderBy(self::ID_COLUMN, $descending ? 'desc' : 'asc')
             ->cursorPaginate($request->perPage())
             ->withQueryString();
 

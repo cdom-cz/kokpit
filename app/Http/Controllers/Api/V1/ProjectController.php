@@ -42,13 +42,18 @@ final class ProjectController
      */
     public const array SORTS = ['name', 'created_at'];
 
+    /**
+     * The tiebreaker of every sort and a key of every cursor of the list.
+     */
+    public const string ID_COLUMN = 'projects.id';
+
     #[Endpoint(
         'List projects',
         'Requires ability `'.ApiAbility::TimeRead->value.'`. Returns the projects an entry can be recorded against (archived projects and projects of archived clients are left out), newest first, a page at a time. Follow `meta.next_cursor` with the `cursor` parameter until it is `null`. A project carries no description, dates or billing value.',
     )]
     #[QueryParam('filter[name]', 'string', 'Only projects whose name contains this text, ignoring case. A comma, a percent sign or an underscore is matched literally. A name finds a project; it never identifies one for a write, use the UUID or the key.', required: false, example: 'ukáz')]
     #[QueryParam('filter[client]', 'string', 'Only projects of this client (UUID).', required: false, example: '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9')]
-    #[QueryParam('cursor', 'string', 'The `meta.next_cursor` of the previous page.', required: false, example: 'No-example')]
+    #[QueryParam('cursor', 'string', 'The `meta.next_cursor` of the previous page of this list, sent with the same `sort`. Any other value answers 422.', required: false, example: 'No-example')]
     #[QueryParam('per_page', 'integer', 'Projects per page, 1 to 200. Default 50.', required: false, example: 50)]
     #[QueryParam('sort', 'string', 'Sort by `created_at` (default, newest first as `-created_at`) or `name`; a leading `-` sorts descending.', required: false, example: '-created_at', enum: ['created_at', '-created_at', 'name', '-name'])]
     #[Response(LookupExamples::PROJECT_LIST, 200, 'A page of projects.')]
@@ -66,7 +71,7 @@ final class ProjectController
             ->defaultSort('-created_at')
             // The id breaks ties between projects that share the sorted value, in the direction of the sort,
             // so a cursor page never skips or repeats a row.
-            ->orderBy('projects.id', $descending ? 'desc' : 'asc')
+            ->orderBy(self::ID_COLUMN, $descending ? 'desc' : 'asc')
             ->cursorPaginate($request->perPage())
             ->withQueryString();
 

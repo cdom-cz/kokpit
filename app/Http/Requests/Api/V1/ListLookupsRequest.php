@@ -18,7 +18,8 @@ use Illuminate\Validation\Rule;
  *
  * One class serves all three: the allowed filter keys and sorts are read from the FILTERS and SORTS constants of
  * the controller the route resolves to, so an unknown key is a 422 (the `array:` key list) and the query-builder's
- * own 400 never reaches a client. The route middleware has already authorized the token.
+ * own 400 never reaches a client. A cursor the API did not issue for the list and the sort is refused the same way
+ * (see ApiCursor). The route middleware has already authorized the token.
  */
 final class ListLookupsRequest extends FormRequest
 {
@@ -42,7 +43,7 @@ final class ListLookupsRequest extends FormRequest
         $rules = [
             'filter' => ['sometimes', 'array:'.implode(',', $filters)],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:'.self::maxPerPage()],
-            'cursor' => ['sometimes', 'string', 'max:1024'],
+            'cursor' => ['sometimes', 'bail', 'string', 'max:1024', ApiCursor::rule($this->cursorColumns())],
             'sort' => ['sometimes', 'string', Rule::in($this->sortValues())],
         ];
 
@@ -109,6 +110,33 @@ final class ListLookupsRequest extends FormRequest
         };
 
         return [...array_map(static fn (string $sort): string => '-'.$sort, $sorts), ...$sorts];
+    }
+
+    /**
+     * The id column of the matched controller: the tiebreaker of its sorts and a key of its cursors.
+     */
+    private function idColumn(): string
+    {
+        return match ($this->route()?->getControllerClass()) {
+            ProjectController::class => ProjectController::ID_COLUMN,
+            TaskController::class => TaskController::ID_COLUMN,
+            default => ClientController::ID_COLUMN,
+        };
+    }
+
+    /**
+     * The order columns a cursor of this list carries: the sort column of the effective sort and the id tiebreaker.
+     *
+     * @return array<string, 'uuid'|'instant'|'text'>
+     */
+    private function cursorColumns(): array
+    {
+        $sortColumn = ltrim($this->sortExpression(), '-');
+
+        return [
+            $sortColumn => ApiCursor::kindOf($sortColumn),
+            $this->idColumn() => ApiCursor::UUID,
+        ];
     }
 
     /**

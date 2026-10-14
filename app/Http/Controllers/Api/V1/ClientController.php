@@ -41,12 +41,17 @@ final class ClientController
      */
     public const array SORTS = ['name', 'created_at'];
 
+    /**
+     * The tiebreaker of every sort and a key of every cursor of the list.
+     */
+    public const string ID_COLUMN = 'clients.id';
+
     #[Endpoint(
         'List clients',
         'Requires ability `'.ApiAbility::TimeRead->value.'`. Returns the clients an entry can be recorded for (archived clients are left out), newest first, a page at a time. Follow `meta.next_cursor` with the `cursor` parameter until it is `null`. A client carries its UUID and its name only.',
     )]
     #[QueryParam('filter[name]', 'string', 'Only clients whose name contains this text, ignoring case. A comma, a percent sign or an underscore is matched literally. A name finds a client; it never identifies one for a write, use the UUID.', required: false, example: 'fikt')]
-    #[QueryParam('cursor', 'string', 'The `meta.next_cursor` of the previous page.', required: false, example: 'No-example')]
+    #[QueryParam('cursor', 'string', 'The `meta.next_cursor` of the previous page of this list, sent with the same `sort`. Any other value answers 422.', required: false, example: 'No-example')]
     #[QueryParam('per_page', 'integer', 'Clients per page, 1 to 200. Default 50.', required: false, example: 50)]
     #[QueryParam('sort', 'string', 'Sort by `created_at` (default, newest first as `-created_at`) or `name`; a leading `-` sorts descending.', required: false, example: '-created_at', enum: ['created_at', '-created_at', 'name', '-name'])]
     #[Response(LookupExamples::CLIENT_LIST, 200, 'A page of clients.')]
@@ -61,7 +66,7 @@ final class ClientController
             ->defaultSort('-created_at')
             // The id breaks ties between clients that share the sorted value, in the direction of the sort,
             // so a cursor page never skips or repeats a row.
-            ->orderBy('clients.id', $descending ? 'desc' : 'asc')
+            ->orderBy(self::ID_COLUMN, $descending ? 'desc' : 'asc')
             ->cursorPaginate($request->perPage())
             ->withQueryString();
 
