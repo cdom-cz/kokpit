@@ -65,7 +65,7 @@ The first confirms that the database and Redis answer, that no migration is pend
 Two background processes must run next to the web container, or the application degrades without a visible error:
 
 - the queue worker runs every background job. Without it jobs wait in Redis and nothing is processed.
-- the scheduler runs the periodic tasks, among them the heartbeats that the System page reads and, every five minutes, the forgotten-timer notice (a timer that has run longer than `time.long_running_hours` in `config/kokpit.php` (12 hours) puts one notice in the Admin's bell and keeps running). Every scheduled task is registered with `->onOneServer()`, so the scheduler may run on several containers and each task still runs once. The lock lives in the cache, so production needs the shared Redis store (`CACHE_STORE=redis`, refused otherwise at boot).
+- the scheduler runs the periodic tasks, among them the heartbeats that the System page reads and, every five minutes, the forgotten-timer notice (a timer that has run longer than `time.long_running_hours` in `config/kokpit.php` (12 hours) puts one notice in the Admin's bell and keeps running) and, once a night, the activity-log prune (rows older than `clean_after_days` in `config/activitylog.php` (365 days) are deleted). Every scheduled task is registered with `->onOneServer()`, so the scheduler may run on several containers and each task still runs once. The lock lives in the cache, so production needs the shared Redis store (`CACHE_STORE=redis`, refused otherwise at boot).
 
 In DDEV both are daemons that `ddev start` brings up (`ddev exec supervisorctl status` shows them); on Zerops supervisord runs Horizon and the crontab runs `schedule:run` every minute on every container of the `kokpit` service.
 

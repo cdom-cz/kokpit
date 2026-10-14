@@ -289,7 +289,7 @@ it('only names Phase 3 classes in CONTRIBUTING.md that exist in app/', function 
     $names = [
         'ActivitySourceLabel' => 'App\Domain\Audit\ActivitySourceLabel',
         'ActivitySource' => 'App\Domain\Audit\ActivitySource',
-        'RefusingCleanActivityLogAction' => 'App\Domain\Audit\RefusingCleanActivityLogAction',
+        'KokpitCleanActivityLogAction' => 'App\Domain\Audit\KokpitCleanActivityLogAction',
         'RunsAsSystem' => 'App\Domain\Operations\Jobs\Middleware\RunsAsSystem',
         'ReportFailedJob' => 'App\Domain\Operations\Alerts\ReportFailedJob',
         'AdminAlerter' => 'App\Domain\Operations\Alerts\AdminAlerter',
