@@ -10,8 +10,9 @@ use App\Domain\Shared\Money\Money;
  * The running totals of one row of the report tree while the entries stream through {@see TimeReport::build()}.
  *
  * A bucket sums whole seconds and the already rounded per-entry amounts, so its figures are the same sums every
- * other row and total is made of. It is a mutable accumulator and never leaves the aggregate: `TimeReport` turns
- * it into a plain array node.
+ * other row and total is made of. The root bucket (`sumsAmount` false) sums seconds and CZK only: a report over
+ * several clients mixes currencies, so a client-currency amount exists on a client row and below it, never above.
+ * It is a mutable accumulator and never leaves the aggregate: `TimeReport` turns it into a plain array node.
  *
  * @internal
  */
@@ -53,6 +54,7 @@ final class ReportBucket
         public readonly string $label,
         public readonly ?string $reference = null,
         public readonly ?string $currency = null,
+        private readonly bool $sumsAmount = true,
     ) {}
 
     /**
@@ -78,7 +80,7 @@ final class ReportBucket
             }
         }
 
-        if ($amounts['amount'] !== null) {
+        if ($this->sumsAmount && $amounts['amount'] !== null) {
             $this->amount = $this->amount === null ? $amounts['amount'] : $this->amount->plus($amounts['amount']);
         }
 

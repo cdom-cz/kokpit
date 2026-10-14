@@ -20,6 +20,7 @@ use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Pages\TimeReportPage;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -868,6 +869,200 @@ describe('the row cap', function (): void {
         $text = timeReportText((string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent());
 
         expect($text)->not->toContain('Zobrazeno prvních');
+    });
+});
+
+describe('Prague days on the calendar edges', function (): void {
+    it('puts the whole 25-hour day of the autumn change into one report day and nothing from its neighbours', function (): void {
+        $client = timeReportClient('Example Client Alpha');
+        timeReportRate('2026-10-23', 'EUR', '25.000');
+        timeReportRate('2026-10-25', 'EUR', '25.000');
+
+        // 2026-10-25 in Prague runs from 2026-10-24T22:00:00Z to 2026-10-25T23:00:00Z.
+        timeReportEntry($client, '2026-10-24T22:30:00Z', '2026-10-24T23:00:00Z');
+        timeReportEntry($client, '2026-10-25T22:59:59Z', '2026-10-25T23:00:00Z');
+        timeReportEntry($client, '2026-10-24T21:59:59Z', '2026-10-24T22:00:00Z');
+        timeReportEntry($client, '2026-10-25T23:00:00Z', '2026-10-25T23:15:00Z');
+
+        $text = timeReportText((string) $this->get('/admin/time-report?client='.$client->id.'&period=custom&from=2026-10-25&to=2026-10-25&split=day')->assertOk()->getContent());
+        $report = TimeReport::build(ReportFilters::period('2026-10-25', '2026-10-25', $client->id), TimerClock::now());
+
+        // 30 minutes and 1 second belong to the day; the second before it and the second after it do not.
+        expect($report->entryCount)->toBe(2)
+            ->and($report->summary['worked'])->toBe(1801)
+            ->and($text)->toContain('25. 10. 2026 0:30 ')
+            ->not->toContain('24. 10. 2026 ')
+            ->not->toContain('26. 10. 2026 ');
+    });
+
+    it('puts the whole 23-hour day of the spring change into one report day', function (): void {
+        $client = timeReportClient('Example Client Alpha');
+
+        // 2027-03-28 in Prague runs from 2027-03-27T23:00:00Z to 2027-03-28T22:00:00Z.
+        timeReportEntry($client, '2027-03-27 23:00:00', '2027-03-27 23:30:00');
+        timeReportEntry($client, '2027-03-28 21:59:59', '2027-03-28 22:00:00');
+        timeReportEntry($client, '2027-03-27 22:59:59', '2027-03-27 23:00:00');
+        timeReportEntry($client, '2027-03-28 22:00:00', '2027-03-28 22:20:00');
+
+        $report = TimeReport::build(ReportFilters::period('2027-03-28', '2027-03-28', $client->id), TimerClock::now());
+        $days = TimeReport::build(ReportFilters::fromInput(['client' => $client->id, 'period' => 'custom', 'from' => '2027-03-28', 'to' => '2027-03-28', 'split' => 'day'], TimerClock::now()), TimerClock::now());
+
+        expect($report->entryCount)->toBe(2)
+            ->and($report->summary['worked'])->toBe(1801)
+            ->and(array_column($days->tree[0]['children'][0]['children'][0]['children'], 'label'))->toBe(['2027-03-28']);
+    });
+
+    it('counts an entry from 23:30 to 00:30 wholly on the day it started', function (): void {
+        $set = timeReportSplitArrangement();
+        // 23:30 Prague on Thursday 2026-09-17 is 21:30 UTC; it ends at 00:30 on the 18th.
+        timeReportEntry($set['task'], '2026-09-17 21:30:00', '2026-09-17 22:30:00');
+
+        $text = timeReportText((string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month&split=day')->assertOk()->getContent());
+
+        expect($text)
+            ->toContain('17. 9. 2026 1:00 1:00 0:00 0:00 1:00 ')
+            ->not->toContain('18. 9. 2026 ');
+    });
+
+    it('counts a running entry at its elapsed time from the frozen clock and prices those seconds', function (): void {
+        $client = timeReportClient('Example Client Alpha', 'EUR', '100');
+        timeReportRate('2026-10-14', 'EUR', '25.000');
+        // The clock is frozen at 2026-10-14 10:00 UTC; the entry started 90 minutes before.
+        timeReportEntry($client, '2026-10-14 08:30:00', '');
+
+        $report = TimeReport::build(ReportFilters::period('2026-10-01', '2026-10-31', $client->id), TimerClock::now());
+
+        // 5400 s at 100.00 EUR/h = 150.00 EUR, at 25.000 = 3 750,00 Kč.
+        expect($report->summary['worked'])->toBe(5400)
+            ->and($report->summary['amounts']['unbilled']['EUR']->minor)->toBe(15000)
+            ->and($report->summary['czk']['unbilled']?->minor)->toBe(375000);
+    });
+
+    it('gives the same totals when the same report is built twice at the same frozen now', function (): void {
+        $set = timeReportSplitArrangement();
+        timeReportEntry($set['client'], '2026-10-14 08:30:00', '');
+        $now = TimerClock::now();
+        $filters = ReportFilters::period('2026-09-01', '2026-10-31', $set['client']->id);
+
+        $first = TimeReport::build($filters, $now);
+        $second = TimeReport::build($filters, $now);
+
+        expect($second->summary)->toEqual($first->summary)
+            ->and($second->footer)->toEqual($first->footer)
+            ->and($second->tree)->toEqual($first->tree);
+    });
+});
+
+describe('several currencies in one report', function (): void {
+    it('lists one amount per currency in the summary and the footer and sums only the CZK column', function (): void {
+        $eur = timeReportClient('Example Client Alpha', 'EUR', '100');
+        $usd = timeReportClient('Example Client Gamma', 'USD', '80');
+        $czk = timeReportClient('Example Client Delta', 'CZK', '900');
+        timeReportRate('2026-09-15', 'EUR', '25.000');
+        timeReportRate('2026-09-15', 'USD', '22.000');
+
+        timeReportEntry($eur, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+        timeReportEntry($usd, '2026-09-15 08:00:00', '2026-09-15 10:00:00');
+        timeReportEntry($czk, '2026-09-15 08:00:00', '2026-09-15 08:30:00');
+
+        $report = TimeReport::build(ReportFilters::period('2026-09-01', '2026-09-30'), TimerClock::now());
+        $text = timeReportText((string) $this->get('/admin/time-report?period=last_month')->assertOk()->getContent());
+
+        // 1:00 at 100.00 EUR = 2 500,00 Kč; 2:00 at 80.00 USD = 160.00 USD = 3 520,00 Kč; 0:30 at 900 Kč = 450,00 Kč.
+        expect(array_keys($report->summary['amounts']['unbilled']))->toBe(['CZK', 'EUR', 'USD'])
+            ->and($report->summary['amounts']['unbilled']['EUR']->minor)->toBe(10000)
+            ->and($report->summary['amounts']['unbilled']['USD']->minor)->toBe(16000)
+            ->and($report->summary['czk']['unbilled']?->minor)->toBe(250000 + 352000 + 45000)
+            ->and(array_keys($report->footer['amounts']))->toBe(['CZK', 'EUR', 'USD'])
+            ->and($report->footer['czk']?->minor)->toBe(647000)
+            ->and($report->tree)->toHaveCount(3)
+            ->and($text)
+            ->toContain(timeReportMoney(10000, 'EUR').' '.timeReportMoney(16000, 'USD'))
+            ->toContain('v Kč: '.timeReportMoney(647000, 'CZK'))
+            ->toContain('Example Client Gamma 2:00 2:00 0:00 0:00 2:00 '.timeReportMoney(16000, 'USD').' '.timeReportMoney(352000, 'CZK'));
+    });
+
+    it('keeps the totals of the hours when a client of another currency is added', function (): void {
+        $eur = timeReportClient('Example Client Alpha', 'EUR', '100');
+        $usd = timeReportClient('Example Client Gamma', 'USD', '80');
+        timeReportRate('2026-09-15', 'EUR', '25.000');
+        timeReportRate('2026-09-15', 'USD', '22.000');
+        timeReportEntry($eur, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+        timeReportEntry($usd, '2026-09-15 08:00:00', '2026-09-15 10:00:00');
+
+        $both = TimeReport::build(ReportFilters::period('2026-09-01', '2026-09-30'), TimerClock::now());
+        $onlyEur = TimeReport::build(ReportFilters::period('2026-09-01', '2026-09-30', $eur->id), TimerClock::now());
+
+        expect($both->summary['worked'])->toBe(10800)
+            ->and($onlyEur->summary['worked'])->toBe(3600)
+            ->and($both->footer['seconds']['worked'])->toBe(10800)
+            ->and($both->tree[0]['amount']?->currency)->toBe('EUR')
+            ->and($both->tree[1]['amount']?->currency)->toBe('USD');
+    });
+});
+
+describe('the cost of a long report', function (): void {
+    /**
+     * The number of queries one request of the report page runs once everything is warm.
+     */
+    function timeReportQueryCount(string $url): int
+    {
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        test()->get($url)->assertOk();
+        $count = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        return $count;
+    }
+
+    it('runs the same number of queries for 5 entries and for 200 entries over several clients, projects and tasks', function (): void {
+        $first = timeReportClient('Example Client Alpha');
+        $project = timeReportProject($first, 'Example Project Web', 'WEB');
+        $task = timeReportTask($this->admin, $project, 'Landing page');
+        timeReportRate('2026-09-15', 'EUR', '25.000');
+
+        foreach (range(1, 5) as $n) {
+            timeReportEntry($task, '2026-09-15 0'.$n.':00:00', '2026-09-15 0'.$n.':30:00');
+        }
+
+        $urls = [
+            '/admin/time-report?period=last_month',
+            '/admin/time-report?period=last_month&split=day',
+            '/admin/time-report?period=last_month&split=user',
+        ];
+
+        // Warm the per-process caches (roles, config) once; the counts below are then comparable.
+        foreach ($urls as $url) {
+            timeReportQueryCount($url);
+        }
+
+        $short = array_map(timeReportQueryCount(...), $urls);
+
+        $second = timeReportClient('Example Client Beta', 'USD', '90');
+        $other = User::factory()->create(['name' => 'Čapek Example']);
+        timeReportRate('2026-09-15', 'USD', '22.000');
+
+        foreach ([$first, $second] as $client) {
+            foreach (['A', 'B'] as $suffix) {
+                $key = $client->is($first) ? 'AL'.$suffix : 'BE'.$suffix;
+                $extra = timeReportProject($client, 'Example Project '.$key, $key);
+
+                foreach (['One', 'Two'] as $title) {
+                    $extraTask = timeReportTask($this->admin, $extra, $title);
+
+                    foreach (range(1, 12) as $n) {
+                        timeReportEntry($extraTask, '2026-09-'.str_pad((string) (1 + ($n % 20)), 2, '0', STR_PAD_LEFT).' 08:'.str_pad((string) $n, 2, '0', STR_PAD_LEFT).':00', '2026-09-'.str_pad((string) (1 + ($n % 20)), 2, '0', STR_PAD_LEFT).' 09:'.str_pad((string) $n, 2, '0', STR_PAD_LEFT).':00', ['user_id' => $n % 2 === 0 ? $other->id : $this->admin->id]);
+                    }
+                }
+            }
+        }
+
+        $long = array_map(timeReportQueryCount(...), $urls);
+        $entries = TimeEntry::query()->count();
+
+        expect($entries)->toBeGreaterThan(100)
+            ->and($long)->toBe($short);
     });
 });
 

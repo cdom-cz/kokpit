@@ -70,7 +70,8 @@ final readonly class TimeReport
         ));
         $rates = RateBook::load($currencies, $filters->from, $filters->to);
 
-        $total = new ReportBucket(null, '');
+        // The root row spans clients of different currencies, so it sums hours and CZK but never a client-currency amount.
+        $total = new ReportBucket(null, '', sumsAmount: false);
         $amounts = ['billed' => [], 'unbilled' => [], 'billable' => []];
         $czk = ['billed' => null, 'unbilled' => null, 'billable' => null];
         $missingByState = ['billed' => 0, 'unbilled' => 0];
