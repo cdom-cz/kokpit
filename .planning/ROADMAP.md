@@ -440,7 +440,7 @@ Plans:
   4. An API client resolves clients, projects and tasks by UUID, key and name through read-only lookups, and addresses a task by its `KEY-N`
   5. Excess requests receive a rate-limit response, and published OpenAPI documentation describes every endpoint
 
-**Plans:** 10/12 plans executed
+**Plans:** 11/12 plans executed
 
 Plans:
 **Wave 1**
@@ -466,7 +466,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 - [x] 07-10-PLAN.md — Daily purge of expired keys and the multi-process idempotency proof (wave 7)
-- [ ] 07-11-PLAN.md — Batch create up to 100 entries with partial success and replay-safe retries (wave 7)
+- [x] 07-11-PLAN.md — Batch create up to 100 entries with partial success and replay-safe retries (wave 7)
 
 **Wave 8** *(blocked on Wave 7 completion)*
 - [ ] 07-12-PLAN.md — Docs generation as the last Zerops init command, output hygiene scan, API canary line, CONTRIBUTING (wave 8)
@@ -568,7 +568,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Clients and Projects | 21/21 | Complete    | 2026-10-09 |
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
-| 7. REST API | 10/12 | In Progress | - |
+| 7. REST API | 11/12 | In Progress | - |
 | 8. Exchange Rates and Reports | 0/0 | Not started | - |
 | 9. Documents and Finance | 0/0 | Not started | - |
 | 10. Invoicing | 0/0 | Not started | - |

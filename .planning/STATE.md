@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: REST API
 status: executing
-stopped_at: Completed 07-10-PLAN.md
-last_updated: "2026-10-14T11:21:59.207Z"
+stopped_at: Completed 07-11-PLAN.md
+last_updated: "2026-10-14T11:34:16.388Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 07 execution started
-state_head: dc89fffff32113a6828f3f7ab771111fa09bf5e4
+state_head: a3ef1ac46d6b2ec919eccddb3757d9ad78635b43
 progress:
   total_phases: 12
   completed_phases: 6
   total_plans: 112
-  completed_plans: 110
+  completed_plans: 111
   percent: 50
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 07 (REST API) — EXECUTING
-Plan: 11 of 12
+Plan: 12 of 12
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 07 execution started
 
@@ -171,6 +171,7 @@ Progress: [█████░░░░░] 50%
 | Phase 07 P08 | 35 min | 3 tasks | 12 files |
 | Phase 07 P09 | 45 min | 3 tasks | 13 files |
 | Phase 07 P10 | 30min | 2 tasks | 8 files |
+| Phase 07 P11 | 40 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -396,6 +397,8 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-08: lookup detail parameter is documented as id (Scribe renames the last parameter of a *.show route); ApiDocs finds routes through Scribe UrlParamsNormalizer
 - [Phase 07]: 07-09: idempotency claim ownership is the whole-second locked_at; complete and release only act on the claim the request still owns, so a stale-overtaken request cannot overwrite its successor
 - [Phase 07]: 07-10: the purge deletes only expires_at < now(); the concurrency worker uses a shared start timestamp barrier like the timer harness and prints the raw body so replays compare byte for byte
+- [Phase 07]: 07-11: a batch has no outer transaction; only a ValidationException is an item error, any other exception is a 500 that keeps earlier items and releases the idempotency key (caller deduplicates)
+- [Phase 07]: 07-11: batch answers 201 / 207 / 422 with {saved, failed, errors:[{index, errors}]}, 422 adds message first; item limit is a closure rule so Scribe adds no rule sentence
 
 ### Pending Todos
 
@@ -441,6 +444,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T11:21:59.044Z
-Stopped at: Completed 07-10-PLAN.md
+Last session: 2026-10-14T11:34:16.204Z
+Stopped at: Completed 07-11-PLAN.md
 Resume file: None
