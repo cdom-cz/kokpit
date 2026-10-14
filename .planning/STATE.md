@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 07
-current_phase_name: rest-api
+current_phase_name: REST API
 status: executing
-stopped_at: Phase 7 UI-SPEC approved
-last_updated: "2026-10-14T09:20:59.540Z"
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-10-14T09:38:48.117Z"
 last_activity: 2026-10-14
-last_activity_desc: Phase 06 complete, transitioned to Phase 7
-state_head: 59a4fb4890f453efca374d687724c2e41cdd6881
+last_activity_desc: Phase 07 execution started
+state_head: 44fa5e1ae489eaf0684e174f20983dfd2fe6ebad
 progress:
   total_phases: 12
   completed_phases: 6
   total_plans: 112
-  completed_plans: 100
+  completed_plans: 101
   percent: 50
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 06 — time-tracking
+**Current focus:** Phase 07 — REST API
 
 ## Current Position
 
-Phase: 07 (rest-api) — READY TO EXECUTE
-Plan: Not started
+Phase: 07 (REST API) — EXECUTING
+Plan: 2 of 12
 Status: Ready to execute
-Last activity: 2026-10-14 — Phase 06 complete, transitioned to Phase 7
+Last activity: 2026-10-14 — Phase 07 execution started
 
 Progress: [█████░░░░░] 50%
 
@@ -161,6 +161,7 @@ Progress: [█████░░░░░] 50%
 | Phase 06 P12 | 15 min | 3 tasks | 11 files |
 | Phase 06 P13 | 20 min | 2 tasks | 8 files |
 | Phase 06 P14 | 14 min | 3 tasks | 8 files |
+| Phase 07 P01 | 8 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -365,6 +366,9 @@ Recent decisions affecting current work:
 - [Phase 06]: Czech collation is guarded at deploy (kokpit:deploy:verify collation check), never silently replaced by the default collation
 - [Phase 06]: Phase 10 snapshot migration must re-create time_entries_frozen_guard with an extended mutable list; hand-over notes for Phases 7, 8, 9 and 10 live in CONTRIBUTING
 - [Quick 261014-cy9]: activity records older than 365 days (activitylog.clean_after_days) are pruned every night by the scheduled activitylog:clean --force (kokpit-activity-log-prune, onOneServer) through KokpitCleanActivityLogAction, which deletes as system so the fail-closed Partner scope cannot make it a silent no-op (WR-04); supersedes Phase 03 D-09 and the 03-11 never-pruned decision on the owner's request
+- [Phase 07]: Sanctum guard list is empty so a panel session is never an API credential (TransientToken bypass)
+- [Phase 07]: Only a token of an active Admin is valid, enforced in Sanctum::authenticateAccessTokensUsing; findToken refuses a non-uuid id part before the database
+- [Phase 07]: API rate-limit buckets are keyed by token id (IP fallback), reads 120 and writes 60 a minute, separate per direction
 
 ### Pending Todos
 
@@ -410,6 +414,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T07:38:12.532Z
-Stopped at: Phase 7 UI-SPEC approved
-Resume file: .planning/phases/07-rest-api/07-UI-SPEC.md
+Last session: 2026-10-14T09:38:47.940Z
+Stopped at: Completed 07-01-PLAN.md
+Resume file: None
