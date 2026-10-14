@@ -618,35 +618,46 @@ $this->getJson('/api/v1/time-entries')->assertUnauthorized();
 | A10 | Zerops initCommands run as a user that can write `resources/views/scribe`, `public/vendor/scribe`, `.scribe` and `storage/app/private/scribe` under `/var/www`, and `/var/www` is the working directory (same as the existing `php artisan` init commands) | Pattern 9 item 9 | Docs init command fails and fails the deploy; resolve in the first Zerops rehearsal (together with the open `sudo -u zerops` user question already in the manifest) |
 | A11 | Optional `token_prefix` in Sanctum config (for secret scanning) | Pattern 6 | None if skipped; if adopted a gitleaks rule is needed |
 | A12 | Public docs rate limit 60 per minute per IP (`kokpit.api.docs_rate_limit`) and a `noindex` header are acceptable defaults | Pattern 9 item 2 | Too strict for a shared office IP, or crawlers index the docs; both trivial to change |
-| A14 | The `hljs`/`Jets` stub (no highlighting, no sidebar search) is acceptable instead of vendoring the two libraries | Pattern 9 item 4, Open Question 5 | Owner expected highlighted code and search; fix by vendoring the two files |
+| A14 | SUPERSEDED by the CDN decision (stock theme, no stubs). The `hljs`/`Jets` stub (no highlighting, no sidebar search) is acceptable instead of vendoring the two libraries | Pattern 9 item 4, Open Question 5 | Owner expected highlighted code and search; fix by vendoring the two files |
 | A15 | Production containers have no shared volume on `storage/` or `public/` (none in `zerops.yml`), so generation output is private to each container | Pattern 9 item 5 | Concurrent generation could race on shared files; guarded by the smoke test asserting a plain local `local` disk |
 | A13 | Lookups return only non-archived (selectable) rows | Pattern 3 | n8n cannot resolve an archived project/task referenced by old entries via lookup (entries still embed them) |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All nine questions were settled by owner decisions during planning on 2026-10-14 (see 07-CONTEXT.md D-17 and the owner decisions listed in the plans).
 
 1. **`duration_seconds` on writes (D-09 vs code)**
+   - RESOLVED: yes, `duration_seconds` is accepted as an alternative to `ended_at`, mapped in the request layer (owner decision, plan 07-02 checkpoint pins the wire contract).
    - What we know: UI and `CreateTimeEntry` take only `started_at` and `ended_at`; `duration_seconds` is a generated column. D-09 says writes also take `duration_seconds` "for the manual-entry shape the UI allows"; no such shape exists.
    - What's unclear: whether the owner wants `started_at` + `duration_seconds` as an alternative input for the importer.
    - Recommendation: support it as an alternative to `ended_at` mapped in the request layer (exactly one of them), because the importer reports durations; if declined, make `duration_seconds` response-only and say so in the spec. Decide before the first plan fixes the contract.
 
 2. **Running entries (started in the UI timer) through the API**
+   - RESOLVED: refused like the UI; PATCH with `ended_at` on a running entry is 422, DELETE of a running entry is 409 (owner decision, plan 07-05).
    - What we know: the list returns them (`ended_at` null, `duration_seconds` null). `UpdateTimeEntry` silently ignores a named `ended_at` for a running entry ("the stop is StopTimer") and `DeleteTimeEntry` allows deleting one, while the UI offers neither (`TimeEntryResource::canDelete`).
    - What's unclear: whether "the API refuses what the UI refuses" extends to these.
    - Recommendation: PATCH on a running entry may change description/billable/context but a supplied `ended_at` is a 422 ("running entries are stopped in the app"); DELETE of a running entry is 409. Implement as thin controller guards (no Action change), tell the owner.
 
 3. **Date-range semantics** (A4): confirm Prague-day inclusive semantics for date-only `from`/`to`.
+   - RESOLVED: Europe/Prague calendar days, inclusive (owner decision, plan 07-04 shared `PragueDay` helper).
 
 4. **Strict vs success-only replay** (A6): D-07 literal ("stored original response") versus keeping failed attempts retryable.
+   - RESOLVED: only 2xx responses are stored and replayed; the key is released on failure (owner decision, plan 07-09).
 
 5. **Highlighting and search without a CDN (Pitfall 14):** the default recommendation is to stub `hljs` and `Jets` in the published theme (no third-party files in git; docs lose code highlighting and sidebar search). Alternative: commit minified `highlight.js` 11.6.0 (BSD-3-Clause) and `jets` 0.14.1 (MIT) under a path Scribe does not wipe. Owner to choose.
+   - RESOLVED: superseded; the stock Scribe theme is used and CDN assets are allowed, no stubs and no vendored libraries (owner decision, D-17).
 
 6. **Placeholder `base_url` on a public page:** the page and spec say `https://kokpit.example.com` so a reader must substitute the real host. Using `config('app.url')` would print the real instance URL on a public page, which D-17 and the public-exposure rule rule out. Confirm the placeholder is fine (recommended), or choose a documented "your Kokpit URL" wording in the intro.
+   - RESOLVED: superseded; `base_url` comes from `APP_URL` at generation time, tests and CI use an example.com placeholder (owner decision, D-17).
 
 7. **Docs rate limit and indexing (A12):** confirm 60/min/IP and `noindex`, or drop them.
+   - RESOLVED: 60 requests per minute per IP and a `noindex` header (owner decision, D-17).
 
 8. **Failure after migrate (Pattern 9 item 9):** with `scribe:generate` as the last init command, a docs failure fails the deploy after the one-time migration and after Horizon started on that container. This follows the owner's placement; confirm the owner accepts it (the CI smoke test is the mitigation).
+   - RESOLVED: accepted; a failing `scribe:generate` fails the deploy, migrations stay backward compatible (owner decision, D-17).
 
 9. **Housekeeping from CONTEXT:** `.planning/REQUIREMENTS.md` already shows AP-03 removed ("kept in ROADMAP.md Backlog as 999.1", line 178) and the phase description's success criterion 3 is already reworded to idempotent creation, so the scope-change edits CONTEXT asked for appear done; the planner should only verify ROADMAP.md Backlog 999.1 exists.
+   - RESOLVED: ROADMAP.md Backlog 999.1 and the REQUIREMENTS.md change are verified by plan 07-12 housekeeping.
 
 ## Environment Availability
 

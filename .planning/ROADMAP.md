@@ -440,7 +440,36 @@ Plans:
   4. An API client resolves clients, projects and tasks by UUID, key and name through read-only lookups, and addresses a task by its `KEY-N`
   5. Excess requests receive a rate-limit response, and published OpenAPI documentation describes every endpoint
 
-**Plans**: TBD
+**Plans:** 12 plans
+
+Plans:
+**Wave 1**
+- [ ] 07-01-PLAN.md — Token-secured /api/v1 skeleton: an Admin token reads one entry, clean 401/403/404, per-token rate limits (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 07-02-PLAN.md — Scribe docs generated without a database, public /docs and /docs.openapi, owner confirms the wire contract (wave 2, checkpoint)
+- [ ] 07-03-PLAN.md — Admin token screen: create with password and TOTP, one-time display, revoke, Partner isolation, ability labels, API route walk (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 07-04-PLAN.md — Time entry list: filters by uuid or key, inclusive Prague-day range via shared PragueDay, stable cursor paging (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 07-05-PLAN.md — Create, update, delete over the Actions: duration_seconds alternative, key references, 409 locked/running, UI refusal matrix (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 07-06-PLAN.md — Optional external jsonb object: object-only, size and depth caps, frozen on billed entries (wave 5)
+- [ ] 07-07-PLAN.md — api activity source label for API writes (wave 5)
+- [ ] 07-08-PLAN.md — Read-only lookups of clients, projects and tasks by uuid, key and name (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 07-09-PLAN.md — Idempotency-Key on create: replay, mismatch, in-progress, 2xx-only storage (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 07-10-PLAN.md — Daily purge of expired keys and the multi-process idempotency proof (wave 7)
+- [ ] 07-11-PLAN.md — Batch create up to 100 entries with partial success and replay-safe retries (wave 7)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 07-12-PLAN.md — Docs generation as the last Zerops init command, output hygiene scan, API canary line, CONTRIBUTING (wave 8)
 **UI hint**: yes
 
 ### Phase 8: Exchange Rates and Reports
