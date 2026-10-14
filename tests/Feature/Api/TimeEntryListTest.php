@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\Support\ApiFixtures;
+use Tests\Support\TimeEntryContract;
 
 /*
  * AP-02, D-11: the read-back list of time entries. Newest first, cursor paginated, filtered by the
@@ -199,3 +201,141 @@ it('answers 422 under the filter key for a malformed value, never 400 or 500', f
     'a billed word' => ['filter[billed]=yes', 'filter.billed'],
     'an unknown filter' => ['filter[unknown]=1', 'filter'],
 ]);
+
+/**
+ * Inserts the given number of finished entries that all share one start (and one creation time),
+ * so only the id can order them.
+ *
+ * @return list<string> the ids of the entries
+ */
+function listTiedEntries(int $count): array
+{
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $rows = [];
+
+    for ($i = 0; $i < $count; $i++) {
+        $rows[] = [
+            'id' => (string) Str::uuid7(),
+            'user_id' => $admin->id,
+            'client_id' => $client->id,
+            'description' => 'Example work '.$i,
+            'started_at' => '2026-10-12 08:00:00+00',
+            'ended_at' => '2026-10-12 08:10:00+00',
+            'billable' => true,
+            'billing_state' => 'unbilled',
+            'created_at' => '2026-10-12 08:11:00+00',
+            'updated_at' => '2026-10-12 08:11:00+00',
+        ];
+    }
+
+    DB::table('time_entries')->insert($rows);
+
+    return array_column($rows, 'id');
+}
+
+/**
+ * Follows the cursor from the first page to the last and returns the ids of every page.
+ *
+ * @return list<list<string>>
+ */
+function listPages(mixed $test, string $query): array
+{
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:read']);
+    $pages = [];
+    $cursor = null;
+
+    do {
+        $url = '/api/v1/time-entries?'.$query.($cursor === null ? '' : '&cursor='.urlencode($cursor));
+        $response = $test->withToken($token)->getJson($url)->assertOk();
+        $pages[] = array_column($response->json('data'), 'id');
+        $cursor = $response->json('meta.next_cursor');
+    } while ($cursor !== null && count($pages) < 10);
+
+    return $pages;
+}
+
+it('pages 120 entries with the same start in 50, 50 and 20 without a skipped or repeated row', function (string $sort): void {
+    $ids = listTiedEntries(120);
+
+    $pages = listPages($this, 'per_page=50'.($sort === '' ? '' : '&sort='.$sort));
+
+    expect(array_map('count', $pages))->toBe([50, 50, 20])
+        ->and(array_merge(...$pages))->toHaveCount(120)
+        ->and(array_unique(array_merge(...$pages)))->toHaveCount(120)
+        ->and(array_diff($ids, array_merge(...$pages)))->toBe([]);
+})->with([
+    'the default sort' => [''],
+    'started_at ascending' => ['started_at'],
+    'created_at descending' => ['-created_at'],
+]);
+
+it('breaks a tie by id in the direction of the sort', function (): void {
+    listTiedEntries(5);
+
+    $newestFirst = array_merge(...listPages($this, 'per_page=2'));
+    $oldestFirst = array_merge(...listPages($this, 'per_page=2&sort=started_at'));
+
+    $sorted = $newestFirst;
+    rsort($sorted);
+
+    expect($newestFirst)->toBe($sorted)
+        ->and($oldestFirst)->toBe(array_reverse($newestFirst));
+});
+
+it('holds 50 entries a page by default, accepts 200 and refuses a size outside 1 to 200', function (): void {
+    listTiedEntries(120);
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:read']);
+
+    expect($this->withToken($token)->getJson('/api/v1/time-entries')->assertOk()->json('data'))->toHaveCount(50);
+
+    $all = $this->withToken($token)->getJson('/api/v1/time-entries?per_page=200')->assertOk();
+    expect($all->json('data'))->toHaveCount(120)
+        ->and($all->json('meta.next_cursor'))->toBeNull();
+
+    $this->withToken($token)->getJson('/api/v1/time-entries?per_page=0')->assertStatus(422)->assertJsonValidationErrors(['per_page']);
+    $this->withToken($token)->getJson('/api/v1/time-entries?per_page=201')->assertStatus(422)->assertJsonValidationErrors(['per_page']);
+    $this->withToken($token)->getJson('/api/v1/time-entries?per_page=many')->assertStatus(422)->assertJsonValidationErrors(['per_page']);
+});
+
+it('refuses a sort outside started_at and created_at with 422 under sort', function (string $sort): void {
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:read']);
+
+    $this->withToken($token)->getJson('/api/v1/time-entries?sort='.urlencode($sort))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['sort']);
+})->with(['description', '-description', 'started_at,created_at', '']);
+
+it('lists a running entry with a null end and a null duration', function (): void {
+    $admin = ApiFixtures::admin();
+    $entry = ApiFixtures::running($admin, ApiFixtures::client());
+    $token = ApiFixtures::token($admin, ['time:read']);
+
+    $item = $this->withToken($token)->getJson('/api/v1/time-entries')->assertOk()->json('data.0');
+
+    expect($item['id'])->toBe($entry->id)
+        ->and($item['ended_at'])->toBeNull()
+        ->and($item['duration_seconds'])->toBeNull();
+});
+
+it('gives every listed entry exactly the confirmed keys and no rate, price or amount', function (): void {
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $project = ApiFixtures::project($client, 'DEMO');
+    $task = ApiFixtures::task($project);
+    listEntryAt('2026-10-12T08:00:00Z', ['client_id' => $client->id, 'project_id' => $project->id, 'task_id' => $task->id]);
+    ApiFixtures::running($admin, $client);
+    $token = ApiFixtures::token($admin, ['time:read']);
+
+    $items = $this->withToken($token)->getJson('/api/v1/time-entries')->assertOk()->json('data');
+
+    expect($items)->toHaveCount(2);
+
+    foreach ($items as $item) {
+        TimeEntryContract::assertShape($item);
+
+        foreach (array_keys($item) as $key) {
+            expect($key)->not->toMatch('/rate|price|amount|cost|total|money/i');
+        }
+    }
+});
