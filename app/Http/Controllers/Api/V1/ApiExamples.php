@@ -1,0 +1,52 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Api\V1;
+
+/**
+ * Fixed example payloads for the generated API documentation.
+ *
+ * The documentation page is public, so no example may come from a response call or a database row:
+ * every `#[Response]` attribute names one of these constants. All values are fictional (project key
+ * DEMO, task DEMO-1, identifiers with hex letters in every group), and the contract test compares
+ * TIME_ENTRY with the keys of the real resource, so an example cannot drift from the API.
+ */
+final class ApiExamples
+{
+    public const array TIME_ENTRY = [
+        'data' => [
+            'id' => '0199e3a0-5b7c-7d2e-8f41-a1b2c3d4e5f6',
+            'client_id' => '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9',
+            'project_id' => '0199e39f-d8a1-7c3e-b2f5-e5f6a7b8c9d0',
+            'project_key' => 'DEMO',
+            'task_id' => '0199e39f-f1b2-7e4a-a3c6-f6a7b8c9d0e1',
+            'task_reference' => 'DEMO-1',
+            'description' => 'Example work on the DEMO project',
+            'started_at' => '2026-10-12T08:00:00+00:00',
+            'ended_at' => '2026-10-12T09:30:00+00:00',
+            'duration_seconds' => 5400,
+            'billable' => true,
+            'billing_state' => 'unbilled',
+            'billed_at' => null,
+            'created_at' => '2026-10-12T09:31:12+00:00',
+            'updated_at' => '2026-10-12T09:31:12+00:00',
+        ],
+    ];
+
+    public const array UNAUTHENTICATED = [
+        'message' => 'Unauthenticated.',
+    ];
+
+    public const array FORBIDDEN = [
+        'message' => 'Invalid ability provided.',
+    ];
+
+    public const array NOT_FOUND = [
+        'message' => 'Záznam neexistuje.',
+    ];
+
+    public const array TOO_MANY_REQUESTS = [
+        'message' => 'Too Many Attempts.',
+    ];
+}
