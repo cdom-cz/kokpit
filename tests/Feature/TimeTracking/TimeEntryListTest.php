@@ -10,7 +10,9 @@ use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Actions\MarkEntriesBilled;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Filament\Resources\TimeEntryResource\Pages\EditTimeEntry;
 use App\Filament\Resources\TimeEntryResource\Pages\ListTimeEntries;
+use App\Filament\Resources\TimeEntryResource\Pages\ViewTimeEntry;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
@@ -205,6 +207,36 @@ it('totals the whole filtered set, not just the page, and splits it into billabl
         ->assertSee('8:02')
         ->assertSee('fakturovatelné')
         ->assertSee('nefakturovatelné');
+});
+
+it('lists a running entry that has run past the integer range with the clamped duration and an exact total (G-07-1)', function (): void {
+    $now = CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC');
+    $this->travelTo($now);
+    $overrun = listEntry($now->subSeconds(2147483645)->format('Y-m-d H:i:s'), '');
+    $finished = listEntry('2026-10-12 06:00:00', '2026-10-12 07:00:00');
+
+    // Four seconds later the running value is 2147483649, one past the limit of an integer.
+    $this->travelTo($now->addSeconds(4));
+
+    Livewire::test(ListTimeEntries::class)
+        ->assertSuccessful()
+        ->assertCanSeeTableRecords([$overrun, $finished])
+        ->assertTableColumnStateSet('elapsed_seconds', '596523:14', $overrun)
+        ->assertTableColumnSummarySet('elapsed_seconds', 'total', 2147483647 + 3600);
+});
+
+it('shows and edits a running entry that has run past the integer range (G-07-1)', function (): void {
+    $now = CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC');
+    $this->travelTo($now);
+    $overrun = listEntry($now->subSeconds(2147483645)->format('Y-m-d H:i:s'), '');
+
+    $this->travelTo($now->addSeconds(4));
+
+    Livewire::test(ViewTimeEntry::class, ['record' => $overrun->id])
+        ->assertSuccessful()
+        ->assertSee('596523:14:07');
+
+    Livewire::test(EditTimeEntry::class, ['record' => $overrun->id])->assertSuccessful();
 });
 
 it('totals only the filtered rows when a filter is active', function (): void {

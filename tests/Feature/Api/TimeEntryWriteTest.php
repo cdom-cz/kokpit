@@ -13,6 +13,7 @@ use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\TimerClock;
 use App\Http\Requests\Api\V1\TimeEntryPayload;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\ApiFixtures;
@@ -477,6 +478,33 @@ it('refuses a start far in the past or far ahead on a running entry and keeps th
 
     expect(TimeEntry::query()->findOrFail($running->id)->started_at->toIso8601String())->toBe($before)
         ->and(TimeEntry::query()->withElapsedSeconds(TimerClock::now())->get())->toHaveCount(1);
+});
+
+it('keeps the entry list readable after a running start accepted at the edge of the limit runs past it (G-07-1)', function (): void {
+    $now = CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC');
+    $this->travelTo($now);
+    $admin = ApiFixtures::admin();
+    $running = ApiFixtures::running($admin, ApiFixtures::client());
+    $token = ApiFixtures::token($admin, ['time:write', 'time:read']);
+
+    // The 07-13 guard accepts a start exactly 2147483645 seconds old.
+    $this->withToken($token)->patchJson('/api/v1/time-entries/'.$running->id, [
+        'started_at' => $now->subSeconds(2147483645)->format('Y-m-d\\TH:i:s\\Z'),
+    ])->assertOk();
+
+    // The clock moves on: the running value is now past the integer range.
+    $this->travelTo($now->addSeconds(4));
+
+    $elapsed = TimeEntry::query()->withElapsedSeconds(TimerClock::now())->findOrFail($running->id)->elapsed_seconds;
+
+    expect($elapsed)->toBe(2147483647);
+
+    Auth::forgetGuards();
+
+    $this->withToken($token)->getJson('/api/v1/time-entries/'.$running->id)
+        ->assertOk()
+        ->assertJsonPath('data.duration_seconds', null)
+        ->assertJsonPath('data.ended_at', null);
 });
 
 it('refuses an instant outside UTC years 1 to 9999 under its own field on create, never a database error', function (): void {

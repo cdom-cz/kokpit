@@ -15,6 +15,7 @@ use App\Domain\Shared\Models\KokpitModel;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Enums\BillingBadge;
 use App\Domain\TimeTracking\Enums\BillingState;
+use App\Domain\TimeTracking\TimeEntryInput;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Database\Factories\TimeEntryFactory;
@@ -64,7 +65,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $long_running_notified_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
- * @property-read int|null $elapsed_seconds only on rows read through the withElapsedSeconds scope
+ * @property-read int|null $elapsed_seconds only on rows read through the withElapsedSeconds scope; a running entry reads between 0 and 2147483647 (clamped)
  * @property-read bool|null $overlaps only on rows read through the withOverlapFlag scope
  * @property-read string|null $overlap_label only on rows read through the withOverlapFlag scope
  */
@@ -94,12 +95,29 @@ final class TimeEntry extends KokpitModel implements PartnerIsolated
     }
 
     /**
-     * Adds `elapsed_seconds` to every row: the exact stored duration of a finished
-     * entry, the seconds from the start to `$now` of a running one (never negative).
+     * The one SQL expression for the elapsed seconds of an entry, for every reader of it.
      *
-     * The instant is bound from the PHP clock, never SQL `now()`, because
-     * PostgreSQL's `now()` ignores a frozen test clock and would make the screens
-     * disagree with the timer.
+     * A finished entry keeps its stored duration. A running one counts the seconds from its
+     * start up to the one bound instant (`?`, bound from the PHP clock, never SQL `now()`,
+     * because PostgreSQL's `now()` ignores a frozen test clock and would make the screens
+     * disagree with the timer). The difference is computed wide and clamped between 0 and
+     * the ceiling of the write bound, and only then cast to an integer, so no storable start
+     * can overflow the cast: a start ahead of the instant counts 0, a start decades back
+     * counts the ceiling. Each row is an integer, and sums over the rows are wide in PostgreSQL.
+     *
+     * @param  literal-string  $alias  the alias of the entries table in the query
+     * @return literal-string
+     */
+    public static function elapsedSecondsSql(string $alias): string
+    {
+        return 'COALESCE('.$alias.'.duration_seconds, LEAST('.TimeEntryInput::MAX_DURATION_SECONDS
+            .', GREATEST(0, EXTRACT(EPOCH FROM (?::timestamptz - '.$alias.'.started_at))::bigint))::int)';
+    }
+
+    /**
+     * Adds `elapsed_seconds` to every row: the exact stored duration of a finished
+     * entry, the seconds from the start to `$now` of a running one, between 0 and
+     * 2147483647 (see elapsedSecondsSql).
      *
      * @param  Builder<TimeEntry>  $query
      */
@@ -108,7 +126,7 @@ final class TimeEntry extends KokpitModel implements PartnerIsolated
         $query
             ->addSelect($this->qualifyColumn('*'))
             ->selectRaw(
-                'COALESCE(time_entries.duration_seconds, GREATEST(0, EXTRACT(EPOCH FROM (?::timestamptz - time_entries.started_at))::int)) AS elapsed_seconds',
+                self::elapsedSecondsSql('time_entries').' AS elapsed_seconds',
                 [$now->utc()->format('Y-m-d H:i:sP')],
             );
     }
