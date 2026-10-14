@@ -10,6 +10,7 @@ use App\Domain\Clients\Models\Contact;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\BillingType;
+use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Reports\Enums\ReportExportFormat;
@@ -199,12 +200,14 @@ final class CanaryRegistry
 
             // One task in the canary project of that client (found by name; the Project
             // fixture runs before this one), created through the real Action by an
-            // Admin. The canary is the title, so a Partner reading it would be caught.
+            // Admin. The canary is the title, so a Partner reading it would be caught. The task is in
+            // status in_review (Phase 8, UI-SPEC Access contract), so every test that renders the Partner dashboard
+            // exercises the "Ke kontrole" highlight path of the open tasks widget.
             Task::class => static function (string $clientId, string $canary): void {
                 app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
                     $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
 
-                    app(CreateTask::class)->handle(Canary::admin(), $project, ['title' => $canary]);
+                    app(CreateTask::class)->handle(Canary::admin(), $project, ['title' => $canary, 'status' => ProjectStatus::InReview->value]);
                 });
             },
 
