@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-07-PLAN.md
-last_updated: "2026-10-14T20:18:01.265Z"
+stopped_at: Completed 08-08-PLAN.md
+last_updated: "2026-10-14T20:28:14.989Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: e24b470bad09a7655d58140f209ddf1301d4ac15
+state_head: a0726c65a667118ea22356ab69535ba6a2d2eb9c
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 127
+  completed_plans: 128
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 8 of 22
+Plan: 9 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -189,6 +189,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P05 | 8 min | 3 tasks | 6 files |
 | Phase 08 P06 | 19 min | 3 tasks | 7 files |
 | Phase 08 P07 | 40 min | 3 tasks | 14 files |
+| Phase 08 P08 | 45 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -443,6 +444,7 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-06: WorkReportSource::fromEntryIds takes one client's listed entries; period is first and last Prague day, project named only when shared — Phase 10 attaches the report for exactly the billed entries
 - [Phase 08]: 08-07: report_exports expires_at is creation plus retention, reset to completion plus retention by markReady(), so the prune also removes stale pending and failed records; ttlDays() never below 1
 - [Phase 08]: 08-07: downloadFileName() accepts only two real YYYY-MM-DD days from stored filters, else report-casu.<ext>; markReady() leaves the path shape to the database CHECK
+- [Phase 08]: 08-08: the CNB download stays a synchronous scheduled command; only the --final run alerts, and a database error on it alerts and is rethrown without its text in the alert
 
 ### Pending Todos
 
@@ -489,6 +491,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T20:18:01.054Z
-Stopped at: Completed 08-07-PLAN.md
+Last session: 2026-10-14T20:28:14.801Z
+Stopped at: Completed 08-08-PLAN.md
 Resume file: None
