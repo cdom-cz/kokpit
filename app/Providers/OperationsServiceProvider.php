@@ -8,6 +8,7 @@ use App\Domain\Audit\ActivitySource;
 use App\Domain\Operations\Alerts\ReportFailedJob;
 use App\Domain\Operations\Health\HealthIndicatorRegistry;
 use App\Domain\Operations\Health\Indicators\FailedJobsIndicator;
+use App\Domain\Operations\Health\Indicators\LastRateDateIndicator;
 use App\Domain\Operations\Health\Indicators\OldestPendingJobIndicator;
 use App\Domain\Operations\Health\Indicators\PlaceholderIndicator;
 use App\Domain\Operations\Health\Indicators\SchedulerHeartbeatIndicator;
@@ -34,8 +35,9 @@ final class OperationsServiceProvider extends ServiceProvider
             fn (): ActivitySource => new ActivitySource(fn (): bool => $this->app->runningInConsole()),
         );
 
-        // One indicator per HealthSlot case (D-13). The queue and scheduler slots are measured for
-        // real; the rest start as placeholders that Phases 8, 10 and 11 swap through replace().
+        // One indicator per HealthSlot case (D-13). The queue, scheduler and last rate date slots
+        // (Phase 8) are measured for real; the rest start as placeholders that Phases 10 and 11
+        // swap through replace().
         // A slot never stays without an indicator, and register() refuses a second one, so the
         // placeholder is only registered for a slot no real indicator covers.
         $this->app->singleton(HealthIndicatorRegistry::class, function (): HealthIndicatorRegistry {
@@ -44,6 +46,7 @@ final class OperationsServiceProvider extends ServiceProvider
                 new FailedJobsIndicator,
                 new OldestPendingJobIndicator,
                 new SchedulerHeartbeatIndicator,
+                new LastRateDateIndicator,
             ];
 
             foreach ($real as $indicator) {

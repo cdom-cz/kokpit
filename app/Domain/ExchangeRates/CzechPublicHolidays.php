@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\ExchangeRates;
 
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use InvalidArgumentException;
 
 /**
@@ -34,6 +35,9 @@ final class CzechPublicHolidays
 
     /** The longest run of consecutive non-working days is far below this; the loop is only a safety stop. */
     private const int MAX_LOOKBACK_DAYS = 31;
+
+    /** The CNB publishes in Czech time, so "today" and the final hour are read in this zone. */
+    private const string CALENDAR_TIMEZONE = 'Europe/Prague';
 
     /**
      * Monday to Friday, and not a public holiday.
@@ -93,6 +97,68 @@ final class CzechPublicHolidays
         }
 
         throw new InvalidArgumentException('No working day within a month before '.$day);
+    }
+
+    /**
+     * The day whose CNB list the system should already hold at `$now`: today when today is a working day in Prague
+     * and the Prague hour is at or after `$finalHour` (the last scheduled attempt has run), otherwise the closest
+     * working day before today. On a Saturday, a Sunday or a holiday that is the last working day at any hour.
+     *
+     * @throws InvalidArgumentException when no working day lies within a month before today
+     */
+    public static function expectedListDate(CarbonInterface $now, int $finalHour): string
+    {
+        $prague = CarbonImmutable::instance($now)->setTimezone(self::CALENDAR_TIMEZONE);
+        $today = $prague->format('Y-m-d');
+
+        if ((int) $prague->format('G') >= $finalHour && self::isWorkingDay($today)) {
+            return $today;
+        }
+
+        return self::previousWorkingDay($today);
+    }
+
+    /**
+     * How many working days `d` lie with `$after < d <= $upTo`; 0 when `$after` is not before `$upTo`.
+     *
+     * @throws InvalidArgumentException when either argument is not a real day of the form `Y-m-d`
+     */
+    public static function workingDaysBetween(string $after, string $upTo): int
+    {
+        $start = self::parse($after);
+        $end = self::parse($upTo);
+
+        if ($start >= $end) {
+            return 0;
+        }
+
+        return count(self::workingDays($start->modify('+1 day')->format('Y-m-d'), $upTo));
+    }
+
+    /**
+     * The working days of the inclusive range `$from` to `$to`, in order; empty when `$from` is after `$to`.
+     *
+     * @return list<string>
+     *
+     * @throws InvalidArgumentException when either argument is not a real day of the form `Y-m-d`
+     */
+    public static function workingDays(string $from, string $to): array
+    {
+        $cursor = self::parse($from);
+        $end = self::parse($to);
+        $days = [];
+
+        while ($cursor <= $end) {
+            $day = $cursor->format('Y-m-d');
+
+            if (self::isWorkingDay($day)) {
+                $days[] = $day;
+            }
+
+            $cursor = $cursor->modify('+1 day');
+        }
+
+        return $days;
     }
 
     /**
