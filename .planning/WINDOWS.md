@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 1
+open_count: 0
 waived_count: 0
-fixed_count: 0
+fixed_count: 1
 total_count: 1
-last_updated: 2026-10-14T11:34:16.656Z
+last_updated: 2026-10-14T11:48:33.136Z
 ---
 
 # Broken Windows Ledger
@@ -15,7 +15,7 @@ last_updated: 2026-10-14T11:34:16.656Z
 
 | id | phase | kind | file | line | description | status | reason | recorded_at | resolved_at |
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
-| 1 | 07 | deviation | config/scribe.php |  | Scribe docs show untranslated rule sentences on earlier endpoints; see deferred-items.md | open |  | 2026-10-14T11:34:16.656Z |  |
+| 1 | 07 | deviation | config/scribe.php |  | Scribe docs show untranslated rule sentences on earlier endpoints; see deferred-items.md | fixed |  | 2026-10-14T11:34:16.656Z | 2026-10-14T11:48:33.136Z |
 
 ````json
 [
@@ -26,10 +26,10 @@ last_updated: 2026-10-14T11:34:16.656Z
     "file": "config/scribe.php",
     "line": null,
     "description": "Scribe docs show untranslated rule sentences on earlier endpoints; see deferred-items.md",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-14T11:34:16.656Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-14T11:48:33.136Z",
     "milestone": null
   }
 ]

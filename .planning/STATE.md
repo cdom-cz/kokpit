@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: REST API
-status: executing
-stopped_at: Completed 07-11-PLAN.md
-last_updated: "2026-10-14T11:34:16.388Z"
+status: verifying
+stopped_at: Completed 07-12-PLAN.md
+last_updated: "2026-10-14T11:49:30.782Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 07 execution started
-state_head: a3ef1ac46d6b2ec919eccddb3757d9ad78635b43
+state_head: 8e4ebcdbe46fae088bfc95f72400e1d4b90a8f8b
 progress:
   total_phases: 12
   completed_phases: 6
   total_plans: 112
-  completed_plans: 111
+  completed_plans: 112
   percent: 50
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 Phase: 07 (REST API) — EXECUTING
 Plan: 12 of 12
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-14 — Phase 07 execution started
 
 Progress: [█████░░░░░] 50%
@@ -172,6 +172,7 @@ Progress: [█████░░░░░] 50%
 | Phase 07 P09 | 45 min | 3 tasks | 13 files |
 | Phase 07 P10 | 30min | 2 tasks | 8 files |
 | Phase 07 P11 | 40 min | 3 tasks | 8 files |
+| Phase 07 P12 | 15 min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -399,6 +400,8 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-10: the purge deletes only expires_at < now(); the concurrency worker uses a shared start timestamp barrier like the timer harness and prints the raw body so replays compare byte for byte
 - [Phase 07]: 07-11: a batch has no outer transaction; only a ValidationException is an item error, any other exception is a 500 that keeps earlier items and releases the idempotency key (caller deduplicates)
 - [Phase 07]: 07-11: batch answers 201 / 207 / 422 with {saved, failed, errors:[{index, errors}]}, 422 adds message first; item limit is a closure rule so Scribe adds no rule sentence
+- [Phase 07]: Plan 07-12: docs generation is the plain last run.initCommands entry on every container; a failing generation fails the deploy (D-17)
+- [Phase 07]: Plan 07-12: public docs are generated with the app locale switched to English for scribe:generate only; API answers stay Czech, wire contract unchanged
 
 ### Pending Todos
 
@@ -444,6 +447,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T11:34:16.204Z
-Stopped at: Completed 07-11-PLAN.md
+Last session: 2026-10-14T11:49:30.581Z
+Stopped at: Completed 07-12-PLAN.md
 Resume file: None
