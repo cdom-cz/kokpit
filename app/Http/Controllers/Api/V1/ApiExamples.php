@@ -131,6 +131,45 @@ final class ApiExamples
         'errors' => [],
     ];
 
+    /**
+     * The answer of a batch in which the second of three entries failed (207).
+     */
+    public const array BATCH_MIXED = [
+        'saved' => 2,
+        'failed' => 1,
+        'errors' => [
+            [
+                'index' => 1,
+                'errors' => [
+                    'ended_at' => ['Konec musí být později než začátek.'],
+                ],
+            ],
+        ],
+    ];
+
+    /**
+     * The answer of a batch in which no entry could be saved (422).
+     */
+    public const array BATCH_NONE_SAVED = [
+        'message' => 'Nepodařilo se uložit žádnou položku.',
+        'saved' => 0,
+        'failed' => 2,
+        'errors' => [
+            [
+                'index' => 0,
+                'errors' => [
+                    'started_at' => ['Zadejte platné datum a čas.'],
+                ],
+            ],
+            [
+                'index' => 1,
+                'errors' => [
+                    'entry' => ['Položka musí být objekt JSON.'],
+                ],
+            ],
+        ],
+    ];
+
     public const array ENTRY_LOCKED = [
         'message' => 'Záznam je vyfakturovaný a nelze ho upravit. Nejdřív zrušte fakturaci.',
         'code' => 'entry_locked',
