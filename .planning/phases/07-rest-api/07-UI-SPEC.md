@@ -233,7 +233,7 @@ On close: the Livewire property holding the token is cleared, the list refreshes
 No Kokpit-designed UI: the page is the stock Scribe documentation UI (D-17 revised: generated at release, assets served locally, no CDN). The contract is limited to:
 
 - Reached from "Dokumentace API" on Surface A and Surface C; opens in a new tab.
-- Visible only to a logged-in Admin (gate or middleware; exact route path set by the plan). A Partner or a guest gets 403; no content, no route list, no spec JSON (the OpenAPI spec route has the same rule).
+- Public: reachable by anyone on a public URL, with no login and no gate (owner decision; exact route path set by the plan). The OpenAPI spec route is public as well. Because both are public they carry fictional example values only.
 - Theme follows the operating-system colour mode (Scribe stock theme); no custom CSS, logo, font or colour. Page title "Kokpit API".
 - The documentation itself is in English (it documents a machine interface and it is generated from the code at release); it contains fictional example values only (`example.com` addresses, placeholder IDs) and never a real token.
 - The page has no navigation back into the panel; the Admin returns by closing the tab.
@@ -350,7 +350,6 @@ Applicable state considerations resolved: 14 covered, 4 backstop, 2 unresolved (
 | long-text | N4 (interactive-control) | ✅ covered | A long token name in the confirmation body wraps and is escaped once |
 | long-text | N3 summary (static-content) | 🧪 backstop | A long name in the summary line wraps; checked visually at 375px |
 | overflow | N3 on small screens (interactive-control) | 🧪 backstop | The modal is at most the viewport wide and scrolls inside itself; checked at 375px |
-| error | N5 (nav) | ⚠ unresolved | Whether a guest or Partner opening `/docs/api` sees a bare 403 page or a redirect to the login. Planner treats the assumption: the stock 403 response of the Admin-only docs guard, no redirect, no content leaked |
 | error | N2 expired session (form) | ⚠ unresolved | If the Admin session expires while the create modal is open, the submit fails with the stock Livewire expired-session handling. Planner treats the assumption: stock behaviour (re-login), the token is not created and nothing is shown |
 | empty | N5 (static-content) | ✅ covered | The docs page needs no data state of its own; an instance with no committed endpoints cannot occur because the spec is generated from the routes |
 
