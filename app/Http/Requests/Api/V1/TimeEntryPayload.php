@@ -196,10 +196,10 @@ final class TimeEntryPayload
     }
 
     /**
-     * The end of the entry: the named `ended_at`, or the start plus `duration_seconds`. An interval beyond
-     * the column limit is refused under `ended_at` before the database sees it. The bound is the domain
-     * rule `TimeEntryInput::assertDurationFits()`, applied here first so the answer comes before the
-     * Action runs.
+     * The end of the entry: the named `ended_at`, or the start plus `duration_seconds`. Both forms pass
+     * `TimeEntryInput::instant()` (UTC years 1 to 9999, whole second), so an end the database cannot store
+     * is refused under `ended_at` with `invalid_time` here, before the Action runs. An interval beyond the
+     * column limit is refused next, under `ended_at`, by the domain rule `TimeEntryInput::assertDurationFits()`.
      *
      * @param  array<string, mixed>  $validated
      *
@@ -210,7 +210,7 @@ final class TimeEntryPayload
         $duration = $validated['duration_seconds'] ?? null;
 
         $end = $duration !== null
-            ? $start?->addSeconds((int) $duration)
+            ? TimeEntryInput::instant($start?->addSeconds((int) $duration), 'ended_at')
             : TimeEntryInput::instant($validated['ended_at'] ?? null, 'ended_at');
 
         if ($start !== null && $end !== null) {

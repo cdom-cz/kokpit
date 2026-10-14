@@ -200,7 +200,10 @@ final class TimeEntryInput
      * @param  string  $field  the data key the field error is keyed by (`started_at` or `ended_at`)
      * @return CarbonImmutable|null null for an absent value
      *
-     * @throws ValidationException the field error `invalid_time` on `$field` for anything unparsable
+     * An instant that lies outside UTC years 1 to 9999 once moved to UTC (`TimerClock::isStorable()`) is
+     * the same `invalid_time` field error: the database cannot store it.
+     *
+     * @throws ValidationException the field error `invalid_time` on `$field` for anything unparsable or unstorable
      */
     public static function instant(mixed $value, string $field): ?CarbonImmutable
     {
@@ -209,7 +212,7 @@ final class TimeEntryInput
         }
 
         if ($value instanceof CarbonInterface) {
-            return self::normalised($value);
+            return self::normalised($value, $field);
         }
 
         if (! is_string($value)) {
@@ -228,7 +231,7 @@ final class TimeEntryInput
 
         return $parsed === null
             ? throw self::error($field, 'invalid_time')
-            : self::normalised($parsed);
+            : self::normalised($parsed, $field);
     }
 
     /**
@@ -290,11 +293,20 @@ final class TimeEntryInput
      *
      * The model casts write the wall-clock value of the instant's own zone, so
      * an instant carrying a +02:00 offset must be moved to UTC before it is
-     * stored, or it would be stored two hours late.
+     * stored, or it would be stored two hours late. An instant the database cannot store (UTC year outside
+     * 1 to 9999) is refused with `invalid_time` on `$field`.
+     *
+     * @throws ValidationException
      */
-    private static function normalised(CarbonInterface $value): CarbonImmutable
+    private static function normalised(CarbonInterface $value, string $field): CarbonImmutable
     {
-        return TimerClock::truncate($value)->setTimezone((string) config('app.timezone'));
+        $truncated = TimerClock::truncate($value);
+
+        if (! TimerClock::isStorable($truncated)) {
+            throw self::error($field, 'invalid_time');
+        }
+
+        return $truncated->setTimezone((string) config('app.timezone'));
     }
 
     /**

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Api\ReferenceResolver;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
@@ -11,7 +12,9 @@ use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\TimerClock;
+use App\Http\Requests\Api\V1\TimeEntryPayload;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 use Tests\Support\ApiFixtures;
 use Tests\Support\Canary;
 
@@ -474,6 +477,137 @@ it('refuses a start far in the past or far ahead on a running entry and keeps th
 
     expect(TimeEntry::query()->findOrFail($running->id)->started_at->toIso8601String())->toBe($before)
         ->and(TimeEntry::query()->withElapsedSeconds(TimerClock::now())->get())->toHaveCount(1);
+});
+
+it('refuses an instant outside UTC years 1 to 9999 under its own field on create, never a database error', function (): void {
+    [, $client, , , $token] = matrixContext();
+
+    // UTC year 0: PostgreSQL has no year 0.
+    $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, [
+        'started_at' => '0001-01-01T00:00:00+02:00',
+        'ended_at' => null,
+        'duration_seconds' => 1,
+    ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['started_at'])
+        ->assertJsonPath('errors.started_at.0', __('kokpit.time.errors.invalid_time'));
+
+    // UTC year 10000: Carbon cannot read a five-digit year back. The range check answers before the span bound.
+    $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, [
+        'started_at' => '2026-10-12T08:00:00Z',
+        'ended_at' => '9999-12-31T23:59:59-12:00',
+    ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['ended_at'])
+        ->assertJsonPath('errors.ended_at.0', __('kokpit.time.errors.invalid_time'));
+
+    expect(TimeEntry::query()->count())->toBe(0);
+});
+
+it('accepts the first storable second of UTC year 1', function (): void {
+    [, $client, , , $token] = matrixContext();
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, [
+        'started_at' => '0001-01-01T00:00:00Z',
+        'ended_at' => '0001-01-01T00:00:01Z',
+    ]))->assertCreated();
+});
+
+it('refuses an end computed from duration_seconds that leaves UTC year 9999 under ended_at, and accepts the last storable second', function (): void {
+    [, $client, , , $token] = matrixContext();
+
+    foreach ([2147483647, 86400] as $duration) {
+        $this->withToken($token)->postJson('/api/v1/time-entries', [
+            'client_id' => $client->id,
+            'started_at' => '9999-12-31T00:00:00Z',
+            'duration_seconds' => $duration,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['ended_at'])
+            ->assertJsonPath('errors.ended_at.0', __('kokpit.time.errors.invalid_time'));
+    }
+
+    expect(TimeEntry::query()->count())->toBe(0);
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', [
+        'client_id' => $client->id,
+        'started_at' => '9999-12-31T00:00:00Z',
+        'duration_seconds' => 86399,
+    ])->assertCreated();
+});
+
+it('refuses an unstorable instant on PATCH and leaves the row unchanged', function (): void {
+    $admin = ApiFixtures::admin();
+    [$entry] = writableEntry($admin);
+    $token = ApiFixtures::token($admin, ['time:write']);
+
+    $this->withToken($token)->patchJson('/api/v1/time-entries/'.$entry->id, ['started_at' => '0001-01-01T00:00:00+02:00'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['started_at'])
+        ->assertJsonPath('errors.started_at.0', __('kokpit.time.errors.invalid_time'));
+
+    $this->withToken($token)->patchJson('/api/v1/time-entries/'.$entry->id, ['ended_at' => '9999-12-31T23:59:59-12:00'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['ended_at'])
+        ->assertJsonPath('errors.ended_at.0', __('kokpit.time.errors.invalid_time'));
+
+    $stored = TimeEntry::query()->findOrFail($entry->id);
+
+    expect($stored->started_at->toIso8601String())->toBe('2026-10-12T08:00:00+00:00')
+        ->and($stored->ended_at?->toIso8601String())->toBe('2026-10-12T09:30:00+00:00');
+});
+
+it('refuses a PATCH duration_seconds whose computed end leaves UTC year 9999 and accepts the last storable second', function (): void {
+    $admin = ApiFixtures::admin();
+    $entry = ApiFixtures::entry($admin, [
+        'client_id' => ApiFixtures::client()->id,
+        'started_at' => '9999-12-31 00:00:00',
+        'ended_at' => '9999-12-31 01:00:00',
+    ]);
+    $token = ApiFixtures::token($admin, ['time:write']);
+
+    foreach ([86400, 2147483647] as $duration) {
+        $this->withToken($token)->patchJson('/api/v1/time-entries/'.$entry->id, ['duration_seconds' => $duration])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['ended_at'])
+            ->assertJsonPath('errors.ended_at.0', __('kokpit.time.errors.invalid_time'));
+    }
+
+    $stored = TimeEntry::query()->findOrFail($entry->id);
+
+    expect($stored->ended_at?->toIso8601String())->toBe('9999-12-31T01:00:00+00:00')
+        ->and($stored->duration_seconds)->toBe(3600);
+
+    $this->withToken($token)->patchJson('/api/v1/time-entries/'.$entry->id, ['duration_seconds' => 86399])->assertOk();
+});
+
+it('refuses the computed end of duration_seconds in the payload itself, before any Action runs', function (): void {
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $entry = ApiFixtures::entry($admin, [
+        'client_id' => $client->id,
+        'started_at' => '9999-12-31 00:00:00',
+        'ended_at' => '9999-12-31 01:00:00',
+    ]);
+
+    $errors = static function (Closure $call): array {
+        try {
+            $call();
+        } catch (ValidationException $e) {
+            return $e->errors();
+        }
+
+        return [];
+    };
+
+    $expected = ['ended_at' => [__('kokpit.time.errors.invalid_time')]];
+
+    expect($errors(fn () => TimeEntryPayload::forCreate([
+        'client_id' => $client->id,
+        'started_at' => '9999-12-31T00:00:00Z',
+        'duration_seconds' => 2147483647,
+    ], app(ReferenceResolver::class))))->toBe($expected)
+        ->and($errors(fn () => TimeEntryPayload::forUpdate(['duration_seconds' => 86400], $entry, app(ReferenceResolver::class))))->toBe($expected);
 });
 
 it('ignores smuggled keys: the entry is the token owner\'s, unbilled and has a new uuid', function (): void {
