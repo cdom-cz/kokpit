@@ -498,6 +498,7 @@ it('only names Phase 6 classes in CONTRIBUTING.md that exist in app/', function 
         'RequiresAdmin' => 'App\Livewire\TimeTracking\RequiresAdmin',
         'TimeTotals' => 'App\Domain\TimeTracking\Queries\TimeTotals',
         'NotifyLongRunningTimers' => 'App\Domain\TimeTracking\Jobs\NotifyLongRunningTimers',
+        'EndOverrunTimers' => 'App\Domain\TimeTracking\Actions\EndOverrunTimers',
         'EntryContextOptions' => 'App\Domain\TimeTracking\Queries\EntryContextOptions',
     ];
 
@@ -543,6 +544,7 @@ it('names the Phase 6 enforcing tests, and each of them exists', function () {
         'TimesheetTest' => 'tests/Feature/TimeTracking/TimesheetTest.php',
         'ProjectTimeOverviewTest' => 'tests/Feature/TimeTracking/ProjectTimeOverviewTest.php',
         'LongRunningTimerTest' => 'tests/Feature/TimeTracking/LongRunningTimerTest.php',
+        'EndOverrunTimersTest' => 'tests/Feature/TimeTracking/EndOverrunTimersTest.php',
         'DeployVerifyCommandTest' => 'tests/Feature/Operations/DeployVerifyCommandTest.php',
     ];
 
