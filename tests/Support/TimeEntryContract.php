@@ -10,7 +10,8 @@ use PHPUnit\Framework\Assert;
  * The time entry keys and JSON types the owner confirmed (07-02 Task 2, amended).
  *
  * `project_key` and `task_reference` are output-only. Every key that can be absent in the domain
- * (project, task, description, end, duration, billing time) may be null in a response.
+ * (project, task, description, end, duration, billing time, external) may be null in a response.
+ * `external` (D-15, plan 07-06) is a JSON object, which a decoded response holds as an array.
  */
 final class TimeEntryContract
 {
@@ -31,6 +32,7 @@ final class TimeEntryContract
         'billable' => 'boolean',
         'billing_state' => 'string',
         'billed_at' => '?string',
+        'external' => '?array',
         'created_at' => 'string',
         'updated_at' => 'string',
     ];

@@ -38,7 +38,7 @@ it('lets an Admin token with time:read read one time entry', function (): void {
     expect(array_keys($response->json('data')))->toBe([
         'id', 'client_id', 'project_id', 'project_key', 'task_id', 'task_reference', 'description',
         'started_at', 'ended_at', 'duration_seconds', 'billable', 'billing_state', 'billed_at',
-        'created_at', 'updated_at',
+        'external', 'created_at', 'updated_at',
     ]);
 });
 

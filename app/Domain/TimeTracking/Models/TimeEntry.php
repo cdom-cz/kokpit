@@ -41,6 +41,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Changes to the context, the instants, the billable flag and the billing state
  * are written to the activity log through an allowlist (D-06). The description
  * is free text and `long_running_notified_at` is bookkeeping: neither is logged.
+ * `external` (D-15) is the free-form JSON object of an import helper: set only by the
+ * Actions, never fillable, never logged and never shown in the panel.
  * Billing and unbilling save the model one entry at a time so each writes a row.
  *
  * The relations to client, project and task include archived rows: archiving
@@ -58,6 +60,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property bool $billable
  * @property BillingState $billing_state
  * @property CarbonImmutable|null $billed_at
+ * @property \stdClass|null $external
  * @property CarbonImmutable|null $long_running_notified_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
@@ -194,6 +197,7 @@ final class TimeEntry extends KokpitModel implements PartnerIsolated
             'billable' => 'boolean',
             'billing_state' => BillingState::class,
             'duration_seconds' => 'integer',
+            'external' => 'object',
         ];
     }
 

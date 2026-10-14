@@ -9,8 +9,10 @@ use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\TimeEntryInput;
 use Carbon\CarbonImmutable;
 use Closure;
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use stdClass;
 
 /**
  * The write payload of a time entry: the shape rules and the mapping to the data of the domain Actions.
@@ -23,6 +25,11 @@ use Illuminate\Validation\ValidationException;
  *
  * `duration_seconds` is an alternative to `ended_at` that exists only here: it becomes
  * `ended_at = started_at + duration` before the Action, which takes `ended_at` only.
+ *
+ * `external` (D-15) is taken from the raw request body: a PHP array cannot tell the JSON object `{}` from
+ * the list `[]`, and Laravel decodes the body to arrays. The body is decoded once more as objects
+ * (`rawBody()`), and the `external` member is handed to the Action as it is. The key reaches the Action
+ * exactly when the body names it, so on update an absent key keeps the stored value and `null` clears it.
  */
 final class TimeEntryPayload
 {
@@ -38,6 +45,25 @@ final class TimeEntryPayload
      * crash the database.
      */
     public const int MAX_DURATION_SECONDS = 2147483647;
+
+    private const string RAW_BODY = 'kokpit.api.raw_body';
+
+    /**
+     * The JSON body of the request decoded as objects, once per request; null when the body is not a JSON
+     * object (a form post, an empty or a malformed body).
+     */
+    public static function rawBody(Request $request): ?stdClass
+    {
+        if (! $request->attributes->has(self::RAW_BODY)) {
+            $raw = json_decode($request->getContent(), false);
+
+            $request->attributes->set(self::RAW_BODY, $raw instanceof stdClass ? $raw : null);
+        }
+
+        $raw = $request->attributes->get(self::RAW_BODY);
+
+        return $raw instanceof stdClass ? $raw : null;
+    }
 
     /**
      * @return array<string, list<mixed>>
@@ -55,6 +81,8 @@ final class TimeEntryPayload
             'duration_seconds' => ['integer', 'min:1', 'max:'.self::MAX_DURATION_SECONDS],
             'description' => ['nullable', 'string'],
             'billable' => ['nullable', 'boolean'],
+            // Shape and size are decided by TimeEntryInput::external() on the raw body (D-15).
+            'external' => ['nullable'],
         ];
     }
 
@@ -66,7 +94,7 @@ final class TimeEntryPayload
      *
      * @throws ValidationException
      */
-    public static function forCreate(array $validated, ReferenceResolver $refs): array
+    public static function forCreate(array $validated, ReferenceResolver $refs, ?stdClass $raw = null): array
     {
         $start = TimeEntryInput::instant($validated['started_at'] ?? null, 'started_at');
         $data = [
@@ -82,7 +110,7 @@ final class TimeEntryPayload
             $data['billable'] = filter_var($validated['billable'], FILTER_VALIDATE_BOOLEAN);
         }
 
-        return $data;
+        return [...$data, ...self::external($validated, $raw)];
     }
 
     /**
@@ -94,7 +122,7 @@ final class TimeEntryPayload
      *
      * @throws ValidationException
      */
-    public static function forUpdate(array $validated, TimeEntry $entry, ReferenceResolver $refs): array
+    public static function forUpdate(array $validated, TimeEntry $entry, ReferenceResolver $refs, ?stdClass $raw = null): array
     {
         $data = [];
 
@@ -127,7 +155,24 @@ final class TimeEntryPayload
             $data['ended_at'] = self::end($validated, $start);
         }
 
-        return $data;
+        return [...$data, ...self::external($validated, $raw)];
+    }
+
+    /**
+     * The `external` key of the Action data: present exactly when the request names it. The value is the
+     * raw object (or null, or whatever else was sent, for the Action to refuse). Without a JSON object
+     * body, a form post for example, a named `external` is an array, which the Action refuses too.
+     *
+     * @param  array<string, mixed>  $validated
+     * @return array{external?: mixed}
+     */
+    private static function external(array $validated, ?stdClass $raw): array
+    {
+        if ($raw !== null) {
+            return property_exists($raw, 'external') ? ['external' => $raw->external] : [];
+        }
+
+        return array_key_exists('external', $validated) ? ['external' => $validated['external']] : [];
     }
 
     /**

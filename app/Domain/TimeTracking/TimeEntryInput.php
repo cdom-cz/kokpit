@@ -16,6 +16,8 @@ use DomainException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use JsonException;
+use stdClass;
 
 /**
  * The input rules every time entry writer shares: StartTimer now, CreateTimeEntry
@@ -25,6 +27,11 @@ use Illuminate\Validation\ValidationException;
 final class TimeEntryInput
 {
     private const int DESCRIPTION_MAX_LENGTH = 1000;
+
+    /**
+     * How many objects or lists may be nested in `external`, the object itself being the first level.
+     */
+    public const int EXTERNAL_MAX_DEPTH = 8;
 
     /**
      * The client, project and task of an entry, each read again under a share
@@ -130,6 +137,46 @@ final class TimeEntryInput
         }
 
         return $description === '' ? null : $description;
+    }
+
+    /**
+     * The free-form `external` object of an import helper (D-15): null stays null, a JSON object within
+     * the depth and size limits is returned as it is.
+     *
+     * Only a `stdClass` is an object: a PHP array cannot tell `{}` from `[]`, so a caller that decodes a
+     * request body must decode it as objects (`TimeEntryPayload::rawBody()`) and hand the member over
+     * untouched. An array, a string, a number or a bool is refused. The size is the byte length of the
+     * compact JSON, so multi-byte text counts in bytes.
+     *
+     * @throws ValidationException a field error on `external`: `external_not_object`, `external_too_deep`
+     *                             (more than EXTERNAL_MAX_DEPTH levels) or `external_too_large`
+     *                             (more than `kokpit.api.external_max_bytes` bytes)
+     */
+    public static function external(mixed $value): ?stdClass
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (! $value instanceof stdClass) {
+            throw self::error('external', 'external_not_object');
+        }
+
+        try {
+            $json = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR, self::EXTERNAL_MAX_DEPTH);
+        } catch (JsonException $e) {
+            // Beyond the depth is its own answer; anything else json_encode refuses (a float that is not
+            // finite) is not a JSON value an object may hold.
+            throw self::error('external', $e->getCode() === JSON_ERROR_DEPTH ? 'external_too_deep' : 'external_not_object');
+        }
+
+        $max = (int) config('kokpit.api.external_max_bytes');
+
+        if (strlen($json) > $max) {
+            throw self::error('external', 'external_too_large', ['max' => $max]);
+        }
+
+        return $value;
     }
 
     /**
@@ -259,8 +306,11 @@ final class TimeEntryInput
         return $value;
     }
 
-    private static function error(string $key, string $message): ValidationException
+    /**
+     * @param  array<string, mixed>  $replace
+     */
+    private static function error(string $key, string $message, array $replace = []): ValidationException
     {
-        return ValidationException::withMessages([$key => __('kokpit.time.errors.'.$message)]);
+        return ValidationException::withMessages([$key => __('kokpit.time.errors.'.$message, $replace)]);
     }
 }

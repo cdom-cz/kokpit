@@ -30,7 +30,7 @@ final class UpdateTimeEntryRequest extends FormRequest
     /**
      * The field descriptions and examples of the generated documentation (Scribe).
      *
-     * @return array<string, array{description: string, example: mixed}>
+     * @return array<string, array{description: string, example: mixed, type?: string}>
      */
     public function bodyParameters(): array
     {
@@ -66,6 +66,11 @@ final class UpdateTimeEntryRequest extends FormRequest
             'billable' => [
                 'description' => 'Whether the entry is billable.',
                 'example' => false,
+            ],
+            'external' => [
+                'description' => 'A free-form JSON object, with the same limits as on create (an object, at most 4096 bytes as compact JSON, at most 8 levels deep). Absent keeps the stored object, `null` clears it, an object replaces it whole (keys are not merged). A billed entry cannot be changed.',
+                'type' => 'object',
+                'example' => ['source' => 'demo-tracker', 'id' => 'A-1001'],
             ],
         ];
     }

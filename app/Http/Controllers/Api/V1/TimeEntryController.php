@@ -136,6 +136,7 @@ final class TimeEntryController
     #[ResponseField('data.ended_at', 'string', 'End instant, ISO 8601; null while the entry runs.', nullable: true)]
     #[ResponseField('data.duration_seconds', 'integer', 'Whole seconds from start to end; null while the entry runs.', nullable: true)]
     #[ResponseField('data.billed_at', 'string', 'Instant the entry was billed, ISO 8601, or null while unbilled.', nullable: true)]
+    #[ResponseField('data.external', 'object', 'The free-form JSON object an import helper stored with the entry, or null.', nullable: true)]
     #[Response(ApiExamples::NOT_FOUND, 404, 'No time entry has this UUID.')]
     public function show(string $timeEntry): TimeEntryResource
     {
@@ -162,10 +163,11 @@ final class TimeEntryController
     #[ResponseField('data.ended_at', 'string', 'End instant, ISO 8601; null while the entry runs.', nullable: true)]
     #[ResponseField('data.duration_seconds', 'integer', 'Whole seconds from start to end; null while the entry runs.', nullable: true)]
     #[ResponseField('data.billed_at', 'string', 'Instant the entry was billed, ISO 8601, or null while unbilled.', nullable: true)]
+    #[ResponseField('data.external', 'object', 'The free-form JSON object an import helper stored with the entry, or null.', nullable: true)]
     #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A field is not valid or the application refuses the entry; the errors are keyed by field.')]
     public function store(StoreTimeEntryRequest $request, CreateTimeEntry $create, ReferenceResolver $refs): JsonResponse
     {
-        $entry = $create->handle(self::actor($request), TimeEntryPayload::forCreate($request->validated(), $refs));
+        $entry = $create->handle(self::actor($request), TimeEntryPayload::forCreate($request->validated(), $refs, TimeEntryPayload::rawBody($request)));
         $entry->load(['project', 'task']);
 
         return (new TimeEntryResource($entry))
@@ -195,6 +197,7 @@ final class TimeEntryController
     #[ResponseField('data.ended_at', 'string', 'End instant, ISO 8601; null while the entry runs.', nullable: true)]
     #[ResponseField('data.duration_seconds', 'integer', 'Whole seconds from start to end; null while the entry runs.', nullable: true)]
     #[ResponseField('data.billed_at', 'string', 'Instant the entry was billed, ISO 8601, or null while unbilled.', nullable: true)]
+    #[ResponseField('data.external', 'object', 'The free-form JSON object an import helper stored with the entry, or null.', nullable: true)]
     #[Response(ApiExamples::NOT_FOUND, 404, 'No time entry has this UUID.')]
     #[Response(ApiExamples::ENTRY_LOCKED, 409, 'The entry is billed and cannot be changed (code `entry_locked`).')]
     #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A field is not valid or the application refuses the change; the errors are keyed by field.')]
@@ -209,7 +212,7 @@ final class TimeEntryController
             throw ValidationException::withMessages(['ended_at' => __('api.errors.running_entry_end')]);
         }
 
-        $data = TimeEntryPayload::forUpdate($validated, $entry, $refs);
+        $data = TimeEntryPayload::forUpdate($validated, $entry, $refs, TimeEntryPayload::rawBody($request));
 
         try {
             $changed = $update->handle(self::actor($request), $entry, $data);

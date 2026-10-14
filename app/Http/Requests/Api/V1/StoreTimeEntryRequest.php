@@ -30,7 +30,7 @@ final class StoreTimeEntryRequest extends FormRequest
     /**
      * The field descriptions and examples of the generated documentation (Scribe).
      *
-     * @return array<string, array{description: string, example: mixed}>
+     * @return array<string, array{description: string, example: mixed, type?: string}>
      */
     public function bodyParameters(): array
     {
@@ -66,6 +66,11 @@ final class StoreTimeEntryRequest extends FormRequest
             'billable' => [
                 'description' => 'Whether the entry is billable. When absent or null, the default of the task applies (billable unless the task is non-billable).',
                 'example' => true,
+            ],
+            'external' => [
+                'description' => 'A free-form JSON object for your own bookkeeping, for example the id of the entry in the system it was imported from. Optional. It must be an object (`{}` is fine, a list, a string or a number is refused with 422), at most 4096 bytes as compact JSON and nested at most 8 levels deep. It is returned with the entry (the order of its keys is not kept), never shown in the application and never used to look entries up or to skip duplicates.',
+                'type' => 'object',
+                'example' => ['source' => 'demo-tracker', 'id' => 'A-1001'],
             ],
         ];
     }
