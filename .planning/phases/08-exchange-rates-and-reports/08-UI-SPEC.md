@@ -1,10 +1,11 @@
 ---
 phase: "08"
 slug: exchange-rates-and-reports
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: "2026-10-14"
+reviewed_at: "2026-10-14"
 ---
 
 # Phase 08 — UI Design Contract
@@ -543,12 +544,12 @@ Questions answered by upstream artifacts and not re-asked: CNB conversion date a
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
-- [ ] Dimension 7 Inventory Provenance: PASS
+- [x] Dimension 1 Copywriting: PASS (non-blocking FLAG: single-word "Zavřít", "Nedoplňovat")
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS (non-blocking FLAG: accent Amber vs Indigo, F-1)
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
+- [x] Dimension 7 Inventory Provenance: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-10-14 (checker, after 1 revision)
