@@ -64,6 +64,21 @@ final class EditTimeEntry extends EditRecord
         return $schema->components(TimeEntryResource::entryFields($entry instanceof TimeEntry && $entry->isRunning()));
     }
 
+    /**
+     * The form is filled with every attribute of the record, and the page state travels to the browser
+     * as the Livewire snapshot. `external` (D-15) belongs to the import helpers of the API and is shown
+     * nowhere in the panel, so it is dropped before it can reach the page.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        unset($data['external']);
+
+        return $data;
+    }
+
     protected function getSavedNotificationTitle(): string
     {
         return __('kokpit.time.saved');

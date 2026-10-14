@@ -250,3 +250,55 @@ it('sets external on an entry that had none and refuses a non-object on a PATCH'
         ->assertOk()
         ->assertJsonPath('data.external', ['source' => 'demo-tracker']);
 });
+
+it('answers 409 entry_locked to a PATCH that changes only external of a billed entry and keeps the value', function (): void {
+    $client = ApiFixtures::client();
+    $entry = ApiFixtures::entry($this->externalAdmin, [
+        'client_id' => $client->id,
+        'started_at' => '2026-10-12 08:00:00',
+        'ended_at' => '2026-10-12 09:00:00',
+        'external' => (object) ['source' => 'demo-tracker'],
+    ]);
+    ApiFixtures::billed($entry);
+
+    Auth::forgetGuards();
+
+    $this->withToken(ApiFixtures::token($this->externalAdmin, ['time:write']))
+        ->patchJson('/api/v1/time-entries/'.$entry->id, ['external' => (object) ['source' => 'changed']])
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'entry_locked');
+
+    $stored = DB::selectOne('select external from time_entries where id = ?', [$entry->id]);
+
+    expect(json_decode((string) $stored->external, true))->toBe(['source' => 'demo-tracker']);
+});
+
+it('writes no activity row when only external changes, and none for a create that carries it', function (): void {
+    $id = externalEntry($this->externalAdmin, (object) ['source' => 'demo-tracker']);
+    $before = DB::table('activity_log')->where('subject_type', 'time_entry')->where('subject_id', $id)->count();
+
+    Auth::forgetGuards();
+
+    $this->withToken(ApiFixtures::token($this->externalAdmin, ['time:write']))
+        ->patchJson('/api/v1/time-entries/'.$id, ['external' => (object) ['source' => 'changed']])
+        ->assertOk();
+
+    $rows = DB::table('activity_log')->where('subject_type', 'time_entry')->where('subject_id', $id)->get();
+
+    expect($rows)->toHaveCount($before)
+        ->and(json_encode($rows))->not->toContain('external')
+        ->and(json_encode($rows))->not->toContain('demo-tracker');
+});
+
+it('renders no part of external on the panel pages of an entry, snapshot included', function (): void {
+    $canary = 'canary-'.bin2hex(random_bytes(6));
+    $id = externalEntry($this->externalAdmin, (object) ['source' => $canary, 'note' => 'x-'.$canary]);
+
+    Auth::forgetGuards();
+    $this->actingAs($this->externalAdmin);
+
+    foreach (['/admin/time-entries', '/admin/time-entries/'.$id, '/admin/time-entries/'.$id.'/edit'] as $path) {
+        // The page state travels as an HTML-escaped Livewire snapshot, so the canary is searched in the raw markup.
+        $this->get($path)->assertOk()->assertDontSee($canary, false)->assertDontSee('&quot;external&quot;', false);
+    }
+});

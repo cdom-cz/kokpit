@@ -7,6 +7,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Models\Task;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\RawSql;
@@ -127,6 +128,28 @@ describe('checks (23514)', function (): void {
     it('refuses an unknown billing state', function (): void {
         RawSql::expectSqlState('23514', fn () => timeEntriesSchemaInsert(['billing_state' => 'invoiced']));
     });
+
+    it('refuses an external value that is not a JSON object (time_entries_external_object_check)', function (string $json): void {
+        $message = null;
+
+        try {
+            DB::transaction(fn () => timeEntriesSchemaInsert(['external' => $json]));
+        } catch (QueryException $e) {
+            $message = $e->getMessage();
+        }
+
+        expect($message)->toContain('time_entries_external_object_check');
+
+        $id = timeEntriesSchemaInsert();
+
+        RawSql::expectSqlState('23514', fn () => DB::update('update time_entries set external = ?::jsonb where id = ?', [$json, $id]));
+    })->with(['an empty list' => '[]', 'a list' => '[1]', 'a string' => '"x"', 'a number' => '5', 'a bool' => 'true', 'a json null' => 'null']);
+
+    it('accepts an empty object, an object and an absent external', function (): void {
+        RawSql::expectAllowed(fn () => timeEntriesSchemaInsert());
+        RawSql::expectAllowed(fn () => timeEntriesSchemaInsert(['external' => '{}']));
+        RawSql::expectAllowed(fn () => timeEntriesSchemaInsert(['external' => '{"source": "demo-tracker"}']));
+    });
 });
 
 describe('foreign keys (23503)', function (): void {
@@ -181,13 +204,14 @@ describe('the billed freeze (KP001)', function (): void {
             'ended_at' => ["ended_at = '2026-10-12 12:00:00+00'", []],
             'client_id' => ['client_id = ?', [$this->timeEntriesClientB]],
             'description' => ["description = 'Example changed'", []],
+            'external' => ['external = \'{"source": "demo-tracker"}\'::jsonb', []],
         };
 
         RawSql::expectSqlState('KP001', fn () => DB::update(
             'update time_entries set '.$change[0].' where id = ?',
             [...$change[1], $id],
         ));
-    })->with(['started_at', 'ended_at', 'client_id', 'description']);
+    })->with(['started_at', 'ended_at', 'client_id', 'description', 'external']);
 
     it('refuses to delete a billed row', function (): void {
         $id = timeEntriesSchemaBilled();
