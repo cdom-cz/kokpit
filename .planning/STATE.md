@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-11-PLAN.md
-last_updated: "2026-10-14T21:06:32.178Z"
+stopped_at: Completed 08-12-PLAN.md
+last_updated: "2026-10-14T21:14:04.159Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: 69b99f081592e65929a63959b97e058abfa7770d
+state_head: 26c70e447ae096867b8e48a2f4baf63854137a0a
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 131
+  completed_plans: 132
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 12 of 22
+Plan: 13 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -193,6 +193,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P09 | 22 min | 3 tasks | 13 files |
 | Phase 08 P10 | 30 min | 2 tasks | 10 files |
 | Phase 08 P11 | 10 min | 2 tasks | 3 files |
+| Phase 08 P12 | 25 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -453,6 +454,7 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-09: an entry with its own billable flag set is priced even when its task is non-billable; fixed-price entries and rate-less entries carry hours only
 - [Phase 08]: 08-10: last rate date health lag is counted in Czech working days against the expected list date (today only from the final hour on a working day); error threshold is max(warning, error); never downloaded is Error; System page shows a dash for any empty value
 - [Phase 08]: 08-11: the exports download re-reads the row through the owner scope and re-checks isDownloadable() and the stored file at click time; an expired-after-render click is refused by Filament's server-side visibility (no file), a missing file shows the gone toast
+- [Phase 08]: 08-12: the export prune runs as system, deletes the private-disk file before the record (a failed delete is retried next day, a missing file is fine) and only ever deletes the stored path of an expired record
 
 ### Pending Todos
 
@@ -499,6 +501,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T21:06:31.977Z
-Stopped at: Completed 08-11-PLAN.md
+Last session: 2026-10-14T21:14:03.975Z
+Stopped at: Completed 08-12-PLAN.md
 Resume file: None
