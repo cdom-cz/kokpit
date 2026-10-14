@@ -9,10 +9,14 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Routing\Middleware\ValidateSignature;
+use Laravel\Sanctum\Http\Middleware\CheckAbilities;
+use Laravel\Sanctum\Http\Middleware\CheckForAnyAbility;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',
+        apiPrefix: 'api/v1',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
@@ -32,6 +36,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // request answers 403 without being counted and the 429 still carries the header.
         $middleware->prependToPriorityList(before: ThrottleRequests::class, prepend: SetNoReferrerPolicy::class);
         $middleware->prependToPriorityList(before: ThrottleRequests::class, prepend: ValidateSignature::class);
+
+        // Sanctum 4 registers no route middleware aliases, so `abilities:` and `ability:` on the
+        // /api/v1 routes would otherwise fail with "Target class [abilities] does not exist".
+        $middleware->alias([
+            'abilities' => CheckAbilities::class,
+            'ability' => CheckForAnyAbility::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
