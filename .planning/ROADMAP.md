@@ -501,7 +501,7 @@ Plans:
   4. Admin requests a CSV or XLSX export that is built in the background and delivered by notification with spreadsheet-safe cells, and generates a multi-page PDF work report with correct Czech diacritics
   5. The dashboard shows today's and this week's hours, unbilled time per client and upcoming task deadlines
 
-**Plans:** 4/22 plans executed (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed)
+**Plans:** 5/22 plans executed (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed)
 **UI hint**: yes
 
 Plans:
@@ -512,7 +512,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [x] 08-04-PLAN.md — Tracer: `kokpit:rates:download` via `CnbClient::daily()`, refusal matrix, rates copy and config (EX-01, EX-02)
-- [ ] 08-05-PLAN.md — `RateBook`, `ExchangeRateConverter`, `ExchangeRateMissing`, `Money::forDurationConverted`, `Money::hourlyRateFor` (EX-03, RE-02, RE-05)
+- [x] 08-05-PLAN.md — `RateBook`, `ExchangeRateConverter`, `ExchangeRateMissing`, `Money::forDurationConverted`, `Money::hourlyRateFor` (EX-03, RE-02, RE-05)
 - [ ] 08-06-PLAN.md — Work report document: two sections (billable, non-billable), summary, running header, page N / M, English version, no money (RE-03)
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -622,7 +622,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
-| 8. Exchange Rates and Reports | 4/22 | In Progress | - |
+| 8. Exchange Rates and Reports | 5/22 | In Progress | - |
 | 9. Documents and Finance | 0/0 | Not started | - |
 | 10. Invoicing | 0/0 | Not started | - |
 | 11. Stripe Payments | 0/0 | Not started | - |

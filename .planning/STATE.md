@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-04-PLAN.md
-last_updated: "2026-10-14T19:36:56.694Z"
+stopped_at: Completed 08-05-PLAN.md
+last_updated: "2026-10-14T19:46:19.813Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: c47420044f9423b9b21ebea2253175355cd8bbbd
+state_head: 404fc2c5fe4b7901f8e4d44bae046c3f56ba81da
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 124
+  completed_plans: 125
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 5 of 22
+Plan: 6 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -186,6 +186,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P02 | 12 min | 2 tasks | 9 files |
 | Phase 08 P03 | 45 min | 2 tasks | 10 files |
 | Phase 08 P04 | 35min | 3 tasks | 12 files |
+| Phase 08 P05 | 8 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -434,6 +435,8 @@ Recent decisions affecting current work:
 - [Phase 08]: WorkReportSource takes plain ids and Prague days (not ReportFilters) and builds its labelled lines in the client's invoice language; WorkReportPdf calls Dompdf directly with remote, PHP and JavaScript off, DejaVu Sans and a chroot on resources/views/pdf
 - [Phase 08]: 08-04: CNB list stored under the payload validFor only; any bad row refuses the whole list; rate shape is the Money::convert() regex limited to ten integer digits
 - [Phase 08]: 08-04: rates schedule 15/16/17 plus final 18 Prague, health warning 1 and error 2 working days, gap lookback 31 days, backfill from 2000-01-01 up to 3660 days live in config/kokpit.php rates
+- [Phase 08]: 08-05: weekends, holidays and outages resolve by lookup of the newest stored CNB list not after the day, never stored copies; a missing rate throws ExchangeRateMissing, never zero
+- [Phase 08]: 08-05: converted durations are one exact rational rounded once (Money::forDurationConverted); the converter has no role check, the fail-closed ExchangeRate scope gives a Partner ExchangeRateMissing
 
 ### Pending Todos
 
@@ -480,6 +483,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T19:36:56.490Z
-Stopped at: Completed 08-04-PLAN.md
+Last session: 2026-10-14T19:46:19.619Z
+Stopped at: Completed 08-05-PLAN.md
 Resume file: None
