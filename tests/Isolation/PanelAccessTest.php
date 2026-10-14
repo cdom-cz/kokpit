@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Shared\Auth\AccessRules;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Pages\Dashboard;
+use App\Filament\Widgets\PartnerTasks;
 use Filament\Facades\Filament;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Gate;
@@ -78,7 +79,10 @@ it('replaces the stock dashboard and its widgets', function (): void {
 
     expect($panel->getPages())->toContain(Dashboard::class)
         ->and($panel->getPages())->not->toContain(Filament\Pages\Dashboard::class)
-        ->and($panel->getWidgets())->toBe([])
+        // The panel discovers exactly the widgets under app/Filament/Widgets (the Partner dashboard
+        // ones); the stock account and info widgets stay out, and outside a Partner context the
+        // dashboard offers none.
+        ->and(array_values($panel->getWidgets()))->toEqualCanonicalizing([PartnerTasks::class])
         ->and((new Dashboard)->getWidgets())->toBe([]);
 
     $this->actingAs(Canary::admin())->get('/admin')

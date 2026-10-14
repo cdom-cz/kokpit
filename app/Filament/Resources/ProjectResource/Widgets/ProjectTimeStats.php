@@ -26,7 +26,7 @@ use Livewire\Attributes\On;
  * four figures come from `TimeTotals::forProject()`, so worked = billed + unbilled + non-billable.
  *
  * Registered on `ProjectResource` and returned by `ViewProject`, not discovered at panel level: the
- * panel's widget list stays empty, so the widget is never offered to a dashboard without a record.
+ * panel's widget list never holds it, so the widget is never offered to a dashboard without a record.
  */
 #[AccessRule(Audience::AdminOnly, reason: 'Worked and billed time and the estimate are internal; the Partner project pages show none of it.')]
 final class ProjectTimeStats extends StatsOverviewWidget

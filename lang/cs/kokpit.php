@@ -178,6 +178,20 @@ return [
         'empty_heading' => 'Zatím tu nic není',
         'empty_description_admin' => 'Nástěnka se naplní, jakmile v Kokpitu přibudou klienti, projekty a odpracovaný čas.',
         'empty_description_partner' => 'Jakmile pro vás bude něco připraveno, objeví se to tady.',
+        'partner_tasks' => [
+            'heading' => 'Otevřené úkoly',
+            'description' => 'Nejdřív úkoly, které čekají na vaši kontrolu.',
+            'review_count' => 'Ke kontrole: :count',
+            'review_button' => 'Zkontrolovat úkol',
+            'all_link' => 'Zobrazit všechny úkoly',
+            'empty_heading' => 'Žádné otevřené úkoly',
+            'empty_description' => 'Jakmile bude potřeba vaše pozornost, objeví se to tady.',
+        ],
+        'partner_projects' => [
+            'heading' => 'Moje projekty',
+            'empty_heading' => 'Zatím žádné projekty',
+            'empty_description' => 'Projekty, které pro vás Kokpit zpřístupní, se objeví tady.',
+        ],
     ],
 
     'settings' => [
