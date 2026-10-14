@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use FilesystemIterator;
 use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Route;
 use Knuckles\Scribe\Extracting\Shared\UrlParamsNormalizer;
 use PHPUnit\Framework\Assert;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use ReflectionMethod;
+use SplFileInfo;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
@@ -58,6 +62,92 @@ final class ApiDocs
         $process->run();
 
         return $process;
+    }
+
+    /**
+     * Runs the generation in a process that registers one api/v1 route whose attribute cannot be read
+     * (tests/Support/scribe-broken-route.php). Scribe finishes the run but exits non-zero, which is what makes a
+     * docs failure fail the deploy. The output of the run holds the broken route, so callers generate again.
+     *
+     * @param  array<string, string>  $env  extra environment variables, overriding the defaults
+     */
+    public static function generateWithBrokenRoute(array $env = []): Process
+    {
+        $process = new Process(
+            [PHP_BINARY, 'tests/Support/scribe-broken-route.php'],
+            base_path(),
+            [
+                'APP_URL' => self::placeholderUrl(),
+                'DB_HOST' => '127.0.0.1',
+                'DB_PORT' => '1',
+                ...$env,
+            ],
+        );
+        $process->setTimeout(300);
+        $process->run();
+
+        return $process;
+    }
+
+    /**
+     * Every file a generation leaves behind: the page, the spec, Scribe's intermediate files and the published
+     * theme assets. Scribe's own bookkeeping of file hashes is left out, it is a list of checksums.
+     *
+     * @return list<string> absolute paths
+     */
+    public static function generatedFiles(): array
+    {
+        self::ensureGenerated();
+
+        $files = [resource_path('views/scribe/index.blade.php'), self::specPath()];
+
+        foreach ([base_path('.scribe'), public_path('vendor/scribe')] as $directory) {
+            if (! is_dir($directory)) {
+                continue;
+            }
+
+            foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS)) as $file) {
+                if ($file instanceof SplFileInfo && $file->isFile() && $file->getFilename() !== '.filehashes') {
+                    $files[] = $file->getPathname();
+                }
+            }
+        }
+
+        sort($files);
+
+        return $files;
+    }
+
+    /**
+     * The hosts a URL in the generated output may name: the placeholder base URL's host plus exactly the hosts that
+     * occur in the stock theme's views (read now, so an upgrade that adds a CDN still passes while a real host can
+     * never slip in), plus the documentation host Scribe links to in a comment of an intermediate file.
+     *
+     * @return list<string> lower case
+     */
+    public static function allowedHosts(): array
+    {
+        // Scribe writes a comment with a link to its own documentation into the intermediate file of the custom
+        // endpoints (.scribe/endpoints/custom.0.yaml); the file is never published, the host holds no instance data.
+        $hosts = [strtolower((string) parse_url(self::placeholderUrl(), PHP_URL_HOST)), implode('.', ['scribe', 'knuckles', 'wtf'])];
+
+        $views = base_path('vendor/knuckleswtf/scribe/resources/views');
+        Assert::assertDirectoryExists($views);
+
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($views, FilesystemIterator::SKIP_DOTS)) as $file) {
+            if ($file instanceof SplFileInfo && $file->isFile()) {
+                preg_match_all('#https?://([A-Za-z0-9.-]+)#', (string) file_get_contents($file->getPathname()), $found);
+
+                foreach ($found[1] as $host) {
+                    $hosts[] = strtolower($host);
+                }
+            }
+        }
+
+        $hosts = array_values(array_unique($hosts));
+        sort($hosts);
+
+        return $hosts;
     }
 
     /**

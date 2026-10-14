@@ -145,3 +145,77 @@ it('stores the generated spec on a local disk under storage, not on a shared vol
     expect(config('filesystems.disks.local.driver'))->toBe('local')
         ->and(config('filesystems.disks.local.root'))->toStartWith(storage_path());
 });
+
+it('pins the twelve routes of the API, no more and no fewer', function (): void {
+    $actual = array_map(
+        fn ($route): string => ApiDocs::method($route).' /'.$route->uri(),
+        ApiDocs::apiRoutes(),
+    );
+    sort($actual);
+
+    $expected = [
+        'GET /api/v1/clients',
+        'GET /api/v1/clients/{client}',
+        'GET /api/v1/projects',
+        'GET /api/v1/projects/{project}',
+        'GET /api/v1/tasks',
+        'GET /api/v1/tasks/{task}',
+        'GET /api/v1/time-entries',
+        'GET /api/v1/time-entries/{timeEntry}',
+        'POST /api/v1/time-entries',
+        'POST /api/v1/time-entries/batch',
+        'PATCH /api/v1/time-entries/{timeEntry}',
+        'DELETE /api/v1/time-entries/{timeEntry}',
+    ];
+    sort($expected);
+
+    expect($actual)->toBe($expected);
+});
+
+it('describes every pinned route in the published spec with its method', function (): void {
+    foreach (ApiDocs::apiRoutes() as $route) {
+        expect(ApiDocs::operation($route))->not->toBeNull('no operation for '.ApiDocs::method($route).' /'.$route->uri());
+    }
+});
+
+it('documents the Idempotency-Key on exactly the two create operations', function (): void {
+    $withKey = [];
+
+    foreach (ApiDocs::spec()['paths'] as $path => $operations) {
+        foreach ($operations as $method => $operation) {
+            foreach ($operation['parameters'] ?? [] as $parameter) {
+                if (($parameter['in'] ?? null) === 'header' && strtolower((string) ($parameter['name'] ?? '')) === 'idempotency-key') {
+                    $withKey[] = strtoupper($method).' '.$path;
+                }
+            }
+        }
+    }
+    sort($withKey);
+
+    expect($withKey)->toBe(['POST /api/v1/time-entries', 'POST /api/v1/time-entries/batch']);
+});
+
+it('documents 201, 207, 409 and 422 on the batch operation', function (): void {
+    $route = Route::getRoutes()->getByName('api.v1.time-entries.batch');
+    $operation = ApiDocs::operation($route);
+
+    expect($operation)->not->toBeNull()
+        ->and($operation['responses'])->toHaveKeys([201, 207, 409, 422]);
+});
+
+it('fails the generation, with exit status 2, when one route attribute is broken, and a normal run afterwards is clean', function (): void {
+    try {
+        $broken = ApiDocs::generateWithBrokenRoute();
+
+        expect($broken->getExitCode())->toBe(2)
+            ->and($broken->getOutput().$broken->getErrorOutput())->toContain('_docs-probe');
+    } finally {
+        $clean = ApiDocs::generate();
+    }
+
+    $paths = array_keys(ApiDocs::spec()['paths']);
+
+    expect($clean->getExitCode())->toBe(0)
+        ->and(array_filter($paths, fn (string $path): bool => str_contains($path, '_docs-probe')))->toBe([])
+        ->and(ApiDocs::view())->not->toContain('_docs-probe');
+});
