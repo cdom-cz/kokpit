@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Reports\WorkReport\WorkReportPageDecoration;
 use App\Domain\Reports\WorkReport\WorkReportPdf;
 use App\Domain\Reports\WorkReport\WorkReportSource;
 use App\Domain\Settings\Settings\SupplierSettings;
@@ -14,7 +15,11 @@ use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
+use Dompdf\Canvas;
+use Dompdf\Dompdf;
 use Illuminate\Auth\Access\AuthorizationException;
+use Symfony\Component\Process\ExecutableFinder;
+use Illuminate\Support\Facades\Process;
 use Tests\Support\Canary;
 use Tests\Support\FictionalCompanyId;
 
@@ -484,5 +489,228 @@ describe('the section helpers of the source', function (): void {
             ['project' => 'Projekt B', 'seconds' => 3600],
             ['project' => null, 'seconds' => 900],
         ]);
+    });
+});
+
+/**
+ * A source of fixed rows, no database: one billable row per day for `$days` days, each with a task title.
+ */
+function longReportSource(int $days, string $title = 'Ladění přihlášení a příprava šablon'): WorkReportSource
+{
+    $rows = [];
+    $start = CarbonImmutable::parse('2026-07-01', 'UTC');
+
+    for ($i = 0; $i < $days; $i++) {
+        $rows[] = ['billable' => true, 'project' => 'Redesign žluťoučkého webu', 'date' => $start->addDays($i)->format('Y-m-d'), 'task' => sprintf('KEY-%d · %s', $i + 1, $title), 'seconds' => 1800 + $i * 60];
+    }
+
+    return new WorkReportSource(
+        supplierLines: ['Příklad Dodavatel s.r.o.', 'Vzorová 1', '110 00 Praha', 'CZ', 'IČO: 12345678'],
+        clientName: 'Ukázkový odběratel a.s.',
+        clientLines: ['Příkladná 2', '602 00 Brno', 'CZ'],
+        clientLanguage: InvoiceLanguage::Czech,
+        from: '2026-07-01',
+        to: '2026-09-30',
+        projectName: null,
+        rows: $rows,
+    );
+}
+
+/**
+ * Runs pdftotext on the bytes and returns the text of the page given (or of all pages), null when the
+ * binary is not installed (research A10).
+ */
+function pdfText(string $pdf, ?int $page = null, bool $bbox = false): ?string
+{
+    $binary = (new ExecutableFinder)->find('pdftotext');
+
+    if ($binary === null) {
+        return null;
+    }
+
+    $file = tempnam(sys_get_temp_dir(), 'wrp');
+
+    try {
+        file_put_contents($file, $pdf);
+        $command = [$binary, '-enc', 'UTF-8'];
+        if ($bbox) {
+            $command[] = '-bbox';
+        }
+        if ($page !== null) {
+            array_push($command, '-f', (string) $page, '-l', (string) $page);
+        }
+        array_push($command, $file, '-');
+
+        return Process::run($command)->output();
+    } finally {
+        @unlink($file);
+    }
+}
+
+/**
+ * The number of page objects in the PDF bytes.
+ */
+function pdfPages(string $pdf): int
+{
+    return preg_match_all('#/Type\s*/Page\b#', $pdf);
+}
+
+describe('many pages', function (): void {
+    it('spans several pages with the DejaVu font embedded and a repeating table header', function (): void {
+        $source = longReportSource(150);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+        $pdf = app(WorkReportPdf::class)->render($source, InvoiceLanguage::Czech);
+
+        expect($html)->toContain('table-header-group')
+            ->and(pdfPages($pdf))->toBeGreaterThan(1)
+            ->and($pdf)->toContain('DejaVuSans');
+    });
+
+    it('draws the running header on the pages after the first only and numbers every page', function (): void {
+        if (pdfText('%PDF-') === null) {
+            test()->markTestSkipped('pdftotext is not installed.');
+        }
+
+        $source = longReportSource(60);
+        $pdf = app(WorkReportPdf::class)->render($source, InvoiceLanguage::Czech, CarbonImmutable::parse('2026-10-14 10:00:00', 'UTC'));
+        $pages = pdfPages($pdf);
+        $header = 'Pracovní výkaz · Ukázkový odběratel a.s. · 1. 7. 2026 – 30. 9. 2026';
+
+        expect($pages)->toBeGreaterThanOrEqual(3)
+            ->and(pdfText($pdf, 1))->not->toContain($header);
+
+        for ($page = 1; $page <= $pages; $page++) {
+            $text = (string) pdfText($pdf, $page);
+
+            expect($text)->toContain(sprintf('Strana %d / %d', $page, $pages))
+                ->and($text)->toContain('Vytvořeno 14. 10. 2026');
+
+            if ($page > 1) {
+                expect($text)->toContain($header);
+            }
+        }
+    });
+
+    it('raises a memory limit below 256M and leaves a higher or unlimited one alone', function (): void {
+        $original = (string) ini_get('memory_limit');
+
+        try {
+            if (ini_set('memory_limit', '128M') === false) {
+                test()->markTestSkipped('The memory limit cannot be lowered below the current usage of this process.');
+            }
+
+            app(WorkReportPdf::class)->render(longReportSource(1), InvoiceLanguage::Czech);
+            expect(ini_get('memory_limit'))->toBe('256M');
+
+            ini_set('memory_limit', '512M');
+            app(WorkReportPdf::class)->render(longReportSource(1), InvoiceLanguage::Czech);
+            expect(ini_get('memory_limit'))->toBe('512M');
+
+            ini_set('memory_limit', '-1');
+            app(WorkReportPdf::class)->render(longReportSource(1), InvoiceLanguage::Czech);
+            expect(ini_get('memory_limit'))->toBe('-1');
+        } finally {
+            ini_set('memory_limit', $original);
+        }
+    });
+
+    it('wraps a 300 character task title inside the Úkol cell and keeps the table inside the page', function (): void {
+        if (pdfText('%PDF-') === null) {
+            test()->markTestSkipped('pdftotext is not installed.');
+        }
+
+        $source = longReportSource(1, str_repeat('Ž', 300));
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+        $pdf = app(WorkReportPdf::class)->render($source, InvoiceLanguage::Czech);
+        $boxes = (string) pdfText($pdf, 1, bbox: true);
+
+        preg_match_all('/xMax="([0-9.]+)"/', $boxes, $matches);
+
+        // A4 is 595.28pt wide and the right margin 48pt.
+        expect($html)->toContain('overflow-wrap')
+            ->and($matches[1])->not->toBe([])
+            ->and(max(array_map(floatval(...), $matches[1])))->toBeLessThanOrEqual(595.28 - 48 + 1);
+    });
+});
+
+describe('the page decoration', function (): void {
+    /**
+     * Runs the decoration of one page against a recording canvas of A4 size and returns what it drew.
+     *
+     * @return array{texts: list<array{x: float, y: float, text: string, size: float}>, lines: list<array{x1: float, x2: float, width: float}>}
+     */
+    function decorate(WorkReportPageDecoration $decoration, int $page, int $pages): array
+    {
+        $drawn = ['texts' => [], 'lines' => []];
+        $canvas = Mockery::mock(Canvas::class);
+        $canvas->shouldReceive('get_width')->andReturn(595.28);
+        $canvas->shouldReceive('get_height')->andReturn(841.89);
+        $canvas->shouldReceive('text')->andReturnUsing(function ($x, $y, $text, $font, $size) use (&$drawn): void {
+            $drawn['texts'][] = ['x' => (float) $x, 'y' => (float) $y, 'text' => (string) $text, 'size' => (float) $size];
+        });
+        $canvas->shouldReceive('line')->andReturnUsing(function ($x1, $y1, $x2, $y2, $color, $width) use (&$drawn): void {
+            $drawn['lines'][] = ['x1' => (float) $x1, 'x2' => (float) $x2, 'width' => (float) $width];
+        });
+
+        $decoration($page, $pages, $canvas, (new Dompdf)->getFontMetrics());
+
+        return $drawn;
+    }
+
+    function decoration(string $client = 'Ukázkový odběratel a.s.'): WorkReportPageDecoration
+    {
+        return new WorkReportPageDecoration(
+            title: 'Pracovní výkaz',
+            client: $client,
+            period: '1. 7. 2026 – 30. 9. 2026',
+            generated: 'Vytvořeno 14. 10. 2026',
+            pageTemplate: 'Strana {n} / {total}',
+        );
+    }
+
+    it('draws only the footer on the first page: the date left and the page right at 8pt', function (): void {
+        $drawn = decorate(decoration(), 1, 3);
+
+        expect($drawn['lines'])->toBe([])
+            ->and(array_column($drawn['texts'], 'text'))->toBe(['Vytvořeno 14. 10. 2026', 'Strana 1 / 3'])
+            ->and(array_unique(array_column($drawn['texts'], 'size')))->toBe([8.0])
+            ->and($drawn['texts'][0]['x'])->toBe(48.0)
+            ->and($drawn['texts'][1]['x'])->toBeGreaterThan(400.0)
+            // The footer sits in the bottom margin (56pt).
+            ->and($drawn['texts'][0]['y'])->toBeGreaterThan(841.89 - 56.0);
+    });
+
+    it('draws the running header with a 1pt rule on every page after the first', function (): void {
+        $drawn = decorate(decoration(), 2, 3);
+
+        expect(array_column($drawn['texts'], 'text'))->toBe([
+            'Pracovní výkaz · Ukázkový odběratel a.s. · 1. 7. 2026 – 30. 9. 2026',
+            'Vytvořeno 14. 10. 2026',
+            'Strana 2 / 3',
+        ])
+            ->and($drawn['lines'])->toBe([['x1' => 48.0, 'x2' => 595.28 - 48.0, 'width' => 1.0]])
+            // The header sits in the top margin (72pt).
+            ->and($drawn['texts'][0]['y'])->toBeLessThan(72.0);
+    });
+
+    it('ends the page label at the right margin', function (): void {
+        $drawn = decorate(decoration(), 3, 3);
+        $label = $drawn['texts'][1];
+        $width = (new Dompdf)->getFontMetrics()->getTextWidth($label['text'], (new Dompdf)->getFontMetrics()->getFont('DejaVu Sans'), 8);
+
+        expect($label['x'] + $width)->toEqualWithDelta(595.28 - 48.0, 0.01);
+    });
+
+    it('shortens a long client name so the running header stays on one line inside the margins', function (): void {
+        $drawn = decorate(decoration(str_repeat('Ž', 400)), 2, 3);
+        $header = $drawn['texts'][0];
+        $metrics = (new Dompdf)->getFontMetrics();
+        $width = $metrics->getTextWidth($header['text'], $metrics->getFont('DejaVu Sans'), 8);
+
+        expect($header['text'])->toContain('…')
+            ->and($header['text'])->toStartWith('Pracovní výkaz · ')
+            ->and($header['text'])->toEndWith(' · 1. 7. 2026 – 30. 9. 2026')
+            ->and($width)->toBeLessThanOrEqual(595.28 - 96.0);
     });
 });
