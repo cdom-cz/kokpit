@@ -267,4 +267,25 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Time report
+    |--------------------------------------------------------------------------
+    |
+    | Fixed settings of the "Report času" page (RE-01, RE-02; UI-SPEC U-16).
+    | Literal starting point, not editable in the UI.
+    |
+    | max_rendered_rows: at most this many leaf rows (task rows, or the day or
+    |   user rows below them) are rendered in the report tree, which keeps the
+    |   HTML of a long period bounded. The summary, the row totals and the
+    |   footer are always computed over every entry, and the exports cover the
+    |   full set, so the cap only limits what is drawn. The value is never read
+    |   below 1.
+    |
+    */
+
+    'report' => [
+        'max_rendered_rows' => 1000,
+    ],
+
 ];

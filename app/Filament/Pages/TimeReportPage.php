@@ -77,7 +77,8 @@ class TimeReportPage extends Page
     }
 
     /**
-     * Normalises a bad URL to the defaults.
+     * Normalises a bad URL to the defaults. A refused custom range is the one exception: its properties are left
+     * as they came, so every request reads the same refusal again and the page can say why this month is shown.
      */
     public function mount(): void
     {
@@ -85,10 +86,15 @@ class TimeReportPage extends Page
 
         $this->client = $filters->clientId;
         $this->project = $filters->projectId;
+        $this->split = $filters->split;
+
+        if ($filters->rangeError) {
+            return;
+        }
+
         $this->period = $filters->period;
         $this->from = $filters->period === 'custom' ? $filters->from : null;
         $this->to = $filters->period === 'custom' ? $filters->to : null;
-        $this->split = $filters->split;
     }
 
     /**
