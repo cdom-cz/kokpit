@@ -19,7 +19,8 @@ use Illuminate\Notifications\Notification;
  * a Filament-format toDatabase().
  *
  * The body is plain text, one line per row, already shortened and stripped of
- * payloads by the code that builds it.
+ * payloads by the code that builds it. The action reads "Otevřít stránku Systém"
+ * unless the caller names its own label (the CNB rates alert opens the rates overview).
  */
 final class OperationalAlert extends Notification
 {
@@ -27,6 +28,7 @@ final class OperationalAlert extends Notification
         public readonly string $title,
         public readonly string $body,
         public readonly ?string $actionUrl = null,
+        public readonly ?string $actionLabel = null,
     ) {}
 
     /**
@@ -34,7 +36,7 @@ final class OperationalAlert extends Notification
      */
     public function withLine(string $line): self
     {
-        return new self($this->title, $this->body."\n".$line, $this->actionUrl);
+        return new self($this->title, $this->body."\n".$line, $this->actionUrl, $this->actionLabel);
     }
 
     /** @return list<string> */
@@ -55,7 +57,7 @@ final class OperationalAlert extends Notification
         }
 
         if ($this->actionUrl !== null) {
-            $message->action(__('kokpit.alerts.link_label'), $this->actionUrl);
+            $message->action($this->actionLabel ?? __('kokpit.alerts.link_label'), $this->actionUrl);
         }
 
         return $message;
@@ -74,7 +76,7 @@ final class OperationalAlert extends Notification
         if ($this->actionUrl !== null) {
             $notification->actions([
                 Action::make('open_system')
-                    ->label(__('kokpit.alerts.link_label'))
+                    ->label($this->actionLabel ?? __('kokpit.alerts.link_label'))
                     ->url($this->actionUrl),
             ]);
         }
