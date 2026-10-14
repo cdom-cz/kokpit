@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 5
+open_count: 6
 waived_count: 0
 fixed_count: 1
-total_count: 6
-last_updated: 2026-10-14T22:36:17.164Z
+total_count: 7
+last_updated: 2026-10-14T23:35:44.136Z
 ---
 
 # Broken Windows Ledger
@@ -21,6 +21,7 @@ last_updated: 2026-10-14T22:36:17.164Z
 | 4 | 08 | unrun-verify | app/Filament/Widgets/UnbilledPerClient.php |  | 08-15: the Admin dashboard layout (one column below lg, two from lg, widgets side by side), the Pevná cena and Chybí kurz badges in the unbilled table and the contrast of the running-timer text were not looked at in a browser; the markup and figures are asserted by tests | open |  | 2026-10-14T21:39:50.714Z |  |
 | 5 | 08 | unrun-verify | app/Domain/Reports/Notifications/ReportExportReadyNotification.php |  | Plan 08-16 human check not run: open the export bell and a CSV export in a Czech spreadsheet in DDEV (stock bell styling with long period text, columns split at semicolon, decimal commas) | open |  | 2026-10-14T21:55:19.520Z |  |
 | 6 | 08 | unrun-verify | resources/views/filament/pages/time-report.blade.php |  | Plan 08-14 task 3 human-check not run: the 375px visual pass of /admin/time-report (horizontal scroll inside the tree, toggles with Tab/Enter/Space and focus ring, long names wrapping) and the Alpine expand/collapse behaviour are untested in a browser | open |  | 2026-10-14T22:36:17.164Z |  |
+| 7 | 08 | unrun-verify | app/Domain/Reports/Jobs/BuildReportExport.php |  | 08-21: the XLSX workbook (frozen header pane, auto filter, CZK-missing comments, number formats) was verified by reading the package, not by opening it in a spreadsheet application | open |  | 2026-10-14T23:35:44.136Z |  |
 
 ````json
 [
@@ -99,6 +100,19 @@ last_updated: 2026-10-14T22:36:17.164Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-14T22:36:17.164Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 7,
+    "kind": "unrun-verify",
+    "phase": "08",
+    "file": "app/Domain/Reports/Jobs/BuildReportExport.php",
+    "line": null,
+    "description": "08-21: the XLSX workbook (frozen header pane, auto filter, CZK-missing comments, number formats) was verified by reading the package, not by opening it in a spreadsheet application",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T23:35:44.136Z",
     "resolved_at": null,
     "milestone": null
   }

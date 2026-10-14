@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-20-PLAN.md
-last_updated: "2026-10-14T23:21:41.855Z"
+stopped_at: Completed 08-21-PLAN.md
+last_updated: "2026-10-14T23:36:30.950Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: 09d512d4dc4fee2444fd7f794fd4abc5b74989b7
+state_head: f9fb8aae4bc99feac7c67def1ff34c41e2c043e9
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 140
+  completed_plans: 141
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 21 of 22
+Plan: 22 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -202,6 +202,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P18 | 12 min | 3 tasks | 5 files |
 | Phase 08 P19 | 10 min | 2 tasks | 5 files |
 | Phase 08 P20 | 33 min | 2 tasks | 8 files |
+| Phase 08 P21 | 35 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -478,6 +479,8 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-19: FixedPriceSummary preloads one RateBook and uses Money::convert (the arithmetic of ExchangeRateConverter::toCzk) so three fixed-price projects cost the queries of one
 - [Phase 08]: 08-20: deadlines widget ordered by priority first (TaskColumns::orderByPriority), then nearest due date NULLS LAST, per owner requirement; overrides plan order due date then priority
 - [Phase 08]: 08-20: tomorrow plan block is read-only, owner-scoped via SignalDayReader, collapsed to three items by an Alpine toggle with aria-expanded and aria-controls
+- [Phase 08]: 08-21: the XLSX summary lists billable amounts per currency and an unconvertible CZK total is an empty commented cell, never a zero
+- [Phase 08]: 08-21: SpreadsheetCells::number() builds XLSX numeric cells from plain decimal strings only, so text can never become a numeric or formula cell
 
 ### Pending Todos
 
@@ -525,6 +528,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T23:21:41.661Z
-Stopped at: Completed 08-20-PLAN.md
+Last session: 2026-10-14T23:36:30.757Z
+Stopped at: Completed 08-21-PLAN.md
 Resume file: None
