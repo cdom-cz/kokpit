@@ -6,12 +6,15 @@ namespace App\Providers;
 
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\RoleName;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
 
 /**
- * Wires the REST API: who may hold a working token.
+ * Wires the REST API: who may hold a working token, and how fast it may be used.
  *
  * Sanctum already refuses an unknown, revoked or expired token. The callback
  * below is the single choke point that also refuses a token whose owner is not
@@ -31,5 +34,23 @@ final class ApiServiceProvider extends ServiceProvider
                 && $user->deactivated_at === null
                 && $user->hasRole(RoleName::Admin->value);
         });
+
+        // Reads and writes are separate buckets (D-16), and each token has its own. The limit is read
+        // when the request arrives, so a changed config value applies at once. ThrottleRequests runs
+        // after authentication, so the token is known; the IP address is only the fallback.
+        RateLimiter::for('api-read', static fn (Request $request): Limit => Limit::perMinute((int) config('kokpit.api.rate_limit.read'))
+            ->by(self::bucketKey($request)));
+        RateLimiter::for('api-write', static fn (Request $request): Limit => Limit::perMinute((int) config('kokpit.api.rate_limit.write'))
+            ->by(self::bucketKey($request)));
+    }
+
+    /**
+     * The id of the token the request authenticated with, or the client address without one.
+     */
+    private static function bucketKey(Request $request): string
+    {
+        $tokenId = $request->user()?->currentAccessToken()?->getKey();
+
+        return is_scalar($tokenId) ? (string) $tokenId : (string) $request->ip();
     }
 }

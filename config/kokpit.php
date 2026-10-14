@@ -118,6 +118,48 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | REST API
+    |--------------------------------------------------------------------------
+    |
+    | Fixed settings of the /api/v1 REST API. Literal starting points, not
+    | editable in the UI.
+    |
+    | rate_limit.read / rate_limit.write: requests a minute per token for the
+    |   read routes and for the write routes. The two are separate buckets, and
+    |   every token has its own; a request over the limit answers 429 with
+    |   Retry-After and X-RateLimit-Limit / X-RateLimit-Remaining.
+    | docs_rate_limit: requests a minute per IP address for the public API
+    |   documentation pages.
+    | page_size.default / page_size.max: items of one list page when the client
+    |   names no size, and the largest size it may ask for.
+    | batch_max_items: largest number of entries one batch request may carry.
+    | external_max_bytes: largest size in bytes of the free-form `external`
+    |   object an API client may store with an entry.
+    | idempotency_ttl_hours: how long a stored Idempotency-Key and its response
+    |   are kept before they are purged.
+    | idempotency_stale_lock_seconds: a key claimed but never completed is taken
+    |   over by a retry after this many seconds.
+    |
+    */
+
+    'api' => [
+        'rate_limit' => [
+            'read' => 120,
+            'write' => 60,
+        ],
+        'docs_rate_limit' => 60,
+        'page_size' => [
+            'default' => 50,
+            'max' => 200,
+        ],
+        'batch_max_items' => 100,
+        'external_max_bytes' => 4096,
+        'idempotency_ttl_hours' => 24,
+        'idempotency_stale_lock_seconds' => 120,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Time tracking
     |--------------------------------------------------------------------------
     |
