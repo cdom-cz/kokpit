@@ -375,6 +375,16 @@ describe('the unbilled time of the month per client', function (): void {
             ->not->toContain('Example Client Quiet');
     });
 
+    it('escapes stored markup in a client name', function (): void {
+        $client = adminDashClient('Example <b>Bold</b> Client', 'CZK', '100');
+        adminDashClientEntry($client, '2026-10-05 08:00:00', '2026-10-05 09:00:00');
+
+        $html = adminDashUnbilledHtml();
+
+        expect($html)->toContain('Example &lt;b&gt;Bold&lt;/b&gt; Client')
+            ->not->toContain('<b>Bold</b>');
+    });
+
     it('is part of the Admin dashboard', function (): void {
         adminDashClientA();
 
