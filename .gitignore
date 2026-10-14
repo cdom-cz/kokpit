@@ -62,6 +62,8 @@ CLAUDE.local.md
 !/storage/framework/testing/.gitignore
 /storage/framework/views/*
 !/storage/framework/views/.gitignore
+# Dompdf font metrics cache and temp files, created at the first render (WorkReportPdf).
+/storage/framework/dompdf/
 /bootstrap/cache/*
 !/bootstrap/cache/.gitignore
 *.log
