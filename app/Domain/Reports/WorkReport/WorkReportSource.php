@@ -56,6 +56,76 @@ final readonly class WorkReportSource
     ) {}
 
     /**
+     * The rows of one section: the billable ones or the non-billable ones, in the order of the source.
+     *
+     * @return list<array{billable: bool, project: ?string, date: string, task: ?string, seconds: int}>
+     */
+    public function section(bool $billable): array
+    {
+        return array_values(array_filter($this->rows, static fn (array $row): bool => $row['billable'] === $billable));
+    }
+
+    /**
+     * The seconds of one section.
+     */
+    public function sectionSeconds(bool $billable): int
+    {
+        return array_sum(array_column($this->section($billable), 'seconds'));
+    }
+
+    /**
+     * The seconds of both sections together.
+     */
+    public function totalSeconds(): int
+    {
+        return array_sum(array_column($this->rows, 'seconds'));
+    }
+
+    /**
+     * The number of Prague days with any work, a day counted once whatever the section, project or task.
+     */
+    public function daysWorked(): int
+    {
+        return count(array_unique(array_column($this->rows, 'date')));
+    }
+
+    /**
+     * The seconds per project over both sections: the largest first, equal ones in the order of the rows,
+     * the entries without a project last.
+     *
+     * @return list<array{project: ?string, seconds: int}>
+     */
+    public function projectTotals(): array
+    {
+        $named = [];
+        $unnamed = 0;
+
+        foreach ($this->rows as $row) {
+            if ($row['project'] === null) {
+                $unnamed += $row['seconds'];
+
+                continue;
+            }
+
+            $named[$row['project']] = ($named[$row['project']] ?? 0) + $row['seconds'];
+        }
+
+        arsort($named);
+
+        $totals = [];
+
+        foreach ($named as $project => $seconds) {
+            $totals[] = ['project' => (string) $project, 'seconds' => $seconds];
+        }
+
+        if ($unnamed > 0) {
+            $totals[] = ['project' => null, 'seconds' => $unnamed];
+        }
+
+        return $totals;
+    }
+
+    /**
      * The report of one client's period, optionally of one project of that client.
      *
      * @param  string  $from  first Prague day `Y-m-d`

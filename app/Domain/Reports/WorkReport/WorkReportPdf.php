@@ -55,25 +55,32 @@ final class WorkReportPdf
     public function html(WorkReportSource $source, InvoiceLanguage $language): string
     {
         return $this->withLocale($language->value, function () use ($source, $language): string {
-            $billable = [];
-            $billableSeconds = 0;
-            $previous = null;
+            // A project row precedes its days only when the report holds several projects (UI-SPEC Surface D).
+            $projectRows = count($source->projectTotals()) > 1;
+            $sections = [];
 
-            foreach ($source->rows as $row) {
-                if (! $row['billable']) {
+            foreach ([true, false] as $billable) {
+                if ($source->section($billable) === []) {
                     continue;
                 }
 
-                // The date shows on the first row of a day only: the rows of one project and day follow each other.
-                $key = ($row['project'] ?? '').'|'.$row['date'];
-
-                $billable[] = [
-                    'date' => $key === $previous ? '' : $this->date($row['date'], $language),
-                    'task' => $row['task'],
-                    'hours' => DurationFormat::hoursMinutes($row['seconds']),
+                $sections[] = [
+                    'heading' => __($billable ? 'work_report.billable' : 'work_report.non_billable'),
+                    'totalLabel' => __($billable ? 'work_report.total_billable' : 'work_report.total_non_billable'),
+                    'total' => DurationFormat::hoursMinutes($source->sectionSeconds($billable)),
+                    'lines' => $this->lines($source->section($billable), $projectRows, $language),
                 ];
-                $billableSeconds += $row['seconds'];
-                $previous = $key;
+            }
+
+            $projects = [];
+
+            if ($projectRows) {
+                foreach ($source->projectTotals() as $total) {
+                    $projects[] = [
+                        'name' => $total['project'] ?? __('work_report.no_project'),
+                        'hours' => DurationFormat::hoursMinutes($total['seconds']),
+                    ];
+                }
             }
 
             return view('pdf.work-report', [
@@ -84,11 +91,59 @@ final class WorkReportPdf
                 'from' => $this->date($source->from, $language),
                 'to' => $this->date($source->to, $language),
                 'projectName' => $source->projectName,
-                'billable' => $billable,
-                'billableTotal' => DurationFormat::hoursMinutes($billableSeconds),
+                'sections' => $sections,
                 'empty' => $source->rows === [],
+                'daysWorked' => $source->daysWorked(),
+                'totalHours' => DurationFormat::hoursMinutes($source->totalSeconds()),
+                'projects' => $projects,
             ])->render();
         });
+    }
+
+    /**
+     * The printed lines of one section: an optional project row, then per day its task rows (the date on the
+     * first one only) and the day's subtotal.
+     *
+     * @param  list<array{billable: bool, project: ?string, date: string, task: ?string, seconds: int}>  $rows
+     * @return list<array{type: string, name?: string, date?: string, task?: ?string, hours?: string}>
+     */
+    private function lines(array $rows, bool $projectRows, InvoiceLanguage $language): array
+    {
+        $lines = [];
+        $group = null;
+        $project = null;
+        $daySeconds = 0;
+
+        foreach ($rows as $row) {
+            // One project and one Prague day make a group; the rows of a group follow each other.
+            $key = ($row['project'] ?? "\0").'|'.$row['date'];
+
+            if ($key !== $group) {
+                if ($group !== null) {
+                    $lines[] = ['type' => 'day', 'hours' => DurationFormat::hoursMinutes($daySeconds)];
+                }
+
+                if ($projectRows && ($group === null || $row['project'] !== $project)) {
+                    $lines[] = ['type' => 'project', 'name' => $row['project'] ?? __('work_report.no_project')];
+                }
+
+                $lines[] = ['type' => 'task', 'date' => $this->date($row['date'], $language), 'task' => $row['task'], 'hours' => DurationFormat::hoursMinutes($row['seconds'])];
+                $group = $key;
+                $project = $row['project'];
+                $daySeconds = $row['seconds'];
+
+                continue;
+            }
+
+            $lines[] = ['type' => 'task', 'date' => '', 'task' => $row['task'], 'hours' => DurationFormat::hoursMinutes($row['seconds'])];
+            $daySeconds += $row['seconds'];
+        }
+
+        if ($group !== null) {
+            $lines[] = ['type' => 'day', 'hours' => DurationFormat::hoursMinutes($daySeconds)];
+        }
+
+        return $lines;
     }
 
     private function options(): Options

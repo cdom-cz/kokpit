@@ -21,7 +21,14 @@
         table.entries tr { page-break-inside: avoid; }
         .hours { text-align: right; width: 20%; }
         .date { width: 22%; }
+        table.entries tr.day td { background-color: #f4f4f5; }
+        table.entries tr.project td { font-weight: 700; }
         .total td { font-weight: 700; background-color: #f4f4f5; }
+        .summary { page-break-inside: avoid; }
+        table.summary-table { width: 100%; border-collapse: collapse; }
+        table.summary-table td { border-bottom: 1pt solid #d4d4d8; padding: 4pt 8pt; }
+        table.summary-table td.hours { width: 20%; }
+        .strong, .total-hours { font-weight: 700; }
         .empty { color: #52525b; }
     </style>
 </head>
@@ -53,8 +60,8 @@
         @endif
     </div>
 
-    @if ($billable !== [])
-        <h2>{{ __('work_report.billable') }}</h2>
+    @foreach ($sections as $section)
+        <h2>{{ $section['heading'] }}</h2>
         <table class="entries block">
             <thead>
                 <tr>
@@ -64,20 +71,33 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach ($billable as $row)
-                    <tr>
-                        <td class="date">{{ $row['date'] }}</td>
-                        <td>{{ $row['task'] ?? __('work_report.no_task') }}</td>
-                        <td class="hours">{{ $row['hours'] }}</td>
-                    </tr>
+                @foreach ($section['lines'] as $line)
+                    @if ($line['type'] === 'project')
+                        <tr class="project">
+                            <td colspan="3">{{ __('work_report.project', ['name' => $line['name']]) }}</td>
+                        </tr>
+                    @elseif ($line['type'] === 'day')
+                        <tr class="day">
+                            <td colspan="2">{{ __('work_report.daily_total') }}</td>
+                            <td class="hours">{{ $line['hours'] }}</td>
+                        </tr>
+                    @else
+                        <tr>
+                            <td class="date">{{ $line['date'] }}</td>
+                            <td>{{ $line['task'] ?? __('work_report.no_task') }}</td>
+                            <td class="hours">{{ $line['hours'] }}</td>
+                        </tr>
+                    @endif
                 @endforeach
                 <tr class="total">
-                    <td colspan="2">{{ __('work_report.total_billable') }}</td>
-                    <td class="hours">{{ $billableTotal }}</td>
+                    <td colspan="2">{{ $section['totalLabel'] }}</td>
+                    <td class="hours">{{ $section['total'] }}</td>
                 </tr>
             </tbody>
         </table>
-    @elseif ($empty)
+    @endforeach
+
+    @if ($empty)
         <table class="entries block">
             <tbody>
                 <tr>
@@ -86,5 +106,40 @@
             </tbody>
         </table>
     @endif
+
+    <div class="summary">
+        <h2>{{ __('work_report.summary') }}</h2>
+        <table class="summary-table block">
+            <tbody>
+                <tr>
+                    <td>{{ __('work_report.days_worked') }}</td>
+                    <td class="hours">{{ $daysWorked }}</td>
+                </tr>
+                <tr>
+                    <td class="strong">{{ __('work_report.total_hours') }}</td>
+                    <td class="hours total-hours">{{ $totalHours }}</td>
+                </tr>
+                @foreach ($sections as $section)
+                    <tr>
+                        <td>{{ $section['totalLabel'] }}</td>
+                        <td class="hours">{{ $section['total'] }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+
+        @if ($projects !== [])
+            <table class="summary-table">
+                <tbody>
+                    @foreach ($projects as $project)
+                        <tr>
+                            <td>{{ $project['name'] }}</td>
+                            <td class="hours">{{ $project['hours'] }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @endif
+    </div>
 </body>
 </html>

@@ -10,6 +10,7 @@ use App\Domain\Reports\WorkReport\WorkReportSource;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
+use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
@@ -302,5 +303,186 @@ describe('the Czech document', function (): void {
         }
 
         expect(str_starts_with($pdf, '%PDF-'))->toBeTrue();
+    });
+});
+
+/**
+ * Adds to the client of the test a second project with a fixed-price task and the entries of the two
+ * sections: billable 5:45 (project one 4:45, project two 1:00, the second one fixed-price) on Sep 2, 3,
+ * and non-billable 1:30 on Sep 4 and Sep 5, so 4 days with work in all, 7:15 in total.
+ *
+ * @return array{second: Project, fixed: Task}
+ */
+function reportMixedSections(): array
+{
+    $client = test()->client;
+    $second = Project::factory()->create(['client_id' => $client->id, 'name' => 'Údržba webu']);
+    $fixed = Task::factory()->create(['project_id' => $second->id, 'title' => 'Paušální správa']);
+    $fixed->billing()->create(['billing_type' => TaskBillingType::FixedPrice, 'fixed_price' => Money::ofMinor(77700, 'CZK')]);
+
+    // Sep 2: a second task of project one, 0:30 (the day totals 2:45).
+    reportEntry($client, '2026-09-02 09:00:00', '2026-09-02 09:30:00', ['project_id' => test()->project->id, 'task_id' => test()->taskTwo->id]);
+    // Sep 3: the fixed-price entry is billable hours of project two, 1:00.
+    reportEntry($client, '2026-09-03 09:00:00', '2026-09-03 10:00:00', ['project_id' => $second->id, 'task_id' => $fixed->id]);
+    // Sep 4 and Sep 5: non-billable, without a task.
+    reportEntry($client, '2026-09-04 06:00:00', '2026-09-04 07:00:00', ['project_id' => test()->project->id, 'billable' => false]);
+    reportEntry($client, '2026-09-05 06:00:00', '2026-09-05 06:30:00', ['project_id' => $second->id, 'billable' => false]);
+
+    return ['second' => $second, 'fixed' => $fixed];
+}
+
+describe('the two sections', function (): void {
+    it('puts the billable section before the non-billable one, each with its own table and total', function (): void {
+        reportMixedSections();
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+
+        $billable = strpos($html, '<h2>Fakturovatelné</h2>');
+        $nonBillable = strpos($html, '<h2>Nefakturovatelné</h2>');
+
+        expect($billable)->toBeInt()
+            ->and($nonBillable)->toBeInt()
+            ->and($billable)->toBeLessThan($nonBillable)
+            ->and(substr_count($html, '<table class="entries'))->toBe(2)
+            ->and($html)->toContain('Celkem fakturovatelné')
+            ->and($html)->toContain('Celkem nefakturovatelné')
+            ->and($html)->toMatch('/Celkem fakturovatelné<\/td>\s*<td class="hours">5:45</')
+            ->and($html)->toMatch('/Celkem nefakturovatelné<\/td>\s*<td class="hours">1:30</')
+            // The fixed-price task is billable hours, in the first section.
+            ->and(strpos($html, 'Paušální správa'))->toBeLessThan($nonBillable);
+    });
+
+    it('closes every day with its subtotal and shows the date on the first row of the day only', function (): void {
+        reportMixedSections();
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+
+        // Billable: project one Sep 2 and Sep 3, project two Sep 3. Non-billable: Sep 4, Sep 5.
+        expect(substr_count($html, 'Celkem za den'))->toBe(5)
+            ->and($html)->toMatch('/Celkem za den<\/td>\s*<td class="hours">2:45</')
+            ->and(substr_count($html, '2. 9. 2026'))->toBe(1)
+            ->and(substr_count($html, 'Bez úkolu'))->toBe(2);
+    });
+
+    it('precedes the days of each project with a project row when there are several projects', function (): void {
+        reportMixedSections();
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+
+        // Each project is named in both sections.
+        expect(substr_count($html, 'Projekt: Redesign žluťoučkého webu'))->toBe(2)
+            ->and(substr_count($html, 'Projekt: Údržba webu'))->toBe(2)
+            ->and(strpos($html, 'Projekt: Redesign žluťoučkého webu'))->toBeLessThan(strpos($html, 'Projekt: Údržba webu'));
+    });
+
+    it('closes the report with a summary of the days, the total of both sections and the hours per project', function (): void {
+        reportMixedSections();
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+        $summary = substr($html, (int) strpos($html, '<h2>Souhrn</h2>'));
+
+        expect($html)->toContain('<h2>Souhrn</h2>')
+            ->and(strrpos($html, '<table class="entries'))->toBeLessThan(strpos($html, '<h2>Souhrn</h2>'))
+            ->and($summary)->toMatch('/Počet dní s prací<\/td>\s*<td class="hours">4</')
+            ->and($summary)->toMatch('/Celkem hodin<\/td>\s*<td class="hours total-hours">7:15</')
+            ->and($summary)->toMatch('/Celkem fakturovatelné<\/td>\s*<td class="hours">5:45</')
+            ->and($summary)->toMatch('/Celkem nefakturovatelné<\/td>\s*<td class="hours">1:30</')
+            ->and($summary)->toMatch('/Redesign žluťoučkého webu<\/td>\s*<td class="hours">5:45</')
+            ->and($summary)->toMatch('/Údržba webu<\/td>\s*<td class="hours">1:30</')
+            ->and($html)->toContain('page-break-inside: avoid');
+    });
+
+    it('leaves out the non-billable section of a client who has none and the project rows of a single project', function (): void {
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+
+        expect($html)->toContain('<h2>Fakturovatelné</h2>')
+            ->and($html)->not->toContain('<h2>Nefakturovatelné</h2>')
+            ->and($html)->not->toContain('Celkem nefakturovatelné')
+            ->and($html)->not->toContain('Projekt: ')
+            ->and($html)->toMatch('/Počet dní s prací<\/td>\s*<td class="hours">2</')
+            ->and($html)->toMatch('/Celkem hodin<\/td>\s*<td class="hours total-hours">4:15</')
+            ->and(substr_count($html, 'Redesign žluťoučkého webu'))->toBe(0);
+    });
+
+    it('shows only the non-billable section of a period with non-billable entries only', function (): void {
+        reportMixedSections();
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-04', '2026-09-05', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+
+        expect($html)->not->toContain('<h2>Fakturovatelné</h2>')
+            ->and($html)->toContain('<h2>Nefakturovatelné</h2>')
+            ->and($html)->not->toContain('Za zvolené období nejsou žádné záznamy.')
+            ->and($html)->toMatch('/Celkem hodin<\/td>\s*<td class="hours total-hours">1:30</');
+    });
+
+    it('renders a period without entries as the header, one empty row and a 0:00 summary', function (): void {
+        $source = WorkReportSource::forPeriod($this->client->id, '2025-01-01', '2025-01-31', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+        $pdf = app(WorkReportPdf::class)->render($source, InvoiceLanguage::Czech);
+
+        expect($html)->toContain('Pracovní výkaz')
+            ->and($html)->toContain('Období: 1. 1. 2025 – 31. 1. 2025')
+            ->and(substr_count($html, 'Za zvolené období nejsou žádné záznamy.'))->toBe(1)
+            ->and($html)->not->toContain('<h2>Fakturovatelné</h2>')
+            ->and($html)->not->toContain('<h2>Nefakturovatelné</h2>')
+            ->and($html)->toMatch('/Počet dní s prací<\/td>\s*<td class="hours">0</')
+            ->and($html)->toMatch('/Celkem hodin<\/td>\s*<td class="hours total-hours">0:00</')
+            ->and(str_starts_with($pdf, '%PDF-'))->toBeTrue();
+    });
+});
+
+describe('the section helpers of the source', function (): void {
+    /**
+     * A source of fixed rows: billable 3:00 (project one 2:00 on Sep 1 and Sep 2 in one hour each, project two
+     * 1:00 on Sep 2) and non-billable 0:30 (project one on Sep 3), the last row without a project.
+     */
+    function helperSource(): WorkReportSource
+    {
+        return new WorkReportSource(
+            supplierLines: [],
+            clientName: 'Ukázkový odběratel a.s.',
+            clientLines: [],
+            clientLanguage: InvoiceLanguage::Czech,
+            from: '2026-09-01',
+            to: '2026-09-30',
+            projectName: null,
+            rows: [
+                ['billable' => true, 'project' => 'Projekt A', 'date' => '2026-09-01', 'task' => null, 'seconds' => 3600],
+                ['billable' => true, 'project' => 'Projekt A', 'date' => '2026-09-02', 'task' => null, 'seconds' => 3600],
+                ['billable' => true, 'project' => 'Projekt B', 'date' => '2026-09-02', 'task' => null, 'seconds' => 3600],
+                ['billable' => false, 'project' => 'Projekt A', 'date' => '2026-09-03', 'task' => null, 'seconds' => 1800],
+                ['billable' => false, 'project' => null, 'date' => '2026-09-03', 'task' => null, 'seconds' => 900],
+            ],
+        );
+    }
+
+    it('returns the rows and the seconds of a section', function (): void {
+        $source = helperSource();
+
+        expect($source->section(true))->toHaveCount(3)
+            ->and($source->section(false))->toHaveCount(2)
+            ->and($source->sectionSeconds(true))->toBe(10800)
+            ->and($source->sectionSeconds(false))->toBe(2700)
+            ->and($source->totalSeconds())->toBe(13500);
+    });
+
+    it('counts a day with work once, whatever the section, project or task', function (): void {
+        expect(helperSource()->daysWorked())->toBe(3);
+    });
+
+    it('totals the hours per project, the project without a name last, the largest first', function (): void {
+        expect(helperSource()->projectTotals())->toBe([
+            ['project' => 'Projekt A', 'seconds' => 9000],
+            ['project' => 'Projekt B', 'seconds' => 3600],
+            ['project' => null, 'seconds' => 900],
+        ]);
     });
 });
