@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Domain\ExchangeRates\Actions\DownloadCnbRates;
 use App\Domain\ExchangeRates\Cnb\CnbDownloadFailed;
+use App\Domain\ExchangeRates\CzechPublicHolidays;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Operations\Alerts\AdminAlerter;
 use App\Domain\Operations\Alerts\OperationalAlert;
@@ -19,8 +20,9 @@ use Throwable;
 /**
  * Downloads today's CNB list and stores it once (EX-01, D-02).
  *
- * Exit 0 when the list was stored, was already stored or the CNB still answers an older list (before the
- * publication, on a weekend or a holiday); exit 1 when the download failed. Output names dates, counts and the
+ * Exit 0 when the list was stored, was already stored, the CNB still answers an older list before the publication
+ * or the day is a weekend or a public holiday (no request is made then); exit 1 when the download failed or the
+ * final run of a working day ends without a list dated today. Output names dates, counts and the
  * Czech failure reason only, never the response or an exception text (T-08-13).
  *
  * Run synchronously by the scheduler, never through the queue, so a dead worker cannot swallow the alert. Only the
@@ -38,15 +40,26 @@ class DownloadCnbRatesCommand extends Command
         $today = CarbonImmutable::now('Europe/Prague')->format('Y-m-d');
         $final = (bool) $this->option('final');
 
+        // The CNB publishes on Czech working days only (assumption A5): a weekend or a public holiday makes no
+        // request and raises no alert, whatever hour the scheduler fires at.
+        if (! CzechPublicHolidays::isWorkingDay($today)) {
+            $this->components->info(__('kokpit.rates.console.not_working_day'));
+
+            return self::SUCCESS;
+        }
+
         try {
             // Console work has no signed-in user, so the fail-closed scopes would silence it: the whole run is an
             // explicit system run.
             $result = app(PartnerContext::class)->runAsSystem(fn (): array => $action->handle($today));
         } catch (CnbDownloadFailed $failure) {
-            $this->components->error(__('kokpit.rates.console.failed', ['reason' => $failure->failure->label()]));
+            // An hourly attempt that fails is a warning: the next hour tries again and nobody is alerted.
+            $line = $final ? $this->components->error(...) : $this->components->warn(...);
+
+            $line(__('kokpit.rates.console.failed', ['reason' => $failure->failure->label()]));
 
             if ($failure->status !== null) {
-                $this->components->error(__('kokpit.rates.console.status', ['status' => $failure->status]));
+                $line(__('kokpit.rates.console.status', ['status' => $failure->status]));
             }
 
             if ($final) {
@@ -76,7 +89,22 @@ class DownloadCnbRatesCommand extends Command
             ]));
         }
 
+        // The CNB answered, but with no list dated today (it publishes late or not at all): the last run of the day
+        // still tells the Admin, once.
+        if ($final && ! $this->listStoredFor($today)) {
+            $this->alertAdmin($today);
+
+            return self::FAILURE;
+        }
+
         return self::SUCCESS;
+    }
+
+    private function listStoredFor(string $day): bool
+    {
+        return app(PartnerContext::class)->runAsSystem(
+            static fn (): bool => ExchangeRate::query()->where('rate_date', $day)->exists(),
+        );
     }
 
     /**

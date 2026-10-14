@@ -179,16 +179,29 @@ describe('idempotence', function (): void {
 });
 
 describe('the validity date', function (): void {
-    it('stores the Friday list under Friday only when run on a Saturday', function (): void {
-        cnbAt('2026-10-10');
-        cnbServes('2026-10-09');
+    it('stores the previous list under its own day when the CNB has not published today\'s list yet', function (): void {
+        // 2026-10-14 is a Wednesday and a working day, so the command asks; the answer is still Tuesday's list.
+        cnbAt('2026-10-14');
+        cnbServes('2026-10-13');
 
         expect(Artisan::call('kokpit:rates:download'))->toBe(0)
-            ->and(Artisan::output())->toContain(__('kokpit.rates.console.not_published', ['date' => '9. 10. 2026']));
+            ->and(Artisan::output())->toContain(__('kokpit.rates.console.not_published', ['date' => '13. 10. 2026']));
 
         $dates = array_unique(array_column(cnbStored(), 'date'));
 
-        expect($dates)->toBe(['2026-10-09'])
+        expect($dates)->toBe(['2026-10-13'])
+            ->and(cnbStored())->toHaveCount(6);
+    });
+
+    it('stores the Friday list under Friday only when the Action runs for a Saturday', function (): void {
+        // The command skips a Saturday since plan 08-08; the Action (manual download, backfill) still answers it.
+        cnbAt('2026-10-10');
+        cnbServes('2026-10-09');
+
+        $result = app(PartnerContext::class)->runAsSystem(static fn (): array => app(DownloadCnbRates::class)->handle('2026-10-10'));
+
+        expect($result)->toBe(['valid_for' => '2026-10-09', 'inserted' => 6, 'skipped' => false])
+            ->and(array_unique(array_column(cnbStored(), 'date')))->toBe(['2026-10-09'])
             ->and(cnbStored())->toHaveCount(6);
     });
 
@@ -196,7 +209,7 @@ describe('the validity date', function (): void {
         cnbAt('2026-10-10');
         cnbServes('2026-10-09');
 
-        Artisan::call('kokpit:rates:download');
+        app(PartnerContext::class)->runAsSystem(static fn (): array => app(DownloadCnbRates::class)->handle('2026-10-10'));
 
         expect(array_column(cnbStored(), 'date'))->not->toContain('2026-10-10');
     });
@@ -205,8 +218,9 @@ describe('the validity date', function (): void {
         cnbAt('2026-10-10');
         cnbServes('2026-10-09');
 
-        Artisan::call('kokpit:rates:download');
-        Artisan::call('kokpit:rates:download');
+        $run = static fn (): array => app(PartnerContext::class)->runAsSystem(static fn (): array => app(DownloadCnbRates::class)->handle('2026-10-10'));
+        $run();
+        $run();
 
         Http::assertSentCount(2);
         expect(cnbStored())->toHaveCount(6);
