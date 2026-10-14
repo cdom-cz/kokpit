@@ -10,6 +10,7 @@ use App\Domain\TimeTracking\TimeEntryInput;
 use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use stdClass;
@@ -111,6 +112,32 @@ final class TimeEntryPayload
         }
 
         return [...$data, ...self::external($validated, $raw)];
+    }
+
+    /**
+     * The data of `CreateTimeEntry::handle()` for one item of a batch (D-14).
+     *
+     * The item is validated here with the rules of a single create, so a bad item raises its own
+     * `ValidationException` keyed by the item's field names and never fails the batch. An item must be a JSON
+     * object: `$rawItem` is the same item decoded as objects (`rawBody()`), which tells `{}` from `[]` and
+     * is also where `external` is taken from, exactly as for a single create.
+     *
+     * @param  mixed  $item  the item as Laravel decoded it (an array for an object or a list, a scalar otherwise)
+     * @param  mixed  $rawItem  the item decoded as objects
+     * @return array<string, mixed>
+     *
+     * @throws ValidationException
+     */
+    public static function forBatchItem(mixed $item, mixed $rawItem, ReferenceResolver $refs): array
+    {
+        if (! is_array($item) || ! $rawItem instanceof stdClass) {
+            throw ValidationException::withMessages(['entry' => __('api.errors.batch_item_not_object')]);
+        }
+
+        /** @var array<string, mixed> $validated */
+        $validated = Validator::make($item, self::rules(true))->validate();
+
+        return self::forCreate($validated, $refs, $rawItem);
     }
 
     /**

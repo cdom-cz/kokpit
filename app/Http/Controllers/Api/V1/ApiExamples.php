@@ -122,6 +122,15 @@ final class ApiExamples
         ],
     ];
 
+    /**
+     * The answer of a batch in which every entry was saved (201).
+     */
+    public const array BATCH_ALL_SAVED = [
+        'saved' => 3,
+        'failed' => 0,
+        'errors' => [],
+    ];
+
     public const array ENTRY_LOCKED = [
         'message' => 'Záznam je vyfakturovaný a nelze ho upravit. Nejdřív zrušte fakturaci.',
         'code' => 'entry_locked',

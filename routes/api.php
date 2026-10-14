@@ -6,6 +6,7 @@ use App\Domain\Identity\ApiAbility;
 use App\Http\Controllers\Api\V1\ClientController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\TaskController;
+use App\Http\Controllers\Api\V1\TimeEntryBatchController;
 use App\Http\Controllers\Api\V1\TimeEntryController;
 use App\Http\Middleware\EnsureIdempotency;
 use Illuminate\Support\Facades\Route;
@@ -51,6 +52,11 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeWrite->value, 't
     Route::post('time-entries', [TimeEntryController::class, 'store'])
         ->middleware(EnsureIdempotency::class)
         ->name('api.v1.time-entries.store');
+    // The batch counts as one write against the limit and carries the key like the single create (D-14, D-16).
+    // It is declared before the PATCH and DELETE routes; the path has no parameter, so it never clashes.
+    Route::post('time-entries/batch', TimeEntryBatchController::class)
+        ->middleware(EnsureIdempotency::class)
+        ->name('api.v1.time-entries.batch');
     Route::patch('time-entries/{timeEntry}', [TimeEntryController::class, 'update'])
         ->whereUuid('timeEntry')
         ->name('api.v1.time-entries.update');
