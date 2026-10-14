@@ -3,11 +3,11 @@ gsd_state_version: "1.0"
 current_phase: 7
 current_phase_name: REST API
 status: planning
-stopped_at: Phase 06 complete, ready to plan Phase 7
-last_updated: "2026-10-14T07:11:33.156Z"
+stopped_at: Phase 7 context gathered
+last_updated: "2026-10-14T07:28:18.230Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 06 complete, transitioned to Phase 7
-state_head: 1276619bacad0bc40a7f52e1d15192fccd6820b2
+state_head: 9889e6bbc0ab72b211d88c4fabe3c756e43f663b
 progress:
   total_phases: 12
   completed_phases: 6
@@ -364,6 +364,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-13: the forgotten-timer notice is a non-queued database notification sent with notifyNow in the same transaction as the atomic long_running_notified_at claim, so claim and notice roll back together; a deactivated or non-Admin owner is skipped without claiming
 - [Phase 06]: Czech collation is guarded at deploy (kokpit:deploy:verify collation check), never silently replaced by the default collation
 - [Phase 06]: Phase 10 snapshot migration must re-create time_entries_frozen_guard with an extended mutable list; hand-over notes for Phases 7, 8, 9 and 10 live in CONTRIBUTING
+- [Quick 261014-cy9]: activity records older than 365 days (activitylog.clean_after_days) are pruned every night by the scheduled activitylog:clean --force (kokpit-activity-log-prune, onOneServer) through KokpitCleanActivityLogAction, which deletes as system so the fail-closed Partner scope cannot make it a silent no-op (WR-04); supersedes Phase 03 D-09 and the 03-11 never-pruned decision on the owner's request
 
 ### Pending Todos
 
@@ -408,6 +409,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T16:21:37.166Z
-Stopped at: Phase 06 complete, ready to plan Phase 7
-Resume file: None
+Last session: 2026-10-14T07:28:17.976Z
+Stopped at: Phase 7 context gathered
+Resume file: .planning/phases/07-rest-api/07-CONTEXT.md
