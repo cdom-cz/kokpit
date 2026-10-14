@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
+use Symfony\Component\Yaml\Yaml;
 use Tests\Support\ApiDocs;
 
 /*
@@ -21,6 +22,14 @@ it('generates without a database and documents the placeholder base URL as OpenA
     expect($spec['openapi'])->toBe('3.1.0')
         ->and($spec['info']['title'])->toBe('Kokpit API')
         ->and($spec['servers'][0]['url'])->toBe(ApiDocs::placeholderUrl());
+});
+
+it('generates with exactly the command the deploy manifest runs last on every container', function (): void {
+    $manifest = Yaml::parseFile(base_path('zerops.yml'));
+    $init = $manifest['zerops'][0]['run']['initCommands'];
+
+    expect(explode(' ', (string) end($init)))->toBe(ApiDocs::COMMAND)
+        ->and(ApiDocs::generate()->getExitCode())->toBe(0);
 });
 
 it('declares a bearer scheme that the global security references', function (): void {

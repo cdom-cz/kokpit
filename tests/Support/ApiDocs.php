@@ -22,6 +22,11 @@ use Symfony\Component\Yaml\Yaml;
  */
 final class ApiDocs
 {
+    /**
+     * The generation command exactly as the last init command of zerops.yml spells it.
+     */
+    public const array COMMAND = ['php', 'artisan', 'scribe:generate', '--no-interaction'];
+
     private static bool $generated = false;
 
     /**
@@ -40,7 +45,7 @@ final class ApiDocs
     public static function generate(array $env = []): Process
     {
         $process = new Process(
-            [PHP_BINARY, 'artisan', 'scribe:generate', '--no-interaction'],
+            [PHP_BINARY, ...array_slice(self::COMMAND, 1)],
             base_path(),
             [
                 'APP_URL' => self::placeholderUrl(),
