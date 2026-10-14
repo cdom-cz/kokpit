@@ -422,6 +422,41 @@ it('refuses an interval beyond the column limit under ended_at, never a database
     expect(TimeEntry::query()->count())->toBe(1);
 });
 
+it('refuses a start far in the past on a finished entry with 422 under started_at, never a database error', function (): void {
+    $admin = ApiFixtures::admin();
+    $entry = ApiFixtures::entry($admin, [
+        'client_id' => ApiFixtures::client()->id,
+        'started_at' => '2026-10-12 08:00:00',
+        'ended_at' => '2026-10-12 09:00:00',
+    ]);
+    $token = ApiFixtures::token($admin, ['time:write']);
+
+    $this->withToken($token)->patchJson('/api/v1/time-entries/'.$entry->id, ['started_at' => '1900-01-01T00:00:00Z'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['started_at'])
+        ->assertJsonPath('errors.started_at.0', __('kokpit.time.errors.duration_too_long'));
+
+    $stored = TimeEntry::query()->findOrFail($entry->id);
+
+    expect($stored->started_at->toIso8601String())->toBe('2026-10-12T08:00:00+00:00')
+        ->and($stored->duration_seconds)->toBe(3600);
+});
+
+it('still accepts an old start whose interval fits the column', function (): void {
+    $admin = ApiFixtures::admin();
+    $entry = ApiFixtures::entry($admin, [
+        'client_id' => ApiFixtures::client()->id,
+        'started_at' => '2026-10-12 08:00:00',
+        'ended_at' => '2026-10-12 09:00:00',
+    ]);
+    $token = ApiFixtures::token($admin, ['time:write']);
+
+    $response = $this->withToken($token)->patchJson('/api/v1/time-entries/'.$entry->id, ['started_at' => '1960-01-01T00:00:00Z'])
+        ->assertOk();
+
+    expect($response->json('data.duration_seconds'))->toBe(2107414800);
+});
+
 it('ignores smuggled keys: the entry is the token owner\'s, unbilled and has a new uuid', function (): void {
     [$admin, $client, , , $token] = matrixContext();
     $other = Canary::partnerFor($client->id);

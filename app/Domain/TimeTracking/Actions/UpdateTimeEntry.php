@@ -40,7 +40,10 @@ use Illuminate\Validation\ValidationException;
  * like a creation, and the end must lie strictly after the start whenever either
  * changes (an untouched zero-length entry from a same-second start can still have
  * its description edited). A running entry can change its start but keeps
- * `ended_at` null: a named end is ignored, the stop is StopTimer.
+ * `ended_at` null: a named end is ignored, the stop is StopTimer. Whenever the start or the end changes,
+ * the interval must fit TimeEntryInput::MAX_DURATION_SECONDS (the integer column limit), checked before
+ * the row is touched; the field error sits on `ended_at` when the data names an end, otherwise on
+ * `started_at`.
  *
  * Lock order: the task, project and client rows FOR SHARE (a changed context
  * only), after the entry row FOR UPDATE.
@@ -176,6 +179,11 @@ final class UpdateTimeEntry
 
         if (! $locked->isRunning() && $changed) {
             TimeEntryInput::assertEndAfterStart($start, $end);
+
+            // The field the data changes: the end when it names one, the start otherwise.
+            if ($end !== null) {
+                TimeEntryInput::assertDurationFits($start, $end, array_key_exists('ended_at', $data) ? 'ended_at' : 'started_at');
+            }
         }
 
         $locked->forceFill(['started_at' => $start, 'ended_at' => $end]);

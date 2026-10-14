@@ -1092,6 +1092,7 @@ return [
             'start_required' => 'Zadejte začátek.',
             'end_required' => 'Zadejte konec.',
             'end_before_start' => 'Konec musí být později než začátek.',
+            'duration_too_long' => 'Záznam je příliš dlouhý.',
             'invalid_time' => 'Zadejte platné datum a čas.',
             'external_not_object' => 'Pole external musí být objekt JSON.',
             'external_too_large' => 'Pole external je příliš velké (nejvýše :max bajtů).',

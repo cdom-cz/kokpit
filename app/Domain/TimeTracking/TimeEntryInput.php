@@ -34,6 +34,14 @@ final class TimeEntryInput
     public const int EXTERNAL_MAX_DEPTH = 8;
 
     /**
+     * The longest interval a time entry may span, in seconds: the limit of a PostgreSQL integer. It guards
+     * two consumers, the generated `duration_seconds` column of a finished entry and the `::int` cast of
+     * the elapsed seconds in `TimeEntry::scopeWithElapsedSeconds`, which a running entry feeds with its
+     * start. It is the column limit, not a product cap (about 68 years).
+     */
+    public const int MAX_DURATION_SECONDS = 2147483647;
+
+    /**
      * The client, project and task of an entry, each read again under a share
      * lock so an archive in flight cannot slip past the check.
      *
@@ -232,6 +240,24 @@ final class TimeEntryInput
     {
         if ($end !== null && $end->lessThanOrEqualTo($start)) {
             throw self::error('ended_at', 'end_before_start');
+        }
+    }
+
+    /**
+     * The interval between the start and `$to` must fit the integer limit of the duration.
+     *
+     * `$to` is the end of a finished entry, or the current whole second (`TimerClock::now()`) for a running
+     * one. The magnitude of the difference counts, so a running entry whose start lies far ahead of now is
+     * refused too: its elapsed seconds would overflow the integer cast of the entry list just the same.
+     *
+     * @param  string  $field  the data key the field error is keyed by (`started_at` or `ended_at`)
+     *
+     * @throws ValidationException the field error `duration_too_long` on `$field`
+     */
+    public static function assertDurationFits(CarbonImmutable $start, CarbonImmutable $to, string $field): void
+    {
+        if (abs($to->getTimestamp() - $start->getTimestamp()) > self::MAX_DURATION_SECONDS) {
+            throw self::error($field, 'duration_too_long');
         }
     }
 
