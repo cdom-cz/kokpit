@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Policies\UserPolicy;
@@ -95,6 +96,9 @@ final class AccessServiceProvider extends ServiceProvider
 
         // Tracked time, its rates and its billing are Admin-only (TI-07): a Partner is granted nothing.
         Gate::policy(TimeEntry::class, AdminOnlyPolicy::class);
+
+        // Public CNB data, but finance-like and closed to Partners like every rate.
+        Gate::policy(ExchangeRate::class, AdminOnlyPolicy::class);
 
         // The personal planner "Signal" belongs to one Admin and is closed to Partners; the owner scope
         // of the models keeps every Admin to the own rows.

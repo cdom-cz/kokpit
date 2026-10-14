@@ -7,6 +7,7 @@ namespace Tests\Support;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Models\Project;
@@ -84,8 +85,9 @@ final class CanaryRegistry
 
     /**
      * The strings the Admin must find in the visible rows of a model for one canary: the canary itself
-     * for every model that stores text; the Monday of the canary for the two models that have a date but
-     * no text column; the id of the planner owner for the settings (one row per user, no text column).
+     * for every model that stores text; the Monday of the canary for the models that have a date but
+     * no text column (the two Signal day models and the exchange rate); the id of the planner owner for the
+     * settings (one row per user, no text column).
      *
      * @param  class-string  $model
      * @return list<string>
@@ -93,7 +95,7 @@ final class CanaryRegistry
     public static function needles(string $model, string $canary): array
     {
         return match ($model) {
-            SignalDeepWorkDay::class, SignalDayOverride::class => [self::signalMonday($canary)],
+            SignalDeepWorkDay::class, SignalDayOverride::class, ExchangeRate::class => [self::signalMonday($canary)],
             SignalSetting::class => [(string) self::plannerOwner()->getKey()],
             default => [$canary],
         };
@@ -263,6 +265,25 @@ final class CanaryRegistry
                         'started_at' => TimerClock::now()->subHours(2),
                         'ended_at' => TimerClock::now()->subHour(),
                     ])->save();
+                });
+            },
+
+            // A CNB rate row has no text and no client: the canary is the published day (the Monday of the
+            // canary), under a fictional currency code, so two canaries never collide on the unique key of a
+            // currency and day. A Partner reading any rate would be caught by that day.
+            ExchangeRate::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    $now = TimerClock::now();
+
+                    ExchangeRate::query()->insert([
+                        'rate_date' => self::signalMonday($canary),
+                        'currency' => 'XTS',
+                        'unit_amount' => 1,
+                        'rate' => '1.5',
+                        'fetched_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
                 });
             },
 

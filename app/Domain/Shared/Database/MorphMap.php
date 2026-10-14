@@ -8,6 +8,7 @@ use App\Domain\Api\Models\IdempotencyKey;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
@@ -61,6 +62,7 @@ final class MorphMap
         'task_checklist_item' => TaskChecklistItem::class,
         'task_comment' => TaskComment::class,
         'time_entry' => TimeEntry::class,
+        'exchange_rate' => ExchangeRate::class,
         'signal_day_override' => SignalDayOverride::class,
         'signal_deep_work_day' => SignalDeepWorkDay::class,
         'signal_recurring_task' => SignalRecurringTask::class,
