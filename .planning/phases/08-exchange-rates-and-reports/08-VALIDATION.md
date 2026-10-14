@@ -1,7 +1,7 @@
 ---
 phase: "08"
 slug: "exchange-rates-and-reports"
-status: approved
+status: validated
 nyquist_compliant: true
 wave_0_complete: true
 created: "2026-10-14"
@@ -155,3 +155,11 @@ All six measure at or above the 4.5:1 of WCAG AA for normal text; the white-on-A
 - [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** automated gate approved 2026-10-15 by the executor of plan 08-22 (full gate green, see above); the manual-only verifications above remain open for the owner and the phase verifier.
+
+## Validation Audit 2026-10-14
+
+| Metric | Count |
+|---|---|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
