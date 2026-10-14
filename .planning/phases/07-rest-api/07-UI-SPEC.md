@@ -329,7 +329,7 @@ Destructive and hard-to-undo actions in this phase: "Zneplatnit token" (`danger`
 
 > Populated by the ui-phase UI-consideration probe and lifted by plan-phase's `## UI Considerations` lift rule via the identical rule as SPEC `## Edge Coverage`. Shape-rooted UI *state* coverage (empty / loading / error / populated / partial / overflow / zero-one-many / long-text). Empty-state and error-state COPY live in `## Copywriting Contract` above; this section covers state coverage and references those rows rather than restating the copy.
 
-Applicable state considerations resolved: 14 covered, 4 backstop, 2 unresolved (20 applicable, 0 unclassified). Element ids: N1 token list, N2 create modal, N3 one-time token modal, N4 revoke confirmation, N5 documentation link and page.
+Applicable state considerations resolved: 14 covered, 4 backstop, 1 unresolved (19 applicable, 0 unclassified). Element ids: N1 token list, N2 create modal, N3 one-time token modal, N4 revoke confirmation, N5 documentation link and page.
 
 | Category | Element(s) | Status | Resolution / Reason |
 |----------|------------|--------|---------------------|
@@ -351,7 +351,7 @@ Applicable state considerations resolved: 14 covered, 4 backstop, 2 unresolved (
 | long-text | N3 summary (static-content) | 🧪 backstop | A long name in the summary line wraps; checked visually at 375px |
 | overflow | N3 on small screens (interactive-control) | 🧪 backstop | The modal is at most the viewport wide and scrolls inside itself; checked at 375px |
 | error | N2 expired session (form) | ⚠ unresolved | If the Admin session expires while the create modal is open, the submit fails with the stock Livewire expired-session handling. Planner treats the assumption: stock behaviour (re-login), the token is not created and nothing is shown |
-| empty | N5 (static-content) | ✅ covered | The docs page needs no data state of its own; an instance with no committed endpoints cannot occur because the spec is generated from the routes |
+| empty | N5 (static-content) | ✅ covered | The docs page needs no data state of its own; the docs are generated from the routes at release, so an empty page cannot occur |
 
 <!-- Status vocabulary (locked by probe-core projectTruths):
      ✅ covered   → a plain truth string lifted into must_haves.truths
