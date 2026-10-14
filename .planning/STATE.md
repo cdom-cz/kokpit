@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-16-PLAN.md
-last_updated: "2026-10-14T21:56:10.670Z"
+stopped_at: Completed 08-17-PLAN.md
+last_updated: "2026-10-14T22:07:24.035Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: e4752356e6fe702e758c7d3c24688ebc90d25777
+state_head: eeac51c73d92a3e75306bdb3d2c81ceaaed3b28d
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 135
+  completed_plans: 136
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 16 of 22
+Plan: 17 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -197,6 +197,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P13 | 18 min | 3 tasks | 8 files |
 | Phase 08 P15 | 25 min | 2 tasks | 9 files |
 | Phase 08 P16 | 20 min | 3 tasks | 11 files |
+| Phase 08 P17 | 40 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -464,6 +465,7 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-15: dashboard widgets poll with visible.60s (wire:poll.visible.60s); row and heading links carry period=this_month explicitly
 - [Phase 08]: 08-16: the CSV Úkol column holds the task title only so a title starting with a formula character is neutralised by the apostrophe rule
 - [Phase 08]: 08-16: export numbers are text built from exact values (integer hours arithmetic, Money::toMajor), never floats; every text goes through SpreadsheetCells::text
+- [Phase 08]: 08-17: the CNB gap heal runs only in the scheduled command, once per Prague day (cache claim), one daily-year request per affected year, fills only days with no stored row up to the run's day; handle() returns lists stored
 
 ### Pending Todos
 
@@ -511,6 +513,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T21:56:10.471Z
-Stopped at: Completed 08-16-PLAN.md
+Last session: 2026-10-14T22:07:23.842Z
+Stopped at: Completed 08-17-PLAN.md
 Resume file: None
