@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 08
-current_phase_name: exchange-rates-and-reports
+current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Phase 07 complete, ready to plan Phase 08
-last_updated: "2026-10-14T18:42:40.551Z"
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-10-14T18:58:51.240Z"
 last_activity: 2026-10-14
-last_activity_desc: Phase 07 complete, transitioned to Phase 08
-state_head: 9e65d16553a38235753cf48faef9e91b5b39dad9
+last_activity_desc: Phase 08 execution started
+state_head: e02929401122b5f4a6258d2554279e51704a7db0
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 120
+  completed_plans: 121
   percent: 58
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 07 — REST API
+**Current focus:** Phase 08 — Exchange Rates and Reports
 
 ## Current Position
 
-Phase: 08 (exchange-rates-and-reports) — READY TO EXECUTE
-Plan: Not started
+Phase: 08 (Exchange Rates and Reports) — EXECUTING
+Plan: 2 of 22
 Status: Ready to execute
-Last activity: 2026-10-14 — Phase 07 complete, transitioned to Phase 08
+Last activity: 2026-10-14 — Phase 08 execution started
 
 Progress: [██████░░░░] 58%
 
@@ -182,6 +182,7 @@ Progress: [██████░░░░] 58%
 | Phase 07 P15 | 20 min | 2 tasks | 4 files |
 | Phase 07 P19 | 45 min | 2 tasks | 8 files |
 | Phase 07 P20 | 3 min | 2 tasks | 2 files |
+| Phase 08 P01 | 16 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -423,6 +424,7 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-19: StopTimer on an entry already run past 2147483647 s is left to the owner (T-07-77); recovery is to correct the start through UpdateTimeEntry, then stop
 - [Quick 261014-o13]: a running time entry that has run longer than kokpit.time.max_running_hours (48) is ended every hour by kokpit:time:end-overrun (kokpit-end-overrun-timers, onOneServer) through EndOverrunTimers at started_at + 48 h, never at now, so the stored duration is capped and cannot overflow the integer column; narrows Phase 06 D-07 on the owner's request, the 12-hour bell notice is unchanged
 - [Phase 07]: 07-20: empty-state newToken opens createToken with replaceMountedAction (not a nested mount) and a canAccess guard; ListApiTokens unchanged
+- [Phase 08]: 08-01: exchange_rates holds one row per currency and published CNB day with the unit amount; weekends and holidays are never stored, resolved by lookup (08-05); lists are immutable (insert-or-ignore); ExchangeRate is Admin-only with a canary fixture whose needle is the published day
 
 ### Pending Todos
 
@@ -469,6 +471,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T18:26:43.496Z
-Stopped at: Phase 07 complete, ready to plan Phase 08
+Last session: 2026-10-14T18:58:51.033Z
+Stopped at: Completed 08-01-PLAN.md
 Resume file: None
