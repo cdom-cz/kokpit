@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: REST API
 status: executing
-stopped_at: Completed 07-16-PLAN.md
-last_updated: "2026-10-14T13:18:52.699Z"
+stopped_at: Completed 07-14-PLAN.md
+last_updated: "2026-10-14T13:23:42.232Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 07 execution started
-state_head: 3611f9990406a0c78d6ae145e39cb7a546ed4b92
+state_head: 32d771912c75cfc2d3c857ad984da992cbd34d33
 progress:
   total_phases: 12
   completed_phases: 6
   total_plans: 118
-  completed_plans: 114
+  completed_plans: 115
   percent: 50
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 07 (REST API) — EXECUTING
-Plan: 3 of 18
+Plan: 4 of 18
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 07 execution started
 
@@ -175,6 +175,7 @@ Progress: [█████░░░░░] 50%
 | Phase 07 P12 | 15 min | 3 tasks | 12 files |
 | Phase 07 P13 | 25 min | 3 tasks | 8 files |
 | Phase 07 P16 | 12 min | 2 tasks | 9 files |
+| Phase 07 P14 | 25 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -406,6 +407,8 @@ Recent decisions affecting current work:
 - [Phase 07]: Plan 07-12: public docs are generated with the app locale switched to English for scribe:generate only; API answers stay Czech, wire contract unchanged
 - [Phase 07]: 07-13: interval bound is abs(to - start) <= 2147483647 s in TimeEntryInput::assertDurationFits, shared by UpdateTimeEntry, CreateTimeEntry and TimeEntryPayload; running entries measured against TimerClock::now()
 - [Phase 07]: 07-16: a cursor the API did not issue (empty, foreign, wrong-typed, hand-edited) answers 422 under cursor on all four list endpoints; ApiCursor derives the expected keys from the sort column and ID_COLUMN
+- [Phase 07]: 07-14: one UTC year 1..9999 envelope (TimerClock::isStorable) is asked by TimeEntryInput::normalised and PragueDay; the computed duration_seconds end passes TimeEntryInput::instant so it answers invalid_time under ended_at before the Action
+- [Phase 07]: 07-14: PragueDay::midnight builds from day components (no formatted-year re-parse); 0001-01-01 is not a supported day, 9999-12-31 is; out-of-range panel period days are ignored
 
 ### Pending Todos
 
@@ -451,6 +454,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T13:18:52.515Z
-Stopped at: Completed 07-16-PLAN.md
+Last session: 2026-10-14T13:23:42.039Z
+Stopped at: Completed 07-14-PLAN.md
 Resume file: None
