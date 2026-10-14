@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-06-PLAN.md
-last_updated: "2026-10-14T20:06:38.739Z"
+stopped_at: Completed 08-07-PLAN.md
+last_updated: "2026-10-14T20:18:01.265Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: 467901b24bd458b95d0c4c6fa662a17d17bac45d
+state_head: e24b470bad09a7655d58140f209ddf1301d4ac15
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 126
+  completed_plans: 127
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 7 of 22
+Plan: 8 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -188,6 +188,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P04 | 35min | 3 tasks | 12 files |
 | Phase 08 P05 | 8 min | 3 tasks | 6 files |
 | Phase 08 P06 | 19 min | 3 tasks | 7 files |
+| Phase 08 P07 | 40 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -440,6 +441,8 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-05: converted durations are one exact rational rounded once (Money::forDurationConverted); the converter has no role check, the fail-closed ExchangeRate scope gives a Partner ExchangeRateMissing
 - [Phase 08]: 08-06: work report page header and footer are a Dompdf page script class (WorkReportPageDecoration), unit-tested against a recording Canvas — pdftotext is absent from DDEV; isPhpEnabled stays off
 - [Phase 08]: 08-06: WorkReportSource::fromEntryIds takes one client's listed entries; period is first and last Prague day, project named only when shared — Phase 10 attaches the report for exactly the billed entries
+- [Phase 08]: 08-07: report_exports expires_at is creation plus retention, reset to completion plus retention by markReady(), so the prune also removes stale pending and failed records; ttlDays() never below 1
+- [Phase 08]: 08-07: downloadFileName() accepts only two real YYYY-MM-DD days from stored filters, else report-casu.<ext>; markReady() leaves the path shape to the database CHECK
 
 ### Pending Todos
 
@@ -486,6 +489,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T20:06:32.798Z
-Stopped at: Completed 08-06-PLAN.md
+Last session: 2026-10-14T20:18:01.054Z
+Stopped at: Completed 08-07-PLAN.md
 Resume file: None
