@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Identity\ApiAbility;
 use Filament\Facades\Filament;
+use Illuminate\Pagination\Cursor;
 use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -17,6 +18,7 @@ use Tests\Support\CanaryRegistry;
  * route collection, so a route added by a later plan is walked without editing this file: it
  * needs a token (auth:sanctum), exactly one ability and the rate limit of that ability, and it
  * answers 401 to a guest and to a Partner token and 403 to an Admin token without its ability.
+ * A forged cursor on a list route is answered by the same 401 and 403, never by the cursor validator (T-07-69).
  */
 
 /**
@@ -159,6 +161,53 @@ it('answers 403 to an Admin token that lacks the ability of the route', function
         Auth::forgetGuards();
 
         $this->withToken($token)->json(apiWalkMethod($route), apiWalkPath($route))
+            ->assertForbidden();
+    }
+});
+
+/**
+ * The GET routes of the walk that have no route parameter: the list routes, which take a cursor.
+ *
+ * @return list<LaravelRoute>
+ */
+function apiWalkListRoutes(): array
+{
+    return array_values(array_filter(
+        apiWalkRoutes(),
+        static fn (LaravelRoute $route): bool => apiWalkMethod($route) === 'GET' && ! str_contains($route->uri(), '{'),
+    ));
+}
+
+/**
+ * A cursor no list issued: it holds no sort column and no id, so the cursor rule would refuse it with 422.
+ */
+function apiWalkForgedCursor(): string
+{
+    return (new Cursor([], true))->encode();
+}
+
+it('finds the list routes of the walk, so the forged cursor tests are not vacuous', function (): void {
+    $paths = array_map(static fn (LaravelRoute $route): string => $route->uri(), apiWalkListRoutes());
+
+    expect($paths)->toContain('api/v1/time-entries')
+        ->and($paths)->toContain('api/v1/clients');
+});
+
+it('answers 401 to a guest with a forged cursor on every list route, never 422 or 500', function (): void {
+    foreach (apiWalkListRoutes() as $route) {
+        $this->json('GET', apiWalkPath($route), ['cursor' => apiWalkForgedCursor()])
+            ->assertUnauthorized();
+    }
+});
+
+it('answers 403 to an Admin token without the ability with a forged cursor on every list route, never 422 or 500', function (): void {
+    $admin = ApiFixtures::admin();
+
+    foreach (apiWalkListRoutes() as $route) {
+        $token = ApiFixtures::token($admin, array_values(array_diff(ApiAbility::values(), [apiWalkAbility($route)])));
+        Auth::forgetGuards();
+
+        $this->withToken($token)->json('GET', apiWalkPath($route), ['cursor' => apiWalkForgedCursor()])
             ->assertForbidden();
     }
 });
