@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Domain\ExchangeRates\Actions\DownloadCnbRates;
+use App\Domain\ExchangeRates\Actions\HealCnbRateGaps;
 use App\Domain\ExchangeRates\Cnb\CnbDownloadFailed;
 use App\Domain\ExchangeRates\CzechPublicHolidays;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
@@ -25,6 +26,10 @@ use Throwable;
  * final run of a working day ends without a list dated today. Output names dates, counts and the
  * Czech failure reason only, never the response or an exception text (T-08-13).
  *
+ * After a successful daily step the run also heals gaps (HealCnbRateGaps): a Czech working day of the lookback window
+ * without a stored list is fetched from the year endpoint, once a day. A failed heal fails the run like a failed
+ * daily step, and the rows of the daily step stay stored. The manual download never heals.
+ *
  * Run synchronously by the scheduler, never through the queue, so a dead worker cannot swallow the alert. Only the
  * `--final` run of the day alerts the Admin (D-04); the earlier attempts of the day fail quietly and wait for the
  * next hour.
@@ -35,7 +40,7 @@ class DownloadCnbRatesCommand extends Command
 
     protected $description = 'Download the CNB exchange rate list of today (Europe/Prague) and store it once under the day it is valid for; --final is the last attempt of the day and alerts the Admin when the day still has no list';
 
-    public function handle(DownloadCnbRates $action): int
+    public function handle(DownloadCnbRates $action, HealCnbRateGaps $heal): int
     {
         $today = CarbonImmutable::now('Europe/Prague')->format('Y-m-d');
         $final = (bool) $this->option('final');
@@ -52,6 +57,8 @@ class DownloadCnbRatesCommand extends Command
             // Console work has no signed-in user, so the fail-closed scopes would silence it: the whole run is an
             // explicit system run.
             $result = app(PartnerContext::class)->runAsSystem(fn (): array => $action->handle($today));
+            // Only after the daily step answered: a failed daily step throws before this line.
+            $healed = app(PartnerContext::class)->runAsSystem(fn (): int => $heal->handle($today));
         } catch (CnbDownloadFailed $failure) {
             // An hourly attempt that fails is a warning: the next hour tries again and nobody is alerted.
             $line = $final ? $this->components->error(...) : $this->components->warn(...);
@@ -87,6 +94,10 @@ class DownloadCnbRatesCommand extends Command
                 'date' => self::display($validFor),
                 'count' => $result['inserted'],
             ]));
+        }
+
+        if ($healed > 0) {
+            $this->components->info(__('kokpit.rates.console.healed', ['count' => $healed]));
         }
 
         // The CNB answered, but with no list dated today (it publishes late or not at all): the last run of the day

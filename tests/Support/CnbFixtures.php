@@ -41,6 +41,41 @@ final class CnbFixtures
      */
     public static function dailyJson(string $validFor, ?array $rates = null): string
     {
+        return '{"rates":['.implode(',', self::rowsJson($validFor, $rates)).']}';
+    }
+
+    /**
+     * The JSON body of the `daily-year` answer for `$year`: one list of invented rows for every given day, in the
+     * order given, as the CNB writes every published day of a year into one `rates` array.
+     *
+     * A day is written `Y-m-d`, or `m-d` for a day of `$year`; a full date of another year is kept as written, so a
+     * test can build an answer that leaves the requested year. Every day carries the same invented rows unless
+     * `$rates` names others.
+     *
+     * @param  list<string>  $days
+     * @param  list<array<string, mixed>>|null  $rates  rows of `currencyCode`, `amount`, `rate` and an optional `validFor`
+     */
+    public static function yearJson(int $year, array $days, ?array $rates = null): string
+    {
+        $rows = [];
+
+        foreach ($days as $day) {
+            $validFor = strlen($day) === 5 ? sprintf('%04d-%s', $year, $day) : $day;
+
+            array_push($rows, ...self::rowsJson($validFor, $rates));
+        }
+
+        return '{"rates":['.implode(',', $rows).']}';
+    }
+
+    /**
+     * The JSON objects of one list, one per row.
+     *
+     * @param  list<array<string, mixed>>|null  $rates
+     * @return list<string>
+     */
+    private static function rowsJson(string $validFor, ?array $rates): array
+    {
         $rows = [];
 
         foreach ($rates ?? self::defaultRates() as $position => $row) {
@@ -56,6 +91,6 @@ final class CnbFixtures
             );
         }
 
-        return '{"rates":['.implode(',', $rows).']}';
+        return $rows;
     }
 }

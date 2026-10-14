@@ -25,6 +25,9 @@ use Throwable;
  * the money conversion accepts, and anything else ends in a typed CnbDownloadFailed. The exception carries the
  * failure value and the HTTP status only, never response text (T-08-11, T-08-13).
  *
+ * The year endpoint (`exrates/daily-year`) answers every published list of one year in one body; it goes through the
+ * same quoting, the same row validation and the same retry rules, and is grouped by `validFor`.
+ *
  * Only connection errors and 5xx responses are retried; a 4xx is asked exactly once. The base URL comes from
  * config only, so no input chooses the outbound host (T-08-15).
  */
@@ -55,13 +58,58 @@ final class CnbClient
             throw new InvalidArgumentException('Not a calendar day: '.$day);
         }
 
-        return $this->parse($this->fetch($day), $day);
+        return $this->parse($this->fetch('daily', ['date' => $day, 'lang' => 'EN']), $day);
     }
 
     /**
+     * Every list the CNB published in `$year`, one `CnbList` per published day, ascending by day.
+     *
+     * The whole answer is validated before anything is returned, so a single bad row ends in a typed failure and no
+     * list of the answer is used. A list dated outside `$year` is refused as malformed: the endpoint is asked for
+     * one year only.
+     *
+     * @return list<CnbList>
+     *
+     * @throws CnbDownloadFailed
+     * @throws InvalidArgumentException when `$year` is not a four-digit year
+     */
+    public function year(int $year): array
+    {
+        if ($year < 1000 || $year > 9999) {
+            throw new InvalidArgumentException('Not a year: '.$year);
+        }
+
+        $rows = $this->rows($this->fetch('daily-year', ['year' => $year]));
+        $lists = [];
+        $seen = [];
+
+        foreach ($rows as $row) {
+            $rate = $this->row($row);
+            $day = PragueDay::day($row['validFor'] ?? null);
+
+            if ($day === null || ! str_starts_with($day, sprintf('%04d-', $year)) || isset($seen[$day][$rate['currency']])) {
+                throw new CnbDownloadFailed(CnbFailure::Malformed);
+            }
+
+            $seen[$day][$rate['currency']] = true;
+            $lists[$day][] = $rate;
+        }
+
+        ksort($lists);
+
+        return array_map(
+            static fn (string $day, array $rates): CnbList => new CnbList($day, $rates),
+            array_keys($lists),
+            $lists,
+        );
+    }
+
+    /**
+     * @param  array<string, int|string>  $query
+     *
      * @throws CnbDownloadFailed
      */
-    private function fetch(string $day): string
+    private function fetch(string $endpoint, array $query): string
     {
         try {
             $response = Http::acceptJson()
@@ -75,7 +123,7 @@ final class CnbClient
                         || ($e instanceof RequestException && $e->response->serverError()),
                     throw: false,
                 )
-                ->get(rtrim((string) config('services.cnb.base_url'), '/').'/exrates/daily', ['date' => $day, 'lang' => 'EN']);
+                ->get(rtrim((string) config('services.cnb.base_url'), '/').'/exrates/'.$endpoint, $query);
         } catch (ConnectionException) {
             throw new CnbDownloadFailed(CnbFailure::Unavailable);
         }
@@ -99,11 +147,13 @@ final class CnbClient
     }
 
     /**
-     * Quotes the rates, decodes the body and validates every row.
+     * Quotes the rates and decodes the body into its non-empty list of raw rows.
+     *
+     * @return list<mixed>
      *
      * @throws CnbDownloadFailed
      */
-    private function parse(string $body, string $requestedDay): CnbList
+    private function rows(string $body): array
     {
         // JSON numbers would become floats: quote every "rate" value (an exponent form included, so the row
         // check below refuses it, not the decoder) so the digits reach the validation unchanged.
@@ -125,11 +175,21 @@ final class CnbClient
             throw new CnbDownloadFailed(CnbFailure::Malformed);
         }
 
+        return $rows;
+    }
+
+    /**
+     * Validates every row of one daily list.
+     *
+     * @throws CnbDownloadFailed
+     */
+    private function parse(string $body, string $requestedDay): CnbList
+    {
         $validFor = null;
         $seen = [];
         $rates = [];
 
-        foreach ($rows as $row) {
+        foreach ($this->rows($body) as $row) {
             $rate = $this->row($row);
             $day = PragueDay::day($row['validFor'] ?? null);
 
