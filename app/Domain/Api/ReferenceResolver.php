@@ -15,14 +15,15 @@ use Illuminate\Support\Str;
  * A client, project or task is named by its UUID, and a project or task also by its human key
  * (`DEMO`, `DEMO-1`); a name is never accepted. The result is the UUID or null when nothing matches,
  * and a string that is neither a UUID nor a well formed key never reaches a query (a malformed value
- * on a uuid column would fail the whole query). Archived projects and tasks resolve too, because
+ * on a uuid column would fail the whole query). The key patterns match the whole string, a trailing
+ * line feed included (the `D` modifier). Archived projects and tasks resolve too, because
  * the time entries of archived work stay readable.
  */
 final class ReferenceResolver
 {
-    public const string PROJECT_KEY = '/^[A-Z]{2,6}$/';
+    public const string PROJECT_KEY = '/^[A-Z]{2,6}$/D';
 
-    public const string TASK_REFERENCE = '/^[A-Z]{2,6}-[1-9][0-9]*$/';
+    public const string TASK_REFERENCE = '/^[A-Z]{2,6}-[1-9][0-9]*$/D';
 
     /**
      * A client is referenced by UUID only; there is no key.

@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Api\ReferenceResolver;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
+use Illuminate\Foundation\Http\Middleware\TrimStrings;
 use Illuminate\Pagination\Cursor;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -419,6 +421,46 @@ it('answers 422 for a task list filter or sort it does not know and for a malfor
     foreach ($cases as $url => $key) {
         $this->withToken($token)->getJson($url)->assertStatus(422)->assertJsonValidationErrors([$key]);
     }
+});
+
+it('answers 422 for a project key with a trailing line feed instead of an empty list (IN-03)', function (): void {
+    ApiFixtures::task(ApiFixtures::project(ApiFixtures::client(), 'DEMO'));
+    $token = lookupToken();
+
+    // The TrimStrings middleware strips a trailing line feed from a query value before validation, so the
+    // pattern is the second line of defence; the middleware is switched off here to reach it.
+    TrimStrings::skipWhen(static fn (): bool => true);
+
+    try {
+        $this->withToken($token)->getJson('/api/v1/tasks?filter[project]='.rawurlencode("DEMO\n"))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['filter.project']);
+    } finally {
+        TrimStrings::flushState();
+    }
+
+    $this->withToken($token)->getJson('/api/v1/tasks?filter[project]=DEMO')->assertOk();
+});
+
+it('matches a project key and a task reference as a whole string, a trailing line feed included (IN-03)', function (): void {
+    expect(preg_match(ReferenceResolver::PROJECT_KEY, "DEMO\n"))->toBe(0)
+        ->and(preg_match(ReferenceResolver::TASK_REFERENCE, "DEMO-1\n"))->toBe(0)
+        ->and(preg_match(ReferenceResolver::PROJECT_KEY, 'DEMO'))->toBe(1)
+        ->and(preg_match(ReferenceResolver::TASK_REFERENCE, 'DEMO-1'))->toBe(1);
+});
+
+it('answers 404 for a task or project reference with a trailing line feed (IN-03)', function (): void {
+    $project = ApiFixtures::project(ApiFixtures::client(), 'DEMO');
+    ApiFixtures::task($project);
+    $token = lookupToken();
+
+    foreach (['/api/v1/tasks/'.rawurlencode("DEMO-1\n"), '/api/v1/projects/'.rawurlencode("DEMO\n")] as $url) {
+        $this->withToken($token)->getJson($url)
+            ->assertNotFound()
+            ->assertJsonPath('message', __('api.errors.not_found'));
+    }
+
+    $this->withToken($token)->getJson('/api/v1/tasks/DEMO-1')->assertOk();
 });
 
 it('refuses the lookups to a token without the read ability', function (): void {
