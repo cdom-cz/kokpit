@@ -670,6 +670,114 @@ return [
         ],
     ],
 
+    // The time report "Report času" (RE-01, RE-02; D-06, D-07): the UI-SPEC copywriting contract "Time report" and
+    // Surface B, formal address. The whole namespace lives here because the pages that build on it (the tree, the
+    // effective rate block, the export menu) land in later plans. :duration is H:MM, :czk and :amount a formatted
+    // amount, :count a whole number, :currency an ISO code, :date a day written j. n. Y.
+    'report' => [
+        'navigation' => 'Report času',
+        'title' => 'Report času',
+        'controls' => 'Filtry reportu',
+        'range' => ':from – :to',
+
+        'filters' => [
+            'client' => 'Klient',
+            'all_clients' => 'Všichni klienti',
+            'archived' => '(archivovaný)',
+            'project' => 'Projekt',
+            'all_projects' => 'Všechny projekty',
+            'project_hint' => 'Nejdřív vyberte klienta',
+            'period' => 'Období',
+            'this_month' => 'Tento měsíc',
+            'last_month' => 'Minulý měsíc',
+            'custom' => 'Vlastní',
+            'from' => 'Od',
+            'to' => 'Do',
+            'range_error' => 'Datum Od nesmí být později než Do.',
+            'split' => 'Rozpad',
+            'split_none' => 'Bez rozpadu',
+            'split_day' => 'Po dnech',
+            'split_user' => 'Podle uživatelů',
+        ],
+
+        'summary' => [
+            'worked' => 'Odpracováno',
+            'unbilled' => 'Nevyfakturováno',
+            'billed' => 'Vyfakturováno',
+            'non_billable' => 'Nefakturovatelné',
+            'billable_line' => 'Fakturovatelné :duration',
+            'non_billable_line' => 'Nefakturovatelné :duration',
+            'czk_line' => 'v Kč: :czk',
+            'no_amount' => 'Bez částky',
+        ],
+
+        'notes' => [
+            'computed' => 'Částky jsou vypočtené z aktuálních sazeb a z kurzu ČNB ke dni záznamu.',
+            'fixed_price' => '* Hodiny projektů a úkolů s pevnou cenou jsou bez částky.',
+            'missing_rate' => 'Součet v Kč nezahrnuje :count záznamů bez kurzu ČNB.',
+        ],
+
+        'tree' => [
+            'heading' => 'Přehled podle klientů a projektů',
+            'columns' => [
+                'name' => 'Název',
+                'worked' => 'Odpracováno',
+                'billable' => 'Fakturovatelné',
+                'non_billable' => 'Nefakturovatelné',
+                'billed' => 'Vyfakturováno',
+                'unbilled' => 'Nevyfakturováno',
+                'amount' => 'Částka',
+                'amount_czk' => 'Částka v Kč',
+            ],
+            'total' => 'Celkem',
+            'expand_all' => 'Rozbalit vše',
+            'collapse_all' => 'Sbalit vše',
+            'expand' => 'Rozbalit :name',
+            'collapse' => 'Sbalit :name',
+            'no_project' => 'Bez projektu',
+            'no_task' => 'Bez úkolu',
+            'empty_value' => '—',
+            'fixed_price' => [
+                'badge' => 'Pevná cena',
+                'tooltip' => 'Pevná cena: částka se nepočítá za záznam.',
+            ],
+            'missing_rate' => [
+                'badge' => 'Chybí kurz',
+                'tooltip' => 'Pro měnu :currency a den :date není k dispozici kurz ČNB. Záznam není v součtu v Kč.',
+            ],
+            'row_cap' => 'Zobrazeno prvních :count řádků. Součty výše platí pro všechny záznamy. Zúžte období nebo použijte export.',
+        ],
+
+        // The effective rate block of a fixed-price project (RE-05, D-07, D-08).
+        'effective' => [
+            'fixed_price' => 'Pevná cena',
+            'worked' => 'Odpracováno na celém projektu',
+            'rate' => 'Efektivní hodinová sazba',
+            'whole_project' => 'Za celou dobu projektu, ne jen za vybrané období.',
+            'rate_date' => 'Kurz ČNB ke dni :date',
+            'per_hour' => ':amount/h',
+            'czk_per_hour' => 'v Kč: :czk/h',
+            'no_hours' => 'Na projektu zatím není žádný odpracovaný čas.',
+        ],
+
+        'empty' => [
+            'heading' => 'Za zvolené období nejsou žádné záznamy',
+            'description' => 'Zkuste jiné období nebo jiného klienta. Do reportu se počítá i nefakturovatelný čas.',
+        ],
+
+        'export' => [
+            'group' => 'Exportovat report',
+            'csv' => 'Tabulka CSV',
+            'xlsx' => 'Tabulka XLSX',
+            'pdf' => 'Pracovní výkaz PDF',
+            'exports_link' => 'Exporty',
+            'pdf_failed' => [
+                'title' => 'Pracovní výkaz se nepodařilo vytvořit',
+                'body' => 'Zkuste to znovu. Pokud chyba přetrvá, zkuste jiné období.',
+            ],
+        ],
+    ],
+
     'ares' => [
         'button' => 'Načíst z ARES',
         'filled' => 'Načteno z ARES',
