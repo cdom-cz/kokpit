@@ -452,6 +452,24 @@ return [
         ],
     ],
 
+    // The CNB rates area. The console and failure lines are written for the command and the download action;
+    // the rest is the UI-SPEC copywriting contract.
+    'rates' => [
+        'console' => [
+            'stored' => 'Kurzy ČNB byly staženy: platnost ke dni :date, :count měn.',
+            'already_stored' => 'Kurzy ČNB za :date už jsou stažené.',
+            'not_published' => 'ČNB nové kurzy zatím nevyhlásila. Poslední platné kurzy jsou ze dne :date.',
+            'failed' => 'Kurzy ČNB se nepodařilo stáhnout: :reason',
+            'status' => 'Stavový kód odpovědi: :status.',
+        ],
+        'failure' => [
+            'unavailable' => 'Server ČNB neodpovídá.',
+            'rejected' => 'Server ČNB požadavek odmítl.',
+            'server_error' => 'Server ČNB hlásí chybu.',
+            'malformed' => 'Server ČNB vrátil neplatná data.',
+        ],
+    ],
+
     'ares' => [
         'button' => 'Načíst z ARES',
         'filled' => 'Načteno z ARES',
