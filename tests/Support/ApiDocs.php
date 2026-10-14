@@ -6,7 +6,9 @@ namespace Tests\Support;
 
 use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Route;
+use Knuckles\Scribe\Extracting\Shared\UrlParamsNormalizer;
 use PHPUnit\Framework\Assert;
+use ReflectionMethod;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
@@ -133,7 +135,7 @@ final class ApiDocs
     public static function operation(LaravelRoute $route): ?array
     {
         $paths = self::spec()['paths'] ?? [];
-        $path = is_array($paths) ? ($paths['/'.$route->uri()] ?? null) : null;
+        $path = is_array($paths) ? ($paths['/'.self::documentedUri($route)] ?? null) : null;
         $operation = is_array($path) ? ($path[strtolower(self::method($route))] ?? null) : null;
 
         if (! is_array($operation)) {
@@ -142,6 +144,23 @@ final class ApiDocs
 
         /** @var array<string, mixed> $operation */
         return $operation;
+    }
+
+    /**
+     * The URI the generated spec lists the route under. Scribe renames the path parameter of a resource route
+     * (a route named `tasks.show` with `{task}` is documented as `{id}`), so the lookup in the spec goes through
+     * Scribe's own normalizer instead of the raw route URI.
+     */
+    public static function documentedUri(LaravelRoute $route): string
+    {
+        $controller = $route->getControllerClass();
+        $action = $route->getActionMethod();
+
+        if ($controller === null || ! method_exists($controller, $action)) {
+            return $route->uri();
+        }
+
+        return UrlParamsNormalizer::normalizeParameterNamesInRouteUri($route, new ReflectionMethod($controller, $action));
     }
 
     /**
@@ -177,7 +196,7 @@ final class ApiDocs
         foreach ($routes as $route) {
             $method = self::method($route);
             $label = $method.' /'.$route->uri();
-            $path = $paths['/'.$route->uri()] ?? null;
+            $path = $paths['/'.self::documentedUri($route)] ?? null;
             $operation = is_array($path) ? ($path[strtolower($method)] ?? null) : null;
 
             if (! is_array($operation)) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Api;
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Tasks\Models\Task;
 use Illuminate\Support\Str;
@@ -78,5 +79,48 @@ final class ReferenceResolver
     public function writeTask(mixed $value): mixed
     {
         return is_string($value) ? ($this->taskId($value) ?? $value) : $value;
+    }
+
+    /**
+     * The client of the uuid when it is selectable (not archived), else null. A lookup offers what the pickers
+     * offer; archived work stays reachable only through the ids old time entries carry (research A13).
+     */
+    public function selectableClient(string $ref): ?Client
+    {
+        return Str::isUuid($ref) ? Client::query()->whereKey($ref)->first() : null;
+    }
+
+    /**
+     * The selectable project (not archived, client not archived) of a uuid or a project key, else null.
+     */
+    public function selectableProject(string $ref): ?Project
+    {
+        if (Str::isUuid($ref)) {
+            return Project::query()->selectable()->whereKey($ref)->first();
+        }
+
+        if (preg_match(self::PROJECT_KEY, $ref) !== 1) {
+            return null;
+        }
+
+        return Project::query()->selectable()->where('projects.key', $ref)->first();
+    }
+
+    /**
+     * The selectable task (not archived, of a selectable project) of a uuid or a `KEY-N` reference, else null.
+     */
+    public function selectableTask(string $ref): ?Task
+    {
+        $query = Task::query()->whereIn('tasks.project_id', Project::query()->selectable()->select('projects.id'));
+
+        if (Str::isUuid($ref)) {
+            return $query->whereKey($ref)->first();
+        }
+
+        if (preg_match(self::TASK_REFERENCE, $ref) !== 1) {
+            return null;
+        }
+
+        return $query->where('tasks.reference', $ref)->first();
     }
 }

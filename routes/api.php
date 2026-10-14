@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Identity\ApiAbility;
+use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TimeEntryController;
 use Illuminate\Support\Facades\Route;
 
@@ -23,6 +24,11 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeRead->value, 'th
     Route::get('time-entries/{timeEntry}', [TimeEntryController::class, 'show'])
         ->whereUuid('timeEntry')
         ->name('api.v1.time-entries.show');
+
+    // Lookups (D-12): read-only; the reference is checked by the resolver, so a malformed one answers the
+    // same Czech 404 as an unknown one instead of a router 404.
+    Route::get('tasks/{task}', [TaskController::class, 'show'])
+        ->name('api.v1.tasks.show');
 });
 
 // Writes: POST, PATCH and DELETE routes, ability time:write.
