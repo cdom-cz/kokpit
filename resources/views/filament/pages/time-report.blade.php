@@ -1,6 +1,8 @@
 @php
     use App\Domain\Shared\Money\Money;
     use App\Domain\TimeTracking\Support\DurationFormat;
+    use App\Providers\LocalisationServiceProvider;
+    use Carbon\CarbonImmutable;
     use Filament\Support\Icons\Heroicon;
 
     $dash = __('kokpit.report.tree.empty_value');
@@ -10,8 +12,19 @@
     $summary = $report->summary;
     $footer = $report->footer;
     $periods = ['this_month', 'last_month', 'custom'];
+    $splits = ['none', 'day', 'user'];
 
-    // The tree as flat rows: client (indent 0), project (1.5rem), task (3rem).
+    // A breakdown link keeps every other filter and sets the split; the default split is left out of the URL.
+    $splitLinks = [];
+    foreach ($splits as $split) {
+        $query = http_build_query([
+            ...array_diff_key($filters->toQuery(), ['split' => true]),
+            ...($split === 'none' ? [] : ['split' => $split]),
+        ]);
+        $splitLinks[$split] = $query === '' ? $actionUrl : $actionUrl.'?'.$query;
+    }
+
+    // The tree as flat rows: client (indent 0), project (1.5rem), task (3rem), then the day or user rows (4.5rem).
     $rows = [];
     foreach ($report->tree as $client) {
         $rows[] = ['node' => $client, 'level' => 0];
@@ -19,10 +32,16 @@
             $rows[] = ['node' => $project, 'level' => 1];
             foreach ($project['children'] as $task) {
                 $rows[] = ['node' => $task, 'level' => 2];
+                foreach ($task['children'] as $leaf) {
+                    $rows[] = ['node' => $leaf, 'level' => 3];
+                }
             }
         }
     }
-    $indents = [0 => '0', 1 => '1.5rem', 2 => '3rem'];
+    $indents = [0 => '0', 1 => '1.5rem', 2 => '3rem', 3 => '4.5rem'];
+    $leafLabel = static fn (string $label): string => $filters->split === 'day'
+        ? CarbonImmutable::parse($label)->format(LocalisationServiceProvider::DATE_FORMAT)
+        : $label;
 
     $cellStyle = 'padding: 0.5rem 1rem; text-align: right; white-space: nowrap; vertical-align: top; font-variant-numeric: tabular-nums;';
     $headStyle = 'padding: 0.5rem 1rem; text-align: right; font-weight: 600; white-space: nowrap;';
@@ -103,6 +122,22 @@
                         :aria-current="$filters->period === $period ? 'true' : null"
                     >
                         {{ __('kokpit.report.filters.'.$period) }}
+                    </x-filament::button>
+                @endforeach
+            </div>
+        </div>
+
+        <div style="display: grid; gap: 0.25rem;">
+            <span style="font-weight: 600;">{{ __('kokpit.report.filters.split') }}</span>
+            <div role="group" aria-label="{{ __('kokpit.report.filters.split') }}" style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                @foreach ($splits as $split)
+                    <x-filament::button
+                        tag="a"
+                        :href="$splitLinks[$split]"
+                        :color="$filters->split === $split ? 'primary' : 'gray'"
+                        :aria-current="$filters->split === $split ? 'true' : null"
+                    >
+                        {{ __('kokpit.report.filters.split_'.$split) }}
                     </x-filament::button>
                 @endforeach
             </div>
@@ -190,7 +225,7 @@
                                 <th
                                     scope="row"
                                     style="padding: 0.5rem 1rem 0.5rem calc(1rem + {{ $indents[$row['level']] }}); text-align: left; font-weight: {{ $row['level'] < 2 ? 600 : 400 }}; overflow-wrap: anywhere;"
-                                >{{ $node['label'] }}</th>
+                                >{{ $row['level'] === 3 ? $leafLabel($node['label']) : $node['label'] }}</th>
                                 <td style="{{ $cellStyle }}">{{ $hours($seconds['worked']) }}</td>
                                 <td style="{{ $cellStyle }}">{{ $hours($seconds['billable']) }}</td>
                                 <td style="{{ $cellStyle }}">{{ $hours($seconds['non_billable']) }}</td>

@@ -6,6 +6,7 @@ namespace App\Domain\Reports;
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\ExchangeRates\RateBook;
+use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Reports\Queries\TimeReportReader;
 use App\Domain\Shared\Database\CzechCollation;
@@ -105,6 +106,13 @@ final readonly class TimeReport
             $client->add($entry, $priced);
             $project->add($entry, $priced);
             $task->add($entry, $priced);
+
+            // The "Rozpad" rows below the task: its Prague days or its users, from the same priced entry.
+            if ($filters->split === 'day') {
+                $task->child($entry->workDate, null, $entry->workDate)->add($entry, $priced);
+            } elseif ($filters->split === 'user') {
+                $task->child($entry->userId, $entry->userId, $entry->userName)->add($entry, $priced);
+            }
         }
 
         ksort($amounts['billed']);
@@ -137,7 +145,7 @@ final readonly class TimeReport
 
         return new self(
             $summary,
-            self::tree($total),
+            self::tree($total, $filters->split),
             [
                 'seconds' => self::seconds($total),
                 'czk' => $total->czk,
@@ -150,27 +158,38 @@ final readonly class TimeReport
 
     /**
      * The clients of the root bucket as nodes: clients and projects by name in Czech order (entries without a
-     * project last), tasks by their number (entries without a task last).
+     * project last), tasks by their number (entries without a task last), and below each task, with a "Rozpad",
+     * its days in date order or its users in Czech order.
      *
      * @return list<Node>
      */
-    private static function tree(ReportBucket $root): array
+    private static function tree(ReportBucket $root, string $split): array
     {
         $clientRank = self::ranks(Client::query()->withTrashed(), array_keys($root->children));
         $clients = $root->children;
         uasort($clients, static fn (ReportBucket $a, ReportBucket $b): int => ($clientRank[$a->id ?? ''] ?? PHP_INT_MAX) <=> ($clientRank[$b->id ?? ''] ?? PHP_INT_MAX));
 
         $projectIds = [];
+        $userIds = [];
 
         foreach ($clients as $client) {
             foreach ($client->children as $project) {
                 if ($project->id !== null) {
                     $projectIds[] = $project->id;
                 }
+
+                foreach ($project->children as $task) {
+                    foreach ($task->children as $child) {
+                        if ($split === 'user' && $child->id !== null) {
+                            $userIds[$child->id] = $child->id;
+                        }
+                    }
+                }
             }
         }
 
         $projectRank = self::ranks(Project::query()->withTrashed(), $projectIds);
+        $userRank = self::ranks(User::query(), array_values($userIds));
         $nodes = [];
 
         foreach ($clients as $client) {
@@ -186,7 +205,18 @@ final readonly class TimeReport
                 $taskNodes = [];
 
                 foreach ($tasks as $task) {
-                    $taskNodes[] = self::node($task, []);
+                    $leaves = $task->children;
+
+                    if ($split === 'day') {
+                        ksort($leaves);
+                    } else {
+                        uasort($leaves, static fn (ReportBucket $a, ReportBucket $b): int => self::rankOf($userRank, $a) <=> self::rankOf($userRank, $b));
+                    }
+
+                    $taskNodes[] = self::node($task, array_map(
+                        static fn (ReportBucket $leaf): array => self::node($leaf, []),
+                        array_values($leaves),
+                    ));
                 }
 
                 $projectNodes[] = self::node($project, $taskNodes);
@@ -237,7 +267,7 @@ final readonly class TimeReport
      * The position of every id in the Czech alphabetical order of the names, from the database collation
      * (the one mechanism for text sorted for people).
      *
-     * @template TModel of Client|Project
+     * @template TModel of Client|Project|User
      *
      * @param  Builder<TModel>  $query
      * @param  list<int|string>  $ids

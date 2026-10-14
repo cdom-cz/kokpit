@@ -502,6 +502,116 @@ describe('the Livewire calls of the page', function (): void {
     });
 });
 
+/**
+ * A task with entries of two users on three days of last month, for the "Rozpad" tests: the Admin is named so
+ * that Czech order and binary order differ (Čapek sorts before Dvořák in Czech, after it by code point).
+ *
+ * Tuesday 2026-09-15: the Admin 1:00 and Čapek 0:30; Wednesday 2026-09-16: the Admin 0:30;
+ * Sunday 2026-09-20: Čapek 1:00 (priced at the list of Friday 2026-09-18).
+ *
+ * @return array{client: Client, project: Project, task: Task}
+ */
+function timeReportSplitArrangement(): array
+{
+    test()->admin->forceFill(['name' => 'Dvořák Example'])->save();
+    $other = User::factory()->create(['name' => 'Čapek Example']);
+
+    $client = timeReportClient('Example Client Alpha');
+    $project = timeReportProject($client, 'Example Project Web', 'WEB');
+    $task = timeReportTask(test()->admin, $project, 'Landing page');
+
+    timeReportRate('2026-09-15', 'EUR', '25.000');
+    timeReportRate('2026-09-16', 'EUR', '25.500');
+    timeReportRate('2026-09-18', 'EUR', '24.000');
+
+    timeReportEntry($task, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+    timeReportEntry($task, '2026-09-15 10:00:00', '2026-09-15 10:30:00', ['user_id' => $other->id]);
+    timeReportEntry($task, '2026-09-16 08:00:00', '2026-09-16 08:30:00');
+    timeReportEntry($task, '2026-09-20 08:00:00', '2026-09-20 09:00:00', ['user_id' => $other->id]);
+
+    return ['client' => $client, 'project' => $project, 'task' => $task];
+}
+
+describe('the Rozpad breakdown below each task', function (): void {
+    it('lists the days of a task in date order with their hours and amounts', function (): void {
+        $set = timeReportSplitArrangement();
+
+        $text = timeReportText((string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month&split=day')->assertOk()->getContent());
+
+        // 15th: 1:30 = 150.00 EUR at 25.000 = 3 750,00 Kč; 16th: 0:30 = 50.00 EUR at 25.500 = 1 275,00 Kč;
+        // 20th: 1:00 = 100.00 EUR at the list of Friday, 24.000 = 2 400,00 Kč.
+        expect($text)
+            ->toContain('15. 9. 2026 1:30 1:30 0:00 0:00 1:30 '.timeReportMoney(15000, 'EUR').' '.timeReportMoney(375000, 'CZK'))
+            ->toContain('16. 9. 2026 0:30 0:30 0:00 0:00 0:30 '.timeReportMoney(5000, 'EUR').' '.timeReportMoney(127500, 'CZK'))
+            ->toContain('20. 9. 2026 1:00 1:00 0:00 0:00 1:00 '.timeReportMoney(10000, 'EUR').' '.timeReportMoney(240000, 'CZK'));
+
+        $task = strpos($text, $set['task']->reference.' · Landing page');
+
+        expect($task)->not->toBeFalse()
+            ->and(strpos($text, '15. 9. 2026 1:30'))->toBeGreaterThan($task)
+            ->and(strpos($text, '16. 9. 2026 0:30'))->toBeGreaterThan(strpos($text, '15. 9. 2026 1:30'))
+            ->and(strpos($text, '20. 9. 2026 1:00'))->toBeGreaterThan(strpos($text, '16. 9. 2026 0:30'));
+    });
+
+    it('lists the users of a task in Czech alphabetical order', function (): void {
+        $set = timeReportSplitArrangement();
+
+        $text = timeReportText((string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month&split=user')->assertOk()->getContent());
+
+        // Čapek 0:30 + 1:00 = 1:30, the Admin 1:00 + 0:30 = 1:30; Čapek is first in Czech order.
+        expect($text)
+            ->toContain('Čapek Example 1:30 1:30 0:00 0:00 1:30 '.timeReportMoney(15000, 'EUR').' ')
+            ->toContain('Dvořák Example 1:30 1:30 0:00 0:00 1:30 '.timeReportMoney(15000, 'EUR').' ')
+            ->and(strpos($text, 'Čapek Example 1:30'))->toBeLessThan(strpos($text, 'Dvořák Example 1:30'))
+            ->and(strpos($text, 'Čapek Example 1:30'))->toBeGreaterThan(strpos($text, $set['task']->reference.' · Landing page'));
+    });
+
+    it('shows no child rows without a breakdown', function (): void {
+        $set = timeReportSplitArrangement();
+
+        $text = timeReportText((string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month&split=none')->assertOk()->getContent());
+
+        expect($text)
+            ->toContain($set['task']->reference.' · Landing page 3:00 ')
+            ->not->toContain('15. 9. 2026')
+            ->not->toContain('Čapek Example 1:30')
+            ->not->toContain('Dvořák Example 1:30');
+    });
+
+    it('marks the active breakdown and keeps the other filters in its links', function (): void {
+        $set = timeReportSplitArrangement();
+
+        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month&split=day')->assertOk()->getContent();
+        $text = timeReportText($html);
+
+        expect($text)->toContain('Rozpad Bez rozpadu Po dnech Podle uživatelů')
+            ->and($html)->toContain('split=user')
+            ->and($html)->toContain('client='.$set['client']->id)
+            ->and(preg_match_all('/aria-current="true"/', $html))->toBe(2);
+    });
+
+    it('leaves the summary and the footer identical across the three breakdowns', function (): void {
+        $set = timeReportSplitArrangement();
+        $now = TimerClock::now();
+        $build = static fn (string $split): TimeReport => TimeReport::build(
+            ReportFilters::fromInput(['client' => $set['client']->id, 'period' => 'last_month', 'split' => $split], $now),
+            $now,
+        );
+
+        $none = $build('none');
+        $day = $build('day');
+        $user = $build('user');
+
+        expect($day->summary)->toEqual($none->summary)
+            ->and($user->summary)->toEqual($none->summary)
+            ->and($day->footer)->toEqual($none->footer)
+            ->and($user->footer)->toEqual($none->footer)
+            ->and($none->tree[0]['children'][0]['children'][0]['children'])->toBe([])
+            ->and(array_column($day->tree[0]['children'][0]['children'][0]['children'], 'label'))->toBe(['2026-09-15', '2026-09-16', '2026-09-20'])
+            ->and(array_column($user->tree[0]['children'][0]['children'][0]['children'], 'label'))->toBe(['Čapek Example', 'Dvořák Example']);
+    });
+});
+
 describe('the row cap setting', function (): void {
     it('is a documented config value of 1000 rendered rows', function (): void {
         expect(config('kokpit.report.max_rendered_rows'))->toBe(1000);
