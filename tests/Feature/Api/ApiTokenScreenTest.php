@@ -2,13 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Domain\Identity\Actions\RevokeApiToken;
 use App\Domain\Identity\ApiTokenStatus;
 use App\Domain\Identity\Models\PersonalAccessToken;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Filament\Resources\ApiTokenResource\Pages\ListApiTokens;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -300,4 +304,196 @@ it('stores no IP address, user agent or token fragment on the token row', functi
 
     expect($columns)->not->toContain('ip_address')
         ->and($columns)->not->toContain('user_agent');
+});
+
+/*
+ * Revoke (Task 3): the confirmation, the server-side owner check, the one-time modal exit.
+ */
+
+it('asks "Zneplatnit token?" with the active-token body, then deletes the token and the API answers 401', function (): void {
+    $token = $this->admin->createToken('Example tool', ['time:read']);
+    $plain = $token->plainTextToken;
+    $entry = ApiFixtures::entry($this->admin, [
+        'client_id' => ApiFixtures::client()->id,
+        'started_at' => '2026-10-12 08:00:00',
+        'ended_at' => '2026-10-12 09:30:00',
+    ]);
+    $this->actingAs($this->admin);
+
+    $page = Livewire::test(ListApiTokens::class)->mountTableAction('revoke', $token->accessToken);
+    $modal = $page->instance()->getMountedAction();
+
+    expect($modal->getModalHeading())->toBe('Zneplatnit token?')
+        ->and($modal->getModalDescription())->toBe('Token Example tool přestane okamžitě fungovat. Nástroje, které ho používají, dostanou chybu 401 a bude jim potřeba zadat nový token. Tuto akci nelze vrátit.')
+        ->and($modal->getModalSubmitActionLabel())->toBe('Zneplatnit token')
+        ->and($modal->getModalCancelActionLabel())->toBe('Ponechat token');
+
+    $page->callMountedTableAction()
+        ->assertNotified('Token byl zneplatněn')
+        ->assertCanNotSeeTableRecords([$token->accessToken]);
+
+    expect(PersonalAccessToken::query()->count())->toBe(0);
+
+    Auth::forgetGuards();
+    $this->withToken($plain)->getJson('/api/v1/time-entries/'.$entry->id)->assertUnauthorized();
+});
+
+it('uses the expired-token body for a token that has expired', function (): void {
+    $token = $this->admin->createToken('Old tool', ['time:read'], now()->subDay());
+
+    $modal = Livewire::test(ListApiTokens::class)
+        ->mountTableAction('revoke', $token->accessToken)
+        ->instance()->getMountedAction();
+
+    expect($modal->getModalDescription())->toBe('Token Old tool už vypršel. Odstraní se ze seznamu. Tuto akci nelze vrátit.');
+});
+
+it('offers the revoke action on every row, an expired one included', function (): void {
+    $active = $this->admin->createToken('Active tool', ['time:read']);
+    $expired = $this->admin->createToken('Expired tool', ['time:read'], now()->subDay());
+
+    Livewire::test(ListApiTokens::class)
+        ->assertTableActionVisible('revoke', $active->accessToken)
+        ->assertTableActionVisible('revoke', $expired->accessToken);
+});
+
+it('shows "Token už byl zneplatněn." when the token is gone and changes nothing', function (): void {
+    $token = $this->admin->createToken('Example tool', ['time:read']);
+    $other = $this->admin->createToken('Other tool', ['time:read']);
+
+    $page = Livewire::test(ListApiTokens::class)->mountTableAction('revoke', $token->accessToken);
+
+    PersonalAccessToken::query()->whereKey($token->accessToken->getKey())->delete();
+
+    $page->callMountedTableAction()->assertNotified('Token už byl zneplatněn.');
+
+    expect(PersonalAccessToken::query()->count())->toBe(1)
+        ->and(PersonalAccessToken::query()->sole()->getKey())->toBe($other->accessToken->getKey());
+});
+
+it('does not delete the token of another user through a forged record key', function (): void {
+    $foreign = Canary::admin()->createToken('Foreign tool', ['time:read']);
+
+    expect(app(RevokeApiToken::class)->handle($this->admin, (string) $foreign->accessToken->getKey()))->toBeFalse()
+        ->and(app(RevokeApiToken::class)->handle($this->admin, 'not-a-uuid'))->toBeFalse()
+        ->and(PersonalAccessToken::query()->count())->toBe(1);
+});
+
+it('refuses a non-Admin actor in RevokeApiToken', function (): void {
+    $token = $this->admin->createToken('Example tool', ['time:read']);
+    $partner = Canary::partnerFor(ApiFixtures::client()->id);
+
+    expect(fn () => app(RevokeApiToken::class)->handle($partner, (string) $token->accessToken->getKey()))
+        ->toThrow(AuthorizationException::class)
+        ->and(PersonalAccessToken::query()->count())->toBe(1);
+});
+
+it('writes one activity row for a revoke with the name and abilities only', function (): void {
+    $token = $this->admin->createToken('Example tool', ['time:read', 'time:write']);
+
+    app(RevokeApiToken::class)->handle($this->admin, (string) $token->accessToken->getKey());
+
+    $row = Activity::query()->where('event', 'api_token.revoked')->sole();
+    $encoded = json_encode($row->getAttributes(), JSON_THROW_ON_ERROR);
+
+    expect($row->properties->toArray())->toBe(['name' => 'Example tool', 'abilities' => ['time:read', 'time:write']])
+        ->and($encoded)->not->toContain($token->plainTextToken)
+        ->and($encoded)->not->toContain(explode('|', $token->plainTextToken)[1]);
+});
+
+it('keeps no part of the plain token in the page after the one-time modal is closed', function (): void {
+    $page = Livewire::test(ListApiTokens::class)
+        ->callAction('createToken', screenCreateData($this))
+        ->assertActionMounted('showToken');
+
+    $plain = (string) $page->get('plainToken');
+    $secret = explode('|', $plain)[1];
+
+    $page->callMountedAction();
+
+    $snapshot = json_encode($page->snapshot, JSON_THROW_ON_ERROR);
+
+    expect($page->get('plainToken'))->toBeNull()
+        ->and($page->html())->not->toContain($secret)
+        ->and($snapshot)->not->toContain($secret)
+        ->and($page->instance()->mountedActions)->toBe([]);
+});
+
+it('writes the token into no notification and no log line', function (): void {
+    Livewire::test(ListApiTokens::class)->callAction('createToken', screenCreateData($this));
+
+    expect(DB::table('notifications')->count())->toBe(0);
+});
+
+/*
+ * A Partner sees and drives nothing of the screen (T-07-14).
+ */
+
+it('gives a Partner no navigation item and refuses the page', function (): void {
+    $partner = Canary::partnerFor(ApiFixtures::client()->id);
+    $this->actingAs($partner);
+
+    $labels = collect(Filament::getNavigation())
+        ->flatMap(static fn ($group): array => $group->getItems()->map(static fn ($item): string => (string) $item->getLabel())->all())
+        ->all();
+
+    expect($labels)->not->toContain('API tokeny');
+
+    $this->get('/admin/api-tokens')->assertForbidden();
+});
+
+it('refuses a forged Livewire mount, create and revoke by a Partner and writes nothing', function (): void {
+    $partner = Canary::partnerFor(ApiFixtures::client()->id);
+    $token = $this->admin->createToken('Example tool', ['time:read']);
+
+    // The page was mounted while the Admin was signed in; every later call is made as a Partner.
+    foreach ([
+        ['mountAction', ['createToken']],
+        ['callMountedAction', []],
+        ['mountTableAction', ['revoke', (string) $token->accessToken->getKey()]],
+        ['callMountedTableAction', []],
+    ] as [$method, $arguments]) {
+        $this->actingAs($this->admin);
+        $page = Livewire::test(ListApiTokens::class);
+        $this->actingAs($partner);
+
+        $page->call($method, ...$arguments)->assertForbidden();
+    }
+
+    $this->actingAs($partner);
+
+    Livewire::test(ListApiTokens::class)->assertForbidden();
+
+    // Counted as a system run: a Partner session would hide every activity row anyway.
+    expect(PersonalAccessToken::query()->count())->toBe(1)
+        ->and(app(PartnerContext::class)->runAsSystem(static fn (): int => Activity::query()->where('event', 'like', 'api_token.%')->count()))->toBe(0);
+});
+
+it('renders none of the token strings on any page a Partner can open', function (): void {
+    $partner = Canary::partnerFor(ApiFixtures::client()->id);
+    $this->actingAs($partner);
+
+    $urls = collect(Filament::getNavigation())
+        ->flatMap(static fn ($group): array => $group->getItems()->map(static fn ($item): string => (string) $item->getUrl())->all())
+        ->push('/admin')
+        ->unique()
+        ->all();
+
+    $forbidden = ['API tokeny', 'API token', 'Nový API token', 'Zneplatnit token', 'Dokumentace API', 'Oprávnění', 'Čtení času', 'Zápis času'];
+
+    expect($urls)->not->toBe([]);
+
+    $found = [];
+
+    foreach ($urls as $url) {
+        $content = (string) $this->get($url)->getContent();
+
+        foreach ($forbidden as $string) {
+            if (str_contains($content, $string)) {
+                $found[] = "{$string} on {$url}";
+            }
+        }
+    }
+
+    expect($found)->toBe([]);
 });
