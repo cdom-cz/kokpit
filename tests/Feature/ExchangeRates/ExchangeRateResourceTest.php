@@ -507,7 +507,7 @@ describe('immutable lists and no calculator', function (): void {
             ->and($table->getBulkActions())->toBe([])
             ->and($table->getFlatRecordActions())->toBe([])
             ->and($table->getHeaderActions())->toBe([])
-            ->and(array_map(static fn ($action) => $action->getName(), $page->instance()->getCachedHeaderActions()))->toBe(['downloadToday']);
+            ->and(array_map(static fn ($action) => $action->getName(), $page->instance()->getCachedHeaderActions()))->toBe(['backfill', 'downloadToday']);
     });
 
     it('is not globally searchable and has no conversion calculator', function (): void {

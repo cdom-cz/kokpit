@@ -6,13 +6,16 @@ namespace App\Filament\Resources\ExchangeRateResource\Pages;
 
 use App\Domain\ExchangeRates\Actions\DownloadCnbRates;
 use App\Domain\ExchangeRates\Cnb\CnbDownloadFailed;
+use App\Domain\ExchangeRates\Jobs\BackfillCnbRates;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Resources\ExchangeRateResource;
 use App\Filament\Resources\ExchangeRateResource\Widgets\ExchangeRateStats;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
+use Filament\Forms\Components\DatePicker;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
+use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 
 /**
@@ -36,6 +39,7 @@ final class ListExchangeRates extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
+            $this->backfillAction(),
             $this->downloadTodayAction(),
         ];
     }
@@ -48,6 +52,43 @@ final class ListExchangeRates extends ListRecords
     protected function getHeaderWidgets(): array
     {
         return [ExchangeRateStats::class];
+    }
+
+    /**
+     * "Doplnit historii": queues the backfill of a day range and returns at once; the job stores the lists of the
+     * covered years in the background and a rerun over the same range stores nothing new (D-05).
+     */
+    public function backfillAction(): Action
+    {
+        return Action::make('backfill')
+            ->label(__('kokpit.rates.actions.backfill'))
+            ->icon(Heroicon::OutlinedCalendarDays)
+            ->color('gray')
+            ->modalHeading(__('kokpit.rates.backfill.heading'))
+            ->modalWidth(Width::Large)
+            ->modalSubmitActionLabel(__('kokpit.rates.backfill.submit'))
+            ->modalCancelActionLabel(__('kokpit.rates.backfill.cancel'))
+            ->schema([
+                DatePicker::make('from')
+                    ->label(__('kokpit.rates.backfill.from'))
+                    ->required(),
+                DatePicker::make('to')
+                    ->label(__('kokpit.rates.backfill.to'))
+                    ->helperText(__('kokpit.rates.backfill.helper'))
+                    ->default(static fn (): string => CarbonImmutable::now('Europe/Prague')->format('Y-m-d'))
+                    ->required(),
+            ])
+            ->action(function (array $data): void {
+                abort_unless(ExchangeRateResource::canAccess(), 403);
+
+                BackfillCnbRates::dispatch((string) $data['from'], (string) $data['to']);
+
+                Notification::make()
+                    ->info()
+                    ->title(__('kokpit.rates.backfill.queued.title'))
+                    ->body(__('kokpit.rates.backfill.queued.body'))
+                    ->send();
+            });
     }
 
     public function downloadTodayAction(): Action

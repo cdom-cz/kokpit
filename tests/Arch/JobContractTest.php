@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Api\Jobs\PurgeExpiredIdempotencyKeys;
+use App\Domain\ExchangeRates\Jobs\BackfillCnbRates;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
 use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
@@ -24,11 +25,11 @@ use Tests\Support\Probes\SettingsReadingProbeJob;
 /**
  * The application jobs expected under app/. Adding a job is a visible, reviewed
  * change: plan 03-16 added the worker heartbeat job, later phases add theirs (plan 08-12 the export prune,
- * plan 08-16 the export build).
+ * plan 08-16 the export build, plan 08-18 the rates history backfill).
  *
  * @var list<class-string<KokpitJob>>
  */
-const EXPECTED_APPLICATION_JOBS = [RecordWorkerHeartbeat::class, NotifyLongRunningTimers::class, PurgeExpiredIdempotencyKeys::class, PruneExpiredReportExports::class, BuildReportExport::class];
+const EXPECTED_APPLICATION_JOBS = [RecordWorkerHeartbeat::class, NotifyLongRunningTimers::class, PurgeExpiredIdempotencyKeys::class, PruneExpiredReportExports::class, BuildReportExport::class, BackfillCnbRates::class];
 
 /** A concrete job that a self-check subclasses, to prove the declaration is not inherited. */
 #[Idempotent(how: 'Does nothing, so a second run changes nothing')]
