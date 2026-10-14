@@ -7,6 +7,7 @@ namespace App\Domain\TimeTracking\Actions;
 use App\Domain\Identity\Models\User;
 use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Domain\TimeTracking\Support\TimerClock;
 use App\Domain\TimeTracking\TimeEntryInput;
 use DomainException;
 use Illuminate\Database\QueryException;
@@ -43,7 +44,8 @@ use Illuminate\Validation\ValidationException;
  * `ended_at` null: a named end is ignored, the stop is StopTimer. Whenever the start or the end changes,
  * the interval must fit TimeEntryInput::MAX_DURATION_SECONDS (the integer column limit), checked before
  * the row is touched; the field error sits on `ended_at` when the data names an end, otherwise on
- * `started_at`.
+ * `started_at`. A running entry's changed start is measured against the current second, in both
+ * directions, because the panel list casts the elapsed seconds to an integer.
  *
  * Lock order: the task, project and client rows FOR SHARE (a changed context
  * only), after the entry row FOR UPDATE.
@@ -184,6 +186,12 @@ final class UpdateTimeEntry
             if ($end !== null) {
                 TimeEntryInput::assertDurationFits($start, $end, array_key_exists('ended_at', $data) ? 'ended_at' : 'started_at');
             }
+        }
+
+        // A running entry is measured against the current second: the entry list casts its elapsed
+        // seconds to an integer, so a start too far behind or ahead of now would break the list.
+        if ($locked->isRunning() && ! $start->equalTo($locked->started_at)) {
+            TimeEntryInput::assertDurationFits($start, TimerClock::now(), 'started_at');
         }
 
         $locked->forceFill(['started_at' => $start, 'ended_at' => $end]);

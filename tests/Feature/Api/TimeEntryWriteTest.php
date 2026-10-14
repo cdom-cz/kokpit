@@ -10,6 +10,7 @@ use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Domain\TimeTracking\Support\TimerClock;
 use Illuminate\Support\Facades\Auth;
 use Tests\Support\ApiFixtures;
 use Tests\Support\Canary;
@@ -455,6 +456,23 @@ it('still accepts an old start whose interval fits the column', function (): voi
         ->assertOk();
 
     expect($response->json('data.duration_seconds'))->toBe(2107414800);
+});
+
+it('refuses a start far in the past or far ahead on a running entry and keeps the entry list readable', function (): void {
+    $admin = ApiFixtures::admin();
+    $running = ApiFixtures::running($admin, ApiFixtures::client());
+    $token = ApiFixtures::token($admin, ['time:write']);
+    $before = $running->started_at->toIso8601String();
+
+    foreach (['1900-01-01T00:00:00Z', '2200-01-01T00:00:00Z'] as $start) {
+        $this->withToken($token)->patchJson('/api/v1/time-entries/'.$running->id, ['started_at' => $start])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['started_at'])
+            ->assertJsonPath('errors.started_at.0', __('kokpit.time.errors.duration_too_long'));
+    }
+
+    expect(TimeEntry::query()->findOrFail($running->id)->started_at->toIso8601String())->toBe($before)
+        ->and(TimeEntry::query()->withElapsedSeconds(TimerClock::now())->get())->toHaveCount(1);
 });
 
 it('ignores smuggled keys: the entry is the token owner\'s, unbilled and has a new uuid', function (): void {
