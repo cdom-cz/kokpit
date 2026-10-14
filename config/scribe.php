@@ -59,11 +59,11 @@ return [
 
             `POST /api/v1/time-entries/batch` records up to 100 entries in one request. Each item takes the fields of a single create and is saved on its own, through the same rules and in its own transaction, so one invalid item never blocks the others.
 
-            - The answer is `{"saved": n, "failed": m, "errors": [{"index": i, "errors": {"field": ["..."]}}]}`. `errors` lists only the failed items, with their zero-based position in `entries`. An item that is not a JSON object fails under the field `entry`.
+            - The answer is `{"saved": n, "failed": m, "errors": [{"index": i, "errors": {"field": ["..."]}}]}`. `errors` lists only the failed items, with their zero-based position in `entries`. An item that is not a JSON object fails under the field `entry`, and so does an item that could not be saved because of a fault on the server: send such an item again in a new batch, with a new key.
             - `201` means every item was saved, `207` that some were saved and some failed, `422` that none was saved. A list with no item, or with more than 100, answers `422` under `entries` and saves nothing.
             - A batch counts as one write against the rate limit of the token.
             - To retry a batch, send it again with the same `Idempotency-Key`: a stored `201` or `207` is replayed and nothing new is saved, and a `422` stored nothing, so the corrected batch can be sent with the same key. Do not resend only the failed items under the old key; that is a different body.
-            - Keys protect only a retry of the same request. If a batch is sent again under a different key, or the server fails in the middle of a batch, items may already be saved: deduplicate on your side: store your own id in `external` (it comes back with every entry), and list the entries of the period before you resend.
+            - Keys protect only a retry of the same request. If a batch is sent again under a different key, or the server stops in the middle of a batch (for example a restart or a lost connection), items may already be saved: deduplicate on your side: store your own id in `external` (it comes back with every entry), and list the entries of the period before you resend.
             INTRO,
 
     // The base URL displayed in the docs.

@@ -474,6 +474,72 @@ it('answers 422 and releases the key when every item meets a fault of the server
         ->and(TimeEntry::query()->count())->toBe(3);
 });
 
+it('reports a start outside the storable years as a failed item and replays the 207 on a retry with the same key', function (): void {
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:write']);
+    $headers = ['Idempotency-Key' => 'demo-key-0009'];
+    $body = ['entries' => [
+        batchItem($client->id, 8, 'before'),
+        ['client_id' => $client->id, 'started_at' => '0001-01-01T00:00:00+02:00', 'duration_seconds' => 60],
+        batchItem($client->id, 10, 'after'),
+    ]];
+
+    $first = $this->withToken($token)->postJson('/api/v1/time-entries/batch', $body, $headers)->assertStatus(207);
+
+    expect($first->json('saved'))->toBe(2)
+        ->and($first->json('failed'))->toBe(1)
+        ->and($first->json('errors.0.index'))->toBe(1)
+        ->and($first->json('errors.0.errors.started_at'))->toHaveCount(1)
+        ->and($first->json('errors.0.errors.started_at.0'))->toBe(__('kokpit.time.errors.invalid_time'));
+
+    Auth::forgetGuards();
+
+    $second = $this->withToken($token)->postJson('/api/v1/time-entries/batch', $body, $headers)
+        ->assertStatus(207)
+        ->assertHeader('Idempotent-Replayed', 'true');
+
+    expect($second->getContent())->toBe($first->getContent())
+        ->and(TimeEntry::query()->orderBy('started_at')->pluck('description')->all())->toBe(['before', 'after'])
+        ->and(IdempotencyKey::query()->count())->toBe(1);
+});
+
+it('reports an end outside the storable years under ended_at and replays the 207 on a retry', function (): void {
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:write']);
+    $headers = ['Idempotency-Key' => 'demo-key-0010'];
+    $body = ['entries' => [
+        batchItem($client->id, 8, 'before'),
+        ['client_id' => $client->id, 'started_at' => '2026-10-12T09:00:00Z', 'ended_at' => '9999-12-31T23:59:59-12:00'],
+        batchItem($client->id, 10, 'after'),
+    ]];
+
+    $first = $this->withToken($token)->postJson('/api/v1/time-entries/batch', $body, $headers)->assertStatus(207);
+
+    expect($first->json('saved'))->toBe(2)
+        ->and($first->json('errors.0.index'))->toBe(1)
+        ->and($first->json('errors.0.errors.ended_at.0'))->toBe(__('kokpit.time.errors.invalid_time'));
+
+    Auth::forgetGuards();
+
+    $second = $this->withToken($token)->postJson('/api/v1/time-entries/batch', $body, $headers)
+        ->assertStatus(207)
+        ->assertHeader('Idempotent-Replayed', 'true');
+
+    expect($second->getContent())->toBe($first->getContent())
+        ->and(TimeEntry::query()->count())->toBe(2);
+});
+
+it('tells an integrator what an entry error caused by a fault on the server means and what to do', function (): void {
+    $route = Route::getRoutes()->getByName('api.v1.time-entries.batch');
+    $operation = ApiDocs::operation($route);
+    $view = ApiDocs::view();
+
+    expect($operation['responses'][207]['description'] ?? '')->toContain('fault on the server')
+        ->and($view)->toContain('fault on the server')
+        ->toContain('in a new batch')
+        ->toContain('the server stops in the middle of a batch');
+});
+
 it('counts a batch as one write against the per-token limit', function (): void {
     config(['kokpit.api.rate_limit.write' => 2]);
     $client = ApiFixtures::client();

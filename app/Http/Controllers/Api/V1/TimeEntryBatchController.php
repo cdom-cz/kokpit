@@ -62,7 +62,7 @@ final class TimeEntryBatchController
     #[BodyParam('entries[].billable', 'boolean', 'Whether the entry is billable. When absent or null, the default of the task applies.', required: false, example: true)]
     #[BodyParam('entries[].external', 'object', 'A free-form JSON object for your own bookkeeping, at most 4096 bytes as compact JSON and nested at most 8 levels deep. `{}` is fine; a list, a string or a number fails the item. It is returned with the entry and never used to skip duplicates.', required: false, example: ['source' => 'demo-tracker', 'id' => 'A-1001'])]
     #[Response(ApiExamples::BATCH_ALL_SAVED, 201, 'Every entry was saved.')]
-    #[Response(ApiExamples::BATCH_MIXED, 207, 'Some entries were saved and some failed. `errors` lists only the failed items: `index` is the zero-based position in `entries`, `errors` the messages by field (`entry` when the item is not a JSON object).')]
+    #[Response(ApiExamples::BATCH_MIXED, 207, 'Some entries were saved and some failed. `errors` lists only the failed items: `index` is the zero-based position in `entries`, `errors` the messages by field (`entry` when the item is not a JSON object, or when it could not be saved because of a fault on the server; send such an item again in a new batch).')]
     #[Response(ApiExamples::IDEMPOTENCY_IN_PROGRESS, 409, 'A request with the same Idempotency-Key is still running (code `idempotency_in_progress`).')]
     #[Response(ApiExamples::VALIDATION_ERROR, 422, 'The `entries` list is missing, empty or longer than 100 items; nothing was saved.')]
     #[Response(ApiExamples::BATCH_NONE_SAVED, 422, 'No entry could be saved; `errors` lists every item. The Idempotency-Key is not kept, so the corrected batch can be sent again with it.')]
