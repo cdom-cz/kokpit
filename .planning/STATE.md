@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-02-PLAN.md
-last_updated: "2026-10-14T19:11:16.552Z"
+stopped_at: Completed 08-03-PLAN.md
+last_updated: "2026-10-14T19:24:49.615Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: ed62ddcf542ae88fdfb7da1b3d52c0dfd42d102b
+state_head: ac45cecf7e710b9d617b6f981a6fb8d628134e60
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 122
+  completed_plans: 123
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 3 of 22
+Plan: 4 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -184,6 +184,7 @@ Progress: [██████░░░░] 58%
 | Phase 07 P20 | 3 min | 2 tasks | 2 files |
 | Phase 08 P01 | 16 min | 2 tasks | 8 files |
 | Phase 08 P02 | 12 min | 2 tasks | 9 files |
+| Phase 08 P03 | 45 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -428,6 +429,8 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-01: exchange_rates holds one row per currency and published CNB day with the unit amount; weekends and holidays are never stored, resolved by lookup (08-05); lists are immutable (insert-or-ignore); ExchangeRate is Admin-only with a canary fixture whose needle is the published day
 - [Phase 08]: 08-02: Partner widgets (PartnerTasks, PartnerProjects) narrow the PartnerAllowed declaration with canView() to a non-Admin Partner with a client; a forged Admin mount answers 403
 - [Phase 08]: 08-02: Partner dashboard keeps the stock empty state only when the Partner has neither an open task nor a visible project; otherwise each empty widget shows its own empty state
+- [Phase 08]: Owner ruled (2026-10-14) dompdf/dompdf's LGPL-2.1 compatible with AGPL-3.0 under the strict LGPL-2.1-only reading; the licence gate maps the deprecated id LGPL-2.1 to LGPL-2.1-only for every package (normalise-alias)
+- [Phase 08]: WorkReportSource takes plain ids and Prague days (not ReportFilters) and builds its labelled lines in the client's invoice language; WorkReportPdf calls Dompdf directly with remote, PHP and JavaScript off, DejaVu Sans and a chroot on resources/views/pdf
 
 ### Pending Todos
 
@@ -474,6 +477,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T19:11:16.346Z
-Stopped at: Completed 08-02-PLAN.md
+Last session: 2026-10-14T19:24:49.412Z
+Stopped at: Completed 08-03-PLAN.md
 Resume file: None
