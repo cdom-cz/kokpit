@@ -165,14 +165,14 @@ it('rejects an unknown source value with a check violation', function (): void {
     });
 });
 
-it('accepts each of the four labels and a row without a label', function (): void {
+it('accepts each label and a row without a label', function (): void {
     foreach ([...array_column(ActivitySourceLabel::cases(), 'value'), null] as $value) {
         RawSql::expectAllowed(function () use ($value): void {
             DB::table('activity_log')->insert(['description' => 'Fictional label row', 'source' => $value]);
         });
     }
 
-    expect(DB::table('activity_log')->count())->toBe(5);
+    expect(DB::table('activity_log')->count())->toBe(count(ActivitySourceLabel::cases()) + 1);
 });
 
 it('writes a non-null source on every row of every path above', function (): void {

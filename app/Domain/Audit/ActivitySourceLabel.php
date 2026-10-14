@@ -19,6 +19,9 @@ enum ActivitySourceLabel: string implements HasLabel
     case Job = 'job';
     case Webhook = 'webhook';
 
+    /** A request to /api/v1, labelled by the LabelApiActivitySource middleware of the api route group. */
+    case Api = 'api';
+
     public function getLabel(): string
     {
         return __('enums.activity_source_label.'.$this->value);

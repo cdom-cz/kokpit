@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Middleware\LabelApiActivitySource;
 use App\Http\Middleware\SetNoReferrerPolicy;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -36,6 +37,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // request answers 403 without being counted and the 429 still carries the header.
         $middleware->prependToPriorityList(before: ThrottleRequests::class, prepend: SetNoReferrerPolicy::class);
         $middleware->prependToPriorityList(before: ThrottleRequests::class, prepend: ValidateSignature::class);
+
+        // Every route of routes/api.php writes its activity rows with the source 'api' (OD-4); the docs
+        // routes are not in the api group.
+        $middleware->api(append: [LabelApiActivitySource::class]);
 
         // Sanctum 4 registers no route middleware aliases, so `abilities:` and `ability:` on the
         // /api/v1 routes would otherwise fail with "Target class [abilities] does not exist".
