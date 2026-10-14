@@ -105,12 +105,12 @@ final class ApiExamples
             'first' => null,
             'last' => null,
             'prev' => null,
-            'next' => 'https://kokpit.example.com/api/v1/time-entries?per_page=2&cursor=eyJ0aW1lX2VudHJpZXMuaWQiOiIwMTk5ZTNhMS02YzhkIiwiX3BvaW50c1RvTmV4dEl0ZW1zIjp0cnVlfQ',
+            'next' => 'https://kokpit.example.com/api/v1/time-entries?per_page=2&cursor=eyJzdGFydGVkX2F0IjoiMjAyNi0xMC0xMSAxMDowMDowMCIsInRpbWVfZW50cmllcy5pZCI6IjAxOTllM2ExLTZjOGQtN2UzZi05YTUyLWIyYzNkNGU1ZjZhNyIsIl9wb2ludHNUb05leHRJdGVtcyI6dHJ1ZX0',
         ],
         'meta' => [
             'path' => 'https://kokpit.example.com/api/v1/time-entries',
             'per_page' => 2,
-            'next_cursor' => 'eyJ0aW1lX2VudHJpZXMuaWQiOiIwMTk5ZTNhMS02YzhkIiwiX3BvaW50c1RvTmV4dEl0ZW1zIjp0cnVlfQ',
+            'next_cursor' => 'eyJzdGFydGVkX2F0IjoiMjAyNi0xMC0xMSAxMDowMDowMCIsInRpbWVfZW50cmllcy5pZCI6IjAxOTllM2ExLTZjOGQtN2UzZi05YTUyLWIyYzNkNGU1ZjZhNyIsIl9wb2ludHNUb05leHRJdGVtcyI6dHJ1ZX0',
             'prev_cursor' => null,
         ],
     ];

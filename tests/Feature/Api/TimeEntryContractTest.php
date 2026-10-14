@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\V1\ApiExamples;
+use Illuminate\Pagination\Cursor;
 use Tests\Support\ApiDocs;
 use Tests\Support\ApiFixtures;
 use Tests\Support\TimeEntryContract;
@@ -65,6 +66,43 @@ it('documents examples with the same keys and types as the resource', function (
 
     expect(ApiExamples::TIME_ENTRY_RUNNING['data']['ended_at'])->toBeNull()
         ->and(ApiExamples::TIME_ENTRY_RUNNING['data']['duration_seconds'])->toBeNull();
+});
+
+it('documents an example cursor with the keys of a real cursor of the default sort', function (): void {
+    $example = Cursor::fromEncoded(ApiExamples::TIME_ENTRY_LIST['meta']['next_cursor']);
+
+    expect($example)->not->toBeNull()
+        ->and($example->parameter('started_at'))->toBe('2026-10-11 10:00:00')
+        ->and($example->parameter('time_entries.id'))->toBe('0199e3a1-6c8d-7e3f-9a52-b2c3d4e5f6a7')
+        ->and($example->pointsToNextItems())->toBeTrue();
+
+    // The link of the next page carries the very same cursor.
+    parse_str((string) parse_url(ApiExamples::TIME_ENTRY_LIST['links']['next'], PHP_URL_QUERY), $query);
+    expect($query['cursor'])->toBe(ApiExamples::TIME_ENTRY_LIST['meta']['next_cursor']);
+
+    // A real cursor of the default sort has the same key set, so the example cannot drift from the API.
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    ApiFixtures::entry($admin, ['client_id' => $client->id, 'started_at' => '2026-10-10 08:00:00', 'ended_at' => '2026-10-10 09:00:00']);
+    ApiFixtures::entry($admin, ['client_id' => $client->id, 'started_at' => '2026-10-12 08:00:00', 'ended_at' => '2026-10-12 09:00:00']);
+
+    $page = $this->withToken(ApiFixtures::token($admin, ['time:read']))->getJson('/api/v1/time-entries?per_page=1')->assertOk();
+    $real = Cursor::fromEncoded($page->json('meta.next_cursor'));
+
+    $exampleKeys = array_keys($example->toArray());
+    $realKeys = array_keys($real->toArray());
+    sort($exampleKeys);
+    sort($realKeys);
+
+    expect($exampleKeys)->toBe($realKeys);
+});
+
+it('accepts the example cursor of the documentation with a 200', function (): void {
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:read']);
+
+    $this->withToken($token)
+        ->getJson('/api/v1/time-entries?per_page=2&cursor='.urlencode(ApiExamples::TIME_ENTRY_LIST['meta']['next_cursor']))
+        ->assertOk();
 });
 
 it('marks every optional key of the response as nullable in the generated spec and no other key', function (): void {
