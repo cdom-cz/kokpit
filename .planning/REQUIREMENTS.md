@@ -86,16 +86,15 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **TI-05**: Entries can be marked billed manually, in bulk, or automatically by invoicing; billed entries are locked until billing is cancelled
 - [x] **TI-06**: Daily/weekly timesheet with totals
 - [x] **TI-07**: Consistency rules enforced in the database: task/project/client agree, at most one running timer per user, end after start; starting a timer stops the running one
-- [ ] **TI-08**: Time is stored exactly in seconds without rounding; rate resolution is task, project, client, global default; snapshot of rate and amount on billing
+- [x] **TI-08**: Time is stored exactly in seconds without rounding; rate resolution is task, project, client, global default; snapshot of rate and amount on billing
 - [x] **TI-09**: A forgotten long-running timer is flagged to the user
 
 ### API
 
-- [ ] **AP-01**: REST API `/api/v1` with Sanctum tokens carrying abilities (`time:read`, `time:write`); only Admin creates tokens
-- [ ] **AP-02**: Time entries list with filters, detail, create, update, delete; same domain actions and rules as the UI
-- [ ] **AP-03**: Timer start, stop and current running
-- [ ] **AP-04**: Read-only lookups of clients, projects and tasks (UUID, key, name); tasks addressable by key
-- [ ] **AP-05**: Token management UI, rate limiting, idempotency key support, OpenAPI documentation
+- [x] **AP-01**: REST API `/api/v1` with Sanctum tokens carrying abilities (`time:read`, `time:write`); only Admin creates tokens
+- [x] **AP-02**: Time entries list with filters, detail, create, update, delete; same domain actions and rules as the UI
+- [x] **AP-04**: Read-only lookups of clients, projects and tasks (UUID, key, name); tasks addressable by key
+- [x] **AP-05**: Token management UI, rate limiting, idempotency key support, OpenAPI documentation
 
 ### Exchange Rates
 
@@ -176,6 +175,7 @@ Deferred to future release. Tracked but not in current roadmap.
 - **PLT-03**: Project and task templates, recurring tasks
 - **PLT-04**: Custom workflow statuses per project
 - **PLT-05**: Outgoing webhooks and API for tasks
+- **AP-03**: API timer: start, stop and current running (removed from Phase 7 on 2026-10-14; kept in ROADMAP.md Backlog as 999.1)
 
 ## Out of Scope
 
@@ -253,13 +253,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TI-05 | Phase 6 | Complete |
 | TI-06 | Phase 6 | Complete |
 | TI-07 | Phase 6 | Complete |
-| TI-08 | Phase 6 | Pending |
+| TI-08 | Phase 6 | Complete |
 | TI-09 | Phase 6 | Complete |
-| AP-01 | Phase 7 | Pending |
-| AP-02 | Phase 7 | Pending |
-| AP-03 | Phase 7 | Pending |
-| AP-04 | Phase 7 | Pending |
-| AP-05 | Phase 7 | Pending |
+| AP-01 | Phase 7 | Complete |
+| AP-02 | Phase 7 | Complete |
+| AP-03 | Backlog (999.1) | Deferred |
+| AP-04 | Phase 7 | Complete |
+| AP-05 | Phase 7 | Complete |
 | EX-01 | Phase 8 | Pending |
 | EX-02 | Phase 8 | Pending |
 | EX-03 | Phase 8 | Pending |
@@ -297,7 +297,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 **Coverage:**
 - v1 requirements: 97 total
-- Mapped to phases: 97
+- Mapped to phases: 96
+- Deferred to backlog: 1 (AP-03)
 - Unmapped: 0
 
 **Mapping notes:** CL-03 and FI-03 (Phase 10), PR-05 (Phase 6) and US-01 (Phase 12) are traced to the phase where they first become fully observable. RE-04 tiles, the System page indicators (FND-10) and the file attachments of PR-01, TA-01 and TA-04 are wired by later phases. Details in ROADMAP.md (Overview, Mapping notes).

@@ -32,4 +32,19 @@ final class TimerClock
     {
         return CarbonImmutable::instance($value)->startOfSecond();
     }
+
+    /**
+     * Whether the instant may be written to a time column: its UTC year lies between 1 and 9999.
+     *
+     * PostgreSQL has no year 0 and rejects the year-0 literal Laravel writes (SQLSTATE 22008), and Carbon
+     * cannot read back a five-digit year. A well-formed instant can still fall outside the range once it
+     * is moved to UTC (`0001-01-01T00:00:00+02:00` is UTC year 0, `9999-12-31T23:59:59-12:00` is UTC year
+     * 10000), so every instant written to a time column must pass this check.
+     */
+    public static function isStorable(CarbonInterface $value): bool
+    {
+        $year = CarbonImmutable::instance($value)->utc()->year;
+
+        return $year >= 1 && $year <= 9999;
+    }
 }

@@ -28,8 +28,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Operations Foundation** - Typed settings, audit trail, resilient background jobs, health page, release deploy, private storage and technology spikes (completed 2026-10-08)
 - [x] **Phase 4: Clients and Projects** - Clients, contacts, ARES lookup, Partner invitations, and projects with keys, billing terms and client visibility (completed 2026-10-09)
 - [x] **Phase 5: Tasks and Kanban** - Tasks and subtasks with per-project keys, comments, list filters, drag-and-drop boards and Partner task access (completed 2026-10-09)
-- [ ] **Phase 6: Time Tracking** - Always-visible timer, manual entries, exact durations, billed locking, timesheet and project time totals
-- [ ] **Phase 7: REST API** - Token-secured `/api/v1` for time entries, timer and lookups with the same rules as the UI
+- [x] **Phase 6: Time Tracking** - Always-visible timer, manual entries, exact durations, billed locking, timesheet and project time totals (completed 2026-10-14)
+- [x] **Phase 7: REST API** - Token-secured `/api/v1` for time entries (single and batch) and lookups with the same rules as the UI (completed 2026-10-14)
 - [ ] **Phase 8: Exchange Rates and Reports** - Daily CNB rates, time and billing reports in client currency and CZK, exports, work report PDF and dashboard
 - [ ] **Phase 9: Documents and Finance** - Files on private S3 with Partner visibility rules, central document listing, and income/expense overview in CZK
 - [ ] **Phase 10: Invoicing** - Bill-from-time drafts, numbered immutable invoices, proformas and credit notes, PDF with QR, e-mail, manual payment and Partner invoice view
@@ -382,7 +382,7 @@ Gap closure (from 05-VERIFICATION.md gap 1: the closing-gate test of G-05-5 is f
   4. Admin sees a daily and weekly timesheet with totals, and a timer left running unusually long is flagged to the user
   5. Project detail (Admin only) shows tasks, estimate versus actual and billed versus unbilled time, and a Partner sees no time, rates or prices anywhere, proven by the canary tests
 
-**Plans:** 14/14 plans executed (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 5 rule; each plan modifies at most 13 files)
+**Plans:** 14/14 plans complete (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 5 rule; each plan modifies at most 13 files)
 **UI hint**: yes
 
 Plans:
@@ -430,17 +430,63 @@ Plans:
 
 ### Phase 7: REST API
 
-**Goal**: External tools can read and write time entries and drive the timer through a versioned, token-secured API that applies the same rules as the UI
+**Goal**: External tools can read and write time entries (single and batch) and look up clients, projects and tasks through a versioned, token-secured API that applies the same rules as the UI
 **Depends on**: Phase 6
-**Requirements**: AP-01, AP-02, AP-03, AP-04, AP-05
+**Requirements**: AP-01, AP-02, AP-04, AP-05
 **Success Criteria** (what must be TRUE):
   1. Admin creates and revokes API tokens with `time:read` and `time:write` abilities in a token management screen, a Partner cannot create tokens, and a request whose token lacks the needed ability is refused
   2. An API client lists time entries with filters and creates, reads, updates and deletes them, and the API refuses what the UI refuses (locked billed entries, inconsistent client/project/task, end before start)
-  3. An API client starts and stops the timer and reads the currently running one, and repeating a request with the same idempotency key does not create a duplicate
+  3. Creating a time entry (single or batch) with the same idempotency key repeated does not create a duplicate; a batch saves every valid item and reports only the failed ones
   4. An API client resolves clients, projects and tasks by UUID, key and name through read-only lookups, and addresses a task by its `KEY-N`
   5. Excess requests receive a rate-limit response, and published OpenAPI documentation describes every endpoint
 
-**Plans**: TBD
+**Plans:** 20/20 plans complete
+
+Plans:
+**Wave 1**
+- [x] 07-01-PLAN.md — Token-secured /api/v1 skeleton: an Admin token reads one entry, clean 401/403/404, per-token rate limits (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 07-02-PLAN.md — Scribe docs generated without a database, public /docs and /docs.openapi, owner confirms the wire contract (wave 2, checkpoint)
+- [x] 07-03-PLAN.md — Admin token screen: create with password and TOTP, one-time display, revoke, Partner isolation, ability labels, API route walk (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 07-04-PLAN.md — Time entry list: filters by uuid or key, inclusive Prague-day range via shared PragueDay, stable cursor paging (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 07-05-PLAN.md — Create, update, delete over the Actions: duration_seconds alternative, key references, 409 locked/running, UI refusal matrix (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 07-06-PLAN.md — Optional external jsonb object: object-only, size and depth caps, frozen on billed entries (wave 5)
+- [x] 07-07-PLAN.md — api activity source label for API writes (wave 5)
+- [x] 07-08-PLAN.md — Read-only lookups of clients, projects and tasks by uuid, key and name (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 07-09-PLAN.md — Idempotency-Key on create: replay, mismatch, in-progress, 2xx-only storage (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 07-10-PLAN.md — Daily purge of expired keys and the multi-process idempotency proof (wave 7)
+- [x] 07-11-PLAN.md — Batch create up to 100 entries with partial success and replay-safe retries (wave 7)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 07-12-PLAN.md — Docs generation as the last Zerops init command, output hygiene scan, API canary line, CONTRIBUTING (wave 8)
+
+**Gap closure** *(from 07-VERIFICATION.md; gap plans waves 1-3, run with `/gsd-execute-phase 07 --gaps-only`)*
+
+**Gap wave 1**
+- [x] 07-13-PLAN.md — Interval span bound in the shared Actions: a far-past or far-ahead start answers 422 on finished and running entries (gap 1, closes T-07-26)
+- [x] 07-16-PLAN.md — Cursor validation on all four list endpoints (gap 4)
+
+**Gap wave 2** *(blocked on gap wave 1 completion)*
+- [x] 07-14-PLAN.md — UTC years 1 to 9999 for every stored instant, the end computed from duration_seconds included, and range-aware PragueDay filters (gap 2)
+- [x] 07-17-PLAN.md — Review info items IN-01 to IN-04: key patterns, ordering note, docs limits pinned to config, docs helper note
+- [x] 07-18-PLAN.md — Complete example cursor in the published docs and the 401/403-before-cursor guard (gap 4, split from 07-16)
+
+**Gap wave 3** *(blocked on gap wave 2 completion)*
+- [x] 07-15-PLAN.md — Batch item faults reported as failed items, so the Idempotency-Key is never released after partial commits (gap 3)
+- [x] 07-19-PLAN.md — Overflow-proof elapsed seconds: one clamped bigint expression for the entry list and the time totals, so a running start at the edge of the limit never breaks the Admin screens (07-UAT.md G-07-1, WR-02)
+- [x] 07-20-PLAN.md — Empty-state "Nový API token" opens the create modal: the table action replaces the mounted stack with the page action instead of a nested mount, with a Livewire click test and a both-ability token created from it (07-UAT.md G-07-3; depends only on 07-03)
+
 **UI hint**: yes
 
 ### Phase 8: Exchange Rates and Reports
@@ -455,8 +501,41 @@ Plans:
   4. Admin requests a CSV or XLSX export that is built in the background and delivered by notification with spreadsheet-safe cells, and generates a multi-page PDF work report with correct Czech diacritics
   5. The dashboard shows today's and this week's hours, unbilled time per client and upcoming task deadlines
 
-**Plans**: TBD
+**Plans:** 16 plans (8 waves; same-wave plans share no file; 08-11 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed; 08-15 and 08-16 were split from 08-01 and 08-10 at plan check and run in the waves shown)
 **UI hint**: yes
+
+Plans:
+**Wave 1**
+- [ ] 08-15-PLAN.md — `exchange_rates` with DB constraints and `ExchangeRate` under every repository convention; Partner reads no rate (EX-01)
+- [ ] 08-02-PLAN.md — Partner dashboard: own visible projects and open tasks, `in_review` first and highlighted, no time or money (RE-04, D-12)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 08-01-PLAN.md — Tracer: `kokpit:rates:download` stores the whole CNB daily list once under its `validFor` date; refusal matrix and mutation self-check (EX-01)
+- [ ] 08-04-PLAN.md — Conversion helper: `RateBook` lookups (previous valid rate, per-unit amounts), `CnbConverter`, exact `Money::forDurationConverted` and `Money::hourlyRateFor` (EX-03, RE-02, RE-05)
+- [ ] 08-05-PLAN.md — Export records: owner-scoped `report_exports`, Admin "Exporty" list and the permission-checked download from the private disk (RE-03)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 08-03-PLAN.md — Scheduled download 15:00-17:00 Prague plus a final 18:00 run that alerts by mail and bell without the queue; Czech working-day calendar (EX-01, EX-02)
+- [ ] 08-07-PLAN.md — Tracer: "Report času" with one reader, per-entry amounts in client currency and CZK at the entry day's rate, parity with the rate resolvers, task/day/user breakdowns (RE-01, RE-02)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 08-06-PLAN.md — Real last-rate-date System page slot in Czech working days; gap self-heal from `daily-year` (EX-01, EX-02)
+- [ ] 08-09-PLAN.md — Fixed-price block with the effective hourly rate; DST, running-entry, missing-rate and mixed-currency edges; constant query count (RE-05, RE-01, RE-02)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 08-08-PLAN.md — "Kurzy ČNB" overview with "download today" and a queued, idempotent history backfill (EX-01, EX-02)
+- [ ] 08-10-PLAN.md — Admin dashboard: hours today/week/month and unbilled per client with money (RE-04, D-11)
+- [ ] 08-11-PLAN.md — Work report PDF with Dompdf in the client's language, no money, multi-page; owner licence decision checkpoint first (RE-03, D-10)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 08-12-PLAN.md — Queued CSV export from the report page, spreadsheet-safe cells, bell notice, 7-day expiry (RE-03, D-09)
+- [ ] 08-16-PLAN.md — Admin dashboard: ten nearest open-task deadlines and tomorrow's Signal plan, collapsed and read-only (RE-04, D-11)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 08-13-PLAN.md — XLSX export with the summary sheet, formula-free sheet XML, daily prune of expired exports (RE-03, D-09)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 08-14-PLAN.md — Partner leak sweep over every Phase 8 surface, conventions and hand-over docs, .gitignore review and the phase gate
 
 ### Phase 9: Documents and Finance
 
@@ -516,6 +595,15 @@ Plans:
 
 **Plans**: TBD
 
+## Backlog
+
+### Phase 999.1: API Timer (BACKLOG)
+
+**Goal**: An API client starts and stops the timer and reads the currently running one, with the same rules as the UI (auto-stop of the running timer on start, one running timer per user) and idempotent start
+**Requirements**: AP-03
+**Origin**: Removed from Phase 7 on 2026-10-14 (see `.planning/phases/07-rest-api/07-CONTEXT.md`, deferred)
+**Plans**: 0 plans
+
 ## Progress
 
 **Execution Order:**
@@ -528,8 +616,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
 | 4. Clients and Projects | 21/21 | Complete    | 2026-10-09 |
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
-| 6. Time Tracking | 14/14 | In Progress | - |
-| 7. REST API | 0/0 | Not started | - |
+| 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
+| 7. REST API | 20/20 | Complete    | 2026-10-14 |
 | 8. Exchange Rates and Reports | 0/0 | Not started | - |
 | 9. Documents and Finance | 0/0 | Not started | - |
 | 10. Invoicing | 0/0 | Not started | - |

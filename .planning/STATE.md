@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 06
-current_phase_name: time-tracking
-status: verifying
-stopped_at: Completed 06-14-PLAN.md
-last_updated: "2026-10-11T08:52:18.757Z"
-last_activity: 2026-10-11
-last_activity_desc: Phase 06 execution started
-state_head: b60da59e264772fd51a6b9641c81e66eb5a1996d
+current_phase: 08
+current_phase_name: Exchange Rates and Reports
+status: planning
+stopped_at: Phase 07 complete, ready to plan Phase 08
+last_updated: "2026-10-14T18:36:52.951Z"
+last_activity: 2026-10-14
+last_activity_desc: Phase 07 complete, transitioned to Phase 08
+state_head: 2160f9076a41fd4caa22909adb0f66450604bc0a
 progress:
   total_phases: 12
-  completed_phases: 5
-  total_plans: 100
-  completed_plans: 100
-  percent: 42
+  completed_phases: 7
+  total_plans: 140
+  completed_plans: 120
+  percent: 58
 ---
 
 # Project State
@@ -23,21 +23,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 06 — time-tracking
+**Current focus:** Phase 07 — REST API
 
 ## Current Position
 
-Phase: 06 (time-tracking) — EXECUTING
-Plan: 14 of 14
-Status: Phase complete — ready for verification
-Last activity: 2026-10-11 - Completed quick task 261011-ekq: Prefix S3 storage env vars with S3_, keep all files on the S3 disk, add AWS SES mailer
+Phase: 08 — Exchange Rates and Reports
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-14 — Phase 07 complete, transitioned to Phase 08
 
-Progress: [████░░░░░░] 42%
+Progress: [██████░░░░] 58%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 86
+- Total plans completed: 120
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -50,6 +50,8 @@ Progress: [████░░░░░░] 42%
 | 03 | 19 | - | - |
 | 04 | 21 | - | - |
 | 05 | 22 | - | - |
+| 06 | 14 | - | - |
+| 07 | 20 | - | - |
 
 **Recent Trend:**
 - Last 5 plans: -
@@ -160,6 +162,26 @@ Progress: [████░░░░░░] 42%
 | Phase 06 P12 | 15 min | 3 tasks | 11 files |
 | Phase 06 P13 | 20 min | 2 tasks | 8 files |
 | Phase 06 P14 | 14 min | 3 tasks | 8 files |
+| Phase 07 P01 | 8 min | 3 tasks | 14 files |
+| Phase 07 P03 | 20 min | 3 tasks | 12 files |
+| Phase 07 P02 | 40min | 3 tasks | 14 files |
+| Phase 07 P04 | 35 min | 3 tasks | 14 files |
+| Phase 07 P05 | 35 min | 3 tasks | 10 files |
+| Phase 07 P06 | 35 min | 3 tasks | 17 files |
+| Phase 07 P07 | 25min | 2 tasks | 8 files |
+| Phase 07 P08 | 35 min | 3 tasks | 12 files |
+| Phase 07 P09 | 45 min | 3 tasks | 13 files |
+| Phase 07 P10 | 30min | 2 tasks | 8 files |
+| Phase 07 P11 | 40 min | 3 tasks | 8 files |
+| Phase 07 P12 | 15 min | 3 tasks | 12 files |
+| Phase 07 P13 | 25 min | 3 tasks | 8 files |
+| Phase 07 P16 | 12 min | 2 tasks | 9 files |
+| Phase 07 P14 | 25 min | 2 tasks | 8 files |
+| Phase 07 P17 | 20min | 3 tasks | 8 files |
+| Phase 07 P18 | 10 min | 2 tasks | 3 files |
+| Phase 07 P15 | 20 min | 2 tasks | 4 files |
+| Phase 07 P19 | 45 min | 2 tasks | 8 files |
+| Phase 07 P20 | 3 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -363,6 +385,44 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-13: the forgotten-timer notice is a non-queued database notification sent with notifyNow in the same transaction as the atomic long_running_notified_at claim, so claim and notice roll back together; a deactivated or non-Admin owner is skipped without claiming
 - [Phase 06]: Czech collation is guarded at deploy (kokpit:deploy:verify collation check), never silently replaced by the default collation
 - [Phase 06]: Phase 10 snapshot migration must re-create time_entries_frozen_guard with an extended mutable list; hand-over notes for Phases 7, 8, 9 and 10 live in CONTRIBUTING
+- [Quick 261014-cy9]: activity records older than 365 days (activitylog.clean_after_days) are pruned every night by the scheduled activitylog:clean --force (kokpit-activity-log-prune, onOneServer) through KokpitCleanActivityLogAction, which deletes as system so the fail-closed Partner scope cannot make it a silent no-op (WR-04); supersedes Phase 03 D-09 and the 03-11 never-pruned decision on the owner's request
+- [Phase 07]: Sanctum guard list is empty so a panel session is never an API credential (TransientToken bypass)
+- [Phase 07]: Only a token of an active Admin is valid, enforced in Sanctum::authenticateAccessTokensUsing; findToken refuses a non-uuid id part before the database
+- [Phase 07]: API rate-limit buckets are keyed by token id (IP fallback), reads 120 and writes 60 a minute, separate per direction
+- [Phase 07]: 07-03: form state of CheckboxList and Select holds enum cases; the token handler accepts a case or its value and refuses anything else
+- [Phase 07]: 07-03: UI-SPEC utilities break-all, select-all and break-words are absent from the precompiled Filament CSS, so inline styles carry wrapping and select-all (font-mono stays a class)
+- [Phase 07]: 07-03: an already-revoked token shows its info toast from the page hydrate() hook, because Filament silently drops a submit whose record is gone
+- [Phase 07]: 07-02: public docs at /docs and /docs.openapi, per-IP limiter, 404 before first generation; owner amended the contract so project_id, task_id and description are optional on writes (project_key, task_reference output-only)
+- [Phase 07]: 07-04: query-builder filter value splitting is off; unknown filter keys, bad page sizes and sorts are 422 from ListTimeEntriesRequest, never the package's 400
+- [Phase 07]: 07-04: date-only filter[from]/filter[to] are inclusive Europe/Prague days through the shared PragueDay class; instants are exact and an instant filter[to] is inclusive
+- [Phase 07]: 07-04: cursor lists order by the sort column then time_entries.id in the same direction, so equal-start entries never skip or repeat
+- [Phase 07]: 07-05: request rules check shape only with closure rules that fail with the panel's Czech messages; every business rule stays in the Actions
+- [Phase 07]: 07-05: interval bound is the integer column limit 2147483647 seconds, over it is 422 under ended_at; the year 0000 is refused in the instant regex
+- [Phase 07]: 07-05: running UI-timer entries are guarded in the controller (PATCH ended_at or duration_seconds 422 under ended_at, DELETE 409 entry_running); 409 answers are {message, code}
+- [Phase 07]: 07-06: external is an object-only jsonb (cast object, CHECK time_entries_external_object_check); the {} vs [] decision is taken from the raw request body decoded as objects
+- [Phase 07]: 07-06: external limits are 4096 compact JSON bytes (multi-byte counted in bytes) and 8 nested levels; update semantics are absent keeps, null clears, object replaces whole
+- [Phase 07]: 07-06: EditTimeEntry drops external before the form fill, because the Livewire snapshot would otherwise ship it to the browser
+- [Phase 07]: 07-07: API activity label is a middleware appended to the api route group (ActivitySource::as(Api)); the CHECK is replaced by name, no down()
+- [Phase 07]: 07-08: lookup detail routes carry no route constraint; the resolver validates uuid or key by regex so every miss answers the Czech 404
+- [Phase 07]: 07-08: lookup detail parameter is documented as id (Scribe renames the last parameter of a *.show route); ApiDocs finds routes through Scribe UrlParamsNormalizer
+- [Phase 07]: 07-09: idempotency claim ownership is the whole-second locked_at; complete and release only act on the claim the request still owns, so a stale-overtaken request cannot overwrite its successor
+- [Phase 07]: 07-10: the purge deletes only expires_at < now(); the concurrency worker uses a shared start timestamp barrier like the timer harness and prints the raw body so replays compare byte for byte
+- [Phase 07]: 07-11: a batch has no outer transaction; only a ValidationException is an item error, any other exception is a 500 that keeps earlier items and releases the idempotency key (caller deduplicates)
+- [Phase 07]: 07-11: batch answers 201 / 207 / 422 with {saved, failed, errors:[{index, errors}]}, 422 adds message first; item limit is a closure rule so Scribe adds no rule sentence
+- [Phase 07]: Plan 07-12: docs generation is the plain last run.initCommands entry on every container; a failing generation fails the deploy (D-17)
+- [Phase 07]: Plan 07-12: public docs are generated with the app locale switched to English for scribe:generate only; API answers stay Czech, wire contract unchanged
+- [Phase 07]: 07-13: interval bound is abs(to - start) <= 2147483647 s in TimeEntryInput::assertDurationFits, shared by UpdateTimeEntry, CreateTimeEntry and TimeEntryPayload; running entries measured against TimerClock::now()
+- [Phase 07]: 07-16: a cursor the API did not issue (empty, foreign, wrong-typed, hand-edited) answers 422 under cursor on all four list endpoints; ApiCursor derives the expected keys from the sort column and ID_COLUMN
+- [Phase 07]: 07-14: one UTC year 1..9999 envelope (TimerClock::isStorable) is asked by TimeEntryInput::normalised and PragueDay; the computed duration_seconds end passes TimeEntryInput::instant so it answers invalid_time under ended_at before the Action
+- [Phase 07]: 07-14: PragueDay::midnight builds from day components (no formatted-year re-parse); 0001-01-01 is not a supported day, 9999-12-31 is; out-of-range panel period days are ignored
+- [Phase 07]: 07-17: key patterns match the whole string (D modifier); the HTTP 422 test switches TrimStrings off because the middleware already strips a trailing line feed from query values
+- [Phase 07]: 07-17: documented limits are pinned to config/kokpit.php by a test with a failing self-check, not by building intro_text from config()
+- [Phase 07]: 07-18: example cursor is a literal from Cursor::encode() (second item's fictional values); forged-cursor guard derives parameterless GET routes from apiWalkRoutes()
+- [Phase 07]: 07-15: every batch item failure is an item error (ValidationException keeps its field errors, any other Throwable is report()ed and listed under entry); supersedes the 07-11 decision that a non-validation exception is a 500 that releases the Idempotency-Key
+- [Phase 07]: 07-19: running elapsed seconds computed as bigint, floored at 0, capped at MAX_DURATION_SECONDS then cast to int in one shared TimeEntry::elapsedSecondsSql; the 07-13 write bound stays as a sanity bound
+- [Phase 07]: 07-19: StopTimer on an entry already run past 2147483647 s is left to the owner (T-07-77); recovery is to correct the start through UpdateTimeEntry, then stop
+- [Quick 261014-o13]: a running time entry that has run longer than kokpit.time.max_running_hours (48) is ended every hour by kokpit:time:end-overrun (kokpit-end-overrun-timers, onOneServer) through EndOverrunTimers at started_at + 48 h, never at now, so the stored duration is capped and cannot overflow the integer column; narrows Phase 06 D-07 on the owner's request, the 12-hour bell notice is unchanged
+- [Phase 07]: 07-20: empty-state newToken opens createToken with replaceMountedAction (not a nested mount) and a canAccess guard; ListApiTokens unchanged
 
 ### Pending Todos
 
@@ -396,6 +456,8 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261011-dqq | Fix the tests to match the current source code and configuration | 2026-10-11 | 3a1f008 | [261011-dqq-fix-the-tests-to-match-the-current-sourc](./quick/261011-dqq-fix-the-tests-to-match-the-current-sourc/) |
 | 261011-ekq | Prefix S3 storage env vars with S3_, keep all files on the S3 disk, add AWS SES mailer | 2026-10-11 | b60da59 | [261011-ekq-prefix-s3-storage-env-vars-with-s3-store](./quick/261011-ekq-prefix-s3-storage-env-vars-with-s3-store/) |
 | 261012-tsk | Admin task list: order by priority and due date, hide Done by default, multi-state status filter | 2026-10-12 | — | [261012-tsk-task-list-priority-due-order-hide-done](./quick/261012-tsk-task-list-priority-due-order-hide-done/) |
+| 261014-cy9 | Prune activity log records older than one year via a daily scheduled task | 2026-10-14 | ab8ec7f | [261014-cy9-prune-activity-log-records-older-than-on](./quick/261014-cy9-prune-activity-log-records-older-than-on/) |
+| 261014-o13 | Hourly safety-net command that ends running time entries older than 48 hours | 2026-10-14 | 136bbce | [261014-o13-hourly-safety-net-command-that-ends-runn](./quick/261014-o13-hourly-safety-net-command-that-ends-runn/) |
 
 ## Deferred Items
 
@@ -407,6 +469,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T16:21:37.166Z
-Stopped at: Completed 06-14-PLAN.md
+Last session: 2026-10-14T18:26:43.496Z
+Stopped at: Phase 07 complete, ready to plan Phase 08
 Resume file: None

@@ -16,6 +16,8 @@ use DomainException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use JsonException;
+use stdClass;
 
 /**
  * The input rules every time entry writer shares: StartTimer now, CreateTimeEntry
@@ -25,6 +27,19 @@ use Illuminate\Validation\ValidationException;
 final class TimeEntryInput
 {
     private const int DESCRIPTION_MAX_LENGTH = 1000;
+
+    /**
+     * How many objects or lists may be nested in `external`, the object itself being the first level.
+     */
+    public const int EXTERNAL_MAX_DEPTH = 8;
+
+    /**
+     * The longest interval a time entry may span, in seconds: the limit of a PostgreSQL integer, which is the
+     * limit of the generated `duration_seconds` column of a finished entry. It is also the ceiling at which
+     * `TimeEntry::elapsedSecondsSql` clamps the elapsed seconds of a running entry, so no stored start can
+     * make a read fail. It is the column limit, not a product cap (about 68 years).
+     */
+    public const int MAX_DURATION_SECONDS = 2147483647;
 
     /**
      * The client, project and task of an entry, each read again under a share
@@ -133,6 +148,46 @@ final class TimeEntryInput
     }
 
     /**
+     * The free-form `external` object of an import helper (D-15): null stays null, a JSON object within
+     * the depth and size limits is returned as it is.
+     *
+     * Only a `stdClass` is an object: a PHP array cannot tell `{}` from `[]`, so a caller that decodes a
+     * request body must decode it as objects (`TimeEntryPayload::rawBody()`) and hand the member over
+     * untouched. An array, a string, a number or a bool is refused. The size is the byte length of the
+     * compact JSON, so multi-byte text counts in bytes.
+     *
+     * @throws ValidationException a field error on `external`: `external_not_object`, `external_too_deep`
+     *                             (more than EXTERNAL_MAX_DEPTH levels) or `external_too_large`
+     *                             (more than `kokpit.api.external_max_bytes` bytes)
+     */
+    public static function external(mixed $value): ?stdClass
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (! $value instanceof stdClass) {
+            throw self::error('external', 'external_not_object');
+        }
+
+        try {
+            $json = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR, self::EXTERNAL_MAX_DEPTH);
+        } catch (JsonException $e) {
+            // Beyond the depth is its own answer; anything else json_encode refuses (a float that is not
+            // finite) is not a JSON value an object may hold.
+            throw self::error('external', $e->getCode() === JSON_ERROR_DEPTH ? 'external_too_deep' : 'external_not_object');
+        }
+
+        $max = (int) config('kokpit.api.external_max_bytes');
+
+        if (strlen($json) > $max) {
+            throw self::error('external', 'external_too_large', ['max' => $max]);
+        }
+
+        return $value;
+    }
+
+    /**
      * An instant of a manual entry, truncated to the whole second (never rounded).
      *
      * Accepted: a CarbonInterface, an ISO 8601 string with an offset or `Z`
@@ -145,7 +200,10 @@ final class TimeEntryInput
      * @param  string  $field  the data key the field error is keyed by (`started_at` or `ended_at`)
      * @return CarbonImmutable|null null for an absent value
      *
-     * @throws ValidationException the field error `invalid_time` on `$field` for anything unparsable
+     * An instant that lies outside UTC years 1 to 9999 once moved to UTC (`TimerClock::isStorable()`) is
+     * the same `invalid_time` field error: the database cannot store it.
+     *
+     * @throws ValidationException the field error `invalid_time` on `$field` for anything unparsable or unstorable
      */
     public static function instant(mixed $value, string $field): ?CarbonImmutable
     {
@@ -154,7 +212,7 @@ final class TimeEntryInput
         }
 
         if ($value instanceof CarbonInterface) {
-            return self::normalised($value);
+            return self::normalised($value, $field);
         }
 
         if (! is_string($value)) {
@@ -173,7 +231,7 @@ final class TimeEntryInput
 
         return $parsed === null
             ? throw self::error($field, 'invalid_time')
-            : self::normalised($parsed);
+            : self::normalised($parsed, $field);
     }
 
     /**
@@ -185,6 +243,25 @@ final class TimeEntryInput
     {
         if ($end !== null && $end->lessThanOrEqualTo($start)) {
             throw self::error('ended_at', 'end_before_start');
+        }
+    }
+
+    /**
+     * The interval between the start and `$to` must fit the integer limit of the duration.
+     *
+     * `$to` is the end of a finished entry, or the current whole second (`TimerClock::now()`) for a running
+     * one. The magnitude of the difference counts, so a running entry whose start lies far ahead of now is
+     * refused too. For a running entry this is a sanity bound against an obviously wrong start: the readers
+     * clamp through `TimeEntry::elapsedSecondsSql`, so a start that later runs past the limit stays readable.
+     *
+     * @param  string  $field  the data key the field error is keyed by (`started_at` or `ended_at`)
+     *
+     * @throws ValidationException the field error `duration_too_long` on `$field`
+     */
+    public static function assertDurationFits(CarbonImmutable $start, CarbonImmutable $to, string $field): void
+    {
+        if (abs($to->getTimestamp() - $start->getTimestamp()) > self::MAX_DURATION_SECONDS) {
+            throw self::error($field, 'duration_too_long');
         }
     }
 
@@ -217,11 +294,20 @@ final class TimeEntryInput
      *
      * The model casts write the wall-clock value of the instant's own zone, so
      * an instant carrying a +02:00 offset must be moved to UTC before it is
-     * stored, or it would be stored two hours late.
+     * stored, or it would be stored two hours late. An instant the database cannot store (UTC year outside
+     * 1 to 9999) is refused with `invalid_time` on `$field`.
+     *
+     * @throws ValidationException
      */
-    private static function normalised(CarbonInterface $value): CarbonImmutable
+    private static function normalised(CarbonInterface $value, string $field): CarbonImmutable
     {
-        return TimerClock::truncate($value)->setTimezone((string) config('app.timezone'));
+        $truncated = TimerClock::truncate($value);
+
+        if (! TimerClock::isStorable($truncated)) {
+            throw self::error($field, 'invalid_time');
+        }
+
+        return $truncated->setTimezone((string) config('app.timezone'));
     }
 
     /**
@@ -259,8 +345,11 @@ final class TimeEntryInput
         return $value;
     }
 
-    private static function error(string $key, string $message): ValidationException
+    /**
+     * @param  array<string, mixed>  $replace
+     */
+    private static function error(string $key, string $message, array $replace = []): ValidationException
     {
-        return ValidationException::withMessages([$key => __('kokpit.time.errors.'.$message)]);
+        return ValidationException::withMessages([$key => __('kokpit.time.errors.'.$message, $replace)]);
     }
 }

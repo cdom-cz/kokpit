@@ -524,6 +524,67 @@ function zeropsHorizonProblems(array $manifest): array
 }
 
 /**
+ * The API documentation (D-17, OD-6): php artisan scribe:generate --no-interaction runs exactly once in the manifest, as
+ * the last init command on every container (never inside execOnce, never with its exit status swallowed, never in the
+ * build), after the migration, the verify and the Horizon start. The output is container-local and never committed, so
+ * every container generates its own from its own code and environment; a failing generation fails the deploy.
+ *
+ * @param  array<string|int, mixed>  $manifest
+ * @return list<string>
+ */
+function zeropsDocsProblems(array $manifest): array
+{
+    $found = [];
+
+    foreach (zeropsSetups($manifest) as $name => $setup) {
+        foreach (zeropsCommandGroups($setup) as $group => $commands) {
+            foreach ($commands as $command) {
+                if (str_contains($command, 'scribe:generate')) {
+                    $found[] = [$name, $group, $command];
+                }
+            }
+        }
+    }
+
+    if (count($found) !== 1) {
+        return ['expected exactly one scribe:generate command in the manifest, found '.count($found)];
+    }
+
+    [$name, $group, $command] = $found[0];
+
+    if ($group !== 'run.initCommands') {
+        return ["the docs generation of setup {$name} is in {$group}, expected run.initCommands"];
+    }
+
+    $problems = [];
+
+    if ($command !== 'php artisan scribe:generate --no-interaction') {
+        $problems[] = "the docs generation is not exactly 'php artisan scribe:generate --no-interaction': {$command}";
+    }
+
+    if (str_contains($command, 'execOnce')) {
+        $problems[] = 'the docs generation is wrapped in execOnce, it must run on every container';
+    }
+
+    $init = zeropsCommandGroups(zeropsSetups($manifest)[$name])['run.initCommands'];
+    $index = (int) array_key_first(array_filter($init, fn (string $c): bool => str_contains($c, 'scribe:generate')));
+
+    if ($index !== count($init) - 1) {
+        $problems[] = 'the docs generation is not the last init command';
+    }
+
+    foreach (['artisan migrate' => 'the migration', 'kokpit:deploy:verify' => 'the verify', 'supervisorctl start horizon' => 'the Horizon start'] as $needle => $label) {
+        $anchors = array_keys(array_filter($init, fn (string $c): bool => str_contains($c, $needle)));
+
+        if ($anchors === [] || $index < $anchors[0]) {
+            $problems[] = "the docs generation runs before {$label}";
+        }
+    }
+
+    return $problems;
+}
+
+/**
  * @param  array<string|int, mixed>  $manifest
  * @param  callable(string): ?string  $reader
  * @return array<string, list<string>>
@@ -543,6 +604,7 @@ function zeropsAllProblems(array $manifest, string $raw, callable $reader): arra
         'frontend' => zeropsFrontendProblems($manifest),
         'verify' => zeropsVerifyProblems($manifest),
         'horizon' => zeropsHorizonProblems($manifest),
+        'docs' => zeropsDocsProblems($manifest),
     ];
 }
 
@@ -592,6 +654,10 @@ it('verifies the deploy once per container, after the migration and before the c
 
 it('starts Horizon at container start, last, after the migration and the verify', function (): void {
     expect(zeropsHorizonProblems(zeropsManifest()))->toBe([]);
+});
+
+it('generates the API docs as the last init command on every container', function (): void {
+    expect(zeropsDocsProblems(zeropsManifest()))->toBe([]);
 });
 
 /*
@@ -649,6 +715,7 @@ it('reports every weakening of the manifest', function (): void {
 
     $verify = 'php artisan kokpit:deploy:verify';
     $startHorizon = 'sudo supervisorctl start horizon';
+    $docs = 'php artisan scribe:generate --no-interaction';
     $wrapped = fn (string $inner): string => 'sudo -E -u zerops -- zsc execOnce ${appVersionId} -- '.$inner;
 
     // Removes a command from the init commands and puts it back before or after the first command containing the
@@ -798,6 +865,16 @@ it('reports every weakening of the manifest', function (): void {
         'start horizon inside execOnce' => ['horizon', fn (array $m): array => $replaceInit($m, 'supervisorctl start horizon', $wrapped($startHorizon))],
         'a supervisor step after start horizon' => ['horizon', function (array $m): array {
             $m['zerops'][0]['run']['initCommands'][] = 'sudo supervisorctl status';
+
+            return $m;
+        }],
+        'the docs generation removed' => ['docs', fn (array $m): array => $replaceInit($m, 'scribe:generate', null)],
+        'the docs generation inside execOnce' => ['docs', fn (array $m): array => $replaceInit($m, 'scribe:generate', $wrapped($docs))],
+        'the docs generation moved into the build' => ['docs', fn (array $m): array => $moveToBuild($m, 'scribe:generate')],
+        'the docs generation before the Horizon start' => ['docs', fn (array $m): array => $placeInit($m, $docs, $startHorizon)],
+        'the docs generation failure swallowed' => ['docs', fn (array $m): array => $replaceInit($m, 'scribe:generate', $docs.' || true')],
+        'a second docs generation' => ['docs', function (array $m) use ($docs): array {
+            $m['zerops'][0]['run']['initCommands'][] = $docs;
 
             return $m;
         }],

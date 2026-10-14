@@ -14,6 +14,7 @@ use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Actions\CreateTimeEntry;
 use App\Domain\TimeTracking\Actions\DeleteTimeEntry;
+use App\Domain\TimeTracking\Actions\StopTimer;
 use App\Domain\TimeTracking\Actions\UpdateTimeEntry;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Queries\OverlapFinder;
@@ -476,6 +477,150 @@ it('edits a running entry and keeps it running even when the payload names an en
         ->and($updated->duration_seconds)->toBeNull()
         ->and($updated->task_id)->toBe($task->id)
         ->and($updated->description)->toBe('Still going');
+});
+
+it('refuses a manual entry spanning more than the column limit under ended_at and stores nothing', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $client = entrySystem(static fn (): Client => Client::factory()->create());
+
+    $errors = entryRefused(fn () => entryCreate($admin, [
+        'client_id' => $client->id,
+        'started_at' => '1900-01-01 00:00:00',
+        'ended_at' => '2026-10-12 09:00:00',
+    ]));
+
+    expect($errors)->toHaveKey('ended_at')
+        ->and($errors['ended_at'][0])->toBe(__('kokpit.time.errors.duration_too_long'))
+        ->and(entryCount())->toBe(0);
+});
+
+it('stores a manual entry of exactly 2147483647 seconds', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $client = entrySystem(static fn (): Client => Client::factory()->create());
+    $end = CarbonImmutable::parse('2026-10-12 09:00:00', 'UTC');
+
+    $entry = entryCreate($admin, [
+        'client_id' => $client->id,
+        'started_at' => $end->subSeconds(2147483647)->format('Y-m-d H:i:s'),
+        'ended_at' => $end->format('Y-m-d H:i:s'),
+    ]);
+
+    expect($entry->duration_seconds)->toBe(2147483647);
+});
+
+it('bounds the start of a running entry against the current second in both directions, exactly at the column limit', function (): void {
+    $now = CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC');
+    $this->travelTo($now);
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $running = entrySystem(static fn (): TimeEntry => TimeEntry::factory()->running()->create([
+        'user_id' => $admin->id,
+        'started_at' => $now->subMinutes(30),
+    ]));
+
+    $fits = $now->subSeconds(2147483647);
+    $updated = app(UpdateTimeEntry::class)->handle($admin, $running, ['started_at' => $fits->format('Y-m-d H:i:s')]);
+    $elapsed = entrySystem(static fn (): int => TimeEntry::query()->withElapsedSeconds($now)->findOrFail($running->id)->elapsed_seconds);
+
+    expect($updated->started_at->equalTo($fits))->toBeTrue()
+        ->and($elapsed)->toBe(2147483647);
+
+    // One second on, the interval is past the limit: the read clamps instead of raising SQLSTATE 22003.
+    $later = $now->addSecond();
+    $this->travelTo($later);
+    $clamped = entrySystem(static fn (): int => TimeEntry::query()->withElapsedSeconds($later)->findOrFail($running->id)->elapsed_seconds);
+
+    expect($clamped)->toBe(2147483647);
+
+    // Back at the original second for the refusals below.
+    $this->travelTo($now);
+
+    foreach ([$now->subSeconds(2147483648), $now->addSeconds(2147483648)] as $beyond) {
+        $errors = entryRefused(fn () => app(UpdateTimeEntry::class)->handle($admin, $running, ['started_at' => $beyond->format('Y-m-d H:i:s')]));
+
+        expect($errors)->toHaveKey('started_at')
+            ->and($errors['started_at'][0])->toBe(__('kokpit.time.errors.duration_too_long'))
+            ->and(entryReload($running)->started_at->equalTo($fits))->toBeTrue();
+    }
+});
+
+it('reads the elapsed seconds of any stored running start without overflow', function (string $start, int $expected): void {
+    $now = CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC');
+    $this->travelTo($now);
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $running = entrySystem(static fn (): TimeEntry => TimeEntry::factory()->running()->create([
+        'user_id' => $admin->id,
+        'started_at' => CarbonImmutable::parse($start, 'UTC'),
+    ]));
+
+    $elapsed = entrySystem(static fn (): int => TimeEntry::query()->withElapsedSeconds($now)->findOrFail($running->id)->elapsed_seconds);
+
+    expect($elapsed)->toBe($expected);
+})->with([
+    'start in UTC year 1' => ['0001-01-02 00:00:00', 2147483647],
+    'start ahead of now' => ['9999-12-30 00:00:00', 0],
+    'start thirty minutes ago' => ['2026-10-12 07:30:00', 1800],
+]);
+
+it('lets the Admin correct a running entry that has run past the limit and then stop it', function (): void {
+    $now = CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC');
+    $this->travelTo($now);
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $running = entrySystem(static fn (): TimeEntry => TimeEntry::factory()->running()->create([
+        'user_id' => $admin->id,
+        'started_at' => $now->subSeconds(2147483645),
+    ]));
+
+    $this->travelTo($now->addSeconds(4));
+    $later = $now->addSeconds(4);
+
+    app(UpdateTimeEntry::class)->handle($admin, $running, ['started_at' => $later->subMinutes(30)->format('Y-m-d H:i:s')]);
+    $stopped = app(StopTimer::class)->handle($admin);
+    $elapsed = entrySystem(static fn (): int => TimeEntry::query()->withElapsedSeconds($later)->findOrFail($running->id)->elapsed_seconds);
+
+    expect($stopped)->not->toBeNull()
+        ->and(entryReload($running)->duration_seconds)->toBe(1800)
+        ->and($elapsed)->toBe(1800);
+});
+
+it('accepts a finished interval of exactly 2147483647 seconds and refuses one second more under started_at', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $entry = entryStored($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+    $end = CarbonImmutable::parse('2026-10-12 09:00:00', 'UTC');
+
+    $errors = entryRefused(fn () => app(UpdateTimeEntry::class)->handle($admin, $entry, [
+        'started_at' => $end->subSeconds(2147483648)->format('Y-m-d H:i:s'),
+    ]));
+
+    expect($errors)->toHaveKey('started_at')
+        ->and($errors['started_at'][0])->toBe(__('kokpit.time.errors.duration_too_long'))
+        ->and(entryReload($entry)->duration_seconds)->toBe(3600);
+
+    $updated = app(UpdateTimeEntry::class)->handle($admin, $entry, [
+        'started_at' => $end->subSeconds(2147483647)->format('Y-m-d H:i:s'),
+    ]);
+
+    expect($updated->duration_seconds)->toBe(2147483647);
+});
+
+it('runs the span bound only when the start or the end changes', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $entry = entryStored($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+
+    $updated = app(UpdateTimeEntry::class)->handle($admin, $entry, [
+        'description' => 'Fictional note',
+        'started_at' => '2026-10-12 08:00:00',
+        'ended_at' => '2026-10-12 09:00:00',
+    ]);
+
+    expect($updated->description)->toBe('Fictional note')
+        ->and($updated->duration_seconds)->toBe(3600);
 });
 
 it('does not re-check an unchanged context, so a description edit survives an archived task', function (): void {

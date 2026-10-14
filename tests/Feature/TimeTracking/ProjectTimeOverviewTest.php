@@ -669,3 +669,43 @@ describe('the tab "Časové záznamy"', function (): void {
         }
     });
 });
+
+describe('elapsed seconds beyond the integer range', function (): void {
+    it('counts a running entry started long ago at the ceiling in every figure, and the sum passes the integer range', function (): void {
+        $project = overviewProject();
+        $task = overviewTask($project, 'Example overrun task');
+        overviewTaskEntry($task, '1900-01-01 00:00:00', ''); // about 3.98e9 seconds, as the data layer may hold it
+        overviewTaskEntry($task, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+
+        $now = CarbonImmutable::now();
+        $expected = ['worked' => 2147487247, 'billed' => 0, 'unbilled' => 2147487247, 'non_billable' => 0];
+
+        expect(app(TimeTotals::class)->forTask($task, $now))->toBe($expected)
+            ->and(app(TimeTotals::class)->forProject($project, $now))->toMatchArray($expected)
+            ->and(app(TimeTotals::class)->withoutTask($project, $now)['worked'])->toBe(0);
+    });
+
+    it('renders the project stats row and the task tab with that entry', function (): void {
+        $project = overviewProject();
+        $task = overviewTask($project, 'Example overrun task');
+        overviewTaskEntry($task, '1900-01-01 00:00:00', '');
+        overviewTaskEntry($task, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+
+        expect(overviewStats($project))->toContain('Odpracováno 596524:14');
+
+        overviewTasksTab($project)
+            ->assertSuccessful()
+            ->assertTableColumnStateSet('worked_seconds', '596524:14', $task)
+            ->assertTableColumnStateSet('unbilled_seconds', '596524:14', $task);
+    });
+
+    it('counts a running entry that starts ahead of now as zero', function (): void {
+        $project = overviewProject();
+        $task = overviewTask($project, 'Example future task');
+        overviewTaskEntry($task, '9999-12-30 00:00:00', '');
+
+        expect(app(TimeTotals::class)->forTask($task, CarbonImmutable::now())['worked'])->toBe(0);
+        expect(overviewStats($project))->toContain('Odpracováno');
+        overviewTasksTab($project)->assertSuccessful();
+    });
+});

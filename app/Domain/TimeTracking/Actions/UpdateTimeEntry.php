@@ -7,6 +7,7 @@ namespace App\Domain\TimeTracking\Actions;
 use App\Domain\Identity\Models\User;
 use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Domain\TimeTracking\Support\TimerClock;
 use App\Domain\TimeTracking\TimeEntryInput;
 use DomainException;
 use Illuminate\Database\QueryException;
@@ -25,6 +26,9 @@ use Illuminate\Validation\ValidationException;
  * through the cancel action of the billing). A KP001 from the guard trigger,
  * the writer-independent backstop, is translated to the same message.
  *
+ * `external` (D-15) follows the same rule: absent keeps, null clears, an object replaces the stored
+ * one whole, nothing is merged. It is not in the activity log.
+ *
  * Context: the three ids are checked again only when one of them changes, so
  * the description of an entry whose task was archived later still saves. A
  * changed context goes through the rules of a start (TimeEntryInput::context).
@@ -37,12 +41,17 @@ use Illuminate\Validation\ValidationException;
  * like a creation, and the end must lie strictly after the start whenever either
  * changes (an untouched zero-length entry from a same-second start can still have
  * its description edited). A running entry can change its start but keeps
- * `ended_at` null: a named end is ignored, the stop is StopTimer.
+ * `ended_at` null: a named end is ignored, the stop is StopTimer. Whenever the start or the end changes,
+ * the interval must fit TimeEntryInput::MAX_DURATION_SECONDS (the integer column limit), checked before
+ * the row is touched; the field error sits on `ended_at` when the data names an end, otherwise on
+ * `started_at`. A running entry's changed start is measured against the current second, in both
+ * directions, as a sanity bound against an obviously wrong start. The readers clamp through
+ * TimeEntry::elapsedSecondsSql, so a start that later runs past the limit still keeps every list readable.
  *
  * Lock order: the task, project and client rows FOR SHARE (a changed context
  * only), after the entry row FOR UPDATE.
  *
- * @phpstan-type EntryChanges array{client_id?: mixed, project_id?: mixed, task_id?: mixed, description?: mixed, started_at?: mixed, ended_at?: mixed, billable?: mixed}
+ * @phpstan-type EntryChanges array{client_id?: mixed, project_id?: mixed, task_id?: mixed, description?: mixed, started_at?: mixed, ended_at?: mixed, billable?: mixed, external?: mixed}
  */
 final class UpdateTimeEntry
 {
@@ -59,9 +68,10 @@ final class UpdateTimeEntry
         Gate::forUser($actor)->authorize('update', $entry);
 
         $description = array_key_exists('description', $data) ? TimeEntryInput::description($data['description']) : null;
+        $external = array_key_exists('external', $data) ? TimeEntryInput::external($data['external']) : null;
 
         try {
-            return DB::transaction(function () use ($entry, $data, $description): TimeEntry {
+            return DB::transaction(function () use ($entry, $data, $description, $external): TimeEntry {
                 $locked = TimeEntry::query()->whereKey($entry->getKey())->lockForUpdate()->firstOrFail();
 
                 if ($locked->billing_state === BillingState::Billed) {
@@ -82,6 +92,11 @@ final class UpdateTimeEntry
 
                 if (array_key_exists('description', $data)) {
                     $locked->description = $description;
+                }
+
+                // The optional import object (D-15): an absent key keeps it, null clears it, an object replaces it whole.
+                if (array_key_exists('external', $data)) {
+                    $locked->forceFill(['external' => $external]);
                 }
 
                 if (is_bool($data['billable'] ?? null)) {
@@ -167,6 +182,18 @@ final class UpdateTimeEntry
 
         if (! $locked->isRunning() && $changed) {
             TimeEntryInput::assertEndAfterStart($start, $end);
+
+            // The field the data changes: the end when it names one, the start otherwise.
+            if ($end !== null) {
+                TimeEntryInput::assertDurationFits($start, $end, array_key_exists('ended_at', $data) ? 'ended_at' : 'started_at');
+            }
+        }
+
+        // A running entry is measured against the current second, as a sanity bound against an obviously
+        // wrong start. The readers clamp through TimeEntry::elapsedSecondsSql, so a start that later runs
+        // past the limit still keeps every list readable.
+        if ($locked->isRunning() && ! $start->equalTo($locked->started_at)) {
+            TimeEntryInput::assertDurationFits($start, TimerClock::now(), 'started_at');
         }
 
         $locked->forceFill(['started_at' => $start, 'ended_at' => $end]);

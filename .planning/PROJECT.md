@@ -23,7 +23,7 @@ Tracked time turns into an issued, payable invoice in one pass, with no unbilled
 - [ ] Tasks and subtasks (shared per-project counter `KEY-N`, todos, comments with internal flag, list view with filters)
 - [ ] Kanban per project and global, drag and drop
 - [ ] Time tracking (always-visible timer, manual entries, one running timer per user, consistency rules, billed locking, timesheet)
-- [ ] REST API `/api/v1` for time entries and timer (Sanctum tokens with abilities, OpenAPI docs, rate limiting)
+- [ ] REST API `/api/v1` for time entries and lookups; timer endpoints are in the backlog (Sanctum tokens with abilities, OpenAPI docs, rate limiting)
 - [ ] CNB exchange rates (daily scheduled download, idempotent, manual backfill, failure alert)
 - [ ] Reports and dashboard (time per client/project, billable vs billed, CSV/XLSX export, work report PDF)
 - [ ] Documents on S3-compatible storage via medialibrary, central listing, ZIP download, bulk delete

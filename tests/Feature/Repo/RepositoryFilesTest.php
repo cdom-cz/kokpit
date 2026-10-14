@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Audit\ActivitySourceLabel;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\Audience;
@@ -289,7 +290,7 @@ it('only names Phase 3 classes in CONTRIBUTING.md that exist in app/', function 
     $names = [
         'ActivitySourceLabel' => 'App\Domain\Audit\ActivitySourceLabel',
         'ActivitySource' => 'App\Domain\Audit\ActivitySource',
-        'RefusingCleanActivityLogAction' => 'App\Domain\Audit\RefusingCleanActivityLogAction',
+        'KokpitCleanActivityLogAction' => 'App\Domain\Audit\KokpitCleanActivityLogAction',
         'RunsAsSystem' => 'App\Domain\Operations\Jobs\Middleware\RunsAsSystem',
         'ReportFailedJob' => 'App\Domain\Operations\Alerts\ReportFailedJob',
         'AdminAlerter' => 'App\Domain\Operations\Alerts\AdminAlerter',
@@ -497,6 +498,7 @@ it('only names Phase 6 classes in CONTRIBUTING.md that exist in app/', function 
         'RequiresAdmin' => 'App\Livewire\TimeTracking\RequiresAdmin',
         'TimeTotals' => 'App\Domain\TimeTracking\Queries\TimeTotals',
         'NotifyLongRunningTimers' => 'App\Domain\TimeTracking\Jobs\NotifyLongRunningTimers',
+        'EndOverrunTimers' => 'App\Domain\TimeTracking\Actions\EndOverrunTimers',
         'EntryContextOptions' => 'App\Domain\TimeTracking\Queries\EntryContextOptions',
     ];
 
@@ -542,7 +544,66 @@ it('names the Phase 6 enforcing tests, and each of them exists', function () {
         'TimesheetTest' => 'tests/Feature/TimeTracking/TimesheetTest.php',
         'ProjectTimeOverviewTest' => 'tests/Feature/TimeTracking/ProjectTimeOverviewTest.php',
         'LongRunningTimerTest' => 'tests/Feature/TimeTracking/LongRunningTimerTest.php',
+        'EndOverrunTimersTest' => 'tests/Feature/TimeTracking/EndOverrunTimersTest.php',
         'DeployVerifyCommandTest' => 'tests/Feature/Operations/DeployVerifyCommandTest.php',
+    ];
+
+    foreach ($tests as $short => $path) {
+        expect($contributing)->toContain($short);
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$short} but {$path} does not exist");
+    }
+});
+
+it('only names Phase 7 classes in CONTRIBUTING.md that exist in app/', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    // The documentation must not name a Phase 7 mechanism that is gone (research Pitfall 12).
+    $names = [
+        'ApiAbility' => 'App\Domain\Identity\ApiAbility',
+        'ReferenceResolver' => 'App\Domain\Api\ReferenceResolver',
+        'TimeEntryPayload' => 'App\Http\Requests\Api\V1\TimeEntryPayload',
+        'EnsureIdempotency' => 'App\Http\Middleware\EnsureIdempotency',
+        'IdempotencyStore' => 'App\Domain\Api\Idempotency\IdempotencyStore',
+        'PurgeExpiredIdempotencyKeys' => 'App\Domain\Api\Jobs\PurgeExpiredIdempotencyKeys',
+        'EnsureApiDocsGenerated' => 'App\Http\Middleware\EnsureApiDocsGenerated',
+        'LabelApiActivitySource' => 'App\Http\Middleware\LabelApiActivitySource',
+        'ApiExamples' => 'App\Http\Controllers\Api\V1\ApiExamples',
+        'PragueDay' => 'App\Domain\TimeTracking\Support\PragueDay',
+        'ActivitySourceLabel' => 'App\Domain\Audit\ActivitySourceLabel',
+    ];
+
+    foreach ($names as $short => $class) {
+        expect($contributing)->toContain($short);
+        expect(class_exists($class) || trait_exists($class) || interface_exists($class) || enum_exists($class))
+            ->toBeTrue("CONTRIBUTING.md names {$short} but {$class} does not exist");
+    }
+
+    // The conventions the API documentation rests on: the constants the list controllers declare.
+    foreach (['ClientController', 'ProjectController', 'TaskController', 'TimeEntryController'] as $controller) {
+        expect(defined("App\\Http\\Controllers\\Api\\V1\\{$controller}::FILTERS"))->toBeTrue("{$controller} has no FILTERS constant")
+            ->and(defined("App\\Http\\Controllers\\Api\\V1\\{$controller}::SORTS"))->toBeTrue("{$controller} has no SORTS constant");
+    }
+
+    expect($contributing)->toContain('ddev exec php artisan scribe:generate --no-interaction')
+        ->and($contributing)->toContain('web, console, job, webhook, api')
+        ->and($contributing)->toContain('999.1')
+        ->and($contributing)->toContain('`FILTERS`')
+        ->and($contributing)->toContain('`SORTS`')
+        ->and($contributing)->toContain('/docs.openapi')
+        ->and(ActivitySourceLabel::Api->value)->toBe('api');
+});
+
+it('names the Phase 7 enforcing tests, and each of them exists', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    $tests = [
+        'ApiAccessTest' => 'tests/Isolation/ApiAccessTest.php',
+        'ApiDocumentationTest' => 'tests/Feature/Api/ApiDocumentationTest.php',
+        'ApiDocumentationHygieneTest' => 'tests/Feature/Api/ApiDocumentationHygieneTest.php',
+        'ZeropsConfigTest' => 'tests/Feature/Repo/ZeropsConfigTest.php',
+        'IdempotencyTest' => 'tests/Feature/Api/IdempotencyTest.php',
+        'IdempotencyConcurrencyTest' => 'tests/Concurrency/IdempotencyConcurrencyTest.php',
+        'TimeEntryContractTest' => 'tests/Feature/Api/TimeEntryContractTest.php',
     ];
 
     foreach ($tests as $short => $path) {

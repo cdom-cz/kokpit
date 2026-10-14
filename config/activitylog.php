@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Audit\KokpitCleanActivityLogAction;
 use App\Domain\Audit\KokpitLogActivityAction;
-use App\Domain\Audit\RefusingCleanActivityLogAction;
 use App\Domain\Shared\Models\Activity;
 
 return [
@@ -14,9 +14,10 @@ return [
     'enabled' => env('ACTIVITYLOG_ENABLED', true),
 
     /*
-     * Not used: activity records are kept indefinitely (D-09). The clean action
-     * below refuses to delete, so the activitylog:clean command fails whatever
-     * this value says, and nothing schedules it.
+     * Activity rows older than this many days are deleted every night by the
+     * scheduled clean command (routes/console.php, kokpit-activity-log-prune).
+     * The clean action below runs the delete as system. This value is the only
+     * place the retention is set; the schedule passes no --days.
      */
     'clean_after_days' => 365,
 
@@ -71,6 +72,6 @@ return [
      */
     'actions' => [
         'log_activity' => KokpitLogActivityAction::class,
-        'clean_log' => RefusingCleanActivityLogAction::class,
+        'clean_log' => KokpitCleanActivityLogAction::class,
     ],
 ];

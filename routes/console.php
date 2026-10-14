@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Api\Jobs\PurgeExpiredIdempotencyKeys;
 use App\Domain\Operations\Health\Heartbeats;
 use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
 use App\Domain\TimeTracking\Jobs\NotifyLongRunningTimers;
@@ -41,4 +42,22 @@ Schedule::command('horizon:snapshot')
 Schedule::job(new NotifyLongRunningTimers)
     ->everyFiveMinutes()
     ->name('kokpit-long-running-timers')
+    ->onOneServer();
+
+// Safety net: a running entry past kokpit.time.max_running_hours (48) is ended at its start plus that limit, never at now (hand-inserted entries).
+Schedule::command('kokpit:time:end-overrun')
+    ->hourly()
+    ->name('kokpit-end-overrun-timers')
+    ->onOneServer();
+
+// Deletes idempotency keys past their 24 hours so api_idempotency_keys stays small (D-08).
+Schedule::job(new PurgeExpiredIdempotencyKeys)
+    ->daily()
+    ->name('kokpit-api-idempotency-prune')
+    ->onOneServer();
+
+// Deletes activity rows older than activitylog.clean_after_days (365) once a night; retention lives in config only.
+Schedule::command('activitylog:clean', ['--force'])
+    ->daily()
+    ->name('kokpit-activity-log-prune')
     ->onOneServer();

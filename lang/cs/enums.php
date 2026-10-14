@@ -92,6 +92,7 @@ return [
         'console' => 'Konzole',
         'job' => 'Úloha na pozadí',
         'webhook' => 'Webhook',
+        'api' => 'API',
     ],
 
     'health_status' => [

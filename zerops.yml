@@ -45,6 +45,13 @@ zerops:
         - sudo supervisorctl reread
         - sudo supervisorctl update
         - sudo supervisorctl start horizon
+        # API documentation (D-17, owner-approved): generated on every container from its own code, with
+        # its own APP_URL as the documented base URL, and last so a failure cannot hide an earlier step.
+        # Deliberately no execOnce: the output is container-local and never committed. A failing generation
+        # fails the deploy after the migration ran and Horizon started, so migrations must stay backward
+        # compatible; the previous version keeps serving. Open item (A10), to confirm in the first rehearsal
+        # together with the sudo -u zerops question: the init user can write the Scribe output directories.
+        - php artisan scribe:generate --no-interaction
 
       crontab:
         - command: "php artisan schedule:run"
