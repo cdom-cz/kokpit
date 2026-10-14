@@ -27,5 +27,6 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeRead->value, 'th
 
 // Writes: POST, PATCH and DELETE routes, ability time:write.
 Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeWrite->value, 'throttle:api-write'])->group(function (): void {
-    // Added by the write plans of the phase.
+    Route::post('time-entries', [TimeEntryController::class, 'store'])
+        ->name('api.v1.time-entries.store');
 });

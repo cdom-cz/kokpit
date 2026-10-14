@@ -60,4 +60,23 @@ final class ReferenceResolver
 
         return is_string($id) ? $id : null;
     }
+
+    /**
+     * The project reference of a write as the Action expects it: a uuid or the id of the project the key
+     * names. Anything else (null, a non-string, a string that is no key or names no project) passes through
+     * unchanged, so the Action refuses it with its own field error and the API carries no copy of that rule.
+     * An archived project resolves too; the Action then refuses it as the panel does.
+     */
+    public function writeProject(mixed $value): mixed
+    {
+        return is_string($value) ? ($this->projectId($value) ?? $value) : $value;
+    }
+
+    /**
+     * The task counterpart of {@see writeProject()}: a uuid or the id of the task a `KEY-N` reference names.
+     */
+    public function writeTask(mixed $value): mixed
+    {
+        return is_string($value) ? ($this->taskId($value) ?? $value) : $value;
+    }
 }

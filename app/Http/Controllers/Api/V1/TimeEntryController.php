@@ -6,14 +6,20 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Domain\Api\ReferenceResolver;
 use App\Domain\Identity\ApiAbility;
+use App\Domain\Identity\Models\User;
+use App\Domain\TimeTracking\Actions\CreateTimeEntry;
 use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\PragueDay;
 use App\Domain\TimeTracking\TimeEntryInput;
 use App\Http\Requests\Api\V1\ListTimeEntriesRequest;
+use App\Http\Requests\Api\V1\StoreTimeEntryRequest;
+use App\Http\Requests\Api\V1\TimeEntryPayload;
 use App\Http\Resources\Api\V1\TimeEntryResource;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Knuckles\Scribe\Attributes\Endpoint;
 use Knuckles\Scribe\Attributes\Group;
@@ -133,6 +139,37 @@ final class TimeEntryController
         }
 
         return new TimeEntryResource($entry);
+    }
+
+    #[Endpoint(
+        'Create a time entry',
+        'Requires ability `'.ApiAbility::TimeWrite->value.'`. Records a finished entry through the same rules as the application. Give `started_at` and exactly one of `ended_at` and `duration_seconds` (whole seconds from the start). Instants are ISO 8601 with an offset or `Z`; an instant without one is refused. The project and the task are referenced by UUID or by key (`DEMO`, `DEMO-1`), never by name; a task fixes its project and client, so `client_id` may then be left out. An entry that disagrees about client, project and task, ends before it starts or names an archived task answers 422 under the field the application marks. Overlapping entries are allowed. `billable` defaults to the default of the task. The answer is 201 with the entry and a `Location` header.',
+    )]
+    #[Response(ApiExamples::TIME_ENTRY, 201, 'The entry was created.')]
+    #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A field is not valid or the application refuses the entry; the errors are keyed by field.')]
+    public function store(StoreTimeEntryRequest $request, CreateTimeEntry $create, ReferenceResolver $refs): JsonResponse
+    {
+        $entry = $create->handle(self::actor($request), TimeEntryPayload::forCreate($request->validated(), $refs));
+        $entry->load(['project', 'task']);
+
+        return (new TimeEntryResource($entry))
+            ->response()
+            ->setStatusCode(201)
+            ->header('Location', route('api.v1.time-entries.show', $entry->id));
+    }
+
+    /**
+     * The Admin the token belongs to; the token check has already refused every other kind of user.
+     */
+    private static function actor(Request $request): User
+    {
+        $user = $request->user();
+
+        if (! $user instanceof User) {
+            abort(401);
+        }
+
+        return $user;
     }
 
     /**
