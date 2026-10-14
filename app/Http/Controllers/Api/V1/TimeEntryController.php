@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Domain\Api\ReferenceResolver;
 use App\Domain\Identity\ApiAbility;
+use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Domain\TimeTracking\Support\PragueDay;
+use App\Domain\TimeTracking\TimeEntryInput;
 use App\Http\Requests\Api\V1\ListTimeEntriesRequest;
 use App\Http\Resources\Api\V1\TimeEntryResource;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Knuckles\Scribe\Attributes\Endpoint;
 use Knuckles\Scribe\Attributes\Group;
@@ -36,7 +41,7 @@ final class TimeEntryController
      * The filters of the list, `filter[<name>]`. The query-builder allow-list, the request rules and the
      * generated documentation all read this one list.
      */
-    public const array FILTERS = ['client'];
+    public const array FILTERS = ['client', 'project', 'task', 'billable', 'billed', 'from', 'to'];
 
     /**
      * The columns the list can be sorted by; a leading `-` sorts descending.
@@ -48,18 +53,42 @@ final class TimeEntryController
         'Requires ability `'.ApiAbility::TimeRead->value.'`. Returns the time entries newest first (by start), a page at a time. Follow `meta.next_cursor` with the `cursor` parameter until it is `null`. The entries carry no rate, price or amount.',
     )]
     #[QueryParam('filter[client]', 'string', 'Only entries of this client (UUID).', required: false, example: '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9')]
+    #[QueryParam('filter[project]', 'string', 'Only entries of this project: its UUID or its key, for example `DEMO`. Archived projects are included; an unknown key matches no entry.', required: false, example: 'DEMO')]
+    #[QueryParam('filter[task]', 'string', 'Only entries of this task: its UUID or its reference, for example `DEMO-1`. Archived tasks are included; an unknown reference matches no entry.', required: false, example: 'DEMO-1')]
+    #[QueryParam('filter[billable]', 'boolean', 'Only billable (`true`) or only non-billable (`false`) entries.', required: false, example: true)]
+    #[QueryParam('filter[billed]', 'boolean', 'Only billed (`true`) or only unbilled (`false`) entries.', required: false, example: false)]
+    #[QueryParam('filter[from]', 'string', 'Entries that started at or after this moment. A date such as `2026-10-12` is a Europe/Prague calendar day and means the start of that day; an ISO 8601 instant with an offset or `Z` (encode `+` as `%2B`) is used exactly.', required: false, example: '2026-10-12')]
+    #[QueryParam('filter[to]', 'string', 'Entries that started at or before this moment. A date such as `2026-10-12` is a Europe/Prague calendar day and includes the whole day; an ISO 8601 instant with an offset or `Z` (encode `+` as `%2B`) is inclusive.', required: false, example: '2026-10-18')]
     #[QueryParam('cursor', 'string', 'The `meta.next_cursor` of the previous page.', required: false, example: 'No-example')]
     #[QueryParam('per_page', 'integer', 'Entries per page, 1 to 200. Default 50.', required: false, example: 50)]
     #[QueryParam('sort', 'string', 'Sort by `started_at` (default, newest first as `-started_at`) or `created_at`; a leading `-` sorts descending.', required: false, example: '-started_at', enum: ['started_at', '-started_at', 'created_at', '-created_at'])]
     #[Response(ApiExamples::TIME_ENTRY_LIST, 200, 'A page of time entries.')]
     #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A filter, the page size, the cursor or the sort is not valid.')]
-    public function index(ListTimeEntriesRequest $request): AnonymousResourceCollection
+    public function index(ListTimeEntriesRequest $request, ReferenceResolver $refs): AnonymousResourceCollection
     {
         $descending = str_starts_with($request->sortExpression(), '-');
 
         $entries = QueryBuilder::for(TimeEntry::query()->with(['project', 'task']))
             ->allowedFilters(
                 AllowedFilter::callback('client', static fn (Builder $query, mixed $value): Builder => $query->where('time_entries.client_id', $value)),
+                // A key that matches nothing narrows the list to nothing; it is not an error.
+                AllowedFilter::callback('project', static function (Builder $query, mixed $value) use ($refs): Builder {
+                    $id = is_string($value) ? $refs->projectId($value) : null;
+
+                    return $id === null ? $query->whereRaw('false') : $query->where('time_entries.project_id', $id);
+                }),
+                AllowedFilter::callback('task', static function (Builder $query, mixed $value) use ($refs): Builder {
+                    $id = is_string($value) ? $refs->taskId($value) : null;
+
+                    return $id === null ? $query->whereRaw('false') : $query->where('time_entries.task_id', $id);
+                }),
+                AllowedFilter::callback('billable', static fn (Builder $query, mixed $value): Builder => $query->where('time_entries.billable', self::flag($value))),
+                AllowedFilter::callback('billed', static fn (Builder $query, mixed $value): Builder => $query->where(
+                    'time_entries.billing_state',
+                    self::flag($value) ? BillingState::Billed->value : BillingState::Unbilled->value,
+                )),
+                AllowedFilter::callback('from', static fn (Builder $query, mixed $value): Builder => self::startedFrom($query, $value)),
+                AllowedFilter::callback('to', static fn (Builder $query, mixed $value): Builder => self::startedUntil($query, $value)),
             )
             ->allowedSorts(...self::SORTS)
             ->defaultSort('-started_at')
@@ -104,5 +133,59 @@ final class TimeEntryController
         }
 
         return new TimeEntryResource($entry);
+    }
+
+    /**
+     * A true or false filter value: the query-builder hands over `true` / `false` as booleans and `1` / `0` as strings.
+     */
+    private static function flag(mixed $value): bool
+    {
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /**
+     * Started at or after the midnight that begins a Prague day, or at or after an instant (OD-5).
+     *
+     * @param  Builder<Model>  $query
+     * @return Builder<Model>
+     */
+    private static function startedFrom(Builder $query, mixed $value): Builder
+    {
+        if (! is_string($value)) {
+            return $query;
+        }
+
+        $day = PragueDay::day($value);
+        $from = $day === null ? TimeEntryInput::instant($value, 'filter.from') : PragueDay::start($day);
+
+        return $from === null
+            ? $query
+            : $query->whereRaw('time_entries.started_at >= ?::timestamptz', [$from->format('Y-m-d H:i:sP')]);
+    }
+
+    /**
+     * Started before the midnight that follows a Prague day (the named day is inclusive), or at or
+     * before an instant (OD-5). An entry belongs to the day it started.
+     *
+     * @param  Builder<Model>  $query
+     * @return Builder<Model>
+     */
+    private static function startedUntil(Builder $query, mixed $value): Builder
+    {
+        if (! is_string($value)) {
+            return $query;
+        }
+
+        $day = PragueDay::day($value);
+
+        if ($day !== null) {
+            return $query->whereRaw('time_entries.started_at < ?::timestamptz', [PragueDay::endExclusive($day)->format('Y-m-d H:i:sP')]);
+        }
+
+        $until = TimeEntryInput::instant($value, 'filter.to');
+
+        return $until === null
+            ? $query
+            : $query->whereRaw('time_entries.started_at <= ?::timestamptz', [$until->format('Y-m-d H:i:sP')]);
     }
 }

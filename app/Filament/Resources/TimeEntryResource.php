@@ -21,6 +21,7 @@ use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Queries\EntryContextOptions;
 use App\Domain\TimeTracking\Queries\OverlapFinder;
 use App\Domain\TimeTracking\Support\DurationFormat;
+use App\Domain\TimeTracking\Support\PragueDay;
 use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\RelationManagers\TimeEntryHistoryRelationManager;
@@ -476,8 +477,8 @@ final class TimeEntryResource extends Resource
                             : [];
                     }
 
-                    $from = self::day($data['from'] ?? null);
-                    $until = self::day($data['until'] ?? null);
+                    $from = PragueDay::day($data['from'] ?? null);
+                    $until = PragueDay::day($data['until'] ?? null);
 
                     return array_values(array_filter([
                         $from === null ? null : $label.' '.mb_strtolower(__('kokpit.time.filters.from')).': '.self::dayText($from),
@@ -555,43 +556,13 @@ final class TimeEntryResource extends Resource
             'last_month' => [$month->subMonthNoOverflow(), $month],
             // Both days are inclusive: the end is the midnight after the last day.
             'custom' => [
-                ($day = self::day($data['from'] ?? null)) === null ? null : CarbonImmutable::createFromFormat('!Y-m-d', $day, 'UTC'),
-                ($day = self::day($data['until'] ?? null)) === null ? null : CarbonImmutable::createFromFormat('!Y-m-d', $day, 'UTC')?->addDay(),
+                ($day = PragueDay::day($data['from'] ?? null)) === null ? null : CarbonImmutable::createFromFormat('!Y-m-d', $day, 'UTC'),
+                ($day = PragueDay::day($data['until'] ?? null)) === null ? null : CarbonImmutable::createFromFormat('!Y-m-d', $day, 'UTC')?->addDay(),
             ],
             default => [null, null],
         };
 
-        return [self::pragueMidnight($from), self::pragueMidnight($until)];
-    }
-
-    /**
-     * The UTC instant at which the calendar day of `$day` begins in the panel timezone.
-     */
-    private static function pragueMidnight(?CarbonImmutable $day): ?CarbonImmutable
-    {
-        if (! $day instanceof CarbonImmutable) {
-            return null;
-        }
-
-        return CarbonImmutable::createFromFormat('!Y-m-d', $day->format('Y-m-d'), FilamentTimezone::get())?->utc();
-    }
-
-    /**
-     * A real calendar day as `Y-m-d`, or null for anything else.
-     */
-    private static function day(mixed $value): ?string
-    {
-        if (! is_string($value) || $value === '') {
-            return null;
-        }
-
-        try {
-            $day = CarbonImmutable::createFromFormat('!Y-m-d', $value);
-        } catch (Throwable) {
-            return null;
-        }
-
-        return $day instanceof CarbonImmutable && $day->format('Y-m-d') === $value ? $value : null;
+        return [PragueDay::midnight($from), PragueDay::midnight($until)];
     }
 
     private static function dayText(string $day): string

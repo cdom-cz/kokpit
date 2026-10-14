@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\TimeTracking\Models\TimeEntry;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\ApiFixtures;
 
 /*
@@ -69,3 +72,130 @@ it('answers 422, not 400, for a filter key the API does not know', function (): 
         ->assertStatus(422)
         ->assertJsonValidationErrors(['filter.client']);
 });
+
+/**
+ * A finished entry of ten minutes that starts at the given UTC instant.
+ *
+ * @param  array<string, mixed>  $data
+ */
+function listEntryAt(string $start, array $data = []): TimeEntry
+{
+    $started = CarbonImmutable::parse($start);
+
+    return ApiFixtures::entry(ApiFixtures::admin(), [
+        'started_at' => $started->format('Y-m-d\TH:i:sP'),
+        'ended_at' => $started->addMinutes(10)->format('Y-m-d\TH:i:sP'),
+        ...$data,
+    ]);
+}
+
+/**
+ * The ids of the entries a list query returns.
+ *
+ * @return list<string>
+ */
+function listIds(mixed $test, string $query): array
+{
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:read']);
+
+    return array_column($test->withToken($token)->getJson('/api/v1/time-entries?'.$query)->assertOk()->json('data'), 'id');
+}
+
+it('treats a date-only range as inclusive Prague days across the 25-hour day', function (): void {
+    $client = ApiFixtures::client();
+    $before = listEntryAt('2026-10-24T21:59:59Z', ['client_id' => $client->id]);
+    $first = listEntryAt('2026-10-24T22:30:00Z', ['client_id' => $client->id]);
+    $last = listEntryAt('2026-10-25T22:59:59Z', ['client_id' => $client->id]);
+    $after = listEntryAt('2026-10-25T23:00:00Z', ['client_id' => $client->id]);
+
+    $ids = listIds($this, 'filter[from]=2026-10-25&filter[to]=2026-10-25');
+
+    expect($ids)->toContain($first->id, $last->id)
+        ->and($ids)->not->toContain($before->id)
+        ->and($ids)->not->toContain($after->id);
+
+    $from = listIds($this, 'filter[from]=2026-10-25');
+    expect($from)->toContain($first->id, $last->id, $after->id)->and($from)->not->toContain($before->id);
+
+    $to = listIds($this, 'filter[to]=2026-10-25');
+    expect($to)->toContain($before->id, $first->id, $last->id)->and($to)->not->toContain($after->id);
+});
+
+it('uses an ISO 8601 instant exactly and treats an instant filter[to] as inclusive', function (): void {
+    $client = ApiFixtures::client();
+    $early = listEntryAt('2026-10-12T07:59:59Z', ['client_id' => $client->id]);
+    $on = listEntryAt('2026-10-12T08:00:00Z', ['client_id' => $client->id]);
+    $late = listEntryAt('2026-10-12T09:00:01Z', ['client_id' => $client->id]);
+
+    $ids = listIds($this, 'filter[from]='.urlencode('2026-10-12T10:00:00+02:00'));
+    expect($ids)->toContain($on->id, $late->id)->and($ids)->not->toContain($early->id);
+
+    $ids = listIds($this, 'filter[to]='.urlencode('2026-10-12T11:00:00+02:00'));
+    expect($ids)->toContain($early->id, $on->id)->and($ids)->not->toContain($late->id);
+});
+
+it('finds a project by uuid and by key alike, and an unknown key matches nothing', function (): void {
+    $client = ApiFixtures::client();
+    $project = ApiFixtures::project($client, 'DEMO');
+    $other = ApiFixtures::project($client, 'OTHR');
+    $inProject = listEntryAt('2026-10-12T08:00:00Z', ['client_id' => $client->id, 'project_id' => $project->id]);
+    $elsewhere = listEntryAt('2026-10-12T09:00:00Z', ['client_id' => $client->id, 'project_id' => $other->id]);
+
+    expect(listIds($this, 'filter[project]='.$project->id))->toBe([$inProject->id])
+        ->and(listIds($this, 'filter[project]=DEMO'))->toBe([$inProject->id])
+        ->and(listIds($this, 'filter[project]=ZZZZ'))->toBe([])
+        ->and($elsewhere->id)->not->toBe($inProject->id);
+});
+
+it('finds the entries of an archived project and an archived task by key', function (): void {
+    $client = ApiFixtures::client();
+    $project = ApiFixtures::project($client, 'DEMO');
+    $task = ApiFixtures::task($project);
+    $entry = listEntryAt('2026-10-12T08:00:00Z', ['client_id' => $client->id, 'project_id' => $project->id, 'task_id' => $task->id]);
+
+    expect(listIds($this, 'filter[task]='.$task->reference))->toBe([$entry->id])
+        ->and(listIds($this, 'filter[task]='.$task->id))->toBe([$entry->id]);
+
+    DB::table('tasks')->where('id', $task->id)->update(['deleted_at' => now()]);
+    DB::table('projects')->where('id', $project->id)->update(['deleted_at' => now()]);
+
+    expect(listIds($this, 'filter[task]='.$task->reference))->toBe([$entry->id])
+        ->and(listIds($this, 'filter[project]=DEMO'))->toBe([$entry->id])
+        ->and(listIds($this, 'filter[task]=DEMO-999'))->toBe([]);
+});
+
+it('filters by the billable flag and the billing state', function (): void {
+    $client = ApiFixtures::client();
+    $billable = listEntryAt('2026-10-12T08:00:00Z', ['client_id' => $client->id]);
+    $free = listEntryAt('2026-10-12T09:00:00Z', ['client_id' => $client->id, 'billable' => false]);
+    $billed = ApiFixtures::billed(listEntryAt('2026-10-12T10:00:00Z', ['client_id' => $client->id]));
+
+    $nonBillable = listIds($this, 'filter[billable]=false&filter[client]='.$client->id);
+    expect($nonBillable)->toBe([$free->id]);
+
+    $billableIds = listIds($this, 'filter[billable]=true&filter[client]='.$client->id);
+    expect($billableIds)->toContain($billable->id, $billed->id)->and($billableIds)->not->toContain($free->id);
+
+    expect(listIds($this, 'filter[billed]=true&filter[client]='.$client->id))->toBe([$billed->id]);
+
+    $unbilled = listIds($this, 'filter[billed]=0&filter[client]='.$client->id);
+    expect($unbilled)->toContain($billable->id, $free->id)->and($unbilled)->not->toContain($billed->id);
+});
+
+it('answers 422 under the filter key for a malformed value, never 400 or 500', function (string $query, string $field): void {
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:read']);
+
+    $this->withToken($token)->getJson('/api/v1/time-entries?'.$query)
+        ->assertStatus(422)
+        ->assertJsonValidationErrors([$field]);
+})->with([
+    'a non-uuid client' => ['filter[client]=abc', 'filter.client'],
+    'a lower case project key' => ['filter[project]=demo', 'filter.project'],
+    'a task number of zero' => ['filter[task]=DEMO-0', 'filter.task'],
+    'a task without a number' => ['filter[task]=DEMO', 'filter.task'],
+    'a non-calendar date' => ['filter[from]=2026-02-30', 'filter.from'],
+    'a date with a time but no offset' => ['filter[to]=2026-10-12T10:00:00', 'filter.to'],
+    'a billable word' => ['filter[billable]=maybe', 'filter.billable'],
+    'a billed word' => ['filter[billed]=yes', 'filter.billed'],
+    'an unknown filter' => ['filter[unknown]=1', 'filter'],
+]);
