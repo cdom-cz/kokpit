@@ -440,7 +440,7 @@ Plans:
   4. An API client resolves clients, projects and tasks by UUID, key and name through read-only lookups, and addresses a task by its `KEY-N`
   5. Excess requests receive a rate-limit response, and published OpenAPI documentation describes every endpoint
 
-**Plans:** 13/18 plans executed
+**Plans:** 14/18 plans executed
 
 Plans:
 **Wave 1**
@@ -475,7 +475,7 @@ Plans:
 
 **Gap wave 1**
 - [x] 07-13-PLAN.md — Interval span bound in the shared Actions: a far-past or far-ahead start answers 422 on finished and running entries (gap 1, closes T-07-26)
-- [ ] 07-16-PLAN.md — Cursor validation on all four list endpoints (gap 4)
+- [x] 07-16-PLAN.md — Cursor validation on all four list endpoints (gap 4)
 
 **Gap wave 2** *(blocked on gap wave 1 completion)*
 - [ ] 07-14-PLAN.md — UTC years 1 to 9999 for every stored instant, the end computed from duration_seconds included, and range-aware PragueDay filters (gap 2)
@@ -582,7 +582,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Clients and Projects | 21/21 | Complete    | 2026-10-09 |
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
-| 7. REST API | 13/18 | In Progress | - |
+| 7. REST API | 14/18 | In Progress | - |
 | 8. Exchange Rates and Reports | 0/0 | Not started | - |
 | 9. Documents and Finance | 0/0 | Not started | - |
 | 10. Invoicing | 0/0 | Not started | - |
