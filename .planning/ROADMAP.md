@@ -440,7 +440,7 @@ Plans:
   4. An API client resolves clients, projects and tasks by UUID, key and name through read-only lookups, and addresses a task by its `KEY-N`
   5. Excess requests receive a rate-limit response, and published OpenAPI documentation describes every endpoint
 
-**Plans:** 18/18 plans executed
+**Plans:** 18/19 plans executed
 
 Plans:
 **Wave 1**
@@ -484,6 +484,7 @@ Plans:
 
 **Gap wave 3** *(blocked on gap wave 2 completion)*
 - [x] 07-15-PLAN.md — Batch item faults reported as failed items, so the Idempotency-Key is never released after partial commits (gap 3)
+- [ ] 07-19-PLAN.md — Overflow-proof elapsed seconds: one clamped bigint expression for the entry list and the time totals, so a running start at the edge of the limit never breaks the Admin screens (07-UAT.md G-07-1, WR-02)
 
 **UI hint**: yes
 
