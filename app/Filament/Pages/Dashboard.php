@@ -12,6 +12,7 @@ use App\Filament\Widgets\HoursStats;
 use App\Filament\Widgets\PartnerProjects;
 use App\Filament\Widgets\PartnerTasks;
 use App\Filament\Widgets\UnbilledPerClient;
+use App\Filament\Widgets\UpcomingDeadlines;
 use Filament\Pages\Dashboard as BaseDashboard;
 use Filament\Schemas\Components\EmptyState;
 use Filament\Schemas\Schema;
@@ -41,7 +42,7 @@ class Dashboard extends BaseDashboard
         $context = app(PartnerContext::class);
 
         if ($context->isAdmin()) {
-            return [HoursStats::class, UnbilledPerClient::class];
+            return [HoursStats::class, UnbilledPerClient::class, UpcomingDeadlines::class];
         }
 
         if ($context->partnerClientId() === null) {

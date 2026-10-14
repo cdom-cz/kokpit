@@ -11,11 +11,14 @@ use App\Domain\Reports\ReportFilters;
 use App\Domain\Reports\TimeReport;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
+use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Widgets\HoursStats;
 use App\Filament\Widgets\UnbilledPerClient;
+use App\Filament\Widgets\UpcomingDeadlines;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 use Livewire\Features\SupportEvents\SupportEvents;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -421,5 +424,238 @@ describe('the unbilled time of the month per client', function (): void {
         expect($text)->not->toContain('Nevyfakturováno tento měsíc')
             ->not->toContain('Zobrazit v reportu')
             ->not->toContain('Nic k vyfakturování');
+    });
+});
+
+/**
+ * A project of a client under a fixed key, in a system run.
+ */
+function adminDashProject(Client $client, string $key, string $name): Project
+{
+    return app(PartnerContext::class)->runAsSystem(static fn (): Project => Project::factory()->create([
+        'client_id' => $client->id,
+        'key' => $key,
+        'name' => $name,
+    ]));
+}
+
+/**
+ * A task of the project with the given due day (`Y-m-d`, or null for none), in a system run.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function adminDashDeadlineTask(Project $project, ?string $due, string $title, array $attributes = []): Task
+{
+    return app(PartnerContext::class)->runAsSystem(static fn (): Task => Task::factory()->create([
+        'project_id' => $project->id,
+        'title' => $title,
+        'due_date' => $due,
+        ...$attributes,
+    ]));
+}
+
+/**
+ * The HTML of the deadlines widget alone, as the Admin gets it.
+ */
+function adminDashDeadlinesHtml(): string
+{
+    return Livewire::actingAs(test()->admin)->test(UpcomingDeadlines::class)->html();
+}
+
+describe('the upcoming task deadlines', function (): void {
+    beforeEach(function (): void {
+        $this->deadlineClient = adminDashClient('Example Client Deadline');
+        $this->deadlineProject = adminDashProject($this->deadlineClient, 'DLN', 'Example Project Deadline');
+    });
+
+    it('lists the ten nearest of twelve open tasks with a due date, nearest first', function (): void {
+        // Today is 2026-10-14. Twelve tasks due on the 15th to the 26th, created in reverse order.
+        for ($day = 26; $day >= 15; $day--) {
+            adminDashDeadlineTask($this->deadlineProject, '2026-10-'.$day, 'Example due '.$day);
+        }
+
+        $text = adminDashText(adminDashDeadlinesHtml());
+
+        expect($text)->toContain('Nejbližší termíny')
+            ->toContain('Example due 15')
+            ->toContain('Example due 24')
+            ->not->toContain('Example due 25')
+            ->not->toContain('Example due 26')
+            ->and(strpos($text, 'Example due 15'))->toBeLessThan((int) strpos($text, 'Example due 16'))
+            ->and(strpos($text, 'Example due 23'))->toBeLessThan((int) strpos($text, 'Example due 24'));
+    });
+
+    it('breaks a tie of the due day by priority, the most urgent first', function (): void {
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-20', 'Example low', ['priority' => 'low']);
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-20', 'Example urgent', ['priority' => 'urgent']);
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-20', 'Example normal', ['priority' => 'normal']);
+
+        $text = adminDashText(adminDashDeadlinesHtml());
+
+        expect(strpos($text, 'Example urgent'))->toBeLessThan((int) strpos($text, 'Example normal'))
+            ->and(strpos($text, 'Example normal'))->toBeLessThan((int) strpos($text, 'Example low'));
+    });
+
+    it('highlights an overdue task with the danger date, the badge and the day count, and a task due today with "Dnes"', function (): void {
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-13', 'Example one day late');
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-11', 'Example three days late');
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-09', 'Example five days late');
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-14', 'Example due today');
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-16', 'Example due later');
+
+        $html = adminDashDeadlinesHtml();
+        $text = adminDashText($html);
+
+        expect($text)->toContain('13. 10. 2026')
+            ->toContain('Po termínu o 1 den')
+            ->toContain('Po termínu o 3 dny')
+            ->toContain('Po termínu o 5 dní')
+            ->toContain('Dnes')
+            ->toContain('16. 10. 2026')
+            // The badge appears on the three overdue rows only, with the warning triangle.
+            ->and(substr_count($html, 'fi-color-danger'))->toBe(3)
+            ->and(substr_count($text, 'Po termínu o'))->toBe(3)
+            ->and($html)->toContain('var(--danger-600)');
+    });
+
+    it('shows no alarm for a task due today or later', function (): void {
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-14', 'Example due today');
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-17', 'Example due later');
+
+        $html = adminDashDeadlinesHtml();
+
+        expect($html)->not->toContain('fi-color-danger')
+            ->not->toContain('var(--danger-600)')
+            ->and(adminDashText($html))->not->toContain('Po termínu');
+    });
+
+    it('leaves out a done task, a task without a due date and an archived task', function (): void {
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-15', 'Example open');
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-15', 'Example finished', ['status' => 'done']);
+        adminDashDeadlineTask($this->deadlineProject, null, 'Example undated');
+        $archived = adminDashDeadlineTask($this->deadlineProject, '2026-10-15', 'Example archived');
+        app(PartnerContext::class)->runAsSystem(static fn () => $archived->delete());
+
+        $text = adminDashText(adminDashDeadlinesHtml());
+
+        expect($text)->toContain('Example open')
+            ->not->toContain('Example finished')
+            ->not->toContain('Example undated')
+            ->not->toContain('Example archived');
+    });
+
+    it('links each row to the task page and names the client and the project under the title', function (): void {
+        $task = adminDashDeadlineTask($this->deadlineProject, '2026-10-15', 'Example linked');
+
+        $html = adminDashDeadlinesHtml();
+
+        expect($html)->toContain('href="'.url('/admin/tasks/'.$task->reference).'"')
+            ->and(adminDashText($html))->toContain($task->reference.' · Example linked')
+            ->toContain('Example Client Deadline · Example Project Deadline');
+    });
+
+    it('cuts a 251-character title to one line and keeps the full text as the tooltip', function (): void {
+        $title = 'Example '.str_repeat('long ', 48).'end';
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-15', $title);
+
+        $html = adminDashDeadlinesHtml();
+
+        expect(strlen($title))->toBe(251)
+            ->and($html)->toContain('title="'.e($title).'"')
+            ->toContain('text-overflow: ellipsis')
+            ->toContain('white-space: nowrap');
+    });
+
+    it('escapes markup in a title and in the client and project names', function (): void {
+        $client = adminDashClient('Example <i>Client</i>');
+        $project = adminDashProject($client, 'ESC', 'Example <u>Project</u>');
+        adminDashDeadlineTask($project, '2026-10-15', 'Example <b>Bold</b> title');
+
+        $html = adminDashDeadlinesHtml();
+
+        expect($html)->toContain('Example &lt;b&gt;Bold&lt;/b&gt; title')
+            ->toContain('Example &lt;i&gt;Client&lt;/i&gt;')
+            ->toContain('Example &lt;u&gt;Project&lt;/u&gt;')
+            ->not->toContain('<b>Bold</b>')
+            ->not->toContain('<i>Client</i>');
+    });
+
+    it('still names the client and the project of a task whose client or project is archived', function (): void {
+        $task = adminDashDeadlineTask($this->deadlineProject, '2026-10-15', 'Example orphaned');
+        app(PartnerContext::class)->runAsSystem(function (): void {
+            $this->deadlineProject->delete();
+            $this->deadlineClient->delete();
+        });
+
+        $text = adminDashText(adminDashDeadlinesHtml());
+
+        expect($text)->toContain($task->reference.' · Example orphaned')
+            ->toContain('Example Client Deadline · Example Project Deadline');
+    });
+
+    it('says "Žádné nadcházející termíny" when no open task has a due date', function (): void {
+        adminDashDeadlineTask($this->deadlineProject, null, 'Example undated');
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-15', 'Example finished', ['status' => 'done']);
+
+        $text = adminDashText(adminDashDeadlinesHtml());
+
+        expect($text)->toContain('Žádné nadcházející termíny')
+            ->toContain('Otevřené úkoly zatím nemají termín.')
+            ->not->toContain('Example undated');
+    });
+
+    it('is part of the Admin dashboard after the unbilled table', function (): void {
+        adminDashDeadlineTask($this->deadlineProject, '2026-10-15', 'Example on the dashboard');
+
+        $text = adminDashText((string) $this->actingAs($this->admin)->get('/admin')->assertOk()->getContent());
+
+        expect($text)->toContain('Nejbližší termíny')
+            ->toContain('Example on the dashboard')
+            ->and(strpos($text, 'Nevyfakturováno tento měsíc'))->toBeLessThan((int) strpos($text, 'Nejbližší termíny'));
+    });
+
+    it('reads the rows with a constant number of queries', function (): void {
+        for ($i = 1; $i <= 3; $i++) {
+            adminDashDeadlineTask($this->deadlineProject, '2026-10-1'.(4 + $i), 'Example few '.$i);
+        }
+
+        // One render first: the roles and permissions of the Admin are read once and cached.
+        Livewire::actingAs($this->admin)->test(UpcomingDeadlines::class);
+
+        DB::enableQueryLog();
+        Livewire::actingAs($this->admin)->test(UpcomingDeadlines::class);
+        $few = count(DB::getQueryLog());
+        DB::flushQueryLog();
+
+        for ($i = 1; $i <= 6; $i++) {
+            $other = adminDashProject(adminDashClient('Example Client More '.$i), 'MR'.chr(64 + $i), 'Example Project More '.$i);
+            adminDashDeadlineTask($other, '2026-10-2'.$i, 'Example more '.$i);
+        }
+
+        DB::flushQueryLog();
+        Livewire::actingAs($this->admin)->test(UpcomingDeadlines::class);
+        $many = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        expect($many)->toBe($few);
+    });
+
+    it('listens to the four time events and polls every 60 seconds', function (): void {
+        $component = Livewire::actingAs($this->admin)->test(UpcomingDeadlines::class);
+
+        expect(SupportEvents::getListenerEventNames($component->instance()))
+            ->toEqualCanonicalizing(['timer-started', 'timer-stopped', 'time-entry-saved', 'time-entry-deleted'])
+            ->and($component->html())->toContain('wire:poll.visible.60s');
+    });
+
+    it('is refused to a Partner, also when mounted by force, and absent from the Partner dashboard', function (): void {
+        $partner = Canary::partnerFor(Canary::twoClients()[0]);
+
+        Livewire::actingAs($partner)->test(UpcomingDeadlines::class)->assertForbidden();
+
+        $text = adminDashText((string) $this->actingAs($partner)->get('/admin')->assertOk()->getContent());
+
+        expect($text)->not->toContain('Nejbližší termíny')
+            ->not->toContain('Žádné nadcházející termíny');
     });
 });

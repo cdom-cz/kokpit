@@ -343,7 +343,9 @@ describe('the empty states', function (): void {
         $this->actingAs($this->admin)->get('/admin')->assertOk()
             ->assertSee(__('kokpit.dashboard.hours.today'))
             ->assertDontSee(__('kokpit.dashboard.empty_heading'))
-            ->assertDontSee(__('kokpit.dashboard.partner_tasks.heading'))
+            // The heading "Otevřené úkoly" also opens the sentence of the deadlines empty state, so the Partner
+            // widget is told apart by its own sub-line.
+            ->assertDontSee(__('kokpit.dashboard.partner_tasks.description'))
             ->assertDontSee(__('kokpit.dashboard.partner_projects.heading'));
 
         $this->actingAs(Canary::partnerFor(null))->get('/admin')->assertForbidden();
