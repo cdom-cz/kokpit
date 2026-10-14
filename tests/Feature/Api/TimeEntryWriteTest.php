@@ -5,10 +5,14 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Tasks\Actions\ArchiveTask;
+use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Illuminate\Support\Facades\Auth;
 use Tests\Support\ApiFixtures;
+use Tests\Support\Canary;
 
 /*
  * AP-02, D-09: writing time entries over the REST API. The API maps input and lets the domain Actions
@@ -243,4 +247,259 @@ it('answers 404 for an unknown entry on PATCH and DELETE and 403 for a token tha
     $this->withToken($reader)->deleteJson('/api/v1/time-entries/'.$entry->id)->assertForbidden();
 
     expect(TimeEntry::query()->whereKey($entry->id)->exists())->toBeTrue();
+});
+
+/**
+ * The refusal matrix of the UI through the API (D-09). The expected messages are the Action messages, read
+ * through __(), so the tests prove that the panel and the API answer alike.
+ */
+
+/**
+ * A client, a project DEMO with its task DEMO-1 and a token that may write.
+ *
+ * @return array{0: User, 1: Client, 2: Project, 3: Task, 4: string}
+ */
+function matrixContext(): array
+{
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $project = ApiFixtures::project($client, 'DEMO');
+    $task = ApiFixtures::task($project);
+
+    return [$admin, $client, $project, $task, ApiFixtures::token($admin, ['time:write'])];
+}
+
+/**
+ * The body of a valid create to override per case.
+ *
+ * @param  array<string, mixed>  $override
+ * @return array<string, mixed>
+ */
+function matrixBody(Client $client, array $override = []): array
+{
+    return [
+        'client_id' => $client->id,
+        'started_at' => '2026-10-12T08:00:00Z',
+        'ended_at' => '2026-10-12T09:00:00Z',
+        ...$override,
+    ];
+}
+
+it('refuses a task together with the project of another task, and a project of another client, as the panel does', function (): void {
+    [$admin, $client, $project, $task, $token] = matrixContext();
+    $otherProject = ApiFixtures::project($client, 'OTHR');
+    $otherClient = ApiFixtures::client();
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, ['task_id' => $task->id, 'project_id' => $otherProject->id]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['task_id'])
+        ->assertJsonPath('errors.task_id.0', __('kokpit.time.errors.inconsistent_context'));
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($otherClient, ['project_id' => 'DEMO']))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['project_id'])
+        ->assertJsonPath('errors.project_id.0', __('kokpit.time.errors.inconsistent_context'));
+
+    expect(TimeEntry::query()->count())->toBe(0);
+});
+
+it('refuses an end equal to or before the start under ended_at', function (string $end): void {
+    [, $client, , , $token] = matrixContext();
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, ['ended_at' => $end]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['ended_at'])
+        ->assertJsonPath('errors.ended_at.0', __('kokpit.time.errors.end_before_start'));
+})->with([
+    'equal' => '2026-10-12T08:00:00Z',
+    'equal after truncation' => '2026-10-12T08:00:00.900Z',
+    'before' => '2026-10-12T07:59:59Z',
+]);
+
+it('refuses an archived task by key and by uuid, a name and a lowercase key under their own keys, and no context under client_id', function (): void {
+    [$admin, $client, , $task, $token] = matrixContext();
+
+    Auth::shouldUse('web');
+    Auth::guard('web')->setUser($admin);
+    app(ArchiveTask::class)->handle($admin, $task);
+    Auth::forgetGuards();
+
+    foreach (['DEMO-1', $task->id] as $reference) {
+        $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, ['task_id' => $reference]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['task_id'])
+            ->assertJsonPath('errors.task_id.0', __('kokpit.time.errors.task_unavailable'));
+    }
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, ['task_id' => 'Fictional task title']))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['task_id']);
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, ['project_id' => 'demo']))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['project_id']);
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, ['task_id' => 'NOPE-9']))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['task_id'])
+        ->assertJsonPath('errors.task_id.0', __('kokpit.time.errors.task_unavailable'));
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', ['started_at' => '2026-10-12T08:00:00Z', 'duration_seconds' => 60])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['client_id'])
+        ->assertJsonPath('errors.client_id.0', __('kokpit.time.errors.client_required'));
+
+    expect(TimeEntry::query()->count())->toBe(0);
+});
+
+it('needs an offset on every instant, takes Z and cuts a fraction to the whole second', function (): void {
+    [, $client, , , $token] = matrixContext();
+
+    foreach (['started_at', 'ended_at'] as $field) {
+        $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, [$field => '2026-10-12 09:30:00']))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors([$field]);
+    }
+
+    $response = $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, [
+        'started_at' => '2026-10-12T08:00:00.700Z',
+        'ended_at' => '2026-10-12T08:30:00.999Z',
+    ]))->assertCreated();
+
+    expect($response->json('data.started_at'))->toBe('2026-10-12T08:00:00+00:00')
+        ->and($response->json('data.ended_at'))->toBe('2026-10-12T08:30:00+00:00')
+        ->and($response->json('data.duration_seconds'))->toBe(1800);
+});
+
+it('wants exactly one of ended_at and duration_seconds and a duration of 1 to 2147483647', function (): void {
+    [, $client, , , $token] = matrixContext();
+    $withoutEnd = static fn (array $extra): array => ['client_id' => $client->id, 'started_at' => '2026-10-12T08:00:00Z', ...$extra];
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, ['duration_seconds' => 60]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['ended_at']);
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', $withoutEnd([]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['ended_at']);
+
+    foreach ([0, -5, 1.5, 2147483648, 'abc'] as $duration) {
+        $this->withToken($token)->postJson('/api/v1/time-entries', $withoutEnd(['duration_seconds' => $duration]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['duration_seconds']);
+    }
+
+    $largest = $this->withToken($token)->postJson('/api/v1/time-entries', $withoutEnd(['duration_seconds' => 2147483647]))
+        ->assertCreated();
+
+    expect($largest->json('data.duration_seconds'))->toBe(2147483647);
+});
+
+it('refuses an interval beyond the column limit under ended_at, never a database error', function (): void {
+    [, $client, , , $token] = matrixContext();
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, ['ended_at' => '9999-12-31T23:59:59Z']))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['ended_at'])
+        ->assertJsonPath('errors.ended_at.0', __('api.errors.duration_too_long'));
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, [
+        'started_at' => '0000-01-01T00:00:00Z',
+        'ended_at' => '0000-01-01T00:00:01Z',
+    ]))->assertStatus(422)->assertJsonValidationErrors(['started_at']);
+
+    $edit = ApiFixtures::entry(ApiFixtures::admin(), [
+        'client_id' => $client->id,
+        'started_at' => '2026-10-12 08:00:00',
+        'ended_at' => '2026-10-12 09:00:00',
+    ]);
+
+    $this->withToken($token)->patchJson('/api/v1/time-entries/'.$edit->id, ['ended_at' => '9999-12-31T23:59:59Z'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['ended_at'])
+        ->assertJsonPath('errors.ended_at.0', __('api.errors.duration_too_long'));
+
+    expect(TimeEntry::query()->count())->toBe(1);
+});
+
+it('ignores smuggled keys: the entry is the token owner\'s, unbilled and has a new uuid', function (): void {
+    [$admin, $client, , , $token] = matrixContext();
+    $other = Canary::partnerFor($client->id);
+    $smuggledId = '0199e3ff-1111-7000-8000-000000000001';
+
+    $response = $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, [
+        'id' => $smuggledId,
+        'user_id' => $other->id,
+        'billing_state' => 'billed',
+        'billed_at' => '2026-10-13T09:00:00Z',
+        'created_at' => '2020-01-01T00:00:00Z',
+    ]))->assertCreated();
+
+    $stored = TimeEntry::query()->findOrFail($response->json('data.id'));
+
+    expect($stored->id)->not->toBe($smuggledId)
+        ->and($stored->user_id)->toBe($admin->id)
+        ->and($stored->billing_state->value)->toBe('unbilled')
+        ->and($stored->billed_at)->toBeNull()
+        ->and($response->json('data.billing_state'))->toBe('unbilled')
+        ->and($response->json('data.billed_at'))->toBeNull()
+        ->and($stored->created_at->year)->not->toBe(2020);
+
+    $patched = $this->withToken($token)->patchJson('/api/v1/time-entries/'.$stored->id, [
+        'user_id' => $other->id,
+        'billing_state' => 'billed',
+        'billed_at' => '2026-10-13T09:00:00Z',
+        'description' => 'Fictional note',
+    ])->assertOk();
+
+    $reloaded = TimeEntry::query()->findOrFail($stored->id);
+
+    expect($patched->json('data.billing_state'))->toBe('unbilled')
+        ->and($reloaded->user_id)->toBe($admin->id)
+        ->and($reloaded->billing_state->value)->toBe('unbilled');
+});
+
+it('accepts an overlapping entry and takes the billable default of the task when billable is absent', function (): void {
+    [$admin, $client, $project, , $token] = matrixContext();
+    Auth::shouldUse('web');
+    Auth::guard('web')->setUser($admin);
+    $freeTask = app(UpdateTask::class)->handle(
+        $admin,
+        app(CreateTask::class)->handle($admin, $project, ['title' => 'Example free task']),
+        ['billing_type' => 'non_billable'],
+    );
+    Auth::forgetGuards();
+
+    $first = $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client))->assertCreated();
+    $overlap = $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, [
+        'started_at' => '2026-10-12T08:30:00Z',
+        'ended_at' => '2026-10-12T09:30:00Z',
+    ]))->assertCreated();
+
+    expect($overlap->json('data.id'))->not->toBe($first->json('data.id'))
+        ->and($first->json('data.billable'))->toBeTrue();
+
+    $absent = $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, ['task_id' => $freeTask->reference]))->assertCreated();
+    $explicit = $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, ['task_id' => $freeTask->reference, 'billable' => true]))->assertCreated();
+    $nullDefault = $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, ['task_id' => $freeTask->reference, 'billable' => null]))->assertCreated();
+
+    expect($absent->json('data.billable'))->toBeFalse()
+        ->and($explicit->json('data.billable'))->toBeTrue()
+        ->and($nullDefault->json('data.billable'))->toBeFalse();
+});
+
+it('limits the writes of one token on the real create route: the 3rd of 2 a minute answers 429', function (): void {
+    config(['kokpit.api.rate_limit.write' => 2]);
+    [, $client, , , $token] = matrixContext();
+
+    foreach ([1, 2] as $attempt) {
+        $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client, ['started_at' => '2026-10-1'.$attempt.'T08:00:00Z', 'ended_at' => '2026-10-1'.$attempt.'T09:00:00Z']))
+            ->assertCreated();
+    }
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', matrixBody($client))
+        ->assertStatus(429)
+        ->assertHeader('Retry-After');
+
+    expect(TimeEntry::query()->count())->toBe(2);
 });
