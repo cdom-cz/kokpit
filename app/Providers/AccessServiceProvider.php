@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Policies\UserPolicy;
 use App\Domain\Projects\Models\Project;
@@ -87,6 +88,10 @@ final class AccessServiceProvider extends ServiceProvider
         // Comments: a Partner reads the non-internal comments of the visible tasks and
         // writes new ones; nobody edits or deletes a comment (TA-04, D-08, A6).
         Gate::policy(TaskComment::class, TaskCommentPolicy::class);
+
+        // API tokens are minted and revoked by the Admin only (AP-01); strict authorization needs the
+        // registration, because the token screen is a Resource on this model.
+        Gate::policy(PersonalAccessToken::class, AdminOnlyPolicy::class);
 
         // Tracked time, its rates and its billing are Admin-only (TI-07): a Partner is granted nothing.
         Gate::policy(TimeEntry::class, AdminOnlyPolicy::class);
