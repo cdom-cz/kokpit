@@ -55,7 +55,7 @@ final class ProjectController
     #[QueryParam('filter[client]', 'string', 'Only projects of this client (UUID).', required: false, example: '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9')]
     #[QueryParam('cursor', 'string', 'The `meta.next_cursor` of the previous page of this list, sent with the same `sort`. Any other value answers 422.', required: false, example: 'No-example')]
     #[QueryParam('per_page', 'integer', 'Projects per page, 1 to 200. Default 50.', required: false, example: 50)]
-    #[QueryParam('sort', 'string', 'Sort by `created_at` (default, newest first as `-created_at`) or `name`; a leading `-` sorts descending.', required: false, example: '-created_at', enum: ['created_at', '-created_at', 'name', '-name'])]
+    #[QueryParam('sort', 'string', 'Sort by `created_at` (default, newest first as `-created_at`) or `name`; a leading `-` sorts descending. Names sort in the plain database order with an id tiebreaker, not in Czech alphabetical order.', required: false, example: '-created_at', enum: ['created_at', '-created_at', 'name', '-name'])]
     #[Response(LookupExamples::PROJECT_LIST, 200, 'A page of projects.')]
     #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A filter, the page size, the cursor or the sort is not valid.')]
     public function index(ListLookupsRequest $request): AnonymousResourceCollection

@@ -53,7 +53,7 @@ final class ClientController
     #[QueryParam('filter[name]', 'string', 'Only clients whose name contains this text, ignoring case. A comma, a percent sign or an underscore is matched literally. A name finds a client; it never identifies one for a write, use the UUID.', required: false, example: 'fikt')]
     #[QueryParam('cursor', 'string', 'The `meta.next_cursor` of the previous page of this list, sent with the same `sort`. Any other value answers 422.', required: false, example: 'No-example')]
     #[QueryParam('per_page', 'integer', 'Clients per page, 1 to 200. Default 50.', required: false, example: 50)]
-    #[QueryParam('sort', 'string', 'Sort by `created_at` (default, newest first as `-created_at`) or `name`; a leading `-` sorts descending.', required: false, example: '-created_at', enum: ['created_at', '-created_at', 'name', '-name'])]
+    #[QueryParam('sort', 'string', 'Sort by `created_at` (default, newest first as `-created_at`) or `name`; a leading `-` sorts descending. Names sort in the plain database order with an id tiebreaker, not in Czech alphabetical order.', required: false, example: '-created_at', enum: ['created_at', '-created_at', 'name', '-name'])]
     #[Response(LookupExamples::CLIENT_LIST, 200, 'A page of clients.')]
     #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A filter, the page size, the cursor or the sort is not valid.')]
     public function index(ListLookupsRequest $request): AnonymousResourceCollection
