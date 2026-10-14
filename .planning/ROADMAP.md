@@ -440,7 +440,7 @@ Plans:
   4. An API client resolves clients, projects and tasks by UUID, key and name through read-only lookups, and addresses a task by its `KEY-N`
   5. Excess requests receive a rate-limit response, and published OpenAPI documentation describes every endpoint
 
-**Plans:** 12/17 plans executed
+**Plans:** 12/18 plans executed
 
 Plans:
 **Wave 1**
@@ -475,11 +475,12 @@ Plans:
 
 **Gap wave 1**
 - [ ] 07-13-PLAN.md — Interval span bound in the shared Actions: a far-past or far-ahead start answers 422 on finished and running entries (gap 1, closes T-07-26)
-- [ ] 07-16-PLAN.md — Cursor validation on all four list endpoints and a complete example cursor in the docs (gap 4)
+- [ ] 07-16-PLAN.md — Cursor validation on all four list endpoints (gap 4)
 
 **Gap wave 2** *(blocked on gap wave 1 completion)*
-- [ ] 07-14-PLAN.md — UTC years 1 to 9999 for every stored instant and range-aware PragueDay filters (gap 2)
+- [ ] 07-14-PLAN.md — UTC years 1 to 9999 for every stored instant, the end computed from duration_seconds included, and range-aware PragueDay filters (gap 2)
 - [ ] 07-17-PLAN.md — Review info items IN-01 to IN-04: key patterns, ordering note, docs limits pinned to config, docs helper note
+- [ ] 07-18-PLAN.md — Complete example cursor in the published docs and the 401/403-before-cursor guard (gap 4, split from 07-16)
 
 **Gap wave 3** *(blocked on gap wave 2 completion)*
 - [ ] 07-15-PLAN.md — Batch item faults reported as failed items, so the Idempotency-Key is never released after partial commits (gap 3)
