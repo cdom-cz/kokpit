@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-08-PLAN.md
-last_updated: "2026-10-14T20:28:14.989Z"
+stopped_at: Completed 08-09-PLAN.md
+last_updated: "2026-10-14T20:48:53.133Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: a0726c65a667118ea22356ab69535ba6a2d2eb9c
+state_head: a1c2edfd2c5bc48d7d6a29f808fd746164913aef
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 128
+  completed_plans: 129
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 9 of 22
+Plan: 10 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -190,6 +190,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P06 | 19 min | 3 tasks | 7 files |
 | Phase 08 P07 | 40 min | 3 tasks | 14 files |
 | Phase 08 P08 | 45 min | 3 tasks | 8 files |
+| Phase 08 P09 | 22 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -445,6 +446,9 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-07: report_exports expires_at is creation plus retention, reset to completion plus retention by markReady(), so the prune also removes stale pending and failed records; ttlDays() never below 1
 - [Phase 08]: 08-07: downloadFileName() accepts only two real YYYY-MM-DD days from stored filters, else report-casu.<ext>; markReady() leaves the path shape to the database CHECK
 - [Phase 08]: 08-08: the CNB download stays a synchronous scheduled command; only the --final run alerts, and a database error on it alerts and is rethrown without its text in the alert
+- [Phase 08]: 08-09: the report summary is a flat array and tree nodes carry seconds, amount, czk, czk_missing, fixed and children; later report plans read these shapes directly
+- [Phase 08]: 08-09: ReportFilters::fromStored() and period() throw on an invalid value; only fromInput() falls back, so an export never covers other data than requested
+- [Phase 08]: 08-09: an entry with its own billable flag set is priced even when its task is non-billable; fixed-price entries and rate-less entries carry hours only
 
 ### Pending Todos
 
@@ -491,6 +495,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T20:28:14.801Z
-Stopped at: Completed 08-08-PLAN.md
+Last session: 2026-10-14T20:48:52.919Z
+Stopped at: Completed 08-09-PLAN.md
 Resume file: None
