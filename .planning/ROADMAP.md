@@ -501,7 +501,7 @@ Plans:
   4. Admin requests a CSV or XLSX export that is built in the background and delivered by notification with spreadsheet-safe cells, and generates a multi-page PDF work report with correct Czech diacritics
   5. The dashboard shows today's and this week's hours, unbilled time per client and upcoming task deadlines
 
-**Plans:** 19/22 plans executed (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed)
+**Plans:** 20/22 plans executed (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed)
 **UI hint**: yes
 
 Plans:
@@ -535,7 +535,7 @@ Plans:
 **Wave 6** *(blocked on Wave 5 completion)*
 - [x] 08-18-PLAN.md — "Doplnit historii" modal and `BackfillCnbRates` job (EX-01, D-05)
 - [x] 08-19-PLAN.md — Effective hourly rate for fixed-price projects (RE-05, D-08)
-- [ ] 08-20-PLAN.md — Admin dashboard deadlines and read-only tomorrow plan (RE-04, D-11)
+- [x] 08-20-PLAN.md — Admin dashboard deadlines and read-only tomorrow plan (RE-04, D-11)
 - [ ] 08-21-PLAN.md — XLSX export with summary sheet and "Pracovní výkaz PDF" report-page item (RE-03)
 
 **Wave 7** *(blocked on Wave 6 completion)*
@@ -622,7 +622,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
-| 8. Exchange Rates and Reports | 19/22 | In Progress | - |
+| 8. Exchange Rates and Reports | 20/22 | In Progress | - |
 | 9. Documents and Finance | 0/0 | Not started | - |
 | 10. Invoicing | 0/0 | Not started | - |
 | 11. Stripe Payments | 0/0 | Not started | - |

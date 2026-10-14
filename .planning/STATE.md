@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-19-PLAN.md
-last_updated: "2026-10-14T23:02:00.011Z"
+stopped_at: Completed 08-20-PLAN.md
+last_updated: "2026-10-14T23:21:41.855Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: 1d70d3f190e7fac2d3efbcf35848e941f2e970a3
+state_head: 09d512d4dc4fee2444fd7f794fd4abc5b74989b7
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 139
+  completed_plans: 140
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 20 of 22
+Plan: 21 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -201,6 +201,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P14 | 13 min | 3 tasks | 6 files |
 | Phase 08 P18 | 12 min | 3 tasks | 5 files |
 | Phase 08 P19 | 10 min | 2 tasks | 5 files |
+| Phase 08 P20 | 33 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -475,6 +476,8 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-18: backfill span counts days including both ends and Do is judged against the Prague day
 - [Phase 08]: 08-19: the effective hourly rate divides the price by every worked second of the whole project (TimeTotals::forProject worked), converts at the CNB rate of min(period end, Prague today) and prints that day; the CZK rate is derived from the converted price
 - [Phase 08]: 08-19: FixedPriceSummary preloads one RateBook and uses Money::convert (the arithmetic of ExchangeRateConverter::toCzk) so three fixed-price projects cost the queries of one
+- [Phase 08]: 08-20: deadlines widget ordered by priority first (TaskColumns::orderByPriority), then nearest due date NULLS LAST, per owner requirement; overrides plan order due date then priority
+- [Phase 08]: 08-20: tomorrow plan block is read-only, owner-scoped via SignalDayReader, collapsed to three items by an Alpine toggle with aria-expanded and aria-controls
 
 ### Pending Todos
 
@@ -522,6 +525,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T23:01:59.792Z
-Stopped at: Completed 08-19-PLAN.md
+Last session: 2026-10-14T23:21:41.661Z
+Stopped at: Completed 08-20-PLAN.md
 Resume file: None
