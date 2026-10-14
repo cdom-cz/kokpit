@@ -343,6 +343,70 @@
                                         @endif
                                     </td>
                                 </tr>
+
+                                {{-- The effective hourly rate of a fixed-price project (UI-SPEC B4): always visible with its project row, never a toggle target. --}}
+                                @php
+                                    $effective = $level === 1 && $node['fixed_price'] && $node['id'] !== null ? ($report->fixedPrice[$node['id']] ?? null) : null;
+                                @endphp
+                                @if ($effective !== null)
+                                    @php
+                                        $isCzk = $effective['price']->currency === 'CZK';
+                                        $czkLine = static fn (?Money $czk): string => __('kokpit.report.summary.czk_line', ['czk' => $money($czk)]);
+                                        $blockLabel = 'margin: 0; opacity: 0.8; font-size: 0.875rem;';
+                                        $blockValue = 'margin: 0; font-weight: 600; font-variant-numeric: tabular-nums;';
+                                        $blockLine = 'margin: 0; opacity: 0.8; font-size: 0.875rem; font-variant-numeric: tabular-nums;';
+                                    @endphp
+                                    <tr
+                                        data-effective-rate
+                                        @if ($showWhen !== '') x-bind:hidden="{{ $showWhen }}" @endif
+                                    >
+                                        <td colspan="8" style="padding: 0 1rem 0.75rem calc(1rem + {{ $indents[$level] }} + 1.75rem);">
+                                            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem 2.5rem;">
+                                                <div>
+                                                    <p style="{{ $blockLabel }}">{{ __('kokpit.report.effective.fixed_price') }}</p>
+                                                    <p style="{{ $blockValue }}">{{ $money($effective['price']) }}</p>
+                                                    @if (! $isCzk)
+                                                        <p style="{{ $blockLine }}">
+                                                            {{ $czkLine($effective['price_czk']) }}
+                                                            @if ($effective['czk_missing'])
+                                                                <x-filament::badge color="warning" size="sm" :icon="Heroicon::OutlinedExclamationTriangle">{{ __('kokpit.report.tree.missing_rate.badge') }}</x-filament::badge>
+                                                            @endif
+                                                        </p>
+                                                    @endif
+                                                </div>
+
+                                                <div>
+                                                    <p style="{{ $blockLabel }}">{{ __('kokpit.report.effective.worked') }}</p>
+                                                    <p style="{{ $blockValue }}">{{ $hours($effective['project_seconds']) }}</p>
+                                                    <p style="{{ $blockLine }}">{{ __('kokpit.report.effective.whole_project') }}</p>
+                                                </div>
+
+                                                <div>
+                                                    <p style="{{ $blockLabel }}">{{ __('kokpit.report.effective.rate') }}</p>
+                                                    <p style="{{ $blockValue }}">
+                                                        {{ $effective['effective_rate'] instanceof Money ? __('kokpit.report.effective.per_hour', ['amount' => $money($effective['effective_rate'])]) : $dash }}
+                                                    </p>
+                                                    @if ($effective['effective_rate'] === null)
+                                                        <p style="{{ $blockLine }}">{{ __('kokpit.report.effective.no_hours') }}</p>
+                                                    @elseif (! $isCzk)
+                                                        <p style="{{ $blockLine }}">
+                                                            @if ($effective['effective_rate_czk'] instanceof Money)
+                                                                {{ __('kokpit.report.effective.czk_per_hour', ['czk' => $money($effective['effective_rate_czk'])]) }}
+                                                            @else
+                                                                {{ $czkLine(null) }}
+                                                                <x-filament::badge color="warning" size="sm" :icon="Heroicon::OutlinedExclamationTriangle">{{ __('kokpit.report.tree.missing_rate.badge') }}</x-filament::badge>
+                                                            @endif
+                                                        </p>
+                                                    @endif
+                                                </div>
+                                            </div>
+
+                                            @if (! $isCzk && ! $effective['czk_missing'])
+                                                <p style="{{ $blockLine }} margin-top: 0.25rem;">{{ __('kokpit.report.effective.rate_date', ['date' => $dayText($effective['conversion_day'])]) }}</p>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endif
                             @endforeach
                         </tbody>
                         <tfoot>

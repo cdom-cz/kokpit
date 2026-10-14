@@ -742,7 +742,9 @@ describe('the fixed-price and missing-rate markers', function (): void {
             ->toContain($fixedTask->reference.' · Retainer 0:30 0:30 0:00 0:00 0:30 — —')
             ->toContain('Nevyfakturováno 3:30 '.timeReportMoney(12000, 'EUR').'* v Kč: '.timeReportMoney(300000, 'CZK'))
             ->toContain('* Hodiny projektů a úkolů s pevnou cenou jsou bez částky.')
-            ->and(substr_count($text, 'Pevná cena'))->toBe(1)
+            // The badge of the project row and the label of its effective rate block (only the project, not the task, has one).
+            ->and(substr_count($text, 'Pevná cena'))->toBe(2)
+            ->and(substr_count($text, 'Efektivní hodinová sazba'))->toBe(1)
             ->and($html)->toContain('title="Pevná cena: částka se nepočítá za záznam."');
     });
 

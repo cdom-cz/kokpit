@@ -29,6 +29,9 @@ use Illuminate\Database\Eloquent\Builder;
  * currency, and only the CZK figure sums across clients. An entry priced in a currency without a CNB list leaves
  * the CZK sum and is counted in `czk_missing`; the CZK figure is then a lower bound, never a silent zero.
  *
+ * The effective hourly rate of the fixed-price projects of the tree comes from {@see FixedPriceSummary} (RE-05): their
+ * whole-project hours, never only those of the period, so it is formed beside the tree and not out of its rows.
+ *
  * Worked time is billed + unbilled + non-billable (a billed entry is always billable), the same four sums as
  * `TimeTotals`. Fixed-price hours are part of the billable hours and carry no amount (D-07).
  *
@@ -36,6 +39,7 @@ use Illuminate\Database\Eloquent\Builder;
  * @phpstan-type Node array{id: ?string, label: string, reference: ?string, currency: ?string, seconds: Seconds, amount: ?Money, czk: ?Money, czk_missing: int, czk_missing_day: ?string, fixed: bool, fixed_price: bool, children: list<array<string, mixed>>}
  * @phpstan-type Summary array{worked: int, billable: int, non_billable: int, billed: int, unbilled: int, fixed: int, amounts: array{billed: array<string, Money>, unbilled: array<string, Money>, billable: array<string, Money>}, czk: array{billed: ?Money, unbilled: ?Money, billable: ?Money}, czk_missing: int, czk_missing_by_state: array{billed: int, unbilled: int}}
  * @phpstan-type Footer array{seconds: Seconds, czk: ?Money, amounts: array<string, Money>, czk_missing: int}
+ * @phpstan-type FixedPrice array{price: Money, price_czk: Money|null, project_seconds: int, effective_rate: Money|null, effective_rate_czk: Money|null, conversion_day: string, czk_missing: bool}
  */
 final readonly class TimeReport
 {
@@ -46,6 +50,7 @@ final readonly class TimeReport
      * @param  bool  $capped  more leaf rows exist than `kokpit.report.max_rendered_rows`, so the tree is cut and the totals are not
      * @param  int  $renderedLeafCount  the leaf rows (task rows, or the day or user rows below them) left in the tree
      * @param  int  $leafCap  the cap the tree was cut at, never below 1
+     * @param  array<string, FixedPrice>  $fixedPrice  the effective hourly rate of every fixed-price project of the tree, by project id (RE-05)
      */
     private function __construct(
         public array $summary,
@@ -55,6 +60,7 @@ final readonly class TimeReport
         public bool $capped,
         public int $renderedLeafCount,
         public int $leafCap,
+        public array $fixedPrice,
     ) {}
 
     /**
@@ -158,6 +164,7 @@ final readonly class TimeReport
 
         $cap = max(1, (int) config('kokpit.report.max_rendered_rows'));
         [$tree, $leaves, $rendered] = self::tree($total, $filters->split, $cap);
+        $fixedPrice = FixedPriceSummary::for(self::fixedPriceProjectIds($tree), $filters, $now);
 
         return new self(
             $summary,
@@ -172,7 +179,29 @@ final readonly class TimeReport
             $leaves > $cap,
             $rendered,
             $cap,
+            $fixedPrice,
         );
+    }
+
+    /**
+     * The ids of the fixed-price projects among the project nodes of the tree.
+     *
+     * @param  list<Node>  $tree
+     * @return list<string>
+     */
+    private static function fixedPriceProjectIds(array $tree): array
+    {
+        $ids = [];
+
+        foreach ($tree as $client) {
+            foreach ($client['children'] as $project) {
+                if ($project['fixed_price'] === true && is_string($project['id'])) {
+                    $ids[] = $project['id'];
+                }
+            }
+        }
+
+        return $ids;
     }
 
     /**
