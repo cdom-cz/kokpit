@@ -8,6 +8,8 @@ use App\Domain\Api\ReferenceResolver;
 use App\Domain\Identity\ApiAbility;
 use App\Domain\Identity\Models\User;
 use App\Domain\TimeTracking\Actions\CreateTimeEntry;
+use App\Domain\TimeTracking\Actions\DeleteTimeEntry;
+use App\Domain\TimeTracking\Actions\UpdateTimeEntry;
 use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\PragueDay;
@@ -15,12 +17,17 @@ use App\Domain\TimeTracking\TimeEntryInput;
 use App\Http\Requests\Api\V1\ListTimeEntriesRequest;
 use App\Http\Requests\Api\V1\StoreTimeEntryRequest;
 use App\Http\Requests\Api\V1\TimeEntryPayload;
+use App\Http\Requests\Api\V1\UpdateTimeEntryRequest;
 use App\Http\Resources\Api\V1\TimeEntryResource;
+use App\Http\Responses\ApiError;
+use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Validation\ValidationException;
 use Knuckles\Scribe\Attributes\Endpoint;
 use Knuckles\Scribe\Attributes\Group;
 use Knuckles\Scribe\Attributes\QueryParam;
@@ -132,13 +139,7 @@ final class TimeEntryController
     #[Response(ApiExamples::NOT_FOUND, 404, 'No time entry has this UUID.')]
     public function show(string $timeEntry): TimeEntryResource
     {
-        $entry = TimeEntry::query()->with(['project', 'task'])->whereKey($timeEntry)->first();
-
-        if ($entry === null) {
-            abort(404, __('api.errors.not_found'));
-        }
-
-        return new TimeEntryResource($entry);
+        return new TimeEntryResource(self::find($timeEntry));
     }
 
     #[Endpoint(
@@ -146,6 +147,21 @@ final class TimeEntryController
         'Requires ability `'.ApiAbility::TimeWrite->value.'`. Records a finished entry through the same rules as the application. Give `started_at` and exactly one of `ended_at` and `duration_seconds` (whole seconds from the start). Instants are ISO 8601 with an offset or `Z`; an instant without one is refused. The project and the task are referenced by UUID or by key (`DEMO`, `DEMO-1`), never by name; a task fixes its project and client, so `client_id` may then be left out. An entry that disagrees about client, project and task, ends before it starts or names an archived task answers 422 under the field the application marks. Overlapping entries are allowed. `billable` defaults to the default of the task. The answer is 201 with the entry and a `Location` header.',
     )]
     #[Response(ApiExamples::TIME_ENTRY, 201, 'The entry was created.')]
+    #[ResponseField('data.id', 'string', 'UUID of the time entry.')]
+    #[ResponseField('data.client_id', 'string', 'UUID of the client.')]
+    #[ResponseField('data.started_at', 'string', 'Start instant, ISO 8601 in UTC.')]
+    #[ResponseField('data.billable', 'boolean', 'Whether the entry is billable.')]
+    #[ResponseField('data.billing_state', 'string', 'unbilled or billed.')]
+    #[ResponseField('data.created_at', 'string', 'Creation instant, ISO 8601 in UTC.')]
+    #[ResponseField('data.updated_at', 'string', 'Last change instant, ISO 8601 in UTC.')]
+    #[ResponseField('data.project_id', 'string', 'UUID of the project, or null.', nullable: true)]
+    #[ResponseField('data.project_key', 'string', 'Key of the project (read-only), or null.', nullable: true)]
+    #[ResponseField('data.task_id', 'string', 'UUID of the task, or null.', nullable: true)]
+    #[ResponseField('data.task_reference', 'string', 'Reference of the task, such as DEMO-1 (read-only), or null.', nullable: true)]
+    #[ResponseField('data.description', 'string', 'Free text, or null.', nullable: true)]
+    #[ResponseField('data.ended_at', 'string', 'End instant, ISO 8601; null while the entry runs.', nullable: true)]
+    #[ResponseField('data.duration_seconds', 'integer', 'Whole seconds from start to end; null while the entry runs.', nullable: true)]
+    #[ResponseField('data.billed_at', 'string', 'Instant the entry was billed, ISO 8601, or null while unbilled.', nullable: true)]
     #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A field is not valid or the application refuses the entry; the errors are keyed by field.')]
     public function store(StoreTimeEntryRequest $request, CreateTimeEntry $create, ReferenceResolver $refs): JsonResponse
     {
@@ -156,6 +172,92 @@ final class TimeEntryController
             ->response()
             ->setStatusCode(201)
             ->header('Location', route('api.v1.time-entries.show', $entry->id));
+    }
+
+    #[Endpoint(
+        'Update a time entry',
+        'Requires ability `'.ApiAbility::TimeWrite->value.'`. Edits an unbilled entry through the same rules as the application. Send only the keys to change: an absent key keeps its value, `null` clears the project or the task (clearing the task keeps the project). `duration_seconds` sets the end to the stored (or the sent) start plus that many seconds. A billed entry cannot be changed and answers 409 with the code `entry_locked`. A running entry (a timer started in the application) keeps its end: sending `ended_at` or `duration_seconds` answers 422 under `ended_at`, while the description, the billable flag, the context and the start can still be changed.',
+    )]
+    #[UrlParam('timeEntry', 'string', 'Time entry UUID.', example: '0199e3a0-5b7c-7d2e-8f41-a1b2c3d4e5f6')]
+    #[Response(ApiExamples::TIME_ENTRY, 200, 'The entry after the change.')]
+    #[ResponseField('data.id', 'string', 'UUID of the time entry.')]
+    #[ResponseField('data.client_id', 'string', 'UUID of the client.')]
+    #[ResponseField('data.started_at', 'string', 'Start instant, ISO 8601 in UTC.')]
+    #[ResponseField('data.billable', 'boolean', 'Whether the entry is billable.')]
+    #[ResponseField('data.billing_state', 'string', 'unbilled or billed.')]
+    #[ResponseField('data.created_at', 'string', 'Creation instant, ISO 8601 in UTC.')]
+    #[ResponseField('data.updated_at', 'string', 'Last change instant, ISO 8601 in UTC.')]
+    #[ResponseField('data.project_id', 'string', 'UUID of the project, or null.', nullable: true)]
+    #[ResponseField('data.project_key', 'string', 'Key of the project (read-only), or null.', nullable: true)]
+    #[ResponseField('data.task_id', 'string', 'UUID of the task, or null.', nullable: true)]
+    #[ResponseField('data.task_reference', 'string', 'Reference of the task, such as DEMO-1 (read-only), or null.', nullable: true)]
+    #[ResponseField('data.description', 'string', 'Free text, or null.', nullable: true)]
+    #[ResponseField('data.ended_at', 'string', 'End instant, ISO 8601; null while the entry runs.', nullable: true)]
+    #[ResponseField('data.duration_seconds', 'integer', 'Whole seconds from start to end; null while the entry runs.', nullable: true)]
+    #[ResponseField('data.billed_at', 'string', 'Instant the entry was billed, ISO 8601, or null while unbilled.', nullable: true)]
+    #[Response(ApiExamples::NOT_FOUND, 404, 'No time entry has this UUID.')]
+    #[Response(ApiExamples::ENTRY_LOCKED, 409, 'The entry is billed and cannot be changed (code `entry_locked`).')]
+    #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A field is not valid or the application refuses the change; the errors are keyed by field.')]
+    public function update(string $timeEntry, UpdateTimeEntryRequest $request, UpdateTimeEntry $update, ReferenceResolver $refs): JsonResponse|TimeEntryResource
+    {
+        $entry = self::find($timeEntry);
+        $validated = $request->validated();
+
+        // A running entry is ended by the timer in the application, never from outside (OD-2). The guard
+        // lives here so the Action and the panel keep their behaviour.
+        if ($entry->isRunning() && (array_key_exists('ended_at', $validated) || array_key_exists('duration_seconds', $validated))) {
+            throw ValidationException::withMessages(['ended_at' => __('api.errors.running_entry_end')]);
+        }
+
+        $data = TimeEntryPayload::forUpdate($validated, $entry, $refs);
+
+        try {
+            $changed = $update->handle(self::actor($request), $entry, $data);
+        } catch (DomainException $e) {
+            return ApiError::conflict('entry_locked', $e->getMessage());
+        }
+
+        return new TimeEntryResource($changed->load(['project', 'task']));
+    }
+
+    #[Endpoint(
+        'Delete a time entry',
+        'Requires ability `'.ApiAbility::TimeWrite->value.'`. Deletes an unbilled, finished entry and answers 204 without a body. A billed entry answers 409 with the code `entry_locked`; a running entry (a timer started in the application) answers 409 with the code `entry_running`: stop it in the application first.',
+    )]
+    #[UrlParam('timeEntry', 'string', 'Time entry UUID.', example: '0199e3a0-5b7c-7d2e-8f41-a1b2c3d4e5f6')]
+    #[Response(null, 204, 'The entry was deleted.')]
+    #[Response(ApiExamples::NOT_FOUND, 404, 'No time entry has this UUID.')]
+    #[Response(ApiExamples::ENTRY_LOCKED, 409, 'The entry is billed (code `entry_locked`).')]
+    #[Response(ApiExamples::ENTRY_RUNNING, 409, 'The entry is running (code `entry_running`).')]
+    public function destroy(string $timeEntry, Request $request, DeleteTimeEntry $delete): JsonResponse|HttpResponse
+    {
+        $entry = self::find($timeEntry);
+
+        if ($entry->isRunning()) {
+            return ApiError::conflict('entry_running', __('api.errors.running_entry_delete'));
+        }
+
+        try {
+            $delete->handle(self::actor($request), $entry);
+        } catch (DomainException $e) {
+            return ApiError::conflict('entry_locked', $e->getMessage());
+        }
+
+        return response()->noContent();
+    }
+
+    /**
+     * The entry of the UUID, or the Czech 404 of the API.
+     */
+    private static function find(string $id): TimeEntry
+    {
+        $entry = TimeEntry::query()->with(['project', 'task'])->whereKey($id)->first();
+
+        if ($entry === null) {
+            abort(404, __('api.errors.not_found'));
+        }
+
+        return $entry;
     }
 
     /**

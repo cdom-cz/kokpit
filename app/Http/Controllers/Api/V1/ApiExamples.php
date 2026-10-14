@@ -118,6 +118,16 @@ final class ApiExamples
         ],
     ];
 
+    public const array ENTRY_LOCKED = [
+        'message' => 'Záznam je vyfakturovaný a nelze ho upravit. Nejdřív zrušte fakturaci.',
+        'code' => 'entry_locked',
+    ];
+
+    public const array ENTRY_RUNNING = [
+        'message' => 'Běžící záznam nelze smazat. Nejdřív ho v aplikaci zastavte.',
+        'code' => 'entry_running',
+    ];
+
     public const array UNAUTHENTICATED = [
         'message' => 'Unauthenticated.',
     ];

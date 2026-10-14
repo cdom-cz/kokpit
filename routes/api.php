@@ -29,4 +29,10 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeRead->value, 'th
 Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeWrite->value, 'throttle:api-write'])->group(function (): void {
     Route::post('time-entries', [TimeEntryController::class, 'store'])
         ->name('api.v1.time-entries.store');
+    Route::patch('time-entries/{timeEntry}', [TimeEntryController::class, 'update'])
+        ->whereUuid('timeEntry')
+        ->name('api.v1.time-entries.update');
+    Route::delete('time-entries/{timeEntry}', [TimeEntryController::class, 'destroy'])
+        ->whereUuid('timeEntry')
+        ->name('api.v1.time-entries.destroy');
 });
