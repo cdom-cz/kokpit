@@ -500,33 +500,35 @@ Plans:
   4. Admin requests a CSV or XLSX export that is built in the background and delivered by notification with spreadsheet-safe cells, and generates a multi-page PDF work report with correct Czech diacritics
   5. The dashboard shows today's and this week's hours, unbilled time per client and upcoming task deadlines
 
-**Plans:** 14 plans (8 waves; same-wave plans share no file; 08-11 holds the owner's licence decision checkpoint before Dompdf is installed)
+**Plans:** 16 plans (8 waves; same-wave plans share no file; 08-11 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed; 08-15 and 08-16 were split from 08-01 and 08-10 at plan check and run in the waves shown)
 **UI hint**: yes
 
 Plans:
 **Wave 1**
-- [ ] 08-01-PLAN.md — Tracer: `kokpit:rates:download` stores the whole CNB daily list once under its `validFor` date; `exchange_rates` with constraints; model under every convention (EX-01)
+- [ ] 08-15-PLAN.md — `exchange_rates` with DB constraints and `ExchangeRate` under every repository convention; Partner reads no rate (EX-01)
 - [ ] 08-02-PLAN.md — Partner dashboard: own visible projects and open tasks, `in_review` first and highlighted, no time or money (RE-04, D-12)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 08-03-PLAN.md — Scheduled download 15:00-17:00 Prague plus a final 18:00 run that alerts by mail and bell without the queue; Czech working-day calendar (EX-01, EX-02)
+- [ ] 08-01-PLAN.md — Tracer: `kokpit:rates:download` stores the whole CNB daily list once under its `validFor` date; refusal matrix and mutation self-check (EX-01)
 - [ ] 08-04-PLAN.md — Conversion helper: `RateBook` lookups (previous valid rate, per-unit amounts), `CnbConverter`, exact `Money::forDurationConverted` and `Money::hourlyRateFor` (EX-03, RE-02, RE-05)
 - [ ] 08-05-PLAN.md — Export records: owner-scoped `report_exports`, Admin "Exporty" list and the permission-checked download from the private disk (RE-03)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 08-06-PLAN.md — Real last-rate-date System page slot in Czech working days; gap self-heal from `daily-year` (EX-01, EX-02)
+- [ ] 08-03-PLAN.md — Scheduled download 15:00-17:00 Prague plus a final 18:00 run that alerts by mail and bell without the queue; Czech working-day calendar (EX-01, EX-02)
 - [ ] 08-07-PLAN.md — Tracer: "Report času" with one reader, per-entry amounts in client currency and CZK at the entry day's rate, parity with the rate resolvers, task/day/user breakdowns (RE-01, RE-02)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 08-08-PLAN.md — "Kurzy ČNB" overview with "download today" and a queued, idempotent history backfill (EX-01, EX-02)
+- [ ] 08-06-PLAN.md — Real last-rate-date System page slot in Czech working days; gap self-heal from `daily-year` (EX-01, EX-02)
 - [ ] 08-09-PLAN.md — Fixed-price block with the effective hourly rate; DST, running-entry, missing-rate and mixed-currency edges; constant query count (RE-05, RE-01, RE-02)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 08-10-PLAN.md — Admin dashboard: hours today/week/month, unbilled per client with money, ten nearest deadlines, tomorrow's Signal plan (RE-04, D-11)
+- [ ] 08-08-PLAN.md — "Kurzy ČNB" overview with "download today" and a queued, idempotent history backfill (EX-01, EX-02)
+- [ ] 08-10-PLAN.md — Admin dashboard: hours today/week/month and unbilled per client with money (RE-04, D-11)
 - [ ] 08-11-PLAN.md — Work report PDF with Dompdf in the client's language, no money, multi-page; owner licence decision checkpoint first (RE-03, D-10)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 08-12-PLAN.md — Queued CSV export from the report page, spreadsheet-safe cells, bell notice, 7-day expiry (RE-03, D-09)
+- [ ] 08-16-PLAN.md — Admin dashboard: ten nearest open-task deadlines and tomorrow's Signal plan, collapsed and read-only (RE-04, D-11)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 08-13-PLAN.md — XLSX export with the summary sheet, formula-free sheet XML, daily prune of expired exports (RE-03, D-09)
