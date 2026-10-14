@@ -230,12 +230,12 @@ On close: the Livewire property holding the token is cleared, the list refreshes
 
 ### Surface E: API documentation page `/docs/api` — specified at the edge only (AP-05; D-17)
 
-No Kokpit-designed UI: the page is the stock Scramble documentation UI. The contract is limited to:
+No Kokpit-designed UI: the page is the stock Scribe documentation UI (D-17 revised: generated at release, assets served locally, no CDN). The contract is limited to:
 
 - Reached from "Dokumentace API" on Surface A and Surface C; opens in a new tab.
-- Visible only to a logged-in Admin through the `viewApiDocs` gate. A Partner or a guest gets 403; no content, no route list, no spec JSON (`/docs/api.json` has the same rule).
-- Theme follows the operating-system colour mode (Scramble UI theme `system`); no custom CSS, logo, font or colour. Page title "Kokpit API".
-- The documentation itself is in English (it documents a machine interface and the committed spec is part of the repository); it contains fictional example values only (`example.com` addresses, placeholder IDs) and never a real token.
+- Visible only to a logged-in Admin (gate or middleware; exact route path set by the plan). A Partner or a guest gets 403; no content, no route list, no spec JSON (the OpenAPI spec route has the same rule).
+- Theme follows the operating-system colour mode (Scribe stock theme); no custom CSS, logo, font or colour. Page title "Kokpit API".
+- The documentation itself is in English (it documents a machine interface and it is generated from the code at release); it contains fictional example values only (`example.com` addresses, placeholder IDs) and never a real token.
 - The page has no navigation back into the panel; the Admin returns by closing the tab.
 
 ### Cross-cutting interaction rules (this phase)
@@ -350,7 +350,7 @@ Applicable state considerations resolved: 14 covered, 4 backstop, 2 unresolved (
 | long-text | N4 (interactive-control) | ✅ covered | A long token name in the confirmation body wraps and is escaped once |
 | long-text | N3 summary (static-content) | 🧪 backstop | A long name in the summary line wraps; checked visually at 375px |
 | overflow | N3 on small screens (interactive-control) | 🧪 backstop | The modal is at most the viewport wide and scrolls inside itself; checked at 375px |
-| error | N5 (nav) | ⚠ unresolved | Whether a guest or Partner opening `/docs/api` sees a bare 403 page or a redirect to the login. Planner treats the assumption: the stock 403 response of the `viewApiDocs` gate, no redirect, no content leaked |
+| error | N5 (nav) | ⚠ unresolved | Whether a guest or Partner opening `/docs/api` sees a bare 403 page or a redirect to the login. Planner treats the assumption: the stock 403 response of the Admin-only docs guard, no redirect, no content leaked |
 | error | N2 expired session (form) | ⚠ unresolved | If the Admin session expires while the create modal is open, the submit fails with the stock Livewire expired-session handling. Planner treats the assumption: stock behaviour (re-login), the token is not created and nothing is shown |
 | empty | N5 (static-content) | ✅ covered | The docs page needs no data state of its own; an instance with no committed endpoints cannot occur because the spec is generated from the routes |
 
@@ -379,7 +379,7 @@ Open items from earlier phases that this phase touches. None asks for a rewrite.
 |----------|-------------|-------------|
 | shadcn official | none (`Tool: none`, no `components.json`) | not applicable |
 | Filament official packages (`filament/*`, installed from Packagist) | Components listed in Component Inventory | not required; passed the Phase 2 and Phase 4 research legitimacy audits and the licence allowlist |
-| Third-party UI registries or Filament plugins | none | not applicable; none declared, so no vetting gate ran. The documentation UI is the stock UI of `dedoc/scramble` (free core, MIT), licence-checked in STACK.md; it is a Composer dependency, not a UI registry block. Adding any plugin or third-party block in later waves requires a new vetting pass first |
+| Third-party UI registries or Filament plugins | none | not applicable; none declared, so no vetting gate ran. The documentation UI is the stock UI of `knuckleswtf/scribe` (MIT; licence to be confirmed in the plan); it is a Composer dependency, not a UI registry block. Adding any plugin or third-party block in later waves requires a new vetting pass first |
 
 ---
 
@@ -399,7 +399,7 @@ This run had no human available. Each item can be overturned without changing th
 | U-8 | Revoke asks for no password or code, only a confirmation modal | CONTEXT D-04 requires re-confirmation for creating; revoking only reduces access, and the Admin must be able to do it fast if a token leaks |
 | U-9 | Status "Vyprší brzy" threshold is 7 days, fixed in the contract (not a config value) | Not stated upstream; a hint only, it changes no behaviour |
 | U-10 | An expired token still appears in the list and can be revoked (removed); revoked tokens disappear (no history rows) | CONTEXT D-02 and D-03 mention revoke only; keeping the list limited to rows that exist in the token table |
-| U-11 | The documentation page is the stock Scramble UI with theme `system`, English content, opened in a new tab | CONTEXT D-17 fixes the tool and the gate; presentation is not discussed |
+| U-11 | The documentation page is the stock Scribe UI, English content, opened in a new tab | CONTEXT D-17 fixes the tool and the gate; presentation is not discussed |
 | U-12 | Recommended (outside this UI contract): token creation and revocation write an activity log row with the name and abilities only, never the token or its hash | Audit of an access-granting action; the planner decides whether it fits the allowlist pattern from Phase 3 |
 | U-13 | The language of API error messages (validation messages follow the app locale `cs` by default) is not a panel UI string and is left to the API plan | Out of this UI scope; noted so it is not forgotten |
 | U-14 | Cancel buttons are specific ("Nevytvářet token", "Ponechat token") instead of the generic "Zrušit". Phase 6 sets no shared cancel-label convention (its only "Zrušit" strings are the action "Zrušit fakturaci"), so there is no conflict | Checker Dimension 1 revision |
