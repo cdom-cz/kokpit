@@ -10,6 +10,7 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Knuckles\Scribe\Scribe;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
 
@@ -42,6 +43,14 @@ final class ApiServiceProvider extends ServiceProvider
             ->by(self::bucketKey($request)));
         RateLimiter::for('api-write', static fn (Request $request): Limit => Limit::perMinute((int) config('kokpit.api.rate_limit.write'))
             ->by(self::bucketKey($request)));
+
+        // The docs are English, and Scribe appends one sentence per validation rule it can describe, taken from
+        // the validation translations of the app locale. The Czech lines start with `:Attribute` (capital A),
+        // which Scribe does not replace, so the page would show the raw placeholder. The locale is switched for
+        // the generation command only; the answers of the API itself stay Czech.
+        Scribe::bootstrap(static function (): void {
+            app()->setLocale('en');
+        });
 
         // The public documentation has no token, so its bucket is the client address (behind the balancer
         // the trusted-proxy configuration makes it the real one).

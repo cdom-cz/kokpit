@@ -219,3 +219,21 @@ it('fails the generation, with exit status 2, when one route attribute is broken
         ->and(array_filter($paths, fn (string $path): bool => str_contains($path, '_docs-probe')))->toBe([])
         ->and(ApiDocs::view())->not->toContain('_docs-probe');
 });
+
+it('describes validation rules in English, with no raw translation placeholder left in the page or the spec', function (): void {
+    $spec = (string) file_get_contents(ApiDocs::specPath());
+    $page = ApiDocs::view();
+
+    // Scribe appends one sentence per validation rule it can describe; a translation line it cannot fill leaves a
+    // placeholder such as :Attribute or :max in the output.
+    foreach (['attribute', 'max', 'min', 'value', 'values', 'other', 'size', 'digits', 'format', 'date'] as $placeholder) {
+        expect(preg_match('/(?<![A-Za-z0-9]):'.$placeholder.'\b/i', $spec))->toBe(0, "the spec holds :{$placeholder}")
+            ->and(preg_match('/(?<![A-Za-z0-9]):'.$placeholder.'\b/i', $page))->toBe(0, "the page holds :{$placeholder}");
+    }
+
+    $operation = ApiDocs::operation(Route::getRoutes()->getByName('api.v1.time-entries.store'));
+    $properties = $operation['requestBody']['content']['application/json']['schema']['properties'];
+
+    expect($properties['duration_seconds']['description'])->toContain('Must be at least 1.')
+        ->and($properties['duration_seconds']['description'])->toContain('Must not be greater than 2147483647.');
+});
