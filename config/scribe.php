@@ -43,6 +43,27 @@ return [
             - Every key is always present. A value that does not exist is `null`: for example `ended_at` and `duration_seconds` of a running time entry, or `project_id` of an entry that has only a client.
             - A validation error answers `422` with `{"message": "...", "errors": {"field": ["..."]}}`.
             - A conflict (for example a locked or running entry) answers `409` with `{"message": "...", "code": "..."}`.
+
+            ## Retrying a create safely: the Idempotency-Key
+
+            The two create endpoints, `POST /api/v1/time-entries` and `POST /api/v1/time-entries/batch`, accept an optional `Idempotency-Key` header, so a request that timed out can be sent again without creating a second entry. PATCH, DELETE and GET ignore it.
+
+            - Send 1 to 255 visible characters, a fresh value for every new request (a UUID works well). Keys belong to the token that sent them and are kept for 24 hours.
+            - The same key with the same body does not create anything a second time: the answer stored for the first request is sent again, byte for byte, with the response header `Idempotent-Replayed: true`.
+            - Only successful answers (`201`, and `207` of a batch) are stored. A request that failed leaves its key free, so the corrected request can be sent again with the same key.
+            - While the first request with a key is still running, a repeat answers `409` with the code `idempotency_in_progress`; wait a moment and send it again.
+            - The same key with a different body answers `422` with the code `idempotency_key_reused`; a malformed key answers `422` with the code `idempotency_key_invalid`.
+            - A request without the header is never deduplicated.
+
+            ## Batches
+
+            `POST /api/v1/time-entries/batch` records up to 100 entries in one request. Each item takes the fields of a single create and is saved on its own, through the same rules and in its own transaction, so one invalid item never blocks the others.
+
+            - The answer is `{"saved": n, "failed": m, "errors": [{"index": i, "errors": {"field": ["..."]}}]}`. `errors` lists only the failed items, with their zero-based position in `entries`. An item that is not a JSON object fails under the field `entry`.
+            - `201` means every item was saved, `207` that some were saved and some failed, `422` that none was saved. A list with no item, or with more than 100, answers `422` under `entries` and saves nothing.
+            - A batch counts as one write against the rate limit of the token.
+            - To retry a batch, send it again with the same `Idempotency-Key`: a stored `201` or `207` is replayed and nothing new is saved, and a `422` stored nothing, so the corrected batch can be sent with the same key. Do not resend only the failed items under the old key; that is a different body.
+            - Keys protect only a retry of the same request. If a batch is sent again under a different key, or the server fails in the middle of a batch, items may already be saved: deduplicate on your side: store your own id in `external` (it comes back with every entry), and list the entries of the period before you resend.
             INTRO,
 
     // The base URL displayed in the docs.

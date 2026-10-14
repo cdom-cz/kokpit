@@ -32,11 +32,22 @@ use Knuckles\Scribe\Attributes\Response;
 #[Response(ApiExamples::TOO_MANY_REQUESTS, 429, 'Too many requests for this token. Wait for the number of seconds in the Retry-After header; X-RateLimit-Limit and X-RateLimit-Remaining show the limit and what is left. A batch counts as one write.')]
 final class TimeEntryBatchController
 {
+    /**
+     * The sample item of the documented `entries` list.
+     */
+    private const array EXAMPLE_ENTRY = [
+        'task_id' => 'DEMO-1',
+        'started_at' => '2026-10-12T10:00:00+02:00',
+        'duration_seconds' => 5400,
+        'description' => 'Example work on the DEMO project',
+    ];
+
     #[Endpoint(
         'Create time entries in a batch',
         'Requires ability `'.ApiAbility::TimeWrite->value.'`. Records up to 100 finished entries in one request, each one through the same rules as a single create. Every item takes the fields of a single create. The items are saved one by one, each in its own transaction: an item that fails is skipped and reported, and the items before and after it are still saved. The answer is 201 when every item was saved, 207 when some were saved and some failed, and 422 when none was saved, and lists only the failed items.',
     )]
     #[Header('Idempotency-Key', 'demo-key-0002')]
+    #[BodyParam('entries', 'object[]', 'The time entries to record: 1 to 100 JSON objects, each with the fields of a single create. A list with no item or with more than 100 items answers 422 and saves nothing.', example: [self::EXAMPLE_ENTRY])]
     #[BodyParam('entries[].client_id', 'string', 'UUID of the client. Required unless the project or the task is given, because they fix the client.', required: false, example: '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9')]
     #[BodyParam('entries[].project_id', 'string', 'The project: its UUID or its key, for example `DEMO`. A name is refused. Optional; a task fixes the project.', required: false, example: 'DEMO')]
     #[BodyParam('entries[].task_id', 'string', 'The task: its UUID or its reference, for example `DEMO-1`. A name is refused. Optional. An archived task fails the item.', required: false, example: 'DEMO-1')]

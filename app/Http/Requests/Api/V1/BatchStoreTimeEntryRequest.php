@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Api\V1;
 
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -20,28 +21,28 @@ final class BatchStoreTimeEntryRequest extends FormRequest
     }
 
     /**
-     * @return array<string, list<string>>
+     * @return array<string, list<string|Closure>>
      */
     public function rules(): array
     {
         return [
-            'entries' => ['required', 'array', 'list', 'min:1', 'max:'.(int) config('kokpit.api.batch_max_items')],
+            'entries' => ['required', 'array', 'list', self::atMostItems()],
         ];
     }
 
     /**
-     * The field description of the generated documentation (Scribe). The fields of an item are documented
-     * with attributes on the controller, because this request has no per-item rules.
-     *
-     * @return array<string, array{description: string, example?: mixed, type?: string}>
+     * The largest batch (`kokpit.api.batch_max_items`), read when the request is validated so a test or an
+     * operator change takes effect at once. An empty list is already refused by `required`. This is a closure
+     * rather than `max:n` so Scribe does not append its untranslated rule sentence to the documented field.
      */
-    public function bodyParameters(): array
+    private static function atMostItems(): Closure
     {
-        return [
-            'entries' => [
-                'description' => 'The time entries to record, 1 to 100 JSON objects. Each one takes the fields of a single create.',
-                'type' => 'object[]',
-            ],
-        ];
+        return static function (string $attribute, mixed $value, Closure $fail): void {
+            $max = (int) config('kokpit.api.batch_max_items');
+
+            if (is_array($value) && count($value) > $max) {
+                $fail(__('validation.max.array', ['max' => $max]));
+            }
+        };
     }
 }

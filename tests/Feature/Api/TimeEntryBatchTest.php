@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Api\Models\IdempotencyKey;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Http\Controllers\Api\V1\ApiExamples;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
+use Tests\Support\ApiDocs;
 use Tests\Support\ApiFixtures;
 
 /*
@@ -298,4 +301,159 @@ it('documents answers that have the layout of the real answers', function (): vo
         ->and(array_keys(ApiExamples::BATCH_MIXED['errors'][0]))->toBe(array_keys($mixed->json('errors.0')))
         ->and(array_keys(ApiExamples::BATCH_NONE_SAVED))->toBe(array_keys($none->json()))
         ->and(ApiExamples::BATCH_MIXED['errors'][0]['errors']['ended_at'])->toBe($mixed->json('errors.0.errors.ended_at'));
+});
+
+it('replays the stored 207 byte for byte for a retried mixed batch and saves nothing new', function (): void {
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:write']);
+    $headers = ['Idempotency-Key' => 'demo-key-0002'];
+    $body = ['entries' => [batchItem($client->id, 8, 'one'), batchItemEndingBeforeStart($client->id, 10, 'two'), batchItem($client->id, 12, 'three')]];
+
+    $first = $this->withToken($token)->postJson('/api/v1/time-entries/batch', $body, $headers)->assertStatus(207);
+
+    // A real client is a new request: the guard of the test keeps the user of the first request.
+    Auth::forgetGuards();
+
+    $second = $this->withToken($token)->postJson('/api/v1/time-entries/batch', $body, $headers)
+        ->assertStatus(207)
+        ->assertHeader('Idempotent-Replayed', 'true');
+
+    expect($second->getContent())->toBe($first->getContent())
+        ->and($first->headers->has('Idempotent-Replayed'))->toBeFalse()
+        ->and(TimeEntry::query()->count())->toBe(2)
+        ->and(IdempotencyKey::query()->count())->toBe(1);
+});
+
+it('replays a stored 201 of a batch', function (): void {
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:write']);
+    $headers = ['Idempotency-Key' => 'demo-key-0003'];
+    $body = ['entries' => [batchItem($client->id, 8), batchItem($client->id, 9)]];
+
+    $first = $this->withToken($token)->postJson('/api/v1/time-entries/batch', $body, $headers)->assertCreated();
+    Auth::forgetGuards();
+    $second = $this->withToken($token)->postJson('/api/v1/time-entries/batch', $body, $headers)
+        ->assertCreated()
+        ->assertHeader('Idempotent-Replayed', 'true');
+
+    expect($second->getContent())->toBe($first->getContent())
+        ->and(TimeEntry::query()->count())->toBe(2);
+});
+
+it('releases the key of a batch that saved nothing so the corrected batch with the same key is saved', function (): void {
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:write']);
+    $headers = ['Idempotency-Key' => 'demo-key-0004'];
+
+    $this->withToken($token)->postJson('/api/v1/time-entries/batch', [
+        'entries' => [batchItemEndingBeforeStart($client->id, 9)],
+    ], $headers)->assertStatus(422);
+
+    expect(IdempotencyKey::query()->count())->toBe(0)
+        ->and(TimeEntry::query()->count())->toBe(0);
+
+    Auth::forgetGuards();
+
+    $retry = $this->withToken($token)->postJson('/api/v1/time-entries/batch', [
+        'entries' => [batchItem($client->id, 9)],
+    ], $headers)->assertCreated();
+
+    expect($retry->headers->has('Idempotent-Replayed'))->toBeFalse()
+        ->and($retry->json('saved'))->toBe(1)
+        ->and(TimeEntry::query()->count())->toBe(1);
+});
+
+it('refuses the same key with a different batch body with 422 idempotency_key_reused', function (): void {
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:write']);
+    $headers = ['Idempotency-Key' => 'demo-key-0005'];
+
+    $this->withToken($token)->postJson('/api/v1/time-entries/batch', ['entries' => [batchItem($client->id, 8)]], $headers)
+        ->assertCreated();
+    Auth::forgetGuards();
+
+    $this->withToken($token)->postJson('/api/v1/time-entries/batch', ['entries' => [batchItem($client->id, 8), batchItem($client->id, 9)]], $headers)
+        ->assertStatus(422)
+        ->assertJsonPath('code', 'idempotency_key_reused');
+
+    expect(TimeEntry::query()->count())->toBe(1);
+});
+
+it('keeps the items saved before an unexpected fault, answers 500 and releases the key', function (): void {
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:write']);
+    $inserts = 0;
+
+    // The second insert meets a fault of the server, not a refusal of the item.
+    TimeEntry::creating(static function () use (&$inserts): void {
+        if (++$inserts === 2) {
+            throw new RuntimeException('fictional fault');
+        }
+    });
+
+    $this->withToken($token)->postJson('/api/v1/time-entries/batch', [
+        'entries' => [batchItem($client->id, 8), batchItem($client->id, 9), batchItem($client->id, 10)],
+    ], ['Idempotency-Key' => 'demo-key-0006'])->assertStatus(500);
+
+    expect(TimeEntry::query()->count())->toBe(1)
+        ->and(IdempotencyKey::query()->count())->toBe(0);
+});
+
+it('counts a batch as one write against the per-token limit', function (): void {
+    config(['kokpit.api.rate_limit.write' => 2]);
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:write']);
+    $entries = [batchItem($client->id, 8), batchItem($client->id, 9), batchItem($client->id, 10), batchItem($client->id, 11), batchItem($client->id, 12)];
+
+    $this->withToken($token)->postJson('/api/v1/time-entries/batch', ['entries' => $entries])
+        ->assertCreated()
+        ->assertHeader('X-RateLimit-Remaining', '1');
+    Auth::forgetGuards();
+
+    $this->withToken($token)->postJson('/api/v1/time-entries/batch', ['entries' => $entries])
+        ->assertCreated()
+        ->assertHeader('X-RateLimit-Remaining', '0');
+    Auth::forgetGuards();
+
+    $this->withToken($token)->postJson('/api/v1/time-entries/batch', ['entries' => $entries])
+        ->assertStatus(429);
+
+    expect(TimeEntry::query()->count())->toBe(10);
+});
+
+it('documents the batch route with 201, 207, 409 and 422 and the Idempotency-Key header', function (): void {
+    $route = Route::getRoutes()->getByName('api.v1.time-entries.batch');
+    $operation = ApiDocs::operation($route);
+    $headers = array_map(
+        static fn (array $parameter): string => strtolower((string) $parameter['name']),
+        array_filter($operation['parameters'] ?? [], static fn (array $parameter): bool => ($parameter['in'] ?? null) === 'header'),
+    );
+
+    expect($operation['responses'])->toHaveKeys([201, 207, 409, 422])
+        ->and($headers)->toContain('idempotency-key')
+        ->and($operation['description'])->toContain('`time:write`')
+        ->and(ApiDocs::violations([$route], ApiDocs::spec()))->toBe([]);
+});
+
+it('documents the fields of a batch item and the entries list in the spec', function (): void {
+    $route = Route::getRoutes()->getByName('api.v1.time-entries.batch');
+    $operation = ApiDocs::operation($route);
+    $schema = $operation['requestBody']['content']['application/json']['schema'] ?? [];
+    $items = $schema['properties']['entries']['items'] ?? [];
+
+    expect($schema['required'] ?? [])->toContain('entries')
+        ->and($schema['properties']['entries']['type'] ?? null)->toBe('array')
+        ->and(array_keys($items['properties'] ?? []))->toContain('client_id', 'project_id', 'task_id', 'started_at', 'ended_at', 'duration_seconds', 'description', 'billable', 'external')
+        ->and($items['required'] ?? [])->toContain('started_at');
+});
+
+it('explains the Idempotency-Key once for both create routes and the batch retry rules on the docs page', function (): void {
+    $view = ApiDocs::view();
+
+    expect($view)->toContain('Idempotency-Key')
+        ->toContain('Idempotent-Replayed')
+        ->toContain('idempotency_in_progress')
+        ->toContain('idempotency_key_reused')
+        ->toContain('207')
+        ->toContain('deduplicate');
 });
