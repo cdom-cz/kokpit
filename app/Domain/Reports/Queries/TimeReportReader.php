@@ -67,7 +67,7 @@ final class TimeReportReader
                 .'u.name AS user_name, c.id AS client_id, c.name AS client_name, c.currency AS client_currency, '
                 .'p.id AS project_id, p.name AS project_name, p.key AS project_key, '
                 .'t.id AS task_id, t.reference AS task_reference, t.title AS task_title, '
-                .self::BILLING_TYPE_SQL.' AS billing_type, '
+                .self::BILLING_TYPE_SQL.' AS billing_type, pb.billing_type AS project_billing_type, '
                 .self::RATE_MINOR_SQL.' AS rate_minor, '
                 .self::RATE_CURRENCY_SQL.' AS rate_currency',
                 [$now->utc()->format('Y-m-d H:i:sP')],
@@ -98,6 +98,7 @@ final class TimeReportReader
                 taskTitle: is_string($row->task_title) ? $row->task_title : null,
                 billingType: (string) $row->billing_type,
                 rate: $rateMinor !== null && is_string($rateCurrency) ? Money::ofMinor((int) $rateMinor, $rateCurrency) : null,
+                projectBillingType: is_string($row->project_billing_type ?? null) ? $row->project_billing_type : null,
             );
         });
     }

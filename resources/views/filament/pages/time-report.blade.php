@@ -24,24 +24,43 @@
         $splitLinks[$split] = $query === '' ? $actionUrl : $actionUrl.'?'.$query;
     }
 
-    // The tree as flat rows: client (indent 0), project (1.5rem), task (3rem), then the day or user rows (4.5rem).
+    // The tree as flat rows in display order: client (indent 0), project (1.5rem), task (3rem), then the day or user
+    // rows (4.5rem). A row knows the rows it controls and the rows above it, which decide whether it is shown.
     $rows = [];
+    $walk = function (array $node, int $level, array $ancestors) use (&$walk, &$rows): string {
+        $key = 'r'.count($rows);
+        $index = count($rows);
+        $rows[$index] = ['key' => $key, 'node' => $node, 'level' => $level, 'ancestors' => $ancestors, 'children' => []];
+
+        foreach ($node['children'] as $child) {
+            $rows[$index]['children'][] = $walk($child, $level + 1, [...$ancestors, $key]);
+        }
+
+        return $key;
+    };
     foreach ($report->tree as $client) {
-        $rows[] = ['node' => $client, 'level' => 0];
-        foreach ($client['children'] as $project) {
-            $rows[] = ['node' => $project, 'level' => 1];
-            foreach ($project['children'] as $task) {
-                $rows[] = ['node' => $task, 'level' => 2];
-                foreach ($task['children'] as $leaf) {
-                    $rows[] = ['node' => $leaf, 'level' => 3];
-                }
+        $walk($client, 0, []);
+    }
+
+    // Clients start open one level; every row that has children can be toggled.
+    $initiallyOpen = [];
+    $expandable = [];
+    foreach ($rows as $row) {
+        if ($row['children'] !== []) {
+            $expandable[] = $row['key'];
+            if ($row['level'] === 0) {
+                $initiallyOpen[$row['key']] = true;
             }
         }
     }
+
     $indents = [0 => '0', 1 => '1.5rem', 2 => '3rem', 3 => '4.5rem'];
     $leafLabel = static fn (string $label): string => $filters->split === 'day'
         ? CarbonImmutable::parse($label)->format(LocalisationServiceProvider::DATE_FORMAT)
         : $label;
+    $dayText = static fn (?string $day): string => $day === null ? '' : CarbonImmutable::parse($day)->format(LocalisationServiceProvider::DATE_FORMAT);
+    $fixedMarker = $summary['fixed'] > 0 ? '*' : '';
+    $capText = number_format($report->leafCap, 0, ',', "\u{00A0}");
 
     $cellStyle = 'padding: 0.5rem 1rem; text-align: right; white-space: nowrap; vertical-align: top; font-variant-numeric: tabular-nums;';
     $headStyle = 'padding: 0.5rem 1rem; text-align: right; font-weight: 600; white-space: nowrap;';
@@ -169,13 +188,18 @@
                 <p style="margin: 0; font-size: 1.875rem; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums;">{{ $hours($summary[$state]) }}</p>
 
                 @forelse ($summary['amounts'][$state] as $amount)
-                    <p style="{{ $mutedStyle }} font-variant-numeric: tabular-nums;">{{ $amount->format('cs') }}</p>
+                    <p style="{{ $mutedStyle }} font-variant-numeric: tabular-nums;">{{ $amount->format('cs') }}{{ $fixedMarker }}</p>
                 @empty
-                    <p style="{{ $mutedStyle }}">{{ $dash }}</p>
+                    <p style="{{ $mutedStyle }}">{{ $dash }}{{ $fixedMarker }}</p>
                 @endforelse
 
                 @if ($summary['amounts'][$state] !== [])
-                    <p style="{{ $mutedStyle }} font-variant-numeric: tabular-nums;">{{ __('kokpit.report.summary.czk_line', ['czk' => $money($summary['czk'][$state])]) }}</p>
+                    <p style="{{ $mutedStyle }} font-variant-numeric: tabular-nums;">
+                        {{ __('kokpit.report.summary.czk_line', ['czk' => $money($summary['czk'][$state])]) }}
+                        @if ($summary['czk_missing_by_state'][$state] > 0)
+                            <x-filament::badge color="warning" :icon="Heroicon::OutlinedExclamationTriangle" size="sm">{{ __('kokpit.report.tree.missing_rate.badge') }}</x-filament::badge>
+                        @endif
+                    </p>
                 @endif
             </x-filament::section>
         @endforeach
@@ -201,61 +225,173 @@
             compact
         />
     @else
-        <x-filament::section :heading="__('kokpit.report.tree.heading')">
-            {{-- The table is wider than a phone: it scrolls inside this wrapper, never the page. --}}
-            <div style="min-width: 0; max-width: 100%; overflow-x: auto;">
-                <table style="width: 100%; min-width: 60rem; border-collapse: collapse;">
-                    <thead>
-                        <tr>
-                            <th scope="col" style="padding: 0.5rem 1rem; text-align: left; font-weight: 600;">{{ __('kokpit.report.tree.columns.name') }}</th>
-                            @foreach (['worked', 'billable', 'non_billable', 'billed', 'unbilled', 'amount', 'amount_czk'] as $column)
-                                <th scope="col" style="{{ $headStyle }}">{{ __('kokpit.report.tree.columns.'.$column) }}</th>
-                            @endforeach
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($rows as $row)
-                            @php
-                                $node = $row['node'];
-                                $seconds = $node['seconds'];
-                                $fixedTip = $node['fixed'] ? __('kokpit.report.tree.fixed_price.tooltip') : null;
-                            @endphp
+        {{-- The expand state lives here (Alpine, no server round trip): a row is shown while every row above it is open. --}}
+        <div
+            x-data="{
+                open: {{ \Illuminate\Support\Js::from((object) $initiallyOpen) }},
+                all: {{ \Illuminate\Support\Js::from($expandable) }},
+                expandAll() { this.all.forEach((key) => { this.open[key] = true; }); },
+                collapseAll() { this.open = {}; },
+            }"
+        >
+            <x-filament::section :heading="__('kokpit.report.tree.heading')">
+                <x-slot name="afterHeader">
+                    <div style="display: flex; gap: 0.5rem;">
+                        <x-filament::button type="button" color="gray" size="sm" x-on:click="expandAll()">{{ __('kokpit.report.tree.expand_all') }}</x-filament::button>
+                        <x-filament::button type="button" color="gray" size="sm" x-on:click="collapseAll()">{{ __('kokpit.report.tree.collapse_all') }}</x-filament::button>
+                    </div>
+                </x-slot>
 
-                            <tr style="{{ $ruleStyle }}">
-                                <th
-                                    scope="row"
-                                    style="padding: 0.5rem 1rem 0.5rem calc(1rem + {{ $indents[$row['level']] }}); text-align: left; font-weight: {{ $row['level'] < 2 ? 600 : 400 }}; overflow-wrap: anywhere;"
-                                >{{ $row['level'] === 3 ? $leafLabel($node['label']) : $node['label'] }}</th>
-                                <td style="{{ $cellStyle }}">{{ $hours($seconds['worked']) }}</td>
-                                <td style="{{ $cellStyle }}">{{ $hours($seconds['billable']) }}</td>
-                                <td style="{{ $cellStyle }}">{{ $hours($seconds['non_billable']) }}</td>
-                                <td style="{{ $cellStyle }}">{{ $hours($seconds['billed']) }}</td>
-                                <td style="{{ $cellStyle }}">{{ $hours($seconds['unbilled']) }}</td>
-                                <td style="{{ $cellStyle }}" @if ($node['amount'] === null && $fixedTip !== null) title="{{ $fixedTip }}" @endif>{{ $money($node['amount']) }}</td>
-                                <td style="{{ $cellStyle }}" @if ($node['czk'] === null && $fixedTip !== null) title="{{ $fixedTip }}" @endif>{{ $money($node['czk']) }}</td>
+                {{-- The table is wider than a phone: it scrolls inside this wrapper, never the page. --}}
+                <div style="min-width: 0; max-width: 100%; overflow-x: auto;">
+                    <table style="width: 100%; min-width: 60rem; border-collapse: collapse;">
+                        <thead>
+                            <tr>
+                                <th scope="col" style="padding: 0.5rem 1rem; text-align: left; font-weight: 600;">{{ __('kokpit.report.tree.columns.name') }}</th>
+                                @foreach (['worked', 'billable', 'non_billable', 'billed', 'unbilled', 'amount', 'amount_czk'] as $column)
+                                    <th scope="col" style="{{ $headStyle }}">{{ __('kokpit.report.tree.columns.'.$column) }}</th>
+                                @endforeach
                             </tr>
-                        @endforeach
-                    </tbody>
-                    <tfoot>
-                        <tr style="{{ $ruleStyle }} font-weight: 600;">
-                            <th scope="row" style="padding: 0.5rem 1rem; text-align: left;">{{ __('kokpit.report.tree.total') }}</th>
-                            <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['worked']) }}</td>
-                            <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['billable']) }}</td>
-                            <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['non_billable']) }}</td>
-                            <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['billed']) }}</td>
-                            <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['unbilled']) }}</td>
-                            <td style="{{ $cellStyle }}">
-                                @forelse ($footer['amounts'] as $amount)
-                                    <div>{{ $amount->format('cs') }}</div>
-                                @empty
-                                    {{ $dash }}
-                                @endforelse
-                            </td>
-                            <td style="{{ $cellStyle }}">{{ $money($footer['czk']) }}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        </x-filament::section>
+                        </thead>
+                        <tbody>
+                            @foreach ($rows as $row)
+                                @php
+                                    $node = $row['node'];
+                                    $level = $row['level'];
+                                    $key = $row['key'];
+                                    $seconds = $node['seconds'];
+                                    $fixedTip = $node['fixed'] ? __('kokpit.report.tree.fixed_price.tooltip') : null;
+                                    $name = $level === 3 ? $leafLabel($node['label']) : $node['label'];
+                                    $placeholder = in_array($level, [1, 2], true) && $node['id'] === null;
+                                    $isExpandable = $row['children'] !== [];
+                                    $isOpen = isset($initiallyOpen[$key]);
+                                    // Rows below a collapsed project start hidden; Alpine keeps the attribute in step afterwards.
+                                    $startsHidden = $level >= 2;
+                                    $showWhen = implode(' || ', array_map(static fn (string $above): string => '! open.'.$above, $row['ancestors']));
+                                    $missingTip = $node['czk_missing'] > 0 && $node['amount'] !== null
+                                        ? __('kokpit.report.tree.missing_rate.tooltip', ['currency' => $node['amount']->currency, 'date' => $dayText($node['czk_missing_day'])])
+                                        : null;
+                                @endphp
+
+                                <tr
+                                    id="report-row-{{ $key }}"
+                                    style="{{ $ruleStyle }}"
+                                    @if ($startsHidden) hidden @endif
+                                    @if ($showWhen !== '') x-bind:hidden="{{ $showWhen }}" @endif
+                                >
+                                    <th
+                                        scope="row"
+                                        style="padding: 0.5rem 1rem 0.5rem calc(1rem + {{ $indents[$level] }}); text-align: left; font-weight: {{ $level < 2 ? 600 : 400 }};"
+                                    >
+                                        <div style="display: flex; align-items: center; gap: 0.5rem; min-height: 1.5rem;">
+                                            @if ($isExpandable)
+                                                <button
+                                                    type="button"
+                                                    aria-expanded="{{ $isOpen ? 'true' : 'false' }}"
+                                                    aria-controls="{{ implode(' ', array_map(static fn (string $child): string => 'report-row-'.$child, $row['children'])) }}"
+                                                    aria-label="{{ __($isOpen ? 'kokpit.report.tree.collapse' : 'kokpit.report.tree.expand', ['name' => $name]) }}"
+                                                    data-expand="{{ __('kokpit.report.tree.expand', ['name' => $name]) }}"
+                                                    data-collapse="{{ __('kokpit.report.tree.collapse', ['name' => $name]) }}"
+                                                    x-bind:aria-expanded="open.{{ $key }} ? 'true' : 'false'"
+                                                    x-bind:aria-label="open.{{ $key }} ? $el.dataset.collapse : $el.dataset.expand"
+                                                    x-on:click="open.{{ $key }} = ! open.{{ $key }}"
+                                                    style="display: flex; align-items: center; gap: 0.25rem; flex: 1 1 auto; min-width: 0; min-height: 1.5rem; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;"
+                                                >
+                                                    <x-filament::icon
+                                                        :icon="Heroicon::OutlinedChevronRight"
+                                                        style="width: 1.25rem; height: 1.25rem; flex: none; {{ $isOpen ? 'display: none;' : '' }}"
+                                                        x-show="! open.{{ $key }}"
+                                                    />
+                                                    <x-filament::icon
+                                                        :icon="Heroicon::OutlinedChevronDown"
+                                                        style="width: 1.25rem; height: 1.25rem; flex: none; {{ $isOpen ? '' : 'display: none;' }}"
+                                                        x-show="open.{{ $key }}"
+                                                    />
+                                                    <span style="min-width: 0; overflow-wrap: anywhere; {{ $placeholder ? 'opacity: 0.7;' : '' }}">{{ $name }}</span>
+                                                </button>
+                                            @else
+                                                <span aria-hidden="true" style="display: inline-block; width: 1.5rem; flex: none;"></span>
+                                                <span style="min-width: 0; overflow-wrap: anywhere; {{ $placeholder ? 'opacity: 0.7;' : '' }}">{{ $name }}</span>
+                                            @endif
+
+                                            @if ($node['fixed_price'])
+                                                <x-filament::badge color="info" size="sm">{{ __('kokpit.report.tree.fixed_price.badge') }}</x-filament::badge>
+                                            @endif
+                                        </div>
+                                    </th>
+                                    <td style="{{ $cellStyle }}">{{ $hours($seconds['worked']) }}</td>
+                                    <td style="{{ $cellStyle }}">{{ $hours($seconds['billable']) }}</td>
+                                    <td style="{{ $cellStyle }}">{{ $hours($seconds['non_billable']) }}</td>
+                                    <td style="{{ $cellStyle }}">{{ $hours($seconds['billed']) }}</td>
+                                    <td style="{{ $cellStyle }}">{{ $hours($seconds['unbilled']) }}</td>
+                                    <td style="{{ $cellStyle }}">
+                                        @if ($node['amount'] !== null)
+                                            {{ $money($node['amount']) }}
+                                        @else
+                                            <span @if ($fixedTip !== null) title="{{ $fixedTip }}" @endif>{{ $dash }}</span>
+                                        @endif
+                                    </td>
+                                    <td style="{{ $cellStyle }}">
+                                        @if ($node['czk'] !== null)
+                                            {{ $money($node['czk']) }}
+                                        @elseif ($node['czk_missing'] === 0)
+                                            <span @if ($node['amount'] === null && $fixedTip !== null) title="{{ $fixedTip }}" @endif>{{ $dash }}</span>
+                                        @endif
+
+                                        @if ($missingTip !== null)
+                                            <x-filament::badge color="warning" size="sm" :icon="Heroicon::OutlinedExclamationTriangle" title="{{ $missingTip }}">{{ __('kokpit.report.tree.missing_rate.badge') }}</x-filament::badge>
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                        <tfoot>
+                            <tr style="{{ $ruleStyle }} font-weight: 600;">
+                                <th scope="row" style="padding: 0.5rem 1rem; text-align: left;">{{ __('kokpit.report.tree.total') }}</th>
+                                <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['worked']) }}</td>
+                                <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['billable']) }}</td>
+                                <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['non_billable']) }}</td>
+                                <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['billed']) }}</td>
+                                <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['unbilled']) }}</td>
+                                <td style="{{ $cellStyle }}">
+                                    @forelse ($footer['amounts'] as $amount)
+                                        <div>{{ $amount->format('cs') }}</div>
+                                    @empty
+                                        {{ $dash }}
+                                    @endforelse
+                                </td>
+                                <td style="{{ $cellStyle }}">
+                                    {{ $money($footer['czk']) }}
+                                    @if ($footer['czk_missing'] > 0)
+                                        <x-filament::badge color="warning" size="sm" :icon="Heroicon::OutlinedExclamationTriangle">{{ __('kokpit.report.tree.missing_rate.badge') }}</x-filament::badge>
+                                    @endif
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                {{-- The footnotes, each only when it applies (UI-SPEC B5). --}}
+                @if ($summary['fixed'] > 0 || $summary['czk_missing'] > 0 || $report->capped)
+                    <div style="display: grid; gap: 0.5rem; margin-top: 1rem; font-size: 0.875rem;">
+                        @if ($summary['fixed'] > 0)
+                            <p style="{{ $mutedStyle }}">{{ __('kokpit.report.notes.fixed_price') }}</p>
+                        @endif
+
+                        @if ($summary['czk_missing'] > 0)
+                            <p style="{{ $mutedStyle }}">{{ __('kokpit.report.notes.missing_rate', ['count' => $summary['czk_missing']]) }}</p>
+                        @endif
+
+                        @if ($report->capped)
+                            <x-filament::callout
+                                color="warning"
+                                :icon="Heroicon::OutlinedExclamationTriangle"
+                                :description="__('kokpit.report.tree.row_cap', ['count' => $capText])"
+                            />
+                        @endif
+                    </div>
+                @endif
+            </x-filament::section>
+        </div>
     @endif
 </x-filament-panels::page>

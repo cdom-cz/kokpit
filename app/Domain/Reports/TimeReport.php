@@ -33,22 +33,28 @@ use Illuminate\Database\Eloquent\Builder;
  * `TimeTotals`. Fixed-price hours are part of the billable hours and carry no amount (D-07).
  *
  * @phpstan-type Seconds array{worked: int, billable: int, non_billable: int, billed: int, unbilled: int, fixed: int}
- * @phpstan-type Node array{id: ?string, label: string, reference: ?string, currency: ?string, seconds: Seconds, amount: ?Money, czk: ?Money, czk_missing: int, fixed: bool, children: list<array<string, mixed>>}
- * @phpstan-type Summary array{worked: int, billable: int, non_billable: int, billed: int, unbilled: int, fixed: int, amounts: array{billed: array<string, Money>, unbilled: array<string, Money>, billable: array<string, Money>}, czk: array{billed: ?Money, unbilled: ?Money, billable: ?Money}, czk_missing: int}
+ * @phpstan-type Node array{id: ?string, label: string, reference: ?string, currency: ?string, seconds: Seconds, amount: ?Money, czk: ?Money, czk_missing: int, czk_missing_day: ?string, fixed: bool, fixed_price: bool, children: list<array<string, mixed>>}
+ * @phpstan-type Summary array{worked: int, billable: int, non_billable: int, billed: int, unbilled: int, fixed: int, amounts: array{billed: array<string, Money>, unbilled: array<string, Money>, billable: array<string, Money>}, czk: array{billed: ?Money, unbilled: ?Money, billable: ?Money}, czk_missing: int, czk_missing_by_state: array{billed: int, unbilled: int}}
  * @phpstan-type Footer array{seconds: Seconds, czk: ?Money, amounts: array<string, Money>, czk_missing: int}
  */
 final readonly class TimeReport
 {
     /**
      * @param  Summary  $summary
-     * @param  list<Node>  $tree  clients, each with its projects, each with its tasks
+     * @param  list<Node>  $tree  clients, each with its projects, each with its tasks (and their days or users); cut at the leaf cap
      * @param  Footer  $footer
+     * @param  bool  $capped  more leaf rows exist than `kokpit.report.max_rendered_rows`, so the tree is cut and the totals are not
+     * @param  int  $renderedLeafCount  the leaf rows (task rows, or the day or user rows below them) left in the tree
+     * @param  int  $leafCap  the cap the tree was cut at, never below 1
      */
     private function __construct(
         public array $summary,
         public array $tree,
         public array $footer,
         public int $entryCount,
+        public bool $capped,
+        public int $renderedLeafCount,
+        public int $leafCap,
     ) {}
 
     /**
@@ -67,6 +73,7 @@ final readonly class TimeReport
         $total = new ReportBucket(null, '');
         $amounts = ['billed' => [], 'unbilled' => [], 'billable' => []];
         $czk = ['billed' => null, 'unbilled' => null, 'billable' => null];
+        $missingByState = ['billed' => 0, 'unbilled' => 0];
         $count = 0;
 
         foreach ($reader->entries($filters, $now) as $entry) {
@@ -74,10 +81,13 @@ final readonly class TimeReport
             $priced = EntryAmounts::of($entry, $rates);
 
             $total->add($entry, $priced);
+            $state = $entry->billed ? 'billed' : 'unbilled';
+
+            if ($priced['czk_missing']) {
+                $missingByState[$state]++;
+            }
 
             if ($priced['amount'] !== null) {
-                $state = $entry->billed ? 'billed' : 'unbilled';
-
                 foreach ([$state, 'billable'] as $bucket) {
                     $currency = $priced['amount']->currency;
                     $amounts[$bucket][$currency] = isset($amounts[$bucket][$currency])
@@ -96,6 +106,7 @@ final readonly class TimeReport
                 $entry->projectId,
                 $entry->projectName ?? (string) __('kokpit.report.tree.no_project'),
             );
+            $project->fixedPrice = $entry->projectBillingType === 'fixed_price';
             $task = $project->child(
                 $entry->taskId ?? 'none',
                 $entry->taskId,
@@ -129,6 +140,7 @@ final readonly class TimeReport
             'amounts' => $amounts,
             'czk' => $czk,
             'czk_missing' => $total->czkMissing,
+            'czk_missing_by_state' => $missingByState,
         ];
 
         $footerAmounts = [];
@@ -143,9 +155,12 @@ final readonly class TimeReport
 
         ksort($footerAmounts);
 
+        $cap = max(1, (int) config('kokpit.report.max_rendered_rows'));
+        [$tree, $leaves, $rendered] = self::tree($total, $filters->split, $cap);
+
         return new self(
             $summary,
-            self::tree($total, $filters->split),
+            $tree,
             [
                 'seconds' => self::seconds($total),
                 'czk' => $total->czk,
@@ -153,6 +168,9 @@ final readonly class TimeReport
                 'czk_missing' => $total->czkMissing,
             ],
             $count,
+            $leaves > $cap,
+            $rendered,
+            $cap,
         );
     }
 
@@ -161,9 +179,12 @@ final readonly class TimeReport
      * project last), tasks by their number (entries without a task last), and below each task, with a "Rozpad",
      * its days in date order or its users in Czech order.
      *
-     * @return list<Node>
+     * Only the first `$cap` leaf rows are kept, in the order they are listed; a row above them whose leaves were all
+     * cut is dropped, and a task row keeps its own totals when only some of its day or user rows are cut.
+     *
+     * @return array{list<Node>, int, int} the nodes, the number of leaf rows there were, the number kept
      */
-    private static function tree(ReportBucket $root, string $split): array
+    private static function tree(ReportBucket $root, string $split, int $cap): array
     {
         $clientRank = self::ranks(Client::query()->withTrashed(), array_keys($root->children));
         $clients = $root->children;
@@ -191,6 +212,8 @@ final readonly class TimeReport
         $projectRank = self::ranks(Project::query()->withTrashed(), $projectIds);
         $userRank = self::ranks(User::query(), array_values($userIds));
         $nodes = [];
+        $leaves = 0;
+        $rendered = 0;
 
         foreach ($clients as $client) {
             $projects = $client->children;
@@ -205,27 +228,47 @@ final readonly class TimeReport
                 $taskNodes = [];
 
                 foreach ($tasks as $task) {
-                    $leaves = $task->children;
+                    $leafBuckets = $task->children;
 
                     if ($split === 'day') {
-                        ksort($leaves);
+                        ksort($leafBuckets);
                     } else {
-                        uasort($leaves, static fn (ReportBucket $a, ReportBucket $b): int => self::rankOf($userRank, $a) <=> self::rankOf($userRank, $b));
+                        uasort($leafBuckets, static fn (ReportBucket $a, ReportBucket $b): int => self::rankOf($userRank, $a) <=> self::rankOf($userRank, $b));
                     }
 
-                    $taskNodes[] = self::node($task, array_map(
-                        static fn (ReportBucket $leaf): array => self::node($leaf, []),
-                        array_values($leaves),
-                    ));
+                    $room = $cap - $rendered;
+
+                    if ($split === 'none') {
+                        $leaves++;
+
+                        if ($room > 0) {
+                            $rendered++;
+                            $taskNodes[] = self::node($task, []);
+                        }
+
+                        continue;
+                    }
+
+                    $leaves += count($leafBuckets);
+
+                    if ($room > 0) {
+                        $kept = array_slice(array_values($leafBuckets), 0, $room);
+                        $rendered += count($kept);
+                        $taskNodes[] = self::node($task, array_map(static fn (ReportBucket $leaf): array => self::node($leaf, []), $kept));
+                    }
                 }
 
-                $projectNodes[] = self::node($project, $taskNodes);
+                if ($taskNodes !== []) {
+                    $projectNodes[] = self::node($project, $taskNodes);
+                }
             }
 
-            $nodes[] = self::node($client, $projectNodes);
+            if ($projectNodes !== []) {
+                $nodes[] = self::node($client, $projectNodes);
+            }
         }
 
-        return $nodes;
+        return [$nodes, $leaves, $rendered];
     }
 
     /**
@@ -243,7 +286,9 @@ final readonly class TimeReport
             'amount' => $bucket->amount,
             'czk' => $bucket->czk,
             'czk_missing' => $bucket->czkMissing,
+            'czk_missing_day' => $bucket->czkMissingDay,
             'fixed' => $bucket->fixed > 0,
+            'fixed_price' => $bucket->fixedPrice,
             'children' => $children,
         ];
     }

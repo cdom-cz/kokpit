@@ -22,6 +22,7 @@ final readonly class ReportEntry
      * @param  int  $seconds  whole seconds; a running entry at its elapsed time
      * @param  bool  $billed  the entry is billed (its state), as opposed to unbilled
      * @param  string  $billingType  `hourly`, `fixed_price` or `non_billable`
+     * @param  string|null  $projectBillingType  the billing type of the entry's own project (`hourly` or `fixed_price`), null without a project; it marks fixed-price project rows, whereas `billingType` is what prices the entry
      */
     public function __construct(
         public string $id,
@@ -42,5 +43,6 @@ final readonly class ReportEntry
         public ?string $taskTitle,
         public string $billingType,
         public ?Money $rate,
+        public ?string $projectBillingType = null,
     ) {}
 }

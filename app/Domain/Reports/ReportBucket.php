@@ -39,6 +39,12 @@ final class ReportBucket
     /** The number of priced entries without a CNB rate. */
     public int $czkMissing = 0;
 
+    /** The first Prague day (`Y-m-d`) of an entry without a CNB rate, null while none is missing. */
+    public ?string $czkMissingDay = null;
+
+    /** The row is a project whose own billing type is fixed price (its hours may still be hourly on a task). */
+    public bool $fixedPrice = false;
+
     /** @var array<string, self> */
     public array $children = [];
 
@@ -82,6 +88,7 @@ final class ReportBucket
 
         if ($amounts['czk_missing']) {
             $this->czkMissing++;
+            $this->czkMissingDay ??= $entry->workDate;
         }
     }
 
