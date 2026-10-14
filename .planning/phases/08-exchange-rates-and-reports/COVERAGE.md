@@ -1,7 +1,7 @@
 # Phase 8: CNB API Coverage Matrix
 
 **External API:** Czech National Bank public API (`https://api.cnb.cz/cnbapi`), Swagger 2.0 description at `/cnbapi/api-docs` (read 2026-10-14, 22 GET operations, no authentication).
-**Integrated by:** `App\Domain\ExchangeRates\Cnb\CnbClient` (plans 08-01, 08-06, 08-08).
+**Integrated by:** `App\Domain\ExchangeRates\Cnb\CnbClient` (plans 08-04, 08-17, 08-18).
 **Rule:** full coverage by default; every capability that Kokpit does not call carries an explicit opt-out reason.
 
 Kokpit needs exactly one data set from the CNB: the daily exchange-rate fixing of the main currencies (EX-01, D-02), today and history. Everything else the API offers is a different data set (interest rates, money-market operations, forward rates, averages, other-currency monthly rates) with no consumer in Kokpit's flow client -> time -> billing -> invoice -> payment.
@@ -33,7 +33,7 @@ Kokpit needs exactly one data set from the CNB: the daily exchange-rate fixing o
 
 ## How the two integrated capabilities are used
 
-- **exrates/daily** (`CnbClient::daily()`, plan 08-01): the scheduled run (plan 08-03, 15:00 to 17:00 Prague plus a final 18:00 run) and the manual "download today" action (plan 08-08). One request per run, skipped entirely when the day's list is already stored. The row date is the payload's `validFor`, never the requested day.
-- **exrates/daily-year** (`CnbClient::year()`, plan 08-06): the gap self-heal of the scheduled run (only when a Czech working day inside the lookback window has no stored list) and the queued history backfill (plan 08-08), one request per year.
+- **exrates/daily** (`CnbClient::daily()`, plan 08-04): the scheduled run (plan 08-08, 15:00 to 17:00 Prague plus a final 18:00 run) and the manual "download today" action (plan 08-13). One request per run, skipped entirely when the day's list is already stored. The row date is the payload's `validFor`, never the requested day.
+- **exrates/daily-year** (`CnbClient::year()`, plan 08-17): the gap self-heal of the scheduled run (only when a Czech working day inside the lookback window has no stored list) and the queued history backfill (plan 08-18), one request per year.
 
 Request discipline: the CNB FAQ asks clients not to access the service excessively. Kokpit makes at most four daily requests on a working day (fewer once the list is stored), none on weekends and Czech public holidays, and one request per affected year for history.
