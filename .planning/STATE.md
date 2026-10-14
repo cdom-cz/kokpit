@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-14-PLAN.md
-last_updated: "2026-10-14T22:37:03.777Z"
+stopped_at: Completed 08-18-PLAN.md
+last_updated: "2026-10-14T22:50:36.584Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: e2b61cc69f11bc0ff56db298b4f3a5abf973916e
+state_head: 7cf090308b0ed9babc391ada984d5851e75bc25a
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 137
+  completed_plans: 138
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 18 of 22
+Plan: 19 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -199,6 +199,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P16 | 20 min | 3 tasks | 11 files |
 | Phase 08 P17 | 40 min | 2 tasks | 5 files |
 | Phase 08 P14 | 13 min | 3 tasks | 6 files |
+| Phase 08 P18 | 12 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -469,6 +470,8 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-17: the CNB gap heal runs only in the scheduled command, once per Prague day (cache claim), one daily-year request per affected year, fills only days with no stored row up to the run's day; handle() returns lists stored
 - [Phase 08]: 08-14: the root report bucket sums hours and CZK only; client-currency amounts live on client rows and below and per currency in the summary and the footer
 - [Phase 08]: 08-14: ReportEntry carries an optional projectBillingType so only fixed-price projects get the Pevna cena badge; the tree is cut at max_rendered_rows leaf rows while every total covers all entries
+- [Phase 08]: 08-18: one range rule (BackfillCnbRates::violations) serves the backfill form and the queued job; the job re-validates in handle() because a queue payload skips the constructor
+- [Phase 08]: 08-18: backfill span counts days including both ends and Do is judged against the Prague day
 
 ### Pending Todos
 
@@ -516,6 +519,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T22:37:03.570Z
-Stopped at: Completed 08-14-PLAN.md
+Last session: 2026-10-14T22:50:36.092Z
+Stopped at: Completed 08-18-PLAN.md
 Resume file: None
