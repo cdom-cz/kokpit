@@ -67,6 +67,10 @@ return [
         'passed' => 'Nasazení je připravené, všechny čtyři kontroly prošly.',
     ],
 
+    'overrun_timers' => [
+        'done' => 'Ukončeno běžících záznamů delších než :hours h: :count',
+    ],
+
     'api_tokens' => [
         'navigation_label' => 'API tokeny',
         'navigation_group' => 'Správa',

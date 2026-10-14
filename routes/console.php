@@ -44,6 +44,12 @@ Schedule::job(new NotifyLongRunningTimers)
     ->name('kokpit-long-running-timers')
     ->onOneServer();
 
+// Safety net: a running entry past kokpit.time.max_running_hours (48) is ended at its start plus that limit, never at now (hand-inserted entries).
+Schedule::command('kokpit:time:end-overrun')
+    ->hourly()
+    ->name('kokpit-end-overrun-timers')
+    ->onOneServer();
+
 // Deletes idempotency keys past their 24 hours so api_idempotency_keys stays small (D-08).
 Schedule::job(new PurgeExpiredIdempotencyKeys)
     ->daily()
