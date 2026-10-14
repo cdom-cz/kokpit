@@ -136,3 +136,107 @@ describe('labels', function (): void {
             ->and(ReportExportFormat::Xlsx->extension())->toBe('xlsx');
     });
 });
+
+describe('naming', function (): void {
+    it('builds the storage path from the export id and the format only', function (): void {
+        $this->actingAs(Canary::admin());
+        $export = reportExportCreate(['format' => ReportExportFormat::Xlsx]);
+
+        expect($export->storagePath())->toBe('report-exports/'.$export->getKey().'.xlsx')
+            ->and(reportExportCreate()->storagePath())->toEndWith('.csv');
+    });
+
+    it('builds the download name from the stored period only, with no client or project name', function (): void {
+        $this->actingAs(Canary::admin());
+        $export = reportExportCreate(['summary' => 'Příklad Klient s.r.o., Projekt Alfa, 1. 9. 2026 – 30. 9. 2026']);
+
+        expect($export->downloadFileName())->toBe('report-casu-2026-09-01_2026-09-30.csv')
+            ->and($export->downloadFileName())->not->toContain('Klient')
+            ->and($export->downloadFileName())->not->toContain('Alfa')
+            ->and(reportExportCreate(['format' => ReportExportFormat::Xlsx])->downloadFileName())->toBe('report-casu-2026-09-01_2026-09-30.xlsx');
+    });
+
+    it('never lets a tampered period reach the download name', function (): void {
+        $this->actingAs(Canary::admin());
+        $export = reportExportCreate(['filters' => ['from' => '../../etc/passwd', 'to' => '2026-09-30']]);
+
+        expect($export->downloadFileName())->toBe('report-casu.csv');
+
+        $missing = reportExportCreate(['filters' => ['client' => null]]);
+
+        expect($missing->downloadFileName())->toBe('report-casu.csv');
+    });
+});
+
+describe('lifecycle', function (): void {
+    it('marks an export ready with the path, the row count, the completion time and a fresh expiry', function (): void {
+        $this->actingAs(Canary::admin());
+        $export = reportExportCreate();
+        $now = CarbonImmutable::parse('2026-10-01 10:00:00');
+
+        $export->markReady($export->storagePath(), 12, $now);
+        $fresh = ReportExport::query()->findOrFail($export->getKey());
+
+        expect($fresh->status)->toBe(ReportExportStatus::Ready)
+            ->and($fresh->path)->toBe($export->storagePath())
+            ->and($fresh->row_count)->toBe(12)
+            ->and($fresh->completed_at?->equalTo($now))->toBeTrue()
+            ->and($fresh->expires_at->equalTo($now->addDays(7)))->toBeTrue();
+    });
+
+    it('marks an export failed and keeps the expiry of its creation', function (): void {
+        $this->actingAs(Canary::admin());
+        $export = reportExportCreate();
+        $expires = ReportExport::query()->findOrFail($export->getKey())->expires_at;
+
+        $export->markFailed();
+        $fresh = ReportExport::query()->findOrFail($export->getKey());
+
+        expect($fresh->status)->toBe(ReportExportStatus::Failed)
+            ->and($fresh->path)->toBeNull()
+            ->and($fresh->completed_at)->toBeNull()
+            ->and($fresh->expires_at->equalTo($expires))->toBeTrue();
+    });
+
+    it('is downloadable only when ready, unexpired and with a path', function (): void {
+        $this->actingAs(Canary::admin());
+        $now = CarbonImmutable::parse('2026-10-01 10:00:00');
+
+        $pending = reportExportCreate();
+        $failed = reportExportCreate();
+        $failed->markFailed();
+        $ready = reportExportCreate();
+        $ready->markReady($ready->storagePath(), 1, $now);
+        $atExpiry = $ready->expires_at;
+
+        expect($pending->isDownloadable($now))->toBeFalse()
+            ->and($failed->isDownloadable($now))->toBeFalse()
+            ->and($ready->isDownloadable($now))->toBeTrue()
+            ->and($ready->isDownloadable($atExpiry->subSecond()))->toBeTrue()
+            ->and($ready->isDownloadable($atExpiry))->toBeFalse()
+            ->and($ready->isDownloadable($atExpiry->addDay()))->toBeFalse();
+    });
+
+    it('reads the retention from the configuration and never returns less than one day', function (): void {
+        expect(ReportExport::ttlDays())->toBe(7);
+
+        config(['kokpit.exports.ttl_days' => 3]);
+        expect(ReportExport::ttlDays())->toBe(3);
+
+        config(['kokpit.exports.ttl_days' => 0]);
+        expect(ReportExport::ttlDays())->toBe(1);
+
+        config(['kokpit.exports.ttl_days' => -5]);
+        expect(ReportExport::ttlDays())->toBe(1);
+    });
+
+    it('uses the configured retention for a new record', function (): void {
+        config(['kokpit.exports.ttl_days' => 2]);
+        $this->actingAs(Canary::admin());
+
+        $export = reportExportCreate()->refresh();
+
+        expect($export->expires_at->lessThanOrEqualTo(CarbonImmutable::now()->addDays(2)))->toBeTrue()
+            ->and($export->expires_at->greaterThan(CarbonImmutable::now()->addDay()))->toBeTrue();
+    });
+});
