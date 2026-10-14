@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Domain\Api\Idempotency\IdempotencyOutcome;
+use App\Domain\Api\Idempotency\IdempotencyStore;
 use App\Domain\Api\Models\IdempotencyKey;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
 use Tests\Support\ApiFixtures;
 
@@ -62,4 +65,203 @@ it('creates an entry on every request that carries no key', function (): void {
         ->and($second->json('data.id'))->not->toBe($first->json('data.id'))
         ->and(TimeEntry::query()->count())->toBe(2)
         ->and(IdempotencyKey::query()->count())->toBe(0);
+});
+
+/**
+ * The id of the token row of a plain text token `<uuid>|<secret>`.
+ */
+function idempotencyTokenId(string $plainToken): string
+{
+    return explode('|', $plainToken, 2)[0];
+}
+
+/**
+ * Arranges a claim row of the token for the exact request `postJson` will send: the hash is the sha256
+ * of method, path and raw body, and `postJson` sends json_encode of the array.
+ *
+ * @param  array<string, mixed>  $body
+ * @param  array<string, mixed>  $attributes
+ */
+function arrangeClaim(string $plainToken, string $key, array $body, array $attributes = []): IdempotencyKey
+{
+    $row = new IdempotencyKey;
+    $row->forceFill(array_merge([
+        'token_id' => idempotencyTokenId($plainToken),
+        'key' => $key,
+        'request_hash' => hash('sha256', "POST\napi/v1/time-entries\n".json_encode($body)),
+        'locked_at' => now(),
+        'expires_at' => now()->addHours(24),
+    ], $attributes))->save();
+
+    return $row;
+}
+
+it('refuses the same key with a different body with 422 idempotency_key_reused and creates nothing', function (): void {
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token($admin, ['time:write']);
+    $headers = ['Idempotency-Key' => 'demo-key-0002'];
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', idempotentBody($client->id), $headers)->assertCreated();
+    Auth::forgetGuards();
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', idempotentBody($client->id, 'Another description'), $headers)
+        ->assertStatus(422)
+        ->assertJsonPath('code', 'idempotency_key_reused')
+        ->assertJsonPath('message', __('api.errors.idempotency_key_reused'))
+        ->assertHeaderMissing('Idempotent-Replayed');
+
+    expect(TimeEntry::query()->count())->toBe(1);
+});
+
+it('answers 409 idempotency_in_progress while another request holds a fresh claim', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-14 12:00:00', 'UTC'));
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token($admin, ['time:write']);
+    $body = idempotentBody($client->id);
+    arrangeClaim($token, 'demo-key-0003', $body, ['locked_at' => now()->subSeconds(10)]);
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', $body, ['Idempotency-Key' => 'demo-key-0003'])
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'idempotency_in_progress')
+        ->assertJsonPath('message', __('api.errors.idempotency_in_progress'));
+
+    expect(TimeEntry::query()->count())->toBe(0)
+        ->and(IdempotencyKey::query()->count())->toBe(1);
+});
+
+it('takes over a claim older than 121 seconds without a response and completes it', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-14 12:00:00', 'UTC'));
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token($admin, ['time:write']);
+    $body = idempotentBody($client->id);
+    $row = arrangeClaim($token, 'demo-key-0004', $body, ['locked_at' => now()->subSeconds(121)]);
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', $body, ['Idempotency-Key' => 'demo-key-0004'])
+        ->assertCreated();
+
+    $stored = IdempotencyKey::query()->sole();
+
+    expect(TimeEntry::query()->count())->toBe(1)
+        ->and($stored->id)->toBe($row->id)
+        ->and($stored->response_status)->toBe(201)
+        ->and($stored->completed_at)->not->toBeNull()
+        ->and($stored->locked_at->equalTo(now()->startOfSecond()))->toBeTrue();
+});
+
+it('lets only one of two takeovers of a stale claim own it', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-14 12:00:00', 'UTC'));
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token($admin, ['time:write']);
+    $row = arrangeClaim($token, 'demo-key-0005', idempotentBody($client->id), ['locked_at' => now()->subSeconds(300)]);
+    $hash = $row->request_hash;
+    $store = app(IdempotencyStore::class);
+
+    $first = $store->claim(idempotencyTokenId($token), 'demo-key-0005', $hash);
+    $second = $store->claim(idempotencyTokenId($token), 'demo-key-0005', $hash);
+
+    expect($first->outcome)->toBe(IdempotencyOutcome::Claimed)
+        ->and($second->outcome)->toBe(IdempotencyOutcome::InProgress);
+
+    // The slow first owner (the row as it was read before the takeover) finishing late must change nothing.
+    $store->complete($row, 201, '{"data":"late"}');
+    $store->release($row);
+
+    expect(IdempotencyKey::query()->sole()->completed_at)->toBeNull();
+
+    $store->release($first->row);
+
+    expect(IdempotencyKey::query()->count())->toBe(0);
+});
+
+it('treats a completed row past its expiry as absent and stores a fresh one', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-14 12:00:00', 'UTC'));
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token($admin, ['time:write']);
+    $body = idempotentBody($client->id);
+    arrangeClaim($token, 'demo-key-0006', $body, [
+        'locked_at' => now()->subHours(25),
+        'expires_at' => now()->subSecond(),
+        'response_status' => 201,
+        'response_body' => '{"data":"old"}',
+        'completed_at' => now()->subHours(25),
+    ]);
+    // An expired row of another body is absent as well.
+    arrangeClaim($token, 'demo-key-0007', idempotentBody($client->id, 'Other'), [
+        'locked_at' => now()->subHours(25),
+        'expires_at' => now()->subSecond(),
+        'response_status' => 201,
+        'response_body' => '{"data":"old"}',
+        'completed_at' => now()->subHours(25),
+    ]);
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', $body, ['Idempotency-Key' => 'demo-key-0006'])
+        ->assertCreated()
+        ->assertHeaderMissing('Idempotent-Replayed');
+    Auth::forgetGuards();
+    $this->withToken($token)->postJson('/api/v1/time-entries', $body, ['Idempotency-Key' => 'demo-key-0007'])
+        ->assertCreated();
+
+    $fresh = IdempotencyKey::query()->where('key', 'demo-key-0006')->sole();
+
+    expect(TimeEntry::query()->count())->toBe(2)
+        ->and($fresh->response_body)->not->toBe('{"data":"old"}')
+        ->and($fresh->expires_at->greaterThan(now()))->toBeTrue();
+});
+
+it('leaves no row after a 422 and lets the corrected request with the same key create the entry', function (): void {
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token($admin, ['time:write']);
+    $headers = ['Idempotency-Key' => 'demo-key-0008'];
+    $invalid = ['client_id' => $client->id, 'started_at' => '2026-10-12T10:00:00+02:00'];
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', $invalid, $headers)->assertStatus(422);
+
+    expect(IdempotencyKey::query()->count())->toBe(0);
+
+    Auth::forgetGuards();
+    $this->withToken($token)->postJson('/api/v1/time-entries', idempotentBody($client->id), $headers)
+        ->assertCreated()
+        ->assertHeaderMissing('Idempotent-Replayed');
+
+    expect(TimeEntry::query()->count())->toBe(1)
+        ->and(IdempotencyKey::query()->sole()->response_status)->toBe(201);
+});
+
+it('leaves no row when the controller throws, and the exception surfaces as 500', function (): void {
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token($admin, ['time:write']);
+    TimeEntry::creating(static function (): void {
+        throw new RuntimeException('forced failure');
+    });
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', idempotentBody($client->id), ['Idempotency-Key' => 'demo-key-0009'])
+        ->assertStatus(500);
+
+    expect(IdempotencyKey::query()->count())->toBe(0)
+        ->and(TimeEntry::query()->count())->toBe(0);
+});
+
+it('stores status 201, the completion time and an expiry 24 hours after the claim', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-14 12:00:00', 'UTC'));
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token($admin, ['time:write']);
+
+    $response = $this->withToken($token)->postJson('/api/v1/time-entries', idempotentBody($client->id), ['Idempotency-Key' => 'demo-key-0010'])
+        ->assertCreated();
+
+    $row = IdempotencyKey::query()->sole();
+
+    expect($row->response_status)->toBe(201)
+        ->and($row->response_body)->toBe($response->getContent())
+        ->and($row->completed_at)->not->toBeNull()
+        ->and($row->token_id)->toBe(idempotencyTokenId($token))
+        ->and($row->expires_at->equalTo($row->locked_at->addHours(24)))->toBeTrue();
 });

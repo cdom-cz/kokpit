@@ -6,6 +6,7 @@ namespace App\Domain\Api\Idempotency;
 
 use App\Domain\Api\Models\IdempotencyKey;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Claims, completes and releases an Idempotency-Key (D-06 to D-08, OD-3).
@@ -19,29 +20,45 @@ class IdempotencyStore
 {
     /**
      * Claims the key of the token for the request with this hash, or says what it found instead.
+     *
+     * An expired row counts as absent and is deleted. A claim without a response that is older than the
+     * stale-lock setting belongs to a crashed request and is taken over by one atomic UPDATE, so of two
+     * concurrent retries only one wins it.
      */
     public function claim(string $tokenId, string $key, string $requestHash): IdempotencyClaim
     {
-        $now = CarbonImmutable::now();
+        // Twice is enough: the second round only follows a row that expired or vanished since the insert.
+        for ($round = 0; $round < 2; $round++) {
+            $now = CarbonImmutable::now();
 
-        $row = $this->insert($tokenId, $key, $requestHash, $now);
+            $row = $this->insert($tokenId, $key, $requestHash, $now);
 
-        if ($row !== null) {
-            return new IdempotencyClaim(IdempotencyOutcome::Claimed, $row);
-        }
+            if ($row !== null) {
+                return new IdempotencyClaim(IdempotencyOutcome::Claimed, $row);
+            }
 
-        $existing = IdempotencyKey::query()->where('token_id', $tokenId)->where('key', $key)->first();
+            $existing = IdempotencyKey::query()->where('token_id', $tokenId)->where('key', $key)->first();
 
-        if ($existing === null) {
-            return new IdempotencyClaim(IdempotencyOutcome::InProgress);
-        }
+            if ($existing === null) {
+                continue;
+            }
 
-        if (! hash_equals($existing->request_hash, $requestHash)) {
-            return new IdempotencyClaim(IdempotencyOutcome::Mismatch);
-        }
+            if ($existing->expires_at->lessThanOrEqualTo($now)) {
+                // Only the row that was read: a fresh claim of the same key must survive.
+                IdempotencyKey::query()->whereKey($existing->id)->where('expires_at', '<=', self::stamp($now))->delete();
 
-        if ($existing->completed_at !== null) {
-            return new IdempotencyClaim(IdempotencyOutcome::Replay, $existing);
+                continue;
+            }
+
+            if (! hash_equals($existing->request_hash, $requestHash)) {
+                return new IdempotencyClaim(IdempotencyOutcome::Mismatch);
+            }
+
+            if ($existing->completed_at !== null) {
+                return new IdempotencyClaim(IdempotencyOutcome::Replay, $existing);
+            }
+
+            return $this->takeOver($existing, $now);
         }
 
         return new IdempotencyClaim(IdempotencyOutcome::InProgress);
@@ -49,20 +66,20 @@ class IdempotencyStore
 
     /**
      * Stores the 2xx answer of the request that owns the claim, for replay.
+     *
+     * Ownership is the claim time: a request that was overtaken after it went stale finds the time moved
+     * and changes nothing.
      */
     public function complete(IdempotencyKey $row, int $status, string $body): void
     {
         $now = CarbonImmutable::now();
 
-        IdempotencyKey::query()
-            ->whereKey($row->id)
-            ->whereNull('completed_at')
-            ->update([
-                'response_status' => $status,
-                'response_body' => $body,
-                'completed_at' => self::stamp($now),
-                'updated_at' => self::stamp($now),
-            ]);
+        $this->owned($row)->update([
+            'response_status' => $status,
+            'response_body' => $body,
+            'completed_at' => self::stamp($now),
+            'updated_at' => self::stamp($now),
+        ]);
     }
 
     /**
@@ -70,10 +87,53 @@ class IdempotencyStore
      */
     public function release(IdempotencyKey $row): void
     {
-        IdempotencyKey::query()
+        $this->owned($row)->delete();
+    }
+
+    /**
+     * Takes the claim of a crashed request when it is older than the stale-lock setting, otherwise the key is busy.
+     */
+    private function takeOver(IdempotencyKey $existing, CarbonImmutable $now): IdempotencyClaim
+    {
+        $stale = $now->subSeconds(max(1, (int) config('kokpit.api.idempotency_stale_lock_seconds')));
+
+        if ($existing->locked_at->greaterThanOrEqualTo($stale)) {
+            return new IdempotencyClaim(IdempotencyOutcome::InProgress);
+        }
+
+        $taken = IdempotencyKey::query()
+            ->whereKey($existing->id)
+            ->whereNull('completed_at')
+            ->where('locked_at', '<', self::stamp($stale))
+            ->update([
+                'locked_at' => self::stamp($now),
+                'expires_at' => self::stamp($now->addHours($this->ttlHours())),
+                'updated_at' => self::stamp($now),
+            ]);
+
+        $row = $taken === 1 ? IdempotencyKey::query()->find($existing->id) : null;
+
+        return $row === null
+            ? new IdempotencyClaim(IdempotencyOutcome::InProgress)
+            : new IdempotencyClaim(IdempotencyOutcome::Claimed, $row);
+    }
+
+    /**
+     * The row of the claim, only while nobody completed it and nobody took it over.
+     *
+     * @return Builder<IdempotencyKey>
+     */
+    private function owned(IdempotencyKey $row): Builder
+    {
+        return IdempotencyKey::query()
             ->whereKey($row->id)
             ->whereNull('completed_at')
-            ->delete();
+            ->where('locked_at', self::stamp($row->locked_at));
+    }
+
+    private function ttlHours(): int
+    {
+        return max(1, (int) config('kokpit.api.idempotency_ttl_hours'));
     }
 
     /**
@@ -82,7 +142,6 @@ class IdempotencyStore
     private function insert(string $tokenId, string $key, string $requestHash, CarbonImmutable $now): ?IdempotencyKey
     {
         $id = (new IdempotencyKey)->newUniqueId();
-        $ttlHours = max(1, (int) config('kokpit.api.idempotency_ttl_hours'));
 
         $inserted = IdempotencyKey::query()->insertOrIgnore([
             'id' => $id,
@@ -90,7 +149,7 @@ class IdempotencyStore
             'key' => $key,
             'request_hash' => $requestHash,
             'locked_at' => self::stamp($now),
-            'expires_at' => self::stamp($now->addHours($ttlHours)),
+            'expires_at' => self::stamp($now->addHours($this->ttlHours())),
             'created_at' => self::stamp($now),
             'updated_at' => self::stamp($now),
         ]);
