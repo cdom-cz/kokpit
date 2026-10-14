@@ -4,10 +4,10 @@ current_phase: 07
 current_phase_name: REST API
 status: executing
 stopped_at: Completed 07-19-PLAN.md
-last_updated: "2026-10-14T15:21:54.971Z"
+last_updated: "2026-10-14T15:34:05.328Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 07 execution started
-state_head: 9caa3a8f83c0c86fde1b75b17602055a3115a4ab
+state_head: 136bbce952c9fe03c8110c09dfa83511eafb3e6f
 progress:
   total_phases: 12
   completed_phases: 6
@@ -419,6 +419,7 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-15: every batch item failure is an item error (ValidationException keeps its field errors, any other Throwable is report()ed and listed under entry); supersedes the 07-11 decision that a non-validation exception is a 500 that releases the Idempotency-Key
 - [Phase 07]: 07-19: running elapsed seconds computed as bigint, floored at 0, capped at MAX_DURATION_SECONDS then cast to int in one shared TimeEntry::elapsedSecondsSql; the 07-13 write bound stays as a sanity bound
 - [Phase 07]: 07-19: StopTimer on an entry already run past 2147483647 s is left to the owner (T-07-77); recovery is to correct the start through UpdateTimeEntry, then stop
+- [Quick 261014-o13]: a running time entry that has run longer than kokpit.time.max_running_hours (48) is ended every hour by kokpit:time:end-overrun (kokpit-end-overrun-timers, onOneServer) through EndOverrunTimers at started_at + 48 h, never at now, so the stored duration is capped and cannot overflow the integer column; narrows Phase 06 D-07 on the owner's request, the 12-hour bell notice is unchanged
 
 ### Pending Todos
 
@@ -453,6 +454,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261011-ekq | Prefix S3 storage env vars with S3_, keep all files on the S3 disk, add AWS SES mailer | 2026-10-11 | b60da59 | [261011-ekq-prefix-s3-storage-env-vars-with-s3-store](./quick/261011-ekq-prefix-s3-storage-env-vars-with-s3-store/) |
 | 261012-tsk | Admin task list: order by priority and due date, hide Done by default, multi-state status filter | 2026-10-12 | — | [261012-tsk-task-list-priority-due-order-hide-done](./quick/261012-tsk-task-list-priority-due-order-hide-done/) |
 | 261014-cy9 | Prune activity log records older than one year via a daily scheduled task | 2026-10-14 | ab8ec7f | [261014-cy9-prune-activity-log-records-older-than-on](./quick/261014-cy9-prune-activity-log-records-older-than-on/) |
+| 261014-o13 | Hourly safety-net command that ends running time entries older than 48 hours | 2026-10-14 | 136bbce | [261014-o13-hourly-safety-net-command-that-ends-runn](./quick/261014-o13-hourly-safety-net-command-that-ends-runn/) |
 
 ## Deferred Items
 
