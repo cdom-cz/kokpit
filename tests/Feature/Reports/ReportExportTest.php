@@ -895,10 +895,14 @@ describe('spreadsheet-safe cells in the workbook', function (): void {
         exportBuildEntry($client, '2026-09-01 08:00:00', '2026-09-01 09:00:00');
         exportBuildEntry($fixed, '2026-09-02 08:00:00', '2026-09-02 10:00:00');
 
-        $both = exportXlsxSummaryRows(exportXlsxSheets(exportBuildRequest(['client' => $client->id, 'period' => 'last_month'], 'exportXlsx'))['Souhrn']);
+        $export = exportBuildRequest(['client' => $client->id, 'period' => 'last_month'], 'exportXlsx');
+        $both = exportXlsxSummaryRows(exportXlsxSheets($export)['Souhrn']);
 
         expect($both['Poznámka'])->toHaveCount(1)
-            ->and($both['Poznámka'][0][0])->toBe('Hodiny projektů a úkolů s pevnou cenou jsou bez částky. Součet v Kč nezahrnuje 1 záznamů bez kurzu ČNB.');
+            ->and($both['Poznámka'][0][0])->toBe('Hodiny projektů a úkolů s pevnou cenou jsou bez částky. Součet v Kč nezahrnuje 1 záznamů bez kurzu ČNB.')
+            // No entry could be converted: the CZK total is not a zero but an empty cell that says why (row 10).
+            ->and($both['Částka v Kč'][0][0] ?? '')->toBe('')
+            ->and(exportXlsxPart($export, 'xl/comments2.xml'))->toContain('ref="B10"')->toContain('Chybí kurz ČNB');
 
         $only = exportXlsxSummaryRows(exportXlsxSheets(exportBuildRequest(['client' => $client->id, 'project' => $fixed->id, 'period' => 'last_month'], 'exportXlsx'))['Souhrn']);
 

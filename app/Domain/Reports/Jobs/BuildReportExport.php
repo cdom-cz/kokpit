@@ -35,6 +35,8 @@ use OpenSpout\Common\Entity\Cell;
 use OpenSpout\Common\Entity\Cell\DateTimeCell;
 use OpenSpout\Common\Entity\Cell\EmptyCell;
 use OpenSpout\Common\Entity\Cell\StringCell;
+use OpenSpout\Common\Entity\Comment\Comment;
+use OpenSpout\Common\Entity\Comment\TextRun;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Common\Entity\Style\Style;
 use OpenSpout\Writer\AutoFilter;
@@ -236,7 +238,7 @@ final class BuildReportExport extends KokpitJob
                 self::COLUMNS,
             ), $styles['bold']));
 
-            $hours = ['worked' => 0, 'billable' => 0, 'non_billable' => 0, 'billed' => 0, 'unbilled' => 0];
+            $hours = ['worked' => 0, 'billable' => 0, 'non_billable' => 0, 'billed' => 0, 'unbilled' => 0, 'fixed' => 0, 'czk_missing' => 0];
             $amounts = [];
             $czk = null;
 
@@ -250,6 +252,14 @@ final class BuildReportExport extends KokpitJob
 
                 if ($entry->billable) {
                     $hours[$entry->billed ? 'billed' : 'unbilled'] += $entry->seconds;
+
+                    if ($entry->billingType === 'fixed_price') {
+                        $hours['fixed'] += $entry->seconds;
+                    }
+                }
+
+                if ($priced['czk_missing']) {
+                    $hours['czk_missing']++;
                 }
 
                 if ($priced['amount'] !== null) {
@@ -279,7 +289,7 @@ final class BuildReportExport extends KokpitJob
      * The sheet "Souhrn": a label in the first column, the value in the second and, for an amount, its currency
      * in the third. Hours are numeric hours (`0.0000`), amounts numeric (`#,##0.00`).
      *
-     * @param  array{worked: int, billable: int, non_billable: int, billed: int, unbilled: int}  $hours  whole seconds
+     * @param  array{worked: int, billable: int, non_billable: int, billed: int, unbilled: int, fixed: int, czk_missing: int}  $hours  whole seconds, and the number of entries without a CNB rate
      * @param  array<string, Money>  $amounts  the billable amounts per currency
      * @param  array{bold: Style, date: Style, hours: Style, amount: Style}  $styles
      */
@@ -318,7 +328,27 @@ final class BuildReportExport extends KokpitJob
             ]));
         }
 
-        $writer->addRow(new Row([$label('amount_czk'), SpreadsheetCells::number($czk === null ? '0.00' : $czk->toMajor(), $styles['amount'])]));
+        // The CZK total is never a silent zero: with entries that have no CNB rate it is a lower bound, and an
+        // empty cell when no entry could be converted at all; either way the cell says why.
+        $total = $czk === null && $hours['czk_missing'] > 0
+            ? new EmptyCell(null, null)
+            : SpreadsheetCells::number($czk === null ? '0.00' : $czk->toMajor(), $styles['amount']);
+        $total->comment = $hours['czk_missing'] > 0 ? self::missingRateComment() : null;
+        $writer->addRow(new Row([$label('amount_czk'), $total]));
+
+        $notes = [];
+
+        if ($hours['fixed'] > 0) {
+            $notes[] = (string) __('kokpit.exports.file.notes.fixed_price');
+        }
+
+        if ($hours['czk_missing'] > 0) {
+            $notes[] = (string) __('kokpit.exports.file.notes.missing_rate', ['count' => $hours['czk_missing']]);
+        }
+
+        if ($notes !== []) {
+            $writer->addRow(new Row([$label('note'), SpreadsheetCells::text(implode(' ', $notes))]));
+        }
     }
 
     /**
@@ -347,8 +377,38 @@ final class BuildReportExport extends KokpitJob
             SpreadsheetCells::text($entry->billed ? $yes : $no),
             $priced['amount'] === null ? new EmptyCell(null, null) : SpreadsheetCells::number($priced['amount']->toMajor(), $styles['amount']),
             self::xlsxText($priced['amount']?->currency),
-            $priced['czk'] === null ? new EmptyCell(null, null) : SpreadsheetCells::number($priced['czk']->toMajor(), $styles['amount']),
+            self::xlsxCzkCell($priced, $styles),
         ];
+    }
+
+    /**
+     * The CZK amount cell of an entry: numeric, or empty when there is no amount, and then, when the amount
+     * lacks only the CNB rate, carrying the comment "Chybí kurz ČNB".
+     *
+     * @param  array{amount: Money|null, czk: Money|null, czk_missing: bool}  $priced
+     * @param  array{bold: Style, date: Style, hours: Style, amount: Style}  $styles
+     */
+    private static function xlsxCzkCell(array $priced, array $styles): Cell
+    {
+        if ($priced['czk'] !== null) {
+            return SpreadsheetCells::number($priced['czk']->toMajor(), $styles['amount']);
+        }
+
+        $cell = new EmptyCell(null, null);
+        $cell->comment = $priced['czk_missing'] ? self::missingRateComment() : null;
+
+        return $cell;
+    }
+
+    /**
+     * The comment of a CZK cell that has no CNB rate behind it.
+     */
+    private static function missingRateComment(): Comment
+    {
+        $comment = new Comment;
+        $comment->addTextRun(new TextRun((string) __('kokpit.exports.file.missing_rate_comment')));
+
+        return $comment;
     }
 
     /**
