@@ -130,4 +130,15 @@ return [
         'extra' => 'Dodatečný',
     ],
 
+    'report_export_status' => [
+        'pending' => 'Připravuje se',
+        'ready' => 'Hotovo',
+        'failed' => 'Selhalo',
+    ],
+
+    'report_export_format' => [
+        'csv' => 'CSV',
+        'xlsx' => 'XLSX',
+    ],
+
 ];

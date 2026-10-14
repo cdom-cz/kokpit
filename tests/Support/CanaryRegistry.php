@@ -12,6 +12,9 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
+use App\Domain\Reports\Enums\ReportExportFormat;
+use App\Domain\Reports\Enums\ReportExportStatus;
+use App\Domain\Reports\Models\ReportExport;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
@@ -39,6 +42,7 @@ use App\Domain\TimeTracking\Support\TimerClock;
 use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Tests\Support\Probes\PackageProbe;
 
 /**
@@ -284,6 +288,25 @@ final class CanaryRegistry
                         'created_at' => $now,
                         'updated_at' => $now,
                     ]);
+                });
+            },
+
+            // An export request belongs to one Admin and is closed to Partners (OwnedByUser + DeniesPartners).
+            // The canary is the summary ("Zadání"); the row is a finished one with a fictional path, written in
+            // the system context for the one planner owner, because the owner scope limits even an Admin.
+            ReportExport::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    $now = TimerClock::now();
+
+                    (new ReportExport(['format' => ReportExportFormat::Csv, 'summary' => $canary, 'filters' => ['from' => '2020-01-06', 'to' => '2020-01-12']]))
+                        ->forceFill([
+                            'user_id' => self::plannerOwner()->getKey(),
+                            'status' => ReportExportStatus::Ready,
+                            'path' => 'report-exports/'.Str::uuid().'.csv',
+                            'row_count' => 3,
+                            'completed_at' => $now,
+                            'expires_at' => $now->addDays(7),
+                        ])->save();
                 });
             },
 

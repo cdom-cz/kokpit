@@ -14,6 +14,7 @@ use App\Domain\Identity\Policies\UserPolicy;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Projects\Policies\ProjectPolicy;
+use App\Domain\Reports\Models\ReportExport;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
@@ -99,6 +100,10 @@ final class AccessServiceProvider extends ServiceProvider
 
         // Public CNB data, but finance-like and closed to Partners like every rate.
         Gate::policy(ExchangeRate::class, AdminOnlyPolicy::class);
+
+        // An export request names the clients and periods of one Admin: Admin-only, and the owner scope of the
+        // model keeps even a second Admin away from it.
+        Gate::policy(ReportExport::class, AdminOnlyPolicy::class);
 
         // The personal planner "Signal" belongs to one Admin and is closed to Partners; the owner scope
         // of the models keeps every Admin to the own rows.
