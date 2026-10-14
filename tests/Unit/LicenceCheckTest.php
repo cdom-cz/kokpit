@@ -111,6 +111,24 @@ it('passes every licence on the allowlist', function (string $licence) {
     'GPL-3.0-only', 'GPL-3.0-or-later', 'GPL-2.0-or-later', 'AGPL-3.0-only', 'AGPL-3.0-or-later',
 ]);
 
+it('reads the deprecated alias LGPL-2.1 as LGPL-2.1-only and passes it (owner ruling)', function () {
+    $result = runLicenceCheck(licenceReport(['example/lgpl-alias' => ['LGPL-2.1']]));
+
+    expect($result['exit'])->toBe(0)
+        ->and($result['stderr'])->toBe('');
+});
+
+it('still fails GPL-2.0-only next to a package with the LGPL-2.1 alias', function () {
+    $result = runLicenceCheck(licenceReport([
+        'example/lgpl-alias' => ['LGPL-2.1'],
+        'example/gpl-two-only' => ['GPL-2.0-only'],
+    ]));
+
+    expect($result['exit'])->toBe(1)
+        ->and($result['stderr'])->toContain('example/gpl-two-only')
+        ->and($result['stderr'])->not->toContain('example/lgpl-alias');
+});
+
 it('lists only the offenders when allowed and rejected packages are mixed', function () {
     $result = runLicenceCheck(licenceReport([
         'example/fine' => ['MIT'],
