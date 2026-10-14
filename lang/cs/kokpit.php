@@ -430,6 +430,8 @@ return [
         'description' => 'Stav úloh na pozadí a plánovače. Stránka se obnovuje sama každých 30 sekund.',
         'checked_at' => 'Zkontrolováno: :time',
         'not_available_yet' => 'Zatím není k dispozici',
+        // Shown as the value of a row whose indicator has no value (never downloaded, never recorded, not measured).
+        'empty_value' => '—',
         'no_indicator' => 'Pro tuto položku není zaregistrována žádná kontrola',
         'failed_jobs' => [
             'none' => 'Žádná selhaná úloha',

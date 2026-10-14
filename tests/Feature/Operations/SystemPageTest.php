@@ -65,6 +65,18 @@ it('shows the Admin the date of the newest rate list with an Ok badge in the las
     Carbon::setTestNow();
 });
 
+it('shows a dash as the value of the last rate date row and the never-downloaded text when no list was stored', function (): void {
+    $html = (string) $this->actingAs(Canary::admin())->get('/admin/system')->assertOk()
+        ->assertSee('Kurzy ještě nebyly staženy. Stáhněte je v přehledu Kurzy ČNB.')
+        ->getContent();
+
+    $row = substr($html, (int) strpos($html, 'health-slot-last_rate_date'));
+    $row = substr($row, 0, (int) strpos($row, 'health-slot-unprocessed_webhooks'));
+
+    expect($row)->toContain('—')
+        ->and($row)->toContain(__('enums.health_status.error'));
+});
+
 it('is reachable under the route name the failed-job alert links to', function (): void {
     expect(route('filament.admin.pages.system', absolute: false))->toBe('/admin/system');
 });

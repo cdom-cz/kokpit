@@ -22,9 +22,7 @@
                                 {{ $result->status->getLabel() }}
                             </x-filament::badge>
 
-                            @if (filled($result->value))
-                                <span>{{ $result->value }}</span>
-                            @endif
+                            <span>{{ filled($result->value) ? $result->value : __('kokpit.system.empty_value') }}</span>
 
                             @if (filled($result->detail))
                                 <span style="opacity: 0.7;">{{ $result->detail }}</span>

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\ExchangeRates\CzechPublicHolidays;
+use Carbon\CarbonImmutable;
 
 /*
  * The Czech working-day calendar the CNB rhythm depends on (EX-01): a day is a string `Y-m-d`, Easter comes from the
@@ -71,3 +72,48 @@ it('refuses a malformed day', function (string $day): void {
         ->and(fn () => CzechPublicHolidays::isPublicHoliday($day))->toThrow(InvalidArgumentException::class)
         ->and(fn () => CzechPublicHolidays::previousWorkingDay($day))->toThrow(InvalidArgumentException::class);
 })->with(['2026-02-30', '14.10.2026', '', '2026-1-5', '2026-10-14 10:00:00', '0000-01-01', 'garbage']);
+
+it('counts the working days after one day up to and including another', function (string $after, string $upTo, int $count): void {
+    expect(CzechPublicHolidays::workingDaysBetween($after, $upTo))->toBe($count);
+})->with([
+    'over a weekend' => ['2026-10-09', '2026-10-14', 3],
+    'from a Friday to the next Monday' => ['2026-10-09', '2026-10-12', 1],
+    'the same day' => ['2026-10-14', '2026-10-14', 0],
+    'a later start than the end' => ['2026-10-14', '2026-10-13', 0],
+    'over Easter' => ['2026-04-02', '2026-04-07', 1],
+    'over the Christmas holidays' => ['2026-12-23', '2026-12-31', 4],
+]);
+
+it('lists the working days of an inclusive range in order', function (): void {
+    expect(CzechPublicHolidays::workingDays('2026-12-23', '2026-12-31'))
+        ->toBe(['2026-12-23', '2026-12-28', '2026-12-29', '2026-12-30', '2026-12-31'])
+        ->and(CzechPublicHolidays::workingDays('2026-10-10', '2026-10-11'))->toBe([])
+        ->and(CzechPublicHolidays::workingDays('2026-10-14', '2026-10-13'))->toBe([]);
+});
+
+it('expects today list from the final hour on a working day and the previous working day otherwise', function (string $local, string $expected): void {
+    expect(CzechPublicHolidays::expectedListDate(CarbonImmutable::parse($local, 'Europe/Prague'), 18))->toBe($expected);
+})->with([
+    'a working day before the final hour' => ['2026-10-14 17:59:00', '2026-10-13'],
+    'a working day at the final hour' => ['2026-10-14 18:00:00', '2026-10-14'],
+    'a working day late in the evening' => ['2026-10-14 23:30:00', '2026-10-14'],
+    'a Saturday morning' => ['2026-10-10 08:00:00', '2026-10-09'],
+    'a Saturday evening' => ['2026-10-10 20:00:00', '2026-10-09'],
+    'a Sunday evening' => ['2026-10-11 20:00:00', '2026-10-09'],
+    'Easter Monday evening' => ['2026-04-06 20:00:00', '2026-04-02'],
+    'a Monday morning' => ['2026-10-12 09:00:00', '2026-10-09'],
+]);
+
+it('reads today in Prague time whatever the zone of the clock is', function (): void {
+    // 22:30 UTC on 14 October is 00:30 on 15 October in Prague (summer time): a Thursday morning.
+    expect(CzechPublicHolidays::expectedListDate(CarbonImmutable::parse('2026-10-14 22:30:00', 'UTC'), 18))->toBe('2026-10-14')
+        // 16:30 UTC is 18:30 in Prague: after the final hour.
+        ->and(CzechPublicHolidays::expectedListDate(CarbonImmutable::parse('2026-10-14 16:30:00', 'UTC'), 18))->toBe('2026-10-14')
+        // 15:30 UTC is 17:30 in Prague: before the final hour.
+        ->and(CzechPublicHolidays::expectedListDate(CarbonImmutable::parse('2026-10-14 15:30:00', 'UTC'), 18))->toBe('2026-10-13');
+});
+
+it('refuses a malformed day in the range helpers', function (): void {
+    expect(fn () => CzechPublicHolidays::workingDaysBetween('2026-02-30', '2026-03-01'))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => CzechPublicHolidays::workingDays('2026-10-14', 'garbage'))->toThrow(InvalidArgumentException::class);
+});
