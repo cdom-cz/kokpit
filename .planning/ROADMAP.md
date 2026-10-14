@@ -440,7 +440,7 @@ Plans:
   4. An API client resolves clients, projects and tasks by UUID, key and name through read-only lookups, and addresses a task by its `KEY-N`
   5. Excess requests receive a rate-limit response, and published OpenAPI documentation describes every endpoint
 
-**Plans:** 4/12 plans executed
+**Plans:** 5/12 plans executed
 
 Plans:
 **Wave 1**
@@ -454,7 +454,7 @@ Plans:
 - [x] 07-04-PLAN.md — Time entry list: filters by uuid or key, inclusive Prague-day range via shared PragueDay, stable cursor paging (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 07-05-PLAN.md — Create, update, delete over the Actions: duration_seconds alternative, key references, 409 locked/running, UI refusal matrix (wave 4)
+- [x] 07-05-PLAN.md — Create, update, delete over the Actions: duration_seconds alternative, key references, 409 locked/running, UI refusal matrix (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 07-06-PLAN.md — Optional external jsonb object: object-only, size and depth caps, frozen on billed entries (wave 5)
@@ -568,7 +568,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Clients and Projects | 21/21 | Complete    | 2026-10-09 |
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
-| 7. REST API | 4/12 | In Progress | - |
+| 7. REST API | 5/12 | In Progress | - |
 | 8. Exchange Rates and Reports | 0/0 | Not started | - |
 | 9. Documents and Finance | 0/0 | Not started | - |
 | 10. Invoicing | 0/0 | Not started | - |

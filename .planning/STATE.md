@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: REST API
 status: executing
-stopped_at: Completed 07-04-PLAN.md
-last_updated: "2026-10-14T10:25:11.276Z"
+stopped_at: Completed 07-05-PLAN.md
+last_updated: "2026-10-14T10:35:40.148Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 07 execution started
-state_head: 958879fd3a2e041cfb58780727d8e73c4fc81db8
+state_head: 4279ded026128abf433487ad9538af12c8e28e13
 progress:
   total_phases: 12
   completed_phases: 6
   total_plans: 112
-  completed_plans: 104
+  completed_plans: 105
   percent: 50
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 07 (REST API) — EXECUTING
-Plan: 5 of 12
+Plan: 6 of 12
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 07 execution started
 
@@ -165,6 +165,7 @@ Progress: [█████░░░░░] 50%
 | Phase 07 P03 | 20 min | 3 tasks | 12 files |
 | Phase 07 P02 | 40min | 3 tasks | 14 files |
 | Phase 07 P04 | 35 min | 3 tasks | 14 files |
+| Phase 07 P05 | 35 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -379,6 +380,9 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-04: query-builder filter value splitting is off; unknown filter keys, bad page sizes and sorts are 422 from ListTimeEntriesRequest, never the package's 400
 - [Phase 07]: 07-04: date-only filter[from]/filter[to] are inclusive Europe/Prague days through the shared PragueDay class; instants are exact and an instant filter[to] is inclusive
 - [Phase 07]: 07-04: cursor lists order by the sort column then time_entries.id in the same direction, so equal-start entries never skip or repeat
+- [Phase 07]: 07-05: request rules check shape only with closure rules that fail with the panel's Czech messages; every business rule stays in the Actions
+- [Phase 07]: 07-05: interval bound is the integer column limit 2147483647 seconds, over it is 422 under ended_at; the year 0000 is refused in the instant regex
+- [Phase 07]: 07-05: running UI-timer entries are guarded in the controller (PATCH ended_at or duration_seconds 422 under ended_at, DELETE 409 entry_running); 409 answers are {message, code}
 
 ### Pending Todos
 
@@ -424,6 +428,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T10:25:11.104Z
-Stopped at: Completed 07-04-PLAN.md
+Last session: 2026-10-14T10:35:39.979Z
+Stopped at: Completed 07-05-PLAN.md
 Resume file: None
