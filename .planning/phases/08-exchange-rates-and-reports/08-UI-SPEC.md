@@ -62,7 +62,7 @@ The count is of class files at the top level of the six component directories (b
 | Widget (custom view) | `Filament\Widgets\Widget` | Tomorrow plan block, Partner task list (inline-styled highlight) |
 | Table, TextColumn, IconColumn, BadgeColumn via `TextColumn::badge()` | `Filament\Tables\*` | Rates list, exports list, widget tables |
 | Filter, SelectFilter, Indicator | `Filament\Tables\Filters\*` | Rates list (Datum, Měna) |
-| Action, ActionGroup, HeaderActions | `Filament\Actions\Action`, `Filament\Actions\ActionGroup` | "Stáhnout dnešní kurzy", "Doplnit historii", "Přepočítat částku", the report "Exportovat" group, row action "Stáhnout" |
+| Action, ActionGroup, HeaderActions | `Filament\Actions\Action`, `Filament\Actions\ActionGroup` | "Stáhnout dnešní kurzy", "Doplnit historii", "Přepočítat částku", the report "Exportovat report" group, row action "Stáhnout export" |
 | DatePicker, Select, TextInput, Text | `Filament\Forms\Components\*`, `Filament\Schemas\Components\Text` | Backfill modal, calculator modal (live result line) |
 | Section, Callout, EmptyState | `Filament\Schemas\Components\*` | Stock empty states, Section for summary and plan block |
 | Badge, Button, Icon, IconButton, Input wrapper, Input select, Section | `x-filament::badge`, `x-filament::button`, `x-filament::icon`, `x-filament::icon-button`, `x-filament::input.wrapper`, `x-filament::input.select`, `x-filament::section` | Report filter strip, tree toggle, summary blocks, Partner task list, plan block |
@@ -85,7 +85,7 @@ Inherited from 02, 05 and 06: declared values are multiples of 4, mapped to Fila
 | 2xl | 48px | Not used |
 | 3xl | 64px | Not used |
 
-Component sizes that are not spacing tokens (all multiples of 4): report tree minimum table width 960px (the wrapper scrolls, the page never does); tree toggle hit area at least 24 x 24px (WCAG 2.2 AA 2.5.8) with 8px to the next target; Partner task row left highlight border 4px; the Partner "Zkontrolovat" button keeps Filament's stock small size.
+Component sizes that are not spacing tokens (all multiples of 4): report tree minimum table width 960px (the wrapper scrolls, the page never does); tree toggle hit area at least 24 x 24px (WCAG 2.2 AA 2.5.8) with 8px to the next target; Partner task row left highlight border 4px; the Partner "Zkontrolovat úkol" button keeps Filament's stock small size.
 
 Exceptions and rules:
 
@@ -133,7 +133,7 @@ Inherited from 02, 05 and 06: gray is Zinc; semantic roles come from the panel `
 
 Accent reserved for (and nothing else):
 
-1. The single primary action of each surface that has one: "Stáhnout dnešní kurzy" (rates list header), the submit of the backfill modal ("Doplnit historii"), and the Partner "Zkontrolovat" buttons. The report page, the exports list and the Admin dashboard have no accent button ("Exportovat" is gray); the calculator modal has no submit.
+1. The single primary action of each surface that has one: "Stáhnout dnešní kurzy" (rates list header), the submit of the backfill modal ("Doplnit historii"), and the Partner "Zkontrolovat úkol" buttons. The report page, the exports list and the Admin dashboard have no accent button ("Exportovat report" is gray); the calculator modal has no submit.
 2. The active sidebar item (Report času, Exporty, Kurzy ČNB, Dashboard).
 3. Text links: task `KEY-N` and title links in the widgets and the Partner list, client and project links, "Otevřít plán", "Zobrazit v reportu".
 4. The keyboard focus ring on every focusable control including the tree toggles and the plan block expand button.
@@ -157,7 +157,7 @@ Semantic colour map for this phase (every badge and state also carries its text 
 | Planner category | the category colour from `SignalCategory::getColor()` as dot and uppercase-free text label | Tomorrow plan block (same dot as the Signal day view) |
 | Success toast | `success` | "Kurzy byly staženy", "Export je připraven" |
 
-Contrast and mode requirements: 02 and 06 apply. With F-1 open, white text on the Amber primary "Stáhnout dnešní kurzy", "Doplnit historii" and "Zkontrolovat" already measures about 3.2:1; the buttons carry text labels only, and the gate records the measured contrast in both modes. The Partner highlight tint is `color-mix(in srgb, var(--primary-600) 8%, transparent)` so it follows the palette in both modes; text colour on it stays the stock text colour.
+Contrast and mode requirements: 02 and 06 apply. With F-1 open, white text on the Amber primary "Stáhnout dnešní kurzy", "Doplnit historii" and "Zkontrolovat úkol" already measures about 3.2:1; the buttons carry text labels only, and the gate records the measured contrast in both modes. The Partner highlight tint is `color-mix(in srgb, var(--primary-600) 8%, transparent)` so it follows the palette in both modes; text colour on it stays the stock text colour.
 
 ---
 
@@ -183,7 +183,7 @@ Applies to every new class; the registry and canary tests enforce it (FND-18, RE
 |--------|----------------|-----|
 | Rates overview (A) | The three stats row, led by "Poslední kurzy" date and the health state; "Stáhnout dnešní kurzy" is the only accent element above the table | The owner's question is "are the rates current", then "what is the rate" |
 | Time report (B) | The summary tiles, led by "Nevyfakturováno" (hours and amounts), then the tree | The core value is that unbilled billable time never slips through unnoticed |
-| Exports list (C) | The status badge of the newest row and its "Stáhnout" action | The owner waits for a file and wants to download it |
+| Exports list (C) | The status badge of the newest row and its "Stáhnout export" action | The owner waits for a file and wants to download it |
 | Work report PDF (D) | The table of days and tasks with hours; the title and period at the top | A client reads it as an attachment to an invoice: what was worked on, when, how long |
 | Admin dashboard (E) | The three hours stats, then "Nevyfakturováno tento měsíc" | "How much did I work, and what still has to be billed" |
 | Partner dashboard (F) | The "Ke kontrole" highlighted rows at the top of the task list | The Partner's one call to action is a task waiting for them |
@@ -201,7 +201,7 @@ Applies to every new class; the registry and canary tests enforce it (FND-18, RE
 - **Filters** (AND): "Datum" (`DatePicker`, **default = the newest stored date**, so the page opens on the current list; clearing it shows all days), "Měna" (select of stored currency codes). The active Datum is shown as an indicator chip. A Datum without a list (weekend, holiday) shows the empty state "Pro tento den ČNB kurzy nevyhlásila" with the body "Platí poslední vyhlášené kurzy ze dne :date." (the date resolved by the lookup).
 - **"Stáhnout dnešní kurzy"** runs the same synchronous action as the scheduler (one request, 15 s timeout). Outcomes as toasts: new list stored (success), list for today already stored (info), CNB has no newer list yet (info), failure (danger); texts in the Copywriting Contract. The button shows Filament's stock in-flight state.
 - **"Doplnit historii"** opens a modal "Doplnit historii kurzů": `DatePicker` Od (required), `DatePicker` Do (required, default today), helper "Víkendy a svátky se stahovat nemusí, platí pro ně poslední vyhlášený kurz." Submit "Doplnit historii" (primary), cancel "Nedoplňovat" (`modalCancelActionLabel`). The submit queues `BackfillCnbRates` and shows an info toast; the page does not wait. Validation (field errors under the offending field): Od later than Do; Od before 1. 1. 2000; Do in the future; span above the configured maximum. A rerun over the same range is allowed and creates nothing new (idempotent), the toast is the same.
-- **"Přepočítat částku"** opens a read-only modal "Přepočet na koruny" for the conversion helper: `Select` Měna (stored currencies, CZK excluded), `TextInput` Částka (decimal comma accepted, required), `DatePicker` Datum (default today). A live result line under the fields (`live()`, no submit): "= :czk (kurz :rate Kč za :unit :currency ze dne :ratedate)". The modal has no submit button and one close button "Zavřít" (`modalSubmitAction(false)`, `modalCancelActionLabel`). A currency with no rate on or before the date shows the `warning` line "Pro tuto měnu a den není k dispozici žádný kurz." and no number. Nothing is stored.
+- **"Přepočítat částku"** opens a read-only modal "Přepočet na koruny" for the conversion helper: `Select` Měna (stored currencies, CZK excluded), `TextInput` Částka (decimal comma accepted, required), `DatePicker` Datum (default today). A live result line under the fields (`live()`, no submit): "= :czk (kurz :rate Kč za :unit :currency ze dne :ratedate)". The modal has no submit button and one close button "Zavřít" (`modalSubmitAction(false)`, `modalCancelActionLabel`). A currency with no rate on or before the date shows the `warning` line "Pro tuto měnu a den není k dispozici žádný kurz. Zvolte jiné datum." and no number. Nothing is stored.
 - **Empty (no rates ever stored):** heading "Zatím tu nejsou žádné kurzy", body "Stáhněte první seznam tlačítkem Stáhnout dnešní kurzy. Kurzy se pak stahují samy každý pracovní den odpoledne.", the header action stays reachable.
 - No create, edit, delete or bulk action exists: CNB lists are immutable once stored.
 
@@ -215,7 +215,7 @@ Applies to every new class; the registry and canary tests enforce it (FND-18, RE
 - "Projekt": native select, first option "Všechny projekty", limited to the chosen client's projects; disabled with the placeholder "Nejdřív vyberte klienta" until a client is chosen.
 - "Období": a segmented group of three `x-filament::button` links "Tento měsíc", "Minulý měsíc", "Vlastní" (`aria-current` on the active one, `primary` colour when active, gray otherwise, like the timesheet view switch). "Vlastní" reveals two `type="date"` inputs "Od" and "Do" (required, Od not after Do; an invalid pair falls back to this month and shows the danger line "Datum Od nesmí být později než Do."). The active range is always printed as text next to the group: "1. 10. 2026 – 31. 10. 2026".
 - "Rozpad": a segmented group "Bez rozpadu", "Po dnech", "Podle uživatelů" (`aria-current`, same styling). It adds child rows below each task (see B3).
-- Header action: a single `ActionGroup` trigger "Exportovat" (gray, `OutlinedArrowDownTray`) with items "Tabulka CSV", "Tabulka XLSX" (both queue `BuildReportExport` with the current filters, Surface C) and "Pracovní výkaz PDF" (generates and downloads the PDF, Surface D). The PDF item is rendered **only when a client is chosen**; it never appears disabled. A link "Exporty" (gray, `OutlinedArrowDownTray`) to Surface C sits next to the group.
+- Header action: a single `ActionGroup` trigger "Exportovat report" (gray, `OutlinedArrowDownTray`) with items "Tabulka CSV", "Tabulka XLSX" (both queue `BuildReportExport` with the current filters, Surface C) and "Pracovní výkaz PDF" (generates and downloads the PDF, Surface D). The PDF item is rendered **only when a client is chosen**; it never appears disabled. A link "Exporty" (gray, `OutlinedArrowDownTray`) to Surface C sits next to the group.
 
 **B2. Summary** (four tiles in a grid, one column on a phone, two from `sm`, four from `lg`; each tile an `x-filament::section` with a 16px/600 heading, a 30px/600 value and up to two gray 14px lines). Computed over the **whole filtered set**, never over the rendered rows:
 
@@ -250,12 +250,12 @@ The CZK values use the CNB rate of the **last day of the selected period capped 
 
 ### Surface C: Exports — export actions and list `/admin/report-exports` — new (RE-03; D-09)
 
-**C1. Export action** (from the report "Exportovat" group): "Tabulka CSV" and "Tabulka XLSX" queue the job with the **current filters** and show the info toast "Export se připravuje" with the body "Až bude hotový, přijde upozornění. Soubor najdete v nabídce Exporty." Nothing else on the page changes and the Admin may keep working. An export with no entries in the filtered set is still produced (header row only, summary sheet with zeros); it is not blocked.
+**C1. Export action** (from the report "Exportovat report" group): "Tabulka CSV" and "Tabulka XLSX" queue the job with the **current filters** and show the info toast "Export se připravuje" with the body "Až bude hotový, přijde upozornění. Soubor najdete v nabídce Exporty." Nothing else on the page changes and the Admin may keep working. An export with no entries in the filtered set is still produced (header row only, summary sheet with zeros); it is not blocked.
 
-**C2. Exports list** `ReportExportResource`, list page only, Admin only, no group, sort 43, heading "Exporty", subheading (gray) "Hotové exporty se uchovávají :days dní, potom se smažou." (:days from config, default 7). Columns: Vytvořeno (`j. n. Y H:i`, default sort descending), Formát (badge "CSV" or "XLSX", gray), Zadání (text summary of the filters: client name or "Všichni klienti", project name or "Všechny projekty", the period), Stav (`info` "Připravuje se", `success` "Hotovo", `danger` "Selhalo" with `OutlinedExclamationCircle`), Platí do (`j. n. Y H:i`, shown for Hotovo only, `—` otherwise). Row action "Stáhnout" (gray, `OutlinedArrowDownTray`), rendered only for a finished, unexpired export of the signed-in Admin. 25 rows per page. While any row is "Připravuje se" the table polls every 10 s; otherwise no poll.
+**C2. Exports list** `ReportExportResource`, list page only, Admin only, no group, sort 43, heading "Exporty", subheading (gray) "Hotové exporty se uchovávají :days dní, potom se smažou." (:days from config, default 7). Columns: Vytvořeno (`j. n. Y H:i`, default sort descending), Formát (badge "CSV" or "XLSX", gray), Zadání (text summary of the filters: client name or "Všichni klienti", project name or "Všechny projekty", the period), Stav (`info` "Připravuje se", `success` "Hotovo", `danger` "Selhalo" with `OutlinedExclamationCircle`), Platí do (`j. n. Y H:i`, shown for Hotovo only, `—` otherwise). Row action "Stáhnout export" (gray, `OutlinedArrowDownTray`), rendered only for a finished, unexpired export of the signed-in Admin. 25 rows per page. While any row is "Připravuje se" the table polls every 10 s; otherwise no poll.
 
-- A failed export shows the stored reason class in plain Czech only ("Export se nepodařilo vytvořit.") in the Zadání tooltip, never exception text; the bell carries the same sentence.
-- A stale click on "Stáhnout" after the file expired or was pruned shows the danger toast "Soubor už není k dispozici. Spusťte export znovu." and the row disappears on the next refresh.
+- A failed export shows the stored reason class in plain Czech only ("Export se nepodařilo vytvořit. Spusťte ho znovu v Reportu času.") in the Zadání tooltip, never exception text; the bell carries its own sentence (Surface H).
+- A stale click on "Stáhnout export" after the file expired or was pruned shows the danger toast "Soubor už není k dispozici. Spusťte export znovu." and the row disappears on the next refresh.
 - Empty: the empty state in the Copywriting Contract. There is no delete or bulk action (the 7-day prune is the cleanup).
 
 **C3. File contents** (the visual contract of the files themselves):
@@ -280,7 +280,7 @@ Not a screen: a document generated by `WorkReportPdf::render(WorkReportSource, l
 - **Colour:** grayscale only, prints identically in black and white: text `#18181b`, secondary text `#52525b`, rules `#d4d4d8`, table header and day subtotal fill `#f4f4f5`. No accent colour and no logo.
 - **Empty:** a period without billable entries still renders the document: header, a single table row "Za zvolené období nejsou žádné záznamy." / "There are no entries for the selected period." and a summary of `0:00`.
 - Safety: the data is escaped by Blade `{{ }}`; `isRemoteEnabled` and `isPhpEnabled` are off; `chroot` is set (RESEARCH Pattern 7). The memory limit is raised before rendering as the spike recommends.
-- A generation failure shows the danger toast "Pracovní výkaz se nepodařilo vytvořit" and writes nothing.
+- A generation failure shows the danger toast "Pracovní výkaz se nepodařilo vytvořit" with the body "Zkuste to znovu. Pokud chyba přetrvá, zkuste jiné období." (danger status, no exception text) and writes nothing.
 
 ### Surface E: Admin dashboard `/admin` — replaces the empty dashboard (RE-04; D-11)
 
@@ -304,7 +304,7 @@ Not a screen: a document generated by `WorkReportPdf::render(WorkReportSource, l
 Shown by the same `Dashboard` page for a Partner. Two widgets, both Partner only, both read through the pinned Partner column builders and the Phase 5 Partner scope:
 
 **F1. "Otevřené úkoly"** (`PartnerTasks`, custom `Widget` view, sort 10): the open tasks (status not `done`, not archived) of the Partner's visible projects. Order: `in_review` first (`CASE WHEN status = 'in_review' THEN 0 ELSE 1 END`), then the existing priority order (`TaskColumns::orderByPriority`), then due date. At most 20 rows; a gray text link "Zobrazit všechny úkoly" to the Partner task list when more exist. Heading "Otevřené úkoly" with the gray 14px sub-line "Nejdřív úkoly, které čekají na vaši kontrolu." and, when any exist, a `primary` badge "Ke kontrole: :count".
-  Row (a bordered block, 16px padding, 8px between its lines): line 1 the reference `KEY-N` and the title as one link to the Partner task page (title wraps up to two lines, full text as tooltip); line 2 the project name in gray, the assignee name in gray when set, and the due date (`j. n. Y`) when set; the status badge at the end of line 1 (stock status colours; **`in_review` shows the `primary` badge "Ke kontrole" with `OutlinedEye`**). A task in `in_review` is highlighted: 4px left border `var(--primary-600)`, background `color-mix(in srgb, var(--primary-600) 8%, transparent)`, and a trailing small `primary` button "Zkontrolovat" (`OutlinedEye`) linking to the same page. The highlight is written as inline `style`, not utility classes. No time, estimate, billing or checklist data is selected.
+  Row (a bordered block, 16px padding, 8px between its lines): line 1 the reference `KEY-N` and the title as one link to the Partner task page (title wraps up to two lines, full text as tooltip); line 2 the project name in gray, the assignee name in gray when set, and the due date (`j. n. Y`) when set; the status badge at the end of line 1 (stock status colours; **`in_review` shows the `primary` badge "Ke kontrole" with `OutlinedEye`**). A task in `in_review` is highlighted: 4px left border `var(--primary-600)`, background `color-mix(in srgb, var(--primary-600) 8%, transparent)`, and a trailing small `primary` button "Zkontrolovat úkol" (`OutlinedEye`) linking to the same page. The highlight is written as inline `style`, not utility classes. No time, estimate, billing or checklist data is selected.
 **F2. "Moje projekty"** (`PartnerProjects`, `TableWidget`, sort 20): the Partner's own client-visible projects; columns Název (link to the Partner project page), Klíč, Stav (badge), Priorita (badge), Konec (`end_date`, `—` when empty); only the pinned `ProjectColumns::partnerColumns()` names. At most 10 rows, ordered by name in Czech collation.
 
 If the Partner has neither projects nor open tasks, the page shows the **existing** stock empty state (`kokpit.dashboard.empty_heading` and `kokpit.dashboard.empty_description_partner`) instead of two empty widgets. If only one widget is empty it shows its own short empty state (Copywriting Contract). A Partner never sees a time, rate, price, amount, currency or finance string (Copywriting Contract, "Never on a Partner surface").
@@ -321,7 +321,7 @@ If the Partner has neither projects nor open tasks, the page shows the **existin
 ### Cross-cutting interaction rules (this phase)
 
 - Keyboard: every control works by keyboard alone with the accent focus ring: filter selects and date inputs, the period and rozpad groups, the tree toggles (Enter, Space), "Rozbalit vše", "Sbalit vše", the plan block expand button, the export actions, modals (Esc closes, Enter submits).
-- A hidden action is not rendered, not disabled (the PDF item without a client, "Stáhnout" on an unavailable export, the Partner widgets for an Admin).
+- A hidden action is not rendered, not disabled (the PDF item without a client, "Stáhnout export" on an unavailable export, the Partner widgets for an Admin).
 - This phase has **no destructive action** and therefore no destructive confirmation modal. Backfill, downloads and exports are repeatable and idempotent.
 - Money never appears next to a value of a different currency in one cell; a CZK-only figure carries "v Kč" or the column title "Částka v Kč".
 - Enum labels come from `lang/cs/enums.php` (`time_billing_state`, `health_status`, the task status enum); new strings go to `lang/cs/kokpit.php` under `kokpit.rates.*`, `kokpit.report.*`, `kokpit.exports.*`, `kokpit.dashboard.*`, `kokpit.system.last_rate_date.*` and to `lang/{cs,en}/work_report.php`. The now unused key `kokpit.dashboard.empty_description_admin` is removed.
@@ -351,7 +351,7 @@ Language and tone: Czech, formal address (vykání), sentence case, no exclamati
 | Backfill modal | heading "Doplnit historii kurzů"; fields "Od", "Do"; helper "Víkendy a svátky se stahovat nemusí, platí pro ně poslední vyhlášený kurz."; submit "Doplnit historii"; cancel "Nedoplňovat" |
 | Backfill toast | "Doplnění historie je ve frontě"; body "Zpracuje se na pozadí. Výsledek uvidíte v přehledu kurzů." (info) |
 | Backfill errors | "Datum Od nesmí být později než Do."; "Nejdřívější možné datum je 1. 1. 2000."; "Datum Do nemůže být v budoucnosti."; "Zvolené období je příliš dlouhé. Zvolte nejvýše :days dní." |
-| Calculator modal | heading "Přepočet na koruny"; fields "Měna", "Částka", "Datum"; result "= :czk (kurz :rate Kč za :unit :currency ze dne :ratedate)"; no rate "Pro tuto měnu a den není k dispozici žádný kurz."; close "Zavřít" |
+| Calculator modal | heading "Přepočet na koruny"; fields "Měna", "Částka", "Datum"; result "= :czk (kurz :rate Kč za :unit :currency ze dne :ratedate)"; no rate "Pro tuto měnu a den není k dispozici žádný kurz. Zvolte jiné datum."; close "Zavřít" |
 | System page detail | Ok "Kurzy jsou aktuální."; Warning "Chybí kurzy za :count pracovní den."; Error "Kurzy chybí už :count pracovní dny."; never "Kurzy ještě nebyly staženy. Stáhněte je v přehledu Kurzy ČNB." |
 | Alert (bell and e-mail) | title "Kurzy ČNB se nepodařilo stáhnout"; body "Dnešní kurzy ČNB (:date) se ani po opakovaných pokusech nepodařilo stáhnout. Do doby, než se stáhnou, se používají poslední známé kurzy ze dne :last."; action "Otevřít kurzy ČNB" |
 
@@ -360,7 +360,7 @@ Language and tone: Czech, formal address (vykání), sentence case, no exclamati
 | Element | Copy |
 |---------|------|
 | Navigation, titles | "Report času"; section heading "Přehled podle klientů a projektů" |
-| Primary action | "Exportovat" (group trigger); items "Tabulka CSV", "Tabulka XLSX", "Pracovní výkaz PDF"; link "Exporty" |
+| Primary action | "Exportovat report" (group trigger); items "Tabulka CSV", "Tabulka XLSX", "Pracovní výkaz PDF"; link "Exporty" |
 | Filters | "Klient" (options "Všichni klienti", "(archivovaný)"), "Projekt" (options "Všechny projekty", disabled hint "Nejdřív vyberte klienta"), "Období" ("Tento měsíc", "Minulý měsíc", "Vlastní", "Od", "Do"), "Rozpad" ("Bez rozpadu", "Po dnech", "Podle uživatelů") |
 | Filter error | "Datum Od nesmí být později než Do." |
 | Summary tiles | "Odpracováno", "Nevyfakturováno", "Vyfakturováno", "Nefakturovatelné"; lines "Fakturovatelné :duration", "Nefakturovatelné :duration", "v Kč: :czk", "Bez částky" |
@@ -379,11 +379,11 @@ Language and tone: Czech, formal address (vykání), sentence case, no exclamati
 |---------|------|
 | Navigation, titles | "Exporty"; model label "Export"; plural "Exporty"; subheading "Hotové exporty se uchovávají :days dní, potom se smažou." |
 | Columns | "Vytvořeno", "Formát", "Zadání", "Stav", "Platí do"; statuses "Připravuje se", "Hotovo", "Selhalo" |
-| Row action | "Stáhnout" |
+| Row action | "Stáhnout export" |
 | Toast: queued | "Export se připravuje"; body "Až bude hotový, přijde upozornění. Soubor najdete v nabídce Exporty." (info) |
 | Error: file gone | "Soubor už není k dispozici. Spusťte export znovu." (danger) |
-| Failure reason | "Export se nepodařilo vytvořit." |
-| Empty state | heading "Zatím tu nejsou žádné exporty"; body "Export spustíte v Reportu času tlačítkem Exportovat." |
+| Failure reason | "Export se nepodařilo vytvořit. Spusťte ho znovu v Reportu času." |
+| Empty state | heading "Zatím tu nejsou žádné exporty"; body "Export spustíte v Reportu času tlačítkem Exportovat report." |
 | Bell: ready | title "Export je připraven"; body ":format, :period. Soubor je ke stažení do :date."; action "Otevřít exporty" |
 | Bell: failed | title "Export se nepodařil"; body "Export za :period se nepodařilo vytvořit. Zkuste ho spustit znovu."; action "Otevřít exporty" |
 
@@ -398,7 +398,7 @@ Language and tone: Czech, formal address (vykání), sentence case, no exclamati
 | Summary | "Souhrn", "Počet dní s prací", "Celkem hodin" | "Summary", "Days worked", "Total hours" |
 | Empty | "Za zvolené období nejsou žádné záznamy." | "There are no entries for the selected period." |
 | Footer | "Strana :n / :total", "Vytvořeno :date" | "Page :n / :total", "Generated :date" |
-| Error toast | "Pracovní výkaz se nepodařilo vytvořit" (screen only, Czech) | |
+| Error toast | title "Pracovní výkaz se nepodařilo vytvořit"; body "Zkuste to znovu. Pokud chyba přetrvá, zkuste jiné období." (danger; screen only, Czech) | |
 
 ### Admin dashboard
 
@@ -413,7 +413,7 @@ Language and tone: Czech, formal address (vykání), sentence case, no exclamati
 
 | Element | Copy |
 |---------|------|
-| Tasks widget | heading "Otevřené úkoly"; sub-line "Nejdřív úkoly, které čekají na vaši kontrolu."; badge "Ke kontrole: :count"; row badge "Ke kontrole"; button "Zkontrolovat"; link "Zobrazit všechny úkoly"; empty heading "Žádné otevřené úkoly", body "Jakmile bude potřeba vaše pozornost, objeví se to tady." |
+| Tasks widget | heading "Otevřené úkoly"; sub-line "Nejdřív úkoly, které čekají na vaši kontrolu."; badge "Ke kontrole: :count"; row badge "Ke kontrole"; button "Zkontrolovat úkol"; link "Zobrazit všechny úkoly"; empty heading "Žádné otevřené úkoly", body "Jakmile bude potřeba vaše pozornost, objeví se to tady." |
 | Projects widget | heading "Moje projekty"; columns "Název", "Klíč", "Stav", "Priorita", "Konec"; empty heading "Zatím žádné projekty", body "Projekty, které pro vás Kokpit zpřístupní, se objeví tady." |
 | Both empty | the existing heading "Zatím tu nic není" and body "Jakmile pro vás bude něco připraveno, objeví se to tady." (unchanged) |
 
@@ -453,7 +453,7 @@ Applicable state considerations resolved: 33 covered, 6 backstop, 4 unresolved (
 | error | M5 missing CNB rate (list-collection) | ✅ covered | The CZK cell shows the "Chybí kurz" badge, the entry is excluded from the CZK sum and a footnote names the count; zero is never displayed |
 | error | M8 failed export (list-collection) | ✅ covered | A failed row shows the danger "Selhalo" status and a bell notice without exception text |
 | error | M8 stale download (interactive-control) | ✅ covered | A click on an expired or pruned file shows the danger toast and the row disappears on refresh |
-| error | M9 PDF generation (interactive-control) | ✅ covered | A failure shows the danger toast "Pracovní výkaz se nepodařilo vytvořit"; no partial file is offered |
+| error | M9 PDF generation (interactive-control) | ✅ covered | A failure shows the danger toast "Pracovní výkaz se nepodařilo vytvořit" with the next step "Zkuste to znovu. Pokud chyba přetrvá, zkuste jiné období."; no partial file is offered |
 | error | M16 alert (static-content) | ✅ covered | Only the final attempt of the day alerts; the body holds dates only |
 | populated | M5 (list-collection) | ✅ covered | At most 1 000 leaf rows are rendered with a cap notice; totals always cover everything; query count does not depend on the number of entries |
 | populated | M1 (list-collection) | ✅ covered | 30 rows per page, about 30 currencies per list |
@@ -494,7 +494,7 @@ Open items from earlier phases that this phase touches. None asks for a rewrite.
 
 | ID | Flag | Effect on Phase 8 | Guidance |
 |----|------|-------------------|----------|
-| F-1 | Primary colour is Amber, 02 declares Indigo (`app/Providers/Filament/AdminPanelProvider.php`, `'primary' => Color::Amber`) | `primary` and `warning` are the same hue. White text on Amber buttons measures about 3.2:1. This phase uses `warning` (missing rate, running timer text) and `primary` (Partner call to action) on different surfaces only | Resolve at project level (switch to Indigo as 02 specifies, or amend 02). Until then every state carries an icon and a text label and the gate records the measured contrast of "Stáhnout dnešní kurzy", "Doplnit historii" and "Zkontrolovat" in both modes |
+| F-1 | Primary colour is Amber, 02 declares Indigo (`app/Providers/Filament/AdminPanelProvider.php`, `'primary' => Color::Amber`) | `primary` and `warning` are the same hue. White text on Amber buttons measures about 3.2:1. This phase uses `warning` (missing rate, running timer text) and `primary` (Partner call to action) on different surfaces only | Left documented on purpose: committing to Indigo means changing `AdminPanelProvider` and the look of Phases 2 to 7, which is outside this phase and a project-level decision. Resolve at project level (switch to Indigo as 02 specifies, or amend 02). Until then every state carries an icon and a text label and the gate records the measured contrast of "Stáhnout dnešní kurzy", "Doplnit historii" and "Zkontrolovat úkol" in both modes |
 | F-2 | Existing custom markup uses fractional rem values (`0.375rem`, `0.75rem`) | New custom markup in this phase must not copy them | Use only 0.25, 0.5, 1, 1.5, 2, 3, 4 rem |
 | F-11 | Precompiled Filament CSS lacks some Tailwind utilities (07-03) | Row highlight, tree indent, wrapping and `select-all`-like helpers cannot rely on utility classes | Inline `style` attributes and Filament components only (this contract specifies them) |
 | F-12 | `kokpit.dashboard.empty_description_admin` and the Admin empty state of `Dashboard::content()` become unused | `tests/Isolation/PanelAccessTest.php` lines 52-61 pin the old heading and descriptions | Edit the test deliberately and keep the Partner empty state text unchanged |
