@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: REST API
 status: executing
-stopped_at: Completed 07-06-PLAN.md
-last_updated: "2026-10-14T10:46:18.282Z"
+stopped_at: Completed 07-07-PLAN.md
+last_updated: "2026-10-14T10:52:45.876Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 07 execution started
-state_head: 372d84933a18e06927bc3442c2141c674dc0f5a0
+state_head: 1a2f848b3fbb1e271ed51df6a1b2d3aea4bb3ae3
 progress:
   total_phases: 12
   completed_phases: 6
   total_plans: 112
-  completed_plans: 106
+  completed_plans: 107
   percent: 50
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 07 (REST API) — EXECUTING
-Plan: 7 of 12
+Plan: 8 of 12
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 07 execution started
 
@@ -167,6 +167,7 @@ Progress: [█████░░░░░] 50%
 | Phase 07 P04 | 35 min | 3 tasks | 14 files |
 | Phase 07 P05 | 35 min | 3 tasks | 10 files |
 | Phase 07 P06 | 35 min | 3 tasks | 17 files |
+| Phase 07 P07 | 25min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -387,6 +388,7 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-06: external is an object-only jsonb (cast object, CHECK time_entries_external_object_check); the {} vs [] decision is taken from the raw request body decoded as objects
 - [Phase 07]: 07-06: external limits are 4096 compact JSON bytes (multi-byte counted in bytes) and 8 nested levels; update semantics are absent keeps, null clears, object replaces whole
 - [Phase 07]: 07-06: EditTimeEntry drops external before the form fill, because the Livewire snapshot would otherwise ship it to the browser
+- [Phase 07]: 07-07: API activity label is a middleware appended to the api route group (ActivitySource::as(Api)); the CHECK is replaced by name, no down()
 
 ### Pending Todos
 
@@ -432,6 +434,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T10:46:18.115Z
-Stopped at: Completed 07-06-PLAN.md
+Last session: 2026-10-14T10:52:45.719Z
+Stopped at: Completed 07-07-PLAN.md
 Resume file: None
