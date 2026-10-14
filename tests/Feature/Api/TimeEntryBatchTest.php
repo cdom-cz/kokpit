@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\ApiExamples;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Route;
 use Tests\Support\ApiDocs;
 use Tests\Support\ApiFixtures;
@@ -379,7 +380,8 @@ it('refuses the same key with a different batch body with 422 idempotency_key_re
     expect(TimeEntry::query()->count())->toBe(1);
 });
 
-it('keeps the items saved before an unexpected fault, answers 500 and releases the key', function (): void {
+it('reports a fault of the server in the middle of a batch as a failed item, answers 207 and stores the key', function (): void {
+    Exceptions::fake();
     $client = ApiFixtures::client();
     $token = ApiFixtures::token(ApiFixtures::admin(), ['time:write']);
     $inserts = 0;
@@ -391,12 +393,85 @@ it('keeps the items saved before an unexpected fault, answers 500 and releases t
         }
     });
 
-    $this->withToken($token)->postJson('/api/v1/time-entries/batch', [
+    $response = $this->withToken($token)->postJson('/api/v1/time-entries/batch', [
         'entries' => [batchItem($client->id, 8), batchItem($client->id, 9), batchItem($client->id, 10)],
-    ], ['Idempotency-Key' => 'demo-key-0006'])->assertStatus(500);
+    ], ['Idempotency-Key' => 'demo-key-0006'])->assertStatus(207);
 
-    expect(TimeEntry::query()->count())->toBe(1)
+    expect($response->json())->toBe([
+        'saved' => 2,
+        'failed' => 1,
+        'errors' => [['index' => 1, 'errors' => ['entry' => [__('api.errors.batch_item_failed')]]]],
+    ])
+        ->and($response->getContent())->not->toContain('fictional fault')
+        ->and($response->getContent())->not->toContain('RuntimeException')
+        ->and(TimeEntry::query()->count())->toBe(2)
+        ->and(IdempotencyKey::query()->count())->toBe(1);
+
+    Exceptions::assertReported(RuntimeException::class);
+});
+
+it('replays the stored 207 of a batch with a server fault and saves nothing twice', function (): void {
+    Exceptions::fake();
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:write']);
+    $headers = ['Idempotency-Key' => 'demo-key-0007'];
+    $body = ['entries' => [batchItem($client->id, 8), batchItem($client->id, 9), batchItem($client->id, 10)]];
+    $inserts = 0;
+
+    TimeEntry::creating(static function () use (&$inserts): void {
+        if (++$inserts === 2) {
+            throw new RuntimeException('fictional fault');
+        }
+    });
+
+    $first = $this->withToken($token)->postJson('/api/v1/time-entries/batch', $body, $headers)->assertStatus(207);
+    Auth::forgetGuards();
+
+    $second = $this->withToken($token)->postJson('/api/v1/time-entries/batch', $body, $headers)
+        ->assertStatus(207)
+        ->assertHeader('Idempotent-Replayed', 'true');
+
+    expect($second->getContent())->toBe($first->getContent())
+        ->and(TimeEntry::query()->count())->toBe(2)
+        ->and(IdempotencyKey::query()->count())->toBe(1);
+});
+
+it('answers 422 and releases the key when every item meets a fault of the server, so the same key can be used again', function (): void {
+    Exceptions::fake();
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:write']);
+    $headers = ['Idempotency-Key' => 'demo-key-0008'];
+    $body = ['entries' => [batchItem($client->id, 8), batchItem($client->id, 9), batchItem($client->id, 10)]];
+    $failing = true;
+
+    TimeEntry::creating(static function () use (&$failing): void {
+        if ($failing) {
+            throw new RuntimeException('fictional fault');
+        }
+    });
+
+    $response = $this->withToken($token)->postJson('/api/v1/time-entries/batch', $body, $headers)->assertStatus(422);
+
+    expect($response->json('message'))->toBe(__('api.errors.batch_none_saved'))
+        ->and($response->json('saved'))->toBe(0)
+        ->and($response->json('failed'))->toBe(3)
+        ->and($response->json('errors'))->toHaveCount(3)
+        ->and($response->json('errors.2'))->toBe(['index' => 2, 'errors' => ['entry' => [__('api.errors.batch_item_failed')]]])
+        ->and($response->getContent())->not->toContain('fictional fault')
+        ->and(TimeEntry::query()->count())->toBe(0)
         ->and(IdempotencyKey::query()->count())->toBe(0);
+
+    Exceptions::assertReported(RuntimeException::class);
+
+    // The fault is gone: the same key and body are accepted.
+    $failing = false;
+    Auth::forgetGuards();
+
+    $retry = $this->withToken($token)->postJson('/api/v1/time-entries/batch', $body, $headers)->assertCreated();
+
+    expect($retry->headers->has('Idempotent-Replayed'))->toBeFalse()
+        ->and($retry->json('saved'))->toBe(3)
+        ->and(TimeEntry::query()->count())->toBe(3);
 });
 
 it('counts a batch as one write against the per-token limit', function (): void {

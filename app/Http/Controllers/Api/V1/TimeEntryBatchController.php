@@ -18,13 +18,17 @@ use Knuckles\Scribe\Attributes\Endpoint;
 use Knuckles\Scribe\Attributes\Group;
 use Knuckles\Scribe\Attributes\Header;
 use Knuckles\Scribe\Attributes\Response;
+use Throwable;
 
 /**
  * Batch create of time entries over the REST API (D-14).
  *
  * Every item goes through the same `TimeEntryPayload` mapping and the same `CreateTimeEntry` Action as a
  * single create, each in the Action's own transaction. There is deliberately no outer transaction: an item
- * that fails leaves no row and never touches the items before or after it.
+ * that fails leaves no row and never touches the items before or after it. A refusal of the item carries its
+ * own field errors; any other fault of the server is reported to the log and listed under `entry` with one
+ * generic message, so a late fault cannot end the request in a 500 that releases the Idempotency-Key after
+ * earlier items were committed (a retry would save them twice).
  */
 #[Group('Time entries')]
 #[Response(ApiExamples::UNAUTHENTICATED, 401, 'The bearer token is missing, unknown, revoked or expired, or its owner is not an active Admin.')]
@@ -77,9 +81,14 @@ final class TimeEntryBatchController
                 $create->handle($actor, TimeEntryPayload::forBatchItem($item, $raw[$index] ?? null, $refs));
                 $saved++;
             } catch (ValidationException $e) {
-                // Only a refusal of the item is reported. Any other exception is a fault of the server, not of
-                // the item: it is not swallowed, the request fails and the key is released.
                 $errors[] = ['index' => $index, 'errors' => $e->errors()];
+            } catch (Throwable $e) {
+                // Every failure of an item is an item error. An exception that is not a refusal would end the
+                // request in a 500 after the earlier items were committed, EnsureIdempotency would release the
+                // key and a retry with it would save those items again. So it is reported to the log, never to
+                // the client, and listed under `entry` with one generic message; the items after it still run.
+                report($e);
+                $errors[] = ['index' => $index, 'errors' => ['entry' => [__('api.errors.batch_item_failed')]]];
             }
         }
 
