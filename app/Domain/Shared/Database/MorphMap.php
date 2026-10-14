@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Shared\Database;
 
+use App\Domain\Api\Models\IdempotencyKey;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
@@ -45,6 +46,7 @@ final class MorphMap
         'role' => Role::class,
         'permission' => Permission::class,
         'personal_access_token' => PersonalAccessToken::class,
+        'api_idempotency_key' => IdempotencyKey::class,
         'media' => Media::class,
         'tag' => Tag::class,
         'activity' => Activity::class,

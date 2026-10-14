@@ -132,6 +132,16 @@ final class ApiExamples
         'code' => 'entry_running',
     ];
 
+    public const array IDEMPOTENCY_IN_PROGRESS = [
+        'message' => 'Požadavek s tímto klíčem Idempotency-Key se právě zpracovává. Zkuste to za chvíli znovu.',
+        'code' => 'idempotency_in_progress',
+    ];
+
+    public const array IDEMPOTENCY_KEY_REUSED = [
+        'message' => 'Tento klíč Idempotency-Key už byl použit pro jiný požadavek.',
+        'code' => 'idempotency_key_reused',
+    ];
+
     public const array UNAUTHENTICATED = [
         'message' => 'Unauthenticated.',
     ];

@@ -30,6 +30,7 @@ use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Validation\ValidationException;
 use Knuckles\Scribe\Attributes\Endpoint;
 use Knuckles\Scribe\Attributes\Group;
+use Knuckles\Scribe\Attributes\Header;
 use Knuckles\Scribe\Attributes\QueryParam;
 use Knuckles\Scribe\Attributes\Response;
 use Knuckles\Scribe\Attributes\ResponseField;
@@ -145,8 +146,9 @@ final class TimeEntryController
 
     #[Endpoint(
         'Create a time entry',
-        'Requires ability `'.ApiAbility::TimeWrite->value.'`. Records a finished entry through the same rules as the application. Give `started_at` and exactly one of `ended_at` and `duration_seconds` (whole seconds from the start). Instants are ISO 8601 with an offset or `Z`; an instant without one is refused. The project and the task are referenced by UUID or by key (`DEMO`, `DEMO-1`), never by name; a task fixes its project and client, so `client_id` may then be left out. An entry that disagrees about client, project and task, ends before it starts or names an archived task answers 422 under the field the application marks. Overlapping entries are allowed. `billable` defaults to the default of the task. The answer is 201 with the entry and a `Location` header.',
+        'Requires ability `'.ApiAbility::TimeWrite->value.'`. Records a finished entry through the same rules as the application. Give `started_at` and exactly one of `ended_at` and `duration_seconds` (whole seconds from the start). Instants are ISO 8601 with an offset or `Z`; an instant without one is refused. The project and the task are referenced by UUID or by key (`DEMO`, `DEMO-1`), never by name; a task fixes its project and client, so `client_id` may then be left out. An entry that disagrees about client, project and task, ends before it starts or names an archived task answers 422 under the field the application marks. Overlapping entries are allowed. `billable` defaults to the default of the task. The answer is 201 with the entry and a `Location` header. To retry safely, send an optional `Idempotency-Key` header (1 to 255 visible characters, a fresh value for every new entry; keys are kept for 24 hours and belong to the token that sent them): the same key with the same body creates the entry once, and every repeat gets the stored 201 and the identical body again, marked with the response header `Idempotent-Replayed: true` (the replay carries no `Location`). Only successful answers are stored, so a request that failed can be corrected and sent again with the same key. The same key with a different body answers 422 with the code `idempotency_key_reused`, a malformed key 422 with `idempotency_key_invalid`, and a repeat while the first request is still running 409 with `idempotency_in_progress`; wait a moment and send it again.',
     )]
+    #[Header('Idempotency-Key', 'demo-key-0001')]
     #[Response(ApiExamples::TIME_ENTRY, 201, 'The entry was created.')]
     #[ResponseField('data.id', 'string', 'UUID of the time entry.')]
     #[ResponseField('data.client_id', 'string', 'UUID of the client.')]
@@ -164,7 +166,9 @@ final class TimeEntryController
     #[ResponseField('data.duration_seconds', 'integer', 'Whole seconds from start to end; null while the entry runs.', nullable: true)]
     #[ResponseField('data.billed_at', 'string', 'Instant the entry was billed, ISO 8601, or null while unbilled.', nullable: true)]
     #[ResponseField('data.external', 'object', 'The free-form JSON object an import helper stored with the entry, or null.', nullable: true)]
+    #[Response(ApiExamples::IDEMPOTENCY_IN_PROGRESS, 409, 'A request with the same Idempotency-Key is still running (code `idempotency_in_progress`).')]
     #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A field is not valid or the application refuses the entry; the errors are keyed by field.')]
+    #[Response(ApiExamples::IDEMPOTENCY_KEY_REUSED, 422, 'The Idempotency-Key was used with a different body (code `idempotency_key_reused`), or is malformed (code `idempotency_key_invalid`).')]
     public function store(StoreTimeEntryRequest $request, CreateTimeEntry $create, ReferenceResolver $refs): JsonResponse
     {
         $entry = $create->handle(self::actor($request), TimeEntryPayload::forCreate($request->validated(), $refs, TimeEntryPayload::rawBody($request)));

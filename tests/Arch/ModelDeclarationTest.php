@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Api\Models\IdempotencyKey;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
@@ -50,6 +51,7 @@ it('finds every model of the application, so the scan cannot pass vacuously', fu
         Client::class,
         ClientInvitation::class,
         Contact::class,
+        IdempotencyKey::class,
         Media::class,
         Permission::class,
         PersonalAccessToken::class,

@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\ClientController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TimeEntryController;
+use App\Http\Middleware\EnsureIdempotency;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -45,7 +46,10 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeRead->value, 'th
 
 // Writes: POST, PATCH and DELETE routes, ability time:write.
 Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeWrite->value, 'throttle:api-write'])->group(function (): void {
+    // Create routes honour an optional Idempotency-Key (D-06); it runs after the group's credential check,
+    // ability check and limit, and only here: PATCH, DELETE and GET never carry it.
     Route::post('time-entries', [TimeEntryController::class, 'store'])
+        ->middleware(EnsureIdempotency::class)
         ->name('api.v1.time-entries.store');
     Route::patch('time-entries/{timeEntry}', [TimeEntryController::class, 'update'])
         ->whereUuid('timeEntry')
