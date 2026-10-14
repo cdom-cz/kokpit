@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
+use Illuminate\Pagination\Cursor;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\ApiFixtures;
@@ -268,6 +269,8 @@ it('pages 120 entries with the same start in 50, 50 and 20 without a skipped or 
     'the default sort' => [''],
     'started_at ascending' => ['started_at'],
     'created_at descending' => ['-created_at'],
+    'created_at ascending' => ['created_at'],
+    'started_at descending' => ['-started_at'],
 ]);
 
 it('breaks a tie by id in the direction of the sort', function (): void {
@@ -338,4 +341,90 @@ it('gives every listed entry exactly the confirmed keys and no rate, price or am
             expect($key)->not->toMatch('/rate|price|amount|cost|total|money/i');
         }
     }
+});
+
+/**
+ * The cursor of the given parameters, encoded the way the paginator does it.
+ *
+ * @param  array<string, mixed>  $parameters
+ */
+function listCursor(array $parameters, bool $pointsToNextItems = true): string
+{
+    return (new Cursor($parameters, $pointsToNextItems))->encode();
+}
+
+/**
+ * The base64url form of a raw string, as a client could hand-edit it.
+ */
+function listRawCursor(string $raw): string
+{
+    return rtrim(strtr(base64_encode($raw), '+/', '-_'), '=');
+}
+
+it('issues a cursor that holds exactly the sort column, the id and the direction flag', function (): void {
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    ApiFixtures::entry($admin, ['client_id' => $client->id, 'started_at' => '2026-10-10 08:00:00', 'ended_at' => '2026-10-10 09:00:00']);
+    ApiFixtures::entry($admin, ['client_id' => $client->id, 'started_at' => '2026-10-12 08:00:00', 'ended_at' => '2026-10-12 09:00:00']);
+    $token = ApiFixtures::token($admin, ['time:read']);
+
+    $issued = $this->withToken($token)->getJson('/api/v1/time-entries?per_page=1')->assertOk()->json('meta.next_cursor');
+    $decoded = Cursor::fromEncoded($issued)?->toArray();
+
+    expect($decoded)->toBeArray()
+        ->and(array_keys($decoded))->toEqualCanonicalizing(['started_at', 'time_entries.id', '_pointsToNextItems'])
+        ->and($decoded['started_at'])->toMatch('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/')
+        ->and(Str::isUuid($decoded['time_entries.id']))->toBeTrue()
+        ->and($decoded['_pointsToNextItems'])->toBeTrue();
+});
+
+it('answers 422 under cursor for a cursor without parameters, never 500', function (): void {
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:read']);
+
+    $this->withToken($token)->getJson('/api/v1/time-entries?cursor='.urlencode(listCursor([])))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['cursor']);
+});
+
+it('answers 422 under cursor for a cursor of another list or of another sort', function (string $sort, array $parameters): void {
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:read']);
+    $query = $sort === '' ? '' : 'sort='.$sort.'&';
+
+    $this->withToken($token)->getJson('/api/v1/time-entries?'.$query.'cursor='.urlencode(listCursor($parameters)))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['cursor']);
+})->with([
+    'a client list cursor' => ['', ['created_at' => '2026-10-12 08:00:00', 'clients.id' => '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9']],
+    'a project list cursor' => ['', ['name' => 'Example', 'projects.id' => '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9']],
+    'a created_at cursor on the started_at sort' => ['', ['created_at' => '2026-10-12 08:00:00', 'time_entries.id' => '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9']],
+    'a started_at cursor on the created_at sort' => ['-created_at', ['started_at' => '2026-10-12 08:00:00', 'time_entries.id' => '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9']],
+    'a cursor without the id' => ['', ['started_at' => '2026-10-12 08:00:00']],
+    'a cursor without the sort column' => ['', ['time_entries.id' => '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9']],
+    'an extra key next to the right ones' => ['', ['started_at' => '2026-10-12 08:00:00', 'time_entries.id' => '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9', 'extra' => 1]],
+]);
+
+it('answers 422 under cursor for a wrong-typed value or a cursor that is not an object', function (string $cursor): void {
+    $token = ApiFixtures::token(ApiFixtures::admin(), ['time:read']);
+
+    $this->withToken($token)->getJson('/api/v1/time-entries?cursor='.urlencode($cursor))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['cursor']);
+})->with(function (): array {
+    $id = '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9';
+    $at = '2026-10-12 08:00:00';
+
+    return [
+        'a non-uuid id' => [listCursor(['started_at' => $at, 'time_entries.id' => 'x'])],
+        'an unparseable instant' => [listCursor(['started_at' => 'x', 'time_entries.id' => $id])],
+        'a year 0000 instant' => [listCursor(['started_at' => '0000-01-01 00:00:00', 'time_entries.id' => $id])],
+        'an impossible date' => [listCursor(['started_at' => '2026-02-30 10:00:00', 'time_entries.id' => $id])],
+        'an instant with an offset' => [listCursor(['started_at' => '2026-10-12 08:00:00+02', 'time_entries.id' => $id])],
+        'a numeric instant' => [listCursor(['started_at' => 5, 'time_entries.id' => $id])],
+        'a numeric id' => [listCursor(['started_at' => $at, 'time_entries.id' => 5])],
+        'a text direction flag' => [listRawCursor('{"started_at":"'.$at.'","time_entries.id":"'.$id.'","_pointsToNextItems":"yes"}')],
+        'a raw string' => ['abc'],
+        'a json list' => [listRawCursor('[1,2]')],
+        'json that is not an object' => [listRawCursor('5')],
+        'an object without a direction flag' => [listRawCursor('{"started_at":"'.$at.'","time_entries.id":"'.$id.'"}')],
+    ];
 });

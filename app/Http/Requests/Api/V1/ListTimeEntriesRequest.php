@@ -19,7 +19,7 @@ use Illuminate\Validation\ValidationException;
  *
  * Every bad value answers 422 in the Laravel validation shape. The unknown filter keys are rejected here
  * (the `array:` key list), so the query-builder's own 400 for a filter it does not allow never reaches a
- * client. The route middleware has already authorized the token, so `authorize()` only says yes.
+ * client; a cursor the API did not issue for the effective sort is refused the same way (see ApiCursor). The route middleware has already authorized the token, so `authorize()` only says yes.
  */
 final class ListTimeEntriesRequest extends FormRequest
 {
@@ -57,7 +57,7 @@ final class ListTimeEntriesRequest extends FormRequest
             'filter.from' => ['sometimes', 'string', self::dayOrInstant()],
             'filter.to' => ['sometimes', 'string', self::dayOrInstant()],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:'.self::maxPerPage()],
-            'cursor' => ['sometimes', 'string', 'max:1024'],
+            'cursor' => ['sometimes', 'bail', 'string', 'max:1024', ApiCursor::rule($this->cursorColumns())],
             'sort' => ['sometimes', 'string', Rule::in(self::SORT_VALUES)],
         ];
     }
@@ -80,6 +80,21 @@ final class ListTimeEntriesRequest extends FormRequest
         $sort = $this->input('sort');
 
         return is_string($sort) && in_array($sort, self::SORT_VALUES, true) ? $sort : self::SORT_VALUES[0];
+    }
+
+    /**
+     * The order columns a cursor of this list carries: the sort column of the effective sort and the id tiebreaker.
+     *
+     * @return array<string, 'uuid'|'instant'|'text'>
+     */
+    private function cursorColumns(): array
+    {
+        $sortColumn = ltrim($this->sortExpression(), '-');
+
+        return [
+            $sortColumn => ApiCursor::kindOf($sortColumn),
+            TimeEntryController::ID_COLUMN => ApiCursor::UUID,
+        ];
     }
 
     /**

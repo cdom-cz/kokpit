@@ -62,6 +62,11 @@ final class TimeEntryController
      */
     public const array SORTS = ['started_at', 'created_at'];
 
+    /**
+     * The tiebreaker of every sort and a key of every cursor of the list.
+     */
+    public const string ID_COLUMN = 'time_entries.id';
+
     #[Endpoint(
         'List time entries',
         'Requires ability `'.ApiAbility::TimeRead->value.'`. Returns the time entries newest first (by start), a page at a time. Follow `meta.next_cursor` with the `cursor` parameter until it is `null`. The entries carry no rate, price or amount.',
@@ -73,7 +78,7 @@ final class TimeEntryController
     #[QueryParam('filter[billed]', 'boolean', 'Only billed (`true`) or only unbilled (`false`) entries.', required: false, example: false)]
     #[QueryParam('filter[from]', 'string', 'Entries that started at or after this moment. A date such as `2026-10-12` is a Europe/Prague calendar day and means the start of that day; an ISO 8601 instant with an offset or `Z` (encode `+` as `%2B`) is used exactly.', required: false, example: '2026-10-12')]
     #[QueryParam('filter[to]', 'string', 'Entries that started at or before this moment. A date such as `2026-10-12` is a Europe/Prague calendar day and includes the whole day; an ISO 8601 instant with an offset or `Z` (encode `+` as `%2B`) is inclusive.', required: false, example: '2026-10-18')]
-    #[QueryParam('cursor', 'string', 'The `meta.next_cursor` of the previous page.', required: false, example: 'No-example')]
+    #[QueryParam('cursor', 'string', 'The `meta.next_cursor` of the previous page of this list, sent with the same `sort`. Any other value answers 422.', required: false, example: 'No-example')]
     #[QueryParam('per_page', 'integer', 'Entries per page, 1 to 200. Default 50.', required: false, example: 50)]
     #[QueryParam('sort', 'string', 'Sort by `started_at` (default, newest first as `-started_at`) or `created_at`; a leading `-` sorts descending.', required: false, example: '-started_at', enum: ['started_at', '-started_at', 'created_at', '-created_at'])]
     #[Response(ApiExamples::TIME_ENTRY_LIST, 200, 'A page of time entries.')]
@@ -108,7 +113,7 @@ final class TimeEntryController
             ->defaultSort('-started_at')
             // The id breaks ties between entries that share a start, in the direction of the sort,
             // so a cursor page never skips or repeats a row.
-            ->orderBy('time_entries.id', $descending ? 'desc' : 'asc')
+            ->orderBy(self::ID_COLUMN, $descending ? 'desc' : 'asc')
             ->cursorPaginate($request->perPage())
             ->withQueryString();
 
