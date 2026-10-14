@@ -29,7 +29,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Clients and Projects** - Clients, contacts, ARES lookup, Partner invitations, and projects with keys, billing terms and client visibility (completed 2026-10-09)
 - [x] **Phase 5: Tasks and Kanban** - Tasks and subtasks with per-project keys, comments, list filters, drag-and-drop boards and Partner task access (completed 2026-10-09)
 - [x] **Phase 6: Time Tracking** - Always-visible timer, manual entries, exact durations, billed locking, timesheet and project time totals (completed 2026-10-14)
-- [ ] **Phase 7: REST API** - Token-secured `/api/v1` for time entries, timer and lookups with the same rules as the UI
+- [ ] **Phase 7: REST API** - Token-secured `/api/v1` for time entries (single and batch) and lookups with the same rules as the UI
 - [ ] **Phase 8: Exchange Rates and Reports** - Daily CNB rates, time and billing reports in client currency and CZK, exports, work report PDF and dashboard
 - [ ] **Phase 9: Documents and Finance** - Files on private S3 with Partner visibility rules, central document listing, and income/expense overview in CZK
 - [ ] **Phase 10: Invoicing** - Bill-from-time drafts, numbered immutable invoices, proformas and credit notes, PDF with QR, e-mail, manual payment and Partner invoice view
@@ -430,13 +430,13 @@ Plans:
 
 ### Phase 7: REST API
 
-**Goal**: External tools can read and write time entries and drive the timer through a versioned, token-secured API that applies the same rules as the UI
+**Goal**: External tools can read and write time entries (single and batch) and look up clients, projects and tasks through a versioned, token-secured API that applies the same rules as the UI
 **Depends on**: Phase 6
-**Requirements**: AP-01, AP-02, AP-03, AP-04, AP-05
+**Requirements**: AP-01, AP-02, AP-04, AP-05
 **Success Criteria** (what must be TRUE):
   1. Admin creates and revokes API tokens with `time:read` and `time:write` abilities in a token management screen, a Partner cannot create tokens, and a request whose token lacks the needed ability is refused
   2. An API client lists time entries with filters and creates, reads, updates and deletes them, and the API refuses what the UI refuses (locked billed entries, inconsistent client/project/task, end before start)
-  3. An API client starts and stops the timer and reads the currently running one, and repeating a request with the same idempotency key does not create a duplicate
+  3. Creating a time entry (single or batch) with the same idempotency key repeated does not create a duplicate; a batch saves every valid item and reports only the failed ones
   4. An API client resolves clients, projects and tasks by UUID, key and name through read-only lookups, and addresses a task by its `KEY-N`
   5. Excess requests receive a rate-limit response, and published OpenAPI documentation describes every endpoint
 
@@ -515,6 +515,15 @@ Plans:
   4. The audit suite runs in CI and fails the build when a new screen, route or endpoint is added without an explicit role rule
 
 **Plans**: TBD
+
+## Backlog
+
+### Phase 999.1: API Timer (BACKLOG)
+
+**Goal**: An API client starts and stops the timer and reads the currently running one, with the same rules as the UI (auto-stop of the running timer on start, one running timer per user) and idempotent start
+**Requirements**: AP-03
+**Origin**: Removed from Phase 7 on 2026-10-14 (see `.planning/phases/07-rest-api/07-CONTEXT.md`, deferred)
+**Plans**: 0 plans
 
 ## Progress
 
