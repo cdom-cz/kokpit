@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: REST API
 status: executing
-stopped_at: Completed 07-15-PLAN.md
-last_updated: "2026-10-14T13:37:59.146Z"
+stopped_at: Completed 07-19-PLAN.md
+last_updated: "2026-10-14T15:21:54.971Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 07 execution started
-state_head: cd731ca8a1124221b7e6847b968dc1686723b2f4
+state_head: 9caa3a8f83c0c86fde1b75b17602055a3115a4ab
 progress:
   total_phases: 12
   completed_phases: 6
-  total_plans: 118
-  completed_plans: 118
+  total_plans: 119
+  completed_plans: 119
   percent: 50
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 07 (REST API) — EXECUTING
-Plan: 7 of 18
+Plan: 2 of 19
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 07 execution started
 
@@ -179,6 +179,7 @@ Progress: [█████░░░░░] 50%
 | Phase 07 P17 | 20min | 3 tasks | 8 files |
 | Phase 07 P18 | 10 min | 2 tasks | 3 files |
 | Phase 07 P15 | 20 min | 2 tasks | 4 files |
+| Phase 07 P19 | 45 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -416,6 +417,8 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-17: documented limits are pinned to config/kokpit.php by a test with a failing self-check, not by building intro_text from config()
 - [Phase 07]: 07-18: example cursor is a literal from Cursor::encode() (second item's fictional values); forged-cursor guard derives parameterless GET routes from apiWalkRoutes()
 - [Phase 07]: 07-15: every batch item failure is an item error (ValidationException keeps its field errors, any other Throwable is report()ed and listed under entry); supersedes the 07-11 decision that a non-validation exception is a 500 that releases the Idempotency-Key
+- [Phase 07]: 07-19: running elapsed seconds computed as bigint, floored at 0, capped at MAX_DURATION_SECONDS then cast to int in one shared TimeEntry::elapsedSecondsSql; the 07-13 write bound stays as a sanity bound
+- [Phase 07]: 07-19: StopTimer on an entry already run past 2147483647 s is left to the owner (T-07-77); recovery is to correct the start through UpdateTimeEntry, then stop
 
 ### Pending Todos
 
@@ -461,6 +464,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T13:37:58.918Z
-Stopped at: Completed 07-15-PLAN.md
+Last session: 2026-10-14T15:21:54.790Z
+Stopped at: Completed 07-19-PLAN.md
 Resume file: None
