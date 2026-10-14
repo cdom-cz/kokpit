@@ -7,6 +7,7 @@ namespace App\Filament\Resources\ExchangeRateResource\Pages;
 use App\Domain\ExchangeRates\Actions\DownloadCnbRates;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Resources\ExchangeRateResource;
+use App\Filament\Resources\ExchangeRateResource\Widgets\ExchangeRateStats;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -36,6 +37,16 @@ final class ListExchangeRates extends ListRecords
         return [
             $this->downloadTodayAction(),
         ];
+    }
+
+    /**
+     * The three stats above the table; the widget refuses everybody but the Admin.
+     *
+     * @return array<class-string>
+     */
+    protected function getHeaderWidgets(): array
+    {
+        return [ExchangeRateStats::class];
     }
 
     public function downloadTodayAction(): Action

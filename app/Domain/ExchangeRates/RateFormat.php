@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\ExchangeRates;
 
 use InvalidArgumentException;
+use ResourceBundle;
 
 /**
  * The single display rule for a CNB rate (UI-SPEC Typography, "CNB rates").
@@ -13,6 +14,8 @@ use InvalidArgumentException;
  * three and at most ten decimals, the trailing zeros beyond the third trimmed (`25,125`, `24,300`, `0,0123456789`).
  * The digits are only ever cut at the string level, never rounded and never passed through a float, so the shown
  * value is exactly the stored one.
+ *
+ * The Czech name of a currency comes from the ICU data of ext-intl, so no name list is kept in the code.
  */
 final class RateFormat
 {
@@ -41,5 +44,43 @@ final class RateFormat
         $fraction = str_pad($fraction, self::MIN_DECIMALS, '0');
 
         return $whole.','.$fraction;
+    }
+
+    /**
+     * The Czech name of an ISO 4217 currency (`EUR` is `euro`, `HUF` is `maďarský forint`), or null for a code ICU
+     * has no name for. Only an upper-case three-letter code is looked up, so nothing else reaches the bundle.
+     */
+    public static function currencyName(string $code): ?string
+    {
+        if (preg_match('/^[A-Z]{3}$/D', $code) !== 1) {
+            return null;
+        }
+
+        $entry = self::currencies()?->get($code);
+
+        if (! $entry instanceof ResourceBundle) {
+            return null;
+        }
+
+        // Entry 0 is the symbol, entry 1 the display name.
+        $name = $entry[1] ?? null;
+
+        return is_string($name) && $name !== '' ? $name : null;
+    }
+
+    /**
+     * The Czech currency table of ICU, opened once per process.
+     */
+    private static function currencies(): ?ResourceBundle
+    {
+        static $currencies = false;
+
+        if ($currencies === false) {
+            $bundle = ResourceBundle::create('cs', 'ICUDATA-curr');
+            $table = $bundle instanceof ResourceBundle ? $bundle['Currencies'] : null;
+            $currencies = $table instanceof ResourceBundle ? $table : null;
+        }
+
+        return $currencies;
     }
 }

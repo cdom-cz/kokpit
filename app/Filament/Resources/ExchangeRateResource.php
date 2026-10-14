@@ -11,12 +11,14 @@ use App\Domain\Shared\Auth\Audience;
 use App\Domain\TimeTracking\Support\PragueDay;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Resources\ExchangeRateResource\Pages\ListExchangeRates;
+use App\Filament\Resources\ExchangeRateResource\Widgets\ExchangeRateStats;
 use Carbon\CarbonImmutable;
 use Filament\Forms\Components\DatePicker;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -88,7 +90,9 @@ final class ExchangeRateResource extends Resource
                         ->orderBy('currency')),
                 TextColumn::make('currency')
                     ->label(__('kokpit.rates.columns.currency'))
-                    ->weight('semibold'),
+                    ->weight('semibold')
+                    // The Czech name from ICU in gray under the code; a code without a name shows the code only.
+                    ->description(static fn (ExchangeRate $record): ?string => RateFormat::currencyName($record->currency)),
                 TextColumn::make('unit_amount')
                     ->label(__('kokpit.rates.columns.unit'))
                     ->numeric(),
@@ -105,10 +109,44 @@ final class ExchangeRateResource extends Resource
             ->defaultSort(static fn (Builder $query): Builder => $query->orderByDesc('rate_date')->orderBy('currency'))
             ->defaultPaginationPageOption(30)
             ->paginated([30, 60, 120])
-            ->filters([self::dateFilter()])
+            ->filters([self::dateFilter(), self::currencyFilter()])
             ->emptyStateIcon(Heroicon::OutlinedBanknotes)
-            ->emptyStateHeading(__('kokpit.rates.empty.heading'))
-            ->emptyStateDescription(__('kokpit.rates.empty.description'));
+            ->emptyStateHeading(static fn (ListExchangeRates $livewire): ?string => self::emptyState($livewire)['heading'])
+            ->emptyStateDescription(static fn (ListExchangeRates $livewire): ?string => self::emptyState($livewire)['description']);
+    }
+
+    /**
+     * What the empty table says. No list stored at all invites the first download; a Datum filter on a day that
+     * has no list (weekend, holiday) says the CNB declared none and names the newest list before it, which is the
+     * one that applies by lookup. Anything else (a currency the day does not hold) keeps Filament's stock text.
+     *
+     * @return array{heading: string|null, description: string|null}
+     */
+    private static function emptyState(ListExchangeRates $livewire): array
+    {
+        if (! ExchangeRate::query()->exists()) {
+            return [
+                'heading' => (string) __('kokpit.rates.empty.heading'),
+                'description' => (string) __('kokpit.rates.empty.description'),
+            ];
+        }
+
+        $state = $livewire->getTableFilterState('date');
+        $day = PragueDay::day(is_array($state) ? ($state['date'] ?? null) : null);
+
+        if ($day === null || ExchangeRate::query()->where('rate_date', $day)->exists()) {
+            return ['heading' => null, 'description' => null];
+        }
+
+        $previous = ExchangeRate::query()->where('rate_date', '<', $day)->max('rate_date');
+
+        return [
+            'heading' => (string) __('kokpit.rates.empty_day.heading'),
+            // A day before every stored list has no list that applies, so nothing is named.
+            'description' => is_string($previous) && $previous !== ''
+                ? (string) __('kokpit.rates.empty_day.description', ['date' => self::display(substr($previous, 0, 10))])
+                : null,
+        ];
     }
 
     /**
@@ -134,8 +172,30 @@ final class ExchangeRateResource extends Resource
 
                 return $day === null
                     ? null
-                    : __('kokpit.rates.filters.date').': '.CarbonImmutable::createFromFormat('!Y-m-d', $day, 'UTC')?->format('j. n. Y');
+                    : __('kokpit.rates.filters.date').': '.self::display($day);
             });
+    }
+
+    /**
+     * The Měna filter: one of the currency codes that are stored.
+     */
+    private static function currencyFilter(): SelectFilter
+    {
+        return SelectFilter::make('currency')
+            ->label(__('kokpit.rates.filters.currency'))
+            ->options(static fn (): array => ExchangeRate::query()
+                ->distinct()
+                ->orderBy('currency')
+                ->pluck('currency', 'currency')
+                ->all());
+    }
+
+    /**
+     * A `Y-m-d` day as `j. n. Y`.
+     */
+    private static function display(string $day): string
+    {
+        return CarbonImmutable::createFromFormat('!Y-m-d', $day, 'UTC')?->format('j. n. Y') ?? $day;
     }
 
     /**
@@ -146,6 +206,19 @@ final class ExchangeRateResource extends Resource
         $newest = ExchangeRate::query()->max('rate_date');
 
         return is_string($newest) && $newest !== '' ? substr($newest, 0, 10) : null;
+    }
+
+    /**
+     * The widgets of the list page. Registered here and not discovered at panel level, so the dashboard's
+     * widget set is unchanged.
+     *
+     * @return array<class-string>
+     */
+    public static function getWidgets(): array
+    {
+        return [
+            ExchangeRateStats::class,
+        ];
     }
 
     public static function getPages(): array
