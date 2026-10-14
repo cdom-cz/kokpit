@@ -42,6 +42,26 @@ final class ExchangeRateConverter
     }
 
     /**
+     * The CZK amount of a duration at an hourly rate, rounded once from one exact rational (research Pitfall 6):
+     * rounding the client-currency amount first and converting it afterwards can differ by a haléř per entry.
+     * A CZK rate needs no lookup and is priced like any CZK duration.
+     *
+     * @param  string  $day  `YYYY-MM-DD`, the day the work belongs to
+     *
+     * @throws ExchangeRateMissing when no list exists for the currency on or before the day
+     */
+    public function durationToCzk(Money $hourlyRate, int $seconds, string $day): Money
+    {
+        if ($hourlyRate->currency === self::CZK) {
+            return Money::forDuration($hourlyRate, $seconds);
+        }
+
+        $rate = $this->rateFor($hourlyRate->currency, $day);
+
+        return Money::forDurationConverted($hourlyRate, $seconds, $rate['rate'], self::CZK, $rate['unit_amount']);
+    }
+
+    /**
      * The list that applies to a currency on a day: the rate, the unit amount it is quoted for and the day of
      * the list that was used.
      *
