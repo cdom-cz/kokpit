@@ -11,10 +11,12 @@ use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Resources\ExchangeRateResource;
 use App\Filament\Resources\ExchangeRateResource\Widgets\ExchangeRateStats;
 use Carbon\CarbonImmutable;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 
@@ -71,12 +73,16 @@ final class ListExchangeRates extends ListRecords
             ->schema([
                 DatePicker::make('from')
                     ->label(__('kokpit.rates.backfill.from'))
-                    ->required(),
+                    ->required()
+                    ->rule('date_format:Y-m-d')
+                    ->rule(self::rangeRule(['order', 'earliest'])),
                 DatePicker::make('to')
                     ->label(__('kokpit.rates.backfill.to'))
                     ->helperText(__('kokpit.rates.backfill.helper'))
                     ->default(static fn (): string => CarbonImmutable::now('Europe/Prague')->format('Y-m-d'))
-                    ->required(),
+                    ->required()
+                    ->rule('date_format:Y-m-d')
+                    ->rule(self::rangeRule(['future', 'span'])),
             ])
             ->action(function (array $data): void {
                 abort_unless(ExchangeRateResource::canAccess(), 403);
@@ -89,6 +95,31 @@ final class ListExchangeRates extends ListRecords
                     ->body(__('kokpit.rates.backfill.queued.body'))
                     ->send();
             });
+    }
+
+    /**
+     * The validation of the range, as the field error of the first of `$limits` the range breaks: Od carries the
+     * order and the earliest day, Do the future day and the span. The limits are the job's own, so the form and the
+     * queued job cannot disagree; the span error names the configured maximum.
+     *
+     * @param  list<string>  $limits  keys of `kokpit.rates.backfill.errors`
+     */
+    private static function rangeRule(array $limits): Closure
+    {
+        return static fn (Get $get): Closure => static function (string $attribute, mixed $value, Closure $fail) use ($get, $limits): void {
+            $from = $get('from');
+            $to = $get('to');
+
+            if (! is_string($from) || ! is_string($to)) {
+                return;
+            }
+
+            foreach (array_intersect($limits, BackfillCnbRates::violations($from, $to)) as $limit) {
+                $fail(__('kokpit.rates.backfill.errors.'.$limit, ['days' => (int) config('kokpit.rates.backfill.max_span_days')]));
+
+                return;
+            }
+        };
     }
 
     public function downloadTodayAction(): Action

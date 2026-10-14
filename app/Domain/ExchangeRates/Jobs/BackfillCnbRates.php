@@ -93,7 +93,7 @@ final class BackfillCnbRates extends KokpitJob
     /**
      * The longest span in days one backfill may cover.
      */
-    public static function maxSpanDays(): int
+    private static function maxSpanDays(): int
     {
         return max(1, (int) config('kokpit.rates.backfill.max_span_days'));
     }

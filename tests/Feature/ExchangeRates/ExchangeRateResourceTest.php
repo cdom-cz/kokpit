@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\ExchangeRates\Jobs\BackfillCnbRates;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Resources\ExchangeRateResource;
@@ -9,12 +10,14 @@ use App\Filament\Resources\ExchangeRateResource\Pages\ListExchangeRates;
 use App\Filament\Resources\ExchangeRateResource\Widgets\ExchangeRateStats;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\DatePicker;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use Tests\Support\ApiFixtures;
 use Tests\Support\Canary;
@@ -492,6 +495,247 @@ describe('who may use it', function (): void {
         $this->actingAs(Canary::partnerFor(ApiFixtures::client()->id));
 
         expect(rateResourceNavigation())->not->toContain('Správa/Kurzy ČNB');
+    });
+});
+
+/**
+ * The fields of the mounted backfill modal by name, read through the page's protected schema getter.
+ *
+ * @return array<string, DatePicker>
+ */
+function backfillFields(object $component): array
+{
+    $schema = (new ReflectionMethod($component, 'getMountedActionSchema'))->invoke($component);
+    $fields = [];
+
+    foreach ($schema->getFlatComponents() as $field) {
+        if ($field instanceof DatePicker) {
+            $fields[$field->getName()] = $field;
+        }
+    }
+
+    return $fields;
+}
+
+/**
+ * The helper text of a field: Filament keeps it as a text component in the field's below-content schema.
+ */
+function backfillHelper(DatePicker $field): string
+{
+    $components = $field->getChildSchema('below_content')?->getComponents() ?? [];
+
+    return (string) ($components[0]?->getContent() ?? '');
+}
+
+/**
+ * The field errors of the mounted backfill modal, `field => first message`.
+ *
+ * @return array<string, string>
+ */
+function backfillErrors(object $page): array
+{
+    $errors = [];
+
+    foreach (['from', 'to'] as $field) {
+        $message = $page->errors()->first('mountedActions.0.data.'.$field);
+
+        if ($message !== '') {
+            $errors[$field] = $message;
+        }
+    }
+
+    return $errors;
+}
+
+describe('the backfill modal', function (): void {
+    it('reads "Doplnit historii" (gray, calendar icon) before "Stáhnout dnešní kurzy" (primary)', function (): void {
+        $actions = array_values(Livewire::test(ListExchangeRates::class)->instance()->getCachedHeaderActions());
+
+        expect(array_map(static fn ($action) => $action->getName(), $actions))->toBe(['backfill', 'downloadToday'])
+            ->and((string) $actions[0]->getLabel())->toBe('Doplnit historii')
+            ->and($actions[0]->getColor())->toBe('gray')
+            ->and($actions[0]->getIcon())->toBe(Heroicon::OutlinedCalendarDays)
+            ->and((string) $actions[1]->getLabel())->toBe('Stáhnout dnešní kurzy')
+            ->and($actions[1]->getColor())->toBe('primary');
+    });
+
+    it('opens with the heading, Od and Do, the helper, the submit and the cancel label', function (): void {
+        $component = Livewire::test(ListExchangeRates::class)->mountAction('backfill')->instance();
+        $action = $component->getMountedAction();
+        $fields = backfillFields($component);
+
+        expect((string) $action->getModalHeading())->toBe('Doplnit historii kurzů')
+            ->and((string) $action->getModalSubmitActionLabel())->toBe('Doplnit historii')
+            ->and((string) $action->getModalCancelActionLabel())->toBe('Nedoplňovat')
+            ->and(array_keys($fields))->toBe(['from', 'to'])
+            ->and((string) $fields['from']->getLabel())->toBe('Od')
+            ->and($fields['from']->isRequired())->toBeTrue()
+            ->and((string) $fields['to']->getLabel())->toBe('Do')
+            ->and($fields['to']->isRequired())->toBeTrue()
+            ->and(backfillHelper($fields['to']))->toBe('Víkendy a svátky se stahovat nemusí, platí pro ně poslední vyhlášený kurz.');
+    });
+
+    it('defaults Do to today in Prague and leaves Od empty', function (): void {
+        Livewire::test(ListExchangeRates::class)
+            ->mountAction('backfill')
+            ->assertActionDataSet(['from' => null, 'to' => '2026-10-14']);
+    });
+
+    it('requires both days', function (): void {
+        Queue::fake();
+
+        Livewire::test(ListExchangeRates::class)
+            ->callAction('backfill', ['from' => null, 'to' => null])
+            ->assertHasActionErrors(['from' => ['required'], 'to' => ['required']]);
+
+        Queue::assertNothingPushed();
+    });
+
+    it('refuses Od after Do under Od', function (): void {
+        Queue::fake();
+
+        $page = Livewire::test(ListExchangeRates::class)
+            ->callAction('backfill', ['from' => '2025-12-31', 'to' => '2025-01-01'])
+            ->assertHasActionErrors(['from']);
+
+        expect(backfillErrors($page))->toBe(['from' => 'Datum Od nesmí být později než Do.']);
+
+        Queue::assertNothingPushed();
+    });
+
+    it('refuses an Od before 1. 1. 2000 under Od', function (): void {
+        Queue::fake();
+
+        $page = Livewire::test(ListExchangeRates::class)
+            ->callAction('backfill', ['from' => '1999-12-31', 'to' => '2000-01-31'])
+            ->assertHasActionErrors(['from']);
+
+        expect(backfillErrors($page))->toBe(['from' => 'Nejdřívější možné datum je 1. 1. 2000.']);
+
+        Queue::assertNothingPushed();
+    });
+
+    it('accepts the earliest day itself', function (): void {
+        Queue::fake();
+
+        Livewire::test(ListExchangeRates::class)
+            ->callAction('backfill', ['from' => '2000-01-01', 'to' => '2000-01-31'])
+            ->assertHasNoActionErrors();
+
+        Queue::assertPushed(BackfillCnbRates::class, 1);
+    });
+
+    it('refuses a Do in the future under Do and accepts today', function (): void {
+        Queue::fake();
+
+        $page = Livewire::test(ListExchangeRates::class)
+            ->callAction('backfill', ['from' => '2026-10-01', 'to' => '2026-10-15'])
+            ->assertHasActionErrors(['to']);
+
+        expect(backfillErrors($page))->toBe(['to' => 'Datum Do nemůže být v budoucnosti.']);
+
+        Queue::assertNothingPushed();
+
+        Livewire::test(ListExchangeRates::class)
+            ->callAction('backfill', ['from' => '2026-10-01', 'to' => '2026-10-14'])
+            ->assertHasNoActionErrors();
+
+        Queue::assertPushed(BackfillCnbRates::class, 1);
+    });
+
+    it('judges Do against the Prague day, not the UTC day', function (): void {
+        // 22:30 UTC on Friday 2026-10-16 is 00:30 on Saturday 2026-10-17 in Prague (summer time).
+        $this->travelTo(CarbonImmutable::parse('2026-10-16 22:30:00', 'UTC'));
+        Queue::fake();
+
+        Livewire::test(ListExchangeRates::class)
+            ->callAction('backfill', ['from' => '2026-10-01', 'to' => '2026-10-17'])
+            ->assertHasNoActionErrors();
+
+        Queue::assertPushed(BackfillCnbRates::class, 1);
+    });
+
+    it('refuses a span above the configured maximum under Do and names the days', function (): void {
+        config(['kokpit.rates.backfill.max_span_days' => 30]);
+        Queue::fake();
+
+        // 2026-09-14 to 2026-10-14 are 31 days counted with both ends.
+        $page = Livewire::test(ListExchangeRates::class)
+            ->callAction('backfill', ['from' => '2026-09-14', 'to' => '2026-10-14'])
+            ->assertHasActionErrors(['to']);
+
+        expect(backfillErrors($page))->toBe(['to' => 'Zvolené období je příliš dlouhé. Zvolte nejvýše 30 dní.']);
+
+        Queue::assertNothingPushed();
+    });
+
+    it('accepts a span of exactly the configured maximum', function (): void {
+        config(['kokpit.rates.backfill.max_span_days' => 30]);
+        Queue::fake();
+
+        Livewire::test(ListExchangeRates::class)
+            ->callAction('backfill', ['from' => '2026-09-15', 'to' => '2026-10-14'])
+            ->assertHasNoActionErrors();
+
+        Queue::assertPushed(BackfillCnbRates::class, 1);
+    });
+
+    it('shows each error under its own field when two limits are broken at once', function (): void {
+        Queue::fake();
+
+        $page = Livewire::test(ListExchangeRates::class)
+            ->callAction('backfill', ['from' => '1999-12-31', 'to' => '2026-10-15'])
+            ->assertHasActionErrors(['from', 'to']);
+
+        expect(backfillErrors($page))->toBe([
+            'from' => 'Nejdřívější možné datum je 1. 1. 2000.',
+            'to' => 'Datum Do nemůže být v budoucnosti.',
+        ]);
+
+        Queue::assertNothingPushed();
+    });
+
+    it('refuses a day that is not written as Y-m-d, so the job is never built with it', function (): void {
+        Queue::fake();
+
+        Livewire::test(ListExchangeRates::class)
+            ->callAction('backfill', ['from' => '2025-3-1', 'to' => '2025-06-30'])
+            ->assertHasActionErrors(['from']);
+
+        Queue::assertNothingPushed();
+    });
+
+    it('queues exactly one job with the given days and the same toast on every submit', function (): void {
+        Queue::fake();
+        $toast = Notification::make()->info()->title('Doplnění historie je ve frontě')->body('Zpracuje se na pozadí. Výsledek uvidíte v přehledu kurzů.');
+
+        Livewire::test(ListExchangeRates::class)
+            ->callAction('backfill', ['from' => '2025-03-01', 'to' => '2025-06-30'])
+            ->assertHasNoActionErrors()
+            ->assertNotified($toast);
+
+        Queue::assertPushed(BackfillCnbRates::class, 1);
+        Queue::assertPushed(BackfillCnbRates::class, static fn (BackfillCnbRates $job): bool => $job->from === '2025-03-01' && $job->to === '2025-06-30');
+
+        // A rerun over the same range is allowed: another job and the same toast.
+        Livewire::test(ListExchangeRates::class)
+            ->callAction('backfill', ['from' => '2025-03-01', 'to' => '2025-06-30'])
+            ->assertHasNoActionErrors()
+            ->assertNotified($toast);
+
+        Queue::assertPushed(BackfillCnbRates::class, 2);
+    });
+
+    it('refuses a forged backfill call by a Partner on a page mounted by the Admin', function (): void {
+        Queue::fake();
+        $partner = Canary::partnerFor(ApiFixtures::client()->id);
+
+        $page = Livewire::test(ListExchangeRates::class);
+        $this->actingAs($partner);
+
+        $page->call('mountAction', 'backfill')->assertForbidden();
+
+        Queue::assertNothingPushed();
     });
 });
 
