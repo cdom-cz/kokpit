@@ -124,8 +124,10 @@ User request: batch write of time; read-only listing for verification with a dat
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| All or nothing, per-item errors in 422 | One transaction | ✓ |
-| Partial success (207) | | |
+| All or nothing, per-item errors in 422 | One transaction | initially ✓, later revised |
+| Partial success (207) | | ✓ (revised) |
+
+**Revision (2026-10-14):** the user changed this to partial success: valid items are saved, only the failed items are listed with their errors.
 
 | Option | Description | Selected |
 |--------|-------------|----------|
