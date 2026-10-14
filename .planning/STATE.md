@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-15-PLAN.md
-last_updated: "2026-10-14T21:41:29.605Z"
+stopped_at: Completed 08-16-PLAN.md
+last_updated: "2026-10-14T21:56:10.670Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 08 execution started
-state_head: 1ff55122331f148ce16dd552509e7495e0648bbb
+state_head: e4752356e6fe702e758c7d3c24688ebc90d25777
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 142
-  completed_plans: 134
+  completed_plans: 135
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 15 of 22
+Plan: 16 of 22
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 08 execution started
 
@@ -196,6 +196,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P12 | 25 min | 2 tasks | 5 files |
 | Phase 08 P13 | 18 min | 3 tasks | 8 files |
 | Phase 08 P15 | 25 min | 2 tasks | 9 files |
+| Phase 08 P16 | 20 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -461,6 +462,8 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-13: a manual download that inserted nothing for today after a lost race answers 'already stored', like the console command
 - [Phase 08]: 08-15: the dashboard unbilled table footer Celkem totals every client with unbilled time, not only the ten rows shown, like the report totals
 - [Phase 08]: 08-15: dashboard widgets poll with visible.60s (wire:poll.visible.60s); row and heading links carry period=this_month explicitly
+- [Phase 08]: 08-16: the CSV Úkol column holds the task title only so a title starting with a formula character is neutralised by the apostrophe rule
+- [Phase 08]: 08-16: export numbers are text built from exact values (integer hours arithmetic, Money::toMajor), never floats; every text goes through SpreadsheetCells::text
 
 ### Pending Todos
 
@@ -479,6 +482,7 @@ Product decisions needed before the owning phase is planned:
 Research flags (run research before planning): Phase 3 (Zerops specifics, PDF and kanban spikes, PHP 8.5 package compatibility, Filament 5 behaviours), Phase 5 (only if the kanban spike fails), Phase 6, Phase 7 (OpenAPI coverage), Phase 10 (Czech invoicing details), Phase 11 (Payment Link API shape, event matrix). Researcher drift: STACK.md is authoritative on package versions.
 
 Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is unreliable; review it in Phase 1 before pushing anything public.
+- 08-09 aggregate bug: TimeReport::build() throws on mixed client currencies without a client filter (TimeReport.php line 75); to be fixed in plan 08-14, see deferred-items.md
 
 ### Quick Tasks Completed
 
@@ -507,6 +511,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T21:41:29.423Z
-Stopped at: Completed 08-15-PLAN.md
+Last session: 2026-10-14T21:56:10.471Z
+Stopped at: Completed 08-16-PLAN.md
 Resume file: None
