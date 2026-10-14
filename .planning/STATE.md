@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: REST API
 status: executing
-stopped_at: Completed 07-03-PLAN.md
-last_updated: "2026-10-14T09:59:13.963Z"
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-10-14T10:14:17.109Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 07 execution started
-state_head: eeeecf0cd26a7d7613841b823286e54d50c3f517
+state_head: f1eae3a75ec44777d6fd3d966c3defcbadaae055
 progress:
   total_phases: 12
   completed_phases: 6
   total_plans: 112
-  completed_plans: 102
+  completed_plans: 103
   percent: 50
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 07 (REST API) — EXECUTING
-Plan: 3 of 12
+Plan: 4 of 12
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 07 execution started
 
@@ -163,6 +163,7 @@ Progress: [█████░░░░░] 50%
 | Phase 06 P14 | 14 min | 3 tasks | 8 files |
 | Phase 07 P01 | 8 min | 3 tasks | 14 files |
 | Phase 07 P03 | 20 min | 3 tasks | 12 files |
+| Phase 07 P02 | 40min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -373,6 +374,7 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-03: form state of CheckboxList and Select holds enum cases; the token handler accepts a case or its value and refuses anything else
 - [Phase 07]: 07-03: UI-SPEC utilities break-all, select-all and break-words are absent from the precompiled Filament CSS, so inline styles carry wrapping and select-all (font-mono stays a class)
 - [Phase 07]: 07-03: an already-revoked token shows its info toast from the page hydrate() hook, because Filament silently drops a submit whose record is gone
+- [Phase 07]: 07-02: public docs at /docs and /docs.openapi, per-IP limiter, 404 before first generation; owner amended the contract so project_id, task_id and description are optional on writes (project_key, task_reference output-only)
 
 ### Pending Todos
 
@@ -418,6 +420,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T09:59:13.803Z
-Stopped at: Completed 07-03-PLAN.md
+Last session: 2026-10-14T10:14:16.951Z
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
