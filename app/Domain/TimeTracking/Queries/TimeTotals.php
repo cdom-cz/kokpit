@@ -19,24 +19,15 @@ use Illuminate\Database\Eloquent\Builder;
  * A finished entry counts with its stored duration, a running one with the seconds from its start
  * to `$now` (never negative), so a running billable entry already counts as unbilled time (research
  * A3: no unbilled time slips through unnoticed). The instant is bound from the PHP clock, never SQL
- * `now()`, as in TimeEntry::scopeWithElapsedSeconds. No money is formed here: the amount is
- * written at billing time.
+ * `now()`. The per-row value comes from TimeEntry::elapsedSecondsSql (computed wide and clamped, so
+ * no stored start can overflow it), and the sums over the rows are wide, so a total can pass the
+ * integer range. No money is formed here: the amount is written at billing time.
  *
  * Every figure is one of four sums over the same entries, and they add up: worked = billed +
  * unbilled + non_billable, because a billed entry is always billable (a database CHECK).
  */
 final class TimeTotals
 {
-    /**
-     * The seconds of one entry row of `time_entries`, with one `?` for the instant.
-     */
-    private const string ELAPSED = 'COALESCE(time_entries.duration_seconds, GREATEST(0, EXTRACT(EPOCH FROM (?::timestamptz - time_entries.started_at))::int))';
-
-    /**
-     * The same, for the alias `entry` used inside a correlated sub-select.
-     */
-    private const string ELAPSED_OF_ENTRY = 'COALESCE(entry.duration_seconds, GREATEST(0, EXTRACT(EPOCH FROM (?::timestamptz - entry.started_at))::int))';
-
     /**
      * The time logged to exactly this task; a parent task does not add the time of its subtasks.
      * One aggregate query with FILTER clauses.
@@ -145,13 +136,14 @@ final class TimeTotals
     private function aggregate(Builder $entries, CarbonInterface $now): array
     {
         $instant = $now->utc()->format('Y-m-d H:i:sP');
+        $elapsed = TimeEntry::elapsedSecondsSql('time_entries');
 
         $row = $entries
             ->selectRaw(
-                'COALESCE(SUM('.self::ELAPSED.'), 0) AS worked,'
-                .'COALESCE(SUM('.self::ELAPSED.") FILTER (WHERE time_entries.billable AND time_entries.billing_state = 'billed'), 0) AS billed,"
-                .'COALESCE(SUM('.self::ELAPSED.") FILTER (WHERE time_entries.billable AND time_entries.billing_state = 'unbilled'), 0) AS unbilled,"
-                .'COALESCE(SUM('.self::ELAPSED.') FILTER (WHERE NOT time_entries.billable), 0) AS non_billable',
+                'COALESCE(SUM('.$elapsed.'), 0) AS worked,'
+                .'COALESCE(SUM('.$elapsed.") FILTER (WHERE time_entries.billable AND time_entries.billing_state = 'billed'), 0) AS billed,"
+                .'COALESCE(SUM('.$elapsed.") FILTER (WHERE time_entries.billable AND time_entries.billing_state = 'unbilled'), 0) AS unbilled,"
+                .'COALESCE(SUM('.$elapsed.') FILTER (WHERE NOT time_entries.billable), 0) AS non_billable',
                 [$instant, $instant, $instant, $instant],
             )
             ->toBase()
@@ -173,6 +165,6 @@ final class TimeTotals
      */
     private static function taskSum(string $where): string
     {
-        return '(SELECT COALESCE(SUM('.self::ELAPSED_OF_ENTRY.'), 0) FROM time_entries AS entry WHERE entry.task_id = tasks.id'.$where.')';
+        return '(SELECT COALESCE(SUM('.TimeEntry::elapsedSecondsSql('entry').'), 0) FROM time_entries AS entry WHERE entry.task_id = tasks.id'.$where.')';
     }
 }

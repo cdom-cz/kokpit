@@ -45,7 +45,8 @@ use Illuminate\Validation\ValidationException;
  * the interval must fit TimeEntryInput::MAX_DURATION_SECONDS (the integer column limit), checked before
  * the row is touched; the field error sits on `ended_at` when the data names an end, otherwise on
  * `started_at`. A running entry's changed start is measured against the current second, in both
- * directions, because the panel list casts the elapsed seconds to an integer.
+ * directions, as a sanity bound against an obviously wrong start. The readers clamp through
+ * TimeEntry::elapsedSecondsSql, so a start that later runs past the limit still keeps every list readable.
  *
  * Lock order: the task, project and client rows FOR SHARE (a changed context
  * only), after the entry row FOR UPDATE.
@@ -188,8 +189,9 @@ final class UpdateTimeEntry
             }
         }
 
-        // A running entry is measured against the current second: the entry list casts its elapsed
-        // seconds to an integer, so a start too far behind or ahead of now would break the list.
+        // A running entry is measured against the current second, as a sanity bound against an obviously
+        // wrong start. The readers clamp through TimeEntry::elapsedSecondsSql, so a start that later runs
+        // past the limit still keeps every list readable.
         if ($locked->isRunning() && ! $start->equalTo($locked->started_at)) {
             TimeEntryInput::assertDurationFits($start, TimerClock::now(), 'started_at');
         }

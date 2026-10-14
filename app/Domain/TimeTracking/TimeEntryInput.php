@@ -34,10 +34,10 @@ final class TimeEntryInput
     public const int EXTERNAL_MAX_DEPTH = 8;
 
     /**
-     * The longest interval a time entry may span, in seconds: the limit of a PostgreSQL integer. It guards
-     * two consumers, the generated `duration_seconds` column of a finished entry and the `::int` cast of
-     * the elapsed seconds in `TimeEntry::scopeWithElapsedSeconds`, which a running entry feeds with its
-     * start. It is the column limit, not a product cap (about 68 years).
+     * The longest interval a time entry may span, in seconds: the limit of a PostgreSQL integer, which is the
+     * limit of the generated `duration_seconds` column of a finished entry. It is also the ceiling at which
+     * `TimeEntry::elapsedSecondsSql` clamps the elapsed seconds of a running entry, so no stored start can
+     * make a read fail. It is the column limit, not a product cap (about 68 years).
      */
     public const int MAX_DURATION_SECONDS = 2147483647;
 
@@ -251,7 +251,8 @@ final class TimeEntryInput
      *
      * `$to` is the end of a finished entry, or the current whole second (`TimerClock::now()`) for a running
      * one. The magnitude of the difference counts, so a running entry whose start lies far ahead of now is
-     * refused too: its elapsed seconds would overflow the integer cast of the entry list just the same.
+     * refused too. For a running entry this is a sanity bound against an obviously wrong start: the readers
+     * clamp through `TimeEntry::elapsedSecondsSql`, so a start that later runs past the limit stays readable.
      *
      * @param  string  $field  the data key the field error is keyed by (`started_at` or `ended_at`)
      *
