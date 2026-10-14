@@ -8,6 +8,8 @@ use App\Domain\Api\Models\IdempotencyKey;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Route;
+use Tests\Support\ApiDocs;
 use Tests\Support\ApiFixtures;
 
 /*
@@ -264,4 +266,121 @@ it('stores status 201, the completion time and an expiry 24 hours after the clai
         ->and($row->completed_at)->not->toBeNull()
         ->and($row->token_id)->toBe(idempotencyTokenId($token))
         ->and($row->expires_at->equalTo($row->locked_at->addHours(24)))->toBeTrue();
+});
+
+it('refuses an empty, an over-long and a non-printable key with 422 idempotency_key_invalid and creates nothing', function (string $key): void {
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token($admin, ['time:write']);
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', idempotentBody($client->id), ['Idempotency-Key' => $key])
+        ->assertStatus(422)
+        ->assertJsonPath('code', 'idempotency_key_invalid')
+        ->assertJsonPath('message', __('api.errors.idempotency_key_invalid'));
+
+    expect(TimeEntry::query()->count())->toBe(0)
+        ->and(IdempotencyKey::query()->count())->toBe(0);
+})->with([
+    'empty' => [''],
+    '256 characters' => [str_repeat('k', 256)],
+    'a space' => ['demo key'],
+    'a control character' => ["demo\x01key"],
+    'a non-ASCII letter' => ["demo-kl\u{00ED}\u{010D}"],
+]);
+
+it('accepts a key of exactly 255 printable characters', function (): void {
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token($admin, ['time:write']);
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', idempotentBody($client->id), ['Idempotency-Key' => str_repeat('k', 255)])
+        ->assertCreated();
+
+    expect(IdempotencyKey::query()->sole()->key)->toBe(str_repeat('k', 255));
+});
+
+it('keeps the keys of two tokens of the same Admin apart, so neither replays the other', function (): void {
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $first = ApiFixtures::token($admin, ['time:write']);
+    $second = ApiFixtures::token($admin, ['time:write']);
+    $headers = ['Idempotency-Key' => 'demo-key-0011'];
+
+    $one = $this->withToken($first)->postJson('/api/v1/time-entries', idempotentBody($client->id), $headers)->assertCreated();
+    Auth::forgetGuards();
+    $two = $this->withToken($second)->postJson('/api/v1/time-entries', idempotentBody($client->id), $headers)
+        ->assertCreated()
+        ->assertHeaderMissing('Idempotent-Replayed');
+
+    expect($two->json('data.id'))->not->toBe($one->json('data.id'))
+        ->and(TimeEntry::query()->count())->toBe(2)
+        ->and(IdempotencyKey::query()->count())->toBe(2);
+});
+
+it('ignores the header on PATCH, DELETE and GET and stores nothing for them', function (): void {
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $entry = ApiFixtures::entry($admin, [
+        'client_id' => $client->id,
+        'started_at' => '2026-10-12 08:00:00',
+        'ended_at' => '2026-10-12 09:30:00',
+    ]);
+    $token = ApiFixtures::token($admin, ['time:read', 'time:write']);
+    $headers = ['Idempotency-Key' => 'demo-key-0012'];
+    $path = '/api/v1/time-entries/'.$entry->id;
+
+    $this->withToken($token)->getJson($path, $headers)->assertOk()->assertHeaderMissing('Idempotent-Replayed');
+    Auth::forgetGuards();
+    $this->withToken($token)->patchJson($path, ['description' => 'Changed'], $headers)->assertOk();
+    Auth::forgetGuards();
+    // The same PATCH again is applied again: no replay and no 422 for a repeated key.
+    $this->withToken($token)->patchJson($path, ['description' => 'Changed again'], $headers)
+        ->assertOk()
+        ->assertJsonPath('data.description', 'Changed again')
+        ->assertHeaderMissing('Idempotent-Replayed');
+    Auth::forgetGuards();
+    $this->withToken($token)->deleteJson($path, [], $headers)->assertNoContent();
+
+    expect(IdempotencyKey::query()->count())->toBe(0)
+        ->and(TimeEntry::query()->count())->toBe(0);
+});
+
+it('deletes the keys of a token with the token', function (): void {
+    $admin = ApiFixtures::admin();
+    $client = ApiFixtures::client();
+    $token = ApiFixtures::token($admin, ['time:write']);
+
+    $this->withToken($token)->postJson('/api/v1/time-entries', idempotentBody($client->id), ['Idempotency-Key' => 'demo-key-0013'])
+        ->assertCreated();
+
+    expect(IdempotencyKey::query()->count())->toBe(1);
+
+    $admin->tokens()->delete();
+
+    expect(IdempotencyKey::query()->count())->toBe(0);
+});
+
+it('documents the Idempotency-Key header, the 409 and 422 answers and the replay header on POST time-entries', function (): void {
+    ApiDocs::ensureGenerated();
+    $route = Route::getRoutes()->getByName('api.v1.time-entries.store');
+    $operation = ApiDocs::operation($route);
+    $headers = array_map(
+        static fn (array $parameter): string => strtolower((string) $parameter['name']),
+        array_filter($operation['parameters'] ?? [], static fn (array $parameter): bool => ($parameter['in'] ?? null) === 'header'),
+    );
+
+    expect($headers)->toContain('idempotency-key')
+        ->and($operation['responses'])->toHaveKeys([201, 409, 422])
+        ->and($operation['description'])->toContain('Idempotent-Replayed')
+        ->toContain('idempotency_key_reused')
+        ->toContain('idempotency_in_progress')
+        ->toContain('24 hours');
+
+    // The documentation rule is not vacuous: the route carries the middleware, so it asks for the header.
+    expect(ApiDocs::violations([$route], ApiDocs::spec()))->toBe([]);
+
+    $spec = ApiDocs::spec();
+    unset($spec['paths']['/'.ApiDocs::documentedUri($route)]['post']['responses'][409]);
+
+    expect(ApiDocs::violations([$route], $spec))->toContain('POST /api/v1/time-entries documents no 409 response');
 });
