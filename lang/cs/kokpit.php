@@ -178,7 +178,7 @@ return [
         'empty_heading' => 'Zatím tu nic není',
         'empty_description_partner' => 'Jakmile pro vás bude něco připraveno, objeví se to tady.',
 
-        // The Admin dashboard (RE-04; D-11, UI-SPEC Surface E): hours, unbilled time, deadlines and the plan for tomorrow.
+        // The Admin dashboard (RE-04; D-11, UI-SPEC Surface E): hours, unbilled time, deadlines and the plan for today.
         'hours' => [
             'today' => 'Dnes',
             'week' => 'Tento týden',
@@ -218,13 +218,14 @@ return [
             'empty_description' => 'Otevřené úkoly zatím nemají termín.',
         ],
         'plan' => [
-            'heading' => 'Plán na zítřek',
+            'heading' => 'Plán na dnešek',
             'count' => '{0} :count úkolů|{1} :count úkol|[2,4] :count úkoly|[5,*] :count úkolů',
             'open_link' => 'Otevřít plán',
             'show_more' => 'Zobrazit dalších :count',
             'hide_more' => 'Skrýt dalších :count',
             'recurring' => 'Opakuje se',
-            'empty_heading' => 'Na zítřek zatím nic nenaplánováno',
+            'done' => 'Splněno',
+            'empty_heading' => 'Na dnešek zatím nic nenaplánováno',
             'empty_description' => 'Plán si můžete připravit v nabídce Signal, Dnes a zítra.',
         ],
         'partner_tasks' => [

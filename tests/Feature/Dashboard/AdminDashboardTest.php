@@ -18,8 +18,9 @@ use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Filament\Pages\Dashboard;
 use App\Filament\Widgets\HoursStats;
-use App\Filament\Widgets\TomorrowPlan;
+use App\Filament\Widgets\TodayPlan;
 use App\Filament\Widgets\UnbilledPerClient;
 use App\Filament\Widgets\UpcomingDeadlines;
 use Carbon\CarbonImmutable;
@@ -31,7 +32,8 @@ use Tests\Support\Canary;
 
 /*
  * The Admin dashboard (RE-04; D-11, UI-SPEC Surface E): the hours worked today, this week and this month, and
- * the unbilled billable time of the month per client. Every name, rate and amount below is invented.
+ * the unbilled billable time of the month per client, the nearest deadlines and the plan for today. Every name,
+ * rate and amount below is invented.
  */
 
 beforeEach(function (): void {
@@ -808,8 +810,10 @@ describe('the upcoming task deadlines', function (): void {
 
 /**
  * A planner task of a user for a day, written directly: the Admin owns it, the owner column is set by hand.
+ * A task made from a template carries its `recurring_id`; a done task carries `completed_at` too, because the
+ * database requires `is_done` and `completed_at` to agree.
  */
-function adminDashPlanTask(string $title, SignalCategory $category = SignalCategory::Other, ?User $owner = null, string $day = '2026-10-15', int $position = 0): SignalTask
+function adminDashPlanTask(string $title, SignalCategory $category = SignalCategory::Other, ?User $owner = null, string $day = '2026-10-14', int $position = 0, ?SignalRecurringTask $template = null, bool $done = false): SignalTask
 {
     $task = new SignalTask;
     $task->forceFill([
@@ -818,6 +822,9 @@ function adminDashPlanTask(string $title, SignalCategory $category = SignalCateg
         'for_date' => $day,
         'category' => $category,
         'position' => $position,
+        'recurring_id' => $template?->id,
+        'is_done' => $done,
+        'completed_at' => $done ? now() : null,
     ])->save();
 
     return $task;
@@ -843,11 +850,11 @@ function adminDashPlanTemplate(string $title, array $weekdays, SignalCategory $c
 }
 
 /**
- * The HTML of the tomorrow plan widget alone, as the Admin gets it.
+ * The HTML of the today plan widget alone, as the Admin gets it.
  */
 function adminDashPlanHtml(?User $viewer = null): string
 {
-    return Livewire::actingAs($viewer ?? test()->admin)->test(TomorrowPlan::class)->html();
+    return Livewire::actingAs($viewer ?? test()->admin)->test(TodayPlan::class)->html();
 }
 
 /**
@@ -862,9 +869,9 @@ function adminDashPlanParts(string $html): array
     return [adminDashText($lists[0][0] ?? ''), adminDashText($lists[0][1] ?? '')];
 }
 
-describe('the plan for tomorrow', function (): void {
+describe('the plan for today', function (): void {
     /**
-     * Tomorrow is Thursday 2026-10-15: two main, two medium and one other task plus a template of Thursdays.
+     * Today is Wednesday 2026-10-14: two main, two medium and one other task plus a template of Wednesdays.
      */
     function adminDashPlanSix(): void
     {
@@ -873,31 +880,70 @@ describe('the plan for tomorrow', function (): void {
         adminDashPlanTask('Example plan medium A', SignalCategory::Medium, position: 0);
         adminDashPlanTask('Example plan medium B', SignalCategory::Medium, position: 1);
         adminDashPlanTask('Example plan other A', SignalCategory::Other, position: 0);
-        adminDashPlanTemplate('Example plan standup', [3]);
+        adminDashPlanTemplate('Example plan standup', [2]);
     }
 
-    it('shows tomorrow\'s tasks and the template not yet materialised, three outside the collapsed region and three inside', function (): void {
+    it('shows today\'s tasks and the template not yet materialised, three outside the collapsed region and three inside', function (): void {
         adminDashPlanSix();
-        // Today's task and the day after tomorrow's are not part of it.
-        adminDashPlanTask('Example plan today', day: '2026-10-14');
-        adminDashPlanTask('Example plan later', day: '2026-10-16');
+        // Yesterday's task and tomorrow's are not part of it.
+        adminDashPlanTask('Example plan yesterday', day: '2026-10-13');
+        adminDashPlanTask('Example plan tomorrow', day: '2026-10-15');
 
         $html = adminDashPlanHtml();
         $text = adminDashText($html);
         [$visible, $region] = adminDashPlanParts($html);
 
-        expect($text)->toContain('Plán na zítřek')
-            ->toContain('čtvrtek 15. 10. 2026')
+        expect($text)->toContain('Plán na dnešek')
+            ->toContain('středa 14. 10. 2026')
             ->toContain('6 úkolů')
             ->toContain('Otevřít plán')
-            ->not->toContain('Example plan today')
-            ->not->toContain('Example plan later')
+            ->not->toContain('Example plan yesterday')
+            ->not->toContain('Example plan tomorrow')
             ->and($visible)->toContain('Example plan main A')->toContain('Example plan main B')->toContain('Example plan medium A')
             ->not->toContain('Example plan medium B')
             ->and($region)->toContain('Example plan medium B')->toContain('Example plan other A')->toContain('Example plan standup')
-            ->and($html)->toMatch('/<ul\b[^>]*\bid="tomorrow-plan-more"[^>]*\bhidden\b/')
-            ->toMatch('/<button\b[^>]*aria-expanded="false"[^>]*aria-controls="tomorrow-plan-more"|<button\b[^>]*aria-controls="tomorrow-plan-more"[^>]*aria-expanded="false"/')
+            ->and($html)->toMatch('/<ul\b[^>]*\bid="today-plan-more"[^>]*\bhidden\b/')
+            ->toMatch('/<button\b[^>]*aria-expanded="false"[^>]*aria-controls="today-plan-more"|<button\b[^>]*aria-controls="today-plan-more"[^>]*aria-expanded="false"/')
             ->and($text)->toContain('Zobrazit dalších 3');
+    });
+
+    it('follows the Prague day: shortly after midnight there the new day\'s plan shows', function (): void {
+        adminDashPlanTask('Example plan old day', day: '2026-10-14');
+        adminDashPlanTask('Example plan new day', day: '2026-10-15');
+
+        // 22:30 UTC is 00:30 on 2026-10-15 in Prague.
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 22:30:00', 'UTC'));
+
+        $text = adminDashText(adminDashPlanHtml());
+
+        expect($text)->toContain('čtvrtek 15. 10. 2026')
+            ->toContain('Example plan new day')
+            ->not->toContain('Example plan old day');
+    });
+
+    it('shows a template that already became a task of today once, marked as recurring', function (): void {
+        $template = adminDashPlanTemplate('Example plan standup', [2]);
+        adminDashPlanTask('Example plan standup', template: $template);
+
+        $text = adminDashText(adminDashPlanHtml());
+
+        expect($text)->toContain('1 úkol')->not->toContain('1 úkolů')
+            ->toContain('Opakuje se')
+            ->and(substr_count($text, 'Example plan standup'))->toBe(1);
+    });
+
+    it('marks a task that is done today as struck through with "Splněno", and an open one not', function (): void {
+        adminDashPlanTask('Example plan finished', done: true);
+        adminDashPlanTask('Example plan open', position: 1);
+
+        $html = adminDashPlanHtml();
+        preg_match_all('/<li\b.*?<\/li>/s', $html, $items);
+        [$finished, $open] = $items[0];
+
+        expect(adminDashText($finished))->toContain('Example plan finished')->toContain('Splněno')
+            ->and($finished)->toContain('text-decoration: line-through')
+            ->and(adminDashText($open))->toContain('Example plan open')->not->toContain('Splněno')
+            ->and($open)->not->toContain('line-through');
     });
 
     it('shows no toggle for exactly three items and the right count badge for one, two and three', function (): void {
@@ -918,13 +964,13 @@ describe('the plan for tomorrow', function (): void {
             ->and(adminDashText($three))->toContain('3 úkoly')
             ->and($three)->not->toContain('aria-expanded')
             ->not->toContain('aria-controls')
-            ->not->toContain('tomorrow-plan-more')
+            ->not->toContain('today-plan-more')
             ->not->toContain('Zobrazit dalších');
     });
 
     it('marks a recurring template with "Opakuje se" and the circular arrow, and every item with its category and dot', function (): void {
         adminDashPlanTask('Example plan main A', SignalCategory::Main);
-        adminDashPlanTemplate('Example plan standup', [3], SignalCategory::Medium);
+        adminDashPlanTemplate('Example plan standup', [2], SignalCategory::Medium);
 
         $html = adminDashPlanHtml();
         preg_match_all('/<li\b.*?<\/li>/s', $html, $items);
@@ -981,7 +1027,7 @@ describe('the plan for tomorrow', function (): void {
         $other = Canary::admin();
         adminDashPlanTask('Example plan own');
         adminDashPlanTask('Example plan foreign', owner: $other);
-        adminDashPlanTemplate('Example plan foreign template', [3], owner: $other);
+        adminDashPlanTemplate('Example plan foreign template', [2], owner: $other);
 
         $own = adminDashText(adminDashPlanHtml());
         $foreign = adminDashText(adminDashPlanHtml($other));
@@ -992,49 +1038,59 @@ describe('the plan for tomorrow', function (): void {
             ->not->toContain('Example plan own');
     });
 
-    it('says "Na zítřek zatím nic nenaplánováno" with the planner hint and the link when nothing is planned', function (): void {
+    it('says "Na dnešek zatím nic nenaplánováno" with the planner hint and the link when nothing is planned', function (): void {
         $html = adminDashPlanHtml();
         $text = adminDashText($html);
 
-        expect($text)->toContain('Plán na zítřek')
-            ->toContain('Na zítřek zatím nic nenaplánováno')
+        expect($text)->toContain('Plán na dnešek')
+            ->toContain('Na dnešek zatím nic nenaplánováno')
             ->toContain('Plán si můžete připravit v nabídce Signal, Dnes a zítra.')
             ->toContain('Otevřít plán')
             ->and($html)->toContain('href="'.url('/admin/signal').'"')
             ->not->toContain('aria-expanded');
     });
 
-    it('does not poll and runs no Signal action', function (): void {
+    it('does not poll and runs no Signal action, so it never materialises today\'s template', function (): void {
         adminDashPlanSix();
 
-        $component = Livewire::actingAs($this->admin)->test(TomorrowPlan::class);
+        $component = Livewire::actingAs($this->admin)->test(TodayPlan::class);
 
+        // The template fires today. An unchanged count proves the widget did not turn it into a task.
         expect($component->html())->not->toContain('wire:poll')
             ->and(SignalTask::query()->count())->toBe(5)
             ->and(SignalRecurringTask::query()->count())->toBe(1);
     });
 
-    it('is the last widget of the Admin dashboard', function (): void {
+    it('sits right under the hours stats, full width, before the unbilled time and the deadlines', function (): void {
         adminDashPlanTask('Example plan on the dashboard');
         adminDashDeadlineTask(adminDashProject(adminDashClient('Example Client Order'), 'ORD', 'Example Project Order'), '2026-10-15', 'Example deadline on the dashboard');
 
-        $text = adminDashText((string) $this->actingAs($this->admin)->get('/admin')->assertOk()->getContent());
+        $this->actingAs($this->admin);
 
-        expect($text)->toContain('Plán na zítřek')
+        $text = adminDashText((string) $this->get('/admin')->assertOk()->getContent());
+
+        expect((new Dashboard)->getWidgets())->toBe([HoursStats::class, TodayPlan::class, UnbilledPerClient::class, UpcomingDeadlines::class])
+            ->and((new TodayPlan)->getColumnSpan())->toBe('full')
+            ->and($text)->toContain('Tento měsíc')
+            ->toContain('Plán na dnešek')
             ->toContain('Example plan on the dashboard')
-            ->and(strpos($text, 'Nejbližší termíny'))->toBeLessThan((int) strpos($text, 'Plán na zítřek'));
+            ->toContain('Nevyfakturováno tento měsíc')
+            ->toContain('Nejbližší termíny')
+            ->and(strpos($text, 'Tento měsíc'))->toBeLessThan((int) strpos($text, 'Plán na dnešek'))
+            ->and(strpos($text, 'Plán na dnešek'))->toBeLessThan((int) strpos($text, 'Nevyfakturováno tento měsíc'))
+            ->and(strpos($text, 'Plán na dnešek'))->toBeLessThan((int) strpos($text, 'Nejbližší termíny'));
     });
 
     it('is refused to a Partner, also when mounted by force, and absent from the Partner dashboard', function (): void {
         adminDashPlanTask('Example plan secret');
         $partner = Canary::partnerFor(Canary::twoClients()[0]);
 
-        Livewire::actingAs($partner)->test(TomorrowPlan::class)->assertForbidden();
+        Livewire::actingAs($partner)->test(TodayPlan::class)->assertForbidden();
 
         $text = adminDashText((string) $this->actingAs($partner)->get('/admin')->assertOk()->getContent());
 
-        expect($text)->not->toContain('Plán na zítřek')
+        expect($text)->not->toContain('Plán na dnešek')
             ->not->toContain('Example plan secret')
-            ->not->toContain('Na zítřek zatím nic nenaplánováno');
+            ->not->toContain('Na dnešek zatím nic nenaplánováno');
     });
 });

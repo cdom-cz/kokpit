@@ -1,14 +1,15 @@
 {{--
-    "Plán na zítřek": the Admin's own Signal plan for tomorrow, read only. The first three items are always visible; the
+    "Plán na dnešek": the Admin's own Signal plan for today, read only. The first three items are always visible; the
     rest sits in a region that is hidden on every load and opened by one text button (aria-expanded, aria-controls,
-    UI-SPEC U-9). The only form control is that button, the only link is "Otevřít plán". Every value goes through
-    {{ }}; the dot colour is a closed set from SignalCategory::getColor(). Spacing in rem multiples of 0.25 only
-    (UI-SPEC F-2); the category dot is 0.5rem.
+    UI-SPEC U-9). The only form control is that button, the only link is "Otevřít plán". A task that is done is struck
+    through like in the planner and carries the label "Splněno", so the state is not carried by styling alone. Every
+    value goes through {{ }}; the dot colour is a closed set from SignalCategory::getColor(). Spacing in rem multiples
+    of 0.25 only (UI-SPEC F-2); the category dot is 0.5rem.
 --}}
 @php
     use Filament\Support\Icons\Heroicon;
 
-    $regionId = 'tomorrow-plan-more';
+    $regionId = 'today-plan-more';
     $groups = [
         ['id' => null, 'items' => $visibleItems],
         ['id' => $regionId, 'items' => $moreItems],
@@ -65,8 +66,12 @@
 
                                     <span
                                         title="{{ $item['title'] }}"
-                                        style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: anywhere;"
+                                        style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: anywhere;{{ $item['done'] ? ' text-decoration: line-through; opacity: 0.6;' : '' }}"
                                     >{{ $item['title'] }}</span>
+
+                                    @if ($item['done'])
+                                        <span style="flex: 0 0 auto; {{ $mutedStyle }}">{{ __('kokpit.dashboard.plan.done') }}</span>
+                                    @endif
 
                                     @if ($item['recurring'])
                                         <span style="flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.25rem; {{ $mutedStyle }}">
