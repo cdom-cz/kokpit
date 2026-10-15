@@ -26,6 +26,7 @@ use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Livewire\Attributes\Url;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -92,6 +93,14 @@ class TimeReportPage extends Page
     public function getTitle(): string
     {
         return __('kokpit.report.title');
+    }
+
+    /**
+     * The tree needs the screen width so the Název column keeps its floor next to six fixed columns.
+     */
+    public function getMaxContentWidth(): Width
+    {
+        return Width::Full;
     }
 
     /**

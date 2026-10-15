@@ -327,7 +327,7 @@ describe('the cases where the effective rate is absent or converted otherwise', 
         $text = effectiveRateText($html);
 
         expect($text)
-            ->toContain($task->reference.' · Retainer 0:30 0:30 0:00 0:00 0:30 — —')
+            ->toContain($task->reference.' · Retainer 0:30 0:30 0:00 0:00 — —')
             ->not->toContain('Odpracováno na celém projektu')
             ->not->toContain('Efektivní hodinová sazba')
             ->and($html)->not->toContain('data-effective-rate')

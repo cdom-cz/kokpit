@@ -21,6 +21,7 @@ use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Pages\TimeReportPage;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Support\Enums\Width;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -182,10 +183,10 @@ describe('the report of a client and a month', function (): void {
         expect($text)
             ->toContain('Report času')
             ->toContain('Přehled podle klientů a projektů')
-            ->toContain('Example Client Alpha 3:15 3:15 0:00 0:00 3:15 '.timeReportMoney(39000, 'EUR').' '.timeReportMoney(967500, 'CZK'))
-            ->toContain('Example Project Web 3:15 3:15 0:00 0:00 3:15 '.timeReportMoney(39000, 'EUR').' '.timeReportMoney(967500, 'CZK'))
-            ->toContain($set['first']->reference.' · Landing page 2:30 2:30 0:00 0:00 2:30 '.timeReportMoney(30000, 'EUR').' '.timeReportMoney(738000, 'CZK'))
-            ->toContain($set['second']->reference.' · Contact form 0:45 0:45 0:00 0:00 0:45 '.timeReportMoney(9000, 'EUR').' '.timeReportMoney(229500, 'CZK'));
+            ->toContain('Example Client Alpha 3:15 3:15 0:00 0:00 '.timeReportMoney(39000, 'EUR').' '.timeReportMoney(967500, 'CZK'))
+            ->toContain('Example Project Web 3:15 3:15 0:00 0:00 '.timeReportMoney(39000, 'EUR').' '.timeReportMoney(967500, 'CZK'))
+            ->toContain($set['first']->reference.' · Landing page 2:30 2:30 0:00 0:00 '.timeReportMoney(30000, 'EUR').' '.timeReportMoney(738000, 'CZK'))
+            ->toContain($set['second']->reference.' · Contact form 0:45 0:45 0:00 0:00 '.timeReportMoney(9000, 'EUR').' '.timeReportMoney(229500, 'CZK'));
     });
 
     it('shows the summary tiles over the whole filtered set and the footer total', function (): void {
@@ -198,7 +199,7 @@ describe('the report of a client and a month', function (): void {
             ->toContain('Nevyfakturováno 3:15 '.timeReportMoney(39000, 'EUR').' v Kč: '.timeReportMoney(967500, 'CZK'))
             ->toContain('Nefakturovatelné 0:00 Bez částky')
             ->toContain('Částky jsou vypočtené z aktuálních sazeb a z kurzu ČNB ke dni záznamu.')
-            ->toContain('Celkem 3:15 3:15 0:00 0:00 3:15 '.timeReportMoney(39000, 'EUR').' '.timeReportMoney(967500, 'CZK'));
+            ->toContain('Celkem 3:15 3:15 0:00 0:00 '.timeReportMoney(39000, 'EUR').' '.timeReportMoney(967500, 'CZK'));
     });
 
     it('leaves out the entries of other clients and of other months', function (): void {
@@ -544,9 +545,9 @@ describe('the Rozpad breakdown below each task', function (): void {
         // 15th: 1:30 = 150.00 EUR at 25.000 = 3 750,00 Kč; 16th: 0:30 = 50.00 EUR at 25.500 = 1 275,00 Kč;
         // 20th: 1:00 = 100.00 EUR at the list of Friday, 24.000 = 2 400,00 Kč.
         expect($text)
-            ->toContain('15. 9. 2026 1:30 1:30 0:00 0:00 1:30 '.timeReportMoney(15000, 'EUR').' '.timeReportMoney(375000, 'CZK'))
-            ->toContain('16. 9. 2026 0:30 0:30 0:00 0:00 0:30 '.timeReportMoney(5000, 'EUR').' '.timeReportMoney(127500, 'CZK'))
-            ->toContain('20. 9. 2026 1:00 1:00 0:00 0:00 1:00 '.timeReportMoney(10000, 'EUR').' '.timeReportMoney(240000, 'CZK'));
+            ->toContain('15. 9. 2026 1:30 1:30 0:00 0:00 '.timeReportMoney(15000, 'EUR').' '.timeReportMoney(375000, 'CZK'))
+            ->toContain('16. 9. 2026 0:30 0:30 0:00 0:00 '.timeReportMoney(5000, 'EUR').' '.timeReportMoney(127500, 'CZK'))
+            ->toContain('20. 9. 2026 1:00 1:00 0:00 0:00 '.timeReportMoney(10000, 'EUR').' '.timeReportMoney(240000, 'CZK'));
 
         $task = strpos($text, $set['task']->reference.' · Landing page');
 
@@ -563,8 +564,8 @@ describe('the Rozpad breakdown below each task', function (): void {
 
         // Čapek 0:30 + 1:00 = 1:30, the Admin 1:00 + 0:30 = 1:30; Čapek is first in Czech order.
         expect($text)
-            ->toContain('Čapek Example 1:30 1:30 0:00 0:00 1:30 '.timeReportMoney(15000, 'EUR').' ')
-            ->toContain('Dvořák Example 1:30 1:30 0:00 0:00 1:30 '.timeReportMoney(15000, 'EUR').' ')
+            ->toContain('Čapek Example 1:30 1:30 0:00 0:00 '.timeReportMoney(15000, 'EUR').' ')
+            ->toContain('Dvořák Example 1:30 1:30 0:00 0:00 '.timeReportMoney(15000, 'EUR').' ')
             ->and(strpos($text, 'Čapek Example 1:30'))->toBeLessThan(strpos($text, 'Dvořák Example 1:30'))
             ->and(strpos($text, 'Čapek Example 1:30'))->toBeGreaterThan(strpos($text, $set['task']->reference.' · Landing page'));
     });
@@ -739,8 +740,8 @@ describe('the fixed-price and missing-rate markers', function (): void {
         $text = timeReportText($html);
 
         expect($text)
-            ->toContain('Example Project Fixed Pevná cena 2:00 2:00 0:00 0:00 2:00 — —')
-            ->toContain($fixedTask->reference.' · Retainer 0:30 0:30 0:00 0:00 0:30 — —')
+            ->toContain('Example Project Fixed Pevná cena 2:00 2:00 0:00 0:00 — —')
+            ->toContain($fixedTask->reference.' · Retainer 0:30 0:30 0:00 0:00 — —')
             ->toContain('Nevyfakturováno 3:30 '.timeReportMoney(12000, 'EUR').'* v Kč: '.timeReportMoney(300000, 'CZK'))
             ->toContain('* Hodiny projektů a úkolů s pevnou cenou jsou bez částky.')
             // The badge of the project row and the label of its effective rate block (only the project, not the task, has one).
@@ -770,7 +771,7 @@ describe('the fixed-price and missing-rate markers', function (): void {
 
         // Client, "Bez projektu" and "Bez úkolu" rows, the footer total and the summary line each carry the badge.
         expect($text)
-            ->toContain('Example Client Gamma 2:00 2:00 0:00 0:00 2:00 '.timeReportMoney(10000, 'USD').' Chybí kurz')
+            ->toContain('Example Client Gamma 2:00 2:00 0:00 0:00 '.timeReportMoney(10000, 'USD').' Chybí kurz')
             ->toContain('Součet v Kč nezahrnuje 2 záznamů bez kurzu ČNB.')
             ->toContain('v Kč: — Chybí kurz')
             ->not->toContain('0,00 Kč')
@@ -787,7 +788,7 @@ describe('the fixed-price and missing-rate markers', function (): void {
         $text = timeReportText((string) $this->get('/admin/time-report?client='.$client->id.'&period=last_month')->assertOk()->getContent());
 
         expect($text)
-            ->toContain('Example Client Alpha 2:00 2:00 0:00 0:00 2:00 '.timeReportMoney(20000, 'EUR').' '.timeReportMoney(250000, 'CZK').' Chybí kurz')
+            ->toContain('Example Client Alpha 2:00 2:00 0:00 0:00 '.timeReportMoney(20000, 'EUR').' '.timeReportMoney(250000, 'CZK').' Chybí kurz')
             ->toContain('Součet v Kč nezahrnuje 1 záznamů bez kurzu ČNB.');
     });
 
@@ -798,7 +799,7 @@ describe('the fixed-price and missing-rate markers', function (): void {
         $text = timeReportText((string) $this->get('/admin/time-report?client='.$client->id.'&period=last_month')->assertOk()->getContent());
 
         expect($text)
-            ->toContain('Example Client Delta 1:30 1:30 0:00 0:00 1:30 '.timeReportMoney(120000, 'CZK').' '.timeReportMoney(120000, 'CZK'))
+            ->toContain('Example Client Delta 1:30 1:30 0:00 0:00 '.timeReportMoney(120000, 'CZK').' '.timeReportMoney(120000, 'CZK'))
             ->not->toContain('Chybí kurz')
             ->not->toContain('Součet v Kč');
     });
@@ -848,7 +849,7 @@ describe('the row cap', function (): void {
             ->and($report->tree[0]['seconds'])->toEqual($uncapped->tree[0]['seconds'])
             ->and($text)->toContain('Zobrazeno prvních 3 řádků. Součty výše platí pro všechny záznamy. Zúžte období nebo použijte export.')
             ->toContain('Odpracováno 5:00 ')
-            ->toContain('Celkem 5:00 5:00 0:00 0:00 5:00 ')
+            ->toContain('Celkem 5:00 5:00 0:00 0:00 ')
             ->and($tree)->toContain($set['tasks'][2]->reference.' · Three')
             ->not->toContain($set['tasks'][3]->reference.' · Four')
             ->not->toContain($set['tasks'][4]->reference.' · Five');
@@ -923,7 +924,7 @@ describe('Prague days on the calendar edges', function (): void {
         $text = timeReportText((string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month&split=day')->assertOk()->getContent());
 
         expect($text)
-            ->toContain('17. 9. 2026 1:00 1:00 0:00 0:00 1:00 ')
+            ->toContain('17. 9. 2026 1:00 1:00 0:00 0:00 ')
             ->not->toContain('18. 9. 2026 ');
     });
 
@@ -982,7 +983,7 @@ describe('several currencies in one report', function (): void {
             ->and($text)
             ->toContain(timeReportMoney(10000, 'EUR').' '.timeReportMoney(16000, 'USD'))
             ->toContain('v Kč: '.timeReportMoney(647000, 'CZK'))
-            ->toContain('Example Client Gamma 2:00 2:00 0:00 0:00 2:00 '.timeReportMoney(16000, 'USD').' '.timeReportMoney(352000, 'CZK'));
+            ->toContain('Example Client Gamma 2:00 2:00 0:00 0:00 '.timeReportMoney(16000, 'USD').' '.timeReportMoney(352000, 'CZK'));
     });
 
     it('keeps the totals of the hours when a client of another currency is added', function (): void {
@@ -1044,9 +1045,9 @@ describe('a client with money in two currencies', function (): void {
         $all = timeReportText((string) $this->get('/admin/time-report?period=last_month')->assertOk()->getContent());
 
         expect($text)
-            ->toContain('Example Client Mixed 2:30 2:30 0:00 0:00 2:30 '.timeReportMoney(150000, 'CZK').' '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(450000, 'CZK'))
-            ->toContain($set['landing']->reference.' · Landing page 1:00 1:00 0:00 0:00 1:00 '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(300000, 'CZK'))
-            ->toContain($set['contact']->reference.' · Contact form 1:30 1:30 0:00 0:00 1:30 '.timeReportMoney(150000, 'CZK').' '.timeReportMoney(150000, 'CZK'))
+            ->toContain('Example Client Mixed 2:30 2:30 0:00 0:00 '.timeReportMoney(150000, 'CZK').' '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(450000, 'CZK'))
+            ->toContain($set['landing']->reference.' · Landing page 1:00 1:00 0:00 0:00 '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(300000, 'CZK'))
+            ->toContain($set['contact']->reference.' · Contact form 1:30 1:30 0:00 0:00 '.timeReportMoney(150000, 'CZK').' '.timeReportMoney(150000, 'CZK'))
             ->and($all)->toContain('Example Client Mixed');
     });
 
@@ -1069,7 +1070,7 @@ describe('a client with money in two currencies', function (): void {
         $text = timeReportText($html);
 
         expect($text)
-            ->toContain('Example Client Mixed 2:30 2:30 0:00 0:00 2:30 '.timeReportMoney(150000, 'CZK').' '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(150000, 'CZK').' Chybí kurz')
+            ->toContain('Example Client Mixed 2:30 2:30 0:00 0:00 '.timeReportMoney(150000, 'CZK').' '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(150000, 'CZK').' Chybí kurz')
             ->toContain('Součet v Kč nezahrnuje 1 záznamů bez kurzu ČNB.')
             // A zero amount, not the tail of "1 500,00 Kč".
             ->not->toMatch('/(?<!\d)0,00 Kč/u')
@@ -1105,8 +1106,8 @@ describe('a client with money in two currencies', function (): void {
         $text = timeReportText($html);
 
         expect($text)
-            ->toContain($fixed->reference.' · Retainer 0:30 0:30 0:00 0:00 0:30 — —')
-            ->toContain('Example Client Mixed 3:00 3:00 0:00 0:00 3:00 '.timeReportMoney(150000, 'CZK').' '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(450000, 'CZK'))
+            ->toContain($fixed->reference.' · Retainer 0:30 0:30 0:00 0:00 — —')
+            ->toContain('Example Client Mixed 3:00 3:00 0:00 0:00 '.timeReportMoney(150000, 'CZK').' '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(450000, 'CZK'))
             ->and($html)->toContain('title="Pevná cena: částka se nepočítá za záznam."');
     });
 
@@ -1115,7 +1116,7 @@ describe('a client with money in two currencies', function (): void {
 
         $text = timeReportText((string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month&split=day')->assertOk()->getContent());
 
-        expect($text)->toContain('15. 9. 2026 1:00 1:00 0:00 0:00 1:00 '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(300000, 'CZK'));
+        expect($text)->toContain('15. 9. 2026 1:00 1:00 0:00 0:00 '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(300000, 'CZK'));
     });
 });
 
@@ -1187,5 +1188,93 @@ describe('the cost of a long report', function (): void {
 describe('the row cap setting', function (): void {
     it('is a documented config value of 1000 rendered rows', function (): void {
         expect(config('kokpit.report.max_rendered_rows'))->toBe(1000);
+    });
+});
+
+/**
+ * The markup of the tree row of a name: the row tag with its id and everything up to its closing tag.
+ */
+function timeReportRowHtml(string $html, string $needle): string
+{
+    preg_match_all('#<tr\b[^>]*id="report-row-[^"]*"[^>]*>.*?</tr>#s', $html, $rows);
+
+    foreach ($rows[0] as $row) {
+        if (str_contains($row, $needle)) {
+            return $row;
+        }
+    }
+
+    return '';
+}
+
+describe('the readable table', function (): void {
+    it('uses the full content width of the panel', function (): void {
+        expect(Livewire::test(TimeReportPage::class)->instance()->getMaxContentWidth())->toBe(Width::Full);
+    });
+
+    it('lays the tree out as a fixed table with a floor and seven columns', function (): void {
+        $set = timeReportArrangement();
+
+        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
+
+        preg_match('#<colgroup.*?</colgroup>#s', $html, $group);
+        preg_match_all('#<col\b[^>]*>#', $group[0] ?? '', $cols);
+        $cols = $cols[0];
+
+        expect($html)->toContain('table-layout: fixed')->toContain('min-width: 64rem')
+            ->and($cols)->toHaveCount(7)
+            ->and(array_filter($cols, static fn (string $col): bool => ! str_contains($col, 'width')))->toHaveCount(1)
+            ->and(array_filter($cols, static fn (string $col): bool => str_contains($col, 'width: 6rem')))->toHaveCount(4)
+            ->and(array_filter($cols, static fn (string $col): bool => str_contains($col, 'width: 10rem')))->toHaveCount(2);
+    });
+
+    it('groups the four hour columns under one heading and drops Fakturovatelné from the tree', function (): void {
+        $set = timeReportArrangement();
+
+        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
+
+        preg_match('#<thead.*?</thead>#s', $html, $head);
+        preg_match_all('#<th\b[^>]*>(.*?)</th>#s', $head[0] ?? '', $cells);
+        $titles = array_map(static fn (string $cell): string => trim(strip_tags($cell)), $cells[1]);
+
+        expect(timeReportText($html))->toContain('Název Hodiny Částka Částka v Kč Odpracováno Nevyfakturováno Vyfakturováno Nefakturovatelné')
+            ->and($html)->toContain('scope="colgroup"')
+            ->and($titles)->not->toContain('Fakturovatelné')
+            ->and($titles)->toHaveCount(8);
+    });
+
+    it('clamps a very long task title to two lines and keeps the whole label as a tooltip', function (): void {
+        $client = timeReportClient('Example Client Alpha');
+        $project = timeReportProject($client, 'Example Project Web', 'WEB', ['hourly_rate' => '120']);
+        $title = trim(str_repeat('Prepare the quarterly overview for the example board ', 4));
+        $task = timeReportTask($this->admin, $project, $title);
+        timeReportRate('2026-09-15', 'EUR', '25.000');
+        timeReportEntry($task, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+
+        $html = (string) $this->get('/admin/time-report?client='.$client->id.'&period=last_month')->assertOk()->getContent();
+
+        $row = timeReportRowHtml($html, $task->reference);
+
+        expect(strlen($title))->toBeGreaterThan(190)
+            ->and($row)->toContain('line-clamp: 2')
+            ->and($row)->toContain('title="'.$task->reference.' · '.$title.'"');
+    });
+
+    it('shows markup in a title escaped inside the tooltip and never as a live tag', function (): void {
+        $client = timeReportClient('Example Client Alpha');
+        $project = timeReportProject($client, 'Example Project Web', 'WEB', ['hourly_rate' => '120']);
+        $tag = '<'.'b'.'>'.'Canary'.'<'.'/b'.'>';
+        $quote = '"'.' on'.'mouseover='.'"'.'x';
+        $task = timeReportTask($this->admin, $project, 'Review '.$tag.' '.$quote);
+        timeReportRate('2026-09-15', 'EUR', '25.000');
+        timeReportEntry($task, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+
+        $html = (string) $this->get('/admin/time-report?client='.$client->id.'&period=last_month')->assertOk()->getContent();
+
+        $row = timeReportRowHtml($html, $task->reference);
+
+        expect($row)->toContain('title="'.e($task->reference.' · Review '.$tag.' '.$quote).'"')
+            ->and($row)->not->toContain($tag)
+            ->and($row)->not->toContain(' on'.'mouseover='.'"');
     });
 });

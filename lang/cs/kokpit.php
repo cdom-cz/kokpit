@@ -770,10 +770,13 @@ return [
 
         'tree' => [
             'heading' => 'Přehled podle klientů a projektů',
+            // The four hour columns sit under one heading; Fakturovatelné stays in the tile line and the exports.
+            'groups' => [
+                'hours' => 'Hodiny',
+            ],
             'columns' => [
                 'name' => 'Název',
                 'worked' => 'Odpracováno',
-                'billable' => 'Fakturovatelné',
                 'non_billable' => 'Nefakturovatelné',
                 'billed' => 'Vyfakturováno',
                 'unbilled' => 'Nevyfakturováno',

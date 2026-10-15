@@ -24,8 +24,8 @@
         $splitLinks[$split] = $query === '' ? $actionUrl : $actionUrl.'?'.$query;
     }
 
-    // The tree as flat rows in display order: client (indent 0), project (1.5rem), task (3rem), then the day or user
-    // rows (4.5rem). A row knows the rows it controls and the rows above it, which decide whether it is shown.
+    // The tree as flat rows in display order: client (indent 0), project (1rem), task (2rem), then the day or user
+    // rows (3rem). A row knows the rows it controls and the rows above it, which decide whether it is shown.
     $rows = [];
     $walk = function (array $node, int $level, array $ancestors) use (&$walk, &$rows): string {
         $key = 'r'.count($rows);
@@ -54,7 +54,7 @@
         }
     }
 
-    $indents = [0 => '0', 1 => '1.5rem', 2 => '3rem', 3 => '4.5rem'];
+    $indents = [0 => '0', 1 => '1rem', 2 => '2rem', 3 => '3rem'];
     $leafLabel = static fn (string $label): string => $filters->split === 'day'
         ? CarbonImmutable::parse($label)->format(LocalisationServiceProvider::DATE_FORMAT)
         : $label;
@@ -62,10 +62,17 @@
     $fixedMarker = $summary['fixed'] > 0 ? '*' : '';
     $capText = number_format($report->leafCap, 0, ',', "\u{00A0}");
 
-    $cellStyle = 'padding: 0.5rem 1rem; text-align: right; white-space: nowrap; vertical-align: top; font-variant-numeric: tabular-nums;';
-    $headStyle = 'padding: 0.5rem 1rem; text-align: right; font-weight: 600; white-space: nowrap;';
+    // Numeric cells: 0.5rem padding, tabular figures; an amount line never breaks inside itself (nowrap sits on the
+    // line, not on the cell, so a badge may wrap below its amount). The money group is set off by a 1px rule.
+    $cellStyle = 'padding: 0.5rem; text-align: right; vertical-align: top; font-variant-numeric: tabular-nums;';
+    $headStyle = 'padding: 0.5rem; text-align: right; font-weight: 600; vertical-align: bottom; overflow-wrap: anywhere; hyphens: auto;';
+    $groupRule = 'border-left: 1px solid color-mix(in srgb, currentColor 12%, transparent);';
+    $lineStyle = 'white-space: nowrap;';
     $ruleStyle = 'border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);';
+    $hourColumns = ['worked', 'unbilled', 'billed', 'non_billable'];
     $mutedStyle = 'margin: 0; opacity: 0.8;';
+    // A name is clamped to two lines; the full text sits in the title attribute of the label.
+    $labelStyle = 'min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;';
 @endphp
 
 <x-filament-panels::page>
@@ -242,13 +249,28 @@
                     </div>
                 </x-slot>
 
-                {{-- The table is wider than a phone: it scrolls inside this wrapper, never the page. --}}
+                {{-- The table is wider than a phone: it scrolls inside this wrapper, never the page. A fixed layout gives the
+                     Název column the rest of the width (at least 20rem at the 64rem floor), so a title never wraps one word
+                     per line (UI-SPEC Amendment A-1). --}}
                 <div style="min-width: 0; max-width: 100%; overflow-x: auto;">
-                    <table style="width: 100%; min-width: 60rem; border-collapse: collapse;">
+                    <table style="width: 100%; min-width: 64rem; table-layout: fixed; border-collapse: collapse;">
+                        <colgroup>
+                            <col>
+                            @foreach ($hourColumns as $column)
+                                <col style="width: 6rem;">
+                            @endforeach
+                            <col style="width: 10rem;">
+                            <col style="width: 10rem;">
+                        </colgroup>
                         <thead>
                             <tr>
-                                <th scope="col" style="padding: 0.5rem 1rem; text-align: left; font-weight: 600;">{{ __('kokpit.report.tree.columns.name') }}</th>
-                                @foreach (['worked', 'billable', 'non_billable', 'billed', 'unbilled', 'amount', 'amount_czk'] as $column)
+                                <th scope="col" rowspan="2" style="padding: 0.5rem 1rem; text-align: left; font-weight: 600; vertical-align: bottom;">{{ __('kokpit.report.tree.columns.name') }}</th>
+                                <th scope="colgroup" colspan="4" style="padding: 0.5rem; text-align: right; font-weight: 600;">{{ __('kokpit.report.tree.groups.hours') }}</th>
+                                <th scope="col" rowspan="2" style="{{ $headStyle }} {{ $groupRule }}">{{ __('kokpit.report.tree.columns.amount') }}</th>
+                                <th scope="col" rowspan="2" style="{{ $headStyle }}">{{ __('kokpit.report.tree.columns.amount_czk') }}</th>
+                            </tr>
+                            <tr>
+                                @foreach ($hourColumns as $column)
                                     <th scope="col" style="{{ $headStyle }}">{{ __('kokpit.report.tree.columns.'.$column) }}</th>
                                 @endforeach
                             </tr>
@@ -307,33 +329,33 @@
                                                         style="width: 1.25rem; height: 1.25rem; flex: none; {{ $isOpen ? '' : 'display: none;' }}"
                                                         x-show="open.{{ $key }}"
                                                     />
-                                                    <span style="min-width: 0; overflow-wrap: anywhere; {{ $placeholder ? 'opacity: 0.7;' : '' }}">{{ $name }}</span>
+                                                    <span title="{{ $name }}" style="{{ $labelStyle }} {{ $placeholder ? 'opacity: 0.7;' : '' }}">{{ $name }}</span>
                                                 </button>
                                             @else
                                                 <span aria-hidden="true" style="display: inline-block; width: 1.5rem; flex: none;"></span>
-                                                <span style="min-width: 0; overflow-wrap: anywhere; {{ $placeholder ? 'opacity: 0.7;' : '' }}">{{ $name }}</span>
+                                                <span title="{{ $name }}" style="{{ $labelStyle }} {{ $placeholder ? 'opacity: 0.7;' : '' }}">{{ $name }}</span>
                                             @endif
 
                                             @if ($node['fixed_price'])
-                                                <x-filament::badge color="info" size="sm">{{ __('kokpit.report.tree.fixed_price.badge') }}</x-filament::badge>
+                                                <span style="flex: none;">
+                                                    <x-filament::badge color="info" size="sm">{{ __('kokpit.report.tree.fixed_price.badge') }}</x-filament::badge>
+                                                </span>
                                             @endif
                                         </div>
                                     </th>
-                                    <td style="{{ $cellStyle }}">{{ $hours($seconds['worked']) }}</td>
-                                    <td style="{{ $cellStyle }}">{{ $hours($seconds['billable']) }}</td>
-                                    <td style="{{ $cellStyle }}">{{ $hours($seconds['non_billable']) }}</td>
-                                    <td style="{{ $cellStyle }}">{{ $hours($seconds['billed']) }}</td>
-                                    <td style="{{ $cellStyle }}">{{ $hours($seconds['unbilled']) }}</td>
-                                    <td style="{{ $cellStyle }}">
+                                    @foreach ($hourColumns as $column)
+                                        <td style="{{ $cellStyle }}">{{ $hours($seconds[$column]) }}</td>
+                                    @endforeach
+                                    <td style="{{ $cellStyle }} {{ $groupRule }}">
                                         @forelse ($node['amounts'] as $amount)
-                                            <div>{{ $money($amount) }}</div>
+                                            <div style="{{ $lineStyle }}">{{ $money($amount) }}</div>
                                         @empty
                                             <span @if ($fixedTip !== null) title="{{ $fixedTip }}" @endif>{{ $dash }}</span>
                                         @endforelse
                                     </td>
                                     <td style="{{ $cellStyle }}">
                                         @if ($node['czk'] !== null)
-                                            {{ $money($node['czk']) }}
+                                            <span style="{{ $lineStyle }}">{{ $money($node['czk']) }}</span>
                                         @elseif ($node['czk_missing'] === 0)
                                             <span @if ($node['amounts'] === [] && $fixedTip !== null) title="{{ $fixedTip }}" @endif>{{ $dash }}</span>
                                         @endif
@@ -360,7 +382,7 @@
                                         data-effective-rate
                                         @if ($showWhen !== '') x-bind:hidden="{{ $showWhen }}" @endif
                                     >
-                                        <td colspan="8" style="padding: 0 1rem 0.75rem calc(1rem + {{ $indents[$level] }} + 1.75rem);">
+                                        <td colspan="7" style="padding: 0 1rem 0.75rem calc(1rem + {{ $indents[$level] }} + 1.75rem);">
                                             <div style="display: flex; flex-wrap: wrap; gap: 0.5rem 2.5rem;">
                                                 <div>
                                                     <p style="{{ $blockLabel }}">{{ __('kokpit.report.effective.fixed_price') }}</p>
@@ -412,20 +434,18 @@
                         <tfoot>
                             <tr style="{{ $ruleStyle }} font-weight: 600;">
                                 <th scope="row" style="padding: 0.5rem 1rem; text-align: left;">{{ __('kokpit.report.tree.total') }}</th>
-                                <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['worked']) }}</td>
-                                <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['billable']) }}</td>
-                                <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['non_billable']) }}</td>
-                                <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['billed']) }}</td>
-                                <td style="{{ $cellStyle }}">{{ $hours($footer['seconds']['unbilled']) }}</td>
-                                <td style="{{ $cellStyle }}">
+                                @foreach ($hourColumns as $column)
+                                    <td style="{{ $cellStyle }}">{{ $hours($footer['seconds'][$column]) }}</td>
+                                @endforeach
+                                <td style="{{ $cellStyle }} {{ $groupRule }}">
                                     @forelse ($footer['amounts'] as $amount)
-                                        <div>{{ $amount->format('cs') }}</div>
+                                        <div style="{{ $lineStyle }}">{{ $amount->format('cs') }}</div>
                                     @empty
                                         {{ $dash }}
                                     @endforelse
                                 </td>
                                 <td style="{{ $cellStyle }}">
-                                    {{ $money($footer['czk']) }}
+                                    <span style="{{ $lineStyle }}">{{ $money($footer['czk']) }}</span>
                                     @if ($footer['czk_missing'] > 0)
                                         <x-filament::badge color="warning" size="sm" :icon="Heroicon::OutlinedExclamationTriangle">{{ __('kokpit.report.tree.missing_rate.badge') }}</x-filament::badge>
                                     @endif
