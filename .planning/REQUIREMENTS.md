@@ -98,17 +98,17 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Exchange Rates
 
-- [x] **EX-01**: Daily scheduled, idempotent download of CNB rates, manual run and history backfill; weekend/holiday uses previous rate; per-unit amounts handled
-- [x] **EX-02**: Overview of rates and Admin alert when download fails; last known rate is used meanwhile
-- [x] **EX-03**: Conversion helper used for invoice and transaction CZK amounts; document rates are snapshots
+- [ ] **EX-01**: Daily scheduled, idempotent download of CNB rates, manual run and history backfill; weekend/holiday uses previous rate; per-unit amounts handled
+- [ ] **EX-02**: Overview of rates and Admin alert when download fails; last known rate is used meanwhile
+- [ ] **EX-03**: Conversion helper used for invoice and transaction CZK amounts; document rates are snapshots
 
 ### Reports
 
-- [x] **RE-01**: Time report per client and project for a period with breakdown by task, day and user
-- [x] **RE-02**: Billable/non-billable and billed/unbilled split with amounts in client currency and CZK
-- [x] **RE-03**: CSV/XLSX export (queued, delivered by notification) and PDF work report attachable to an invoice
-- [x] **RE-04**: Dashboard: today/this week hours, unbilled per client, overdue invoices, unresolved payments, upcoming task deadlines
-- [x] **RE-05**: Effective hourly rate shown for fixed-price projects
+- [ ] **RE-01**: Time report per client and project for a period with breakdown by task, day and user
+- [ ] **RE-02**: Billable/non-billable and billed/unbilled split with amounts in client currency and CZK
+- [ ] **RE-03**: CSV/XLSX export (queued, delivered by notification) and PDF work report attachable to an invoice
+- [ ] **RE-04**: Dashboard: today/this week hours, unbilled per client, overdue invoices, unresolved payments, upcoming task deadlines
+- [ ] **RE-05**: Effective hourly rate shown for fixed-price projects
 
 ### Documents
 
@@ -260,14 +260,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AP-03 | Backlog (999.1) | Deferred |
 | AP-04 | Phase 7 | Complete |
 | AP-05 | Phase 7 | Complete |
-| EX-01 | Phase 8 | Complete |
-| EX-02 | Phase 8 | Complete |
-| EX-03 | Phase 8 | Complete |
-| RE-01 | Phase 8 | Complete |
-| RE-02 | Phase 8 | Complete |
-| RE-03 | Phase 8 | Complete |
-| RE-04 | Phase 8 | Complete |
-| RE-05 | Phase 8 | Complete |
+| EX-01 | Phase 8 | Gaps Found |
+| EX-02 | Phase 8 | Gaps Found |
+| EX-03 | Phase 8 | Gaps Found |
+| RE-01 | Phase 8 | Gaps Found |
+| RE-02 | Phase 8 | Gaps Found |
+| RE-03 | Phase 8 | Gaps Found |
+| RE-04 | Phase 8 | Gaps Found |
+| RE-05 | Phase 8 | Gaps Found |
 | DO-01 | Phase 9 | Pending |
 | DO-02 | Phase 9 | Pending |
 | DO-03 | Phase 9 | Pending |
