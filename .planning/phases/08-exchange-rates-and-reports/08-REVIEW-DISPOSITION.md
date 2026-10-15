@@ -10,7 +10,7 @@ One row per finding of `08-REVIEW.md`. Default disposition is `open`; update a r
 
 | Finding | Severity | Title | Disposition |
 |---------|----------|-------|-------------|
-| CR-01 | critical | A client with money in two currencies crashes the report, the dashboard widget and the exports | open |
+| CR-01 | critical | A client with money in two currencies crashes the report, the dashboard widget and the exports | fixed: 08-23 (report and exports per currency), 08-24 (dashboard widget per currency), 08-25 (task money in the client currency lock) |
 | WR-01 | warning | A report file whose record ends failed or pending is never deleted from the private disk | open |
 | WR-02 | warning | A failed gap heal after a successful daily download raises a false rates alert | open |
 | WR-03 | warning | A legal client and project name can make the export request fail with a database error | open |
