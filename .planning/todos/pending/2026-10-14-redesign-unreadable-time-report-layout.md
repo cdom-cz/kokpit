@@ -25,3 +25,7 @@ Observed in the screenshot:
 TBD, needs a design proposal first (UI-SPEC amendment before code). Options to evaluate: a wider or sticky name column, single-line truncation with a tooltip, collapsible client/project levels (collapsed by default), fewer or grouped columns, clearer visual hierarchy per level.
 
 Relation to the plans: plan 08-14 owns the split child rows, toggles, badges and footnotes of this page, and 08-09 owns the reader and the page. Revisit the layout before or while 08-14 runs, then close the gap through phase verification (`/gsd-plan-phase 8 --gaps`).
+
+## Resolution
+
+The design is recorded in `.planning/phases/08-exchange-rates-and-reports/08-UI-SPEC.md` as Amendment A-1 (2026-10-15, decisions U-20 to U-25). It is built by plans 08-26 (full-width page, fixed layout, grouped columns, clamped names) and 08-27 (sticky Název column, level hierarchy, open depth by filters). This todo closes after the owner's visual pass at 1280px and at 375px (WINDOWS.md ledger 6). The file stays in pending until then.

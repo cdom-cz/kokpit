@@ -6,6 +6,7 @@ shadcn_initialized: false
 preset: none
 created: "2026-10-14"
 reviewed_at: "2026-10-14"
+amended: "2026-10-15"
 ---
 
 # Phase 08 — UI Design Contract
@@ -80,13 +81,13 @@ Inherited from 02, 05 and 06: declared values are multiples of 4, mapped to Fila
 |-------|-------|---------------------|
 | xs | 4px | Gap between a badge and its icon, gap between a stat label and value, gap between the two lines of a table cell (value and secondary line) |
 | sm | 8px | Gap between filter controls, gap between icon and text in a tree toggle, gap between rows of the tomorrow plan list, gap between a Partner task row's lines |
-| md | 16px | Padding of the summary tiles, padding of a Partner task row, gap between the filter strip and the summary, gap between a widget heading and its content |
-| lg | 24px | Indent per tree level in the report (client 0, project 24px, task 48px, day or user 72px), gap between the summary, the tree and the footnotes |
+| md | 16px | Padding of the summary tiles, padding of a Partner task row, gap between the filter strip and the summary, gap between a widget heading and its content, indent per tree level in the report (client 0, project 16px, task 32px, day or user 48px; Amendment A-1) |
+| lg | 24px | Gap between the summary, the tree and the footnotes |
 | xl | 32px | Page content horizontal padding, gap between page header and content (Filament stock) |
 | 2xl | 48px | Not used |
 | 3xl | 64px | Not used |
 
-Component sizes that are not spacing tokens (all multiples of 4): report tree minimum table width 960px (the wrapper scrolls, the page never does); tree toggle hit area at least 24 x 24px (WCAG 2.2 AA 2.5.8) with 8px to the next target; Partner task row left highlight border 4px; the Partner "Zkontrolovat úkol" button keeps Filament's stock small size.
+Component sizes that are not spacing tokens (all multiples of 4): report tree fixed table layout with a floor of 1024px (the wrapper scrolls, the page never does), Název column at least 320px, hour columns 96px, money columns 160px (Amendment A-1); tree toggle hit area at least 24 x 24px (WCAG 2.2 AA 2.5.8) with 8px to the next target; Partner task row left highlight border 4px; the Partner "Zkontrolovat úkol" button keeps Filament's stock small size.
 
 Exceptions and rules:
 
@@ -226,19 +227,46 @@ Applies to every new class; the registry and canary tests enforce it (FND-18, RE
 
 Identity that must hold on screen and in the export: Odpracováno = Vyfakturováno + Nevyfakturováno + Nefakturovatelné. Hours of fixed-price entries count in these hours but carry no amount; when any exist a footnote marker `*` appears on the amount lines and the footnote under the tree reads "* Hodiny projektů a úkolů s pevnou cenou jsou bez částky." Under the tiles, one gray 14px note: "Částky jsou vypočtené z aktuálních sazeb a z kurzu ČNB ke dni záznamu." (RESEARCH Pitfall 7). When CNB rates are missing for some entries the CZK line carries the `warning` badge "Chybí kurz" and the footnote "Součet v Kč nezahrnuje :count záznamů bez kurzu ČNB." The CZK total is never shown as zero in that case.
 
-**B3. Tree table** (inside `x-filament::section` heading "Přehled podle klientů a projektů"; a wrapper `min-width: 0; max-width: 100%; overflow-x: auto`, the table `min-width: 960px`). Header actions of the section, text buttons: "Rozbalit vše" and "Sbalit vše" (gray, `size="sm"`).
+**B3. Tree table** (inside `x-filament::section` heading "Přehled podle klientů a projektů"; Amendment A-1 of 2026-10-15 rewrote this surface: the page is full width, the table is a fixed layout with column floors; see "Amendment A-1" below and U-20 to U-25). Header actions of the section, text buttons: "Rozbalit vše" and "Sbalit vše" (gray, `size="sm"`).
 
-Columns, in order: Název (client, project, task; day or user for child rows), Odpracováno, Fakturovatelné, Nefakturovatelné, Vyfakturováno, Nevyfakturováno (all `H:MM`, right aligned), Částka (client currency, all billable hourly entries of the row, billed and unbilled; a client whose unbilled entries carry two currencies shows one line per currency), Částka v Kč.
+**Page and frame (A-1).** The report page uses the full content width, the same `Width::Full` pattern as the task board. Inside the scroll wrapper (`min-width: 0; max-width: 100%; overflow-x: auto`) the table is `width: 100%`, `min-width: 64rem` and `table-layout: fixed`. A `<colgroup>` gives four hour columns of 6rem and two money columns of 10rem; the Název column has no width and takes the rest, so it is never narrower than 20rem and grows with the screen. The wrapper scrolls on narrow screens; the page never scrolls sideways.
 
-- Levels and indent: client row (label 600, indent 0), project row (indent 24px), task row (indent 48px), then with "Po dnech" the day rows (`j. n. Y`, indent 72px, ordered by date ascending) or with "Podle uživatelů" the user rows (user name, indent 72px, alphabetical in Czech collation). The footer row "Celkem" sums the hour columns and shows the CZK total; the client-currency column in the footer lists one amount per currency.
-- Expand behaviour (Alpine, no server round trip): clients start **expanded one level** (their projects visible, tasks collapsed). Each expandable row has a toggle `<button>` (`OutlinedChevronRight`, `OutlinedChevronDown` when open) with `aria-expanded`, `aria-controls` and the accessible name "Rozbalit :name" / "Sbalit :name"; the whole Název cell is the hit area, at least 24px high. Enter and Space toggle. Collapsed child rows carry the `hidden` attribute (present in the HTML, not rendered). A leaf row has no toggle and a 24px spacer so names align.
-- Row content rules: an entry without project shows the project row "Bez projektu"; without task the task row "Bez úkolu" (gray, last in its group). Project rows of fixed-price projects carry the `info` badge "Pevná cena" after the name. Task names are `KEY-N · title` as plain text in the tree (the page is a report, not a navigation hub); client and project names are plain text.
+**Columns and header (A-1).** In order: Název (client, project, task; day or user for child rows) | Odpracováno, Nevyfakturováno, Vyfakturováno, Nefakturovatelné (the group "Hodiny", all `H:MM`, right aligned) | Částka (client currency, all billable hourly entries of the row, billed and unbilled; a client whose unbilled entries carry two currencies shows one line per currency) | Částka v Kč.
+
+- The header has two rows. Row one holds Název (rowspan 2), the group heading "Hodiny" (`scope="colgroup"`, colspan 4), Částka (rowspan 2) and Částka v Kč (rowspan 2). Row two holds the four hour columns.
+- The hour order follows the summary tiles. Fakturovatelné leaves the tree: it always equals Nevyfakturováno plus Vyfakturováno, because a billed entry is billable. It stays in the Odpracováno tile line and in the exports. Every row reads Odpracováno = Nevyfakturováno + Vyfakturováno + Nefakturovatelné.
+- A 1px rule (currentColor at 12%) separates the hour group from the money columns in the header, the body and the footer.
+- Numeric cells are right aligned with tabular figures and 0.5rem padding. An amount never breaks inside itself, but a money cell may wrap between an amount and its badge.
+
+**Název cell (A-1).**
+
+- Indent is 1rem per level: client 0, project 1rem, task 2rem, day or user 3rem. The chevron toggle and the leaf spacer stay as they are.
+- The label is clamped to two lines (webkit line clamp 2, overflow hidden, overflow-wrap anywhere) and carries its full text as a `title` tooltip (escaped).
+- A task label is the reference `KEY-N` in the secondary gray, then " · " and the title.
+- With the 20rem floor a long title wraps at word boundaries into at most two lines.
+
+**Sticky Název column (A-1).** The Název cells of the header, body and footer stick to the left edge (`position: sticky; left: 0`). Their background is opaque and matches the row in light and dark mode. The separator is a 1px inset box shadow, because a collapsed-table border does not travel with a sticky cell. Rules that need a dark-mode variant live in one scoped style block of the view with the class prefix `kokpit-report-`, the pattern of `timer-bar.blade.php`; the block holds static CSS only and no value from data (F-11).
+
+**Level hierarchy (A-1).** Four levels, not only indent and weight.
+
+- Client rows carry an opaque band over the whole row: gray-500 mixed at 8% into the white surface in light mode and into gray-900 in dark mode. They also get a top rule of currentColor at 24%, and label and figures at weight 600.
+- Project rows have label and figures at 600 and no band.
+- Task rows are at 400.
+- Day and user rows are at 400 in the secondary gray (gray-500 in light mode, gray-400 in dark mode).
+- The placeholders "Bez projektu" and "Bez úkolu" use the secondary gray with no opacity.
+- The gate records the measured contrast of the secondary gray in both modes; it must be at least 4.5:1 at 14px.
+
+Other tree rules:
+
+- Levels: client row, project row, task row, then with "Po dnech" the day rows (`j. n. Y`, ordered by date ascending) or with "Podle uživatelů" the user rows (user name, alphabetical in Czech collation). The footer row "Celkem" sums the hour columns and shows the CZK total; the client-currency column in the footer lists one amount per currency.
+- Expand behaviour (Alpine, no server round trip): the open depth follows the filters (A-1, replaces "clients start expanded one level"). No client chosen: every client row is visible and collapsed. A client chosen: the client is open and its projects are visible and collapsed. A project chosen: the client and project are open and the tasks are visible, while their day or user rows are collapsed. "Rozbalit vše" opens every level; "Sbalit vše" leaves only the client rows. The effective-rate row shows exactly when its project row does. Rows below a collapsed row carry `hidden` in the server HTML. Each expandable row has a toggle `<button>` (`OutlinedChevronRight`, `OutlinedChevronDown` when open) with `aria-expanded`, `aria-controls` and the accessible name "Rozbalit :name" / "Sbalit :name"; the whole Název cell is the hit area, at least 24px high. Enter and Space toggle. Collapsed child rows carry the `hidden` attribute (present in the HTML, not rendered). A leaf row has no toggle and a 24px spacer so names align.
+- Row content rules: an entry without project shows the project row "Bez projektu"; without task the task row "Bez úkolu" (secondary gray, last in its group). Project rows of fixed-price projects carry the `info` badge "Pevná cena" after the name. Task names are `KEY-N · title` as plain text in the tree (the page is a report, not a navigation hub); client and project names are plain text.
 - Amount cells: an hourly billable row shows the sum of its per-entry rounded amounts; a row with no hourly amount shows `—`. A fixed-price project or fixed-price task row shows `—` with the tooltip "Pevná cena: částka se nepočítá za záznam." and its hours in the hour columns (D-07). A CZK cell without a CNB rate shows the `warning` badge "Chybí kurz" with the tooltip "Pro měnu :currency a den :date není k dispozici kurz ČNB. Záznam není v součtu v Kč." A CZK client's amount is the same in both money columns, shown in both without conversion text.
 - A row lists its client-currency amount one line per currency, sorted by ISO code (CZK before EUR). A client normally has one currency: the client currency lock covers project money and, from plan 08-25 on, task money. A task rate stored in another currency before that lock existed (08-REVIEW.md CR-01) shows as a second line on its task, project and client rows and is never added to the first. Částka v Kč sums both, each entry converted at the CNB rate of its own day. The summary and the footer list per currency as before.
 - Row cap: at most **1 000** leaf rows (task, day or user rows) are rendered. Above that the section shows a `warning` callout "Zobrazeno prvních 1 000 řádků. Součty výše platí pro všechny záznamy. Zúžte období nebo použijte export." The cap is a value in `config/kokpit.php`. The summary, row totals and the footer are always computed over everything.
 - Empty (no entries in the filtered set): the summary tiles show `0:00` and `—`, the tree is replaced by the empty state in the Copywriting Contract; the filter strip stays usable.
 
-**B4. Effective rate block (fixed-price projects, RE-05, D-07, D-08)**: directly under the project row of a fixed-price project, one always-visible full-width detail row (not a toggle target) with three labelled values, each with its CZK equivalent on a second gray line:
+**B4. Effective rate block (fixed-price projects, RE-05, D-07, D-08)**: directly under the project row of a fixed-price project, one full-width detail row (not a toggle target, shown exactly when its project row is shown) with three labelled values, each with its CZK equivalent on a second gray line. Amendment A-1 spacing: the block sits at the project's name indent plus 1.5rem, with padding `0 1rem 0.5rem` and a gap of `0.5rem 2rem`. Secondary lines use the secondary gray or opacity 0.8, never stacked and never below 0.8; this replaces the off-scale values named by 08-UI-REVIEW.md Pillar 5.
 
 - "Pevná cena": the agreed fixed price in the client currency.
 - "Odpracováno na celém projektu": all worked hours of the whole project, billable or not, finished and running (`H:MM`), with the line "Za celou dobu projektu, ne jen za vybrané období."
@@ -364,7 +392,7 @@ Language and tone: Czech, formal address (vykání), sentence case, no exclamati
 | Filter error | "Datum Od nesmí být později než Do." |
 | Summary tiles | "Odpracováno", "Nevyfakturováno", "Vyfakturováno", "Nefakturovatelné"; lines "Fakturovatelné :duration", "Nefakturovatelné :duration", "v Kč: :czk", "Bez částky" |
 | Notes | "Částky jsou vypočtené z aktuálních sazeb a z kurzu ČNB ke dni záznamu."; "* Hodiny projektů a úkolů s pevnou cenou jsou bez částky."; "Součet v Kč nezahrnuje :count záznamů bez kurzu ČNB." |
-| Tree columns | "Název", "Odpracováno", "Fakturovatelné", "Nefakturovatelné", "Vyfakturováno", "Nevyfakturováno", "Částka", "Částka v Kč"; footer "Celkem" |
+| Tree columns | "Název", group "Hodiny" ("Odpracováno", "Nevyfakturováno", "Vyfakturováno", "Nefakturovatelné"), "Částka", "Částka v Kč"; footer "Celkem" (Amendment A-1: "Fakturovatelné" leaves the tree) |
 | Tree actions | "Rozbalit vše", "Sbalit vše"; toggle names "Rozbalit :name", "Sbalit :name" |
 | Group labels | "Bez projektu", "Bez úkolu"; badge "Pevná cena"; tooltip "Pevná cena: částka se nepočítá za záznam." |
 | Missing rate | badge "Chybí kurz"; tooltip "Pro měnu :currency a den :date není k dispozici kurz ČNB. Záznam není v součtu v Kč." |
@@ -464,14 +492,14 @@ Applicable state considerations resolved: 34 covered, 6 backstop, 2 unresolved (
 | partial | M10 (static-content) | ✅ covered | A running timer is counted at its elapsed time at render and says so in the description |
 | partial | M12 (list-collection) | ✅ covered | A task without a due date is not listed; a task due today shows "Dnes" without alarm colour |
 | partial | M13 (list-collection) | ✅ covered | A recurring template not yet materialised is shown with the "Opakuje se" marker, matching the planner page |
-| overflow | M5 (list-collection) | 🧪 backstop | The table scrolls horizontally inside its wrapper at 375px, the page never scrolls sideways; checked at the gate |
+| overflow | M5 (list-collection) | 🧪 backstop | The table scrolls horizontally inside its wrapper at 375px with the sticky Název column staying in view, the page never scrolls sideways; checked at the gate (owner visual pass, WINDOWS.md ledger 6) |
 | overflow | M12, M13, M14 titles (list-collection) | ✅ covered | A long title is one line with an ellipsis and the full text as tooltip (M14: wraps up to two lines); an unbroken word uses `overflow-wrap: anywhere` |
 | overflow | M9 (static-content) | ✅ covered | Long task titles wrap inside the Úkol cell; the header row repeats on every page and the summary is kept together |
 | zero-one-many | M13 (list-collection) | ✅ covered | Zero, one to three, and more than three tasks: the "Zobrazit dalších" button appears only above three and is collapsed on every load |
 | zero-one-many | M14 (list-collection) | ✅ covered | Zero, one and many `in_review` tasks: the badge count and the highlight follow the number; with none, no badge and no highlight |
 | zero-one-many | M4 (list-collection) | ✅ covered | Clients in several currencies list one amount line per currency in the summary and the footer |
 | long-text | M9 (static-content) | 🧪 backstop | Czech diacritics in DejaVu Sans are asserted by a PDF text check that skips when the binary is missing; checked visually at the gate |
-| long-text | M3, M5 client and project names (static-content) | 🧪 backstop | Names wrap in the select options and the Název cell; checked visually |
+| long-text | M3, M5 client and project names (static-content) | 🧪 backstop | Names clamp to two lines in the Název cell with the full text as a tooltip, and the select options still wrap; checked visually (owner visual pass, WINDOWS.md ledger 6) |
 | long-text | M17 (static-content) | 🧪 backstop | Stock bell rendering of the notification; checked visually |
 | error | M10 stale stats (static-content) | ⚠ unresolved | A timer stopped in another tab shows in the stat until the next event or the 60 s poll. Planner treats the assumption: no live ticking, maximum staleness 60 s |
 | long-text | M7, M8 export of a very large set (interactive-control) | ⚠ unresolved | A Livewire download holds the file in memory (RESEARCH Pitfall 10); exports of a freelancer's volume are accepted, a controller route is the fallback above about 20 MB |
@@ -536,8 +564,37 @@ This run had no human available to answer questions. Each item can be overturned
 | U-17 | The CSV delimiter is `;` with a decimal comma and BOM, configurable | RESEARCH A1 (Czech Excel behaviour, unverified) |
 | U-18 | Export bell links to the exports list, not to the file | D-09: download goes through the app with a permission check, no public URL |
 | U-19 | A report row or dashboard row may carry amounts in two currencies (legacy task rates); amounts stay per currency on every row and are never added | 08-VERIFICATION.md gap 1, 08-REVIEW.md CR-01 |
+| U-20 | The report page is full width and the tree is a fixed layout of at least 64rem with column floors (Název at least 20rem, hour columns 6rem, money columns 10rem) | Owner todo 2026-10-14, 08-UI-REVIEW.md Pillar 2, 08-VERIFICATION.md gap 2. Reversible; confirmed by the owner's visual pass (WINDOWS.md ledger 6) |
+| U-21 | The Fakturovatelné column leaves the tree and the hour order follows the summary tiles (Odpracováno, Nevyfakturováno, Vyfakturováno, Nefakturovatelné) | Owner todo 2026-10-14 (fewer or grouped columns); Fakturovatelné always equals Nevyfakturováno plus Vyfakturováno. Reversible; confirmed by the owner's visual pass (ledger 6) |
+| U-22 | Names clamp to two lines with the full text as a tooltip instead of single-line truncation | Owner todo 2026-10-14 (truncation with a tooltip); two lines keep more of a title readable for the same row height. Reversible; confirmed by the owner's visual pass (ledger 6) |
+| U-23 | The Název column is sticky through one scoped style block with the class prefix kokpit-report- | Owner todo 2026-10-14 (a wider or sticky name column); dark-mode variants need CSS, as in `timer-bar.blade.php`. Reversible; confirmed by the owner's visual pass (ledger 6) |
+| U-24 | The open depth of the tree follows the filters (no client: clients collapsed; client: its projects visible; project: its tasks visible) | Owner todo 2026-10-14 (collapsible levels, collapsed by default); 08-VERIFICATION.md gap 2. Reversible; confirmed by the owner's visual pass (ledger 6) |
+| U-25 | Four distinguishable levels (client band and rule, project weight, task regular, day or user in the secondary gray) with a 1rem indent per level | Owner todo 2026-10-14 (clearer hierarchy), 08-UI-REVIEW.md Pillar 2. Reversible; confirmed by the owner's visual pass (ledger 6) |
 
 Questions answered by upstream artifacts and not re-asked: CNB conversion date and download schedule (D-01 to D-04), rates overview actions (D-05), report shape and fixed-price handling (D-06 to D-08), export retention and PDF content rule (D-09, D-10), dashboard contents (D-11), Partner dashboard (D-12), Partner isolation, money and time rules, rate resolution order, the alert mechanism and the PDF engine (earlier phases).
+
+---
+
+## Amendment A-1 (2026-10-15): readable time report tree
+
+**Trigger.** The owner judged the time report unreadable (todo 2026-10-14, "Redesign unreadable time report layout"); 08-UI-REVIEW.md scored Pillar 2 (Visual hierarchy and layout) 2 of 4; 08-VERIFICATION.md gap 2 ("Admin can actually read the time report per client, project and task") is open. Root cause: every numeric cell was `white-space: nowrap`, the Název column had no width or floor and only got the leftover of an eight-column table, and the levels differed by indent and weight alone.
+
+**What changed, and what each statement said before.**
+
+| Statement | Before | After (this amendment) |
+|-----------|--------|------------------------|
+| B3 frame | Section-width wrapper, table with a 960px (60rem) floor and automatic layout | Full-width page, fixed layout with a 64rem floor and a colgroup; Název at least 20rem |
+| B3 columns | Eight columns: Název, Odpracováno, Fakturovatelné, Nefakturovatelné, Vyfakturováno, Nevyfakturováno, Částka, Částka v Kč | Seven columns in a grouped, two-row header: Název, group "Hodiny" (Odpracováno, Nevyfakturováno, Vyfakturováno, Nefakturovatelné), Částka, Částka v Kč |
+| B3 Název cell | Indent 24px per level, full label on any number of lines | Indent 1rem per level, two-line clamp with a title tooltip, sticky column |
+| B3 levels | Indent and weight only | Four levels: client band with a top rule, project at 600, task at 400, day or user in the secondary gray |
+| B3 open depth | Clients start expanded one level | The depth follows the filters |
+| B4 spacing | Off-scale values from the first build | Indent of the project name plus 1.5rem, padding `0 1rem 0.5rem`, gap `0.5rem 2rem`, secondary lines never below opacity 0.8 |
+| Spacing Scale | Tree indent in the lg row (24px); table floor 960px | Tree indent in the md row (16px); fixed layout floor 1024px, Název at least 320px, hour columns 96px, money columns 160px |
+| Copywriting, Tree columns | Eight column titles | The group heading "Hodiny" and the seven columns above |
+
+**Implementing plans.** 08-26 builds the full-width page, the fixed layout, the grouped header, the column order and the clamped names. 08-27 builds the scoped style block with the sticky Název column and the dark variants, the level hierarchy, the open depth by filters and the effective-rate block spacing.
+
+**Sign-off.** The amendment is confirmed by the owner's visual pass at 1280px and at 375px (WINDOWS.md ledger 6). The owner todo closes after that pass. Decisions U-20 to U-25 are listed under "Decisions and Assumptions".
 
 ---
 
