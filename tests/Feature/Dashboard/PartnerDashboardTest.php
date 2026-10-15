@@ -389,7 +389,7 @@ describe('nothing of time or money on the Partner dashboard', function (): void 
 
         $never = [
             'Odpracováno', 'Nevyfakturováno', 'Vyfakturováno', 'Fakturovatelné', 'Nefakturovatelné', 'Částka', 'Kč', 'EUR',
-            'sazba', 'Pevná cena', 'Kurz', 'Report času', 'Exporty', 'Plán na zítřek',
+            'sazba', 'Pevná cena', 'Kurz', 'Report času', 'Exporty', 'Plán na dnešek',
             // The durations of the two entries and every value of a rate or a price, as typed and as formatted.
             '3:17', '1:02', '7391', '7 391', '6482', '6 482', '48260', '48 260', '15930', '15 930',
         ];

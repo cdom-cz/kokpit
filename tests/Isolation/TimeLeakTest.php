@@ -32,7 +32,7 @@ use App\Filament\Resources\ProjectResource\RelationManagers\ProjectTimeEntriesRe
 use App\Filament\Resources\ProjectResource\Widgets\ProjectTimeStats;
 use App\Filament\Resources\ReportExportResource\Pages\ListReportExports;
 use App\Filament\Widgets\HoursStats;
-use App\Filament\Widgets\TomorrowPlan;
+use App\Filament\Widgets\TodayPlan;
 use App\Filament\Widgets\UnbilledPerClient;
 use App\Filament\Widgets\UpcomingDeadlines;
 use App\Livewire\TimeTracking\RecentEntriesPanel;
@@ -334,7 +334,7 @@ function leakPhase8Forbidden(): array
 {
     return [
         'Odpracováno', 'Nevyfakturováno', 'Vyfakturováno', 'Fakturovatelné', 'Nefakturovatelné', 'Částka', 'Kč', 'EUR',
-        'sazba', 'Pevná cena', 'Kurz', 'Report času', 'Exporty', 'Plán na zítřek',
+        'sazba', 'Pevná cena', 'Kurz', 'Report času', 'Exporty', 'Plán na dnešek',
     ];
 }
 
@@ -434,7 +434,7 @@ describe('Phase 8: the Partner and the rates, reports and dashboard surfaces', f
 
         foreach ([
             TimeReportPage::class, ListExchangeRates::class, ExchangeRateStats::class, ListReportExports::class,
-            HoursStats::class, UnbilledPerClient::class, UpcomingDeadlines::class, TomorrowPlan::class,
+            HoursStats::class, UnbilledPerClient::class, UpcomingDeadlines::class, TodayPlan::class,
         ] as $component) {
             Livewire::test($component)->assertForbidden();
         }

@@ -642,7 +642,7 @@ it('only names Phase 8 classes in CONTRIBUTING.md that exist in app/', function 
         'HoursStats' => 'App\Filament\Widgets\HoursStats',
         'UnbilledPerClient' => 'App\Filament\Widgets\UnbilledPerClient',
         'UpcomingDeadlines' => 'App\Filament\Widgets\UpcomingDeadlines',
-        'TomorrowPlan' => 'App\Filament\Widgets\TomorrowPlan',
+        'TodayPlan' => 'App\Filament\Widgets\TodayPlan',
         'PartnerTasks' => 'App\Filament\Widgets\PartnerTasks',
         'PartnerProjects' => 'App\Filament\Widgets\PartnerProjects',
         'TimeReportPage' => 'App\Filament\Pages\TimeReportPage',
