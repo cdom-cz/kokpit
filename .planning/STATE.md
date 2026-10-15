@@ -4,10 +4,10 @@ current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
 stopped_at: Completed 08-27-PLAN.md
-last_updated: "2026-10-15T06:17:54.275Z"
+last_updated: "2026-10-15T07:15:32.745Z"
 last_activity: 2026-10-15
 last_activity_desc: Phase 08 execution started
-state_head: 71922d25ee9170de601ae78a865757bf661615c6
+state_head: 54e2f88dbec73d9db9e44730f1ad7f70ed76f5af
 progress:
   total_phases: 12
   completed_phases: 7
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
 Plan: 27 of 27 complete
 Status: All plans executed; awaiting phase verification
-Last activity: 2026-10-15 — Completed 08-27-PLAN.md
+Last activity: 2026-10-15 - Completed quick task 261015-cdq: Show today's plan under the hours stats on the Admin dashboard
 
 Progress: [██████░░░░] 58%
 
@@ -497,6 +497,7 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-26: hour column headers use overflow-wrap anywhere and hyphens auto because 6rem is narrow for the longest titles; owner visual pass (ledger 6) decides
 - [Phase 08]: [08-27] openDepth from validated filters (0 no client, 1 client, 2 project) drives the initial tree state and the server hidden attributes
 - [Phase 08]: [08-27] Report levels styled by one static kokpit-report- style block (sticky Nazev column, client band, secondary gray) with dark variants; contrast of secondary gray computed 4.83:1 light, 6.99:1 dark, owner confirms in ledger 6
+- [Quick 261015-cdq]: the Admin dashboard shows the Signal plan of today (Europe/Prague day) instead of tomorrow, as TodayPlan (sort 15) right under HoursStats, full width, before the unbilled and deadlines row; still read-only, owner-scoped, three items visible, and it never materialises today's recurring templates (it shows them as not-yet-materialised items); a done task is struck through with Splněno; replaces the 'plan for tomorrow' part of Phase 08 D-11 on the owner's request
 
 ### Pending Todos
 
@@ -533,6 +534,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261012-tsk | Admin task list: order by priority and due date, hide Done by default, multi-state status filter | 2026-10-12 | — | [261012-tsk-task-list-priority-due-order-hide-done](./quick/261012-tsk-task-list-priority-due-order-hide-done/) |
 | 261014-cy9 | Prune activity log records older than one year via a daily scheduled task | 2026-10-14 | ab8ec7f | [261014-cy9-prune-activity-log-records-older-than-on](./quick/261014-cy9-prune-activity-log-records-older-than-on/) |
 | 261014-o13 | Hourly safety-net command that ends running time entries older than 48 hours | 2026-10-14 | 136bbce | [261014-o13-hourly-safety-net-command-that-ends-runn](./quick/261014-o13-hourly-safety-net-command-that-ends-runn/) |
+| 261015-cdq | Show today's plan under the hours stats on the Admin dashboard | 2026-10-15 | 54e2f88 | [261015-cdq-show-today-s-plan-under-the-hours-stats-](./quick/261015-cdq-show-today-s-plan-under-the-hours-stats-/) |
 
 ## Deferred Items
 
