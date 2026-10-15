@@ -72,6 +72,28 @@ final class TaskBilling extends KokpitModel implements PartnerIsolated
     protected $table = 'task_billing';
 
     /**
+     * Whether any task of the client, archived ones and tasks of archived
+     * projects included, holds an hourly rate or a fixed price. The client
+     * currency cannot change once this is true (the lock lives with
+     * UpdateClient), because that money is stored in the client currency. A
+     * stored zero counts as held; an estimate, a note or a billing type alone
+     * does not. Read by the Admin or inside a system run, like the model itself.
+     */
+    public static function clientHoldsMoney(string $clientId): bool
+    {
+        return self::query()
+            ->whereExists(static fn ($sub) => $sub->selectRaw('1')
+                ->from('tasks')
+                ->join('projects', 'projects.id', '=', 'tasks.project_id')
+                ->whereColumn('tasks.id', 'task_billing.task_id')
+                ->where('projects.client_id', $clientId))
+            ->where(static fn ($query) => $query
+                ->whereNotNull('hourly_rate_minor')
+                ->orWhereNotNull('fixed_price_minor'))
+            ->exists();
+    }
+
+    /**
      * @return BelongsTo<Task, $this>
      */
     public function task(): BelongsTo

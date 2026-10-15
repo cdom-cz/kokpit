@@ -6,7 +6,11 @@ use App\Domain\Clients\Actions\CreateClient as CreateClientAction;
 use App\Domain\Clients\Actions\UpdateClient as UpdateClientAction;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Actions\CreateProject as CreateProjectAction;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Money\Money;
+use App\Domain\Tasks\Actions\CreateTask as CreateTaskAction;
+use App\Domain\Tasks\Actions\UpdateTask as UpdateTaskAction;
+use App\Domain\Tasks\Models\Task;
 use App\Filament\Resources\ClientResource\Pages\CreateClient;
 use App\Filament\Resources\ClientResource\Pages\EditClient;
 use Filament\Facades\Filament;
@@ -69,6 +73,31 @@ function rulesProject(Client $client, array $overrides = []): void
         'billing_type' => 'hourly',
         ...$overrides,
     ]);
+}
+
+/**
+ * A project of the client without money of its own, written through the domain Action.
+ */
+function rulesBareProject(Client $client): Project
+{
+    return app(CreateProjectAction::class)->handle($client, [
+        'name' => 'Example rules project',
+        'key' => Canary::projectKey(),
+        'billing_type' => 'hourly',
+    ]);
+}
+
+/**
+ * A task of the project; the billing keys set its Admin-only overrides through UpdateTask.
+ *
+ * @param  array<string, mixed>  $billing
+ */
+function rulesTask(Project $project, array $billing = []): Task
+{
+    $admin = Canary::admin();
+    $task = app(CreateTaskAction::class)->handle($admin, $project, ['title' => 'Example rules task']);
+
+    return $billing === [] ? $task : app(UpdateTaskAction::class)->handle($admin, $task, $billing);
 }
 
 /**
@@ -135,6 +164,34 @@ describe('currency lock', function (): void {
     it('shows the lock on the currency field of the edit form', function (): void {
         $client = Client::factory()->create(['currency' => 'CZK', 'hourly_rate' => Money::ofMinor(100000, 'CZK')]);
         rulesProject($client, ['hourly_rate' => '850']);
+
+        Livewire::test(EditClient::class, ['record' => $client->getRouteKey()])
+            ->fillForm(['currency' => 'EUR', 'hourly_rate' => '45'])
+            ->call('save')
+            ->assertHasErrors(['data.currency']);
+
+        expect(Client::query()->findOrFail($client->id)->currency)->toBe('CZK');
+    });
+
+    it('refuses the change as a field error when a task holds an hourly rate and leaves the client unchanged', function (): void {
+        $client = Client::factory()->create(['currency' => 'CZK', 'hourly_rate' => Money::ofMinor(100000, 'CZK')]);
+        rulesTask(rulesBareProject($client), ['hourly_rate' => '900']);
+
+        $errors = rulesErrors(fn () => app(UpdateClientAction::class)->handle($client, rulesInput(['currency' => 'EUR', 'hourly_rate' => '45'])));
+
+        expect(array_keys($errors))->toBe(['currency'])
+            ->and($errors['currency'][0])->toBe(__('kokpit.clients.errors.currency_locked'));
+
+        $fresh = Client::query()->findOrFail($client->id);
+
+        expect($fresh->currency)->toBe('CZK')
+            ->and($fresh->hourly_rate_currency)->toBe('CZK')
+            ->and($fresh->hourly_rate_minor)->toBe(100000);
+    });
+
+    it('shows the task money lock on the currency field of the edit form', function (): void {
+        $client = Client::factory()->create(['currency' => 'CZK', 'hourly_rate' => Money::ofMinor(100000, 'CZK')]);
+        rulesTask(rulesBareProject($client), ['hourly_rate' => '900']);
 
         Livewire::test(EditClient::class, ['record' => $client->getRouteKey()])
             ->fillForm(['currency' => 'EUR', 'hourly_rate' => '45'])
