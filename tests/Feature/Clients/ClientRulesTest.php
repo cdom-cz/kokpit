@@ -8,9 +8,12 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Actions\CreateProject as CreateProjectAction;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Money\Money;
+use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Tasks\Actions\ArchiveTask as ArchiveTaskAction;
 use App\Domain\Tasks\Actions\CreateTask as CreateTaskAction;
 use App\Domain\Tasks\Actions\UpdateTask as UpdateTaskAction;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskBilling;
 use App\Filament\Resources\ClientResource\Pages\CreateClient;
 use App\Filament\Resources\ClientResource\Pages\EditClient;
 use Filament\Facades\Filament;
@@ -199,6 +202,99 @@ describe('currency lock', function (): void {
             ->assertHasErrors(['data.currency']);
 
         expect(Client::query()->findOrFail($client->id)->currency)->toBe('CZK');
+    });
+
+    it('refuses the change when the only money is on an archived task', function (): void {
+        $client = Client::factory()->create(['currency' => 'CZK', 'hourly_rate' => Money::ofMinor(100000, 'CZK')]);
+        $task = rulesTask(rulesBareProject($client), ['hourly_rate' => '900']);
+        app(ArchiveTaskAction::class)->handle(Canary::admin(), $task);
+
+        expect($task->refresh()->trashed())->toBeTrue()
+            ->and(array_keys(rulesErrors(fn () => app(UpdateClientAction::class)->handle($client, rulesInput(['currency' => 'EUR', 'hourly_rate' => '45'])))))
+            ->toBe(['currency'])
+            ->and(Client::query()->findOrFail($client->id)->currency)->toBe('CZK');
+    });
+
+    it('refuses the change when the task with money sits in an archived project', function (): void {
+        $client = Client::factory()->create(['currency' => 'CZK', 'hourly_rate' => Money::ofMinor(100000, 'CZK')]);
+        $project = rulesBareProject($client);
+        rulesTask($project, ['hourly_rate' => '900']);
+        $project->delete();
+
+        expect(array_keys(rulesErrors(fn () => app(UpdateClientAction::class)->handle($client, rulesInput(['currency' => 'EUR', 'hourly_rate' => '45'])))))
+            ->toBe(['currency']);
+    });
+
+    it('refuses the change for a task fixed price and for a task rate of zero', function (): void {
+        $fixed = Client::factory()->create(['currency' => 'CZK', 'hourly_rate' => Money::ofMinor(100000, 'CZK')]);
+        rulesTask(rulesBareProject($fixed), ['billing_type' => 'fixed_price', 'fixed_price' => '5000']);
+
+        $zero = Client::factory()->create(['currency' => 'CZK', 'hourly_rate' => Money::ofMinor(100000, 'CZK')]);
+        rulesTask(rulesBareProject($zero), ['hourly_rate' => '0']);
+
+        foreach ([$fixed, $zero] as $client) {
+            expect(array_keys(rulesErrors(fn () => app(UpdateClientAction::class)->handle($client, rulesInput(['currency' => 'EUR', 'hourly_rate' => '45'])))))
+                ->toBe(['currency']);
+        }
+    });
+
+    it('does not lock on a task that holds only an estimate, a note or a billing type', function (): void {
+        $client = Client::factory()->create(['currency' => 'CZK', 'hourly_rate' => Money::ofMinor(100000, 'CZK')]);
+        $project = rulesBareProject($client);
+        rulesTask($project, ['estimate_hours' => '3']);
+        rulesTask($project, ['internal_note' => 'Example internal note']);
+        rulesTask($project, ['billing_type' => 'non_billable']);
+
+        app(UpdateClientAction::class)->handle($client, rulesInput(['currency' => 'EUR', 'hourly_rate' => '45']));
+
+        expect(Client::query()->findOrFail($client->id)->currency)->toBe('EUR');
+    });
+
+    it('does not lock on money of another client task', function (): void {
+        $client = Client::factory()->create(['currency' => 'CZK', 'hourly_rate' => Money::ofMinor(100000, 'CZK')]);
+        rulesBareProject($client);
+        $other = Client::factory()->create(['currency' => 'CZK', 'hourly_rate' => Money::ofMinor(100000, 'CZK')]);
+        rulesTask(rulesBareProject($other), ['hourly_rate' => '900']);
+
+        app(UpdateClientAction::class)->handle($client, rulesInput(['currency' => 'EUR', 'hourly_rate' => '45']));
+
+        expect(Client::query()->findOrFail($client->id)->currency)->toBe('EUR');
+    });
+
+    it('unlocks the change once the task rate is cleared', function (): void {
+        $client = Client::factory()->create(['currency' => 'CZK', 'hourly_rate' => Money::ofMinor(100000, 'CZK')]);
+        $task = rulesTask(rulesBareProject($client), ['hourly_rate' => '900']);
+
+        expect(array_keys(rulesErrors(fn () => app(UpdateClientAction::class)->handle($client, rulesInput(['currency' => 'EUR', 'hourly_rate' => '45'])))))
+            ->toBe(['currency']);
+
+        app(UpdateTaskAction::class)->handle(Canary::admin(), $task, ['hourly_rate' => null]);
+
+        app(UpdateClientAction::class)->handle($client, rulesInput(['currency' => 'EUR', 'hourly_rate' => '45']));
+
+        $fresh = Client::query()->findOrFail($client->id);
+
+        expect($fresh->currency)->toBe('EUR')
+            ->and($fresh->hourly_rate_currency)->toBe('EUR');
+    });
+
+    it('reports task money held per client in a system run', function (): void {
+        $system = static fn (Closure $callback): mixed => app(PartnerContext::class)->runAsSystem($callback);
+        $client = Client::factory()->create(['currency' => 'CZK']);
+        $other = Client::factory()->create(['currency' => 'CZK']);
+        $project = rulesBareProject($client);
+
+        expect($system(static fn (): bool => TaskBilling::clientHoldsMoney($client->id)))->toBeFalse();
+
+        rulesTask($project, ['hourly_rate' => '900']);
+
+        expect($system(static fn (): bool => TaskBilling::clientHoldsMoney($client->id)))->toBeTrue()
+            ->and($system(static fn (): bool => TaskBilling::clientHoldsMoney($other->id)))->toBeFalse();
+    });
+
+    it('names projects and tasks in the refusal message', function (): void {
+        expect(__('kokpit.clients.errors.currency_locked'))
+            ->toBe('Měnu klienta nelze změnit, dokud některý jeho projekt nebo úkol, i archivovaný, má hodinovou sazbu nebo pevnou cenu.');
     });
 
     it('changes currency and rate together while no project holds money, keeping the rate in the client currency', function (): void {
