@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-26-PLAN.md
-last_updated: "2026-10-15T06:07:53.999Z"
+stopped_at: Completed 08-27-PLAN.md
+last_updated: "2026-10-15T06:17:54.275Z"
 last_activity: 2026-10-15
 last_activity_desc: Phase 08 execution started
-state_head: e8c02079ac61a77bae8b7df90d3d328def8848ff
+state_head: 71922d25ee9170de601ae78a865757bf661615c6
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 147
-  completed_plans: 146
+  completed_plans: 147
   percent: 58
 ---
 
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 26 of 27 complete (gap plan 08-27 remains)
-Status: Ready to execute
-Last activity: 2026-10-15 — Phase 08 execution started
+Plan: 27 of 27 complete
+Status: All plans executed; awaiting phase verification
+Last activity: 2026-10-15 — Completed 08-27-PLAN.md
 
 Progress: [██████░░░░] 58%
 
@@ -208,6 +208,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P24 | 15 min | 2 tasks | 3 files |
 | Phase 08 P25 | 25 min | 2 tasks | 4 files |
 | Phase 08 P26 | 5 min | 2 tasks | 7 files |
+| Phase 08 P27 | 25min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -494,6 +495,8 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-25: the client currency lock covers task_billing money (archived tasks included) in UpdateClient; clearing the task rate through UpdateTask is the way to unlock, no migration or trigger
 - [Phase 08]: 08-26: Amendment A-1 of 08-UI-SPEC.md fixes the readable report tree (full width, fixed 64rem layout, grouped Hodiny columns, two-line clamp with tooltip); decisions U-20 to U-25
 - [Phase 08]: 08-26: hour column headers use overflow-wrap anywhere and hyphens auto because 6rem is narrow for the longest titles; owner visual pass (ledger 6) decides
+- [Phase 08]: [08-27] openDepth from validated filters (0 no client, 1 client, 2 project) drives the initial tree state and the server hidden attributes
+- [Phase 08]: [08-27] Report levels styled by one static kokpit-report- style block (sticky Nazev column, client band, secondary gray) with dark variants; contrast of secondary gray computed 4.83:1 light, 6.99:1 dark, owner confirms in ledger 6
 
 ### Pending Todos
 
@@ -541,6 +544,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-15T06:07:53.220Z
-Stopped at: Completed 08-26-PLAN.md
+Last session: 2026-10-15T06:17:53.469Z
+Stopped at: Completed 08-27-PLAN.md
 Resume file: None
