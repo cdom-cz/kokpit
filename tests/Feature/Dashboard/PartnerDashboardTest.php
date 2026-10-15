@@ -395,7 +395,12 @@ describe('nothing of time or money on the Partner dashboard', function (): void 
         ];
 
         foreach ($never as $text) {
-            expect(str_contains($body, $text))->toBeFalse('On the Partner dashboard: '.$text);
+            // A number counts only as a whole token: four digits inside a random id or token of the page are no leak.
+            $found = ctype_digit($text[0])
+                ? preg_match('/(?<![0-9A-Za-z])'.preg_quote($text, '/').'(?![0-9A-Za-z])/', $body) === 1
+                : str_contains($body, $text);
+
+            expect($found)->toBeFalse('On the Partner dashboard: '.$text);
         }
     });
 
