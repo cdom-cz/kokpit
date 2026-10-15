@@ -13,6 +13,7 @@ use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
+use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Queries\TimeTotals;
@@ -998,8 +999,123 @@ describe('several currencies in one report', function (): void {
         expect($both->summary['worked'])->toBe(10800)
             ->and($onlyEur->summary['worked'])->toBe(3600)
             ->and($both->footer['seconds']['worked'])->toBe(10800)
-            ->and($both->tree[0]['amount']?->currency)->toBe('EUR')
-            ->and($both->tree[1]['amount']?->currency)->toBe('USD');
+            ->and(array_keys($both->tree[0]['amounts']))->toBe(['EUR'])
+            ->and(array_keys($both->tree[1]['amounts']))->toBe(['USD']);
+    });
+});
+
+describe('a client with money in two currencies', function (): void {
+    /**
+     * A CZK client whose task "Landing page" still carries a rate of 120.00 EUR, and a task "Contact form" without one.
+     *
+     * The legacy row stands for a rate stored while the client was still in EUR; the client currency lock of plan
+     * 08-25 prevents it for new data. Entries of 2026-09-15: 1:00 on Landing page (120.00 EUR, 3 000,00 Kč at 25.000)
+     * and 1:30 on Contact form (1 500,00 Kč at the client rate of 1 000 Kč). The CNB rate of EUR is stored unless
+     * `$withRate` is false.
+     *
+     * @return array{client: Client, project: Project, landing: Task, contact: Task}
+     */
+    function timeReportMixedClient(bool $withRate = true): array
+    {
+        $client = timeReportClient('Example Client Mixed', 'CZK', '1000');
+        $project = timeReportProject($client, 'Example Project Web', 'WEB');
+        $landing = timeReportTask(test()->admin, $project, 'Landing page');
+        $contact = timeReportTask(test()->admin, $project, 'Contact form');
+
+        timeReportSystem(static fn () => $landing->billing()->create([
+            'billing_type' => TaskBillingType::Inherit,
+            'hourly_rate' => Money::fromMajor('120', 'EUR'),
+        ]));
+
+        if ($withRate) {
+            timeReportRate('2026-09-15', 'EUR', '25.000');
+        }
+
+        timeReportEntry($landing, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+        timeReportEntry($contact, '2026-09-15 10:00:00', '2026-09-15 11:30:00');
+
+        return ['client' => $client, 'project' => $project, 'landing' => $landing, 'contact' => $contact];
+    }
+
+    it('opens the report of the client and of all clients with one amount line per currency', function (): void {
+        $set = timeReportMixedClient();
+
+        $text = timeReportText((string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent());
+        $all = timeReportText((string) $this->get('/admin/time-report?period=last_month')->assertOk()->getContent());
+
+        expect($text)
+            ->toContain('Example Client Mixed 2:30 2:30 0:00 0:00 2:30 '.timeReportMoney(150000, 'CZK').' '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(450000, 'CZK'))
+            ->toContain($set['landing']->reference.' · Landing page 1:00 1:00 0:00 0:00 1:00 '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(300000, 'CZK'))
+            ->toContain($set['contact']->reference.' · Contact form 1:30 1:30 0:00 0:00 1:30 '.timeReportMoney(150000, 'CZK').' '.timeReportMoney(150000, 'CZK'))
+            ->and($all)->toContain('Example Client Mixed');
+    });
+
+    it('keeps the amounts of a row per currency in the aggregate and sums only the CZK column', function (): void {
+        $set = timeReportMixedClient();
+
+        $report = TimeReport::build(ReportFilters::period('2026-09-01', '2026-09-30', $set['client']->id), TimerClock::now());
+
+        expect(array_keys($report->tree[0]['amounts']))->toBe(['CZK', 'EUR'])
+            ->and($report->tree[0]['amounts']['CZK']->minor)->toBe(150000)
+            ->and($report->tree[0]['amounts']['EUR']->minor)->toBe(12000)
+            ->and($report->tree[0]['czk']?->minor)->toBe(450000)
+            ->and(array_keys($report->tree[0]['children'][0]['amounts']))->toBe(['CZK', 'EUR']);
+    });
+
+    it('lists the part without a CNB rate as missing and names the currency, never as zero', function (): void {
+        timeReportMixedClient(withRate: false);
+
+        $html = (string) $this->get('/admin/time-report?period=last_month')->assertOk()->getContent();
+        $text = timeReportText($html);
+
+        expect($text)
+            ->toContain('Example Client Mixed 2:30 2:30 0:00 0:00 2:30 '.timeReportMoney(150000, 'CZK').' '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(150000, 'CZK').' Chybí kurz')
+            ->toContain('Součet v Kč nezahrnuje 1 záznamů bez kurzu ČNB.')
+            // A zero amount, not the tail of "1 500,00 Kč".
+            ->not->toMatch('/(?<!\d)0,00 Kč/u')
+            ->and($html)->toContain('title="Pro měnu EUR a den 15. 9. 2026 není k dispozici kurz ČNB. Záznam není v součtu v Kč."');
+    });
+
+    it('keeps the footer equal to the billable amounts of the summary, key by key', function (): void {
+        timeReportMixedClient();
+        $eur = timeReportClient('Example Client Alpha', 'EUR', '100');
+        $usd = timeReportClient('Example Client Gamma', 'USD', '80');
+        timeReportRate('2026-09-15', 'USD', '22.000');
+        timeReportEntry($eur, '2026-09-15 12:00:00', '2026-09-15 13:00:00');
+        timeReportEntry($usd, '2026-09-15 12:00:00', '2026-09-15 14:00:00');
+
+        $report = TimeReport::build(ReportFilters::period('2026-09-01', '2026-09-30'), TimerClock::now());
+
+        expect(array_keys($report->footer['amounts']))->toBe(['CZK', 'EUR', 'USD'])
+            ->and(array_map(static fn (Money $money): int => $money->minor, $report->footer['amounts']))
+            ->toBe(array_map(static fn (Money $money): int => $money->minor, $report->summary['amounts']['billable']))
+            ->and($report->footer['czk']?->minor)->toBe($report->summary['czk']['billable']?->minor)
+            // The clients come in Czech alphabetical order: Alpha, Gamma, Mixed.
+            ->and(array_keys($report->tree[0]['amounts']))->toBe(['EUR'])
+            ->and(array_keys($report->tree[1]['amounts']))->toBe(['USD'])
+            ->and(array_keys($report->tree[2]['amounts']))->toBe(['CZK', 'EUR']);
+    });
+
+    it('still shows the hours of a fixed-price task with dashes and the tooltip', function (): void {
+        $set = timeReportMixedClient();
+        $fixed = app(UpdateTask::class)->handle($this->admin, timeReportTask($this->admin, $set['project'], 'Retainer'), ['billing_type' => 'fixed_price', 'fixed_price' => '500']);
+        timeReportEntry($fixed, '2026-09-15 12:00:00', '2026-09-15 12:30:00');
+
+        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
+        $text = timeReportText($html);
+
+        expect($text)
+            ->toContain($fixed->reference.' · Retainer 0:30 0:30 0:00 0:00 0:30 — —')
+            ->toContain('Example Client Mixed 3:00 3:00 0:00 0:00 3:00 '.timeReportMoney(150000, 'CZK').' '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(450000, 'CZK'))
+            ->and($html)->toContain('title="Pevná cena: částka se nepočítá za záznam."');
+    });
+
+    it('lists both currencies on the day row of the task', function (): void {
+        $set = timeReportMixedClient();
+
+        $text = timeReportText((string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month&split=day')->assertOk()->getContent());
+
+        expect($text)->toContain('15. 9. 2026 1:00 1:00 0:00 0:00 1:00 '.timeReportMoney(12000, 'EUR').' '.timeReportMoney(300000, 'CZK'));
     });
 });
 

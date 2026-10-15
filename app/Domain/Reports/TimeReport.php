@@ -25,9 +25,11 @@ use Illuminate\Database\Eloquent\Builder;
  * shown. The CNB lookup is loaded once for the currencies the entries are priced in, so the number of queries
  * does not depend on the number of entries.
  *
- * Currencies are never added together: a client has one currency, the summary and the footer list one amount per
- * currency, and only the CZK figure sums across clients. An entry priced in a currency without a CNB list leaves
- * the CZK sum and is counted in `czk_missing`; the CZK figure is then a lower bound, never a silent zero.
+ * Currencies are never added together: a row may carry amounts in more than one currency (a client has one currency,
+ * but a task rate stored before the client currency lock covered tasks can leave a second one under it), and they are
+ * kept apart on every row, in the summary and in the footer. Only the CZK figure sums across currencies. An entry priced
+ * in a currency without a CNB list leaves the CZK sum and is counted in `czk_missing`; the CZK figure is then a lower
+ * bound, never a silent zero.
  *
  * The effective hourly rate of the fixed-price projects of the tree comes from {@see FixedPriceSummary} (RE-05): their
  * whole-project hours, never only those of the period, so it is formed beside the tree and not out of its rows.
@@ -36,7 +38,7 @@ use Illuminate\Database\Eloquent\Builder;
  * `TimeTotals`. Fixed-price hours are part of the billable hours and carry no amount (D-07).
  *
  * @phpstan-type Seconds array{worked: int, billable: int, non_billable: int, billed: int, unbilled: int, fixed: int}
- * @phpstan-type Node array{id: ?string, label: string, reference: ?string, currency: ?string, seconds: Seconds, amount: ?Money, czk: ?Money, czk_missing: int, czk_missing_day: ?string, fixed: bool, fixed_price: bool, children: list<array<string, mixed>>}
+ * @phpstan-type Node array{id: ?string, label: string, reference: ?string, currency: ?string, seconds: Seconds, amounts: array<string, Money>, czk: ?Money, czk_missing: int, czk_missing_day: ?string, czk_missing_currency: ?string, fixed: bool, fixed_price: bool, children: list<array<string, mixed>>}
  * @phpstan-type Summary array{worked: int, billable: int, non_billable: int, billed: int, unbilled: int, fixed: int, amounts: array{billed: array<string, Money>, unbilled: array<string, Money>, billable: array<string, Money>}, czk: array{billed: ?Money, unbilled: ?Money, billable: ?Money}, czk_missing: int, czk_missing_by_state: array{billed: int, unbilled: int}}
  * @phpstan-type Footer array{seconds: Seconds, czk: ?Money, amounts: array<string, Money>, czk_missing: int}
  * @phpstan-type FixedPrice array{price: Money, price_czk: Money|null, project_seconds: int, effective_rate: Money|null, effective_rate_czk: Money|null, conversion_day: string, czk_missing: bool}
@@ -76,8 +78,8 @@ final readonly class TimeReport
         ));
         $rates = RateBook::load($currencies, $filters->from, $filters->to);
 
-        // The root row spans clients of different currencies, so it sums hours and CZK but never a client-currency amount.
-        $total = new ReportBucket(null, '', sumsAmount: false);
+        // The root row spans clients of different currencies; its amounts are kept per currency like every other row's.
+        $total = new ReportBucket(null, '');
         $amounts = ['billed' => [], 'unbilled' => [], 'billable' => []];
         $czk = ['billed' => null, 'unbilled' => null, 'billable' => null];
         $missingByState = ['billed' => 0, 'unbilled' => 0];
@@ -150,16 +152,8 @@ final readonly class TimeReport
             'czk_missing_by_state' => $missingByState,
         ];
 
-        $footerAmounts = [];
-
-        foreach ($total->children as $client) {
-            if ($client->amount !== null && $client->currency !== null) {
-                $footerAmounts[$client->amount->currency] = isset($footerAmounts[$client->amount->currency])
-                    ? $footerAmounts[$client->amount->currency]->plus($client->amount)
-                    : $client->amount;
-            }
-        }
-
+        // The footer lists the billable amounts of the whole filtered set per currency, as the summary does.
+        $footerAmounts = $total->amounts;
         ksort($footerAmounts);
 
         $cap = max(1, (int) config('kokpit.report.max_rendered_rows'));
@@ -313,14 +307,28 @@ final readonly class TimeReport
             'reference' => $bucket->reference,
             'currency' => $bucket->currency,
             'seconds' => self::seconds($bucket),
-            'amount' => $bucket->amount,
+            'amounts' => self::sortedAmounts($bucket),
             'czk' => $bucket->czk,
             'czk_missing' => $bucket->czkMissing,
             'czk_missing_day' => $bucket->czkMissingDay,
+            'czk_missing_currency' => $bucket->czkMissingCurrency,
             'fixed' => $bucket->fixed > 0,
             'fixed_price' => $bucket->fixedPrice,
             'children' => $children,
         ];
+    }
+
+    /**
+     * The amounts of a row by ISO currency code, CZK before EUR.
+     *
+     * @return array<string, Money>
+     */
+    private static function sortedAmounts(ReportBucket $bucket): array
+    {
+        $amounts = $bucket->amounts;
+        ksort($amounts);
+
+        return $amounts;
     }
 
     /**

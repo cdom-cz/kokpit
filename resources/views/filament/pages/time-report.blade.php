@@ -268,8 +268,8 @@
                                     // Rows below a collapsed project start hidden; Alpine keeps the attribute in step afterwards.
                                     $startsHidden = $level >= 2;
                                     $showWhen = implode(' || ', array_map(static fn (string $above): string => '! open.'.$above, $row['ancestors']));
-                                    $missingTip = $node['czk_missing'] > 0 && $node['amount'] !== null
-                                        ? __('kokpit.report.tree.missing_rate.tooltip', ['currency' => $node['amount']->currency, 'date' => $dayText($node['czk_missing_day'])])
+                                    $missingTip = $node['czk_missing'] > 0 && $node['czk_missing_currency'] !== null
+                                        ? __('kokpit.report.tree.missing_rate.tooltip', ['currency' => $node['czk_missing_currency'], 'date' => $dayText($node['czk_missing_day'])])
                                         : null;
                                 @endphp
 
@@ -325,17 +325,17 @@
                                     <td style="{{ $cellStyle }}">{{ $hours($seconds['billed']) }}</td>
                                     <td style="{{ $cellStyle }}">{{ $hours($seconds['unbilled']) }}</td>
                                     <td style="{{ $cellStyle }}">
-                                        @if ($node['amount'] !== null)
-                                            {{ $money($node['amount']) }}
-                                        @else
+                                        @forelse ($node['amounts'] as $amount)
+                                            <div>{{ $money($amount) }}</div>
+                                        @empty
                                             <span @if ($fixedTip !== null) title="{{ $fixedTip }}" @endif>{{ $dash }}</span>
-                                        @endif
+                                        @endforelse
                                     </td>
                                     <td style="{{ $cellStyle }}">
                                         @if ($node['czk'] !== null)
                                             {{ $money($node['czk']) }}
                                         @elseif ($node['czk_missing'] === 0)
-                                            <span @if ($node['amount'] === null && $fixedTip !== null) title="{{ $fixedTip }}" @endif>{{ $dash }}</span>
+                                            <span @if ($node['amounts'] === [] && $fixedTip !== null) title="{{ $fixedTip }}" @endif>{{ $dash }}</span>
                                         @endif
 
                                         @if ($missingTip !== null)
