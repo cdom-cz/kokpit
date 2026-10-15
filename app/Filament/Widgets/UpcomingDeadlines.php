@@ -9,12 +9,10 @@ use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Tasks\Models\Task;
-use App\Domain\TimeTracking\Queries\TimesheetQuery;
-use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Concerns\CollapsibleDashboardWidget;
 use App\Filament\Concerns\EnforcesWidgetAccessRule;
 use App\Filament\Support\TaskColumns;
-use Carbon\CarbonImmutable;
+use App\Filament\Support\TaskDueDate;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\ViewColumn;
 use Filament\Tables\Table;
@@ -33,7 +31,8 @@ use Livewire\Attributes\On;
  * task without a due date is not a deadline. A task is overdue when its due day is before today in Prague, and the
  * row then says so three times: the date in danger text, the "Po termínu" badge with the warning triangle and the
  * line "Po termínu o :count dní", so colour is never the only carrier. A task due today says "Dnes" in semibold
- * without an alarm colour.
+ * without an alarm colour. The due cell is the shared view `filament.tasks.due-date-cell` ({@see TaskDueDate}), which
+ * the Admin task list uses too.
  *
  * The client and the project of a task are read through one eager-loaded chain, archived ones included: an archived
  * project or client does not make an open task unnamed.
@@ -68,24 +67,6 @@ final class UpcomingDeadlines extends TableWidget
     #[On('time-entry-deleted')]
     public function refreshAfterTimeChange(): void {}
 
-    /**
-     * How many whole days a due day lies before today; zero for today and for a day to come.
-     *
-     * @param  string  $due  the due day `Y-m-d`
-     * @param  string  $today  today in Prague `Y-m-d`
-     */
-    public static function overdueDays(string $due, string $today): int
-    {
-        if ($due >= $today) {
-            return 0;
-        }
-
-        $from = CarbonImmutable::createFromFormat('!Y-m-d', $due, 'UTC');
-        $to = CarbonImmutable::createFromFormat('!Y-m-d', $today, 'UTC');
-
-        return $from === null || $to === null ? 0 : (int) $from->diffInDays($to);
-    }
-
     public static function dashboardWidget(): DashboardWidget
     {
         return DashboardWidget::UpcomingDeadlines;
@@ -101,7 +82,7 @@ final class UpcomingDeadlines extends TableWidget
      */
     protected function collapsedSummary(): string
     {
-        $today = app(TimesheetQuery::class)->today(TimerClock::now());
+        $today = TaskDueDate::today();
 
         $overdue = Task::query()
             ->whereNotNull('tasks.due_date')
@@ -116,8 +97,6 @@ final class UpcomingDeadlines extends TableWidget
 
     public function table(Table $table): Table
     {
-        $today = app(TimesheetQuery::class)->today(TimerClock::now());
-
         return $table
             // The card carries the title; without this the table makes a heading from the class name.
             ->heading(null)
@@ -126,12 +105,9 @@ final class UpcomingDeadlines extends TableWidget
             ->columns([
                 ViewColumn::make('task')
                     ->label(__('kokpit.dashboard.deadlines.columns.task'))
-                    ->view('filament.widgets.upcoming-deadlines-cell')
-                    ->viewData(['kind' => 'task', 'today' => $today]),
-                ViewColumn::make('due_date')
-                    ->label(__('kokpit.dashboard.deadlines.columns.due'))
-                    ->view('filament.widgets.upcoming-deadlines-cell')
-                    ->viewData(['kind' => 'due', 'today' => $today]),
+                    ->view('filament.widgets.upcoming-deadlines-cell'),
+                TaskDueDate::column(TaskDueDate::CARD_PADDING)
+                    ->label(__('kokpit.dashboard.deadlines.columns.due')),
             ])
             ->paginated(false)
             ->poll('visible.60s')

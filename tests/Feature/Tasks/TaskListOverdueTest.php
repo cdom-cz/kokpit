@@ -6,11 +6,15 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Models\Task;
+use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ListPartnerTasks;
 use App\Filament\Resources\TaskResource\Pages\ListTasks;
+use App\Filament\Support\TaskColumns;
 use App\Filament\Support\TaskDueDate;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Tables\Columns\TextColumn;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -163,4 +167,42 @@ it('counts the overdue days only for an open, live task with a due day before to
         ->and(TaskDueDate::overdueDays('2026-10-14', '2026-10-14'))->toBe(0)
         ->and(TaskDueDate::overdueDays('2026-10-15', '2026-10-14'))->toBe(0)
         ->and(TaskDueDate::overdueDays('2026-10-12', '2026-10-14'))->toBe(2);
+});
+
+describe('the Partner task list', function (): void {
+    beforeEach(function (): void {
+        [$clientA] = Canary::twoClients();
+        $project = app(PartnerContext::class)->runAsSystem(static fn (): Project => app(CreateProject::class)->handle(Client::query()->findOrFail($clientA), [
+            'name' => Canary::canary('project'),
+            'key' => Canary::projectKey(),
+            'billing_type' => 'hourly',
+            'client_visible' => true,
+        ]));
+        $this->overdue = app(PartnerContext::class)->runAsSystem(static fn (): Task => Task::factory()->create([
+            'project_id' => $project->id,
+            'status' => ProjectStatus::InProgress,
+            'due_date' => '2026-10-11',
+        ]));
+        $this->partner = Canary::partnerFor($clientA);
+    });
+
+    it('shows a plain date for an overdue task, with no highlight', function (): void {
+        $this->actingAs($this->partner);
+
+        $body = (string) $this->get('/admin/my-tasks')->assertOk()->getContent();
+
+        expect($body)->toContain($this->overdue->title)
+            ->and(taskOverdueText($body))->toContain('11. 10. 2026')->not->toContain('Po termínu')
+            ->and($body)->not->toContain('var(--danger-600)');
+    });
+
+    it('keeps the due date a plain text column built by the pinned Partner builders', function (): void {
+        $this->actingAs($this->partner);
+
+        $column = Livewire::test(ListPartnerTasks::class)->instance()->getTable()->getColumn('due_date');
+        $names = array_map(static fn (TextColumn $column): string => $column->getName(), TaskColumns::partnerColumns());
+
+        expect($column)->toBeInstanceOf(TextColumn::class)
+            ->and($names)->toBe(TaskColumns::PARTNER_COLUMN_NAMES);
+    });
 });
