@@ -18,6 +18,7 @@ use App\Domain\Reports\TimeReport;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Pages\TimeReportPage;
@@ -914,5 +915,67 @@ describe('spreadsheet-safe cells in the workbook', function (): void {
         $rows = exportXlsxSummaryRows(exportXlsxSheets(exportBuildRequest(['client' => $set['client']->id, 'period' => 'last_month'], 'exportXlsx'))['Souhrn']);
 
         expect($rows)->not->toHaveKey('Poznámka');
+    });
+});
+
+describe('a client with money in two currencies', function (): void {
+    /**
+     * A CZK client whose task "Landing page" still carries a rate of 120.00 EUR, and a task "Contact form" without one.
+     *
+     * The legacy row stands for a rate stored while the client was still in EUR; the client currency lock of plan
+     * 08-25 prevents it for new data. Entries of 2026-09-15: 1:00 on Landing page (120.00 EUR, 3 000 CZK at 25.000)
+     * and 1:30 on Contact form (1 500 CZK at the client rate of 1 000 CZK).
+     *
+     * @return array{client: Client, project: Project}
+     */
+    function exportBuildMixedClient(): array
+    {
+        $client = exportBuildClient('Example Client Mixed', 'CZK', '1000');
+        $project = exportBuildProject($client, 'Example Project Web', 'WEB');
+        $landing = exportBuildTask(test()->admin, $project, 'Landing page');
+        $contact = exportBuildTask(test()->admin, $project, 'Contact form');
+
+        exportBuildSystem(static fn () => $landing->billing()->create([
+            'billing_type' => TaskBillingType::Inherit,
+            'hourly_rate' => Money::fromMajor('120', 'EUR'),
+        ]));
+
+        exportBuildRate('2026-09-15', 'EUR', '25.000');
+        exportBuildEntry($landing, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+        exportBuildEntry($contact, '2026-09-15 10:00:00', '2026-09-15 11:30:00');
+
+        return ['client' => $client, 'project' => $project];
+    }
+
+    it('ends the XLSX export Ready with the amount and the CZK of every entry and a summary row per currency', function (): void {
+        $set = exportBuildMixedClient();
+
+        $export = exportBuildRequest(['client' => $set['client']->id, 'period' => 'last_month'], 'exportXlsx');
+        $sheets = exportXlsxSheets($export);
+        $name = $this->admin->name;
+        $summary = exportXlsxSummaryRows($sheets['Souhrn']);
+
+        expect($export->status)->toBe(ReportExportStatus::Ready)
+            ->and($export->row_count)->toBe(2)
+            ->and($sheets['Záznamy'])->toHaveCount(3)
+            ->and($sheets['Záznamy'][1])->toBe(['2026-09-15', 'Example Client Mixed', 'Example Project Web', 'Landing page', $name, 3600.0, 1.0, 'ano', 'ne', 120.0, 'EUR', 3000.0])
+            ->and($sheets['Záznamy'][2])->toBe(['2026-09-15', 'Example Client Mixed', 'Example Project Web', 'Contact form', $name, 5400.0, 1.5, 'ano', 'ne', 1500.0, 'CZK', 1500.0])
+            ->and($summary['Částky po měnách'])->toBe([[1500.0, 'CZK'], [120.0, 'EUR']])
+            ->and($summary['Částka v Kč'][0][0])->toBe(4500.0);
+    });
+
+    it('ends the CSV export Ready with the own currency in every entry row', function (): void {
+        $set = exportBuildMixedClient();
+
+        $export = exportBuildRequest(['client' => $set['client']->id, 'period' => 'last_month'], 'exportCsv');
+        $rows = exportBuildRows($export);
+
+        expect($export->status)->toBe(ReportExportStatus::Ready)
+            ->and($export->row_count)->toBe(2)
+            ->and($rows)->toHaveCount(3)
+            ->and($rows[1][3])->toBe('Landing page')
+            ->and($rows[1][10])->toBe('EUR')
+            ->and($rows[2][3])->toBe('Contact form')
+            ->and($rows[2][10])->toBe('CZK');
     });
 });
