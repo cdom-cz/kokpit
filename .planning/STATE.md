@@ -4,10 +4,10 @@ current_phase: 08
 current_phase_name: Exchange Rates and Reports
 status: executing
 stopped_at: Completed 08-27-PLAN.md
-last_updated: "2026-10-15T07:15:32.745Z"
+last_updated: "2026-10-15T07:44:17.698Z"
 last_activity: 2026-10-15
 last_activity_desc: Phase 08 execution started
-state_head: 54e2f88dbec73d9db9e44730f1ad7f70ed76f5af
+state_head: 75a5c2e2da3fc2ac92e47d6a2b7fb5eb463ec195
 progress:
   total_phases: 12
   completed_phases: 7
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 Phase: 08 (Exchange Rates and Reports) — EXECUTING
 Plan: 27 of 27 complete
 Status: All plans executed; awaiting phase verification
-Last activity: 2026-10-15 - Completed quick task 261015-cdq: Show today's plan under the hours stats on the Admin dashboard
+Last activity: 2026-10-15 - Completed quick task 261015-cv5: Make dashboard widgets collapsible with the state saved per user in the database
 
 Progress: [██████░░░░] 58%
 
@@ -535,6 +535,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261014-cy9 | Prune activity log records older than one year via a daily scheduled task | 2026-10-14 | ab8ec7f | [261014-cy9-prune-activity-log-records-older-than-on](./quick/261014-cy9-prune-activity-log-records-older-than-on/) |
 | 261014-o13 | Hourly safety-net command that ends running time entries older than 48 hours | 2026-10-14 | 136bbce | [261014-o13-hourly-safety-net-command-that-ends-runn](./quick/261014-o13-hourly-safety-net-command-that-ends-runn/) |
 | 261015-cdq | Show today's plan under the hours stats on the Admin dashboard | 2026-10-15 | 54e2f88 | [261015-cdq-show-today-s-plan-under-the-hours-stats-](./quick/261015-cdq-show-today-s-plan-under-the-hours-stats-/) |
+| 261015-cv5 | Make dashboard widgets collapsible with the state saved per user in the database | 2026-10-15 | 75a5c2e | [261015-cv5-make-dashboard-widgets-collapsible-with-](./quick/261015-cv5-make-dashboard-widgets-collapsible-with-/) |
 
 ## Deferred Items
 
