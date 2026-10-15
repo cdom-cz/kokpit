@@ -302,6 +302,8 @@ class TimeReportPage extends Page
             ],
             'clients' => $this->clientOptions(),
             'projects' => $filters->clientId === null ? [] : $this->projectOptions($filters->clientId),
+            // How many tree levels start open: 0 without a client, 1 with a client, 2 with a project (UI-SPEC A-1, U-24).
+            'openDepth' => $filters->projectId !== null ? 2 : ($filters->clientId !== null ? 1 : 0),
         ];
     }
 

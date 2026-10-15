@@ -1278,3 +1278,103 @@ describe('the readable table', function (): void {
             ->and($row)->not->toContain(' on'.'mouseover='.'"');
     });
 });
+
+/**
+ * The tags of the tree rows (the `<tr>` with a `data-level`) of a rendered report, with their level, in order.
+ *
+ * @return list<array{level: string, tag: string, hidden: bool}>
+ */
+function timeReportLevelRows(string $html): array
+{
+    preg_match_all('/<tr\b[^>]*\sdata-level="([a-z]+)"[^>]*>/', $html, $matches, PREG_SET_ORDER);
+
+    return array_map(static fn (array $match): array => [
+        'level' => $match[1],
+        'tag' => $match[0],
+        'hidden' => preg_match('/\shidden(?=[\s>])/', $match[0]) === 1,
+    ], $matches);
+}
+
+describe('the tree opens as deep as the filters', function (): void {
+    it('shows one collapsed line per client when no client is chosen', function (): void {
+        timeReportRate('2026-09-15', 'EUR', '25.000');
+
+        foreach (['Example Client Alpha' => 'AAA', 'Example Client Beta' => 'BBB'] as $name => $key) {
+            $client = timeReportClient($name);
+            $project = timeReportProject($client, 'Example Project '.$key, $key);
+            $task = timeReportTask($this->admin, $project, 'Work item');
+            timeReportEntry($task, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+        }
+
+        $html = (string) $this->get('/admin/time-report?period=last_month')->assertOk()->getContent();
+        $toggles = timeReportToggles($html);
+        $rows = timeReportLevelRows($html);
+
+        expect($toggles)->toHaveCount(4)
+            ->and($html)->toContain('data-expand="Rozbalit Example Client Alpha"')
+            ->and($html)->toContain('data-expand="Rozbalit Example Client Beta"')
+            ->and(substr_count(implode('', $toggles), 'aria-expanded="true"'))->toBe(0)
+            ->and(preg_match('/aria-expanded="false"[^>]*aria-label="Rozbalit Example Client Alpha"/', $html))->toBe(1)
+            ->and(preg_match('/aria-expanded="false"[^>]*aria-label="Rozbalit Example Client Beta"/', $html))->toBe(1);
+
+        $clients = array_filter($rows, static fn (array $row): bool => $row['level'] === 'client');
+        $below = array_filter($rows, static fn (array $row): bool => in_array($row['level'], ['project', 'task'], true));
+
+        expect($clients)->toHaveCount(2)
+            ->and(array_filter($clients, static fn (array $row): bool => $row['hidden']))->toHaveCount(0)
+            ->and($below)->toHaveCount(4)
+            ->and(array_filter($below, static fn (array $row): bool => ! $row['hidden']))->toHaveCount(0);
+    });
+
+    it('opens the client and the project of a project filter and leaves the day rows hidden', function (): void {
+        $set = timeReportSplitArrangement();
+
+        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&project='.$set['project']->id.'&period=last_month&split=day')->assertOk()->getContent();
+        $toggles = timeReportToggles($html);
+        $rows = timeReportLevelRows($html);
+
+        expect($toggles)->toHaveCount(3)
+            ->and(preg_match('/aria-expanded="true"[^>]*aria-label="Sbalit Example Client Alpha"/', $html))->toBe(1)
+            ->and(preg_match('/aria-expanded="true"[^>]*aria-label="Sbalit Example Project Web"/', $html))->toBe(1);
+
+        $byLevel = static fn (string $level): array => array_values(array_filter($rows, static fn (array $row): bool => $row['level'] === $level));
+
+        expect($byLevel('client'))->toHaveCount(1)
+            ->and($byLevel('project'))->toHaveCount(1)
+            ->and($byLevel('task'))->toHaveCount(1)
+            ->and($byLevel('leaf'))->toHaveCount(3)
+            ->and(array_filter($byLevel('task'), static fn (array $row): bool => $row['hidden']))->toHaveCount(0)
+            ->and(array_filter($byLevel('leaf'), static fn (array $row): bool => ! $row['hidden']))->toHaveCount(0);
+    });
+
+    it('hides the effective-rate row with its project row on the all-clients page and shows it with a client', function (): void {
+        $client = timeReportClient('Example Client Alpha');
+        $project = timeReportProject($client, 'Example Project Fixed', 'FIX', ['billing_type' => 'fixed_price', 'hourly_rate' => null, 'fixed_price' => '5000']);
+        timeReportRate('2026-09-15', 'EUR', '25.000');
+        timeReportEntry($project, '2026-09-15 10:00:00', '2026-09-15 12:00:00');
+
+        $effective = static function (string $html): string {
+            preg_match('/<tr\b[^>]*\sdata-effective-rate[^>]*>/', $html, $match);
+
+            return $match[0] ?? '';
+        };
+
+        $all = $effective((string) $this->get('/admin/time-report?period=last_month')->assertOk()->getContent());
+        $one = $effective((string) $this->get('/admin/time-report?client='.$client->id.'&period=last_month')->assertOk()->getContent());
+
+        expect($all)->not->toBe('')
+            ->and(preg_match('/\shidden(?=[\s>])/', $all))->toBe(1)
+            ->and($one)->not->toBe('')
+            ->and(preg_match('/\shidden(?=[\s>])/', $one))->toBe(0);
+    });
+
+    it('keeps the client filter case: the client open, the project closed, two task rows hidden', function (): void {
+        $set = timeReportArrangement();
+
+        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
+        $rows = timeReportLevelRows($html);
+
+        expect(array_filter($rows, static fn (array $row): bool => $row['hidden']))->toHaveCount(2)
+            ->and(array_column(array_filter($rows, static fn (array $row): bool => $row['hidden']), 'level'))->toBe(['task', 'task']);
+    });
+});

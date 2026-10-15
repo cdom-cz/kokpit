@@ -42,17 +42,20 @@
         $walk($client, 0, []);
     }
 
-    // Clients start open one level; every row that has children can be toggled.
+    // The tree opens only as deep as the filters ask ($openDepth: 0 no client, 1 a client, 2 a project): a row is
+    // visible while its level is at most the depth and open while it has children and its level is below it.
+    // Every row that has children can be toggled.
     $initiallyOpen = [];
     $expandable = [];
     foreach ($rows as $row) {
         if ($row['children'] !== []) {
             $expandable[] = $row['key'];
-            if ($row['level'] === 0) {
+            if ($row['level'] < $openDepth) {
                 $initiallyOpen[$row['key']] = true;
             }
         }
     }
+    $levelNames = [0 => 'client', 1 => 'project', 2 => 'task', 3 => 'leaf'];
 
     $indents = [0 => '0', 1 => '1rem', 2 => '2rem', 3 => '3rem'];
     $leafLabel = static fn (string $label): string => $filters->split === 'day'
@@ -287,8 +290,8 @@
                                     $placeholder = in_array($level, [1, 2], true) && $node['id'] === null;
                                     $isExpandable = $row['children'] !== [];
                                     $isOpen = isset($initiallyOpen[$key]);
-                                    // Rows below a collapsed project start hidden; Alpine keeps the attribute in step afterwards.
-                                    $startsHidden = $level >= 2;
+                                    // Rows below the open depth start hidden; Alpine keeps the attribute in step afterwards.
+                                    $startsHidden = $level > $openDepth;
                                     $showWhen = implode(' || ', array_map(static fn (string $above): string => '! open.'.$above, $row['ancestors']));
                                     $missingTip = $node['czk_missing'] > 0 && $node['czk_missing_currency'] !== null
                                         ? __('kokpit.report.tree.missing_rate.tooltip', ['currency' => $node['czk_missing_currency'], 'date' => $dayText($node['czk_missing_day'])])
@@ -297,6 +300,7 @@
 
                                 <tr
                                     id="report-row-{{ $key }}"
+                                    data-level="{{ $levelNames[$level] }}"
                                     style="{{ $ruleStyle }}"
                                     @if ($startsHidden) hidden @endif
                                     @if ($showWhen !== '') x-bind:hidden="{{ $showWhen }}" @endif
@@ -380,6 +384,7 @@
                                     @endphp
                                     <tr
                                         data-effective-rate
+                                        @if ($startsHidden) hidden @endif
                                         @if ($showWhen !== '') x-bind:hidden="{{ $showWhen }}" @endif
                                     >
                                         <td colspan="7" style="padding: 0 1rem 0.75rem calc(1rem + {{ $indents[$level] }} + 1.75rem);">
