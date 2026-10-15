@@ -16,11 +16,11 @@ affects: [08-26 report column redesign]
 actuals:
   tokens: 3500
   tasks: 2
-  commits: 2
+  commits: 3
 
 plan_head_before: e197807036981549eee6fc0bd47866aa5ba98cd0
-plan_head_after: c30e8933e4fcc3ddb56871870b9121168c6c3313
-commits: 2
+plan_head_after: d281d1b0b13a41025c6f5e322c7538f2e983081c
+commits: 3
 
 tech-stack:
   added: []
@@ -94,6 +94,7 @@ status: complete
 
 1. **Task 1 (tracer): lock the client currency while a task holds a rate or a fixed price** - `77bb104` (fix)
 2. **Task 2: pin archived, fixed-price, zero, non-money and unlock cases; name tasks in the message** - `c30e893` (test)
+3. **Import order fix of the Task 2 test file (Pint ordered_imports)** - `d281d1b` (style)
 
 ## Verification
 
@@ -133,4 +134,4 @@ Ready for 08-26. Existing mixed data written before this lock is rendered per cu
 ## Self-Check: PASSED
 
 - FOUND: app/Domain/Tasks/Models/TaskBilling.php, app/Domain/Clients/Actions/UpdateClient.php, lang/cs/kokpit.php, tests/Feature/Clients/ClientRulesTest.php
-- FOUND commits: 77bb104, c30e893
+- FOUND commits: 77bb104, c30e893, d281d1b

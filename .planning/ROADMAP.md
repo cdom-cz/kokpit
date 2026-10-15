@@ -501,7 +501,7 @@ Plans:
   4. Admin requests a CSV or XLSX export that is built in the background and delivered by notification with spreadsheet-safe cells, and generates a multi-page PDF work report with correct Czech diacritics
   5. The dashboard shows today's and this week's hours, unbilled time per client and upcoming task deadlines
 
-**Plans:** 24/27 plans executed (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed; 5 gap-closure plans 08-23 to 08-27 from 08-VERIFICATION.md in 3 gap waves)
+**Plans:** 25/27 plans executed (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed; 5 gap-closure plans 08-23 to 08-27 from 08-VERIFICATION.md in 3 gap waves)
 **UI hint**: yes
 
 Plans:
@@ -546,7 +546,7 @@ Plans:
 **Gap wave 1**
 - [x] 08-23-PLAN.md — CR-01 report and exports: per-currency amounts on every tree row, footer equal to the summary, XLSX/CSV regression for a CZK client with one EUR task rate (gap 1)
 - [x] 08-24-PLAN.md — CR-01 dashboard: "Nevyfakturováno tento měsíc" lists amounts per currency, so the Admin landing page renders for a two-currency client (gap 1)
-- [ ] 08-25-PLAN.md — CR-01 root cause: the client currency lock covers task_billing money, archived tasks and projects included, with a message that names tasks (gap 1)
+- [x] 08-25-PLAN.md — CR-01 root cause: the client currency lock covers task_billing money, archived tasks and projects included, with a message that names tasks (gap 1)
 
 **Gap wave 2** *(blocked on gap wave 1 completion)*
 - [ ] 08-26-PLAN.md — UI-SPEC Amendment A-1 first, then a full-width report with a fixed-layout tree: Název floor 20rem, grouped and fewer columns, two-line names with tooltips (gap 2)
@@ -635,7 +635,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
-| 8. Exchange Rates and Reports | 24/27 | In Progress | - |
+| 8. Exchange Rates and Reports | 25/27 | In Progress | - |
 | 9. Documents and Finance | 0/0 | Not started | - |
 | 10. Invoicing | 0/0 | Not started | - |
 | 11. Stripe Payments | 0/0 | Not started | - |
