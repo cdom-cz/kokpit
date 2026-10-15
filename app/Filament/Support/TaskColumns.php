@@ -11,6 +11,7 @@ use App\Domain\Tasks\Models\Task;
 use Closure;
 use Filament\Infolists\Components\SpatieTagsEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Tables\Columns\Column;
 use Filament\Tables\Columns\SpatieTagsColumn;
 use Filament\Tables\Columns\TextColumn;
 use Illuminate\Database\Eloquent\Builder;
@@ -150,7 +151,7 @@ final class TaskColumns
     /**
      * List columns of the Admin task list.
      *
-     * @return list<TextColumn>
+     * @return list<Column>
      */
     public static function adminColumns(): array
     {
@@ -182,10 +183,9 @@ final class TaskColumns
             TextColumn::make('checklist_progress')
                 ->label(__('kokpit.tasks.checklist.progress'))
                 ->state(static fn (Task $record): ?string => self::checklistProgress($record)),
-            TextColumn::make('due_date')
+            // The cell shared with the "Nejbližší termíny" widget: the overdue highlight, "Dnes" and the empty value.
+            TaskDueDate::column(TaskDueDate::LIST_PADDING)
                 ->label(__('kokpit.tasks.fields.due_date'))
-                ->date()
-                ->placeholder(__('kokpit.tasks.empty_value'))
                 ->sortable(),
             SpatieTagsColumn::make('tags')
                 ->label(__('kokpit.tasks.fields.tags'))
