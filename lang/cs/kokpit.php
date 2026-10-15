@@ -179,7 +179,12 @@ return [
         'empty_description_partner' => 'Jakmile pro vás bude něco připraveno, objeví se to tady.',
 
         // The Admin dashboard (RE-04; D-11, UI-SPEC Surface E): hours, unbilled time, deadlines and the plan for today.
+        'collapse' => [
+            'store_failed' => 'Nastavení přehledu se nepodařilo uložit. Zkuste to prosím znovu.',
+        ],
         'hours' => [
+            'heading' => 'Odpracovaný čas',
+            'summary' => 'Dnes :duration',
             'today' => 'Dnes',
             'week' => 'Tento týden',
             'month' => 'Tento měsíc',
@@ -190,6 +195,7 @@ return [
         ],
         'unbilled' => [
             'heading' => 'Nevyfakturováno tento měsíc',
+            'summary' => ':duration h',
             'report_link' => 'Zobrazit v reportu',
             'columns' => [
                 'client' => 'Klient',
@@ -207,6 +213,8 @@ return [
         ],
         'deadlines' => [
             'heading' => 'Nejbližší termíny',
+            'summary_overdue' => '{1} :count úkol po termínu|[2,4] :count úkoly po termínu|[5,*] :count úkolů po termínu',
+            'summary_none' => 'Vše v termínu',
             'columns' => [
                 'task' => 'Úkol',
                 'due' => 'Termín',
@@ -219,6 +227,7 @@ return [
         ],
         'plan' => [
             'heading' => 'Plán na dnešek',
+            'summary' => 'Splněno :done z :count',
             'count' => '{0} :count úkolů|{1} :count úkol|[2,4] :count úkoly|[5,*] :count úkolů',
             'open_link' => 'Otevřít plán',
             'show_more' => 'Zobrazit dalších :count',
@@ -230,6 +239,7 @@ return [
         ],
         'partner_tasks' => [
             'heading' => 'Otevřené úkoly',
+            'summary' => 'Otevřeno: :count',
             'description' => 'Nejdřív úkoly, které čekají na vaši kontrolu.',
             'review_count' => 'Ke kontrole: :count',
             'review_button' => 'Zkontrolovat úkol',
@@ -239,6 +249,7 @@ return [
         ],
         'partner_projects' => [
             'heading' => 'Moje projekty',
+            'summary' => 'Projektů: :count',
             'empty_heading' => 'Zatím žádné projekty',
             'empty_description' => 'Projekty, které pro vás Kokpit zpřístupní, se objeví tady.',
         ],

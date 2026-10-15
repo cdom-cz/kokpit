@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Widgets;
 
+use App\Domain\Dashboard\Enums\DashboardWidget;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
@@ -12,6 +13,7 @@ use App\Domain\TimeTracking\Queries\TimesheetQuery;
 use App\Domain\TimeTracking\Support\DurationFormat;
 use App\Domain\TimeTracking\Support\PragueDay;
 use App\Domain\TimeTracking\Support\TimerClock;
+use App\Filament\Concerns\CollapsibleDashboardWidget;
 use App\Filament\Concerns\EnforcesWidgetAccessRule;
 use Carbon\CarbonImmutable;
 use Filament\Support\Icons\Heroicon;
@@ -35,12 +37,16 @@ use Livewire\Attributes\On;
 #[AccessRule(Audience::AdminOnly, reason: 'The Admin\'s own measured time is internal; a Partner never sees time, so the widget is refused at boot.')]
 final class HoursStats extends StatsOverviewWidget
 {
+    use CollapsibleDashboardWidget;
     use EnforcesWidgetAccessRule;
 
     protected static ?int $sort = 10;
 
     /** The page tests and the Admin's first look read the widget as rendered, not as a placeholder. */
     protected static bool $isLazy = false;
+
+    /** @var view-string */
+    protected string $view = 'filament.widgets.hours-stats';
 
     /** No live ticking: the figures are read again every 60 seconds, while the widget is visible (`wire:poll.visible.60s`). */
     protected ?string $pollingInterval = 'visible.60s';
@@ -57,6 +63,36 @@ final class HoursStats extends StatsOverviewWidget
     #[On('time-entry-saved')]
     #[On('time-entry-deleted')]
     public function refreshAfterTimeChange(): void {}
+
+    public static function dashboardWidget(): DashboardWidget
+    {
+        return DashboardWidget::HoursStats;
+    }
+
+    protected function cardHeading(): string
+    {
+        return __('kokpit.dashboard.hours.heading');
+    }
+
+    /**
+     * Today's total, as the "Dnes" stat shows it, for the header of the collapsed card.
+     */
+    protected function collapsedSummary(): ?string
+    {
+        $user = Auth::user();
+
+        if (! $user instanceof User) {
+            return null;
+        }
+
+        $now = TimerClock::now();
+        $timesheet = app(TimesheetQuery::class);
+        [$dayFrom, $dayTo] = $timesheet->dayRange($timesheet->today($now));
+
+        return __('kokpit.dashboard.hours.summary', [
+            'duration' => DurationFormat::hoursMinutes($timesheet->summary($user, $dayFrom, $dayTo, $now)['total']),
+        ]);
+    }
 
     /**
      * @return array<Stat>

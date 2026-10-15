@@ -6,6 +6,7 @@ use App\Domain\Api\Models\IdempotencyKey;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\Dashboard\Models\DashboardWidgetPreference;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
@@ -53,6 +54,7 @@ it('finds every model of the application, so the scan cannot pass vacuously', fu
         Client::class,
         ClientInvitation::class,
         Contact::class,
+        DashboardWidgetPreference::class,
         ExchangeRate::class,
         IdempotencyKey::class,
         Media::class,
