@@ -962,8 +962,9 @@ describe('the plan for today', function (): void {
         expect(adminDashText($one))->toContain('1 úkol')->not->toContain('1 úkolů')
             ->and(adminDashText($two))->toContain('2 úkoly')
             ->and(adminDashText($three))->toContain('3 úkoly')
-            ->and($three)->not->toContain('aria-expanded')
-            ->not->toContain('aria-controls')
+            // The card header has its own chevron with aria-expanded; the "show more" toggle binds `open`.
+            ->and($three)->not->toContain('open.toString()')
+            ->not->toContain('aria-controls="today-plan-more"')
             ->not->toContain('today-plan-more')
             ->not->toContain('Zobrazit dalších');
     });
@@ -1006,14 +1007,15 @@ describe('the plan for today', function (): void {
         expect($html)->toContain('Example &lt;b&gt;Bold&lt;/b&gt; plan')->not->toContain('<b>Bold</b>');
     });
 
-    it('is read-only: no form control but the toggle and no link but the one to the planner', function (): void {
+    it('is read-only: no form control but the card chevron and the toggle, and no link but the one to the planner', function (): void {
         adminDashPlanSix();
 
         $html = adminDashPlanHtml();
         preg_match_all('/<a\b[^>]*href="([^"]*)"/', $html, $links);
 
         expect($links[1])->toBe([url('/admin/signal')])
-            ->and(substr_count($html, '<button'))->toBe(1)
+            // The chevron of the card header and the "show more" toggle.
+            ->and(substr_count($html, '<button'))->toBe(2)
             ->and($html)->not->toContain('<input')
             ->not->toContain('<form')
             ->not->toContain('<select')
@@ -1047,7 +1049,7 @@ describe('the plan for today', function (): void {
             ->toContain('Plán si můžete připravit v nabídce Signal, Dnes a zítra.')
             ->toContain('Otevřít plán')
             ->and($html)->toContain('href="'.url('/admin/signal').'"')
-            ->not->toContain('aria-expanded');
+            ->not->toContain('open.toString()');
     });
 
     it('does not poll and runs no Signal action, so it never materialises today\'s template', function (): void {

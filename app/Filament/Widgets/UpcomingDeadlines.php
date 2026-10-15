@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Filament\Widgets;
 
+use App\Domain\Dashboard\Enums\DashboardWidget;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Queries\TimesheetQuery;
 use App\Domain\TimeTracking\Support\TimerClock;
+use App\Filament\Concerns\CollapsibleDashboardWidget;
 use App\Filament\Concerns\EnforcesWidgetAccessRule;
 use App\Filament\Support\TaskColumns;
 use Carbon\CarbonImmutable;
@@ -42,6 +44,7 @@ use Livewire\Attributes\On;
 #[AccessRule(Audience::AdminOnly, reason: 'The Admin\'s task deadlines across all clients are internal; a Partner is refused at boot and never sees the widget.')]
 final class UpcomingDeadlines extends TableWidget
 {
+    use CollapsibleDashboardWidget;
     use EnforcesWidgetAccessRule;
 
     /** The most rows the widget shows. */
@@ -51,6 +54,9 @@ final class UpcomingDeadlines extends TableWidget
 
     /** The page tests and the Admin's first look read the widget as rendered, not as a placeholder. */
     protected static bool $isLazy = false;
+
+    /** @var view-string */
+    protected string $view = 'filament.widgets.dashboard-table-widget';
 
     /**
      * A timer started or stopped, an entry saved or deleted anywhere: the table is read again on the render that
@@ -80,12 +86,41 @@ final class UpcomingDeadlines extends TableWidget
         return $from === null || $to === null ? 0 : (int) $from->diffInDays($to);
     }
 
+    public static function dashboardWidget(): DashboardWidget
+    {
+        return DashboardWidget::UpcomingDeadlines;
+    }
+
+    protected function cardHeading(): string
+    {
+        return __('kokpit.dashboard.deadlines.heading');
+    }
+
+    /**
+     * How many open tasks are overdue (the due day is before today in Prague), or that none is.
+     */
+    protected function collapsedSummary(): string
+    {
+        $today = app(TimesheetQuery::class)->today(TimerClock::now());
+
+        $overdue = Task::query()
+            ->whereNotNull('tasks.due_date')
+            ->where('tasks.status', '!=', ProjectStatus::Done->value)
+            ->where('tasks.due_date', '<', $today)
+            ->count();
+
+        return $overdue > 0
+            ? trans_choice('kokpit.dashboard.deadlines.summary_overdue', $overdue, ['count' => $overdue])
+            : __('kokpit.dashboard.deadlines.summary_none');
+    }
+
     public function table(Table $table): Table
     {
         $today = app(TimesheetQuery::class)->today(TimerClock::now());
 
         return $table
-            ->heading(__('kokpit.dashboard.deadlines.heading'))
+            // The card carries the title; without this the table makes a heading from the class name.
+            ->heading(null)
             ->query(fn (): Builder => $this->deadlines())
             ->defaultKeySort(false)
             ->columns([

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Filament\Widgets;
 
+use App\Domain\Dashboard\Enums\DashboardWidget;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\AccessRules;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Database\CzechCollation;
+use App\Filament\Concerns\CollapsibleDashboardWidget;
 use App\Filament\Concerns\EnforcesWidgetAccessRule;
 use App\Filament\Partner\Resources\PartnerProjectResource;
 use App\Filament\Support\ProjectColumns;
@@ -34,6 +36,7 @@ use Illuminate\Database\Eloquent\Builder;
 #[AccessRule(Audience::PartnerAllowed, reason: 'The Partner dashboard lists the own client\'s visible projects through the Partner scope with the pinned Partner columns; the Admin is refused by canView().')]
 final class PartnerProjects extends TableWidget
 {
+    use CollapsibleDashboardWidget;
     use EnforcesWidgetAccessRule;
 
     /** The most rows the widget shows. */
@@ -50,6 +53,9 @@ final class PartnerProjects extends TableWidget
 
     /** The page tests and the empty-state decision read the widget as rendered, not as a placeholder. */
     protected static bool $isLazy = false;
+
+    /** @var view-string */
+    protected string $view = 'filament.widgets.dashboard-table-widget';
 
     /** @var int|string|array<string, int|null> */
     protected int|string|array $columnSpan = 'full';
@@ -75,10 +81,29 @@ final class PartnerProjects extends TableWidget
         return Project::query()->count();
     }
 
+    public static function dashboardWidget(): DashboardWidget
+    {
+        return DashboardWidget::PartnerProjects;
+    }
+
+    protected function cardHeading(): string
+    {
+        return __('kokpit.dashboard.partner_projects.heading');
+    }
+
+    /**
+     * The number of visible projects: a count only, never a duration or an amount.
+     */
+    protected function collapsedSummary(): string
+    {
+        return __('kokpit.dashboard.partner_projects.summary', ['count' => self::visibleProjectCount()]);
+    }
+
     public function table(Table $table): Table
     {
         return $table
-            ->heading(__('kokpit.dashboard.partner_projects.heading'))
+            // The card carries the title; without this the table makes a heading from the class name.
+            ->heading(null)
             ->query(static fn (): Builder => CzechCollation::orderBy(
                 Project::query()->select(['id', ...self::FIELDS]),
                 'name',

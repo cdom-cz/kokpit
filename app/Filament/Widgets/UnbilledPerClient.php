@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Widgets;
 
+use App\Domain\Dashboard\Enums\DashboardWidget;
 use App\Domain\ExchangeRates\RateBook;
 use App\Domain\Reports\EntryAmounts;
 use App\Domain\Reports\Queries\TimeReportReader;
@@ -14,10 +15,10 @@ use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Queries\TimesheetQuery;
 use App\Domain\TimeTracking\Support\DurationFormat;
 use App\Domain\TimeTracking\Support\TimerClock;
+use App\Filament\Concerns\CollapsibleDashboardWidget;
 use App\Filament\Concerns\EnforcesWidgetAccessRule;
 use App\Filament\Pages\TimeReportPage;
 use Carbon\CarbonImmutable;
-use Filament\Actions\Action;
 use Filament\Support\Enums\Alignment;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -48,6 +49,7 @@ use Livewire\Attributes\On;
 #[AccessRule(Audience::AdminOnly, reason: 'Unbilled time, rates and amounts are finance data; a Partner is refused at boot and never sees the widget.')]
 final class UnbilledPerClient extends TableWidget
 {
+    use CollapsibleDashboardWidget;
     use EnforcesWidgetAccessRule;
 
     /** The most rows the widget shows. */
@@ -57,6 +59,9 @@ final class UnbilledPerClient extends TableWidget
 
     /** The page tests and the Admin's first look read the widget as rendered, not as a placeholder. */
     protected static bool $isLazy = false;
+
+    /** @var view-string */
+    protected string $view = 'filament.widgets.dashboard-table-widget';
 
     /**
      * The rows and the totals of the current render; computed once, read by the table and its footer.
@@ -88,16 +93,40 @@ final class UnbilledPerClient extends TableWidget
         return array_slice($this->compute()['rows'], 0, self::LIMIT);
     }
 
+    public static function dashboardWidget(): DashboardWidget
+    {
+        return DashboardWidget::UnbilledPerClient;
+    }
+
+    protected function cardHeading(): string
+    {
+        return __('kokpit.dashboard.unbilled.heading');
+    }
+
+    /**
+     * The hours of every client with unbilled time this month, from the memoised totals of the table.
+     */
+    protected function collapsedSummary(): string
+    {
+        return __('kokpit.dashboard.unbilled.summary', ['duration' => DurationFormat::hoursMinutes($this->compute()['totals']['seconds'])]);
+    }
+
+    /**
+     * @return array{label: string, url: string}
+     */
+    protected function headerLink(): array
+    {
+        return [
+            'label' => __('kokpit.dashboard.unbilled.report_link'),
+            'url' => TimeReportPage::getUrl(['period' => 'this_month']),
+        ];
+    }
+
     public function table(Table $table): Table
     {
         return $table
-            ->heading(__('kokpit.dashboard.unbilled.heading'))
-            ->headerActions([
-                Action::make('report')
-                    ->label(__('kokpit.dashboard.unbilled.report_link'))
-                    ->link()
-                    ->url(static fn (): string => TimeReportPage::getUrl(['period' => 'this_month'])),
-            ])
+            // The card carries the title and the report link; without this the table makes a heading from the class name.
+            ->heading(null)
             ->records(fn (): array => $this->rows())
             ->columns([
                 ViewColumn::make('client_name')

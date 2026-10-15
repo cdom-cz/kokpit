@@ -20,11 +20,12 @@
 @endphp
 
 <x-filament-widgets::widget>
-    <x-filament::section :description="$dateLabel">
-        <x-slot name="heading">
-            {{ __('kokpit.dashboard.plan.heading') }}
-        </x-slot>
-
+    <x-dashboard-card
+        :heading="$this->cardHeading()"
+        :description="$dateLabel"
+        :summary="$this->collapsedSummary()"
+        :collapsed="$this->collapsed"
+    >
         <x-slot name="afterHeader">
             <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem 1rem;">
                 <x-filament::badge color="gray" size="sm">
@@ -102,5 +103,5 @@
                 @endif
             </div>
         @endif
-    </x-filament::section>
+    </x-dashboard-card>
 </x-filament-widgets::widget>

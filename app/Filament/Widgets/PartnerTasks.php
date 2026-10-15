@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Filament\Widgets;
 
+use App\Domain\Dashboard\Enums\DashboardWidget;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\AccessRules;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Models\Task;
+use App\Filament\Concerns\CollapsibleDashboardWidget;
 use App\Filament\Concerns\EnforcesWidgetAccessRule;
 use App\Filament\Support\TaskColumns;
 use Filament\Widgets\Widget;
@@ -24,7 +26,8 @@ use Illuminate\Support\Collection;
  * client's client-visible, non-archived projects exist for a Partner, an archived task is gone
  * with the soft delete scope. Only the columns of `FIELDS` are read. No time, estimate, billing
  * or checklist column is selected, so none can reach the markup or the Livewire snapshot, and the
- * widget holds no public property: the rows are read again at every render.
+ * widget holds only the public `collapsed` flag (Locked, a scalar UI state, no data): the rows are
+ * read again at every render.
  *
  * Visible to a Partner with a client only; the Admin has no Partner dashboard, so a forged mount
  * is refused (the declaration admits the Admin, `canView()` narrows it).
@@ -32,6 +35,7 @@ use Illuminate\Support\Collection;
 #[AccessRule(Audience::PartnerAllowed, reason: 'The Partner dashboard lists the open tasks of the own client\'s visible projects through the Partner scope; the Admin is refused by canView().')]
 final class PartnerTasks extends Widget
 {
+    use CollapsibleDashboardWidget;
     use EnforcesWidgetAccessRule;
 
     /** The most rows the widget shows. */
@@ -90,6 +94,24 @@ final class PartnerTasks extends Widget
             ->with(['project:id,name', 'assignee:id,name'])
             ->limit(self::LIMIT)
             ->get();
+    }
+
+    public static function dashboardWidget(): DashboardWidget
+    {
+        return DashboardWidget::PartnerTasks;
+    }
+
+    protected function cardHeading(): string
+    {
+        return __('kokpit.dashboard.partner_tasks.heading');
+    }
+
+    /**
+     * The number of open tasks: a count only, never a duration or an amount.
+     */
+    protected function collapsedSummary(): string
+    {
+        return __('kokpit.dashboard.partner_tasks.summary', ['count' => self::openTaskCount()]);
     }
 
     /**

@@ -12,17 +12,18 @@
 @endphp
 
 <x-filament-widgets::widget>
-    <x-filament::section :description="__('kokpit.dashboard.partner_tasks.description')">
-        <x-slot name="heading">
-            <span style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem;">
-                {{ __('kokpit.dashboard.partner_tasks.heading') }}
-
-                @if ($reviewCount > 0)
-                    <x-filament::badge color="primary">
-                        {{ __('kokpit.dashboard.partner_tasks.review_count', ['count' => $reviewCount]) }}
-                    </x-filament::badge>
-                @endif
-            </span>
+    <x-dashboard-card
+        :heading="$this->cardHeading()"
+        :description="__('kokpit.dashboard.partner_tasks.description')"
+        :summary="$this->collapsedSummary()"
+        :collapsed="$this->collapsed"
+    >
+        <x-slot name="afterHeader">
+            @if ($reviewCount > 0)
+                <x-filament::badge color="primary">
+                    {{ __('kokpit.dashboard.partner_tasks.review_count', ['count' => $reviewCount]) }}
+                </x-filament::badge>
+            @endif
         </x-slot>
 
         @if ($tasks->isEmpty())
@@ -100,5 +101,5 @@
                 </div>
             @endif
         @endif
-    </x-filament::section>
+    </x-dashboard-card>
 </x-filament-widgets::widget>

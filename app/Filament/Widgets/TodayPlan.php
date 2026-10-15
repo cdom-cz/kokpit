@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Filament\Widgets;
 
+use App\Domain\Dashboard\Enums\DashboardWidget;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Signal\Queries\SignalDayReader;
 use App\Domain\Signal\Support\SignalCalendar;
+use App\Filament\Concerns\CollapsibleDashboardWidget;
 use App\Filament\Concerns\EnforcesWidgetAccessRule;
 use App\Filament\Pages\Signal\SignalTodayPage;
 use Filament\Widgets\Widget;
@@ -30,6 +32,7 @@ use Filament\Widgets\Widget;
 #[AccessRule(Audience::AdminOnly, reason: 'The planner is the personal working tool of one Admin; a Partner is refused at boot and never sees the plan.')]
 final class TodayPlan extends Widget
 {
+    use CollapsibleDashboardWidget;
     use EnforcesWidgetAccessRule;
 
     /** The items that stay visible when the rest is collapsed. */
@@ -39,6 +42,13 @@ final class TodayPlan extends Widget
 
     /** The page tests and the Admin's first look read the widget as rendered, not as a placeholder. */
     protected static bool $isLazy = false;
+
+    /**
+     * The items of the current render, read once for the summary and the view.
+     *
+     * @var list<array{title: string, category_label: string, category_colour: string, recurring: bool, done: bool}>|null
+     */
+    private ?array $items = null;
 
     /** @var view-string */
     protected string $view = 'filament.widgets.today-plan';
@@ -53,6 +63,10 @@ final class TodayPlan extends Widget
      */
     public function items(): array
     {
+        if ($this->items !== null) {
+            return $this->items;
+        }
+
         $reader = app(SignalDayReader::class);
         $day = SignalCalendar::today();
         $tasks = $reader->tasks($day);
@@ -79,7 +93,33 @@ final class TodayPlan extends Widget
             ];
         }
 
-        return $items;
+        return $this->items = $items;
+    }
+
+    public static function dashboardWidget(): DashboardWidget
+    {
+        return DashboardWidget::TodayPlan;
+    }
+
+    protected function cardHeading(): string
+    {
+        return __('kokpit.dashboard.plan.heading');
+    }
+
+    /**
+     * How many of today's items are done; none when there is no item (the count badge says so).
+     */
+    protected function collapsedSummary(): ?string
+    {
+        $items = $this->items();
+
+        if ($items === []) {
+            return null;
+        }
+
+        $done = count(array_filter($items, static fn (array $item): bool => $item['done']));
+
+        return __('kokpit.dashboard.plan.summary', ['done' => $done, 'count' => count($items)]);
     }
 
     /**
