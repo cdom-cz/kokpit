@@ -501,7 +501,7 @@ Plans:
   4. Admin requests a CSV or XLSX export that is built in the background and delivered by notification with spreadsheet-safe cells, and generates a multi-page PDF work report with correct Czech diacritics
   5. The dashboard shows today's and this week's hours, unbilled time per client and upcoming task deadlines
 
-**Plans:** 22/22 plans executed (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed)
+**Plans:** 22/27 plans executed (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed; 5 gap-closure plans 08-23 to 08-27 from 08-VERIFICATION.md in 3 gap waves)
 **UI hint**: yes
 
 Plans:
@@ -540,6 +540,19 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 - [x] 08-22-PLAN.md — Partner leak sweep, CONTRIBUTING and README updates, .gitignore review, phase gate, VALIDATION sign-off
+
+**Gap closure** *(from 08-VERIFICATION.md; gap plans waves 1-3, run with `/gsd-execute-phase 08 --gaps-only`)*
+
+**Gap wave 1**
+- [ ] 08-23-PLAN.md — CR-01 report and exports: per-currency amounts on every tree row, footer equal to the summary, XLSX/CSV regression for a CZK client with one EUR task rate (gap 1)
+- [ ] 08-24-PLAN.md — CR-01 dashboard: "Nevyfakturováno tento měsíc" lists amounts per currency, so the Admin landing page renders for a two-currency client (gap 1)
+- [ ] 08-25-PLAN.md — CR-01 root cause: the client currency lock covers task_billing money, archived tasks and projects included, with a message that names tasks (gap 1)
+
+**Gap wave 2** *(blocked on gap wave 1 completion)*
+- [ ] 08-26-PLAN.md — UI-SPEC Amendment A-1 first, then a full-width report with a fixed-layout tree: Název floor 20rem, grouped and fewer columns, two-line names with tooltips (gap 2)
+
+**Gap wave 3** *(blocked on gap wave 2 completion)*
+- [ ] 08-27-PLAN.md — Open depth by filter, four distinguishable levels, sticky Název column, on-scale effective-rate block; CR-01 disposition and validation map; gap-round gate (gap 2)
 
 ### Phase 9: Documents and Finance
 
