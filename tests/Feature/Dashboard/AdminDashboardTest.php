@@ -354,6 +354,51 @@ describe('the unbilled time of the month per client', function (): void {
             ->not->toContain('Nic k vyfakturování');
     });
 
+    it('equals the report per currency for a client with money in two currencies', function (): void {
+        $client = adminDashMixedClient();
+
+        $rows = Livewire::actingAs($this->admin)->test(UnbilledPerClient::class)->instance()->rows();
+        $report = TimeReport::build(ReportFilters::period('2026-10-01', '2026-10-31', $client->id), CarbonImmutable::now());
+
+        expect($rows)->toHaveCount(1)
+            ->and(array_keys($rows[0]['amounts']))->toBe(['CZK', 'EUR'])
+            ->and(array_keys($report->summary['amounts']['unbilled']))->toBe(['CZK', 'EUR'])
+            ->and($rows[0]['amounts']['CZK']->minor)->toBe($report->summary['amounts']['unbilled']['CZK']->minor)
+            ->and($rows[0]['amounts']['EUR']->minor)->toBe($report->summary['amounts']['unbilled']['EUR']->minor)
+            ->and($rows[0]['czk']?->minor)->toBe($report->summary['czk']['unbilled']?->minor)
+            ->and($rows[0]['czk']?->minor)->toBe(450000)
+            ->and($rows[0]['seconds'])->toBe($report->summary['unbilled']);
+    });
+
+    it('flags the part of a two-currency client without a CNB rate and never shows it as zero', function (): void {
+        adminDashMixedClient(withRate: false);
+
+        $text = adminDashText(adminDashUnbilledHtml());
+
+        expect($text)
+            ->toContain('Example Client Mixed 2:30 '.adminDashMoney(150000, 'CZK').' '.adminDashMoney(12000, 'EUR').' '.adminDashMoney(150000, 'CZK').' Chybí kurz')
+            ->toContain('Součet v Kč nezahrnuje 1 záznamů bez kurzu ČNB.')
+            // A zero amount, not the tail of "1 500,00 Kč".
+            ->not->toMatch('/(?<!\d)0,00 Kč/u');
+    });
+
+    it('keeps the order by hours with a two-currency client beside a single-currency one', function (): void {
+        adminDashMixedClient();
+        $euro = adminDashClient('Example Client Euro', 'EUR', '80');
+        adminDashRate('2026-10-06', 'EUR', '24.000');
+        adminDashClientEntry($euro, '2026-10-06 08:00:00', '2026-10-06 12:00:00');
+
+        $rows = Livewire::actingAs($this->admin)->test(UnbilledPerClient::class)->instance()->rows();
+        $text = adminDashText(adminDashUnbilledHtml());
+
+        // 4:00 at 80.00 EUR = 320.00 EUR = 7 680,00 Kč at 24.000.
+        expect(array_column($rows, 'client_name'))->toBe(['Example Client Euro', 'Example Client Mixed'])
+            ->and(array_keys($rows[0]['amounts']))->toBe(['EUR'])
+            ->and($text)
+            ->toContain('Example Client Euro 4:00 '.adminDashMoney(32000, 'EUR').' '.adminDashMoney(768000, 'CZK'))
+            ->toContain('Celkem 6:30 '.adminDashMoney(1218000, 'CZK'));
+    });
+
     it('equals the unbilled figures of the report for the same client and month', function (): void {
         $client = adminDashClientA();
 
