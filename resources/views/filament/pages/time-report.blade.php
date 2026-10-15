@@ -252,6 +252,19 @@
                     </div>
                 </x-slot>
 
+                {{-- Static rules only, no value from data inside (F-11). The prefix keeps them off the rest of the panel; the
+                     dark variants follow the pattern of the timer bar. A sticky cell needs an opaque background of its own. --}}
+                <style>
+                    .kokpit-report-name { position: sticky; left: 0; z-index: 1; background-color: var(--color-white); box-shadow: inset -1px 0 0 color-mix(in srgb, currentColor 12%, transparent); }
+                    .dark .kokpit-report-name { background-color: var(--gray-900); }
+                    .kokpit-report-client { border-top: 1px solid color-mix(in srgb, currentColor 24%, transparent); background-color: color-mix(in srgb, var(--gray-500) 8%, var(--color-white)); }
+                    .dark .kokpit-report-client { background-color: color-mix(in srgb, var(--gray-500) 8%, var(--gray-900)); }
+                    .kokpit-report-client > .kokpit-report-name { background-color: color-mix(in srgb, var(--gray-500) 8%, var(--color-white)); }
+                    .dark .kokpit-report-client > .kokpit-report-name { background-color: color-mix(in srgb, var(--gray-500) 8%, var(--gray-900)); }
+                    .kokpit-report-muted { color: var(--gray-500); }
+                    .dark .kokpit-report-muted { color: var(--gray-400); }
+                </style>
+
                 {{-- The table is wider than a phone: it scrolls inside this wrapper, never the page. A fixed layout gives the
                      Název column the rest of the width (at least 20rem at the 64rem floor), so a title never wraps one word
                      per line (UI-SPEC Amendment A-1). --}}
@@ -267,7 +280,7 @@
                         </colgroup>
                         <thead>
                             <tr>
-                                <th scope="col" rowspan="2" style="padding: 0.5rem 1rem; text-align: left; font-weight: 600; vertical-align: bottom;">{{ __('kokpit.report.tree.columns.name') }}</th>
+                                <th scope="col" rowspan="2" class="kokpit-report-name" style="padding: 0.5rem 1rem; text-align: left; font-weight: 600; vertical-align: bottom;">{{ __('kokpit.report.tree.columns.name') }}</th>
                                 <th scope="colgroup" colspan="4" style="padding: 0.5rem; text-align: right; font-weight: 600;">{{ __('kokpit.report.tree.groups.hours') }}</th>
                                 <th scope="col" rowspan="2" style="{{ $headStyle }} {{ $groupRule }}">{{ __('kokpit.report.tree.columns.amount') }}</th>
                                 <th scope="col" rowspan="2" style="{{ $headStyle }}">{{ __('kokpit.report.tree.columns.amount_czk') }}</th>
@@ -288,6 +301,12 @@
                                     $fixedTip = $node['fixed'] ? __('kokpit.report.tree.fixed_price.tooltip') : null;
                                     $name = $level === 3 ? $leafLabel($node['label']) : $node['label'];
                                     $placeholder = in_array($level, [1, 2], true) && $node['id'] === null;
+                                    // A task label is its reference in the secondary gray, then " · " and the title.
+                                    $reference = $level === 2 && is_string($node['reference']) && str_starts_with($name, $node['reference'].' · ') ? $node['reference'] : null;
+                                    $title = $reference === null ? $name : substr($name, strlen($reference.' · '));
+                                    // Four levels (UI-SPEC A-1): client and project at 600, task at 400, day or user at 400 in the secondary gray.
+                                    $weight = $level < 2 ? 600 : 400;
+                                    $rowClass = trim(($level === 0 ? 'kokpit-report-client' : '').' '.($level === 3 ? 'kokpit-report-muted' : ''));
                                     $isExpandable = $row['children'] !== [];
                                     $isOpen = isset($initiallyOpen[$key]);
                                     // Rows below the open depth start hidden; Alpine keeps the attribute in step afterwards.
@@ -301,13 +320,15 @@
                                 <tr
                                     id="report-row-{{ $key }}"
                                     data-level="{{ $levelNames[$level] }}"
-                                    style="{{ $ruleStyle }}"
+                                    @if ($rowClass !== '') class="{{ $rowClass }}" @endif
+                                    style="{{ $level === 0 ? '' : $ruleStyle }} font-weight: {{ $weight }};"
                                     @if ($startsHidden) hidden @endif
                                     @if ($showWhen !== '') x-bind:hidden="{{ $showWhen }}" @endif
                                 >
                                     <th
                                         scope="row"
-                                        style="padding: 0.5rem 1rem 0.5rem calc(1rem + {{ $indents[$level] }}); text-align: left; font-weight: {{ $level < 2 ? 600 : 400 }};"
+                                        class="kokpit-report-name"
+                                        style="padding: 0.5rem 1rem 0.5rem calc(1rem + {{ $indents[$level] }}); text-align: left; font-weight: {{ $weight }};"
                                     >
                                         <div style="display: flex; align-items: center; gap: 0.5rem; min-height: 1.5rem;">
                                             @if ($isExpandable)
@@ -333,11 +354,11 @@
                                                         style="width: 1.25rem; height: 1.25rem; flex: none; {{ $isOpen ? '' : 'display: none;' }}"
                                                         x-show="open.{{ $key }}"
                                                     />
-                                                    <span title="{{ $name }}" style="{{ $labelStyle }} {{ $placeholder ? 'opacity: 0.7;' : '' }}">{{ $name }}</span>
+                                                    <span title="{{ $name }}" @if ($placeholder) class="kokpit-report-muted" @endif style="{{ $labelStyle }}">@if ($reference !== null)<span class="kokpit-report-muted">{{ $reference }}</span> · {{ $title }}@else{{ $name }}@endif</span>
                                                 </button>
                                             @else
                                                 <span aria-hidden="true" style="display: inline-block; width: 1.5rem; flex: none;"></span>
-                                                <span title="{{ $name }}" style="{{ $labelStyle }} {{ $placeholder ? 'opacity: 0.7;' : '' }}">{{ $name }}</span>
+                                                <span title="{{ $name }}" @if ($placeholder) class="kokpit-report-muted" @endif style="{{ $labelStyle }}">@if ($reference !== null)<span class="kokpit-report-muted">{{ $reference }}</span> · {{ $title }}@else{{ $name }}@endif</span>
                                             @endif
 
                                             @if ($node['fixed_price'])
@@ -387,8 +408,8 @@
                                         @if ($startsHidden) hidden @endif
                                         @if ($showWhen !== '') x-bind:hidden="{{ $showWhen }}" @endif
                                     >
-                                        <td colspan="7" style="padding: 0 1rem 0.75rem calc(1rem + {{ $indents[$level] }} + 1.75rem);">
-                                            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem 2.5rem;">
+                                        <td colspan="7" style="padding: 0 1rem 0.5rem calc(1rem + {{ $indents[$level] }} + 1.5rem);">
+                                            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem 2rem;">
                                                 <div>
                                                     <p style="{{ $blockLabel }}">{{ __('kokpit.report.effective.fixed_price') }}</p>
                                                     <p style="{{ $blockValue }}">{{ $money($effective['price']) }}</p>
@@ -438,7 +459,7 @@
                         </tbody>
                         <tfoot>
                             <tr style="{{ $ruleStyle }} font-weight: 600;">
-                                <th scope="row" style="padding: 0.5rem 1rem; text-align: left;">{{ __('kokpit.report.tree.total') }}</th>
+                                <th scope="row" class="kokpit-report-name" style="padding: 0.5rem 1rem; text-align: left;">{{ __('kokpit.report.tree.total') }}</th>
                                 @foreach ($hourColumns as $column)
                                     <td style="{{ $cellStyle }}">{{ $hours($footer['seconds'][$column]) }}</td>
                                 @endforeach

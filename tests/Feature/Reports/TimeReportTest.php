@@ -1378,3 +1378,129 @@ describe('the tree opens as deep as the filters', function (): void {
             ->and(array_column(array_filter($rows, static fn (array $row): bool => $row['hidden']), 'level'))->toBe(['task', 'task']);
     });
 });
+
+/**
+ * The opening tag of the tree row that contains a name, with the markup up to its closing tag.
+ */
+function timeReportRowTagOf(string $html, string $needle): string
+{
+    preg_match('/<tr\b[^>]*>/', timeReportRowHtml($html, $needle), $tag);
+
+    return $tag[0] ?? '';
+}
+
+describe('the levels of the tree', function (): void {
+    it('keeps the dark-mode and sticky rules in one static style block with the report prefix', function (): void {
+        $set = timeReportArrangement();
+
+        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
+
+        preg_match_all('#<style>(.*?)</style>#s', $html, $blocks);
+        $report = array_values(array_filter($blocks[1], static fn (string $css): bool => str_contains($css, 'kokpit-report-')));
+
+        expect($report)->toHaveCount(1);
+
+        $css = $report[0];
+        $selectors = array_values(array_filter(array_map(
+            static fn (string $rule): string => trim(strstr($rule, '{', true) ?: ''),
+            explode('}', $css),
+        )));
+
+        expect($selectors)->not->toBeEmpty();
+
+        foreach ($selectors as $selector) {
+            expect($selector)->toMatch('/^(\.dark )?\.kokpit-report-/');
+        }
+
+        expect($css)->not->toContain('{{')
+            ->and($css)->not->toContain('{!!')
+            ->and($css)->toContain('position: sticky')
+            ->and($css)->toContain('.dark .kokpit-report-name')
+            ->and($css)->toContain('.dark .kokpit-report-client')
+            ->and($css)->toContain('.dark .kokpit-report-muted');
+    });
+
+    it('marks the client row with the band and the Název cells as sticky', function (): void {
+        $set = timeReportArrangement();
+
+        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
+
+        $clientTag = timeReportRowTagOf($html, 'Example Client Alpha');
+        $projectTag = timeReportRowTagOf($html, 'Example Project Web');
+
+        preg_match('#<thead.*?</thead>#s', $html, $head);
+        preg_match('#<tfoot.*?</tfoot>#s', $html, $foot);
+        preg_match_all('#<th\b[^>]*scope="row"[^>]*>#', $html, $rowHeads);
+
+        expect($clientTag)->toContain('kokpit-report-client')
+            ->and($projectTag)->not->toContain('kokpit-report-client')
+            ->and($head[0] ?? '')->toContain('kokpit-report-name')
+            ->and($foot[0] ?? '')->toContain('kokpit-report-name')
+            ->and($rowHeads[0])->not->toBeEmpty();
+
+        foreach ($rowHeads[0] as $tag) {
+            expect($tag)->toContain('kokpit-report-name');
+        }
+    });
+
+    it('sets the weights of the levels: client and project at 600, task at 400', function (): void {
+        $set = timeReportArrangement();
+
+        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
+
+        expect(timeReportRowTagOf($html, 'Example Client Alpha'))->toContain('font-weight: 600')
+            ->and(timeReportRowTagOf($html, 'Example Project Web'))->toContain('font-weight: 600')
+            ->and(timeReportRowTagOf($html, 'Landing page'))->toContain('font-weight: 400')
+            ->and(timeReportRowHtml($html, 'Landing page'))->toMatch('/<th\b[^>]*font-weight: 400[^>]*>/');
+    });
+
+    it('sets the day rows, the placeholders and the task reference in the secondary gray without opacity', function (): void {
+        $set = timeReportSplitArrangement();
+        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month&split=day')->assertOk()->getContent();
+
+        $day = timeReportRowTagOf($html, '15. 9. 2026');
+        $task = timeReportRowHtml($html, 'Landing page');
+
+        expect($day)->toContain('kokpit-report-muted')
+            ->and($task)->toContain('<span class="kokpit-report-muted">'.$set['task']->reference.'</span>')
+            ->and($task)->toContain('title="'.$set['task']->reference.' · Landing page"');
+
+        $client = timeReportClient('Example Client Beta');
+        $project = timeReportProject($client, 'Example Project Two', 'TWO');
+        $titled = timeReportTask($this->admin, $project, 'Second item');
+        timeReportEntry($project, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
+        timeReportEntry($client, '2026-09-15 10:00:00', '2026-09-15 10:30:00');
+        timeReportEntry($titled, '2026-09-15 11:00:00', '2026-09-15 11:30:00');
+
+        $html = (string) $this->get('/admin/time-report?client='.$client->id.'&period=last_month')->assertOk()->getContent();
+
+        expect(timeReportRowHtml($html, 'Bez projektu'))->toMatch('/<span title="Bez projektu"\s+class="kokpit-report-muted"/')
+            ->and(timeReportRowHtml($html, 'Bez úkolu'))->toMatch('/<span title="Bez úkolu"\s+class="kokpit-report-muted"/')
+            ->and($html)->not->toContain('opacity: 0.7');
+    });
+
+    it('prints the effective-rate block on the spacing scale and uses no opacity below 0.8', function (): void {
+        $client = timeReportClient('Example Client Alpha');
+        $project = timeReportProject($client, 'Example Project Fixed', 'FIX', ['billing_type' => 'fixed_price', 'hourly_rate' => null, 'fixed_price' => '5000']);
+        timeReportRate('2026-09-15', 'EUR', '25.000');
+        timeReportEntry($project, '2026-09-15 10:00:00', '2026-09-15 12:00:00');
+
+        $html = (string) $this->get('/admin/time-report?client='.$client->id.'&period=last_month')->assertOk()->getContent();
+
+        preg_match('#<tr\b[^>]*data-effective-rate.*?</tr>#s', $html, $block);
+        $block = $block[0] ?? '';
+
+        expect($block)->not->toBe('')
+            ->and($block)->toContain('padding: 0 1rem 0.5rem calc(1rem + 1rem + 1.5rem)')
+            ->and($block)->toContain('gap: 0.5rem 2rem')
+            ->and($block)->not->toContain('0.75rem')
+            ->and($block)->not->toContain('1.75rem')
+            ->and($block)->not->toContain('2.5rem');
+
+        preg_match_all('/opacity:\s*([0-9.]+)/', $html, $opacities);
+
+        foreach ($opacities[1] as $value) {
+            expect((float) $value)->toBeGreaterThanOrEqual(0.8);
+        }
+    });
+});
