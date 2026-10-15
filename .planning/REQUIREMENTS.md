@@ -106,7 +106,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 - [ ] **RE-01**: Time report per client and project for a period with breakdown by task, day and user
 - [ ] **RE-02**: Billable/non-billable and billed/unbilled split with amounts in client currency and CZK
-- [ ] **RE-03**: CSV/XLSX export (queued, delivered by notification) and PDF work report attachable to an invoice
+- [x] **RE-03**: CSV/XLSX export (queued, delivered by notification) and PDF work report attachable to an invoice
 - [ ] **RE-04**: Dashboard: today/this week hours, unbilled per client, overdue invoices, unresolved payments, upcoming task deadlines
 - [ ] **RE-05**: Effective hourly rate shown for fixed-price projects
 
@@ -265,7 +265,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EX-03 | Phase 8 | Gaps Found |
 | RE-01 | Phase 8 | Gaps Found |
 | RE-02 | Phase 8 | Gaps Found |
-| RE-03 | Phase 8 | Gaps Found |
+| RE-03 | Phase 8 | Complete |
 | RE-04 | Phase 8 | Gaps Found |
 | RE-05 | Phase 8 | Gaps Found |
 | DO-01 | Phase 9 | Pending |

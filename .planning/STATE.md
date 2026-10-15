@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 08
-current_phase_name: exchange-rates-and-reports
+current_phase_name: Exchange Rates and Reports
 status: executing
-stopped_at: Completed 08-22-PLAN.md
-last_updated: "2026-10-15T05:33:57.687Z"
-last_activity: 2026-10-14
+stopped_at: Completed 08-23-PLAN.md
+last_updated: "2026-10-15T05:47:20.202Z"
+last_activity: 2026-10-15
 last_activity_desc: Phase 08 execution started
-state_head: cba9edc169cafcf7aa07407ac0692aa97e49e0b6
+state_head: 35b6ea584ee2536867f4051c9362c193d61213c3
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 147
-  completed_plans: 142
+  completed_plans: 143
   percent: 58
 ---
 
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 ## Current Position
 
-Phase: 08 (exchange-rates-and-reports) — READY TO EXECUTE
-Plan: 22 of 22
+Phase: 08 (Exchange Rates and Reports) — EXECUTING
+Plan: 23 of 27 complete (gap plans 08-24 to 08-27 remain)
 Status: Ready to execute
-Last activity: 2026-10-14 — Phase 08 execution started
+Last activity: 2026-10-15 — Phase 08 execution started
 
 Progress: [██████░░░░] 58%
 
@@ -204,6 +204,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P20 | 33 min | 2 tasks | 8 files |
 | Phase 08 P21 | 35 min | 3 tasks | 6 files |
 | Phase 08 P22 | 14 min | 3 tasks | 7 files |
+| Phase 08 P23 | 30 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -485,6 +486,7 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-22: the canary task of every client is created in status in_review, so every isolation test that renders the Partner dashboard exercises the review highlight
 - [Phase 08]: 08-22: the Phase 8 hand-over note is replaced by four convention bullets in CONTRIBUTING (Exchange rates, Reports and exports, Work report, Dashboard); Phases 9 and 10 notes gain the converter, snapshot, work report and dashboard-band hand-over
 - [Phase 08]: 08-22: Filament 5 picks button text colour by contrast, so the primary buttons measure 5.29:1 (light) and 4.70:1 (dark), not the white-on-Amber 3.2:1 of UI-SPEC flag F-1
+- [Phase 08]: 08-23: ReportBucket and tree nodes keep amounts per ISO currency; the footer reads the root bucket so it equals the summary billable amounts per currency; BuildReportExport needed no change
 
 ### Pending Todos
 
@@ -532,6 +534,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T23:52:35.878Z
-Stopped at: Completed 08-22-PLAN.md
+Last session: 2026-10-15T05:47:15.231Z
+Stopped at: Completed 08-23-PLAN.md
 Resume file: None
