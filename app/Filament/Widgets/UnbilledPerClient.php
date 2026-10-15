@@ -35,8 +35,10 @@ use Livewire\Attributes\On;
  * {@see EntryAmounts}, and the rounded per-entry amounts are summed per client, so the CZK figure of a client equals
  * the "Nevyfakturováno" v Kč of the report for that client and month. The time of every user counts (it is about
  * billing, not about who worked), unlike the hours stats. Hours are always shown; an amount exists for hourly
- * entries only, so a client with fixed-price hours alone shows dashes and the "Pevná cena" badge. An entry without
- * a CNB rate leaves the CZK sum and raises the "Chybí kurz" marker; the sum is never shown as zero then.
+ * entries only, so a client with fixed-price hours alone shows dashes and the "Pevná cena" badge. The amounts of a
+ * client are listed per currency, because a task rate stored before the client currency lock covered tasks can leave a
+ * second currency under one client; they are never added across currencies, only the CZK figure is a sum. An entry
+ * without a CNB rate leaves the CZK sum and raises the "Chybí kurz" marker; the sum is never shown as zero then.
  *
  * Rows are ordered by hours, most first, at most ten. The footer "Celkem" counts every client, the rows below the
  * limit included, like the totals of the report that cover more than the rendered rows.
@@ -59,7 +61,7 @@ final class UnbilledPerClient extends TableWidget
     /**
      * The rows and the totals of the current render; computed once, read by the table and its footer.
      *
-     * @var array{rows: list<array{client_id: string, client_name: string, currency: string, seconds: int, amount: Money|null, czk: Money|null, czk_missing: bool, fixed: bool}>, totals: array{seconds: int, czk: Money|null, czk_missing: int, fixed: bool}}|null
+     * @var array{rows: list<array{client_id: string, client_name: string, currency: string, seconds: int, amounts: array<string, Money>, czk: Money|null, czk_missing: bool, fixed: bool}>, totals: array{seconds: int, czk: Money|null, czk_missing: int, fixed: bool}}|null
      */
     private ?array $computed = null;
 
@@ -79,7 +81,7 @@ final class UnbilledPerClient extends TableWidget
     /**
      * The clients with unbilled billable time this month, most hours first, at most {@see self::LIMIT}.
      *
-     * @return list<array{client_id: string, client_name: string, currency: string, seconds: int, amount: Money|null, czk: Money|null, czk_missing: bool, fixed: bool}>
+     * @return list<array{client_id: string, client_name: string, currency: string, seconds: int, amounts: array<string, Money>, czk: Money|null, czk_missing: bool, fixed: bool}>
      */
     public function rows(): array
     {
@@ -107,11 +109,11 @@ final class UnbilledPerClient extends TableWidget
                     ->state(static fn (array $record): string => DurationFormat::hoursMinutes($record['seconds']))
                     ->alignment(Alignment::End)
                     ->extraCellAttributes(['style' => 'font-variant-numeric: tabular-nums;']),
-                TextColumn::make('amount')
+                ViewColumn::make('amount')
                     ->label(__('kokpit.dashboard.unbilled.columns.amount'))
-                    ->state(static fn (array $record): string => $record['amount']?->format('cs') ?? (string) __('kokpit.time.empty_value'))
-                    ->alignment(Alignment::End)
-                    ->extraCellAttributes(['style' => 'font-variant-numeric: tabular-nums;']),
+                    ->view('filament.widgets.unbilled-per-client-cell')
+                    ->viewData(['kind' => 'amount'])
+                    ->alignment(Alignment::End),
                 ViewColumn::make('czk')
                     ->label(__('kokpit.dashboard.unbilled.columns.amount_czk'))
                     ->view('filament.widgets.unbilled-per-client-cell')
@@ -146,7 +148,7 @@ final class UnbilledPerClient extends TableWidget
     /**
      * Reads the entries of the current Prague month once and sums the unbilled billable ones per client.
      *
-     * @return array{rows: list<array{client_id: string, client_name: string, currency: string, seconds: int, amount: Money|null, czk: Money|null, czk_missing: bool, fixed: bool}>, totals: array{seconds: int, czk: Money|null, czk_missing: int, fixed: bool}}
+     * @return array{rows: list<array{client_id: string, client_name: string, currency: string, seconds: int, amounts: array<string, Money>, czk: Money|null, czk_missing: bool, fixed: bool}>, totals: array{seconds: int, czk: Money|null, czk_missing: int, fixed: bool}}
      */
     private function compute(): array
     {
@@ -188,7 +190,7 @@ final class UnbilledPerClient extends TableWidget
                 'client_name' => $entry->clientName,
                 'currency' => $entry->clientCurrency,
                 'seconds' => 0,
-                'amount' => null,
+                'amounts' => [],
                 'czk' => null,
                 'czk_missing' => false,
                 'fixed' => false,
@@ -198,7 +200,12 @@ final class UnbilledPerClient extends TableWidget
             $totalSeconds += $entry->seconds;
 
             if ($priced['amount'] !== null) {
-                $client['amount'] = $client['amount'] === null ? $priced['amount'] : $client['amount']->plus($priced['amount']);
+                // Per currency: a task rate stored before the client currency lock can leave a second currency
+                // under one client, and Money refuses to add two currencies.
+                $currency = $priced['amount']->currency;
+                $client['amounts'][$currency] = isset($client['amounts'][$currency])
+                    ? $client['amounts'][$currency]->plus($priced['amount'])
+                    : $priced['amount'];
             }
 
             if ($priced['czk'] !== null) {
@@ -218,6 +225,11 @@ final class UnbilledPerClient extends TableWidget
 
             $clients[$entry->clientId] = $client;
         }
+
+        foreach ($clients as &$row) {
+            ksort($row['amounts']);
+        }
+        unset($row);
 
         $rows = array_values($clients);
 

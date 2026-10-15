@@ -14,6 +14,8 @@ use App\Domain\Shared\Money\Money;
 use App\Domain\Signal\Enums\SignalCategory;
 use App\Domain\Signal\Models\SignalRecurringTask;
 use App\Domain\Signal\Models\SignalTask;
+use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Widgets\HoursStats;
@@ -259,6 +261,66 @@ describe('the hours of the Admin', function (): void {
 
 describe('the unbilled time of the month per client', function (): void {
     /**
+     * A CZK client at 1 000 Kč an hour whose task "Landing page" still carries a rate of 120.00 EUR, and a task
+     * "Contact form" without one. The legacy row stands for a rate stored while the client was still in EUR; the
+     * client currency lock of plan 08-25 prevents it for new data. Entries of 2026-10-05: 1:00 on Landing page
+     * (120.00 EUR, 3 000,00 Kč at 25.000) and 1:30 on Contact form (1 500,00 Kč). The CNB rate of EUR is stored
+     * unless `$withRate` is false.
+     */
+    function adminDashMixedClient(bool $withRate = true): Client
+    {
+        $client = adminDashClient('Example Client Mixed', 'CZK', '1000');
+
+        $project = app(PartnerContext::class)->runAsSystem(static fn (): Project => app(CreateProject::class)->handle($client, [
+            'name' => 'Example Project Web',
+            'key' => 'WEB',
+            'billing_type' => 'hourly',
+        ]));
+        // The scoped project lookup of CreateTask needs the signed-in Admin.
+        test()->actingAs(test()->admin);
+        $landing = app(CreateTask::class)->handle(test()->admin, $project, ['title' => 'Landing page'])->refresh();
+        $contact = app(CreateTask::class)->handle(test()->admin, $project, ['title' => 'Contact form'])->refresh();
+
+        app(PartnerContext::class)->runAsSystem(static fn () => $landing->billing()->create([
+            'billing_type' => TaskBillingType::Inherit,
+            'hourly_rate' => Money::fromMajor('120', 'EUR'),
+        ]));
+
+        if ($withRate) {
+            adminDashRate('2026-10-05', 'EUR', '25.000');
+        }
+
+        adminDashTaskEntry($landing, '2026-10-05 08:00:00', '2026-10-05 09:00:00');
+        adminDashTaskEntry($contact, '2026-10-05 10:00:00', '2026-10-05 11:30:00');
+
+        return $client;
+    }
+
+    /**
+     * An entry of the signed-in Admin on a task, from UTC instants.
+     */
+    function adminDashTaskEntry(Task $task, string $start, string $end): TimeEntry
+    {
+        return app(PartnerContext::class)->runAsSystem(static fn (): TimeEntry => TimeEntry::factory()->forTask($task)->create([
+            'user_id' => test()->admin->id,
+            'started_at' => CarbonImmutable::parse($start, 'UTC'),
+            'ended_at' => CarbonImmutable::parse($end, 'UTC'),
+        ]));
+    }
+
+    it('opens the dashboard of a client whose unbilled time is priced in two currencies', function (): void {
+        adminDashMixedClient();
+
+        $html = (string) $this->actingAs($this->admin)->get('/admin')->assertOk()->getContent();
+        $text = adminDashText(adminDashUnbilledHtml());
+
+        expect(adminDashText($html))->toContain('Nevyfakturováno tento měsíc')
+            ->and($text)
+            ->toContain('Example Client Mixed 2:30 '.adminDashMoney(150000, 'CZK').' '.adminDashMoney(12000, 'EUR').' '.adminDashMoney(450000, 'CZK'))
+            ->toContain('Celkem 2:30 '.adminDashMoney(450000, 'CZK'));
+    });
+
+    /**
      * Client A: 2:00 on 5. 10. at the list of that day (25.000) and 1:00 on 7. 10. (24.000), 80.00 EUR an hour; a
      * billed entry, a non-billable one and one of last month that are not counted.
      */
@@ -301,7 +363,7 @@ describe('the unbilled time of the month per client', function (): void {
         expect($rows)->toHaveCount(1)
             ->and($rows[0]['seconds'])->toBe($report->summary['unbilled'])
             ->and($rows[0]['czk']?->equals($report->summary['czk']['unbilled'] ?? Money::zero('CZK')))->toBeTrue()
-            ->and($rows[0]['amount']?->equals($report->summary['amounts']['unbilled']['EUR']))->toBeTrue();
+            ->and($rows[0]['amounts']['EUR']->equals($report->summary['amounts']['unbilled']['EUR']))->toBeTrue();
     });
 
     it('shows hours and dashes with the "Pevná cena" badge and the note for a client with fixed-price hours only', function (): void {
