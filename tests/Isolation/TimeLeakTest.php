@@ -2,22 +2,47 @@
 
 declare(strict_types=1);
 
+use App\Domain\ExchangeRates\ExchangeRateConverter;
+use App\Domain\ExchangeRates\ExchangeRateMissing;
+use App\Domain\ExchangeRates\Models\ExchangeRate;
+use App\Domain\Operations\Alerts\AdminAlerter;
+use App\Domain\Operations\Alerts\OperationalAlert;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Reports\Enums\ReportExportFormat;
+use App\Domain\Reports\Enums\ReportExportStatus;
+use App\Domain\Reports\FixedPriceSummary;
+use App\Domain\Reports\Models\ReportExport;
+use App\Domain\Reports\Notifications\ReportExportReadyNotification;
+use App\Domain\Reports\Queries\TimeReportReader;
+use App\Domain\Reports\ReportFilters;
+use App\Domain\Reports\WorkReport\WorkReportSource;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Money\Money;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Jobs\NotifyLongRunningTimers;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Domain\TimeTracking\Support\TimerClock;
+use App\Filament\Pages\TimeReportPage;
 use App\Filament\Pages\TimesheetPage;
+use App\Filament\Resources\ExchangeRateResource\Pages\ListExchangeRates;
+use App\Filament\Resources\ExchangeRateResource\Widgets\ExchangeRateStats;
 use App\Filament\Resources\ProjectResource\Pages\ViewProject;
 use App\Filament\Resources\ProjectResource\RelationManagers\ProjectTasksTimeRelationManager;
 use App\Filament\Resources\ProjectResource\RelationManagers\ProjectTimeEntriesRelationManager;
 use App\Filament\Resources\ProjectResource\Widgets\ProjectTimeStats;
+use App\Filament\Resources\ReportExportResource\Pages\ListReportExports;
+use App\Filament\Widgets\HoursStats;
+use App\Filament\Widgets\TodayPlan;
+use App\Filament\Widgets\UnbilledPerClient;
+use App\Filament\Widgets\UpcomingDeadlines;
 use App\Livewire\TimeTracking\RecentEntriesPanel;
 use App\Livewire\TimeTracking\TimerBar;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Filament\Notifications\Livewire\DatabaseNotifications;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\CanaryRegistry;
@@ -287,5 +312,209 @@ describe('what the Admin sees of a description', function (): void {
         // The bar shows the running entry's client and task; it must not turn a description into markup either.
         leakAssertEscaped(Livewire::test(TimerBar::class)->html(), $this->markupWord, $this->markup, 'the bar', mustShow: false);
         leakAssertEscaped((string) $this->get('/admin')->assertOk()->getContent(), $this->markupWord, $this->markup, 'the dashboard with the bar and the panel', mustShow: false);
+    });
+});
+
+/*
+ * Roadmap Phase 8 (exchange rates and reports), threat T-08-69 and the UI-SPEC Access contract: a Partner meets no
+ * Phase 8 surface and no time, rate, price, amount, CNB rate or export summary on any page, in the bell or in the
+ * domain services. The fixtures of the block sit on top of the two canary clients above: invented CNB rates, a ready
+ * export of the Admin whose summary carries a canary of its own, and the two Admin notices of the phase in the Admin's
+ * bell (the export-ready notice and the CNB failure alert). The canary task of every client is in review, so the
+ * Partner dashboard is rendered with the "Ke kontrole" highlight.
+ */
+
+/**
+ * The strings of the UI-SPEC list "Never on a Partner surface" that a Partner page must never carry. Matched as plain
+ * text anywhere in the HTML, the Livewire snapshots included.
+ *
+ * @return list<string>
+ */
+function leakPhase8Forbidden(): array
+{
+    return [
+        'Odpracováno', 'Nevyfakturováno', 'Vyfakturováno', 'Fakturovatelné', 'Nefakturovatelné', 'Částka', 'Kč', 'EUR',
+        'sazba', 'Pevná cena', 'Kurz', 'Report času', 'Exporty', 'Plán na dnešek',
+    ];
+}
+
+/**
+ * Asserts that a Partner response body holds none of the Phase 8 strings and none of the fixture values.
+ *
+ * @param  list<string>  $values  rates, amounts, export summaries and canaries of the fixtures
+ */
+function leakPhase8AssertClean(string $html, string $where, array $values): void
+{
+    foreach (leakPhase8Forbidden() as $text) {
+        expect(str_contains($html, $text))->toBeFalse("{$where} must not hold \"{$text}\"");
+    }
+
+    foreach ($values as $value) {
+        expect(str_contains($html, $value))->toBeFalse("{$where} must not hold {$value}");
+    }
+
+    foreach (['3:17:41', '3:17', '03:17', '11897'] as $duration) {
+        expect(str_contains($html, $duration))->toBeFalse("{$where} must not hold the duration {$duration}");
+    }
+}
+
+describe('Phase 8: the Partner and the rates, reports and dashboard surfaces', function (): void {
+    beforeEach(function (): void {
+        $this->exportSummary = Canary::canary('export');
+        $this->rateValues = ['25,125', '22,500', '25.1250000000', '22.5000000000'];
+
+        leakSystem(function (): void {
+            $now = TimerClock::now();
+
+            foreach ([['EUR', '25.1250000000'], ['USD', '22.5000000000']] as [$currency, $rate]) {
+                ExchangeRate::query()->insert([
+                    'rate_date' => '2026-10-09',
+                    'currency' => $currency,
+                    'unit_amount' => 1,
+                    'rate' => $rate,
+                    'fetched_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+
+            // A ready export of the Admin whose summary carries the canary (the owner scope limits even the Admin).
+            (new ReportExport(['format' => ReportExportFormat::Csv, 'summary' => $this->exportSummary, 'filters' => ['from' => '2026-10-01', 'to' => '2026-10-09']]))
+                ->forceFill([
+                    'user_id' => $this->admin->getKey(),
+                    'status' => ReportExportStatus::Ready,
+                    'path' => 'report-exports/'.Str::uuid().'.csv',
+                    'row_count' => 2,
+                    'completed_at' => $now,
+                    'expires_at' => $now->addDays(7),
+                ])->save();
+
+            // The two Admin notices of the phase: the export-ready notice and the CNB failure alert.
+            $this->admin->notifyNow(new ReportExportReadyNotification('CSV', $this->exportSummary, '16. 10. 2026', '/admin/report-exports'));
+
+            app(AdminAlerter::class)->alert('cnb-rates:2026-10-09', new OperationalAlert(
+                __('kokpit.rates.alert.title'),
+                __('kokpit.rates.alert.body', ['date' => '9. 10. 2026', 'last' => '8. 10. 2026']),
+                '/admin/exchange-rates',
+                __('kokpit.rates.alert.action'),
+            ));
+        });
+
+        $this->phase8Values = [...$this->rateValues, $this->exportSummary, $this->entryCanaryA, $this->entryCanaryB, $this->markupWord, $this->canaryB];
+    });
+
+    it('proves the fixtures exist: the Admin sees the rates, the export, the report and the notices', function (): void {
+        $this->actingAs($this->admin);
+
+        $this->get('/admin/time-report')->assertOk();
+        $this->get('/admin/exchange-rates')->assertOk()->assertSee('25,125')->assertSee('22,500');
+        $this->get('/admin/report-exports')->assertOk()->assertSee($this->exportSummary);
+        $this->get('/admin')->assertOk()->assertDontSee('Zkontrolovat úkol');
+
+        $bell = Livewire::test(DatabaseNotifications::class)->html();
+
+        expect($bell)->toContain(__('kokpit.exports.bell.ready.title'))
+            ->and($bell)->toContain(__('kokpit.rates.alert.title'))
+            ->and($bell)->toContain($this->exportSummary);
+    });
+
+    it('answers 403 to a Partner on the report, the rates overview and the exports list', function (): void {
+        $this->actingAs($this->partnerA);
+
+        foreach (['/admin/time-report', '/admin/exchange-rates', '/admin/report-exports'] as $url) {
+            $response = $this->get($url);
+            $response->assertForbidden();
+
+            leakPhase8AssertClean((string) $response->getContent(), $url, $this->phase8Values);
+        }
+    });
+
+    it('answers 403 to a Partner who mounts any Phase 8 page, table or widget', function (): void {
+        $this->actingAs($this->partnerA);
+
+        foreach ([
+            TimeReportPage::class, ListExchangeRates::class, ExchangeRateStats::class, ListReportExports::class,
+            HoursStats::class, UnbilledPerClient::class, UpcomingDeadlines::class, TodayPlan::class,
+        ] as $component) {
+            Livewire::test($component)->assertForbidden();
+        }
+    });
+
+    it('shows the Partner dashboard with the review highlight and none of the Phase 8 strings or the other client', function (): void {
+        $this->actingAs($this->partnerA);
+
+        $html = (string) $this->get('/admin')->assertOk()->getContent();
+
+        // The canary task of client A is in review, so the highlight path is rendered: its title, the badge and the button.
+        expect($html)->toContain($this->canaryA)
+            ->and($html)->toContain('Ke kontrole')
+            ->and($html)->toContain('Zkontrolovat úkol');
+
+        leakPhase8AssertClean($html, 'the Partner dashboard', $this->phase8Values);
+        leakAssertClean($html, 'the Partner dashboard', [$this->entryCanaryA, $this->entryCanaryB, $this->markupWord, $this->canaryB]);
+    });
+
+    it('shows the Partner no Phase 8 notice in the bell while the Admin has both', function (): void {
+        $this->actingAs($this->partnerA);
+
+        expect(DB::table('notifications')->where('notifiable_id', $this->partnerA->id)->count())->toBe(0);
+
+        $everything = (string) DB::table('notifications')->where('notifiable_id', $this->partnerA->id)->get()->toJson();
+        $bell = Livewire::test(DatabaseNotifications::class)->html();
+
+        foreach ([$everything, $bell] as $where => $text) {
+            leakPhase8AssertClean($text, "bell source {$where}", $this->phase8Values);
+
+            expect($text)->not->toContain(__('kokpit.exports.bell.ready.title'))
+                ->and($text)->not->toContain(__('kokpit.rates.alert.title'));
+        }
+
+        $adminRows = DB::table('notifications')->where('notifiable_id', $this->admin->id)->count();
+        expect($adminRows)->toBe(2);
+    });
+
+    it('keeps every page a Partner can open free of the Phase 8 strings and of the other client', function (): void {
+        $this->actingAs($this->partnerA);
+
+        $pages = [
+            'the dashboard' => '/admin',
+            'the project list' => '/admin/my-projects',
+            'the own project page' => '/admin/my-projects/'.$this->projectA->id,
+            'the task list' => '/admin/my-tasks',
+            'the own task page' => '/admin/my-tasks/'.$this->taskA->reference,
+            'the profile page' => '/admin/profile',
+        ];
+
+        foreach ($pages as $where => $url) {
+            leakPhase8AssertClean((string) $this->get($url)->assertOk()->getContent(), $where, $this->phase8Values);
+        }
+    });
+
+    it('refuses the report, work report and fixed price services in a Partner context and lets the converter find no rate', function (): void {
+        $now = TimerClock::now();
+        $entry = leakSystem(fn (): TimeEntry => TimeEntry::query()->where('description', $this->entryCanaryA)->firstOrFail());
+
+        $this->actingAs($this->partnerA);
+
+        expect(fn () => app(TimeReportReader::class)->entries(ReportFilters::fromInput([], $now), $now))->toThrow(AuthorizationException::class)
+            ->and(fn () => app(TimeReportReader::class)->rateCurrencies(ReportFilters::fromInput([], $now)))->toThrow(AuthorizationException::class)
+            ->and(fn () => WorkReportSource::forPeriod($this->clientA, '2026-10-01', '2026-10-31', null, $now))->toThrow(AuthorizationException::class)
+            ->and(fn () => WorkReportSource::fromEntryIds([$entry->id], $now))->toThrow(AuthorizationException::class)
+            ->and(fn () => FixedPriceSummary::for([$this->projectA->id], ReportFilters::fromInput([], $now), $now))->toThrow(AuthorizationException::class)
+            ->and(fn () => app(ExchangeRateConverter::class)->toCzk(Money::ofMinor(10000, 'EUR'), '2026-10-09'))->toThrow(ExchangeRateMissing::class);
+    });
+
+    it('lets the same services work in a system run, so the refusals come from the Partner context', function (): void {
+        $now = TimerClock::now();
+        $entry = leakSystem(fn (): TimeEntry => TimeEntry::query()->where('description', $this->entryCanaryA)->firstOrFail());
+
+        $this->actingAs($this->partnerA);
+
+        leakSystem(function () use ($now, $entry): void {
+            expect(app(TimeReportReader::class)->entries(ReportFilters::fromInput([], $now), $now)->count())->toBeGreaterThan(0)
+                ->and(WorkReportSource::fromEntryIds([$entry->id], $now)->totalSeconds())->toBe(3 * 3600 + 17 * 60 + 41)
+                ->and(FixedPriceSummary::for([$this->projectA->id], ReportFilters::fromInput([], $now), $now))->toBe([])
+                ->and(app(ExchangeRateConverter::class)->toCzk(Money::ofMinor(10000, 'EUR'), '2026-10-09')->minor)->toBe(251250);
+        });
     });
 });

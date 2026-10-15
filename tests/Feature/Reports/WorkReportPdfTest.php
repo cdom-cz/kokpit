@@ -1,0 +1,913 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Clients\Enums\InvoiceLanguage;
+use App\Domain\Clients\Models\Client;
+use App\Domain\ExchangeRates\Models\ExchangeRate;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Reports\WorkReport\WorkReportPageDecoration;
+use App\Domain\Reports\WorkReport\WorkReportPdf;
+use App\Domain\Reports\WorkReport\WorkReportSource;
+use App\Domain\Settings\Settings\SupplierSettings;
+use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Money\Money;
+use App\Domain\Tasks\Enums\TaskBillingType;
+use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Models\TimeEntry;
+use Carbon\CarbonImmutable;
+use Dompdf\Canvas;
+use Dompdf\Dompdf;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\Process;
+use Symfony\Component\Process\ExecutableFinder;
+use Tests\Support\Canary;
+use Tests\Support\FictionalCompanyId;
+
+/*
+ * The work report of one client's period (RE-03; D-10): the money-free source and the Dompdf rendering.
+ * Every name, id and address below is invented; the supplier uses the placeholder company ID 12345678.
+ */
+
+/**
+ * Stores invented supplier settings.
+ */
+function reportSupplier(): void
+{
+    $supplier = app(SupplierSettings::class);
+    $supplier->company_name = 'Příklad Dodavatel s.r.o.';
+    $supplier->street = 'Vzorová 1';
+    $supplier->city = 'Praha';
+    $supplier->postal_code = '110 00';
+    $supplier->country = 'CZ';
+    $supplier->company_id = '12345678';
+    $supplier->save();
+
+    app()->forgetScopedInstances();
+}
+
+/**
+ * A stored entry from UTC instants, for the user, task and project given.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function reportEntry(Client $client, string $start, string $end, array $attributes = []): TimeEntry
+{
+    return TimeEntry::factory()->create([
+        'user_id' => test()->admin->id,
+        'client_id' => $client->id,
+        'started_at' => CarbonImmutable::parse($start, 'UTC'),
+        'ended_at' => CarbonImmutable::parse($end, 'UTC'),
+        ...$attributes,
+    ]);
+}
+
+beforeEach(function (): void {
+    $this->admin = Canary::admin();
+    $this->actingAs($this->admin);
+    reportSupplier();
+
+    $this->clientCompanyId = FictionalCompanyId::valid();
+    $this->client = Client::factory()->create([
+        'name' => 'Ukázkový odběratel a.s.',
+        'company_number' => $this->clientCompanyId,
+        'street' => 'Příkladná 2',
+        'city' => 'Brno',
+        'postal_code' => '602 00',
+        'country' => 'CZ',
+        'hourly_rate' => Money::ofMinor(98765, 'CZK'),
+    ]);
+    $this->project = Project::factory()->create(['client_id' => $this->client->id, 'name' => 'Redesign žluťoučkého webu']);
+    $this->taskOne = Task::factory()->create(['project_id' => $this->project->id, 'title' => 'Příprava šablon: čeština, ěščřžýáíéů']);
+    $this->taskTwo = Task::factory()->create(['project_id' => $this->project->id, 'title' => 'Ladění přihlášení']);
+
+    $this->now = CarbonImmutable::parse('2026-10-14 10:00:00', 'UTC');
+
+    // Prague is UTC+2 in September. Wednesday 2 September: 08:00-09:30 and 10:00-10:45 on task one (2:15).
+    reportEntry($this->client, '2026-09-02 06:00:00', '2026-09-02 07:30:00', ['project_id' => $this->project->id, 'task_id' => $this->taskOne->id]);
+    reportEntry($this->client, '2026-09-02 08:00:00', '2026-09-02 08:45:00', ['project_id' => $this->project->id, 'task_id' => $this->taskOne->id]);
+    // Thursday 3 September: 2:00 on task two.
+    reportEntry($this->client, '2026-09-03 06:00:00', '2026-09-03 08:00:00', ['project_id' => $this->project->id, 'task_id' => $this->taskTwo->id]);
+});
+
+describe('the source', function (): void {
+    it('groups the billable seconds by project, Prague day and task and leaves out other clients and other periods', function (): void {
+        // 00:30 on 1 September in Prague is 22:30 on 31 August in UTC: it belongs to 1 September.
+        reportEntry($this->client, '2026-08-31 22:30:00', '2026-08-31 23:00:00', ['project_id' => $this->project->id, 'task_id' => $this->taskTwo->id]);
+        // 00:30 on 1 October in Prague is 22:30 on 30 September in UTC: it belongs to October, outside the period.
+        reportEntry($this->client, '2026-09-30 22:30:00', '2026-09-30 23:30:00', ['project_id' => $this->project->id, 'task_id' => $this->taskTwo->id]);
+        // Another client's entry in the same period.
+        TimeEntry::factory()->create([
+            'user_id' => $this->admin->id,
+            'started_at' => CarbonImmutable::parse('2026-09-02 06:00:00', 'UTC'),
+            'ended_at' => CarbonImmutable::parse('2026-09-02 07:00:00', 'UTC'),
+        ]);
+
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        expect($source->rows)->toBe([
+            ['billable' => true, 'project' => 'Redesign žluťoučkého webu', 'date' => '2026-09-01', 'task' => $this->taskTwo->reference.' · Ladění přihlášení', 'seconds' => 1800],
+            ['billable' => true, 'project' => 'Redesign žluťoučkého webu', 'date' => '2026-09-02', 'task' => $this->taskOne->reference.' · Příprava šablon: čeština, ěščřžýáíéů', 'seconds' => 8100],
+            ['billable' => true, 'project' => 'Redesign žluťoučkého webu', 'date' => '2026-09-03', 'task' => $this->taskTwo->reference.' · Ladění přihlášení', 'seconds' => 7200],
+        ])->and($source->clientName)->toBe('Ukázkový odběratel a.s.')
+            ->and($source->clientLanguage)->toBe(InvoiceLanguage::Czech)
+            ->and($source->from)->toBe('2026-09-01')
+            ->and($source->to)->toBe('2026-09-30')
+            ->and($source->projectName)->toBeNull();
+    });
+
+    it('reads the rows of a section, project and day in a stable order with the entries without a project last', function (): void {
+        reportEntry($this->client, '2026-09-04 06:00:00', '2026-09-04 07:00:00', ['billable' => false]);
+        reportEntry($this->client, '2026-09-04 08:00:00', '2026-09-04 08:30:00', ['project_id' => $this->project->id]);
+        reportEntry($this->client, '2026-09-04 09:00:00', '2026-09-04 09:20:00');
+
+        $rows = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now)->rows;
+
+        expect(array_column($rows, 'billable'))->toBe([true, true, true, true, false])
+            ->and($rows[2])->toBe(['billable' => true, 'project' => 'Redesign žluťoučkého webu', 'date' => '2026-09-04', 'task' => null, 'seconds' => 1800])
+            ->and($rows[3])->toBe(['billable' => true, 'project' => null, 'date' => '2026-09-04', 'task' => null, 'seconds' => 1200])
+            ->and($rows[4])->toBe(['billable' => false, 'project' => null, 'date' => '2026-09-04', 'task' => null, 'seconds' => 3600]);
+    });
+
+    it('limits the rows to one project and names it', function (): void {
+        $other = Project::factory()->create(['client_id' => $this->client->id, 'name' => 'Jiný projekt']);
+        reportEntry($this->client, '2026-09-04 06:00:00', '2026-09-04 07:00:00', ['project_id' => $other->id]);
+
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', $this->project->id, $this->now);
+
+        expect($source->projectName)->toBe('Redesign žluťoučkého webu')
+            ->and(array_unique(array_column($source->rows, 'project')))->toBe(['Redesign žluťoučkého webu']);
+    });
+
+    it('reads the supplier and the client lines with the company IDs', function (): void {
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        expect($source->supplierLines)->toBe(['Příklad Dodavatel s.r.o.', 'Vzorová 1', '110 00 Praha', 'CZ', 'IČO: 12345678'])
+            ->and($source->clientLines)->toBe(['Příkladná 2', '602 00 Brno', 'CZ', 'IČO: '.$this->clientCompanyId]);
+    });
+
+    it('reads an archived client', function (): void {
+        $this->client->delete();
+
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        expect($source->clientName)->toBe('Ukázkový odběratel a.s.')
+            ->and($source->rows)->not->toBe([]);
+    });
+
+    it('counts a running entry at its elapsed time', function (): void {
+        $client = Client::factory()->create();
+        TimeEntry::factory()->create([
+            'user_id' => $this->admin->id,
+            'client_id' => $client->id,
+            'started_at' => CarbonImmutable::parse('2026-10-14 09:00:00', 'UTC'),
+            'ended_at' => null,
+        ]);
+
+        $source = WorkReportSource::forPeriod($client->id, '2026-10-14', '2026-10-14', null, $this->now);
+
+        expect($source->rows)->toHaveCount(1)
+            ->and($source->rows[0]['seconds'])->toBe(3600);
+    });
+
+    it('refuses a Partner, a guest and bad input', function (): void {
+        $this->actingAs(Canary::partnerFor($this->client->id));
+        expect(fn () => WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now))
+            ->toThrow(AuthorizationException::class);
+
+        auth()->logout();
+        expect(fn () => WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now))
+            ->toThrow(AuthorizationException::class);
+
+        $this->actingAs($this->admin);
+        $unknown = '0198a5c0-0000-7000-8000-000000000000';
+
+        expect(fn () => WorkReportSource::forPeriod('not-an-id', '2026-09-01', '2026-09-30', null, $this->now))->toThrow(InvalidArgumentException::class)
+            ->and(fn () => WorkReportSource::forPeriod($unknown, '2026-09-01', '2026-09-30', null, $this->now))->toThrow(InvalidArgumentException::class)
+            ->and(fn () => WorkReportSource::forPeriod($this->client->id, '2026-02-30', '2026-09-30', null, $this->now))->toThrow(InvalidArgumentException::class)
+            ->and(fn () => WorkReportSource::forPeriod($this->client->id, '2026-09-30', '2026-09-01', null, $this->now))->toThrow(InvalidArgumentException::class)
+            ->and(fn () => WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', 'not-an-id', $this->now))->toThrow(InvalidArgumentException::class)
+            ->and(fn () => WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', $unknown, $this->now))->toThrow(InvalidArgumentException::class);
+    });
+
+    it('lets a system run build the source', function (): void {
+        auth()->logout();
+
+        $source = app(PartnerContext::class)->runAsSystem(
+            fn (): WorkReportSource => WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now),
+        );
+
+        expect($source->rows)->not->toBe([]);
+    });
+
+    it('refuses a project of another client', function (): void {
+        $foreign = Project::factory()->create();
+
+        expect(fn () => WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', $foreign->id, $this->now))
+            ->toThrow(InvalidArgumentException::class);
+    });
+
+    it('never names a rate, a price or an amount', function (): void {
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+        $serialised = json_encode($source, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+
+        expect($serialised)->not->toContain('98765')
+            ->and($serialised)->not->toContain('987,65')
+            ->and($serialised)->not->toContain('987.65')
+            ->and($serialised)->not->toContain('CZK');
+        foreach ($source->rows as $row) {
+            expect(array_keys($row))->toBe(['billable', 'project', 'date', 'task', 'seconds']);
+        }
+    });
+});
+
+describe('the Czech document', function (): void {
+    it('renders the html of the first page with the parties, the period and the billable table', function (): void {
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+
+        expect($html)->toContain('Pracovní výkaz')
+            ->and($html)->toContain('Dodavatel')
+            ->and($html)->toContain('Odběratel')
+            ->and($html)->toContain('Příklad Dodavatel s.r.o.')
+            ->and($html)->toContain('Ukázkový odběratel a.s.')
+            ->and($html)->toContain('IČO: 12345678')
+            ->and($html)->toContain('IČO: '.$this->clientCompanyId)
+            ->and($html)->toContain('Období: 1. 9. 2026 – 30. 9. 2026')
+            ->and($html)->toContain('Fakturovatelné')
+            ->and($html)->toContain('2. 9. 2026')
+            ->and($html)->toContain('3. 9. 2026')
+            ->and($html)->toContain($this->taskOne->reference.' · Příprava šablon: čeština, ěščřžýáíéů')
+            ->and($html)->toContain('2:15')
+            ->and($html)->toContain('2:00')
+            ->and($html)->toContain('Celkem fakturovatelné')
+            ->and($html)->toContain('4:15')
+            ->and($html)->toContain('DejaVu Sans')
+            ->and($html)->not->toContain('Projekt: ');
+    });
+
+    it('names the project when the report is limited to one', function (): void {
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', $this->project->id, $this->now);
+
+        expect(app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech))->toContain('Projekt: Redesign žluťoučkého webu');
+    });
+
+    it('shows the date on the first row of a day only', function (): void {
+        reportEntry($this->client, '2026-09-02 11:00:00', '2026-09-02 12:00:00', ['project_id' => $this->project->id, 'task_id' => $this->taskTwo->id]);
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+
+        expect(substr_count($html, '2. 9. 2026'))->toBe(1);
+    });
+
+    it('shows no money, no description and no markup injected through a name', function (): void {
+        $canary = 'Popis-'.bin2hex(random_bytes(4));
+        $injected = Task::factory()->create(['project_id' => $this->project->id, 'title' => '<b>tučně</b> & <script>x</script>']);
+        reportEntry($this->client, '2026-09-06 06:00:00', '2026-09-06 07:00:00', ['project_id' => $this->project->id, 'task_id' => $injected->id, 'description' => $canary]);
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+
+        expect($html)->not->toContain($canary)
+            ->and($html)->not->toContain('<b>tučně</b>')
+            ->and($html)->not->toContain('<script>')
+            ->and($html)->toContain('&lt;b&gt;tučně&lt;/b&gt; &amp; &lt;script&gt;x&lt;/script&gt;')
+            ->and($html)->not->toContain('Kč')
+            ->and($html)->not->toContain('CZK')
+            ->and($html)->not->toContain('98765')
+            ->and($html)->not->toContain('987,65')
+            ->and($html)->not->toContain('987.65');
+    });
+
+    it('renders PDF bytes with the embedded DejaVu font', function (): void {
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $pdf = app(WorkReportPdf::class)->render($source, InvoiceLanguage::Czech);
+
+        expect(str_starts_with($pdf, '%PDF-'))->toBeTrue()
+            ->and($pdf)->toContain('DejaVuSans')
+            ->and(strlen($pdf))->toBeGreaterThan(2000);
+    });
+
+    it('does not fetch a remote resource or read a local file named in a value', function (): void {
+        $probe = storage_path('framework/dompdf-probe-'.bin2hex(random_bytes(4)).'.txt');
+
+        try {
+            file_put_contents($probe, 'probe');
+            $task = Task::factory()->create([
+                'project_id' => $this->project->id,
+                'title' => '<img src="'.$probe.'"><link rel="stylesheet" href="http://127.0.0.1:1/x.css">',
+            ]);
+            reportEntry($this->client, '2026-09-07 06:00:00', '2026-09-07 07:00:00', ['project_id' => $this->project->id, 'task_id' => $task->id]);
+            $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+            $pdf = app(WorkReportPdf::class)->render($source, InvoiceLanguage::Czech);
+        } finally {
+            @unlink($probe);
+        }
+
+        expect(str_starts_with($pdf, '%PDF-'))->toBeTrue();
+    });
+});
+
+/**
+ * Adds to the client of the test a second project with a fixed-price task and the entries of the two
+ * sections: billable 5:45 (project one 4:45, project two 1:00, the second one fixed-price) on Sep 2, 3,
+ * and non-billable 1:30 on Sep 4 and Sep 5, so 4 days with work in all, 7:15 in total.
+ *
+ * @return array{second: Project, fixed: Task}
+ */
+function reportMixedSections(): array
+{
+    $client = test()->client;
+    $second = Project::factory()->create(['client_id' => $client->id, 'name' => 'Údržba webu']);
+    $fixed = Task::factory()->create(['project_id' => $second->id, 'title' => 'Paušální správa']);
+    $fixed->billing()->create(['billing_type' => TaskBillingType::FixedPrice, 'fixed_price' => Money::ofMinor(77700, 'CZK')]);
+
+    // Sep 2: a second task of project one, 0:30 (the day totals 2:45).
+    reportEntry($client, '2026-09-02 09:00:00', '2026-09-02 09:30:00', ['project_id' => test()->project->id, 'task_id' => test()->taskTwo->id]);
+    // Sep 3: the fixed-price entry is billable hours of project two, 1:00.
+    reportEntry($client, '2026-09-03 09:00:00', '2026-09-03 10:00:00', ['project_id' => $second->id, 'task_id' => $fixed->id]);
+    // Sep 4 and Sep 5: non-billable, without a task.
+    reportEntry($client, '2026-09-04 06:00:00', '2026-09-04 07:00:00', ['project_id' => test()->project->id, 'billable' => false]);
+    reportEntry($client, '2026-09-05 06:00:00', '2026-09-05 06:30:00', ['project_id' => $second->id, 'billable' => false]);
+
+    return ['second' => $second, 'fixed' => $fixed];
+}
+
+describe('the two sections', function (): void {
+    it('puts the billable section before the non-billable one, each with its own table and total', function (): void {
+        reportMixedSections();
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+
+        $billable = strpos($html, '<h2>Fakturovatelné</h2>');
+        $nonBillable = strpos($html, '<h2>Nefakturovatelné</h2>');
+
+        expect($billable)->toBeInt()
+            ->and($nonBillable)->toBeInt()
+            ->and($billable)->toBeLessThan($nonBillable)
+            ->and(substr_count($html, '<table class="entries'))->toBe(2)
+            ->and($html)->toContain('Celkem fakturovatelné')
+            ->and($html)->toContain('Celkem nefakturovatelné')
+            ->and($html)->toMatch('/Celkem fakturovatelné<\/td>\s*<td class="hours">5:45</')
+            ->and($html)->toMatch('/Celkem nefakturovatelné<\/td>\s*<td class="hours">1:30</')
+            // The fixed-price task is billable hours, in the first section.
+            ->and(strpos($html, 'Paušální správa'))->toBeLessThan($nonBillable);
+    });
+
+    it('closes every day with its subtotal and shows the date on the first row of the day only', function (): void {
+        reportMixedSections();
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+
+        // Billable: project one Sep 2 and Sep 3, project two Sep 3. Non-billable: Sep 4, Sep 5.
+        expect(substr_count($html, 'Celkem za den'))->toBe(5)
+            ->and($html)->toMatch('/Celkem za den<\/td>\s*<td class="hours">2:45</')
+            ->and(substr_count($html, '2. 9. 2026'))->toBe(1)
+            ->and(substr_count($html, 'Bez úkolu'))->toBe(2);
+    });
+
+    it('precedes the days of each project with a project row when there are several projects', function (): void {
+        reportMixedSections();
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+
+        // Each project is named in both sections.
+        expect(substr_count($html, 'Projekt: Redesign žluťoučkého webu'))->toBe(2)
+            ->and(substr_count($html, 'Projekt: Údržba webu'))->toBe(2)
+            ->and(strpos($html, 'Projekt: Redesign žluťoučkého webu'))->toBeLessThan(strpos($html, 'Projekt: Údržba webu'));
+    });
+
+    it('closes the report with a summary of the days, the total of both sections and the hours per project', function (): void {
+        reportMixedSections();
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+        $summary = substr($html, (int) strpos($html, '<h2>Souhrn</h2>'));
+
+        expect($html)->toContain('<h2>Souhrn</h2>')
+            ->and(strrpos($html, '<table class="entries'))->toBeLessThan(strpos($html, '<h2>Souhrn</h2>'))
+            ->and($summary)->toMatch('/Počet dní s prací<\/td>\s*<td class="hours">4</')
+            ->and($summary)->toMatch('/Celkem hodin<\/td>\s*<td class="hours total-hours">7:15</')
+            ->and($summary)->toMatch('/Celkem fakturovatelné<\/td>\s*<td class="hours">5:45</')
+            ->and($summary)->toMatch('/Celkem nefakturovatelné<\/td>\s*<td class="hours">1:30</')
+            ->and($summary)->toMatch('/Redesign žluťoučkého webu<\/td>\s*<td class="hours">5:45</')
+            ->and($summary)->toMatch('/Údržba webu<\/td>\s*<td class="hours">1:30</')
+            ->and($html)->toContain('page-break-inside: avoid');
+    });
+
+    it('leaves out the non-billable section of a client who has none and the project rows of a single project', function (): void {
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+
+        expect($html)->toContain('<h2>Fakturovatelné</h2>')
+            ->and($html)->not->toContain('<h2>Nefakturovatelné</h2>')
+            ->and($html)->not->toContain('Celkem nefakturovatelné')
+            ->and($html)->not->toContain('Projekt: ')
+            ->and($html)->toMatch('/Počet dní s prací<\/td>\s*<td class="hours">2</')
+            ->and($html)->toMatch('/Celkem hodin<\/td>\s*<td class="hours total-hours">4:15</')
+            ->and(substr_count($html, 'Redesign žluťoučkého webu'))->toBe(0);
+    });
+
+    it('shows only the non-billable section of a period with non-billable entries only', function (): void {
+        reportMixedSections();
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-04', '2026-09-05', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+
+        expect($html)->not->toContain('<h2>Fakturovatelné</h2>')
+            ->and($html)->toContain('<h2>Nefakturovatelné</h2>')
+            ->and($html)->not->toContain('Za zvolené období nejsou žádné záznamy.')
+            ->and($html)->toMatch('/Celkem hodin<\/td>\s*<td class="hours total-hours">1:30</');
+    });
+
+    it('renders a period without entries as the header, one empty row and a 0:00 summary', function (): void {
+        $source = WorkReportSource::forPeriod($this->client->id, '2025-01-01', '2025-01-31', null, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+        $pdf = app(WorkReportPdf::class)->render($source, InvoiceLanguage::Czech);
+
+        expect($html)->toContain('Pracovní výkaz')
+            ->and($html)->toContain('Období: 1. 1. 2025 – 31. 1. 2025')
+            ->and(substr_count($html, 'Za zvolené období nejsou žádné záznamy.'))->toBe(1)
+            ->and($html)->not->toContain('<h2>Fakturovatelné</h2>')
+            ->and($html)->not->toContain('<h2>Nefakturovatelné</h2>')
+            ->and($html)->toMatch('/Počet dní s prací<\/td>\s*<td class="hours">0</')
+            ->and($html)->toMatch('/Celkem hodin<\/td>\s*<td class="hours total-hours">0:00</')
+            ->and(str_starts_with($pdf, '%PDF-'))->toBeTrue();
+    });
+});
+
+describe('the section helpers of the source', function (): void {
+    /**
+     * A source of fixed rows: billable 3:00 (project one 2:00 on Sep 1 and Sep 2 in one hour each, project two
+     * 1:00 on Sep 2) and non-billable 0:30 (project one on Sep 3), the last row without a project.
+     */
+    function helperSource(): WorkReportSource
+    {
+        return new WorkReportSource(
+            supplierLines: [],
+            clientName: 'Ukázkový odběratel a.s.',
+            clientLines: [],
+            clientLanguage: InvoiceLanguage::Czech,
+            from: '2026-09-01',
+            to: '2026-09-30',
+            projectName: null,
+            rows: [
+                ['billable' => true, 'project' => 'Projekt A', 'date' => '2026-09-01', 'task' => null, 'seconds' => 3600],
+                ['billable' => true, 'project' => 'Projekt A', 'date' => '2026-09-02', 'task' => null, 'seconds' => 3600],
+                ['billable' => true, 'project' => 'Projekt B', 'date' => '2026-09-02', 'task' => null, 'seconds' => 3600],
+                ['billable' => false, 'project' => 'Projekt A', 'date' => '2026-09-03', 'task' => null, 'seconds' => 1800],
+                ['billable' => false, 'project' => null, 'date' => '2026-09-03', 'task' => null, 'seconds' => 900],
+            ],
+        );
+    }
+
+    it('returns the rows and the seconds of a section', function (): void {
+        $source = helperSource();
+
+        expect($source->section(true))->toHaveCount(3)
+            ->and($source->section(false))->toHaveCount(2)
+            ->and($source->sectionSeconds(true))->toBe(10800)
+            ->and($source->sectionSeconds(false))->toBe(2700)
+            ->and($source->totalSeconds())->toBe(13500);
+    });
+
+    it('counts a day with work once, whatever the section, project or task', function (): void {
+        expect(helperSource()->daysWorked())->toBe(3);
+    });
+
+    it('totals the hours per project, the project without a name last, the largest first', function (): void {
+        expect(helperSource()->projectTotals())->toBe([
+            ['project' => 'Projekt A', 'seconds' => 9000],
+            ['project' => 'Projekt B', 'seconds' => 3600],
+            ['project' => null, 'seconds' => 900],
+        ]);
+    });
+});
+
+/**
+ * A source of fixed rows, no database: one billable row per day for `$days` days, each with a task title.
+ */
+function longReportSource(int $days, string $title = 'Ladění přihlášení a příprava šablon'): WorkReportSource
+{
+    $rows = [];
+    $start = CarbonImmutable::parse('2026-07-01', 'UTC');
+
+    for ($i = 0; $i < $days; $i++) {
+        $rows[] = ['billable' => true, 'project' => 'Redesign žluťoučkého webu', 'date' => $start->addDays($i)->format('Y-m-d'), 'task' => sprintf('KEY-%d · %s', $i + 1, $title), 'seconds' => 1800 + $i * 60];
+    }
+
+    return new WorkReportSource(
+        supplierLines: ['Příklad Dodavatel s.r.o.', 'Vzorová 1', '110 00 Praha', 'CZ', 'IČO: 12345678'],
+        clientName: 'Ukázkový odběratel a.s.',
+        clientLines: ['Příkladná 2', '602 00 Brno', 'CZ'],
+        clientLanguage: InvoiceLanguage::Czech,
+        from: '2026-07-01',
+        to: '2026-09-30',
+        projectName: null,
+        rows: $rows,
+    );
+}
+
+/**
+ * Runs pdftotext on the bytes and returns the text of the page given (or of all pages), null when the
+ * binary is not installed (research A10).
+ */
+function pdfText(string $pdf, ?int $page = null, bool $bbox = false): ?string
+{
+    $binary = (new ExecutableFinder)->find('pdftotext');
+
+    if ($binary === null) {
+        return null;
+    }
+
+    $file = tempnam(sys_get_temp_dir(), 'wrp');
+
+    try {
+        file_put_contents($file, $pdf);
+        $command = [$binary, '-enc', 'UTF-8'];
+        if ($bbox) {
+            $command[] = '-bbox';
+        }
+        if ($page !== null) {
+            array_push($command, '-f', (string) $page, '-l', (string) $page);
+        }
+        array_push($command, $file, '-');
+
+        return Process::run($command)->output();
+    } finally {
+        @unlink($file);
+    }
+}
+
+/**
+ * The number of page objects in the PDF bytes.
+ */
+function pdfPages(string $pdf): int
+{
+    return preg_match_all('#/Type\s*/Page\b#', $pdf);
+}
+
+describe('many pages', function (): void {
+    it('spans several pages with the DejaVu font embedded and a repeating table header', function (): void {
+        $source = longReportSource(150);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+        $pdf = app(WorkReportPdf::class)->render($source, InvoiceLanguage::Czech);
+
+        expect($html)->toContain('table-header-group')
+            ->and(pdfPages($pdf))->toBeGreaterThan(1)
+            ->and($pdf)->toContain('DejaVuSans');
+    });
+
+    it('draws the running header on the pages after the first only and numbers every page', function (): void {
+        if (pdfText('%PDF-') === null) {
+            test()->markTestSkipped('pdftotext is not installed.');
+        }
+
+        $source = longReportSource(60);
+        $pdf = app(WorkReportPdf::class)->render($source, InvoiceLanguage::Czech, CarbonImmutable::parse('2026-10-14 10:00:00', 'UTC'));
+        $pages = pdfPages($pdf);
+        $header = 'Pracovní výkaz · Ukázkový odběratel a.s. · 1. 7. 2026 – 30. 9. 2026';
+
+        expect($pages)->toBeGreaterThanOrEqual(3)
+            ->and(pdfText($pdf, 1))->not->toContain($header);
+
+        for ($page = 1; $page <= $pages; $page++) {
+            $text = (string) pdfText($pdf, $page);
+
+            expect($text)->toContain(sprintf('Strana %d / %d', $page, $pages))
+                ->and($text)->toContain('Vytvořeno 14. 10. 2026');
+
+            if ($page > 1) {
+                expect($text)->toContain($header);
+            }
+        }
+    });
+
+    it('raises a memory limit below 256M and leaves a higher or unlimited one alone', function (): void {
+        expect(WorkReportPdf::raisedMemoryLimit('128M'))->toBe('256M')
+            ->and(WorkReportPdf::raisedMemoryLimit('134217728'))->toBe('256M')
+            ->and(WorkReportPdf::raisedMemoryLimit('256M'))->toBeNull()
+            ->and(WorkReportPdf::raisedMemoryLimit('512M'))->toBeNull()
+            ->and(WorkReportPdf::raisedMemoryLimit('1G'))->toBeNull()
+            ->and(WorkReportPdf::raisedMemoryLimit('-1'))->toBeNull();
+    });
+
+    it('applies the memory rule to the running process before rendering', function (): void {
+        $original = (string) ini_get('memory_limit');
+
+        try {
+            // Lowering the limit fails (with a warning) when this process already uses more than that.
+            if (@ini_set('memory_limit', '128M') === false) {
+                test()->markTestSkipped('The memory limit cannot be lowered below the current usage of this process.');
+            }
+
+            app(WorkReportPdf::class)->render(longReportSource(1), InvoiceLanguage::Czech);
+            expect(ini_get('memory_limit'))->toBe('256M');
+
+            ini_set('memory_limit', '512M');
+            app(WorkReportPdf::class)->render(longReportSource(1), InvoiceLanguage::Czech);
+            expect(ini_get('memory_limit'))->toBe('512M');
+
+            ini_set('memory_limit', '-1');
+            app(WorkReportPdf::class)->render(longReportSource(1), InvoiceLanguage::Czech);
+            expect(ini_get('memory_limit'))->toBe('-1');
+        } finally {
+            ini_set('memory_limit', $original);
+        }
+    });
+
+    it('wraps a 300 character task title inside the Úkol cell and keeps the table inside the page', function (): void {
+        if (pdfText('%PDF-') === null) {
+            test()->markTestSkipped('pdftotext is not installed.');
+        }
+
+        $source = longReportSource(1, str_repeat('Ž', 300));
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::Czech);
+        $pdf = app(WorkReportPdf::class)->render($source, InvoiceLanguage::Czech);
+        $boxes = (string) pdfText($pdf, 1, bbox: true);
+
+        preg_match_all('/xMax="([0-9.]+)"/', $boxes, $matches);
+
+        // A4 is 595.28pt wide and the right margin 48pt.
+        expect($html)->toContain('overflow-wrap')
+            ->and($matches[1])->not->toBe([])
+            ->and(max(array_map(floatval(...), $matches[1])))->toBeLessThanOrEqual(595.28 - 48 + 1);
+    });
+});
+
+describe('the page decoration', function (): void {
+    /**
+     * Runs the decoration of one page against a recording canvas of A4 size and returns what it drew.
+     *
+     * @return array{texts: list<array{x: float, y: float, text: string, size: float}>, lines: list<array{x1: float, x2: float, width: float}>}
+     */
+    function decorate(WorkReportPageDecoration $decoration, int $page, int $pages): array
+    {
+        $drawn = ['texts' => [], 'lines' => []];
+        $canvas = Mockery::mock(Canvas::class);
+        $canvas->shouldReceive('get_width')->andReturn(595.28);
+        $canvas->shouldReceive('get_height')->andReturn(841.89);
+        $canvas->shouldReceive('text')->andReturnUsing(function ($x, $y, $text, $font, $size) use (&$drawn): void {
+            $drawn['texts'][] = ['x' => (float) $x, 'y' => (float) $y, 'text' => (string) $text, 'size' => (float) $size];
+        });
+        $canvas->shouldReceive('line')->andReturnUsing(function ($x1, $y1, $x2, $y2, $color, $width) use (&$drawn): void {
+            $drawn['lines'][] = ['x1' => (float) $x1, 'x2' => (float) $x2, 'width' => (float) $width];
+        });
+
+        $decoration($page, $pages, $canvas, (new Dompdf)->getFontMetrics());
+
+        return $drawn;
+    }
+
+    function decoration(string $client = 'Ukázkový odběratel a.s.'): WorkReportPageDecoration
+    {
+        return new WorkReportPageDecoration(
+            title: 'Pracovní výkaz',
+            client: $client,
+            period: '1. 7. 2026 – 30. 9. 2026',
+            generated: 'Vytvořeno 14. 10. 2026',
+            pageTemplate: 'Strana {n} / {total}',
+        );
+    }
+
+    it('draws only the footer on the first page: the date left and the page right at 8pt', function (): void {
+        $drawn = decorate(decoration(), 1, 3);
+
+        expect($drawn['lines'])->toBe([])
+            ->and(array_column($drawn['texts'], 'text'))->toBe(['Vytvořeno 14. 10. 2026', 'Strana 1 / 3'])
+            ->and(array_unique(array_column($drawn['texts'], 'size')))->toBe([8.0])
+            ->and($drawn['texts'][0]['x'])->toBe(48.0)
+            ->and($drawn['texts'][1]['x'])->toBeGreaterThan(400.0)
+            // The footer sits in the bottom margin (56pt).
+            ->and($drawn['texts'][0]['y'])->toBeGreaterThan(841.89 - 56.0);
+    });
+
+    it('draws the running header with a 1pt rule on every page after the first', function (): void {
+        $drawn = decorate(decoration(), 2, 3);
+
+        expect(array_column($drawn['texts'], 'text'))->toBe([
+            'Pracovní výkaz · Ukázkový odběratel a.s. · 1. 7. 2026 – 30. 9. 2026',
+            'Vytvořeno 14. 10. 2026',
+            'Strana 2 / 3',
+        ])
+            ->and($drawn['lines'])->toBe([['x1' => 48.0, 'x2' => 595.28 - 48.0, 'width' => 1.0]])
+            // The header sits in the top margin (72pt).
+            ->and($drawn['texts'][0]['y'])->toBeLessThan(72.0);
+    });
+
+    it('ends the page label at the right margin', function (): void {
+        $drawn = decorate(decoration(), 3, 3);
+        $label = $drawn['texts'][2];
+        expect($label['text'])->toBe('Strana 3 / 3');
+        $width = (new Dompdf)->getFontMetrics()->getTextWidth($label['text'], (new Dompdf)->getFontMetrics()->getFont('DejaVu Sans'), 8);
+
+        expect($label['x'] + $width)->toEqualWithDelta(595.28 - 48.0, 0.01);
+    });
+
+    it('shortens a long client name so the running header stays on one line inside the margins', function (): void {
+        $drawn = decorate(decoration(str_repeat('Ž', 400)), 2, 3);
+        $header = $drawn['texts'][0];
+        $metrics = (new Dompdf)->getFontMetrics();
+        $width = $metrics->getTextWidth($header['text'], $metrics->getFont('DejaVu Sans'), 8);
+
+        expect($header['text'])->toContain('…')
+            ->and($header['text'])->toStartWith('Pracovní výkaz · ')
+            ->and($header['text'])->toEndWith(' · 1. 7. 2026 – 30. 9. 2026')
+            ->and($width)->toBeLessThanOrEqual(595.28 - 96.0);
+    });
+});
+
+describe('the English document', function (): void {
+    it('prints the English labels, Y-m-d dates and H:MM durations for a client with invoice language en', function (): void {
+        reportMixedSections();
+        $this->client->update(['invoice_language' => 'en']);
+
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+        $html = app(WorkReportPdf::class)->html($source, $source->clientLanguage);
+
+        expect($source->clientLanguage)->toBe(InvoiceLanguage::English)
+            ->and($source->supplierLines)->toContain('Company ID: 12345678')
+            ->and($source->clientLines)->toContain('Company ID: '.$this->clientCompanyId)
+            ->and($html)->toContain('lang="en"')
+            ->and($html)->toContain('>Work report<')
+            ->and($html)->toContain('>Supplier<')
+            ->and($html)->toContain('>Customer<')
+            ->and($html)->toContain('Period: 2026-09-01 – 2026-09-30')
+            ->and($html)->toContain('<h2>Billable</h2>')
+            ->and($html)->toContain('<h2>Non-billable</h2>')
+            ->and($html)->toContain('>Date<')
+            ->and($html)->toContain('>Task<')
+            ->and($html)->toContain('>Hours<')
+            ->and($html)->toContain('Daily total')
+            ->and($html)->toContain('No task')
+            ->and($html)->toContain('Total billable')
+            ->and($html)->toContain('Total non-billable')
+            ->and($html)->toContain('Project: Údržba webu')
+            ->and($html)->toContain('<h2>Summary</h2>')
+            ->and($html)->toContain('Days worked')
+            ->and($html)->toContain('Total hours')
+            ->and($html)->toContain('2026-09-02')
+            ->and($html)->toMatch('/Total hours<\/td>\s*<td class="hours total-hours">7:15</')
+            ->and($html)->not->toContain('2. 9. 2026')
+            ->and($html)->not->toContain('Fakturovatelné');
+    });
+
+    it('prints the empty-period sentence in English', function (): void {
+        $source = WorkReportSource::forPeriod($this->client->id, '2025-01-01', '2025-01-31', null, $this->now);
+
+        expect(app(WorkReportPdf::class)->html($source, InvoiceLanguage::English))->toContain('There are no entries for the selected period.');
+    });
+
+    it('has the same keys in both languages, the footer labels included', function (): void {
+        $czech = array_keys(require lang_path('cs/work_report.php'));
+        $english = array_keys(require lang_path('en/work_report.php'));
+        sort($czech);
+        sort($english);
+
+        expect($english)->toBe($czech)
+            ->and(trans('work_report.page', ['n' => 2, 'total' => 5], 'en'))->toBe('Page 2 / 5')
+            ->and(trans('work_report.generated', ['date' => '2026-10-14'], 'en'))->toBe('Generated 2026-10-14')
+            ->and(trans('work_report.page', ['n' => 2, 'total' => 5], 'cs'))->toBe('Strana 2 / 5')
+            ->and(trans('work_report.generated', ['date' => '14. 10. 2026'], 'cs'))->toBe('Vytvořeno 14. 10. 2026');
+    });
+
+    it('renders an English PDF', function (): void {
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        $pdf = app(WorkReportPdf::class)->render($source, InvoiceLanguage::English);
+
+        expect(str_starts_with($pdf, '%PDF-'))->toBeTrue();
+    });
+});
+
+describe('money, descriptions and markup', function (): void {
+    it('shows no rate, price, amount, currency, exchange rate or description whatever is stored', function (): void {
+        $canary = 'Popis-'.bin2hex(random_bytes(4));
+        ['second' => $second, 'fixed' => $fixed] = reportMixedSections();
+        $this->client->update(['currency' => 'EUR', 'hourly_rate' => Money::ofMinor(98765, 'EUR')]);
+        $this->project->billing()->create(['billing_type' => 'hourly', 'hourly_rate' => Money::ofMinor(87654, 'EUR')]);
+        $second->billing()->create(['billing_type' => 'fixed_price', 'fixed_price' => Money::ofMinor(76543, 'EUR')]);
+        app(PartnerContext::class)->runAsSystem(static function (): void {
+            ExchangeRate::query()->insert([
+                'rate_date' => '2026-09-02', 'currency' => 'EUR', 'unit_amount' => 1, 'rate' => '23.45678',
+                'fetched_at' => '2026-09-02 14:45:00+00', 'created_at' => '2026-09-02 14:45:00+00', 'updated_at' => '2026-09-02 14:45:00+00',
+            ]);
+        });
+        reportEntry($this->client, '2026-09-08 06:00:00', '2026-09-08 07:00:00', ['project_id' => $second->id, 'task_id' => $fixed->id, 'description' => $canary]);
+        reportEntry($this->client, '2026-09-09 06:00:00', '2026-09-09 07:00:00', ['project_id' => $this->project->id, 'billable' => false, 'description' => $canary.'-nb']);
+
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now);
+
+        foreach ([InvoiceLanguage::Czech, InvoiceLanguage::English] as $language) {
+            $html = app(WorkReportPdf::class)->html($source, $language);
+
+            foreach (['EUR', 'CZK', 'Kč', '€', '98765', '987,65', '987.65', '87654', '876,54', '876.54', '76543', '765,43', '765.43', '77700', '777,00', '777.00', '23.45678', '23,45678', $canary] as $forbidden) {
+                expect($html)->not->toContain($forbidden);
+            }
+        }
+    });
+
+    it('escapes a title, a client name and a project name that look like markup', function (): void {
+        $this->client->update(['name' => '<i>Client</i> & Co']);
+        $this->project->update(['name' => '<u>Project</u>']);
+        Task::factory()->create(['project_id' => $this->project->id, 'title' => '<b>Example</b>']);
+        $task = Task::query()->where('title', '<b>Example</b>')->firstOrFail();
+        reportEntry($this->client, '2026-09-10 06:00:00', '2026-09-10 07:00:00', ['project_id' => $this->project->id, 'task_id' => $task->id]);
+        $source = WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', $this->project->id, $this->now);
+
+        $html = app(WorkReportPdf::class)->html($source, InvoiceLanguage::English);
+
+        expect($html)->toContain('&lt;b&gt;Example&lt;/b&gt;')
+            ->and($html)->toContain('&lt;i&gt;Client&lt;/i&gt; &amp; Co')
+            ->and($html)->toContain('&lt;u&gt;Project&lt;/u&gt;')
+            ->and($html)->not->toContain('<b>Example</b>')
+            ->and($html)->not->toContain('<i>Client</i>')
+            ->and($html)->not->toContain('<u>Project</u>');
+    });
+});
+
+describe('the entry-list source', function (): void {
+    it('builds the period and the sections from exactly the listed entries', function (): void {
+        $listed = TimeEntry::query()->where('client_id', $this->client->id)->orderBy('started_at')->pluck('id')->all();
+        $unlisted = reportEntry($this->client, '2026-09-02 12:00:00', '2026-09-02 13:00:00', ['project_id' => $this->project->id]);
+
+        $source = WorkReportSource::fromEntryIds($listed, $this->now);
+
+        expect($unlisted->id)->not->toBeIn($listed)
+            ->and($source->clientName)->toBe('Ukázkový odběratel a.s.')
+            ->and($source->clientLanguage)->toBe(InvoiceLanguage::Czech)
+            ->and($source->from)->toBe('2026-09-02')
+            ->and($source->to)->toBe('2026-09-03')
+            ->and($source->supplierLines)->toBe(['Příklad Dodavatel s.r.o.', 'Vzorová 1', '110 00 Praha', 'CZ', 'IČO: 12345678'])
+            ->and($source->totalSeconds())->toBe(8100 + 7200)
+            ->and($source->daysWorked())->toBe(2)
+            ->and(array_unique(array_column($source->rows, 'billable')))->toBe([true]);
+    });
+
+    it('matches the period source when the list holds every entry of the period', function (): void {
+        reportMixedSections();
+        $ids = TimeEntry::query()->where('client_id', $this->client->id)->pluck('id')->all();
+
+        $byIds = WorkReportSource::fromEntryIds($ids, $this->now);
+        $byPeriod = WorkReportSource::forPeriod($this->client->id, '2026-09-02', '2026-09-05', null, $this->now);
+
+        expect($byIds->rows)->toBe($byPeriod->rows)
+            ->and($byIds->from)->toBe('2026-09-02')
+            ->and($byIds->to)->toBe('2026-09-05')
+            ->and($byIds->projectName)->toBeNull();
+    });
+
+    it('takes the first Prague day of an entry that starts just after midnight there', function (): void {
+        $entry = reportEntry($this->client, '2026-08-31 22:30:00', '2026-08-31 23:00:00', ['project_id' => $this->project->id]);
+
+        $source = WorkReportSource::fromEntryIds([$entry->id], $this->now);
+
+        expect($source->from)->toBe('2026-09-01')
+            ->and($source->to)->toBe('2026-09-01')
+            ->and($source->projectName)->toBe('Redesign žluťoučkého webu');
+    });
+
+    it('refuses an empty list, entries of two clients, an unknown or malformed id', function (): void {
+        $other = Client::factory()->create();
+        $foreign = reportEntry($other, '2026-09-02 06:00:00', '2026-09-02 07:00:00');
+        $own = TimeEntry::query()->where('client_id', $this->client->id)->firstOrFail();
+
+        expect(fn () => WorkReportSource::fromEntryIds([], $this->now))->toThrow(InvalidArgumentException::class)
+            ->and(fn () => WorkReportSource::fromEntryIds([$own->id, $foreign->id], $this->now))->toThrow(InvalidArgumentException::class)
+            ->and(fn () => WorkReportSource::fromEntryIds([$own->id, '0198a5c0-0000-7000-8000-000000000000'], $this->now))->toThrow(InvalidArgumentException::class)
+            ->and(fn () => WorkReportSource::fromEntryIds(['not-an-id'], $this->now))->toThrow(InvalidArgumentException::class);
+    });
+
+    it('counts a repeated id once', function (): void {
+        $own = TimeEntry::query()->where('client_id', $this->client->id)->orderBy('started_at')->firstOrFail();
+
+        $source = WorkReportSource::fromEntryIds([$own->id, $own->id], $this->now);
+
+        expect($source->totalSeconds())->toBe(5400);
+    });
+
+    it('refuses a Partner and a guest and lets a system run build the source', function (): void {
+        $own = TimeEntry::query()->where('client_id', $this->client->id)->firstOrFail();
+
+        $this->actingAs(Canary::partnerFor($this->client->id));
+        expect(fn () => WorkReportSource::fromEntryIds([$own->id], $this->now))->toThrow(AuthorizationException::class)
+            ->and(fn () => WorkReportSource::forPeriod($this->client->id, '2026-09-01', '2026-09-30', null, $this->now))->toThrow(AuthorizationException::class);
+
+        auth()->logout();
+        expect(fn () => WorkReportSource::fromEntryIds([$own->id], $this->now))->toThrow(AuthorizationException::class);
+
+        $source = app(PartnerContext::class)->runAsSystem(fn (): WorkReportSource => WorkReportSource::fromEntryIds([$own->id], $this->now));
+
+        expect($source->rows)->not->toBe([]);
+    });
+});

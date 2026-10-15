@@ -7,12 +7,16 @@ namespace App\Providers;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\Dashboard\Models\DashboardWidgetPreference;
+use App\Domain\Dashboard\Policies\DashboardWidgetPreferencePolicy;
+use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Policies\UserPolicy;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Projects\Policies\ProjectPolicy;
+use App\Domain\Reports\Models\ReportExport;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
@@ -95,6 +99,17 @@ final class AccessServiceProvider extends ServiceProvider
 
         // Tracked time, its rates and its billing are Admin-only (TI-07): a Partner is granted nothing.
         Gate::policy(TimeEntry::class, AdminOnlyPolicy::class);
+
+        // Public CNB data, but finance-like and closed to Partners like every rate.
+        Gate::policy(ExchangeRate::class, AdminOnlyPolicy::class);
+
+        // An export request names the clients and periods of one Admin: Admin-only, and the owner scope of the
+        // model keeps even a second Admin away from it.
+        Gate::policy(ReportExport::class, AdminOnlyPolicy::class);
+
+        // The collapsed state of a dashboard card: the Admin holds any card, a Partner only the cards a Partner can see
+        // (explicit grant in the policy, everything else denied); the owner scope keeps everybody to the own rows.
+        Gate::policy(DashboardWidgetPreference::class, DashboardWidgetPreferencePolicy::class);
 
         // The personal planner "Signal" belongs to one Admin and is closed to Partners; the owner scope
         // of the models keeps every Admin to the own rows.

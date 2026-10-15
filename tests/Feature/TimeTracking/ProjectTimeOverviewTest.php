@@ -266,9 +266,9 @@ describe('the stats row', function (): void {
 });
 
 describe('the registration', function (): void {
-    it('registers the widget on the resource and the page, and keeps the panel widget list empty', function (): void {
+    it('registers the widget on the resource and the page, and keeps it out of the panel widget list', function (): void {
         expect(ProjectResource::getWidgets())->toBe([ProjectTimeStats::class])
-            ->and(Filament::getPanel('admin')->getWidgets())->toBe([]);
+            ->and(Filament::getPanel('admin')->getWidgets())->not->toContain(ProjectTimeStats::class);
 
         $project = overviewProject();
         $page = Livewire::test(ViewProject::class, ['record' => $project->getRouteKey()])->assertSuccessful();

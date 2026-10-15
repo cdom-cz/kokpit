@@ -8,12 +8,15 @@ use App\Domain\Api\Models\IdempotencyKey;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\Dashboard\Models\DashboardWidgetPreference;
+use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
+use App\Domain\Reports\Models\ReportExport;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\Tag;
@@ -61,6 +64,9 @@ final class MorphMap
         'task_checklist_item' => TaskChecklistItem::class,
         'task_comment' => TaskComment::class,
         'time_entry' => TimeEntry::class,
+        'dashboard_widget_preference' => DashboardWidgetPreference::class,
+        'exchange_rate' => ExchangeRate::class,
+        'report_export' => ReportExport::class,
         'signal_day_override' => SignalDayOverride::class,
         'signal_deep_work_day' => SignalDeepWorkDay::class,
         'signal_recurring_task' => SignalRecurringTask::class,

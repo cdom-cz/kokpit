@@ -236,27 +236,58 @@ final readonly class Money implements JsonSerializable
      */
     public function convert(string $decimalRate, string $toCurrency, int $unitAmount = 1): self
     {
-        // Digits only (no sign, exponent, INF or NAN) and not zero: a zero rate would turn every amount into
-        // nothing and a negative one would flip the sign of a billed amount, in an immutable invoice snapshot.
-        if (preg_match('/^\d+(\.\d{1,10})?$/D', $decimalRate) !== 1 || BigDecimal::of($decimalRate)->isZero()) {
-            throw new InvalidArgumentException('The exchange rate must be a positive decimal string with at most ten fraction digits.');
+        $target = self::validConversion($decimalRate, $toCurrency, $unitAmount);
+
+        return self::fromExactMinor(
+            self::convertedExact(BigRational::of($this->minor), $this->currency, $decimalRate, $target, $unitAmount)->toString(),
+            $target,
+        );
+    }
+
+    /**
+     * The amount of one duration at an hourly rate, converted into another currency, rounded once.
+     *
+     * The exact value is `rate / 10^sourceDigits * seconds / 3600 * decimalRate / unitAmount * 10^targetDigits`
+     * as one rational, and {@see Money::fromExactMinor()} rounds it a single time. This can differ from
+     * `forDuration()` followed by `convert()`, which rounds the client-currency amount first and then the CZK
+     * amount again (research Pitfall 6): 100.00 EUR per hour for 61 s at 25.125 is 42.57 CZK here and 42.46
+     * CZK the double-rounded way. Reports price an entry in CZK with this method.
+     *
+     * @param  string  $decimalRate  same shape as for {@see Money::convert()}
+     *
+     * @throws InvalidArgumentException when the rate is malformed, zero or negative, the target currency is malformed, the unit amount is below one or the seconds are negative
+     */
+    public static function forDurationConverted(self $hourlyRate, int $seconds, string $decimalRate, string $toCurrency, int $unitAmount = 1): self
+    {
+        $target = self::validConversion($decimalRate, $toCurrency, $unitAmount);
+
+        if ($seconds < 0) {
+            throw new InvalidArgumentException('A duration cannot be negative.');
         }
 
-        if ($unitAmount < 1) {
-            throw new InvalidArgumentException('The quoted unit amount must be at least one.');
+        $exactDuration = BigRational::ofFraction(BigInteger::of($hourlyRate->minor)->multipliedBy($seconds), 3600);
+
+        return self::fromExactMinor(
+            self::convertedExact($exactDuration, $hourlyRate->currency, $decimalRate, $target, $unitAmount)->toString(),
+            $target,
+        );
+    }
+
+    /**
+     * The effective hourly rate of a fixed price over the time spent on it: `price * 3600 / seconds` in the
+     * currency of the price, rounded once at the single rounding point.
+     *
+     * @throws InvalidArgumentException when the seconds are below one
+     */
+    public static function hourlyRateFor(self $price, int $seconds): self
+    {
+        if ($seconds < 1) {
+            throw new InvalidArgumentException('The effective hourly rate needs at least one second.');
         }
 
-        $target = self::validCurrency($toCurrency);
-        $sourceDigits = Currency::of($this->currency)->getDefaultFractionDigits();
-        $targetDigits = Currency::of($target)->getDefaultFractionDigits();
+        $exact = BigRational::ofFraction(BigInteger::of($price->minor)->multipliedBy(3600), $seconds);
 
-        $exact = BigRational::of($this->minor)
-            ->dividedBy(BigInteger::ten()->power($sourceDigits))
-            ->multipliedBy(BigDecimal::of($decimalRate))
-            ->dividedBy($unitAmount)
-            ->multipliedBy(BigInteger::ten()->power($targetDigits));
-
-        return self::fromExactMinor($exact->toString(), $target);
+        return self::fromExactMinor($exact->toString(), $price->currency);
     }
 
     /**
@@ -292,6 +323,43 @@ final readonly class Money implements JsonSerializable
         } catch (UnknownCurrencyException $e) {
             throw new InvalidArgumentException('The currency is not a known ISO 4217 code.', 0, $e);
         }
+    }
+
+    /**
+     * Validates the inputs every conversion shares and returns the target currency code.
+     *
+     * Digits only (no sign, exponent, INF or NAN) and not zero: a zero rate would turn every amount into
+     * nothing and a negative one would flip the sign of a billed amount, in an immutable invoice snapshot.
+     *
+     * @throws InvalidArgumentException
+     */
+    private static function validConversion(string $decimalRate, string $toCurrency, int $unitAmount): string
+    {
+        if (preg_match('/^\d+(\.\d{1,10})?$/D', $decimalRate) !== 1 || BigDecimal::of($decimalRate)->isZero()) {
+            throw new InvalidArgumentException('The exchange rate must be a positive decimal string with at most ten fraction digits.');
+        }
+
+        if ($unitAmount < 1) {
+            throw new InvalidArgumentException('The quoted unit amount must be at least one.');
+        }
+
+        return self::validCurrency($toCurrency);
+    }
+
+    /**
+     * An exact amount in the minor units of `$sourceCurrency`, converted into the minor units of the target.
+     * Nothing is rounded here.
+     */
+    private static function convertedExact(BigRational $exactSourceMinor, string $sourceCurrency, string $decimalRate, string $target, int $unitAmount): BigRational
+    {
+        $sourceDigits = Currency::of($sourceCurrency)->getDefaultFractionDigits();
+        $targetDigits = Currency::of($target)->getDefaultFractionDigits();
+
+        return $exactSourceMinor
+            ->dividedBy(BigInteger::ten()->power($sourceDigits))
+            ->multipliedBy(BigDecimal::of($decimalRate))
+            ->dividedBy($unitAmount)
+            ->multipliedBy(BigInteger::ten()->power($targetDigits));
     }
 
     private function assertSameCurrency(self $other): void

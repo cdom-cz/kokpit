@@ -5,6 +5,12 @@ declare(strict_types=1);
 use App\Domain\Shared\Auth\AccessRules;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Pages\Dashboard;
+use App\Filament\Widgets\HoursStats;
+use App\Filament\Widgets\PartnerProjects;
+use App\Filament\Widgets\PartnerTasks;
+use App\Filament\Widgets\TodayPlan;
+use App\Filament\Widgets\UnbilledPerClient;
+use App\Filament\Widgets\UpcomingDeadlines;
 use Filament\Facades\Filament;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Gate;
@@ -46,11 +52,13 @@ function accessStates(): array
     ];
 }
 
-it('opens the dashboard to an Admin', function (): void {
+it('opens the dashboard to an Admin and shows the hours stats instead of the empty state', function (): void {
     $this->actingAs(Canary::admin())->get('/admin')
         ->assertOk()
-        ->assertSee(__('kokpit.dashboard.empty_heading'))
-        ->assertSee(__('kokpit.dashboard.empty_description_admin'));
+        ->assertSee(__('kokpit.dashboard.hours.today'))
+        ->assertSee(__('kokpit.dashboard.hours.week'))
+        ->assertSee(__('kokpit.dashboard.hours.month'))
+        ->assertDontSee(__('kokpit.dashboard.empty_heading'));
 });
 
 it('opens the dashboard to a Partner with a client and shows the neutral text', function (): void {
@@ -58,7 +66,7 @@ it('opens the dashboard to a Partner with a client and shows the neutral text', 
         ->assertOk()
         ->assertSee(__('kokpit.dashboard.empty_heading'))
         ->assertSee(__('kokpit.dashboard.empty_description_partner'))
-        ->assertDontSee(__('kokpit.dashboard.empty_description_admin'));
+        ->assertDontSee(__('kokpit.dashboard.hours.today'));
 });
 
 it('refuses the dashboard to a Partner without a client', function (): void {
@@ -78,7 +86,10 @@ it('replaces the stock dashboard and its widgets', function (): void {
 
     expect($panel->getPages())->toContain(Dashboard::class)
         ->and($panel->getPages())->not->toContain(Filament\Pages\Dashboard::class)
-        ->and($panel->getWidgets())->toBe([])
+        // The panel discovers exactly the widgets under app/Filament/Widgets (the Partner and the Admin
+        // dashboard ones); the stock account and info widgets stay out, and outside a Partner or Admin
+        // context the dashboard offers none.
+        ->and(array_values($panel->getWidgets()))->toEqualCanonicalizing([PartnerTasks::class, PartnerProjects::class, HoursStats::class, UnbilledPerClient::class, UpcomingDeadlines::class, TodayPlan::class])
         ->and((new Dashboard)->getWidgets())->toBe([]);
 
     $this->actingAs(Canary::admin())->get('/admin')

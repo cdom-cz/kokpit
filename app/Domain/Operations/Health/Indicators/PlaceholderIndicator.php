@@ -11,7 +11,7 @@ use App\Domain\Operations\Health\HealthStatus;
 
 /**
  * Holds a slot until the phase that owns the measurement replaces it (D-13):
- * rate date (Phase 8), webhooks (Phase 11), invoice e-mails (Phase 10).
+ * webhooks (Phase 11), invoice e-mails (Phase 10). The rate date slot (Phase 8) has its own indicator.
  */
 final readonly class PlaceholderIndicator implements HealthIndicator
 {

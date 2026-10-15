@@ -176,8 +176,83 @@ return [
 
     'dashboard' => [
         'empty_heading' => 'Zatím tu nic není',
-        'empty_description_admin' => 'Nástěnka se naplní, jakmile v Kokpitu přibudou klienti, projekty a odpracovaný čas.',
         'empty_description_partner' => 'Jakmile pro vás bude něco připraveno, objeví se to tady.',
+
+        // The Admin dashboard (RE-04; D-11, UI-SPEC Surface E): hours, unbilled time, deadlines and the plan for today.
+        'collapse' => [
+            'store_failed' => 'Nastavení přehledu se nepodařilo uložit. Zkuste to prosím znovu.',
+        ],
+        'hours' => [
+            'heading' => 'Odpracovaný čas',
+            'summary' => 'Dnes :duration',
+            'today' => 'Dnes',
+            'week' => 'Tento týden',
+            'month' => 'Tento měsíc',
+            'today_done' => 'Odpracováno dnes',
+            'today_running' => 'Včetně běžícího časovače',
+            'week_range' => ':from – :to',
+            'month_billable' => 'Fakturovatelné :duration',
+        ],
+        'unbilled' => [
+            'heading' => 'Nevyfakturováno tento měsíc',
+            'summary' => ':duration h',
+            'report_link' => 'Zobrazit v reportu',
+            'columns' => [
+                'client' => 'Klient',
+                'hours' => 'Hodiny',
+                'amount' => 'Částka',
+                'amount_czk' => 'Částka v Kč',
+            ],
+            'total' => 'Celkem',
+            'fixed_badge' => 'Pevná cena',
+            'fixed_note' => 'Hodiny s pevnou cenou jsou bez částky.',
+            'missing_rate' => 'Chybí kurz',
+            'missing_rate_note' => 'Součet v Kč nezahrnuje :count záznamů bez kurzu ČNB.',
+            'empty_heading' => 'Nic k vyfakturování',
+            'empty_description' => 'Tento měsíc nemáte žádný nevyfakturovaný fakturovatelný čas.',
+        ],
+        'deadlines' => [
+            'heading' => 'Nejbližší termíny',
+            'summary_overdue' => '{1} :count úkol po termínu|[2,4] :count úkoly po termínu|[5,*] :count úkolů po termínu',
+            'summary_none' => 'Vše v termínu',
+            'columns' => [
+                'task' => 'Úkol',
+                'due' => 'Termín',
+            ],
+            'today' => 'Dnes',
+            'overdue_badge' => 'Po termínu',
+            'overdue_days' => '{1} Po termínu o :count den|[2,4] Po termínu o :count dny|[5,*] Po termínu o :count dní',
+            'empty_heading' => 'Žádné nadcházející termíny',
+            'empty_description' => 'Otevřené úkoly zatím nemají termín.',
+        ],
+        'plan' => [
+            'heading' => 'Plán na dnešek',
+            'summary' => 'Splněno :done z :count',
+            'count' => '{0} :count úkolů|{1} :count úkol|[2,4] :count úkoly|[5,*] :count úkolů',
+            'open_link' => 'Otevřít plán',
+            'show_more' => 'Zobrazit dalších :count',
+            'hide_more' => 'Skrýt dalších :count',
+            'recurring' => 'Opakuje se',
+            'done' => 'Splněno',
+            'empty_heading' => 'Na dnešek zatím nic nenaplánováno',
+            'empty_description' => 'Plán si můžete připravit v nabídce Signal, Dnes a zítra.',
+        ],
+        'partner_tasks' => [
+            'heading' => 'Otevřené úkoly',
+            'summary' => 'Otevřeno: :count',
+            'description' => 'Nejdřív úkoly, které čekají na vaši kontrolu.',
+            'review_count' => 'Ke kontrole: :count',
+            'review_button' => 'Zkontrolovat úkol',
+            'all_link' => 'Zobrazit všechny úkoly',
+            'empty_heading' => 'Žádné otevřené úkoly',
+            'empty_description' => 'Jakmile bude potřeba vaše pozornost, objeví se to tady.',
+        ],
+        'partner_projects' => [
+            'heading' => 'Moje projekty',
+            'summary' => 'Projektů: :count',
+            'empty_heading' => 'Zatím žádné projekty',
+            'empty_description' => 'Projekty, které pro vás Kokpit zpřístupní, se objeví tady.',
+        ],
     ],
 
     'settings' => [
@@ -416,6 +491,8 @@ return [
         'description' => 'Stav úloh na pozadí a plánovače. Stránka se obnovuje sama každých 30 sekund.',
         'checked_at' => 'Zkontrolováno: :time',
         'not_available_yet' => 'Zatím není k dispozici',
+        // Shown as the value of a row whose indicator has no value (never downloaded, never recorded, not measured).
+        'empty_value' => '—',
         'no_indicator' => 'Pro tuto položku není zaregistrována žádná kontrola',
         'failed_jobs' => [
             'none' => 'Žádná selhaná úloha',
@@ -435,6 +512,335 @@ return [
             'never' => 'Plánovač se dosud nezapsal',
             'alive' => 'Plánovač běží',
             'late' => 'Plánovač se dlouho nezapsal, pravděpodobně neběží',
+        ],
+        // The detail of the last rate date slot; :count is the number of working days the newest list is behind.
+        'last_rate_date' => [
+            'ok' => 'Kurzy jsou aktuální.',
+            'warning' => '{1} Chybí kurzy za :count pracovní den.|[2,4] Chybí kurzy za :count pracovní dny.|[5,*] Chybí kurzy za :count pracovních dní.',
+            'error' => '{1} Kurzy chybí už :count pracovní den.|[2,4] Kurzy chybí už :count pracovní dny.|[5,*] Kurzy chybí už :count pracovních dní.',
+            'never' => 'Kurzy ještě nebyly staženy. Stáhněte je v přehledu Kurzy ČNB.',
+        ],
+    ],
+
+    // The CNB rates area (EX-01, EX-02): the UI-SPEC copywriting contract, formal address. The console and
+    // failure lines and alert.body_none are planner-written in the same tone; they are not UI-SPEC surfaces.
+    'rates' => [
+        'navigation' => 'Kurzy ČNB',
+        'model_label' => 'Kurz',
+        'plural_label' => 'Kurzy',
+
+        'stats' => [
+            'last_list' => 'Poslední kurzy',
+            'fetched_at' => 'Staženo :datetime',
+            'never' => 'Kurzy ještě nebyly staženy',
+            'status' => 'Stav',
+            'currencies' => 'Měn v seznamu',
+            'currencies_description' => 'Jednotka a kurz podle ČNB',
+        ],
+
+        'columns' => [
+            'date' => 'Datum',
+            'currency' => 'Měna',
+            'unit' => 'Jednotka',
+            'rate' => 'Kurz',
+            'fetched_at' => 'Staženo',
+        ],
+
+        'filters' => [
+            'date' => 'Datum',
+            'currency' => 'Měna',
+        ],
+
+        'empty' => [
+            'heading' => 'Zatím tu nejsou žádné kurzy',
+            'description' => 'Stáhněte první seznam tlačítkem Stáhnout dnešní kurzy. Kurzy se pak stahují samy každý pracovní den odpoledne.',
+        ],
+
+        'empty_day' => [
+            'heading' => 'Pro tento den ČNB kurzy nevyhlásila',
+            'description' => 'Platí poslední vyhlášené kurzy ze dne :date.',
+        ],
+
+        'actions' => [
+            'download' => 'Stáhnout dnešní kurzy',
+            'backfill' => 'Doplnit historii',
+        ],
+
+        'download' => [
+            'stored' => [
+                'title' => 'Kurzy byly staženy',
+                'body' => 'Platnost ke dni :date, :count měn.',
+            ],
+            'already_stored' => [
+                'title' => 'Dnešní kurzy už jsou stažené.',
+                'body' => 'Platnost ke dni :date.',
+            ],
+            'not_published' => [
+                'title' => 'Nové kurzy zatím nejsou k dispozici.',
+                'body' => 'Poslední platné kurzy jsou ze dne :date. ČNB je vyhlašuje v pracovní dny po 14:30.',
+            ],
+            'failed' => [
+                'title' => 'Kurzy se nepodařilo stáhnout',
+                'body' => 'Server ČNB neodpovídá nebo vrátil neplatná data. Zkuste to později. Do té doby se používají poslední známé kurzy.',
+            ],
+        ],
+
+        'backfill' => [
+            'heading' => 'Doplnit historii kurzů',
+            'from' => 'Od',
+            'to' => 'Do',
+            'helper' => 'Víkendy a svátky se stahovat nemusí, platí pro ně poslední vyhlášený kurz.',
+            'submit' => 'Doplnit historii',
+            'cancel' => 'Nedoplňovat',
+            'queued' => [
+                'title' => 'Doplnění historie je ve frontě',
+                'body' => 'Zpracuje se na pozadí. Výsledek uvidíte v přehledu kurzů.',
+            ],
+            'errors' => [
+                'order' => 'Datum Od nesmí být později než Do.',
+                'earliest' => 'Nejdřívější možné datum je 1. 1. 2000.',
+                'future' => 'Datum Do nemůže být v budoucnosti.',
+                'span' => 'Zvolené období je příliš dlouhé. Zvolte nejvýše :days dní.',
+            ],
+        ],
+
+        // The alert of the final attempt of the day (bell and e-mail): dates only, no URL, host or exception text.
+        'alert' => [
+            'title' => 'Kurzy ČNB se nepodařilo stáhnout',
+            'body' => 'Dnešní kurzy ČNB (:date) se ani po opakovaných pokusech nepodařilo stáhnout. Do doby, než se stáhnou, se používají poslední známé kurzy ze dne :last.',
+            // No list has ever been stored, so there is no last known date to name.
+            'body_none' => 'Dnešní kurzy ČNB (:date) se ani po opakovaných pokusech nepodařilo stáhnout. Zatím není uložen žádný seznam kurzů.',
+            'action' => 'Otevřít kurzy ČNB',
+        ],
+
+        'console' => [
+            'stored' => 'Kurzy ČNB byly staženy: platnost ke dni :date, :count měn.',
+            'already_stored' => 'Kurzy ČNB za :date už jsou stažené.',
+            'not_published' => 'ČNB nové kurzy zatím nevyhlásila. Poslední platné kurzy jsou ze dne :date.',
+            'failed' => 'Kurzy ČNB se nepodařilo stáhnout: :reason',
+            'status' => 'Stavový kód odpovědi: :status.',
+            'not_working_day' => 'Dnes není pracovní den, kurzy se nestahují.',
+            'healed' => 'Doplněno chybějících seznamů kurzů: :count.',
+        ],
+
+        'failure' => [
+            'unavailable' => 'Server ČNB neodpovídá.',
+            'rejected' => 'Server ČNB požadavek odmítl.',
+            'server_error' => 'Server ČNB hlásí chybu.',
+            'malformed' => 'Server ČNB vrátil neplatná data.',
+        ],
+    ],
+
+    // The exports area (RE-03, D-09): the UI-SPEC copywriting contract "Exports" and Surface C and H, formal
+    // address. The file texts (column headers, sheet and row names, notes) are what the CSV and XLSX builders
+    // write; the summary texts feed the "Zadání" column. :days, :format, :period and :date are filled by the caller.
+    'exports' => [
+        'navigation' => 'Exporty',
+        'model_label' => 'Export',
+        'plural_label' => 'Exporty',
+        'subheading' => 'Hotové exporty se uchovávají :days dní, potom se smažou.',
+
+        'columns' => [
+            'created_at' => 'Vytvořeno',
+            'format' => 'Formát',
+            'summary' => 'Zadání',
+            'status' => 'Stav',
+            'expires_at' => 'Platí do',
+        ],
+
+        'actions' => [
+            'download' => 'Stáhnout export',
+        ],
+
+        'queued' => [
+            'title' => 'Export se připravuje',
+            'body' => 'Až bude hotový, přijde upozornění. Soubor najdete v nabídce Exporty.',
+        ],
+
+        'gone' => 'Soubor už není k dispozici. Spusťte export znovu.',
+        'failure_reason' => 'Export se nepodařilo vytvořit. Spusťte ho znovu v Reportu času.',
+
+        'empty' => [
+            'heading' => 'Zatím tu nejsou žádné exporty',
+            'description' => 'Export spustíte v Reportu času tlačítkem Exportovat report.',
+        ],
+
+        // The bell notifications name the format and the period only: no client name, amount or path.
+        'bell' => [
+            'ready' => [
+                'title' => 'Export je připraven',
+                'body' => ':format, :period. Soubor je ke stažení do :date.',
+            ],
+            'failed' => [
+                'title' => 'Export se nepodařil',
+                'body' => 'Export za :period se nepodařilo vytvořit. Zkuste ho spustit znovu.',
+            ],
+            'action' => 'Otevřít exporty',
+        ],
+
+        // The parts of the "Zadání" text when no client or project is chosen.
+        'summary' => [
+            'all_clients' => 'Všichni klienti',
+            'all_projects' => 'Všechny projekty',
+        ],
+
+        // What the CSV and XLSX files contain (UI-SPEC C3). The column order is the order of the keys.
+        'file' => [
+            'columns' => [
+                'date' => 'Datum',
+                'client' => 'Klient',
+                'project' => 'Projekt',
+                'task' => 'Úkol',
+                'user' => 'Uživatel',
+                'seconds' => 'Sekundy',
+                'hours' => 'Hodiny',
+                'billable' => 'Fakturovatelné',
+                'billed' => 'Vyfakturováno',
+                'amount' => 'Částka',
+                'currency' => 'Měna',
+                'amount_czk' => 'Částka v Kč',
+            ],
+
+            'yes' => 'ano',
+            'no' => 'ne',
+
+            'sheets' => [
+                'entries' => 'Záznamy',
+                'summary' => 'Souhrn',
+            ],
+
+            'summary_rows' => [
+                'client' => 'Klient',
+                'project' => 'Projekt',
+                'period' => 'Období',
+                'worked' => 'Odpracováno',
+                'billable' => 'Fakturovatelné',
+                'non_billable' => 'Nefakturovatelné',
+                'billed' => 'Vyfakturováno',
+                'unbilled' => 'Nevyfakturováno',
+                'amounts' => 'Částky po měnách',
+                'amount_czk' => 'Částka v Kč',
+                'note' => 'Poznámka',
+            ],
+
+            // The same sentences as the report page notes, without the asterisk of the on-screen footnote.
+            'notes' => [
+                'fixed_price' => 'Hodiny projektů a úkolů s pevnou cenou jsou bez částky.',
+                'missing_rate' => 'Součet v Kč nezahrnuje :count záznamů bez kurzu ČNB.',
+            ],
+
+            'missing_rate_comment' => 'Chybí kurz ČNB',
+        ],
+    ],
+
+    // The time report "Report času" (RE-01, RE-02; D-06, D-07): the UI-SPEC copywriting contract "Time report" and
+    // Surface B, formal address. The whole namespace lives here because the pages that build on it (the tree, the
+    // effective rate block, the export menu) land in later plans. :duration is H:MM, :czk and :amount a formatted
+    // amount, :count a whole number, :currency an ISO code, :date a day written j. n. Y.
+    'report' => [
+        'navigation' => 'Report času',
+        'title' => 'Report času',
+        'controls' => 'Filtry reportu',
+        'range' => ':from – :to',
+
+        'filters' => [
+            'client' => 'Klient',
+            'all_clients' => 'Všichni klienti',
+            'archived' => '(archivovaný)',
+            'project' => 'Projekt',
+            'all_projects' => 'Všechny projekty',
+            'project_hint' => 'Nejdřív vyberte klienta',
+            'period' => 'Období',
+            'this_month' => 'Tento měsíc',
+            'last_month' => 'Minulý měsíc',
+            'custom' => 'Vlastní',
+            'from' => 'Od',
+            'to' => 'Do',
+            'range_error' => 'Datum Od nesmí být později než Do.',
+            'split' => 'Rozpad',
+            'split_none' => 'Bez rozpadu',
+            'split_day' => 'Po dnech',
+            'split_user' => 'Podle uživatelů',
+        ],
+
+        'summary' => [
+            'worked' => 'Odpracováno',
+            'unbilled' => 'Nevyfakturováno',
+            'billed' => 'Vyfakturováno',
+            'non_billable' => 'Nefakturovatelné',
+            'billable_line' => 'Fakturovatelné :duration',
+            'non_billable_line' => 'Nefakturovatelné :duration',
+            'czk_line' => 'v Kč: :czk',
+            'no_amount' => 'Bez částky',
+        ],
+
+        'notes' => [
+            'computed' => 'Částky jsou vypočtené z aktuálních sazeb a z kurzu ČNB ke dni záznamu.',
+            'fixed_price' => '* Hodiny projektů a úkolů s pevnou cenou jsou bez částky.',
+            'missing_rate' => 'Součet v Kč nezahrnuje :count záznamů bez kurzu ČNB.',
+        ],
+
+        'tree' => [
+            'heading' => 'Přehled podle klientů a projektů',
+            // The four hour columns sit under one heading; Fakturovatelné stays in the tile line and the exports.
+            'groups' => [
+                'hours' => 'Hodiny',
+            ],
+            'columns' => [
+                'name' => 'Název',
+                'worked' => 'Odpracováno',
+                'non_billable' => 'Nefakturovatelné',
+                'billed' => 'Vyfakturováno',
+                'unbilled' => 'Nevyfakturováno',
+                'amount' => 'Částka',
+                'amount_czk' => 'Částka v Kč',
+            ],
+            'total' => 'Celkem',
+            'expand_all' => 'Rozbalit vše',
+            'collapse_all' => 'Sbalit vše',
+            'expand' => 'Rozbalit :name',
+            'collapse' => 'Sbalit :name',
+            'no_project' => 'Bez projektu',
+            'no_task' => 'Bez úkolu',
+            'empty_value' => '—',
+            'fixed_price' => [
+                'badge' => 'Pevná cena',
+                'tooltip' => 'Pevná cena: částka se nepočítá za záznam.',
+            ],
+            'missing_rate' => [
+                'badge' => 'Chybí kurz',
+                'tooltip' => 'Pro měnu :currency a den :date není k dispozici kurz ČNB. Záznam není v součtu v Kč.',
+            ],
+            'row_cap' => 'Zobrazeno prvních :count řádků. Součty výše platí pro všechny záznamy. Zúžte období nebo použijte export.',
+        ],
+
+        // The effective rate block of a fixed-price project (RE-05, D-07, D-08).
+        'effective' => [
+            'fixed_price' => 'Pevná cena',
+            'worked' => 'Odpracováno na celém projektu',
+            'rate' => 'Efektivní hodinová sazba',
+            'whole_project' => 'Za celou dobu projektu, ne jen za vybrané období.',
+            'rate_date' => 'Kurz ČNB ke dni :date',
+            'per_hour' => ':amount/h',
+            'czk_per_hour' => 'v Kč: :czk/h',
+            'no_hours' => 'Na projektu zatím není žádný odpracovaný čas.',
+        ],
+
+        'empty' => [
+            'heading' => 'Za zvolené období nejsou žádné záznamy',
+            'description' => 'Zkuste jiné období nebo jiného klienta. Do reportu se počítá i nefakturovatelný čas.',
+        ],
+
+        'export' => [
+            'group' => 'Exportovat report',
+            'csv' => 'Tabulka CSV',
+            'xlsx' => 'Tabulka XLSX',
+            'pdf' => 'Pracovní výkaz PDF',
+            'exports_link' => 'Exporty',
+            'pdf_failed' => [
+                'title' => 'Pracovní výkaz se nepodařilo vytvořit',
+                'body' => 'Zkuste to znovu. Pokud chyba přetrvá, zkuste jiné období.',
+            ],
         ],
     ],
 
@@ -463,7 +869,7 @@ return [
             'terms_invalid' => 'Zadejte splatnost jako celé číslo dnů od 0 do 365.',
             'email_invalid' => 'Zadejte platnou e-mailovou adresu.',
             'rate_invalid' => 'Zadejte nezáporné číslo bez oddělovače tisíců a nejvýše s tolika desetinnými místy, kolik dovoluje měna klienta.',
-            'currency_locked' => 'Měnu klienta nelze změnit, dokud některý jeho projekt, i archivovaný, má hodinovou sazbu nebo pevnou cenu.',
+            'currency_locked' => 'Měnu klienta nelze změnit, dokud některý jeho projekt nebo úkol, i archivovaný, má hodinovou sazbu nebo pevnou cenu.',
             'company_number_taken' => 'Toto IČO už v téže zemi používá jiný klient.',
             'company_number_archived' => 'Toto IČO v téže zemi patří archivovanému klientovi :name. Obnovte ho místo založení nového.',
         ],

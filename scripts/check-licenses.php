@@ -11,6 +11,18 @@ declare(strict_types=1);
  * lists the alternatives of a dual-licensed package separately (for example BSD-3-Clause or GPL-2.0-only or
  * GPL-3.0-only), so a per-licence check would wrongly reject them. A package that declares no licence fails.
  *
+ * Deprecated SPDX alias (owner ruling, 2026-10-14, phase 08 plan 03): the id `LGPL-2.1` is read as
+ * `LGPL-2.1-only` before the allowlist comparison (see LICENCE_ALIASES). The project owner ruled, for
+ * dompdf/dompdf (declared `LGPL-2.1`, used unmodified as a Composer dependency, distributed as source), that
+ * the STRICT -only reading is compatible with AGPL-3.0: LGPL-2.1 section 6 lets a work that merely uses the
+ * library carry its own licence while the library's terms are honoured (library source and its modifications
+ * stay under the LGPL, the user can replace the library), and section 3 lets a copy of the library be
+ * converted to GPL version 2 or any later GPL version, which reaches GPL-3.0 and hence the AGPL-3.0
+ * combination (GPL-3.0 and AGPL-3.0 section 13). The ruling is a compatibility screen, not legal advice, and
+ * it binds every later release. The alias is mapped for every package that declares it (not a per-package
+ * exception), so a later package with the same alias is screened the same way; the allowlist itself did not
+ * grow. Recorded in 03-SPIKE-PDF.md "Licences" (open item) and closed here.
+ *
  * Exit codes (same convention as scripts/check-sensitive.sh):
  *   0  every package has an allowed licence
  *   1  offenders, one per line on stderr as `name [licence, licence]` or `name [no licence declared]`
@@ -42,6 +54,15 @@ const ALLOWED_LICENCES = [
     'GPL-2.0-or-later',
     'AGPL-3.0-only',
     'AGPL-3.0-or-later',
+];
+
+/**
+ * Deprecated SPDX ids and the current id they are read as (owner ruling in the header). The mapped id must
+ * itself be on the allowlist. `LGPL-2.1` is defined by SPDX as the "only" form, so it maps to -only, never
+ * to -or-later.
+ */
+const LICENCE_ALIASES = [
+    'LGPL-2.1' => 'LGPL-2.1-only',
 ];
 
 function licenceCheckMalformed(string $reason): never
@@ -82,7 +103,12 @@ foreach ($report['dependencies'] as $name => $package) {
         continue;
     }
 
-    if (array_intersect($licences, ALLOWED_LICENCES) === []) {
+    $normalised = array_map(
+        static fn (string $licence): string => LICENCE_ALIASES[$licence] ?? $licence,
+        $licences,
+    );
+
+    if (array_intersect($normalised, ALLOWED_LICENCES) === []) {
         $offenders[(string) $name] = implode(', ', $licences);
     }
 }

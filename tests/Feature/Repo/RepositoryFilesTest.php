@@ -612,30 +612,167 @@ it('names the Phase 7 enforcing tests, and each of them exists', function () {
     }
 });
 
-it('hands over to Phases 7, 8, 9 and 10 and no longer carries the Phase 6 note or the stale labels', function () {
+it('only names Phase 8 classes in CONTRIBUTING.md that exist in app/', function () {
     $contributing = repoFile('CONTRIBUTING.md');
 
-    foreach (['Phase 7 (', 'Phase 8 (', 'Phase 9 (', 'Phase 10 ('] as $note) {
+    // The documentation must not name a Phase 8 mechanism that is gone (research Pitfall 12).
+    $names = [
+        'CnbClient' => 'App\Domain\ExchangeRates\Cnb\CnbClient',
+        'DownloadCnbRates' => 'App\Domain\ExchangeRates\Actions\DownloadCnbRates',
+        'HealCnbRateGaps' => 'App\Domain\ExchangeRates\Actions\HealCnbRateGaps',
+        'BackfillCnbRates' => 'App\Domain\ExchangeRates\Jobs\BackfillCnbRates',
+        'CzechPublicHolidays' => 'App\Domain\ExchangeRates\CzechPublicHolidays',
+        'RateBook' => 'App\Domain\ExchangeRates\RateBook',
+        'ExchangeRateConverter' => 'App\Domain\ExchangeRates\ExchangeRateConverter',
+        'ExchangeRateMissing' => 'App\Domain\ExchangeRates\ExchangeRateMissing',
+        'RateFormat' => 'App\Domain\ExchangeRates\RateFormat',
+        'ExchangeRate' => 'App\Domain\ExchangeRates\Models\ExchangeRate',
+        'LastRateDateIndicator' => 'App\Domain\Operations\Health\Indicators\LastRateDateIndicator',
+        'TimeReportReader' => 'App\Domain\Reports\Queries\TimeReportReader',
+        'EntryAmounts' => 'App\Domain\Reports\EntryAmounts',
+        'TimeReport' => 'App\Domain\Reports\TimeReport',
+        'FixedPriceSummary' => 'App\Domain\Reports\FixedPriceSummary',
+        'ReportFilters' => 'App\Domain\Reports\ReportFilters',
+        'SpreadsheetCells' => 'App\Domain\Reports\Exports\SpreadsheetCells',
+        'BuildReportExport' => 'App\Domain\Reports\Jobs\BuildReportExport',
+        'PruneExpiredReportExports' => 'App\Domain\Reports\Jobs\PruneExpiredReportExports',
+        'ReportExport' => 'App\Domain\Reports\Models\ReportExport',
+        'WorkReportPdf' => 'App\Domain\Reports\WorkReport\WorkReportPdf',
+        'WorkReportSource' => 'App\Domain\Reports\WorkReport\WorkReportSource',
+        'HoursStats' => 'App\Filament\Widgets\HoursStats',
+        'UnbilledPerClient' => 'App\Filament\Widgets\UnbilledPerClient',
+        'UpcomingDeadlines' => 'App\Filament\Widgets\UpcomingDeadlines',
+        'TodayPlan' => 'App\Filament\Widgets\TodayPlan',
+        'PartnerTasks' => 'App\Filament\Widgets\PartnerTasks',
+        'PartnerProjects' => 'App\Filament\Widgets\PartnerProjects',
+        'DashboardWidget' => 'App\Domain\Dashboard\Enums\DashboardWidget',
+        'DashboardWidgetPreference' => 'App\Domain\Dashboard\Models\DashboardWidgetPreference',
+        'DashboardWidgetPreferencePolicy' => 'App\Domain\Dashboard\Policies\DashboardWidgetPreferencePolicy',
+        'SetDashboardWidgetCollapsed' => 'App\Domain\Dashboard\Actions\SetDashboardWidgetCollapsed',
+        'CollapsedWidgets' => 'App\Domain\Dashboard\Queries\CollapsedWidgets',
+        'CollapsibleDashboardWidget' => 'App\Filament\Concerns\CollapsibleDashboardWidget',
+        'TaskDueDate' => 'App\Filament\Support\TaskDueDate',
+        'TimeReportPage' => 'App\Filament\Pages\TimeReportPage',
+        'ExchangeRateResource' => 'App\Filament\Resources\ExchangeRateResource',
+        'ReportExportResource' => 'App\Filament\Resources\ReportExportResource',
+    ];
+
+    foreach ($names as $short => $class) {
+        expect($contributing)->toContain($short);
+        expect(class_exists($class) || trait_exists($class) || interface_exists($class) || enum_exists($class))
+            ->toBeTrue("CONTRIBUTING.md names {$short} but {$class} does not exist");
+    }
+
+    // Methods the Phase 8 conventions rely on, and the spelling the text uses for each of them.
+    $methods = [
+        ['App\Domain\Shared\Money\Money', 'forDurationConverted', 'Money::forDurationConverted'],
+        ['App\Domain\Shared\Money\Money', 'hourlyRateFor', 'Money::hourlyRateFor'],
+        ['App\Domain\ExchangeRates\ExchangeRateConverter', 'toCzk', 'ExchangeRateConverter::toCzk'],
+        ['App\Domain\ExchangeRates\RateBook', 'load', 'RateBook::load'],
+        ['App\Domain\Reports\WorkReport\WorkReportSource', 'fromEntryIds', 'WorkReportSource::fromEntryIds'],
+        ['App\Domain\Reports\WorkReport\WorkReportSource', 'forPeriod', 'WorkReportSource::forPeriod'],
+        ['App\Domain\Reports\FixedPriceSummary', 'for', 'FixedPriceSummary::for'],
+        ['App\Domain\ExchangeRates\Jobs\BackfillCnbRates', 'violations', 'BackfillCnbRates::violations'],
+        ['App\Domain\Reports\Models\ReportExport', 'isDownloadable', 'isDownloadable'],
+    ];
+
+    foreach ($methods as [$class, $method, $spelled]) {
+        expect(method_exists($class, $method))->toBeTrue("{$class}::{$method} does not exist");
+        expect($contributing)->toContain($spelled);
+    }
+
+    // The phrases that carry a rule of the phase, and the file of the coverage matrix.
+    foreach ([
+        'COVERAGE.md', 'validFor', 'kokpit:rates:download', 'kokpit-cnb-rates-final', 'Dompdf', 'LGPL-2.1',
+        'Dashboard::getWidgets()', 'in_review', 'PartnerContext',
+    ] as $phrase) {
+        expect($contributing)->toContain($phrase);
+    }
+
+    // The coverage matrix the text points at exists, in the phase directory.
+    expect(is_file(base_path('.planning/phases/08-exchange-rates-and-reports/COVERAGE.md')))->toBeTrue();
+});
+
+it('names the Phase 8 enforcing tests, and each of them exists', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    $tests = [
+        'ExchangeRatesTableTest' => 'tests/Feature/Schema/ExchangeRatesTableTest.php',
+        'ReportExportsTableTest' => 'tests/Feature/Schema/ReportExportsTableTest.php',
+        'DownloadCnbRatesTest' => 'tests/Feature/ExchangeRates/DownloadCnbRatesTest.php',
+        'RateAlertTest' => 'tests/Feature/ExchangeRates/RateAlertTest.php',
+        'HealCnbRateGapsTest' => 'tests/Feature/ExchangeRates/HealCnbRateGapsTest.php',
+        'BackfillCnbRatesTest' => 'tests/Feature/ExchangeRates/BackfillCnbRatesTest.php',
+        'ExchangeRateConverterTest' => 'tests/Feature/ExchangeRates/ExchangeRateConverterTest.php',
+        'ExchangeRateResourceTest' => 'tests/Feature/ExchangeRates/ExchangeRateResourceTest.php',
+        'RatesContractTest' => 'tests/Feature/ExchangeRates/RatesContractTest.php',
+        'CzechPublicHolidaysTest' => 'tests/Unit/ExchangeRates/CzechPublicHolidaysTest.php',
+        'RateFormatTest' => 'tests/Unit/ExchangeRates/RateFormatTest.php',
+        'LastRateDateIndicatorTest' => 'tests/Feature/Operations/LastRateDateIndicatorTest.php',
+        'MoneyTest' => 'tests/Unit/Money/MoneyTest.php',
+        'TimeReportTest' => 'tests/Feature/Reports/TimeReportTest.php',
+        'EffectiveBillingParityTest' => 'tests/Feature/Reports/EffectiveBillingParityTest.php',
+        'EffectiveRateTest' => 'tests/Feature/Reports/EffectiveRateTest.php',
+        'ReportFiltersTest' => 'tests/Feature/Reports/ReportFiltersTest.php',
+        'ReportExportTest' => 'tests/Feature/Reports/ReportExportTest.php',
+        'ReportExportRecordTest' => 'tests/Feature/Reports/ReportExportRecordTest.php',
+        'ReportExportResourceTest' => 'tests/Feature/Reports/ReportExportResourceTest.php',
+        'ReportExportPruneTest' => 'tests/Feature/Reports/ReportExportPruneTest.php',
+        'SpreadsheetCellsTest' => 'tests/Unit/Reports/SpreadsheetCellsTest.php',
+        'WorkReportPdfTest' => 'tests/Feature/Reports/WorkReportPdfTest.php',
+        'WorkReportDownloadTest' => 'tests/Feature/Reports/WorkReportDownloadTest.php',
+        'LicenceCheckTest' => 'tests/Unit/LicenceCheckTest.php',
+        'AdminDashboardTest' => 'tests/Feature/Dashboard/AdminDashboardTest.php',
+        'PartnerDashboardTest' => 'tests/Feature/Dashboard/PartnerDashboardTest.php',
+        'TimeLeakTest' => 'tests/Isolation/TimeLeakTest.php',
+        'CanaryRegistryTest' => 'tests/Isolation/CanaryRegistryTest.php',
+        'ScheduleOnOneServerTest' => 'tests/Feature/Operations/ScheduleOnOneServerTest.php',
+        'JobContractTest' => 'tests/Arch/JobContractTest.php',
+    ];
+
+    foreach ($tests as $short => $path) {
+        expect($contributing)->toContain($short);
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$short} but {$path} does not exist");
+    }
+});
+
+it('hands over to Phases 7, 9 and 10, carries no Phase 8 note and no longer carries the Phase 6 note or the stale labels', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    foreach (['Phase 7 (', 'Phase 9 (', 'Phase 10 ('] as $note) {
         expect($contributing)->toContain("**{$note}");
     }
 
-    // The Phase 6 note is gone now that the phase is built, and the labels that did not match the ROADMAP are gone with it.
+    // The Phase 6 note is gone now that the phase is built, and so is the Phase 8 note; the labels that did not match
+    // the ROADMAP are gone with them.
     expect($contributing)->not->toContain('**Phase 6 (')
+        ->and($contributing)->not->toContain('**Phase 8 (')
         ->and($contributing)->not->toContain('**Phase 7 (calendar and reports)')
         ->and($contributing)->not->toContain('**Phase 8 (exports)')
         ->and($contributing)->not->toContain('**Phase 12 (')
         ->and($contributing)->toContain('**Phase 7 (REST API).**')
-        ->and($contributing)->toContain('**Phase 8 (exchange rates and reports).**')
         ->and($contributing)->toContain('**Phase 10 (invoicing).**');
+
+    // Phase 9 reuses the converter for transaction amounts (FI-01) and stores the work report.
+    $phaseNine = substr($contributing, (int) strpos($contributing, '**Phase 9 (documents).**'));
+    $phaseNine = substr($phaseNine, 0, (int) strpos($phaseNine, '**Phase 10 (invoicing).**'));
+
+    expect($phaseNine)->toContain('ExchangeRateConverter')
+        ->and($phaseNine)->toContain('FI-01')
+        ->and($phaseNine)->toContain('WorkReportPdf');
 
     // Phase 10 must re-create the guard of time_entries with the extended list (research Open Question 5, Pattern 8).
     $phaseTen = substr($contributing, (int) strpos($contributing, '**Phase 10 (invoicing).**'));
+    $phaseTen = substr($phaseTen, 0, (int) strpos($phaseTen, '- **Search.**'));
 
     expect($phaseTen)->toContain('time_entries_frozen_guard')
         ->and($phaseTen)->toContain('Immutability::guardTriggerSql()')
         ->and($phaseTen)->toContain('mutable list')
         ->and($phaseTen)->toContain('TimeEntryRateResolver')
-        ->and($phaseTen)->toContain('MarkEntriesBilled');
+        ->and($phaseTen)->toContain('MarkEntriesBilled')
+        ->and($phaseTen)->toContain('ExchangeRateConverter')
+        ->and($phaseTen)->toContain('WorkReportSource::fromEntryIds')
+        ->and($phaseTen)->toContain('Dashboard');
 });
 
 it('documents the Czech ICU collation requirement and its check for the operator', function () {

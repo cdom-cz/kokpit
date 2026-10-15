@@ -5,8 +5,10 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
+use App\Domain\Reports\Models\ReportExport;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\Activity;
@@ -103,9 +105,11 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         Client::class,
         ClientInvitation::class,
         Contact::class,
+        ExchangeRate::class,
         Media::class,
         Project::class,
         ProjectBilling::class,
+        ReportExport::class,
         SettingsProperty::class,
         Tag::class,
         Task::class,

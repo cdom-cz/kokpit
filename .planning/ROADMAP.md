@@ -501,41 +501,58 @@ Plans:
   4. Admin requests a CSV or XLSX export that is built in the background and delivered by notification with spreadsheet-safe cells, and generates a multi-page PDF work report with correct Czech diacritics
   5. The dashboard shows today's and this week's hours, unbilled time per client and upcoming task deadlines
 
-**Plans:** 16 plans (8 waves; same-wave plans share no file; 08-11 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed; 08-15 and 08-16 were split from 08-01 and 08-10 at plan check and run in the waves shown)
+**Plans:** 27/27 plans executed (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed; 5 gap-closure plans 08-23 to 08-27 from 08-VERIFICATION.md in 3 gap waves)
 **UI hint**: yes
 
 Plans:
 **Wave 1**
-- [ ] 08-15-PLAN.md — `exchange_rates` with DB constraints and `ExchangeRate` under every repository convention; Partner reads no rate (EX-01)
-- [ ] 08-02-PLAN.md — Partner dashboard: own visible projects and open tasks, `in_review` first and highlighted, no time or money (RE-04, D-12)
+- [x] 08-01-PLAN.md — `exchange_rates` with DB constraints and `ExchangeRate` under every repository convention; Partner reads no rate (EX-01)
+- [x] 08-02-PLAN.md — Partner dashboard: open tasks with `in_review` first and highlighted, own projects, leak proof (RE-04, D-12)
+- [x] 08-03-PLAN.md — Owner licence checkpoint (Dompdf LGPL-2.1 vs AGPL-3.0), then tracer: first real Czech work report PDF (RE-03, D-10)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 08-01-PLAN.md — Tracer: `kokpit:rates:download` stores the whole CNB daily list once under its `validFor` date; refusal matrix and mutation self-check (EX-01)
-- [ ] 08-04-PLAN.md — Conversion helper: `RateBook` lookups (previous valid rate, per-unit amounts), `CnbConverter`, exact `Money::forDurationConverted` and `Money::hourlyRateFor` (EX-03, RE-02, RE-05)
-- [ ] 08-05-PLAN.md — Export records: owner-scoped `report_exports`, Admin "Exporty" list and the permission-checked download from the private disk (RE-03)
+- [x] 08-04-PLAN.md — Tracer: `kokpit:rates:download` via `CnbClient::daily()`, refusal matrix, rates copy and config (EX-01, EX-02)
+- [x] 08-05-PLAN.md — `RateBook`, `ExchangeRateConverter`, `ExchangeRateMissing`, `Money::forDurationConverted`, `Money::hourlyRateFor` (EX-03, RE-02, RE-05)
+- [x] 08-06-PLAN.md — Work report document: two sections (billable, non-billable), summary, running header, page N / M, English version, no money (RE-03)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 08-03-PLAN.md — Scheduled download 15:00-17:00 Prague plus a final 18:00 run that alerts by mail and bell without the queue; Czech working-day calendar (EX-01, EX-02)
-- [ ] 08-07-PLAN.md — Tracer: "Report času" with one reader, per-entry amounts in client currency and CZK at the entry day's rate, parity with the rate resolvers, task/day/user breakdowns (RE-01, RE-02)
+- [x] 08-07-PLAN.md — `report_exports` record and lifecycle, exports copy and config (RE-03, D-09)
+- [x] 08-08-PLAN.md — Schedule 15/16/17 plus final 18:00 Prague run, Czech working-day calendar, final-run alert without the queue (EX-01, EX-02)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 08-06-PLAN.md — Real last-rate-date System page slot in Czech working days; gap self-heal from `daily-year` (EX-01, EX-02)
-- [ ] 08-09-PLAN.md — Fixed-price block with the effective hourly rate; DST, running-entry, missing-rate and mixed-currency edges; constant query count (RE-05, RE-01, RE-02)
+- [x] 08-09-PLAN.md — Report core tracer: one reader, per-entry amounts, parity with resolvers, filter strip, summary tiles, tree (RE-01, RE-02)
+- [x] 08-10-PLAN.md — Real last-rate-date System page slot in Czech working days (EX-02)
+- [x] 08-11-PLAN.md — "Exporty" list with click-time permission-checked download (RE-03)
+- [x] 08-12-PLAN.md — Daily prune of expired exports (RE-03)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 08-08-PLAN.md — "Kurzy ČNB" overview with "download today" and a queued, idempotent history backfill (EX-01, EX-02)
-- [ ] 08-10-PLAN.md — Admin dashboard: hours today/week/month and unbilled per client with money (RE-04, D-11)
-- [ ] 08-11-PLAN.md — Work report PDF with Dompdf in the client's language, no money, multi-page; owner licence decision checkpoint first (RE-03, D-10)
+- [x] 08-13-PLAN.md — "Kurzy ČNB" overview: stats, table, filters, empty states, download outcomes, no calculator (EX-01, EX-02)
+- [x] 08-14-PLAN.md — Report tree completion: day/user breakdowns, accessible expand/collapse, footnotes, row cap, DST edges, constant query count (RE-01, RE-02)
+- [x] 08-15-PLAN.md — Admin dashboard hours stats and unbilled time per client (RE-04, D-11)
+- [x] 08-16-PLAN.md — CSV export end to end: job, spreadsheet-safe cells, bell notices (RE-03)
+- [x] 08-17-PLAN.md — Gap self-heal from `CnbClient::year()` in the scheduled command (EX-01)
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 08-12-PLAN.md — Queued CSV export from the report page, spreadsheet-safe cells, bell notice, 7-day expiry (RE-03, D-09)
-- [ ] 08-16-PLAN.md — Admin dashboard: ten nearest open-task deadlines and tomorrow's Signal plan, collapsed and read-only (RE-04, D-11)
+- [x] 08-18-PLAN.md — "Doplnit historii" modal and `BackfillCnbRates` job (EX-01, D-05)
+- [x] 08-19-PLAN.md — Effective hourly rate for fixed-price projects (RE-05, D-08)
+- [x] 08-20-PLAN.md — Admin dashboard deadlines and read-only tomorrow plan (RE-04, D-11)
+- [x] 08-21-PLAN.md — XLSX export with summary sheet and "Pracovní výkaz PDF" report-page item (RE-03)
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 08-13-PLAN.md — XLSX export with the summary sheet, formula-free sheet XML, daily prune of expired exports (RE-03, D-09)
+- [x] 08-22-PLAN.md — Partner leak sweep, CONTRIBUTING and README updates, .gitignore review, phase gate, VALIDATION sign-off
 
-**Wave 8** *(blocked on Wave 7 completion)*
-- [ ] 08-14-PLAN.md — Partner leak sweep over every Phase 8 surface, conventions and hand-over docs, .gitignore review and the phase gate
+**Gap closure** *(from 08-VERIFICATION.md; gap plans waves 1-3, run with `/gsd-execute-phase 08 --gaps-only`)*
+
+**Gap wave 1**
+- [x] 08-23-PLAN.md — CR-01 report and exports: per-currency amounts on every tree row, footer equal to the summary, XLSX/CSV regression for a CZK client with one EUR task rate (gap 1)
+- [x] 08-24-PLAN.md — CR-01 dashboard: "Nevyfakturováno tento měsíc" lists amounts per currency, so the Admin landing page renders for a two-currency client (gap 1)
+- [x] 08-25-PLAN.md — CR-01 root cause: the client currency lock covers task_billing money, archived tasks and projects included, with a message that names tasks (gap 1)
+
+**Gap wave 2** *(blocked on gap wave 1 completion)*
+- [x] 08-26-PLAN.md — UI-SPEC Amendment A-1 first, then a full-width report with a fixed-layout tree: Název floor 20rem, grouped and fewer columns, two-line names with tooltips (gap 2)
+
+**Gap wave 3** *(blocked on gap wave 2 completion)*
+- [x] 08-27-PLAN.md — Open depth by filter, four distinguishable levels, sticky Název column, on-scale effective-rate block; CR-01 disposition and validation map; gap-round gate (gap 2)
 
 ### Phase 9: Documents and Finance
 
@@ -618,7 +635,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
-| 8. Exchange Rates and Reports | 0/0 | Not started | - |
+| 8. Exchange Rates and Reports | 27/27 | In Progress | - |
 | 9. Documents and Finance | 0/0 | Not started | - |
 | 10. Invoicing | 0/0 | Not started | - |
 | 11. Stripe Payments | 0/0 | Not started | - |

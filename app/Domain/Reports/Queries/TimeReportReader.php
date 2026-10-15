@@ -1,0 +1,163 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Reports\Queries;
+
+use App\Domain\Reports\ReportEntry;
+use App\Domain\Reports\ReportFilters;
+use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Money\Money;
+use App\Domain\TimeTracking\Models\TimeEntry;
+use Carbon\CarbonInterface;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\LazyCollection;
+
+/**
+ * The time entries of a report period as one row each, with the effective billing resolved in the SQL
+ * (RE-01, RE-02; D-01, D-07; research Pattern 5).
+ *
+ * One statement joins the client, the user, the project, the task and the billing rows. The effective billing
+ * type and the hourly rate follow the order of `TaskBillingResolver` and `TimeEntryRateResolver`, which stay
+ * the specification (a parity test pins the SQL to them): the task's own row, the parent task's row (a subtask
+ * only, because a root task has no parent), the project's row and for the rate the client. A task row of type
+ * `inherit` defers its type; only null defers an amount, so a rate of zero is a value and stops the search. The
+ * rate and its currency come from the same level (the columns are a pair, both null or both set), and the global
+ * default rate never applies here because every client stores a rate.
+ *
+ * A time entry belongs to the Prague day it started (research A6); the period is a half-open range of UTC
+ * instants, so a 23- or 25-hour day cannot shift a boundary. A finished entry counts with its stored duration, a
+ * running one with the seconds from its start to the PHP clock instant that is bound, never SQL `now()`.
+ * Archived clients, projects and tasks stay in the report, and the entries of every user are read: the split by
+ * user needs them.
+ *
+ * The raw joins bypass the Partner scope of the joined tables, so this reader refuses everyone but the Admin
+ * and a system run, like `TimeEntryRateResolver` (T-08-31, T-08-33).
+ */
+final class TimeReportReader
+{
+    /**
+     * The effective billing type of the entry: the first level that is not `inherit`, hourly for an entry without
+     * a project.
+     */
+    private const string BILLING_TYPE_SQL = "COALESCE(NULLIF(tb.billing_type, 'inherit'), NULLIF(ptb.billing_type, 'inherit'), pb.billing_type, 'hourly')";
+
+    private const string RATE_MINOR_SQL = 'COALESCE(tb.hourly_rate_minor, ptb.hourly_rate_minor, pb.hourly_rate_minor, c.hourly_rate_minor)';
+
+    private const string RATE_CURRENCY_SQL = 'COALESCE(tb.hourly_rate_currency, ptb.hourly_rate_currency, pb.hourly_rate_currency, c.hourly_rate_currency)';
+
+    /**
+     * The entries of the period in the order they started, one at a time.
+     *
+     * @return LazyCollection<int, ReportEntry>
+     *
+     * @throws AuthorizationException when neither the Admin nor a system run asks
+     */
+    public function entries(ReportFilters $filters, CarbonInterface $now): LazyCollection
+    {
+        $this->authorise();
+
+        $query = $this->base($filters)
+            ->selectRaw(
+                'time_entries.id AS id, time_entries.user_id AS user_id, time_entries.billable AS billable, '
+                .'time_entries.billing_state AS billing_state, '
+                ."(time_entries.started_at AT TIME ZONE 'Europe/Prague')::date AS work_date, "
+                .TimeEntry::elapsedSecondsSql('time_entries').' AS seconds, '
+                .'u.name AS user_name, c.id AS client_id, c.name AS client_name, c.currency AS client_currency, '
+                .'p.id AS project_id, p.name AS project_name, p.key AS project_key, '
+                .'t.id AS task_id, t.reference AS task_reference, t.title AS task_title, '
+                .self::BILLING_TYPE_SQL.' AS billing_type, pb.billing_type AS project_billing_type, '
+                .self::RATE_MINOR_SQL.' AS rate_minor, '
+                .self::RATE_CURRENCY_SQL.' AS rate_currency',
+                [$now->utc()->format('Y-m-d H:i:sP')],
+            )
+            ->orderBy('time_entries.started_at')
+            ->orderBy('time_entries.id');
+
+        return $query->toBase()->cursor()->map(static function (object $row): ReportEntry {
+            $rateMinor = $row->rate_minor ?? null;
+            $rateCurrency = $row->rate_currency ?? null;
+
+            return new ReportEntry(
+                id: (string) $row->id,
+                workDate: (string) $row->work_date,
+                seconds: (int) $row->seconds,
+                billable: (bool) $row->billable,
+                billed: $row->billing_state === 'billed',
+                userId: (string) $row->user_id,
+                userName: (string) $row->user_name,
+                clientId: (string) $row->client_id,
+                clientName: (string) $row->client_name,
+                clientCurrency: (string) $row->client_currency,
+                projectId: is_string($row->project_id) ? $row->project_id : null,
+                projectName: is_string($row->project_name) ? $row->project_name : null,
+                projectKey: is_string($row->project_key) ? $row->project_key : null,
+                taskId: is_string($row->task_id) ? $row->task_id : null,
+                taskReference: is_string($row->task_reference) ? $row->task_reference : null,
+                taskTitle: is_string($row->task_title) ? $row->task_title : null,
+                billingType: (string) $row->billing_type,
+                rate: $rateMinor !== null && is_string($rateCurrency) ? Money::ofMinor((int) $rateMinor, $rateCurrency) : null,
+                projectBillingType: is_string($row->project_billing_type ?? null) ? $row->project_billing_type : null,
+            );
+        });
+    }
+
+    /**
+     * The currencies of the hourly rates the entries of the period are priced in, sorted: what the CNB lookup of
+     * a report has to load, so a report asks the rate tables only for the currencies it can use.
+     *
+     * @return list<string>
+     *
+     * @throws AuthorizationException when neither the Admin nor a system run asks
+     */
+    public function rateCurrencies(ReportFilters $filters): array
+    {
+        $this->authorise();
+
+        $currencies = $this->base($filters)
+            ->reorder()
+            ->toBase()
+            ->selectRaw('DISTINCT '.self::RATE_CURRENCY_SQL.' AS currency')
+            ->pluck('currency')
+            ->filter(static fn (mixed $currency): bool => is_string($currency))
+            ->map(static fn (mixed $currency): string => (string) $currency)
+            ->sort()
+            ->values();
+
+        return array_values($currencies->all());
+    }
+
+    /**
+     * The entries of the period joined with everything the report names or resolves.
+     *
+     * @return Builder<TimeEntry>
+     */
+    private function base(ReportFilters $filters): Builder
+    {
+        return TimeEntry::query()
+            ->join('clients AS c', 'c.id', '=', 'time_entries.client_id')
+            ->join('users AS u', 'u.id', '=', 'time_entries.user_id')
+            ->leftJoin('projects AS p', 'p.id', '=', 'time_entries.project_id')
+            ->leftJoin('tasks AS t', 't.id', '=', 'time_entries.task_id')
+            ->leftJoin('task_billing AS tb', 'tb.task_id', '=', 't.id')
+            ->leftJoin('task_billing AS ptb', 'ptb.task_id', '=', 't.parent_id')
+            ->leftJoin('project_billing AS pb', 'pb.project_id', '=', 'time_entries.project_id')
+            ->where('time_entries.started_at', '>=', $filters->startUtc())
+            ->where('time_entries.started_at', '<', $filters->endUtcExclusive())
+            ->when($filters->clientId !== null, static fn (Builder $query): Builder => $query->where('time_entries.client_id', $filters->clientId))
+            ->when($filters->projectId !== null, static fn (Builder $query): Builder => $query->where('time_entries.project_id', $filters->projectId));
+    }
+
+    /**
+     * @throws AuthorizationException
+     */
+    private function authorise(): void
+    {
+        $context = app(PartnerContext::class);
+
+        if (! $context->isAdmin() && ! $context->isSystem()) {
+            throw new AuthorizationException('The time report is available to the Admin only.');
+        }
+    }
+}

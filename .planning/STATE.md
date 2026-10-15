@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 08
 current_phase_name: Exchange Rates and Reports
-status: planning
-stopped_at: Phase 07 complete, ready to plan Phase 08
-last_updated: "2026-10-14T18:36:52.951Z"
-last_activity: 2026-10-14
-last_activity_desc: Phase 07 complete, transitioned to Phase 08
-state_head: 2160f9076a41fd4caa22909adb0f66450604bc0a
+status: executing
+stopped_at: Completed 08-27-PLAN.md
+last_updated: "2026-10-15T07:59:55.878Z"
+last_activity: 2026-10-15
+last_activity_desc: Phase 08 execution started
+state_head: f9dc2e7cbc2ebed354ecd320f9696b715ccbb874
 progress:
   total_phases: 12
   completed_phases: 7
-  total_plans: 140
-  completed_plans: 120
+  total_plans: 147
+  completed_plans: 147
   percent: 58
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 07 — REST API
+**Current focus:** Phase 08 — Exchange Rates and Reports
 
 ## Current Position
 
-Phase: 08 — Exchange Rates and Reports
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-10-14 — Phase 07 complete, transitioned to Phase 08
+Phase: 08 (Exchange Rates and Reports) — EXECUTING
+Plan: 27 of 27 complete
+Status: All plans executed; awaiting phase verification
+Last activity: 2026-10-15 - Completed quick task 261015-diz: Add overdue highlight to the admin tasks list
 
 Progress: [██████░░░░] 58%
 
@@ -182,6 +182,33 @@ Progress: [██████░░░░] 58%
 | Phase 07 P15 | 20 min | 2 tasks | 4 files |
 | Phase 07 P19 | 45 min | 2 tasks | 8 files |
 | Phase 07 P20 | 3 min | 2 tasks | 2 files |
+| Phase 08 P01 | 16 min | 2 tasks | 8 files |
+| Phase 08 P02 | 12 min | 2 tasks | 9 files |
+| Phase 08 P03 | 45 min | 2 tasks | 10 files |
+| Phase 08 P04 | 35min | 3 tasks | 12 files |
+| Phase 08 P05 | 8 min | 3 tasks | 6 files |
+| Phase 08 P06 | 19 min | 3 tasks | 7 files |
+| Phase 08 P07 | 40 min | 3 tasks | 14 files |
+| Phase 08 P08 | 45 min | 3 tasks | 8 files |
+| Phase 08 P09 | 22 min | 3 tasks | 13 files |
+| Phase 08 P10 | 30 min | 2 tasks | 10 files |
+| Phase 08 P11 | 10 min | 2 tasks | 3 files |
+| Phase 08 P12 | 25 min | 2 tasks | 5 files |
+| Phase 08 P13 | 18 min | 3 tasks | 8 files |
+| Phase 08 P15 | 25 min | 2 tasks | 9 files |
+| Phase 08 P16 | 20 min | 3 tasks | 11 files |
+| Phase 08 P17 | 40 min | 2 tasks | 5 files |
+| Phase 08 P14 | 13 min | 3 tasks | 6 files |
+| Phase 08 P18 | 12 min | 3 tasks | 5 files |
+| Phase 08 P19 | 10 min | 2 tasks | 5 files |
+| Phase 08 P20 | 33 min | 2 tasks | 8 files |
+| Phase 08 P21 | 35 min | 3 tasks | 6 files |
+| Phase 08 P22 | 14 min | 3 tasks | 7 files |
+| Phase 08 P23 | 30 min | 3 tasks | 7 files |
+| Phase 08 P24 | 15 min | 2 tasks | 3 files |
+| Phase 08 P25 | 25 min | 2 tasks | 4 files |
+| Phase 08 P26 | 5 min | 2 tasks | 7 files |
+| Phase 08 P27 | 25min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -423,6 +450,54 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-19: StopTimer on an entry already run past 2147483647 s is left to the owner (T-07-77); recovery is to correct the start through UpdateTimeEntry, then stop
 - [Quick 261014-o13]: a running time entry that has run longer than kokpit.time.max_running_hours (48) is ended every hour by kokpit:time:end-overrun (kokpit-end-overrun-timers, onOneServer) through EndOverrunTimers at started_at + 48 h, never at now, so the stored duration is capped and cannot overflow the integer column; narrows Phase 06 D-07 on the owner's request, the 12-hour bell notice is unchanged
 - [Phase 07]: 07-20: empty-state newToken opens createToken with replaceMountedAction (not a nested mount) and a canAccess guard; ListApiTokens unchanged
+- [Phase 08]: 08-01: exchange_rates holds one row per currency and published CNB day with the unit amount; weekends and holidays are never stored, resolved by lookup (08-05); lists are immutable (insert-or-ignore); ExchangeRate is Admin-only with a canary fixture whose needle is the published day
+- [Phase 08]: 08-02: Partner widgets (PartnerTasks, PartnerProjects) narrow the PartnerAllowed declaration with canView() to a non-Admin Partner with a client; a forged Admin mount answers 403
+- [Phase 08]: 08-02: Partner dashboard keeps the stock empty state only when the Partner has neither an open task nor a visible project; otherwise each empty widget shows its own empty state
+- [Phase 08]: Owner ruled (2026-10-14) dompdf/dompdf's LGPL-2.1 compatible with AGPL-3.0 under the strict LGPL-2.1-only reading; the licence gate maps the deprecated id LGPL-2.1 to LGPL-2.1-only for every package (normalise-alias)
+- [Phase 08]: WorkReportSource takes plain ids and Prague days (not ReportFilters) and builds its labelled lines in the client's invoice language; WorkReportPdf calls Dompdf directly with remote, PHP and JavaScript off, DejaVu Sans and a chroot on resources/views/pdf
+- [Phase 08]: 08-04: CNB list stored under the payload validFor only; any bad row refuses the whole list; rate shape is the Money::convert() regex limited to ten integer digits
+- [Phase 08]: 08-04: rates schedule 15/16/17 plus final 18 Prague, health warning 1 and error 2 working days, gap lookback 31 days, backfill from 2000-01-01 up to 3660 days live in config/kokpit.php rates
+- [Phase 08]: 08-05: weekends, holidays and outages resolve by lookup of the newest stored CNB list not after the day, never stored copies; a missing rate throws ExchangeRateMissing, never zero
+- [Phase 08]: 08-05: converted durations are one exact rational rounded once (Money::forDurationConverted); the converter has no role check, the fail-closed ExchangeRate scope gives a Partner ExchangeRateMissing
+- [Phase 08]: 08-06: work report page header and footer are a Dompdf page script class (WorkReportPageDecoration), unit-tested against a recording Canvas — pdftotext is absent from DDEV; isPhpEnabled stays off
+- [Phase 08]: 08-06: WorkReportSource::fromEntryIds takes one client's listed entries; period is first and last Prague day, project named only when shared — Phase 10 attaches the report for exactly the billed entries
+- [Phase 08]: 08-07: report_exports expires_at is creation plus retention, reset to completion plus retention by markReady(), so the prune also removes stale pending and failed records; ttlDays() never below 1
+- [Phase 08]: 08-07: downloadFileName() accepts only two real YYYY-MM-DD days from stored filters, else report-casu.<ext>; markReady() leaves the path shape to the database CHECK
+- [Phase 08]: 08-08: the CNB download stays a synchronous scheduled command; only the --final run alerts, and a database error on it alerts and is rethrown without its text in the alert
+- [Phase 08]: 08-09: the report summary is a flat array and tree nodes carry seconds, amount, czk, czk_missing, fixed and children; later report plans read these shapes directly
+- [Phase 08]: 08-09: ReportFilters::fromStored() and period() throw on an invalid value; only fromInput() falls back, so an export never covers other data than requested
+- [Phase 08]: 08-09: an entry with its own billable flag set is priced even when its task is non-billable; fixed-price entries and rate-less entries carry hours only
+- [Phase 08]: 08-10: last rate date health lag is counted in Czech working days against the expected list date (today only from the final hour on a working day); error threshold is max(warning, error); never downloaded is Error; System page shows a dash for any empty value
+- [Phase 08]: 08-11: the exports download re-reads the row through the owner scope and re-checks isDownloadable() and the stored file at click time; an expired-after-render click is refused by Filament's server-side visibility (no file), a missing file shows the gone toast
+- [Phase 08]: 08-12: the export prune runs as system, deletes the private-disk file before the record (a failed delete is retried next day, a missing file is fine) and only ever deletes the stored path of an expired record
+- [Phase 08]: 08-13: the Czech currency name is a gray description under the ISO code, and the Staženo stat reads the fetched_at of the newest list, not the overall newest
+- [Phase 08]: 08-13: a manual download that inserted nothing for today after a lost race answers 'already stored', like the console command
+- [Phase 08]: 08-15: the dashboard unbilled table footer Celkem totals every client with unbilled time, not only the ten rows shown, like the report totals
+- [Phase 08]: 08-15: dashboard widgets poll with visible.60s (wire:poll.visible.60s); row and heading links carry period=this_month explicitly
+- [Phase 08]: 08-16: the CSV Úkol column holds the task title only so a title starting with a formula character is neutralised by the apostrophe rule
+- [Phase 08]: 08-16: export numbers are text built from exact values (integer hours arithmetic, Money::toMajor), never floats; every text goes through SpreadsheetCells::text
+- [Phase 08]: 08-17: the CNB gap heal runs only in the scheduled command, once per Prague day (cache claim), one daily-year request per affected year, fills only days with no stored row up to the run's day; handle() returns lists stored
+- [Phase 08]: 08-14: the root report bucket sums hours and CZK only; client-currency amounts live on client rows and below and per currency in the summary and the footer
+- [Phase 08]: 08-14: ReportEntry carries an optional projectBillingType so only fixed-price projects get the Pevna cena badge; the tree is cut at max_rendered_rows leaf rows while every total covers all entries
+- [Phase 08]: 08-18: one range rule (BackfillCnbRates::violations) serves the backfill form and the queued job; the job re-validates in handle() because a queue payload skips the constructor
+- [Phase 08]: 08-18: backfill span counts days including both ends and Do is judged against the Prague day
+- [Phase 08]: 08-19: the effective hourly rate divides the price by every worked second of the whole project (TimeTotals::forProject worked), converts at the CNB rate of min(period end, Prague today) and prints that day; the CZK rate is derived from the converted price
+- [Phase 08]: 08-19: FixedPriceSummary preloads one RateBook and uses Money::convert (the arithmetic of ExchangeRateConverter::toCzk) so three fixed-price projects cost the queries of one
+- [Phase 08]: 08-20: deadlines widget ordered by priority first (TaskColumns::orderByPriority), then nearest due date NULLS LAST, per owner requirement; overrides plan order due date then priority
+- [Phase 08]: 08-20: tomorrow plan block is read-only, owner-scoped via SignalDayReader, collapsed to three items by an Alpine toggle with aria-expanded and aria-controls
+- [Phase 08]: 08-21: the XLSX summary lists billable amounts per currency and an unconvertible CZK total is an empty commented cell, never a zero
+- [Phase 08]: 08-21: SpreadsheetCells::number() builds XLSX numeric cells from plain decimal strings only, so text can never become a numeric or formula cell
+- [Phase 08]: 08-22: the canary task of every client is created in status in_review, so every isolation test that renders the Partner dashboard exercises the review highlight
+- [Phase 08]: 08-22: the Phase 8 hand-over note is replaced by four convention bullets in CONTRIBUTING (Exchange rates, Reports and exports, Work report, Dashboard); Phases 9 and 10 notes gain the converter, snapshot, work report and dashboard-band hand-over
+- [Phase 08]: 08-22: Filament 5 picks button text colour by contrast, so the primary buttons measure 5.29:1 (light) and 4.70:1 (dark), not the white-on-Amber 3.2:1 of UI-SPEC flag F-1
+- [Phase 08]: 08-23: ReportBucket and tree nodes keep amounts per ISO currency; the footer reads the root bucket so it equals the summary billable amounts per currency; BuildReportExport needed no change
+- [Phase 08]: 08-24: dashboard unbilled widget rows keep amounts per currency (amounts map), matching the report rows; Částka column is a ViewColumn with one line per currency
+- [Phase 08]: 08-25: the client currency lock covers task_billing money (archived tasks included) in UpdateClient; clearing the task rate through UpdateTask is the way to unlock, no migration or trigger
+- [Phase 08]: 08-26: Amendment A-1 of 08-UI-SPEC.md fixes the readable report tree (full width, fixed 64rem layout, grouped Hodiny columns, two-line clamp with tooltip); decisions U-20 to U-25
+- [Phase 08]: 08-26: hour column headers use overflow-wrap anywhere and hyphens auto because 6rem is narrow for the longest titles; owner visual pass (ledger 6) decides
+- [Phase 08]: [08-27] openDepth from validated filters (0 no client, 1 client, 2 project) drives the initial tree state and the server hidden attributes
+- [Phase 08]: [08-27] Report levels styled by one static kokpit-report- style block (sticky Nazev column, client band, secondary gray) with dark variants; contrast of secondary gray computed 4.83:1 light, 6.99:1 dark, owner confirms in ledger 6
+- [Quick 261015-cdq]: the Admin dashboard shows the Signal plan of today (Europe/Prague day) instead of tomorrow, as TodayPlan (sort 15) right under HoursStats, full width, before the unbilled and deadlines row; still read-only, owner-scoped, three items visible, and it never materialises today's recurring templates (it shows them as not-yet-materialised items); a done task is struck through with Splněno; replaces the 'plan for tomorrow' part of Phase 08 D-11 on the owner's request
 
 ### Pending Todos
 
@@ -441,6 +516,7 @@ Product decisions needed before the owning phase is planned:
 Research flags (run research before planning): Phase 3 (Zerops specifics, PDF and kanban spikes, PHP 8.5 package compatibility, Filament 5 behaviours), Phase 5 (only if the kanban spike fails), Phase 6, Phase 7 (OpenAPI coverage), Phase 10 (Czech invoicing details), Phase 11 (Payment Link API shape, event matrix). Researcher drift: STACK.md is authoritative on package versions.
 
 Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is unreliable; review it in Phase 1 before pushing anything public.
+- 08-09 aggregate bug: TimeReport::build() throws on mixed client currencies without a client filter (TimeReport.php line 75); to be fixed in plan 08-14, see deferred-items.md
 
 ### Quick Tasks Completed
 
@@ -458,6 +534,9 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261012-tsk | Admin task list: order by priority and due date, hide Done by default, multi-state status filter | 2026-10-12 | — | [261012-tsk-task-list-priority-due-order-hide-done](./quick/261012-tsk-task-list-priority-due-order-hide-done/) |
 | 261014-cy9 | Prune activity log records older than one year via a daily scheduled task | 2026-10-14 | ab8ec7f | [261014-cy9-prune-activity-log-records-older-than-on](./quick/261014-cy9-prune-activity-log-records-older-than-on/) |
 | 261014-o13 | Hourly safety-net command that ends running time entries older than 48 hours | 2026-10-14 | 136bbce | [261014-o13-hourly-safety-net-command-that-ends-runn](./quick/261014-o13-hourly-safety-net-command-that-ends-runn/) |
+| 261015-cdq | Show today's plan under the hours stats on the Admin dashboard | 2026-10-15 | 54e2f88 | [261015-cdq-show-today-s-plan-under-the-hours-stats-](./quick/261015-cdq-show-today-s-plan-under-the-hours-stats-/) |
+| 261015-cv5 | Make dashboard widgets collapsible with the state saved per user in the database | 2026-10-15 | 75a5c2e | [261015-cv5-make-dashboard-widgets-collapsible-with-](./quick/261015-cv5-make-dashboard-widgets-collapsible-with-/) |
+| 261015-diz | Add overdue highlight to the admin tasks list, reusing the deadlines widget rendering and copy | 2026-10-15 | f9dc2e7 | [261015-diz-add-overdue-highlight-to-the-admin-tasks](./quick/261015-diz-add-overdue-highlight-to-the-admin-tasks/) |
 
 ## Deferred Items
 
@@ -469,6 +548,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T18:26:43.496Z
-Stopped at: Phase 07 complete, ready to plan Phase 08
+Last session: 2026-10-15T06:17:53.469Z
+Stopped at: Completed 08-27-PLAN.md
 Resume file: None

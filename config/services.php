@@ -21,6 +21,11 @@ return [
         'base_url' => env('ARES_BASE_URL', 'https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty'),
     ],
 
+    // The Czech National Bank exchange rate API: a public address, no key or account.
+    'cnb' => [
+        'base_url' => env('CNB_API_BASE_URL', 'https://api.cnb.cz/cnbapi'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

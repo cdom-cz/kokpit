@@ -7,6 +7,7 @@ namespace App\Domain\Clients\Actions;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Rules\CompanyIdRule;
 use App\Domain\Projects\Models\ProjectBilling;
+use App\Domain\Tasks\Models\TaskBilling;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -18,11 +19,12 @@ use Illuminate\Validation\ValidationException;
  * Money::fromMajor in the client currency) and never reads the typed defaults:
  * an existing client keeps what the Admin saved, whatever the defaults say now.
  *
- * The currency cannot change while any project of the client, archived ones
- * included, holds an hourly rate or a fixed price: that money is stored in the
- * client currency, so the change is a field error on `currency` (research item
- * 3). Without project money the currency changes together with the rate, which
- * the caller sends in the new currency. A company number held by another client
+ * The currency cannot change while any project or task of the client, archived
+ * ones included, holds an hourly rate or a fixed price: that money is stored in
+ * the client currency, so the change is a field error on `currency` (research
+ * item 3). Without project or task money the currency changes together with the
+ * rate, which the caller sends in the new currency; clearing a task's rate
+ * through UpdateTask is the way to unlock it. A company number held by another client
  * in the same country is a field error on `company_number` (D-09). A Czech
  * client's company number must pass CompanyIdRule, checked in ClientInput like on
  * creation (D-09).
@@ -40,7 +42,8 @@ final class UpdateClient
     {
         $attributes = ClientInput::attributes($data);
 
-        if ($attributes['currency'] !== $client->currency && ProjectBilling::clientHoldsMoney($client->id)) {
+        if ($attributes['currency'] !== $client->currency
+            && (ProjectBilling::clientHoldsMoney($client->id) || TaskBilling::clientHoldsMoney($client->id))) {
             throw ValidationException::withMessages(['currency' => __('kokpit.clients.errors.currency_locked')]);
         }
 

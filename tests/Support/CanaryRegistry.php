@@ -7,10 +7,15 @@ namespace Tests\Support;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\BillingType;
+use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
+use App\Domain\Reports\Enums\ReportExportFormat;
+use App\Domain\Reports\Enums\ReportExportStatus;
+use App\Domain\Reports\Models\ReportExport;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
@@ -38,6 +43,7 @@ use App\Domain\TimeTracking\Support\TimerClock;
 use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Tests\Support\Probes\PackageProbe;
 
 /**
@@ -84,8 +90,9 @@ final class CanaryRegistry
 
     /**
      * The strings the Admin must find in the visible rows of a model for one canary: the canary itself
-     * for every model that stores text; the Monday of the canary for the two models that have a date but
-     * no text column; the id of the planner owner for the settings (one row per user, no text column).
+     * for every model that stores text; the Monday of the canary for the models that have a date but
+     * no text column (the two Signal day models and the exchange rate); the id of the planner owner for the
+     * settings (one row per user, no text column).
      *
      * @param  class-string  $model
      * @return list<string>
@@ -93,7 +100,7 @@ final class CanaryRegistry
     public static function needles(string $model, string $canary): array
     {
         return match ($model) {
-            SignalDeepWorkDay::class, SignalDayOverride::class => [self::signalMonday($canary)],
+            SignalDeepWorkDay::class, SignalDayOverride::class, ExchangeRate::class => [self::signalMonday($canary)],
             SignalSetting::class => [(string) self::plannerOwner()->getKey()],
             default => [$canary],
         };
@@ -193,12 +200,14 @@ final class CanaryRegistry
 
             // One task in the canary project of that client (found by name; the Project
             // fixture runs before this one), created through the real Action by an
-            // Admin. The canary is the title, so a Partner reading it would be caught.
+            // Admin. The canary is the title, so a Partner reading it would be caught. The task is in
+            // status in_review (Phase 8, UI-SPEC Access contract), so every test that renders the Partner dashboard
+            // exercises the "Ke kontrole" highlight path of the open tasks widget.
             Task::class => static function (string $clientId, string $canary): void {
                 app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
                     $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
 
-                    app(CreateTask::class)->handle(Canary::admin(), $project, ['title' => $canary]);
+                    app(CreateTask::class)->handle(Canary::admin(), $project, ['title' => $canary, 'status' => ProjectStatus::InReview->value]);
                 });
             },
 
@@ -263,6 +272,44 @@ final class CanaryRegistry
                         'started_at' => TimerClock::now()->subHours(2),
                         'ended_at' => TimerClock::now()->subHour(),
                     ])->save();
+                });
+            },
+
+            // A CNB rate row has no text and no client: the canary is the published day (the Monday of the
+            // canary), under a fictional currency code, so two canaries never collide on the unique key of a
+            // currency and day. A Partner reading any rate would be caught by that day.
+            ExchangeRate::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    $now = TimerClock::now();
+
+                    ExchangeRate::query()->insert([
+                        'rate_date' => self::signalMonday($canary),
+                        'currency' => 'XTS',
+                        'unit_amount' => 1,
+                        'rate' => '1.5',
+                        'fetched_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                });
+            },
+
+            // An export request belongs to one Admin and is closed to Partners (OwnedByUser + DeniesPartners).
+            // The canary is the summary ("Zadání"); the row is a finished one with a fictional path, written in
+            // the system context for the one planner owner, because the owner scope limits even an Admin.
+            ReportExport::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    $now = TimerClock::now();
+
+                    (new ReportExport(['format' => ReportExportFormat::Csv, 'summary' => $canary, 'filters' => ['from' => '2020-01-06', 'to' => '2020-01-12']]))
+                        ->forceFill([
+                            'user_id' => self::plannerOwner()->getKey(),
+                            'status' => ReportExportStatus::Ready,
+                            'path' => 'report-exports/'.Str::uuid().'.csv',
+                            'row_count' => 3,
+                            'completed_at' => $now,
+                            'expires_at' => $now->addDays(7),
+                        ])->save();
                 });
             },
 

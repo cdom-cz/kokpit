@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Operations\Health\HealthIndicatorRegistry;
 use App\Domain\Operations\Health\HealthResult;
 use App\Domain\Operations\Health\HealthSlot;
 use App\Domain\Operations\Health\HealthStatus;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Pages\SystemPage;
+use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Support\Carbon;
 use Livewire\Livewire;
@@ -36,6 +39,42 @@ it('shows the Admin the six Czech slot labels, a status label for each and the p
 
     expect(substr_count((string) $response->getContent(), __('enums.health_status.not_available')))
         ->toBeGreaterThanOrEqual(3);
+});
+
+it('shows the Admin the date of the newest rate list with an Ok badge in the last rate date row', function (): void {
+    Carbon::setTestNow(CarbonImmutable::parse('2026-10-14 19:00:00', 'Europe/Prague'));
+    app(PartnerContext::class)->runAsSystem(static function (): void {
+        ExchangeRate::query()->insert([
+            'rate_date' => '2026-10-14',
+            'currency' => 'EUR',
+            'unit_amount' => 1,
+            'rate' => '25.125',
+            'fetched_at' => '2026-10-14 14:45:00+00',
+            'created_at' => '2026-10-14 14:45:00+00',
+            'updated_at' => '2026-10-14 14:45:00+00',
+        ]);
+    });
+
+    $response = $this->actingAs(Canary::admin())->get('/admin/system')->assertOk();
+
+    $response->assertSee(__('enums.health_slot.last_rate_date'))
+        ->assertSee('14. 10. 2026')
+        ->assertSee('Kurzy jsou aktuální.')
+        ->assertSee(__('enums.health_status.ok'));
+
+    Carbon::setTestNow();
+});
+
+it('shows a dash as the value of the last rate date row and the never-downloaded text when no list was stored', function (): void {
+    $html = (string) $this->actingAs(Canary::admin())->get('/admin/system')->assertOk()
+        ->assertSee('Kurzy ještě nebyly staženy. Stáhněte je v přehledu Kurzy ČNB.')
+        ->getContent();
+
+    $row = substr($html, (int) strpos($html, 'health-slot-last_rate_date'));
+    $row = substr($row, 0, (int) strpos($row, 'health-slot-unprocessed_webhooks'));
+
+    expect($row)->toContain('—')
+        ->and($row)->toContain(__('enums.health_status.error'));
 });
 
 it('is reachable under the route name the failed-job alert links to', function (): void {

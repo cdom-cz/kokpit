@@ -185,4 +185,107 @@ return [
         'max_running_hours' => 48,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | CNB exchange rates
+    |--------------------------------------------------------------------------
+    |
+    | Fixed settings of the rates area (EX-01, EX-02; D-03, D-04, D-05). Literal
+    | starting points, not editable in the UI, kept as literals because no
+    | deployment needs a different value.
+    |
+    | attempt_hours / final_hour (D-03): the CNB publishes the daily list on
+    |   working days after 14:30 Prague time, so the scheduled download is
+    |   attempted at each of the hours in attempt_hours (Europe/Prague, Monday
+    |   to Friday), every attempt after the publication. final_hour is one more
+    |   run after the last attempt, at most until about 18:00 and never after 22.
+    |   Only the final run raises the failure alert, so an Admin is told once a
+    |   day and not once per hourly attempt; the earlier attempts retry quietly.
+    |
+    | health.warning_after_working_days / health.error_after_working_days (D-04):
+    |   how many working days the newest stored list may be behind the expected
+    |   date before the System page slot turns Warning, then Error. The count is
+    |   in working days, never calendar days: a weekend or a public holiday
+    |   publishes no list, so a fixed number of days would show a false Warning
+    |   after every long weekend and a false OK after a real outage. A working
+    |   day is a weekday that is not a Czech public holiday (CzechPublicHolidays).
+    |
+    | gap_lookback_days: how far back the scheduled run looks for a working day
+    |   without a stored list and downloads it, so an outage heals itself on
+    |   the next run. A gap older than this is closed with the backfill.
+    |
+    | backfill.earliest / backfill.max_span_days (D-05): the earliest day a
+    |   history backfill may start from, and the longest span in days one
+    |   request may cover. The CNB serves one year per request, so a span costs
+    |   at most one request per calendar year it touches; the cap keeps a single
+    |   queued job short.
+    |
+    */
+
+    'rates' => [
+        'attempt_hours' => [15, 16, 17],
+        'final_hour' => 18,
+        'health' => [
+            'warning_after_working_days' => 1,
+            'error_after_working_days' => 2,
+        ],
+        'gap_lookback_days' => 31,
+        'backfill' => [
+            'earliest' => '2000-01-01',
+            'max_span_days' => 3660,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Report exports
+    |--------------------------------------------------------------------------
+    |
+    | Fixed settings of the exports area (RE-03, D-09). Literal starting points,
+    | not editable in the UI.
+    |
+    | ttl_days (D-09): how many days a finished export file is kept on the
+    |   private disk, counted from its completion. The scheduled prune then
+    |   deletes the file and the record. A pending or failed record expires the
+    |   same number of days after its creation, so stale records go too. The
+    |   value is never read below 1.
+    |
+    | csv.delimiter / csv.decimal_separator (research A1): the CSV is written
+    |   for Czech Excel, which reads a semicolon as the column separator and a
+    |   comma as the decimal sign (a comma delimiter would split every amount
+    |   such as 1234,50 in two). The file starts with a UTF-8 byte order mark so
+    |   Excel reads the Czech characters, and every text cell is neutralised
+    |   against spreadsheet formulas.
+    |
+    */
+
+    'exports' => [
+        'ttl_days' => 7,
+        'csv' => [
+            'delimiter' => ';',
+            'decimal_separator' => ',',
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Time report
+    |--------------------------------------------------------------------------
+    |
+    | Fixed settings of the "Report času" page (RE-01, RE-02; UI-SPEC U-16).
+    | Literal starting point, not editable in the UI.
+    |
+    | max_rendered_rows: at most this many leaf rows (task rows, or the day or
+    |   user rows below them) are rendered in the report tree, which keeps the
+    |   HTML of a long period bounded. The summary, the row totals and the
+    |   footer are always computed over every entry, and the exports cover the
+    |   full set, so the cap only limits what is drawn. The value is never read
+    |   below 1.
+    |
+    */
+
+    'report' => [
+        'max_rendered_rows' => 1000,
+    ],
+
 ];

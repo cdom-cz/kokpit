@@ -49,6 +49,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\Column;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
@@ -391,7 +392,7 @@ final class TaskResource extends Resource
      * The Admin list columns, with the parent reference of a subtask next to the
      * task's own reference.
      *
-     * @return list<TextColumn>
+     * @return list<Column>
      */
     private static function columns(): array
     {

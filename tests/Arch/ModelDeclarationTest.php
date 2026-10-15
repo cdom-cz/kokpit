@@ -6,12 +6,15 @@ use App\Domain\Api\Models\IdempotencyKey;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\Dashboard\Models\DashboardWidgetPreference;
+use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
+use App\Domain\Reports\Models\ReportExport;
 use App\Domain\Shared\Auth\KokpitPolicy;
 use App\Domain\Shared\Auth\NotPartnerScoped;
 use App\Domain\Shared\Auth\PartnerIsolated;
@@ -51,12 +54,15 @@ it('finds every model of the application, so the scan cannot pass vacuously', fu
         Client::class,
         ClientInvitation::class,
         Contact::class,
+        DashboardWidgetPreference::class,
+        ExchangeRate::class,
         IdempotencyKey::class,
         Media::class,
         Permission::class,
         PersonalAccessToken::class,
         Project::class,
         ProjectBilling::class,
+        ReportExport::class,
         Role::class,
         SettingsProperty::class,
         Tag::class,
@@ -113,7 +119,7 @@ it('gives every PartnerIsolated model a policy that extends KokpitPolicy', funct
         static fn (string $class): bool => is_subclass_of($class, PartnerIsolated::class),
     ));
 
-    expect($isolated)->toContain(CanaryRecord::class, Client::class, ClientInvitation::class, Contact::class, Project::class, ProjectBilling::class, Task::class, TaskBilling::class, TaskChecklistItem::class, TaskComment::class, TimeEntry::class, Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class, SignalDayOverride::class, SignalDeepWorkDay::class, SignalRecurringTask::class, SignalSetting::class, SignalTask::class, SignalWeeklyGoal::class, SignalWeeklyRecap::class);
+    expect($isolated)->toContain(CanaryRecord::class, Client::class, ClientInvitation::class, Contact::class, Project::class, ProjectBilling::class, Task::class, TaskBilling::class, TaskChecklistItem::class, TaskComment::class, TimeEntry::class, ExchangeRate::class, ReportExport::class, Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class, SignalDayOverride::class, SignalDeepWorkDay::class, SignalRecurringTask::class, SignalSetting::class, SignalTask::class, SignalWeeklyGoal::class, SignalWeeklyRecap::class);
 
     foreach ($isolated as $class) {
         expect(Gate::getPolicyFor($class))->toBeInstanceOf(KokpitPolicy::class, "no KokpitPolicy for {$class}");

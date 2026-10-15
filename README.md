@@ -83,6 +83,17 @@ To prove that the private object storage works from the current configuration, r
 
     ddev artisan kokpit:storage:check
 
+### Exchange rates and reports
+
+Amounts in a foreign currency are converted to CZK with the daily rates of the Czech National Bank (CNB). A fresh instance holds no rate list, and the scheduler downloads only on Czech working days, so after the first deploy do the following once, in this order:
+
+1. Download the first list: run `php artisan kokpit:rates:download` on the server (`ddev artisan kokpit:rates:download` in DDEV), or press "Stáhnout dnešní kurzy" on the "Kurzy ČNB" page of the panel. Until a list exists the "Datum posledního kurzu" row of the System page shows Error ("Kurzy ještě nebyly staženy"), which is expected on a new instance and not a fault.
+2. Fill the history: open "Kurzy ČNB", press "Doplnit historii" and fill "Od" with the first day you have time entries for and "Do" with today or earlier. The lists are stored in the background (whole years at a time), so this needs the queue worker; one request covers at most 3660 days, and the earliest possible day is 1. 1. 2000.
+
+After that the scheduler keeps the rates current without help. On every Czech working day (Monday to Friday, not a public holiday) it tries to download the day's list at 15:00, 16:00 and 17:00 Prague time, the CNB publishes it about 14:30, and makes a final attempt at 18:00. A failed attempt before the final one is silent. If the final attempt leaves the day without a list, every Admin gets an alert by e-mail and in the bell, and the "Datum posledního kurzu" row of the System page turns to Warning after one missing working day and to Error after two. The same run fills a missing working day of the last 31 days by itself. The rates need no API key, only the outgoing HTTPS access of the server to the CNB host named in `config/services.php`; the CNB host can be changed with `CNB_API_BASE_URL` in the environment of the instance.
+
+The time report ("Report času") exports to CSV and XLSX in the background and keeps each file for 7 days, then deletes it together with its record every night. The work report ("Pracovní výkaz") is a PDF made on the spot. The PDF and the XLSX export need the PHP extensions `dom`, `mbstring`, `gd` and `zip`, and a rendering of a long report needs enough memory: the deploy rehearsal on the target server must confirm that `php -m` lists all four and read the effective `memory_limit` of the PHP-FPM and the queue worker (`php -i | grep memory_limit` shows the command line value, which may differ from the one of the web process). The PDF renderer raises a limit below 256M for its own run, so a lower value is not fatal, but a rehearsal on a long period should be done once.
+
 ## Language and time
 
 The whole interface is Czech (`lang/cs`), the fallback locale is English. Times are stored in UTC and shown in Europe/Prague as `j. n. Y H:i`.
