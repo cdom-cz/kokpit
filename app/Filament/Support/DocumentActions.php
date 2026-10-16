@@ -7,6 +7,7 @@ namespace App\Filament\Support;
 use App\Domain\Documents\Actions\AttachDocuments;
 use App\Domain\Documents\Actions\DeleteDocument;
 use App\Domain\Documents\Actions\RenameDocument;
+use App\Domain\Documents\Actions\RequestDocumentArchive;
 use App\Domain\Documents\Actions\SetDocumentVisibility;
 use App\Domain\Documents\Enums\DocumentOwnerType;
 use App\Domain\Documents\Models\Document;
@@ -30,6 +31,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Contracts\HasTable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component;
@@ -197,16 +199,63 @@ final class DocumentActions
     }
 
     /**
-     * The bulk actions of the central listing (D-09). The ZIP action of a later plan is appended here, so the
-     * resource does not change.
+     * The bulk actions of the central listing (D-09, D-08): the ZIP of the selection and the deletion. Later actions
+     * are appended here, so the resource does not change.
      *
      * @return list<BulkAction>
      */
     public static function bulkActions(): array
     {
         return [
+            self::bulkArchive(),
             self::bulkDelete(),
         ];
+    }
+
+    /**
+     * Asks for one ZIP of the selected files (D-08). The selection can be a whole filter result, so the files are
+     * read in chunks and only their ids are kept; reading stops one past the configured limit, because
+     * RequestDocumentArchive refuses such a selection anyway. The Action validates the ids and the limits and
+     * queues the build; a refusal is shown as a danger notification and nothing is created.
+     */
+    public static function bulkArchive(): BulkAction
+    {
+        return BulkAction::make('bulkArchive')
+            ->label(__('documents.archives.bulk_action'))
+            ->icon(Heroicon::OutlinedArchiveBoxArrowDown)
+            ->color('gray')
+            ->chunkSelectedRecords(100)
+            ->action(static function (iterable $records): void {
+                $stopAt = max(1, (int) config('kokpit.documents.archive.max_files', 200)) + 1;
+                $ids = [];
+
+                foreach ($records as $record) {
+                    if (! $record instanceof Document) {
+                        continue;
+                    }
+
+                    $ids[] = $record->getKey();
+
+                    if (count($ids) >= $stopAt) {
+                        break;
+                    }
+                }
+
+                try {
+                    app(RequestDocumentArchive::class)->handle(self::user(), $ids);
+                } catch (ValidationException $e) {
+                    Notification::make()->danger()->title(Arr::first(Arr::flatten($e->errors())))->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->info()
+                    ->title(__('documents.archives.queued.title'))
+                    ->body(__('documents.archives.queued.body'))
+                    ->send();
+            })
+            ->deselectRecordsAfterCompletion();
     }
 
     /**

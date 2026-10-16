@@ -147,6 +147,23 @@ return [
         ],
     ],
 
+    // The ZIP of selected files, built in the background (plan 09-17, D-08). The list, the download and the bells
+    // come with plans 09-18 and 09-19.
+    'archives' => [
+        'bulk_action' => 'Stáhnout jako ZIP',
+        'queued' => [
+            'title' => 'Archiv se připravuje',
+            'body' => 'Z vybraných souborů se sestavuje jeden ZIP. Dáme vám vědět, až bude hotový.',
+        ],
+        'summary' => '{1} :count soubor, :size|[2,4] :count soubory, :size|[5,*] :count souborů, :size',
+        'errors' => [
+            'empty' => 'Nevybrali jste žádný soubor.',
+            'too_many' => 'Do jednoho archivu lze zabalit nejvýše :max souborů.',
+            'too_large' => 'Vybrané soubory jsou dohromady větší než povolených :max.',
+            'unknown' => 'Výběr obsahuje soubor, který neexistuje. Obnovte stránku a zkuste to znovu.',
+        ],
+    ],
+
     'notifications' => [
         'renamed' => 'Soubor byl upraven.',
         'shown' => 'Soubor nyní vidí klient.',
