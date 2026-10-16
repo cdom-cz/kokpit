@@ -3,22 +3,33 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Actions\RenameDocument;
+use App\Domain\Documents\Actions\SetDocumentVisibility;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Notifications\PartnerUploadedFilesNotification;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
+use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Media;
+use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskComment;
 use App\Filament\Partner\Resources\PartnerTaskResource\Pages\CreatePartnerTask;
 use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ViewPartnerTask;
 use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerTaskDocumentsRelationManager;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -182,5 +193,165 @@ it('creates neither the task nor a file nor a bell when the second file cannot b
     expect($context->runAsSystem(static fn (): int => Task::query()->withTrashed()->count()))->toBe(0)
         ->and($context->runAsSystem(static fn (): int => Document::query()->count()))->toBe(0)
         ->and($context->runAsSystem(static fn (): int => Media::query()->count()))->toBe(0)
+        ->and(puBells($this->admin))->toBe([]);
+});
+
+/**
+ * Re-points who requested a task, a test arrangement written as system.
+ */
+function puRequestedBy(Task $task, User $requester): Task
+{
+    app(PartnerContext::class)->runAsSystem(static function () use ($task, $requester): void {
+        Task::query()->whereKey($task->id)->firstOrFail()->forceFill(['requester_id' => $requester->id])->save();
+    });
+
+    return Task::query()->withTrashed()->whereKey($task->id)->firstOrFail();
+}
+
+/**
+ * A comment written through the domain Action as the author, then flagged internal when asked (a test arrangement:
+ * the Action itself never lets a Partner write an internal comment).
+ */
+function puComment(User $author, Task $task, bool $internal = false): TaskComment
+{
+    test()->actingAs($author);
+
+    $comment = app(AddTaskComment::class)->handle($author, $task, '<p>Example remark</p>');
+
+    if ($internal) {
+        app(PartnerContext::class)->runAsSystem(static function () use ($comment): void {
+            TaskComment::query()->whereKey($comment->id)->firstOrFail()->forceFill(['is_internal' => true])->save();
+        });
+    }
+
+    return $comment;
+}
+
+/**
+ * The owners a Partner may not attach files to, by name. Each is built for the Partner of client A.
+ *
+ * @return array<string, Model|null>
+ */
+function puForbiddenOwners(object $c): array
+{
+    $other = Canary::partnerFor($c->clientA);
+    $partnerB = Canary::partnerFor($c->clientB);
+    $projectB = puProject($c->clientB);
+    $hidden = puProject($c->clientA, ['client_visible' => false]);
+
+    $done = puTask($c->partner, $c->projectA);
+    test()->actingAs($c->admin);
+    app(UpdateTask::class)->handle($c->admin, $done, ['status' => ProjectStatus::Done->value]);
+
+    $archived = puTask($c->partner, $c->projectA);
+    app(PartnerContext::class)->runAsSystem(static fn (): ?bool => Task::query()->whereKey($archived->id)->firstOrFail()->delete());
+
+    $adminsTask = puTask($c->admin, $c->projectA);
+
+    return [
+        'task requested by the Admin' => $adminsTask,
+        'task of another Partner of the client' => puTask($other, $c->projectA),
+        'task of another client' => puTask($partnerB, $projectB),
+        'task of a project that is not client-visible' => puRequestedBy(puTask($c->admin, $hidden), $c->partner),
+        'done task' => $done,
+        'archived task' => Task::query()->withTrashed()->whereKey($archived->id)->firstOrFail(),
+        'project' => $c->projectA,
+        'client' => app(PartnerContext::class)->runAsSystem(static fn (): Client => Client::query()->findOrFail($c->clientA)),
+        'no owner' => null,
+        'internal comment of the Partner' => puComment($c->partner, puTask($c->partner, $c->projectA), true),
+        'comment of the Admin' => puComment($c->admin, puTask($c->partner, $c->projectA)),
+        'comment of another Partner' => puComment($other, puTask($other, $c->projectA)),
+    ];
+}
+
+it('refuses a Partner every owner D-05 does not allow, stores nothing and sends no bell', function (): void {
+    $owners = puForbiddenOwners($this);
+    $this->actingAs($this->partner);
+
+    // The owners that were NOT refused, by name: an empty list is the proof.
+    $accepted = [];
+
+    foreach ($owners as $label => $owner) {
+        try {
+            app(AttachDocuments::class)->handle($this->partner, $owner, [DocumentFixtures::upload()]);
+            $accepted[] = $label;
+        } catch (AuthorizationException) {
+            // Refused, as D-05 demands.
+        }
+    }
+
+    expect($accepted)->toBe([]);
+
+    expect(app(PartnerContext::class)->runAsSystem(static fn (): int => Document::query()->count()))->toBe(0)
+        ->and(Storage::disk('local')->allFiles())->toBe([])
+        ->and(puBells($this->admin))->toBe([]);
+});
+
+it('stores a Partner file on the own open task visible even when the Partner asks for hidden', function (): void {
+    $task = puTask($this->partner, $this->projectA);
+    $this->actingAs($this->partner);
+
+    $documents = app(AttachDocuments::class)->handle($this->partner, $task, [DocumentFixtures::upload()], false);
+
+    expect($documents->every(fn (Document $d): bool => $d->visible_to_client === true && $d->uploaded_by_id === $this->partner->id))->toBeTrue()
+        ->and(puBells($this->admin))->toHaveCount(1);
+});
+
+it('stores a Partner file on the own non-internal comment visible and names the task in the bell', function (): void {
+    $task = puTask($this->partner, $this->projectA);
+    $comment = puComment($this->partner, $task);
+
+    $documents = app(AttachDocuments::class)->handle($this->partner, $comment, [DocumentFixtures::upload(), DocumentFixtures::upload()], false);
+    $stored = app(PartnerContext::class)->runAsSystem(static fn () => Document::query()->get());
+
+    expect($documents)->toHaveCount(2)
+        ->and($stored->every(fn (Document $d): bool => $d->owner_type === 'task_comment' && $d->owner_id === $comment->id && $d->visible_to_client === true))->toBeTrue();
+
+    $bells = puBells($this->admin);
+
+    expect($bells)->toHaveCount(1)
+        ->and(json_encode($bells[0]->data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE))->toContain($task->reference);
+});
+
+it('refuses the uploading Partner a rename and a visibility change', function (): void {
+    $task = puTask($this->partner, $this->projectA);
+    $this->actingAs($this->partner);
+    $document = app(AttachDocuments::class)->handle($this->partner, $task, [DocumentFixtures::upload()])->firstOrFail();
+
+    expect(fn () => app(RenameDocument::class)->handle($this->partner, $document, 'renamed-example.txt', null))
+        ->toThrow(AuthorizationException::class)
+        ->and(fn () => app(SetDocumentVisibility::class)->handle($this->partner, $document, false))
+        ->toThrow(AuthorizationException::class);
+
+    $fresh = app(PartnerContext::class)->runAsSystem(static fn (): Document => Document::query()->findOrFail($document->id));
+
+    expect($fresh->name)->toBe($document->name)->and($fresh->visible_to_client)->toBeTrue();
+});
+
+it('applies the size limit to a Partner exactly as to the Admin', function (): void {
+    $task = puTask($this->partner, $this->projectA);
+    $tooBig = static fn (): UploadedFile => UploadedFile::fake()->create('big-example.txt', (int) config('kokpit.documents.max_size_kb') + 1);
+
+    $this->actingAs($this->admin);
+    $adminError = null;
+
+    try {
+        app(AttachDocuments::class)->handle($this->admin, $task, [$tooBig()]);
+    } catch (ValidationException $e) {
+        $adminError = $e->errors();
+    }
+
+    $this->actingAs($this->partner);
+    $partnerError = null;
+
+    try {
+        app(AttachDocuments::class)->handle($this->partner, $task, [$tooBig()]);
+    } catch (ValidationException $e) {
+        $partnerError = $e->errors();
+    }
+
+    expect($adminError)->not->toBeNull()
+        ->and($partnerError)->toBe($adminError)
+        ->and(app(PartnerContext::class)->runAsSystem(static fn (): int => Document::query()->count()))->toBe(0)
         ->and(puBells($this->admin))->toBe([]);
 });
