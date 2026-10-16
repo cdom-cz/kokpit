@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 09
-current_phase_name: Documents and Finance
+current_phase: "09.1"
+current_phase_name: Transactions API (INSERTED)
 status: executing
-stopped_at: Phase 10 UI-SPEC approved
-last_updated: "2026-10-16T19:37:55.968Z"
+stopped_at: Completed 09.1-01-PLAN.md
+last_updated: "2026-10-16T22:05:46.603Z"
 last_activity: 2026-10-16
-last_activity_desc: Phase 09 execution started
-state_head: e4a58803b4b9da62b8b8dcea2a2feb97e64be295
+last_activity_desc: Phase 09.1 execution started
+state_head: 2ac1a9f51adf31b4227a05a9a5a2fca700297277
 progress:
-  total_phases: 12
+  total_phases: 13
   completed_phases: 7
-  total_plans: 175
-  completed_plans: 175
-  percent: 58
+  total_plans: 223
+  completed_plans: 176
+  percent: 54
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 09 — Documents and Finance
+**Current focus:** Phase 09.1 — Transactions API (INSERTED)
 
 ## Current Position
 
-Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 28 of 28 done (gap closure 09-25 to 09-28 complete; phase ready for re-verification, three human checks pending)
+Phase: 09.1 (Transactions API (INSERTED)) — EXECUTING
+Plan: 2 of 8
 Status: Ready to execute
-Last activity: 2026-10-16 - Completed quick task 261016-tnb: Show the Checklist section on the admin task view page and allow toggling checklist item states there
+Last activity: 2026-10-16 — Phase 09.1 execution started
 
-Progress: [██████░░░░] 58%
+Progress: [█████░░░░░] 54%
 
 ## Performance Metrics
 
@@ -237,6 +237,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P27 | 55min | 3 tasks | 9 files |
 | Phase 09 P26 | 15min | 2 tasks | 4 files |
 | Phase 09 P28 | 40min | 3 tasks | 7 files |
+| Phase 09.1 P01 | 30 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -576,6 +577,8 @@ Recent decisions affecting current work:
 - [Phase 09]: D-23 (owner, amends D-09): stored object removed after the outermost commit via DB::afterCommit; a refused object is retried 3 times by RemoveDocumentObjects, then the failed-job alert reaches the Admin (WR-01)
 - [Phase 09]: 09-26: the archive prune deletes the id-derived storagePath() of every expired record whatever its status; the build job removes the ZIP of a gone or failed record after commit and keeps a ready one (WR-02)
 - [Phase 09]: D-23 (plan 09-28): user-accepted deviation from D-09, DO-03 means objects removed after the commit, retried 3 times by RemoveDocumentObjects, then the failed-job alert reaches the Admin; recorded in 09-CONTEXT.md and the WR-01 closure note
+- [Phase 09.1]: 09.1-01: czk_source custom replaces only the czk_source and snapshot CHECKs; the identity CHECK stays unchanged
+- [Phase 09.1]: 09.1-01: the rate date of an own rate is always the transaction date; TransactionInput exposes customRateCleared for plan 09.1-04
 
 ### Pending Todos
 
@@ -617,6 +620,10 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261015-diz | Add overdue highlight to the admin tasks list, reusing the deadlines widget rendering and copy | 2026-10-15 | f9dc2e7 | [261015-diz-add-overdue-highlight-to-the-admin-tasks](./quick/261015-diz-add-overdue-highlight-to-the-admin-tasks/) |
 | 261016-tnb | Show the Checklist section on the admin task view page and allow toggling checklist item states there | 2026-10-16 | e4a5880 | [261016-tnb-task-view-checklist-toggle](./quick/261016-tnb-task-view-checklist-toggle/) |
 
+### Roadmap Evolution
+
+- Phase 09.1 inserted after Phase 9: Transactions API: REST API for the transactions and transaction_categories tables, including bulk creation (URGENT)
+
 ## Deferred Items
 
 Items acknowledged and deferred at milestone close, most recent first:
@@ -627,6 +634,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T19:19:43.868Z
-Stopped at: Phase 10 UI-SPEC approved
-Resume file: .planning/phases/10-invoicing/10-UI-SPEC.md
+Last session: 2026-10-16T22:05:45.727Z
+Stopped at: Completed 09.1-01-PLAN.md
+Resume file: None

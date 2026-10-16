@@ -628,6 +628,32 @@ Plans:
 **Gap wave 3** *(blocked on gap wave 2 completion)*
 - [x] 09-28-PLAN.md — Consistency proof through every delete path, CONTRIBUTING update, CR-01/WR-01/WR-02 closed in the disposition, D-23 recorded in 09-CONTEXT.md and the WR-01 note, validation rows, phase gate
 
+### Phase 09.1: Transactions API (INSERTED)
+
+**Goal:** REST API for the transactions and transaction_categories tables, including bulk creation of transactions
+**Requirements**: TBD
+**Depends on:** Phase 9
+**Plans:** 1/8 plans executed in 5 waves
+
+Plans:
+**Wave 1**
+- [x] 09.1-01-PLAN.md — Own exchange rate (D-06): `custom` CZK source in the database, `CustomRate`, the custom branch of `TransactionCzk`, rate rules in `TransactionInput`, `RecordTransaction` wiring
+- [ ] 09.1-02-PLAN.md — Finance abilities (D-01) and reading one transaction (D-07): finance read group, show endpoint, response contract, route-walk and docs pins
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 09.1-03-PLAN.md — Finance token on the token screen (D-01), public docs intro and CONTRIBUTING for the four abilities and the finance formats
+- [ ] 09.1-04-PLAN.md — Editing a transaction booked at an own rate: sticky-rate rule in `UpdateTransaction`, Admin UI badge and kept-rate edit state
+- [ ] 09.1-05-PLAN.md — Listing (D-09): transaction list with filters, sorts and date/integer cursors; read-only transaction categories list and detail
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 09.1-06-PLAN.md — Single writes (D-02, D-03, D-06, D-08): POST, PATCH, DELETE through the Actions, `TransactionPayload` mapping and error-key remap, 409 `transaction_in_use`
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 09.1-07-PLAN.md — Bulk create (D-04, D-05): partial-success batch of up to 500 with its duration measured against the idempotency stale lock; Idempotency-Key on both creates
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 09.1-08-PLAN.md — Importer journey end to end, Phase 10 hand-over in CONTRIBUTING, full gate and validation sign-off
+
 ### Phase 10: Invoicing
 
 **Goal**: Admin turns unbilled time into an issued, immutable, payable invoice in one pass and follows it through payment, and Partner sees their own issued documents
@@ -640,8 +666,75 @@ Plans:
   4. Admin records a manual payment (transfer or cash) with a warning if already paid, which creates an income transaction with editable date and category; overdue status is derived and listed in an overdue overview and as a dashboard tile; a paid proforma converts to a linked invoice
   5. The client detail shows projects, unbilled time and amount, invoices, documents and client accounts, and a Partner sees only their own issued invoices and proformas (list, detail, PDF) read-only, never drafts, internal notes, linked time or rates
 
-**Plans**: TBD
+**Plans:** 40 plans in 13 waves
 **UI hint**: yes
+
+Plans:
+**Wave 1**
+- [ ] 10-01-PLAN.md — Money arithmetic for invoice lines: quantity from exact seconds, quantity times price rounded once, signs, exact conversion between two CNB currencies, converted line amount rounded exactly once
+- [ ] 10-02-PLAN.md — SPAYD payload and local QR PNG with decode round trip; fictional IBAN helper; chillerlan/php-qrcode pinned as a direct dependency
+- [ ] 10-03-PLAN.md — Document appearance: accent colour, footer, logo and signature as typed settings (content-addressed, retained images) with the palette derived by the reference rules, on the Settings page
+- [ ] 10-04-PLAN.md — Guard functions and the invoices and invoice_items tables: issued documents frozen against raw SQL with recorded D-13 carve-outs, every CHECK, series uniqueness, same-client links, pinned Partner-safe columns
+- [ ] 10-33-PLAN.md — Invoicing enums with Czech labels: kinds, states, derived statuses (Admin and Partner wording), line origins, payment methods, e-mail states
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 10-05-PLAN.md — Invoice and InvoiceItem models with the fail-closed Partner scope, policies, morph aliases, registries and canaries
+- [ ] 10-06-PLAN.md — Admin-only side tables, permanent payments, e-mail log, transactions link with the payment-income lock, and the time_entries invoice link with its lifecycle guard
+- [ ] 10-07-PLAN.md — Number series as variable symbols: digits-only proforma rule (owner acknowledgement point), distinct proforma default, VariableSymbol helper
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 10-08-PLAN.md — Admin-only invoicing models, relations and registrations proven closed to Partners
+- [ ] 10-09-PLAN.md — EntryBilling as the single writer of billing columns with the TI-08 rate and amount snapshot; manual billing respects drafts and invoices
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 10-10-PLAN.md — Reserved entries locked against edits and deletion in panel, timesheet and API
+- [ ] 10-11-PLAN.md — Draft lifecycle with manual items, server-side totals, internal note, domain error copy and fixtures
+- [ ] 10-34-PLAN.md — Reports price billed entries with their snapshot and flag reserved time, which still counts as unbilled
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 10-12-PLAN.md — Issuing: blockers, number at issue, chronology, snapshots (appearance with image hashes), CNB snapshot of the document
+- [ ] 10-13-PLAN.md — Draft from unbilled time: picker, grouping per project or task, reservation claimed on locked rows, single-rounding preview of converted lines
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 10-14-PLAN.md — Issue bills linked time; unlink, add new time and fixed amounts on drafts
+- [ ] 10-15-PLAN.md — Invoice PDF from the snapshot: Roboto, D-24 layout, SPAYD QR, hash-verified logo and signature, cs and en copy, PDF test helpers
+- [ ] 10-16-PLAN.md — Manual payments with income from invoices only and the balance reader
+- [ ] 10-35-PLAN.md — Concurrency proofs with mutation twins: gap-free issue under parallel processes and race-free reservation of time
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 10-17-PLAN.md — Foreign-currency lines converted at the issue date with frozen rates and one rounding per line, draft preview, non-VAT-payer proof
+- [ ] 10-18-PLAN.md — PDF variants (proforma, credit note, non-CZK, optional blocks) and regeneration equivalence
+- [ ] 10-19-PLAN.md — Receivables: derived statuses and overdue, tab filters and counts, CZK summaries, payment income locked on the finance side
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 10-20-PLAN.md — PDF stored at issue with full rollback and the invoice owner kind
+- [ ] 10-21-PLAN.md — Admin document list with tabs and the Nová faktura modal; complete Czech screen copy; UI-SPEC amended to the rulings
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 10-22-PLAN.md — Proforma conversion: linked invoice, time moved still billed, payments carried with income at their dates
+- [ ] 10-23-PLAN.md — Credit notes: partial credits and full storno releasing time, converted lines credited with one rounding
+- [ ] 10-24-PLAN.md — Queued idempotent e-mail with PDF and optional work report, failure notice
+- [ ] 10-25-PLAN.md — Draft editor: items table, previews, fixed amounts, linked time with add and unlink
+- [ ] 10-27-PLAN.md — Client detail panels: stats, Projekty and Faktury tabs
+- [ ] 10-28-PLAN.md — Dashboard card Nezaplacené faktury
+- [ ] 10-36-PLAN.md — Stored PDF lifecycle: confirmed deletion of issued PDFs and regeneration from the snapshot
+- [ ] 10-37-PLAN.md — System page slot for unsent invoice e-mails
+- [ ] 10-38-PLAN.md — Signed, user-bound invoice PDF route for Admin and Partner
+- [ ] 10-39-PLAN.md — Invoice link and payment-income lock on the transactions screen
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 10-26-PLAN.md — Partner read-only documents and the canary leak proof
+- [ ] 10-29-PLAN.md — Issue flow from the draft and the issued detail with its tabs
+- [ ] 10-40-PLAN.md — Draft and invoice markers on time entries and the reserved line in the report
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [ ] 10-30-PLAN.md — Payment modal with the permanence note and proforma conversion in the panel
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [ ] 10-31-PLAN.md — Storno and partial credit notes, e-mail dialog, send log and resend in the panel
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [ ] 10-32-PLAN.md — End-to-end flow and Partner sweep, CONTRIBUTING and README hand-over, validation map, phase gate
 
 ### Phase 11: Stripe Payments
 
@@ -696,6 +789,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
 | 8. Exchange Rates and Reports | 27/27 | In Progress | - |
 | 9. Documents and Finance | 28/28 | In Progress | - |
-| 10. Invoicing | 0/0 | Not started | - |
+| 10. Invoicing | 0/32 | Planned | - |
 | 11. Stripe Payments | 0/0 | Not started | - |
 | 12. Partner Audit | 0/0 | Not started | - |
