@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Actions\RenameDocument;
+use App\Domain\Documents\Actions\SetDocumentVisibility;
 use App\Domain\Documents\Enums\DocumentOwnerType;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Support\DocumentFileName;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -25,13 +28,16 @@ use App\Filament\Support\DocumentColumns;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Toggle;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
+use Spatie\Activitylog\Models\Activity;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
 
@@ -480,4 +486,170 @@ it('answers 403 when a Partner mounts the client Soubory tab', function (): void
     $this->actingAs(Canary::partnerFor($client->id));
 
     clientDocumentsTab($client)->assertForbidden();
+});
+
+/*
+ * Rename, describe and show or hide a file for the client (DO-03, D-02, D-03, D-20).
+ */
+
+/**
+ * A fictional file on an owner, written through the domain Action.
+ */
+function managedFile(?object $owner, string $name = 'managed-example.txt', ?bool $visible = null, ?string $description = null): Document
+{
+    return app(AttachDocuments::class)
+        ->handle(test()->admin, $owner, [DocumentFixtures::upload($name)], $visible, $description)
+        ->firstOrFail();
+}
+
+it('renames a file with a cleaned name and a new description from the table action', function (): void {
+    $project = tabProject('REN');
+    $document = managedFile($project, 'before-example.txt', null, 'Old example description');
+    // A right-to-left override and a path separator, assembled when the test runs.
+    $hostile = '../'.mb_chr(0x202E).'after/example.txt ';
+
+    projectDocumentsTab($project)
+        ->callAction(TestAction::make('rename')->table($document), ['name' => $hostile, 'description' => '  New example description  '])
+        ->assertHasNoFormErrors();
+
+    $document->refresh();
+
+    expect($document->name)->toBe(DocumentFileName::displayName($hostile))
+        ->and($document->name)->not->toContain('/')
+        ->and($document->name)->not->toContain(mb_chr(0x202E))
+        ->and($document->description)->toBe('New example description');
+});
+
+it('refuses a blank name under the name field and keeps the old one', function (): void {
+    $project = tabProject('BLK');
+    $document = managedFile($project, 'keep-example.txt');
+
+    projectDocumentsTab($project)
+        ->callAction(TestAction::make('rename')->table($document), ['name' => '   ', 'description' => null])
+        ->assertHasActionErrors(['name' => 'required']);
+
+    expect($document->refresh()->name)->toBe('keep-example.txt');
+
+    $refusal = fn () => app(RenameDocument::class)->handle($this->admin, $document, '   ', null);
+
+    expect($refusal)->toThrow(ValidationException::class);
+
+    try {
+        $refusal();
+    } catch (ValidationException $e) {
+        expect(array_keys($e->errors()))->toBe(['name']);
+    }
+});
+
+it('clears the description when it is sent empty', function (): void {
+    $project = tabProject('CLR');
+    $document = managedFile($project, 'described-example.txt', null, 'Example description to clear');
+
+    app(RenameDocument::class)->handle($this->admin, $document, 'described-example.txt', '   ');
+
+    expect($document->refresh()->description)->toBeNull();
+});
+
+it('writes one activity row for a rename and none for a description-only change', function (): void {
+    $project = tabProject('ACT');
+    $document = managedFile($project, 'old-name-example.txt');
+
+    app(RenameDocument::class)->handle($this->admin, $document, 'new-name-example.txt', 'First example description');
+    app(RenameDocument::class)->handle($this->admin, $document, 'new-name-example.txt', 'Second example description');
+
+    $rows = Activity::query()->forSubject($document)->forEvent('updated')->get();
+
+    expect($rows)->toHaveCount(1)
+        ->and($rows->first()?->attribute_changes->get('old'))->toBe(['name' => 'old-name-example.txt'])
+        ->and($rows->first()?->attribute_changes->get('attributes'))->toBe(['name' => 'new-name-example.txt'])
+        ->and(json_encode($rows->first()?->getAttributes()))->not->toContain('example description');
+});
+
+it('hides and shows a project file for the client and logs the flag', function (): void {
+    $project = tabProject('VIS');
+    $document = managedFile($project, 'shared-example.txt');
+
+    expect($document->visible_to_client)->toBeTrue();
+
+    $tab = projectDocumentsTab($project)->callAction(TestAction::make('toggleVisibility')->table($document));
+
+    expect($document->refresh()->visible_to_client)->toBeFalse();
+
+    $tab->assertNotified(__('documents.notifications.hidden'));
+
+    projectDocumentsTab($project)->callAction(TestAction::make('toggleVisibility')->table($document))
+        ->assertNotified(__('documents.notifications.shown'));
+
+    $changes = Activity::query()->forSubject($document)->forEvent('updated')->orderBy('created_at')->orderBy('id')->get()
+        ->map(fn (Activity $row): mixed => $row->attribute_changes->get('attributes'))
+        ->all();
+
+    expect($document->refresh()->visible_to_client)->toBeTrue()
+        ->and($changes)->toHaveCount(2)
+        ->and(collect($changes)->pluck('visible_to_client')->sort()->values()->all())->toBe([false, true]);
+});
+
+it('labels the toggle by what it does', function (): void {
+    $project = tabProject('LBL');
+    $document = managedFile($project, 'label-example.txt');
+
+    $label = fn (): string => (string) projectDocumentsTab($project)->instance()->getTable()->getAction('toggleVisibility')?->record($document->refresh())->getLabel();
+
+    expect($label())->toBe(__('documents.actions.hide_from_client'));
+
+    app(SetDocumentVisibility::class)->handle($this->admin, $document, false);
+
+    expect($label())->toBe(__('documents.actions.show_to_client'));
+});
+
+it('offers the toggle only for a file the client can ever see', function (): void {
+    $set = clientWithFilesOfEveryOwner('TGL');
+    $internal = app(AddTaskComment::class)->handle($this->admin, $set['task'], 'Example internal note', internal: true);
+    $internalFile = managedFile($internal, 'internal-example.txt');
+
+    $tab = clientDocumentsTab($set['client']);
+
+    $tab->assertTableActionHidden('toggleVisibility', $set['files']['client'])
+        ->assertTableActionHidden('toggleVisibility', $internalFile)
+        ->assertTableActionVisible('toggleVisibility', $set['files']['project'])
+        ->assertTableActionVisible('toggleVisibility', $set['files']['task'])
+        ->assertTableActionVisible('toggleVisibility', $set['files']['task_comment']);
+});
+
+it('refuses to share a client file, an unattached file and a file of an internal comment', function (): void {
+    $set = clientWithFilesOfEveryOwner('REF');
+    $internal = app(AddTaskComment::class)->handle($this->admin, $set['task'], 'Example internal note', internal: true);
+    $internalFile = managedFile($internal, 'internal-example.txt');
+    $unattached = managedFile(null, 'unattached-example.txt');
+
+    foreach ([$set['files']['client'], $internalFile, $unattached] as $document) {
+        try {
+            app(SetDocumentVisibility::class)->handle($this->admin, $document, true);
+
+            $this->fail('A file that cannot be shared was shared.');
+        } catch (ValidationException $e) {
+            expect($e->errors())->toBe(['visible_to_client' => [__('documents.errors.not_shareable')]]);
+        }
+
+        expect($document->refresh()->visible_to_client)->toBeFalse();
+    }
+
+    // Hiding is always allowed and changes nothing for a file that is hidden already.
+    app(SetDocumentVisibility::class)->handle($this->admin, $set['files']['client'], false);
+
+    expect($set['files']['client']->refresh()->visible_to_client)->toBeFalse();
+});
+
+it('refuses a Partner in both Actions', function (): void {
+    $project = tabProject('PAR');
+    $document = managedFile($project, 'partner-example.txt');
+    $partner = Canary::partnerFor($project->client_id);
+
+    expect(fn () => app(RenameDocument::class)->handle($partner, $document, 'taken-example.txt', null))->toThrow(AuthorizationException::class)
+        ->and(fn () => app(SetDocumentVisibility::class)->handle($partner, $document, false))->toThrow(AuthorizationException::class);
+
+    $document->refresh();
+
+    expect($document->name)->toBe('partner-example.txt')
+        ->and($document->visible_to_client)->toBeTrue();
 });

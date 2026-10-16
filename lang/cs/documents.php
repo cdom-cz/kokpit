@@ -14,6 +14,8 @@ return [
         'too_many_files' => 'Najednou lze nahrát nejvýše :max souborů.',
         'extension_not_allowed' => 'Soubor „:name“ má nepovolenou příponu.',
         'owner_archived' => 'Do archivované položky nelze přidávat soubory.',
+        'name_required' => 'Název souboru musí být vyplněn.',
+        'not_shareable' => 'Tento soubor nelze sdílet s klientem.',
         'upload_unreadable' => 'Nahraný soubor se nepodařilo přečíst. Zkuste ho nahrát znovu.',
     ],
 
@@ -37,6 +39,10 @@ return [
         'upload_submit' => 'Nahrát',
         'download' => 'Stáhnout',
         'preview' => 'Zobrazit',
+        'rename' => 'Přejmenovat',
+        'rename_submit' => 'Uložit',
+        'show_to_client' => 'Zobrazit klientovi',
+        'hide_from_client' => 'Skrýt před klientem',
         'delete' => 'Smazat',
         'delete_heading' => 'Smazat soubor?',
         'bulk_delete' => 'Smazat vybrané',
@@ -46,6 +52,7 @@ return [
     ],
 
     'fields' => [
+        'name' => 'Název',
         'files' => 'Soubory',
         'description' => 'Popis',
         'visible_to_client' => 'Zobrazit klientovi',
@@ -70,6 +77,9 @@ return [
     'owner_none' => 'Nepřiřazeno',
 
     'notifications' => [
+        'renamed' => 'Soubor byl upraven.',
+        'shown' => 'Soubor nyní vidí klient.',
+        'hidden' => 'Soubor je skrytý před klientem.',
         'deleted' => 'Soubor byl trvale smazán.',
         'bulk_deleted' => 'Trvale smazáno: :deleted, nepodařilo se smazat: :failed.',
         'delete_failed' => 'Soubor se nepodařilo smazat. Zkuste to znovu.',

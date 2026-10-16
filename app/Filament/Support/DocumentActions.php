@@ -6,9 +6,12 @@ namespace App\Filament\Support;
 
 use App\Domain\Documents\Actions\AttachDocuments;
 use App\Domain\Documents\Actions\DeleteDocument;
+use App\Domain\Documents\Actions\RenameDocument;
+use App\Domain\Documents\Actions\SetDocumentVisibility;
 use App\Domain\Documents\Enums\DocumentOwnerType;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Support\DocumentDisposition;
+use App\Domain\Documents\Support\DocumentFileName;
 use App\Domain\Documents\Support\DocumentUrl;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
@@ -19,6 +22,7 @@ use Filament\Actions\BulkAction;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -40,6 +44,9 @@ use Throwable;
  * flag to AttachDocuments; the owner, the client and the project come from the host's own record, never from
  * the form. Files are not stored by the field itself (`storeFiles(false)`): the temporary object stays where
  * Livewire put it until the Action has checked, copied and removed it.
+ *
+ * Rename and the visibility switch (D-02, D-03) go through RenameDocument and SetDocumentVisibility, which own
+ * the rules; the actions only collect the input and report the result.
  *
  * Delete is permanent (D-09): it asks for a confirmation that names the file, and it removes the row, the media
  * and the stored object through DeleteDocument or not at all.
@@ -104,6 +111,70 @@ final class DocumentActions
                 Gate::forUser(self::user())->authorize('view', $record);
 
                 $livewire->redirect(DocumentUrl::preview($record, self::user()));
+            });
+    }
+
+    /**
+     * Renames the file and edits its description. The name is cleaned by the Action, so what the Admin typed
+     * is not necessarily what is stored.
+     */
+    public static function rename(): Action
+    {
+        return Action::make('rename')
+            ->label(__('documents.actions.rename'))
+            ->icon(Heroicon::OutlinedPencilSquare)
+            ->modalHeading(__('documents.actions.rename'))
+            ->modalSubmitActionLabel(__('documents.actions.rename_submit'))
+            ->fillForm(static fn (Document $record): array => ['name' => $record->name, 'description' => $record->description])
+            ->schema([
+                TextInput::make('name')
+                    ->label(__('documents.fields.name'))
+                    ->required()
+                    ->maxLength(DocumentFileName::MAX_LENGTH),
+                Textarea::make('description')
+                    ->label(__('documents.fields.description'))
+                    ->maxLength(2000)
+                    ->rows(3),
+            ])
+            ->action(static function (array $data, Document $record): void {
+                try {
+                    app(RenameDocument::class)->handle(
+                        self::user(),
+                        $record,
+                        is_string($data['name'] ?? null) ? $data['name'] : '',
+                        is_string($data['description'] ?? null) ? $data['description'] : null,
+                    );
+                } catch (ValidationException $e) {
+                    throw self::underModal($e);
+                }
+
+                Notification::make()->success()->title(__('documents.notifications.renamed'))->send();
+            });
+    }
+
+    /**
+     * Shows or hides the file for the client. Offered only for a file that can ever be shared (a project, a task
+     * or a comment that is not internal), never for a client-owned or unattached file.
+     */
+    public static function toggleVisibility(): Action
+    {
+        return Action::make('toggleVisibility')
+            ->label(static fn (Document $record): string => $record->visible_to_client ? __('documents.actions.hide_from_client') : __('documents.actions.show_to_client'))
+            ->icon(static fn (Document $record): Heroicon => $record->visible_to_client ? Heroicon::OutlinedEyeSlash : Heroicon::OutlinedUsers)
+            ->visible(static fn (Document $record): bool => app(SetDocumentVisibility::class)->isShareable($record))
+            ->action(static function (Document $record): void {
+                $show = ! $record->visible_to_client;
+
+                try {
+                    app(SetDocumentVisibility::class)->handle(self::user(), $record, $show);
+                } catch (ValidationException) {
+                    // The only refusal is a file that cannot be shared; the switch is not offered for one.
+                    Notification::make()->danger()->title(__('documents.errors.not_shareable'))->send();
+
+                    return;
+                }
+
+                Notification::make()->success()->title($show ? __('documents.notifications.shown') : __('documents.notifications.hidden'))->send();
             });
     }
 

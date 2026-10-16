@@ -57,6 +57,8 @@ trait ManagesDocuments
             ->recordActions([
                 DocumentActions::preview(),
                 DocumentActions::download(),
+                DocumentActions::rename(),
+                DocumentActions::toggleVisibility(),
                 DocumentActions::delete(),
             ])
             ->toolbarActions([
