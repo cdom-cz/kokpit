@@ -18,6 +18,7 @@ use App\Domain\Tasks\Models\TaskComment;
 use App\Domain\TimeTracking\Support\PragueDay;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
+use App\Filament\Resources\DocumentResource\Widgets\DocumentStorageStats;
 use App\Filament\Support\DocumentActions;
 use App\Filament\Support\DocumentColumns;
 use App\Providers\LocalisationServiceProvider;
@@ -133,6 +134,18 @@ final class DocumentResource extends Resource
     {
         return [
             'index' => ListDocuments::route('/'),
+        ];
+    }
+
+    /**
+     * The storage totals shown above the listing (D-11); the list page places them.
+     *
+     * @return array<class-string>
+     */
+    public static function getWidgets(): array
+    {
+        return [
+            DocumentStorageStats::class,
         ];
     }
 

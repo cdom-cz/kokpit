@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\DocumentResource\Pages;
 
 use App\Filament\Resources\DocumentResource;
+use App\Filament\Resources\DocumentResource\Widgets\DocumentStorageStats;
 use App\Filament\Support\DocumentActions;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -21,6 +22,18 @@ final class ListDocuments extends ListRecords
     public function getTitle(): string
     {
         return __('documents.navigation');
+    }
+
+    /**
+     * The storage totals above the table (D-11).
+     *
+     * @return array<class-string>
+     */
+    protected function getHeaderWidgets(): array
+    {
+        return [
+            DocumentStorageStats::class,
+        ];
     }
 
     /**
