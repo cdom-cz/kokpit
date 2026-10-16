@@ -11,6 +11,7 @@ use App\Domain\Documents\Actions\AttachDocuments;
 use App\Domain\Documents\Models\Document;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Enums\TransactionType;
+use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\BillingType;
@@ -331,6 +332,29 @@ final class CanaryRegistry
                     (new TransactionCategory(['name' => $canary]))->forceFill([
                         'type' => TransactionType::Expense,
                         'depth' => 0,
+                    ])->save();
+                });
+            },
+
+            // A finance transaction is Admin-only. The canary is the counterparty and the description of an
+            // expense in the seeded "Software" category, tied to the client of the canary and booked in CZK
+            // (identity), written in the system context; a Partner reading any transaction would be caught.
+            Transaction::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $category = TransactionCategory::query()
+                        ->where('type', TransactionType::Expense->value)
+                        ->whereNull('parent_id')
+                        ->where('name', 'Software')
+                        ->sole();
+
+                    (new Transaction(['counterparty' => $canary, 'description' => $canary]))->forceFill([
+                        'type' => TransactionType::Expense,
+                        'transaction_date' => '2026-10-14',
+                        'category_id' => $category->getKey(),
+                        'amount' => Money::ofMinor(123450, 'CZK'),
+                        'czk_minor' => 123450,
+                        'czk_source' => 'identity',
+                        'client_id' => $clientId,
                     ])->save();
                 });
             },

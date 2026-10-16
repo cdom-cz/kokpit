@@ -12,6 +12,7 @@ use App\Domain\Dashboard\Policies\DashboardWidgetPreferencePolicy;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Policies\DocumentPolicy;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
+use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
@@ -112,6 +113,9 @@ final class AccessServiceProvider extends ServiceProvider
 
         // Finance is closed to Partners: the categories of income and expenses are the Admin's alone.
         Gate::policy(TransactionCategory::class, AdminOnlyPolicy::class);
+
+        // Transactions are finance data, the Admin's alone (D-12).
+        Gate::policy(Transaction::class, AdminOnlyPolicy::class);
 
         // An export request names the clients and periods of one Admin: Admin-only, and the owner scope of the
         // model keeps even a second Admin away from it.
