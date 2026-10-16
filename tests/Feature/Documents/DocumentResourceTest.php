@@ -25,12 +25,14 @@ use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
 use App\Filament\Resources\ProjectResource;
 use App\Filament\Resources\TaskResource;
 use App\Filament\Resources\TransactionResource;
+use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Livewire\Features\SupportTesting\Testable;
@@ -655,4 +657,180 @@ it('shows archived owners by name and link, and the archived client by name, wit
     } finally {
         Model::preventLazyLoading(false);
     }
+});
+
+it('renames a file and shows or hides it for the client from a listing row, as on the tabs', function (): void {
+    $tree = listingTree($this->admin);
+    $project = $tree['files']['project'];
+
+    listingPage()
+        ->callAction(TestAction::make('rename')->table($project), ['name' => 'Renamed example.txt', 'description' => 'Example description'])
+        ->assertHasNoErrors();
+
+    $project->refresh();
+
+    expect($project->name)->toBe('Renamed example.txt')
+        ->and($project->description)->toBe('Example description')
+        ->and($project->visible_to_client)->toBeTrue();
+
+    listingPage()->callAction(TestAction::make('toggleVisibility')->table($project));
+
+    expect($project->refresh()->visible_to_client)->toBeFalse();
+
+    listingPage()->callAction(TestAction::make('toggleVisibility')->table($project));
+
+    expect($project->refresh()->visible_to_client)->toBeTrue();
+});
+
+it('offers the visibility switch for project, task and comment files only', function (): void {
+    $files = listingTree($this->admin)['files'];
+    $listing = listingPage();
+
+    foreach (['project', 'task', 'comment'] as $key) {
+        $listing->assertActionVisible(TestAction::make('toggleVisibility')->table($files[$key]));
+    }
+
+    foreach (['client', 'transaction', 'unattached'] as $key) {
+        $listing->assertActionHidden(TestAction::make('toggleVisibility')->table($files[$key]));
+    }
+});
+
+it('deletes one file from a listing row after a confirmation that names it, with its object', function (): void {
+    $document = listingAttach(null, 'doomed-example.txt');
+    $path = Document::query()->whereKey($document->getKey())->sole()->getFirstMedia(Document::MEDIA_COLLECTION)?->getPathRelativeToRoot();
+
+    expect($path)->toBeString()
+        ->and(Storage::disk('local')->exists((string) $path))->toBeTrue();
+
+    $listing = listingPage()
+        ->assertActionExists(TestAction::make('delete')->table($document), static fn (Action $action): bool => $action->isConfirmationRequired())
+        ->mountAction(TestAction::make('delete')->table($document));
+
+    expect((string) $listing->instance()->getMountedAction()?->getModalDescription())->toContain('doomed-example.txt');
+
+    $listing->callMountedAction();
+
+    expect(Document::query()->whereKey($document->getKey())->exists())->toBeFalse()
+        ->and(Storage::disk('local')->exists((string) $path))->toBeFalse();
+});
+
+it('offers a preview only for images and PDF', function (): void {
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==');
+    $pdf = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n";
+
+    $image = listingAttach(null, 'picture-example.png', $png);
+    $paper = listingAttach(null, 'paper-example.pdf', $pdf);
+    $text = listingAttach(null, 'note-example.txt');
+    $archive = listingAttach(null, 'bundle-example.zip', "PK\x05\x06".str_repeat("\x00", 18));
+
+    listingPage()
+        ->assertActionVisible(TestAction::make('preview')->table($image))
+        ->assertActionVisible(TestAction::make('preview')->table($paper))
+        ->assertActionHidden(TestAction::make('preview')->table($text))
+        ->assertActionHidden(TestAction::make('preview')->table($archive));
+});
+
+it('deletes every file of a filter result across two pages after one confirmation, and no other file', function (): void {
+    $project = listingProject(Client::factory()->create(), 'BLK');
+    $task = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example bulk task']);
+
+    $targets = [];
+
+    for ($i = 1; $i <= 7; $i++) {
+        $targets[] = listingAttach($task, "task-target-{$i}-example.txt");
+    }
+
+    $bystanders = [listingAttach($project, 'project-bystander-example.txt'), listingAttach(null, 'loose-bystander-example.txt')];
+
+    $listing = listingPage()
+        ->filterTable('owner_type', 'task')
+        ->set('tableRecordsPerPage', 5)
+        // Seven files in the filter result, five on the first page.
+        ->assertCountTableRecords(7)
+        // "Select all" of the filter result, as the select-all link does: every row of every page.
+        ->set('isTrackingDeselectedTableRecords', true)
+        ->set('deselectedTableRecords', [])
+        ->mountAction(TestAction::make('bulkDelete')->table()->bulk());
+
+    expect(count($listing->instance()->getTableRecords()))->toBe(5)
+        ->and((string) $listing->instance()->getMountedAction()?->getModalDescription())->toBe(trans_choice('documents.actions.bulk_delete_description', 7, ['count' => 7]));
+
+    $listing->callMountedAction()
+        ->assertNotified(__('documents.notifications.bulk_deleted', ['deleted' => 7, 'failed' => 0]));
+
+    expect(Document::query()->pluck('id')->sort()->values()->all())
+        ->toBe(collect($bystanders)->pluck('id')->sort()->values()->all());
+
+    expect(Document::query()->whereKey(collect($targets)->pluck('id')->all())->exists())->toBeFalse();
+
+    // Nothing but the bystanders' objects is left on the disk.
+    expect(Storage::disk('local')->allFiles())->toHaveCount(2);
+});
+
+it('deletes only the matching files when a search narrows the selected-all result', function (): void {
+    $hit = [listingAttach(null, 'invoice-one-example.txt'), listingAttach(null, 'invoice-two-example.txt')];
+    $other = [listingAttach(null, 'contract-example.txt'), listingAttach(null, 'photo-example.txt')];
+
+    listingPage()
+        ->searchTable('invoice')
+        ->set('isTrackingDeselectedTableRecords', true)
+        ->set('deselectedTableRecords', [])
+        ->mountAction(TestAction::make('bulkDelete')->table()->bulk())
+        ->callMountedAction()
+        ->assertNotified(__('documents.notifications.bulk_deleted', ['deleted' => 2, 'failed' => 0]));
+
+    expect(Document::query()->pluck('id')->sort()->values()->all())
+        ->toBe(collect($other)->pluck('id')->sort()->values()->all())
+        ->and(Document::query()->whereKey(collect($hit)->pluck('id')->all())->exists())->toBeFalse();
+});
+
+it('leaves a deselected file and the files of archived owners alone when everything is selected under the default filter', function (): void {
+    $archivedProject = listingProject(Client::factory()->create(), 'ARC');
+    $archivedFile = listingAttach($archivedProject, 'archived-owner-example.txt');
+    $archivedProject->delete();
+
+    $keep = listingAttach(null, 'kept-example.txt');
+    $gone = [listingAttach(null, 'gone-one-example.txt'), listingAttach(null, 'gone-two-example.txt')];
+
+    listingPage()
+        ->set('isTrackingDeselectedTableRecords', true)
+        ->set('deselectedTableRecords', [$keep->getKey()])
+        ->mountAction(TestAction::make('bulkDelete')->table()->bulk())
+        ->callMountedAction()
+        ->assertNotified(__('documents.notifications.bulk_deleted', ['deleted' => 2, 'failed' => 0]));
+
+    expect(Document::query()->whereKey(collect($gone)->pluck('id')->all())->exists())->toBeFalse()
+        ->and(Document::query()->whereKey([$keep->getKey(), $archivedFile->getKey()])->count())->toBe(2);
+});
+
+it('deletes a hand-picked selection and reports the files that could not go', function (): void {
+    $documents = [listingAttach(null, 'pick-one-example.txt'), listingAttach(null, 'pick-two-example.txt'), listingAttach(null, 'pick-three-example.txt')];
+    $untouched = listingAttach(null, 'untouched-example.txt');
+
+    $listing = listingPage()->mountTableBulkAction('bulkDelete', [$documents[0]->getKey(), $documents[1]->getKey()]);
+
+    // One of the two files disappears between the selection and the confirmation.
+    Document::query()->whereKey($documents[1]->getKey())->first()?->delete();
+
+    $listing->callMountedTableBulkAction()
+        ->assertNotified(__('documents.notifications.bulk_deleted', ['deleted' => 1, 'failed' => 1]));
+
+    expect(Document::query()->whereKey($documents[2]->getKey())->exists())->toBeTrue()
+        ->and(Document::query()->whereKey($untouched->getKey())->exists())->toBeTrue()
+        ->and(Document::query()->whereKey($documents[0]->getKey())->exists())->toBeFalse();
+});
+
+it('refuses the bulk delete to a Partner', function (): void {
+    $client = Client::factory()->create();
+    $document = listingAttach($client, 'guarded-example.txt');
+
+    $this->actingAs(Canary::partnerFor((string) $client->getKey()));
+
+    Livewire::test(ListDocuments::class)->assertForbidden();
+
+    expect(Document::query()->count())->toBe(0);
+
+    $this->actingAs($this->admin);
+
+    expect(Document::query()->whereKey($document->getKey())->exists())->toBeTrue();
 });
