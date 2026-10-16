@@ -66,6 +66,18 @@ return [
         'partner_files' => 'Soubory uvidíte vy i správce. Najednou nejvýše :count souborů, každý do :max MB.',
     ],
 
+    // The files of a task comment, in the comment form and under each comment (plan 09-12).
+    'comments' => [
+        'files_label' => 'Přílohy',
+        'files_hint' => 'Najednou nejvýše :count souborů, každý do :max MB. Klient uvidí soubory u komentáře, který není interní.',
+        'internal_files_hint' => 'Soubory interního komentáře klient nikdy neuvidí.',
+        'download' => 'Stáhnout',
+        'preview' => 'Zobrazit',
+        'delete' => 'Smazat',
+        'delete_heading' => 'Smazat soubor?',
+        'delete_description' => 'Soubor „:name“ bude trvale smazán, včetně uloženého souboru. Komentář zůstane. Tento krok nelze vrátit zpět.',
+    ],
+
     'empty' => [
         'heading' => 'Zatím žádné soubory',
         'description' => 'Nahrajte první soubor tlačítkem nahoře.',

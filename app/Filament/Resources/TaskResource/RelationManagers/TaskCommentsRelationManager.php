@@ -8,6 +8,7 @@ use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Concerns\EnforcesRelationManagerAccessRule;
 use App\Filament\Concerns\RendersTaskCommentThread;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -40,8 +41,10 @@ final class TaskCommentsRelationManager extends RelationManager
     protected function commentFields(): array
     {
         return [
-            // No file attachments and no attach button: nothing an upload could land on (A10).
-            // The Action cleans the value again, so the editor is only a convenience.
+            // The editor keeps `fileAttachments(false)` by design (D-22): a file dropped into the editor would bypass
+            // `documents`, the policy and the sanitiser. Files go through the separate `files` field below, which
+            // hands them to AttachDocuments with the saved comment as owner (D-02).
+            // The Action cleans the body again, so the editor is only a convenience.
             RichEditor::make('body')
                 ->label(__('kokpit.tasks.comments.fields.body'))
                 ->required()
@@ -51,6 +54,18 @@ final class TaskCommentsRelationManager extends RelationManager
                     ['blockquote', 'bulletList', 'orderedList'],
                     ['undo', 'redo'],
                 ]),
+            // Not stored by the field: the temporary objects stay where Livewire put them until the Action has
+            // checked, copied and removed them. The files of an internal comment are stored hidden (D-20).
+            FileUpload::make('files')
+                ->label(__('documents.comments.files_label'))
+                ->helperText(__('documents.comments.files_hint', [
+                    'count' => (int) config('kokpit.documents.max_files_per_upload'),
+                    'max' => (int) ((int) config('kokpit.documents.max_size_kb') / 1024),
+                ]).' '.__('documents.comments.internal_files_hint'))
+                ->multiple()
+                ->storeFiles(false)
+                ->maxSize((int) config('kokpit.documents.max_size_kb'))
+                ->maxFiles((int) config('kokpit.documents.max_files_per_upload')),
             Toggle::make('is_internal')
                 ->label(__('kokpit.tasks.comments.fields.is_internal'))
                 ->helperText(__('kokpit.tasks.comments.hints.is_internal'))

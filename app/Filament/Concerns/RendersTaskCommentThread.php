@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace App\Filament\Concerns;
 
+use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Enums\DocumentOwnerType;
+use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Support\DocumentDisposition;
+use App\Domain\Documents\Support\DocumentUrl;
 use App\Domain\Identity\Models\User;
 use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Models\Task;
@@ -15,8 +20,13 @@ use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 /**
  * The comment thread of a task page: the comments one under another, oldest first,
@@ -29,6 +39,14 @@ use Illuminate\Validation\ValidationException;
  *
  * The using manager supplies the form fields and the texts; it decides whether the
  * internal switch exists at all (the Partner form has none).
+ *
+ * Files (DO-01, D-02, D-05): the form carries a separate `files` field, never an editor attachment (the
+ * editors keep `fileAttachments(false)`, D-22). addComment() saves the comment and its files in one
+ * transaction through AddTaskComment and AttachDocuments, so one cannot exist without the other. The files
+ * are listed under their comment; the thread never renders a link. A button calls a method of this
+ * component with the document id, which re-reads the document through the scoped query restricted to the
+ * comments of this task (so a forged id of another task, another client or an internal comment is a 404),
+ * authorizes it and mints the signed link only at click time (D-10).
  *
  * @property-read Schema $commentForm The form schema Filament's InteractsWithSchemas resolves from commentForm().
  */
@@ -84,7 +102,16 @@ trait RendersTaskCommentThread
         $owner = $this->getOwnerRecord();
         assert($owner instanceof Task);
 
-        return $owner->comments()->with('author')->orderBy('created_at')->orderBy('id')->get();
+        // The files come through the scoped `documents` relation: a Partner's query never loads a hidden
+        // file, and an internal comment is not part of the Partner's comments at all.
+        return $owner->comments()
+            ->with([
+                'author',
+                'documents' => static fn ($files) => $files->orderBy('documents.created_at')->orderBy('documents.id'),
+            ])
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
     }
 
     public function content(Schema $schema): Schema
@@ -117,9 +144,10 @@ trait RendersTaskCommentThread
     }
 
     /**
-     * Writes the comment through the Action. Only the body (and, for the Admin, the
-     * internal flag) is read from the form state: a forged flag never reaches the
-     * Action for a Partner.
+     * Writes the comment through the Action, and its files through AttachDocuments, in one transaction.
+     * Only the body, the files (as Livewire temporary uploads) and, for the Admin, the internal flag are
+     * read from the form state: a forged flag never reaches the Action for a Partner, and the visibility
+     * of a file is decided by AttachDocuments (an internal comment's files are stored hidden).
      */
     public function addComment(): void
     {
@@ -131,13 +159,30 @@ trait RendersTaskCommentThread
         $actor = auth()->user();
         assert($actor instanceof User);
 
+        $files = array_values(array_filter(
+            is_array($data['files'] ?? null) ? $data['files'] : [],
+            static fn (mixed $file): bool => $file instanceof TemporaryUploadedFile,
+        ));
+
         try {
-            app(AddTaskComment::class)->handle(
-                $actor,
-                $owner,
-                (string) ($data['body'] ?? ''),
-                $this->acceptsInternalFlag() && (bool) ($data['is_internal'] ?? false),
-            );
+            DB::transaction(function () use ($actor, $owner, $data, $files): void {
+                $comment = app(AddTaskComment::class)->handle(
+                    $actor,
+                    $owner,
+                    (string) ($data['body'] ?? ''),
+                    $this->acceptsInternalFlag() && (bool) ($data['is_internal'] ?? false),
+                );
+
+                if ($files === []) {
+                    return;
+                }
+
+                try {
+                    app(AttachDocuments::class)->handle($actor, $comment, $files);
+                } catch (AuthorizationException) {
+                    throw ValidationException::withMessages(['files' => __('documents.errors.partner_not_allowed')]);
+                }
+            });
         } catch (ValidationException $e) {
             $mapped = [];
 
@@ -150,5 +195,67 @@ trait RendersTaskCommentThread
         }
 
         $this->commentForm->fill();
+    }
+
+    /**
+     * Redirects to the signed download of a file of a comment of this task. The id is client-controlled:
+     * it must be a UUID of a file of this task's comments that the actor may view, or the answer is 404.
+     */
+    public function downloadCommentDocument(string $documentId): void
+    {
+        $document = $this->commentDocument($documentId);
+        $actor = $this->commentActor();
+
+        Gate::forUser($actor)->authorize('view', $document);
+
+        $this->redirect(DocumentUrl::download($document, $actor));
+    }
+
+    /**
+     * Redirects to the signed inline preview; only a type on the inline allowlist has one.
+     */
+    public function previewCommentDocument(string $documentId): void
+    {
+        $document = $this->commentDocument($documentId);
+        $actor = $this->commentActor();
+
+        Gate::forUser($actor)->authorize('view', $document);
+        abort_unless(DocumentDisposition::isInline($document), 404);
+
+        $this->redirect(DocumentUrl::preview($document, $actor));
+    }
+
+    /**
+     * The file of a comment of this task, or 404. The lookup is the scoped Document query restricted to the
+     * comments of this task (also scoped), so another task's file, another client's file, a hidden file and a
+     * file of an internal comment all resolve to nothing for a Partner, exactly like an unknown id.
+     */
+    private function commentDocument(string $documentId): Document
+    {
+        return $this->findCommentDocument($documentId) ?? abort(404);
+    }
+
+    private function findCommentDocument(string $documentId): ?Document
+    {
+        if (! Str::isUuid($documentId)) {
+            return null;
+        }
+
+        $owner = $this->getOwnerRecord();
+        assert($owner instanceof Task);
+
+        return Document::query()
+            ->whereKey($documentId)
+            ->where('documents.owner_type', DocumentOwnerType::TaskComment->value)
+            ->whereIn('documents.owner_id', TaskComment::query()->where('task_comments.task_id', $owner->getKey())->select('task_comments.id'))
+            ->first();
+    }
+
+    private function commentActor(): User
+    {
+        $actor = auth()->user();
+        assert($actor instanceof User);
+
+        return $actor;
     }
 }
