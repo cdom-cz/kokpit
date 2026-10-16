@@ -12,6 +12,7 @@ use App\Domain\Dashboard\Policies\DashboardWidgetPreferencePolicy;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Policies\DocumentPolicy;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
+use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Policies\UserPolicy;
@@ -108,6 +109,9 @@ final class AccessServiceProvider extends ServiceProvider
 
         // Public CNB data, but finance-like and closed to Partners like every rate.
         Gate::policy(ExchangeRate::class, AdminOnlyPolicy::class);
+
+        // Finance is closed to Partners: the categories of income and expenses are the Admin's alone.
+        Gate::policy(TransactionCategory::class, AdminOnlyPolicy::class);
 
         // An export request names the clients and periods of one Admin: Admin-only, and the owner scope of the
         // model keeps even a second Admin away from it.

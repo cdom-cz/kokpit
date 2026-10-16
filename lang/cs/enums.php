@@ -141,4 +141,9 @@ return [
         'xlsx' => 'XLSX',
     ],
 
+    'transaction_type' => [
+        'income' => 'Příjem',
+        'expense' => 'Výdaj',
+    ],
+
 ];

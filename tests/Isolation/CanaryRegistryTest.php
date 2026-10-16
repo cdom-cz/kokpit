@@ -7,6 +7,7 @@ use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
 use App\Domain\Documents\Models\Document;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
+use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Reports\Models\ReportExport;
@@ -119,6 +120,7 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         TaskChecklistItem::class,
         TaskComment::class,
         TimeEntry::class,
+        TransactionCategory::class,
         WebhookCall::class,
         SignalDayOverride::class,
         SignalDeepWorkDay::class,

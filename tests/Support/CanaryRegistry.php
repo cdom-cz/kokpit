@@ -10,6 +10,8 @@ use App\Domain\Clients\Models\Contact;
 use App\Domain\Documents\Actions\AttachDocuments;
 use App\Domain\Documents\Models\Document;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
+use App\Domain\Finance\Enums\TransactionType;
+use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Enums\ProjectStatus;
@@ -319,6 +321,17 @@ final class CanaryRegistry
                         'created_at' => $now,
                         'updated_at' => $now,
                     ]);
+                });
+            },
+
+            // A finance category is Admin-only. The canary is the name of a root expense category (unique per
+            // type, so two canaries never collide); a Partner reading any category would be caught by it.
+            TransactionCategory::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new TransactionCategory(['name' => $canary]))->forceFill([
+                        'type' => TransactionType::Expense,
+                        'depth' => 0,
+                    ])->save();
                 });
             },
 

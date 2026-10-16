@@ -11,6 +11,7 @@ use App\Domain\Clients\Models\Contact;
 use App\Domain\Dashboard\Models\DashboardWidgetPreference;
 use App\Domain\Documents\Models\Document;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
+use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
@@ -65,6 +66,7 @@ final class MorphMap
         'task_checklist_item' => TaskChecklistItem::class,
         'task_comment' => TaskComment::class,
         'time_entry' => TimeEntry::class,
+        'transaction_category' => TransactionCategory::class,
         'dashboard_widget_preference' => DashboardWidgetPreference::class,
         'document' => Document::class,
         'exchange_rate' => ExchangeRate::class,
