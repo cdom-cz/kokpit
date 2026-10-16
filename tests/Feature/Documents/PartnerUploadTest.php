@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Actions\DeleteDocument;
 use App\Domain\Documents\Actions\RenameDocument;
 use App\Domain\Documents\Actions\SetDocumentVisibility;
 use App\Domain\Documents\Models\Document;
@@ -22,6 +23,8 @@ use App\Domain\Tasks\Models\TaskComment;
 use App\Filament\Partner\Resources\PartnerTaskResource\Pages\CreatePartnerTask;
 use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ViewPartnerTask;
 use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerTaskDocumentsRelationManager;
+use Filament\Actions\Action;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
@@ -354,4 +357,121 @@ it('applies the size limit to a Partner exactly as to the Admin', function (): v
         ->and($partnerError)->toBe($adminError)
         ->and(app(PartnerContext::class)->runAsSystem(static fn (): int => Document::query()->count()))->toBe(0)
         ->and(puBells($this->admin))->toBe([]);
+});
+
+/**
+ * The Soubory tab of a task as the signed-in viewer sees it (the task is read through the scoped query).
+ */
+function puTab(User $viewer, Task $task): Testable
+{
+    test()->actingAs($viewer);
+
+    $seen = Task::query()->where('reference', $task->reference)->firstOrFail();
+
+    return Livewire::test(PartnerTaskDocumentsRelationManager::class, ['ownerRecord' => $seen, 'pageClass' => ViewPartnerTask::class]);
+}
+
+/**
+ * The media rows of a document, read as system because Media is closed to Partners.
+ *
+ * @return list<string>
+ */
+function puMedia(string $documentId): array
+{
+    return app(PartnerContext::class)->runAsSystem(
+        static fn (): array => Media::query()->where('model_id', $documentId)->pluck('id')->map(strval(...))->all(),
+    );
+}
+
+it('lets a Partner delete an own file on an open task after the confirmation, object included', function (): void {
+    $task = puTask($this->partner, $this->projectA);
+    $this->actingAs($this->partner);
+    $document = app(AttachDocuments::class)->handle($this->partner, $task, [DocumentFixtures::upload('own-example.txt')])->firstOrFail();
+
+    expect(Storage::disk('local')->allFiles())->toHaveCount(1);
+
+    $tab = puTab($this->partner, $task)
+        ->assertActionExists(TestAction::make('delete')->table($document), static fn (Action $action): bool => $action->isConfirmationRequired())
+        ->mountAction(TestAction::make('delete')->table($document));
+
+    // Opening the dialog deletes nothing and the dialog names the file.
+    expect((string) $tab->instance()->getMountedAction()?->getModalDescription())->toBe(__('documents.actions.delete_description', ['name' => 'own-example.txt']))
+        ->and(app(PartnerContext::class)->runAsSystem(static fn (): bool => Document::query()->whereKey($document->id)->exists()))->toBeTrue();
+
+    $tab->callMountedAction();
+
+    expect(app(PartnerContext::class)->runAsSystem(static fn (): bool => Document::query()->whereKey($document->id)->exists()))->toBeFalse()
+        ->and(puMedia($document->id))->toBe([])
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+
+    $tab->assertNotified(__('documents.notifications.deleted'));
+});
+
+it('offers a Partner the delete only for the own file of an open task', function (): void {
+    $task = puTask($this->partner, $this->projectA);
+    $other = Canary::partnerFor($this->clientA);
+
+    $this->actingAs($this->admin);
+    $adminFile = app(AttachDocuments::class)->handle($this->admin, $task, [DocumentFixtures::upload('admin-example.txt')])->firstOrFail();
+    $otherFile = app(AttachDocuments::class)->handle($this->admin, $task, [DocumentFixtures::upload('other-example.txt')])->firstOrFail();
+    app(PartnerContext::class)->runAsSystem(static function () use ($otherFile, $other): void {
+        Document::query()->whereKey($otherFile->id)->firstOrFail()->forceFill(['uploaded_by_id' => $other->id])->save();
+    });
+
+    $this->actingAs($this->partner);
+    $own = app(AttachDocuments::class)->handle($this->partner, $task, [DocumentFixtures::upload('mine-example.txt')])->firstOrFail();
+
+    puTab($this->partner, $task)
+        ->assertActionVisible(TestAction::make('delete')->table($own))
+        ->assertActionHidden(TestAction::make('delete')->table($adminFile))
+        ->assertActionHidden(TestAction::make('delete')->table($otherFile));
+
+    // A forged call is refused by the Action as well, and nothing is deleted.
+    foreach ([$adminFile, $otherFile] as $foreign) {
+        expect(fn () => app(DeleteDocument::class)->handle($this->partner, $foreign))->toThrow(AuthorizationException::class);
+    }
+
+    expect(app(PartnerContext::class)->runAsSystem(static fn (): int => Document::query()->count()))->toBe(3);
+});
+
+it('takes the delete away from the Partner once the task is done or archived, and keeps it for the Admin', function (): void {
+    $task = puTask($this->partner, $this->projectA);
+    $this->actingAs($this->partner);
+    $first = app(AttachDocuments::class)->handle($this->partner, $task, [DocumentFixtures::upload('first-example.txt')])->firstOrFail();
+    $second = app(AttachDocuments::class)->handle($this->partner, $task, [DocumentFixtures::upload('second-example.txt')])->firstOrFail();
+
+    puTab($this->partner, $task)->assertActionVisible(TestAction::make('delete')->table($first));
+
+    $this->actingAs($this->admin);
+    app(UpdateTask::class)->handle($this->admin, $task, ['status' => ProjectStatus::Done->value]);
+
+    puTab($this->partner, $task)->assertActionHidden(TestAction::make('delete')->table($first));
+    expect(fn () => app(DeleteDocument::class)->handle($this->partner, $first))->toThrow(AuthorizationException::class);
+
+    // An archived task is gone for the Partner altogether, and its files cannot be deleted either.
+    app(PartnerContext::class)->runAsSystem(static fn (): ?bool => Task::query()->whereKey($task->id)->firstOrFail()->delete());
+    $this->actingAs($this->partner);
+    expect(fn () => app(DeleteDocument::class)->handle($this->partner, $second))->toThrow(AuthorizationException::class);
+
+    // The Admin deletes anything, a done or archived task included.
+    $this->actingAs($this->admin);
+    app(DeleteDocument::class)->handle($this->admin, $first);
+    app(DeleteDocument::class)->handle($this->admin, $second);
+
+    expect(app(PartnerContext::class)->runAsSystem(static fn (): int => Document::query()->count()))->toBe(0)
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+});
+
+it('lets the Admin delete the file of a Partner on a done task', function (): void {
+    $task = puTask($this->partner, $this->projectA);
+    $this->actingAs($this->partner);
+    $document = app(AttachDocuments::class)->handle($this->partner, $task, [DocumentFixtures::upload('finished-example.txt')])->firstOrFail();
+
+    $this->actingAs($this->admin);
+    app(UpdateTask::class)->handle($this->admin, $task, ['status' => ProjectStatus::Done->value]);
+    app(DeleteDocument::class)->handle($this->admin, $document);
+
+    expect(app(PartnerContext::class)->runAsSystem(static fn (): bool => Document::query()->whereKey($document->id)->exists()))->toBeFalse()
+        ->and(puMedia($document->id))->toBe([])
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
 });
