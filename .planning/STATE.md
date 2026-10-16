@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-26-PLAN.md
-last_updated: "2026-10-16T18:18:21.974Z"
+stopped_at: Completed 09-28-PLAN.md
+last_updated: "2026-10-16T18:27:58.119Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: f55476ad83f7f437101a9e21684f525ac86297e7
+state_head: d7764e4ae5cd59fcae17d9331f68cc883cdfc3f8
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 175
-  completed_plans: 174
+  completed_plans: 175
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 26 of 28 done (gap closure 09-25, 09-26 and 09-27 complete; 09-28 open)
+Plan: 28 of 28 done (gap closure 09-25 to 09-28 complete; phase ready for re-verification, three human checks pending)
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -236,6 +236,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P25 | 15min | 2 tasks | 3 files |
 | Phase 09 P27 | 55min | 3 tasks | 9 files |
 | Phase 09 P26 | 15min | 2 tasks | 4 files |
+| Phase 09 P28 | 40min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -574,6 +575,7 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-25: ArchiveEntryNames::unique() reads the counter with a default of 1 and registers every handed-out name with its own counter; BuildDocumentArchive left unguarded
 - [Phase 09]: D-23 (owner, amends D-09): stored object removed after the outermost commit via DB::afterCommit; a refused object is retried 3 times by RemoveDocumentObjects, then the failed-job alert reaches the Admin (WR-01)
 - [Phase 09]: 09-26: the archive prune deletes the id-derived storagePath() of every expired record whatever its status; the build job removes the ZIP of a gone or failed record after commit and keeps a ready one (WR-02)
+- [Phase 09]: D-23 (plan 09-28): user-accepted deviation from D-09, DO-03 means objects removed after the commit, retried 3 times by RemoveDocumentObjects, then the failed-job alert reaches the Admin; recorded in 09-CONTEXT.md and the WR-01 closure note
 
 ### Pending Todos
 
@@ -624,6 +626,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T18:18:21.289Z
-Stopped at: Completed 09-26-PLAN.md
+Last session: 2026-10-16T18:27:57.429Z
+Stopped at: Completed 09-28-PLAN.md
 Resume file: None
