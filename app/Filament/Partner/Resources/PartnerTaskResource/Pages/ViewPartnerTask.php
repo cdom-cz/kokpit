@@ -66,8 +66,9 @@ final class ViewPartnerTask extends ViewRecord
                 ];
             })
             ->schema([
-                // The toolbar of the Partner create form; no file attachments (A10). The Action cleans
-                // the value again, so the editor is only a convenience.
+                // The toolbar of the Partner create form. No file attachments and no upload field here: files go
+                // on the comments tab (a separate field, D-22). The Action cleans the value again, so the
+                // editor is only a convenience.
                 RichEditor::make('description')
                     ->label(__('kokpit.tasks.fields.description'))
                     ->fileAttachments(false)
@@ -120,8 +121,8 @@ final class ViewPartnerTask extends ViewRecord
             ->modalDescription(__('kokpit.tasks.escalation.escalate_description'))
             ->modalSubmitActionLabel(__('kokpit.tasks.actions.escalate'))
             ->schema([
-                // No file attachments and no attach button: nothing an upload could land on (A10).
-                // The Action cleans the value again, so the editor is only a convenience.
+                // No file attachments and no upload field here: files go on the comments tab (a separate field,
+                // D-22). The Action cleans the value again, so the editor is only a convenience.
                 RichEditor::make('comment')
                     ->label(__('kokpit.tasks.escalation.reason'))
                     ->required()

@@ -160,7 +160,8 @@ it('offers a Partner no internal badge, toggle, edit or delete', function (): vo
     $schema = $instance->commentForm(Schema::make($instance));
     $fields = array_map(static fn ($component): ?string => method_exists($component, 'getName') ? $component->getName() : null, $schema->getComponents());
 
-    expect($fields)->toBe(['body']);
+    // The body and the separate upload field (plan 09-12, D-05); still no internal switch.
+    expect($fields)->toBe(['body', 'files']);
 });
 
 it('refuses the comments tab of a task of another client', function (): void {
