@@ -7,6 +7,7 @@ namespace App\Filament\Support;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Enums\DocumentOwnerType;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Finance\Models\Transaction;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Database\CzechCollation;
 use App\Domain\Tasks\Models\Task;
@@ -105,7 +106,7 @@ final class DocumentColumns
     }
 
     /**
-     * What the file hangs on, in words: Klient, Projekt, Úkol, Komentář, or "Nepřiřazeno" for a file without an owner.
+     * What the file hangs on, in words: Klient, Projekt, Úkol, Komentář, Transakce, or "Nepřiřazeno" for a file without an owner.
      */
     public static function ownerLabel(Document $document): string
     {
@@ -115,8 +116,8 @@ final class DocumentColumns
     }
 
     /**
-     * The name of the owner: the client or project name, the task reference, or the reference of the task
-     * a comment sits on. Null when there is no owner row to name.
+     * The name of the owner: the client or project name, the task reference, the reference of the task
+     * a comment sits on, or the counterparty of a transaction. Null when there is no owner row to name.
      */
     public static function ownerName(Document $document): ?string
     {
@@ -126,6 +127,7 @@ final class DocumentColumns
             $owner instanceof Client, $owner instanceof Project => $owner->name,
             $owner instanceof Task => $owner->reference,
             $owner instanceof TaskComment => $owner->task?->reference,
+            $owner instanceof Transaction => $owner->counterparty,
             default => null,
         };
     }

@@ -30,7 +30,6 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Contracts\HasTable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component;
@@ -64,28 +63,26 @@ final class DocumentActions
             ->icon(Heroicon::OutlinedArrowUpTray)
             ->modalHeading(__('documents.actions.upload'))
             ->modalSubmitActionLabel(__('documents.actions.upload_submit'))
-            ->schema(static fn (Component $livewire): array => self::uploadFields($livewire))
+            ->schema(static fn (Component $livewire): array => self::uploadFields(self::owner($livewire)))
             ->action(static function (array $data, Component $livewire): void {
-                $owner = self::owner($livewire);
-                $files = is_array($data['files'] ?? null) ? array_values($data['files']) : [];
+                self::attach($data, self::owner($livewire));
+            });
+    }
 
-                try {
-                    $documents = app(AttachDocuments::class)->handle(
-                        self::user(),
-                        $owner,
-                        $files,
-                        // The Action ignores the flag for an owner that cannot be shared (client files stay hidden).
-                        self::isShareable($owner) ? (bool) ($data['visible_to_client'] ?? false) : null,
-                        is_string($data['description'] ?? null) ? $data['description'] : null,
-                    );
-                } catch (ValidationException $e) {
-                    throw self::underModal($e);
-                }
-
-                Notification::make()
-                    ->success()
-                    ->title(trans_choice('documents.notifications.uploaded', $documents->count(), ['count' => $documents->count()]))
-                    ->send();
+    /**
+     * The upload of the central listing: a file that hangs on nothing (D-01, success criterion 1). There is no
+     * owner to take from the page and no visibility switch, because an unattached file is never shared.
+     */
+    public static function uploadUnattached(): Action
+    {
+        return Action::make('uploadUnattached')
+            ->label(__('documents.actions.upload_unattached'))
+            ->icon(Heroicon::OutlinedArrowUpTray)
+            ->modalHeading(__('documents.actions.upload_unattached'))
+            ->modalSubmitActionLabel(__('documents.actions.upload_submit'))
+            ->schema(static fn (): array => self::uploadFields(null, unattached: true))
+            ->action(static function (array $data): void {
+                self::attach($data, null);
             });
     }
 
@@ -200,9 +197,25 @@ final class DocumentActions
     }
 
     /**
+     * The bulk actions of the central listing (D-09). The ZIP action of a later plan is appended here, so the
+     * resource does not change.
+     *
+     * @return list<BulkAction>
+     */
+    public static function bulkActions(): array
+    {
+        return [
+            self::bulkDelete(),
+        ];
+    }
+
+    /**
      * Deletes the selected files after one confirmation. Every file goes through DeleteDocument on its own, so
      * one that cannot be deleted never stops the others; the Admin is told how many went and how many did not.
      * A selected file that no longer exists counts as one that did not go.
+     *
+     * The selection can be a whole filter result ("select all"), so the files are read in chunks of 100 by key
+     * and never all at once; deleting a row of a chunk does not disturb the next one.
      */
     public static function bulkDelete(): BulkAction
     {
@@ -214,9 +227,11 @@ final class DocumentActions
             ->modalHeading(__('documents.actions.bulk_delete_heading'))
             ->modalDescription(static fn (HasTable $livewire): string => trans_choice('documents.actions.bulk_delete_description', self::selectedCount($livewire), ['count' => self::selectedCount($livewire)]))
             ->modalSubmitActionLabel(__('documents.actions.bulk_delete'))
-            ->action(static function (Collection $records, HasTable $livewire): void {
-                $failed = max(0, self::selectedCount($livewire) - $records->count());
+            ->chunkSelectedRecords(100)
+            ->action(static function (iterable $records, HasTable $livewire): void {
+                $selected = self::selectedCount($livewire);
                 $deleted = 0;
+                $failed = 0;
 
                 foreach ($records as $record) {
                     if ($record instanceof Document && self::deleteOne($record)) {
@@ -225,6 +240,9 @@ final class DocumentActions
                         $failed++;
                     }
                 }
+
+                // A selected file that was gone before it was read is a file that did not go.
+                $failed += max(0, $selected - $deleted - $failed);
 
                 $notification = Notification::make()
                     ->title(__('documents.notifications.bulk_deleted', ['deleted' => $deleted, 'failed' => $failed]));
@@ -278,11 +296,39 @@ final class DocumentActions
     }
 
     /**
+     * Stores the files of a submitted upload modal on the given owner (null for an unattached file) and tells
+     * the Admin how many went. The owner, the client and the project come from the host, never from the form.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private static function attach(array $data, ?Model $owner): void
+    {
+        $files = is_array($data['files'] ?? null) ? array_values($data['files']) : [];
+
+        try {
+            $documents = app(AttachDocuments::class)->handle(
+                self::user(),
+                $owner,
+                $files,
+                // The Action ignores the flag for an owner that cannot be shared (client files stay hidden).
+                self::isShareable($owner) ? (bool) ($data['visible_to_client'] ?? false) : null,
+                is_string($data['description'] ?? null) ? $data['description'] : null,
+            );
+        } catch (ValidationException $e) {
+            throw self::underModal($e);
+        }
+
+        Notification::make()
+            ->success()
+            ->title(trans_choice('documents.notifications.uploaded', $documents->count(), ['count' => $documents->count()]))
+            ->send();
+    }
+
+    /**
      * @return list<\Filament\Schemas\Components\Component>
      */
-    private static function uploadFields(Component $livewire): array
+    private static function uploadFields(?Model $owner, bool $unattached = false): array
     {
-        $owner = self::owner($livewire);
         $shareable = self::isShareable($owner);
 
         $maxKb = (int) config('kokpit.documents.max_size_kb');
@@ -291,7 +337,7 @@ final class DocumentActions
         return [
             FileUpload::make('files')
                 ->label(__('documents.fields.files'))
-                ->helperText(__('documents.hints.files', ['count' => $maxFiles, 'max' => (int) ($maxKb / 1024)]).($shareable ? '' : ' '.__('documents.hints.client_hidden')))
+                ->helperText(__('documents.hints.files', ['count' => $maxFiles, 'max' => (int) ($maxKb / 1024)]).($shareable ? '' : ' '.($unattached ? __('documents.hints.unattached') : __('documents.hints.client_hidden'))))
                 ->multiple()
                 ->storeFiles(false)
                 ->maxSize($maxKb)

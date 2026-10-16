@@ -1,0 +1,268 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Clients\Models\Client;
+use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Models\Document;
+use App\Domain\Finance\Actions\RecordTransaction;
+use App\Domain\Finance\Models\Transaction;
+use App\Domain\Finance\Models\TransactionCategory;
+use App\Domain\Identity\Models\User;
+use App\Domain\Projects\Actions\CreateProject;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Tasks\Actions\AddTaskComment;
+use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Models\Task;
+use App\Filament\Resources\ClientResource;
+use App\Filament\Resources\DocumentResource;
+use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
+use App\Filament\Resources\ProjectResource;
+use App\Filament\Resources\TaskResource;
+use App\Filament\Resources\TransactionResource;
+use Filament\Actions\Testing\TestAction;
+use Filament\Facades\Filament;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
+use Livewire\Features\SupportTesting\Testable;
+use Livewire\Livewire;
+use Tests\Support\Canary;
+use Tests\Support\DocumentFixtures;
+
+/*
+ * The Admin's central "Soubory" listing (DO-01, DO-02, D-04, D-07, D-09, D-21): every file with its owner, client,
+ * size, type, uploader, date and flag; the filters, the sorting and the search; single download; bulk delete of a
+ * selection or of a whole filter result; the upload of unattached files. Every name and content is fictional.
+ */
+
+/**
+ * A client-visible project of the given client, written through the domain Action.
+ */
+function listingProject(Client $client, string $key = 'LST'): Project
+{
+    return app(CreateProject::class)->handle($client, [
+        'name' => 'Example listing project',
+        'key' => $key,
+        'billing_type' => 'hourly',
+        'client_visible' => true,
+    ]);
+}
+
+/**
+ * A recorded expense of the given client, with a fictional counterparty.
+ */
+function listingTransaction(?Client $client = null): Transaction
+{
+    $admin = auth()->user();
+    assert($admin instanceof User);
+
+    $parent = TransactionCategory::query()->where('type', 'expense')->whereNull('parent_id')->where('name', 'Software')->sole();
+    $category = TransactionCategory::query()->where('parent_id', $parent->getKey())->where('name', 'Hosting')->sole();
+
+    return app(RecordTransaction::class)->handle($admin, [
+        'type' => 'expense',
+        'transaction_date' => '2026-10-14',
+        'category_id' => $category->getKey(),
+        'amount' => '100,00',
+        'currency' => 'CZK',
+        'counterparty' => implode(' ', ['Example', 'supplier']),
+        'client_id' => $client?->getKey(),
+    ]);
+}
+
+/**
+ * Attaches one fictional file straight through the domain Action and returns its document.
+ */
+function listingAttach(?Model $owner, string $name = 'example-note.txt', ?string $content = null): Document
+{
+    $admin = auth()->user();
+    assert($admin instanceof User);
+
+    /** @var Document */
+    return app(AttachDocuments::class)->handle($admin, $owner, [DocumentFixtures::upload($name, $content)])->firstOrFail();
+}
+
+/**
+ * The central listing as the Admin sees it.
+ */
+function listingPage(): Testable
+{
+    return Livewire::test(ListDocuments::class);
+}
+
+/**
+ * The URL the owner column links to for the given file.
+ */
+function listingOwnerUrl(Testable $listing, Document $document): ?string
+{
+    $column = $listing->instance()->getTable()->getColumn('owner');
+    assert($column !== null);
+
+    return $column->record($document)->getUrl();
+}
+
+beforeEach(function (): void {
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    DocumentFixtures::fakeDisk();
+
+    $this->admin = Canary::admin();
+    $this->actingAs($this->admin);
+});
+
+it('tracer: the Admin finds a file of every owner kind in one listing, follows the owner link and downloads one', function (): void {
+    $client = Client::factory()->create(['name' => 'Example listing client']);
+    $project = listingProject($client);
+    $task = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example listing task']);
+    $comment = app(AddTaskComment::class)->handle($this->admin, $task, 'Example listing comment');
+    $transaction = listingTransaction($client);
+
+    $files = [
+        'client' => listingAttach($client, 'client-example.txt'),
+        'project' => listingAttach($project, 'project-example.txt'),
+        'task' => listingAttach($task, 'task-example.txt'),
+        'comment' => listingAttach($comment, 'comment-example.txt'),
+        'transaction' => listingAttach($transaction, 'transaction-example.txt'),
+    ];
+
+    // The unattached file goes up through the header action of the listing, like the Admin does it.
+    $page = listingPage()->mountAction('uploadUnattached');
+    $page->upload('mountedActions.0.data.files.'.Str::uuid()->toString(), [UploadedFile::fake()->createWithContent('unattached-example.txt', 'Fictional unattached content')]);
+    $page->callMountedAction()->assertHasNoFormErrors();
+
+    $unattached = Document::query()->whereNull('owner_type')->sole();
+    $all = [...array_values($files), $unattached];
+
+    $listing = listingPage()->assertCanSeeTableRecords($all);
+
+    $listing
+        ->assertTableColumnStateSet('owner', 'Klient', $files['client'])
+        ->assertTableColumnStateSet('owner', 'Projekt', $files['project'])
+        ->assertTableColumnStateSet('owner', 'Úkol', $files['task'])
+        ->assertTableColumnStateSet('owner', 'Komentář', $files['comment'])
+        ->assertTableColumnStateSet('owner', 'Transakce', $files['transaction'])
+        ->assertTableColumnStateSet('owner', 'Nepřiřazeno', $unattached)
+        ->assertTableColumnStateSet('client.name', 'Example listing client', $files['project'])
+        ->assertTableColumnStateSet('client.name', 'Example listing client', $files['transaction']);
+
+    expect(listingOwnerUrl($listing, $files['client']))->toBe(ClientResource::getUrl('view', ['record' => $client]))
+        ->and(listingOwnerUrl($listing, $files['project']))->toBe(ProjectResource::getUrl('view', ['record' => $project]))
+        ->and(listingOwnerUrl($listing, $files['task']))->toBe(TaskResource::getUrl('view', ['record' => $task]))
+        // A comment links to the page of its task.
+        ->and(listingOwnerUrl($listing, $files['comment']))->toBe(TaskResource::getUrl('view', ['record' => $task]))
+        ->and(listingOwnerUrl($listing, $files['transaction']))->toBe(TransactionResource::getUrl('edit', ['record' => $transaction]))
+        ->and(listingOwnerUrl($listing, $unattached))->toBeNull();
+
+    $url = data_get($listing->callAction(TestAction::make('download')->table($files['project']))->effects, 'redirect');
+
+    expect($url)->toBeString()
+        ->and($url)->toContain(route('filament.admin.files.document', ['document' => $files['project']->id], false))
+        ->and(URL::hasValidSignature(Request::create($url)))->toBeTrue();
+});
+
+it('stores the file uploaded from the listing unattached, hidden and uploaded by the Admin', function (): void {
+    $page = listingPage()->mountAction('uploadUnattached');
+    $page->upload('mountedActions.0.data.files.'.Str::uuid()->toString(), [UploadedFile::fake()->createWithContent('loose-example.txt', 'Fictional loose content')]);
+    $page->setActionData(['description' => 'Example loose note'])->callMountedAction();
+
+    $document = Document::query()->sole();
+
+    expect($document->owner_type)->toBeNull()
+        ->and($document->owner_id)->toBeNull()
+        ->and($document->client_id)->toBeNull()
+        ->and($document->project_id)->toBeNull()
+        ->and($document->visible_to_client)->toBeFalse()
+        ->and($document->uploaded_by_id)->toBe($this->admin->id)
+        ->and($document->description)->toBe('Example loose note');
+});
+
+it('offers no visibility switch in the unattached upload', function (): void {
+    listingPage()
+        ->mountAction('uploadUnattached')
+        ->assertSchemaComponentHidden('visible_to_client', 'mountedActionSchema0')
+        ->assertSchemaComponentExists('files', 'mountedActionSchema0');
+});
+
+it('loads the owners of the rows in a fixed number of queries whatever the row count', function (): void {
+    $client = Client::factory()->create();
+    $project = listingProject($client);
+    $task = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example listing task']);
+    $comment = app(AddTaskComment::class)->handle($this->admin, $task, 'Example listing comment');
+    $transaction = listingTransaction($client);
+
+    $attachOne = static function (string $suffix) use ($client, $project, $task, $comment, $transaction): void {
+        foreach ([$client, $project, $task, $comment, $transaction, null] as $index => $owner) {
+            listingAttach($owner, "row-{$index}-{$suffix}.txt");
+        }
+    };
+
+    $attachOne('a');
+
+    // A warm-up render fills the caches that only the first render pays for.
+    listingPage();
+
+    $count = static function (): int {
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        listingPage();
+        $queries = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        return $queries;
+    };
+
+    $few = $count();
+
+    $attachOne('b');
+    $attachOne('c');
+    $attachOne('d');
+
+    expect(Document::query()->count())->toBe(24)
+        ->and($count())->toBe($few);
+});
+
+it('answers a Partner with 403 on the listing and its page component', function (): void {
+    $client = Client::factory()->create();
+    listingAttach($client);
+
+    $this->actingAs(Canary::partnerFor((string) $client->getKey()));
+
+    $this->get(DocumentResource::getUrl('index'))->assertForbidden();
+
+    Livewire::test(ListDocuments::class)->assertForbidden();
+});
+
+it('is not globally searchable and the global search of the panel finds no file, for the Admin or a Partner', function (): void {
+    $client = Client::factory()->create();
+    $project = listingProject($client);
+    listingAttach(null, 'searchable-example.txt');
+    listingAttach($project, 'searchable-project-example.txt');
+
+    $search = static function (): array {
+        $results = Filament::getCurrentOrDefaultPanel()->getGlobalSearchProvider()?->getResults('searchable');
+        $titles = [];
+
+        foreach ($results?->getCategories() ?? [] as $items) {
+            foreach ($items as $item) {
+                $titles[] = (string) $item->title;
+            }
+        }
+
+        return $titles;
+    };
+
+    expect(DocumentResource::canGloballySearch())->toBeFalse()
+        ->and($search())->toBe([]);
+
+    $this->actingAs(Canary::partnerFor((string) $client->getKey()));
+
+    expect($search())->toBe([]);
+});
+
+it('lists no create page and no record page, only the index', function (): void {
+    expect(array_keys(DocumentResource::getPages()))->toBe(['index'])
+        ->and(DocumentResource::canCreate())->toBeFalse();
+});

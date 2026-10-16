@@ -23,6 +23,11 @@ return [
     // The tab on a client, project, task or transaction (plan 09-05). The Partner tabs (plan 09-08) read the same keys.
     'relation_title' => 'Soubory',
 
+    // The Admin's central listing (plan 09-14).
+    'navigation' => 'Soubory',
+    'model_label' => 'soubor',
+    'plural_label' => 'soubory',
+
     'columns' => [
         'name' => 'Název',
         'description' => 'Popis',
@@ -38,6 +43,7 @@ return [
     'actions' => [
         'upload' => 'Nahrát soubory',
         'upload_submit' => 'Nahrát',
+        'upload_unattached' => 'Nahrát nepřiřazené soubory',
         'download' => 'Stáhnout',
         'preview' => 'Zobrazit',
         'rename' => 'Přejmenovat',
@@ -63,6 +69,7 @@ return [
         'files' => 'Najednou nejvýše :count souborů, každý do :max MB.',
         'visible_to_client' => 'Klient uvidí tento soubor i jeho popis. Později to můžete změnit.',
         'client_hidden' => 'Soubory přidané ke klientovi vidíte jen vy.',
+        'unattached' => 'Soubory bez vazby na klienta, projekt nebo úkol vidíte jen vy.',
         'partner_files' => 'Soubory uvidíte vy i správce. Najednou nejvýše :count souborů, každý do :max MB.',
     ],
 
@@ -89,6 +96,47 @@ return [
     ],
 
     'owner_none' => 'Nepřiřazeno',
+
+    // The empty central listing (plan 09-14).
+    'listing_empty' => [
+        'heading' => 'Zatím žádné soubory',
+        'description' => 'Soubory se objeví, jakmile je nahrajete ke klientovi, projektu, úkolu nebo transakci, nebo tlačítkem nahoře.',
+    ],
+
+    // The filters of the central listing (plan 09-14, D-07, D-21).
+    'filters' => [
+        'owner_type' => 'Patří k',
+        'unattached' => 'Nepřiřazeno',
+        'client' => 'Klient',
+        'project' => 'Projekt',
+        'created' => 'Nahráno',
+        'created_from' => 'Od',
+        'created_until' => 'Do',
+        'type_group' => 'Typ souboru',
+        'visibility' => 'Vidí klient',
+        'visibility_visible' => 'Ano, klient soubor vidí',
+        'visibility_hidden' => 'Ne, soubor je skrytý',
+        'visibility_all' => 'Všechny soubory',
+        'archived_owners' => 'Archivovaní vlastníci',
+        'archived_owners_only' => 'Jen soubory archivovaných vlastníků',
+        'archived_owners_without' => 'Bez archivovaných vlastníků',
+        'archived_owners_all' => 'Všechny soubory',
+    ],
+
+    // The totals above the central listing (plan 09-16 reads these keys; D-11, D-21).
+    'totals' => [
+        'files' => 'Souborů',
+        'size' => 'Celková velikost',
+        'by_client_heading' => 'Podle klientů',
+        'columns' => [
+            'client' => 'Klient',
+            'count' => 'Souborů',
+            'size' => 'Velikost',
+        ],
+        'no_client' => 'Nepřiřazené ke klientovi',
+        'includes_archived' => 'Součty zahrnují i soubory archivovaných vlastníků.',
+        'archived_client' => 'archivovaný',
+    ],
 
     // The Admin's bell when a Partner hands over files (plan 09-10, D-05).
     'bell' => [
