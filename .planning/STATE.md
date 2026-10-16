@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-11-PLAN.md
-last_updated: "2026-10-16T14:22:28.207Z"
+stopped_at: Completed 09-23-PLAN.md
+last_updated: "2026-10-16T14:32:24.286Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 143348c175a1ced1fccc33a14368739be2c92c94
+state_head: 02d0da4302b8604ee1fd37ef4c89979e2a6d27ed
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 161
+  completed_plans: 162
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 15 of 24
+Plan: 16 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -223,6 +223,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P22 | 13 min | 3 tasks | 11 files |
 | Phase 09 P10 | 50 min | 3 tasks | 11 files |
 | Phase 09 P11 | 14 min | 3 tasks | 11 files |
+| Phase 09 P23 | 25 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -537,6 +538,8 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-10: a Partner may attach files only to an own open task or own non-internal comment (open = not archived, not done); upload always visible; delete only own uploads on an open task
 - [Phase 09]: 09-10: one Admin bell per Partner upload submission (count and task reference, never a file name), sent with notifyNow inside the upload transaction
 - [Phase 09]: Transaction form: the CZK field shows when the manual switch is on or the CNB preview finds no list for the day; the project select is never disabled — The preview runs the same TransactionCzk rule as the Actions; a disabled field is not dehydrated and the Action would keep the stored project
+- [Phase 09]: 09-23: DocumentArchive copies ReportExport (OwnedByUser + AdminOnlyPolicy); download name soubory-YYYY-MM-DD.zip from the Prague creation day — An archive bundles files of every client, so it is owner-scoped and Admin-only; the name carries no user text
+- [Phase 09]: 09-23: document_archives_count_check guards jsonb_array_length with CASE on jsonb_typeof — Constraints are checked in name order; the guard makes document_archives_ids_check refuse a non-array instead of a function error
 
 ### Pending Todos
 
@@ -587,6 +590,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T14:22:21.256Z
-Stopped at: Completed 09-11-PLAN.md
+Last session: 2026-10-16T14:32:23.365Z
+Stopped at: Completed 09-23-PLAN.md
 Resume file: None
