@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Phase 9 context gathered
-last_updated: "2026-10-16T10:51:55.041Z"
-last_activity: 2026-10-15
-last_activity_desc: Phase 08 execution started
-state_head: df0ef82f115ad15c7dafd61d8897bce87cc45399
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-10-16T11:14:57.505Z"
+last_activity: 2026-10-16
+last_activity_desc: Phase 09 execution started
+state_head: 82070554ba59e92ebabba5fadd6704b71da3501e
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 147
+  completed_plans: 148
   percent: 58
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 08 — Exchange Rates and Reports
+**Current focus:** Phase 09 — Documents and Finance
 
 ## Current Position
 
-Phase: 09 (Documents and Finance) — READY TO EXECUTE
-Plan: 27 of 27 complete
-Status: All plans executed; awaiting phase verification
-Last activity: 2026-10-15 - Completed quick task 261015-diz: Add overdue highlight to the admin tasks list
+Phase: 09 (Documents and Finance) — EXECUTING
+Plan: 2 of 24
+Status: Ready to execute
+Last activity: 2026-10-16 — Phase 09 execution started
 
 Progress: [██████░░░░] 58%
 
@@ -209,6 +209,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P25 | 25 min | 2 tasks | 4 files |
 | Phase 08 P26 | 5 min | 2 tasks | 7 files |
 | Phase 08 P27 | 25min | 2 tasks | 5 files |
+| Phase 09 P01 | 25 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -498,6 +499,9 @@ Recent decisions affecting current work:
 - [Phase 08]: [08-27] openDepth from validated filters (0 no client, 1 client, 2 project) drives the initial tree state and the server hidden attributes
 - [Phase 08]: [08-27] Report levels styled by one static kokpit-report- style block (sticky Nazev column, client band, secondary gray) with dark variants; contrast of secondary gray computed 4.83:1 light, 6.99:1 dark, owner confirms in ledger 6
 - [Quick 261015-cdq]: the Admin dashboard shows the Signal plan of today (Europe/Prague day) instead of tomorrow, as TodayPlan (sort 15) right under HoursStats, full width, before the unbilled and deadlines row; still read-only, owner-scoped, three items visible, and it never materialises today's recurring templates (it shows them as not-yet-materialised items); a done task is struck through with Splněno; replaces the 'plan for tomorrow' part of Phase 08 D-11 on the owner's request
+- [Phase 09]: 09-01: projects_id_client_unique already exists from the time entries migration; the documents migration reuses it and neither adds nor drops it — Research A12 treated the key as new; adding it again fails with 42P07
+- [Phase 09]: 09-01: DocumentPolicy declares attach() returning false so the Admin passes through before() and a Partner is refused — The Gate skips before() for an ability the policy has no method for, which would deny the Admin too
+- [Phase 09]: 09-01: owner resolution re-reads the owner as system under a shared lock, archived rows included; stored visibility is shareable and (requested or owner default) — A stale instance must not yield a wrong client; the CHECK documents_visible_owner_check is only the backstop
 
 ### Pending Todos
 
@@ -548,6 +552,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T06:54:59.569Z
-Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-documents-and-finance/09-CONTEXT.md
+Last session: 2026-10-16T11:14:57.086Z
+Stopped at: Completed 09-01-PLAN.md
+Resume file: None
