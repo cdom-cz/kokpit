@@ -150,6 +150,24 @@ return [
     // The ZIP of selected files, built in the background (plan 09-17, D-08). The list, the download and the bells
     // come with plans 09-18 and 09-19.
     'archives' => [
+        'navigation' => 'ZIP archivy',
+        'model_label' => 'Archiv',
+        'plural_label' => 'ZIP archivy',
+        'subheading' => 'Hotové archivy se uchovávají :days dní, potom se smažou.',
+        'columns' => [
+            'created_at' => 'Vytvořeno',
+            'summary' => 'Obsah',
+            'status' => 'Stav',
+            'expires_at' => 'Platí do',
+        ],
+        'actions' => [
+            'download' => 'Stáhnout archiv',
+        ],
+        'gone' => 'Archiv už není k dispozici. Vyberte soubory a požádejte o něj znovu.',
+        'empty' => [
+            'heading' => 'Zatím tu nejsou žádné archivy',
+            'description' => 'Archiv vznikne z vybraných souborů akcí Stáhnout jako ZIP v Souborech.',
+        ],
         'bulk_action' => 'Stáhnout jako ZIP',
         'queued' => [
             'title' => 'Archiv se připravuje',

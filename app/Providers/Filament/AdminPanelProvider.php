@@ -9,6 +9,7 @@ use App\Filament\Auth\EditProfile;
 use App\Filament\Pages\Auth\AcceptInvitation;
 use App\Filament\Pages\Auth\RequestPasswordReset;
 use App\Filament\Pages\Dashboard;
+use App\Http\Controllers\DocumentArchiveFileController;
 use App\Http\Controllers\DocumentFileController;
 use App\Http\Middleware\EnsureAdminHasTwoFactor;
 use App\Http\Middleware\SetNoReferrerPolicy;
@@ -73,16 +74,26 @@ class AdminPanelProvider extends PanelProvider
             ->routes(fn () => Route::get('/invitation', AcceptInvitation::class)
                 ->middleware([SetNoReferrerPolicy::class, 'signed', 'throttle:invitation'])
                 ->name('invitation.accept'))
-            // Every stored file reaches the browser through this one route (DO-03, D-10). It is registered as an
+            // Every stored file reaches the browser through these routes (DO-03, D-10). It is registered as an
             // authenticated route, so Filament's Authenticate (the Partner and archived-client rules of
             // canAccessPanel) and the two-factor middleware run first. It is signed with a short lifetime and
             // the requesting user's id under the signature, so a copied link opens nothing for anybody else.
             // The no-referrer header goes first, so the 403 of a bad signature and the 429 of the limiter carry
             // it as well; `signed` stays ahead of the limiter, so an unsigned request is not counted. The path
             // parameter is the document id, and the controller refuses anything the signed-in user may not see.
-            ->authenticatedRoutes(fn () => Route::get('/files/documents/{document}', DocumentFileController::class)
-                ->middleware([SetNoReferrerPolicy::class, 'signed', 'throttle:document-files'])
-                ->name('files.document'))
+            //
+            // The finished ZIP archives (DO-02, D-08) use a second route in the same closure with the same
+            // middleware and limiter. Its path parameter is the archive id; the controller serves the owner of an
+            // unexpired, finished archive and nobody else.
+            ->authenticatedRoutes(function (): void {
+                Route::get('/files/documents/{document}', DocumentFileController::class)
+                    ->middleware([SetNoReferrerPolicy::class, 'signed', 'throttle:document-files'])
+                    ->name('files.document');
+
+                Route::get('/files/archives/{archive}', DocumentArchiveFileController::class)
+                    ->middleware([SetNoReferrerPolicy::class, 'signed', 'throttle:document-files'])
+                    ->name('files.archive');
+            })
             ->spa()
             // A SPA navigation fetches the link and swaps it into the page, which would swallow a file
             // response. Every route under /files hands the browser a real response instead.

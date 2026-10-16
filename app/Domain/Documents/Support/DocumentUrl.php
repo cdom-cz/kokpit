@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Documents\Support;
 
 use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\Identity\Models\User;
 use Illuminate\Support\Facades\URL;
 
@@ -20,6 +21,8 @@ final class DocumentUrl
 {
     public const string ROUTE = 'filament.admin.files.document';
 
+    public const string ARCHIVE_ROUTE = 'filament.admin.files.archive';
+
     public const string MODE_DOWNLOAD = 'download';
 
     public const string MODE_INLINE = 'inline';
@@ -32,6 +35,19 @@ final class DocumentUrl
     public static function preview(Document $document, User $user): string
     {
         return self::signed($document, $user, self::MODE_INLINE);
+    }
+
+    /**
+     * The link of a finished ZIP archive (D-08, D-10): the same lifetime and the same user binding as a file link.
+     */
+    public static function archive(DocumentArchive $archive, User $user): string
+    {
+        $ttl = max(1, (int) config('kokpit.documents.signed_url_ttl_seconds'));
+
+        return URL::temporarySignedRoute(self::ARCHIVE_ROUTE, now()->addSeconds($ttl), [
+            'archive' => $archive->getKey(),
+            'u' => $user->getKey(),
+        ]);
     }
 
     private static function signed(Document $document, User $user, string $mode): string
