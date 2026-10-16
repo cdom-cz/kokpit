@@ -11,11 +11,15 @@ use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\Identity\Models\User;
 use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
+use App\Filament\Support\DocumentColumns;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Pipeline\Pipeline;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
@@ -57,6 +61,25 @@ function archiveRun(string $archiveId): void
 function archiveRecord(string $archiveId): DocumentArchive
 {
     return DocumentArchive::query()->findOrFail($archiveId);
+}
+
+/**
+ * The message of the refusal the request raises for the given ids, or null when the request went through.
+ *
+ * @param  array<array-key, mixed>  $ids
+ */
+function archiveRefusal(array $ids): ?string
+{
+    $admin = auth()->user();
+    assert($admin instanceof User);
+
+    try {
+        app(RequestDocumentArchive::class)->handle($admin, $ids);
+    } catch (ValidationException $e) {
+        return $e->errors()['documents'][0] ?? null;
+    }
+
+    return null;
 }
 
 beforeEach(function (): void {
@@ -121,4 +144,146 @@ it('refuses a Partner and creates nothing', function (): void {
     Queue::assertNothingPushed();
 
     expect(DocumentArchive::query()->withoutGlobalScopes()->count())->toBe(0);
+});
+
+describe('the request limits', function (): void {
+    it('refuses an empty selection and creates nothing', function (): void {
+        Queue::fake();
+
+        expect(archiveRefusal([]))->toBe(__('documents.archives.errors.empty'));
+
+        Queue::assertNothingPushed();
+
+        expect(DocumentArchive::query()->count())->toBe(0);
+    });
+
+    it('refuses more files than the limit and names the limit', function (): void {
+        config(['kokpit.documents.archive.max_files' => 2]);
+        $ids = [
+            archiveFile('one-example.txt', 'Fictional one')->getKey(),
+            archiveFile('two-example.txt', 'Fictional two')->getKey(),
+            archiveFile('three-example.txt', 'Fictional three')->getKey(),
+        ];
+
+        Queue::fake();
+
+        expect(archiveRefusal($ids))->toBe(__('documents.archives.errors.too_many', ['max' => 2]))
+            ->and(__('documents.archives.errors.too_many', ['max' => 2]))->toContain('2');
+
+        Queue::assertNothingPushed();
+
+        expect(DocumentArchive::query()->count())->toBe(0);
+    });
+
+    it('accepts exactly the limit of files', function (): void {
+        config(['kokpit.documents.archive.max_files' => 2]);
+        $ids = [archiveFile('one-example.txt', 'Fictional one')->getKey(), archiveFile('two-example.txt', 'Fictional two')->getKey()];
+
+        Queue::fake();
+
+        expect(archiveRefusal($ids))->toBeNull();
+
+        Queue::assertPushed(BuildDocumentArchive::class, 1);
+    });
+
+    it('refuses a selection larger than the byte limit and names the limit in MB', function (): void {
+        $first = archiveFile('one-example.txt', str_repeat('a', 700000));
+        $second = archiveFile('two-example.txt', str_repeat('b', 700000));
+        config(['kokpit.documents.archive.max_bytes' => 1048576]);
+
+        Queue::fake();
+
+        $message = archiveRefusal([$first->getKey(), $second->getKey()]);
+
+        expect($message)->toBe(__('documents.archives.errors.too_large', ['max' => DocumentColumns::humanSize(1048576)]))
+            ->and($message)->toContain('1 MB');
+
+        Queue::assertNothingPushed();
+
+        expect(DocumentArchive::query()->count())->toBe(0);
+    });
+
+    it('accepts a selection of exactly the byte limit', function (): void {
+        $first = archiveFile('one-example.txt', str_repeat('a', 500));
+        $second = archiveFile('two-example.txt', str_repeat('b', 500));
+        config(['kokpit.documents.archive.max_bytes' => 1000]);
+
+        Queue::fake();
+
+        expect(archiveRefusal([$first->getKey(), $second->getKey()]))->toBeNull();
+    });
+
+    it('refuses a value that is not a UUID, an unknown UUID and a duplicated id', function (): void {
+        $known = archiveFile('known-example.txt', 'Fictional known')->getKey();
+
+        Queue::fake();
+
+        $unknown = __('documents.archives.errors.unknown');
+
+        expect(archiveRefusal([$known, 'not-a-uuid']))->toBe($unknown)
+            ->and(archiveRefusal([$known, (string) Str::uuid()]))->toBe($unknown)
+            ->and(archiveRefusal([$known, $known]))->toBe($unknown)
+            ->and(archiveRefusal([$known, ['nested']]))->toBe($unknown)
+            ->and(archiveRefusal([$known, 12]))->toBe($unknown);
+
+        Queue::assertNothingPushed();
+
+        expect(DocumentArchive::query()->count())->toBe(0);
+    });
+
+    it('stores the ids, the count, the size and a summary of the selection', function (): void {
+        $first = archiveFile('one-example.txt', str_repeat('a', 1024));
+        $second = archiveFile('two-example.txt', str_repeat('b', 2048));
+        $third = archiveFile('three-example.txt', str_repeat('c', 1024));
+
+        Queue::fake();
+
+        $archive = app(RequestDocumentArchive::class)->handle($this->admin, [$third->getKey(), $first->getKey(), $second->getKey()]);
+
+        expect($archive->document_ids)->toBe([$third->getKey(), $first->getKey(), $second->getKey()])
+            ->and($archive->document_count)->toBe(3)
+            ->and($archive->total_bytes)->toBe(4096)
+            ->and($archive->summary)->toBe('3 soubory, 4 KB');
+    });
+});
+
+describe('the bulk action', function (): void {
+    it('archives exactly the files of a filter result selected as a whole', function (): void {
+        $hits = [archiveFile('invoice-one-example.txt', 'Fictional hit one'), archiveFile('invoice-two-example.txt', 'Fictional hit two')];
+        archiveFile('contract-example.txt', 'Fictional other');
+
+        Queue::fake();
+
+        Livewire::test(ListDocuments::class)
+            ->searchTable('invoice')
+            ->set('isTrackingDeselectedTableRecords', true)
+            ->set('deselectedTableRecords', [])
+            ->mountAction(TestAction::make('bulkArchive')->table()->bulk())
+            ->callMountedAction()
+            ->assertNotified(__('documents.archives.queued.title'));
+
+        $archive = DocumentArchive::query()->sole();
+
+        expect($archive->document_ids)->toEqualCanonicalizing(collect($hits)->map(fn (Document $document): string => $document->getKey())->all())
+            ->and($archive->document_count)->toBe(2);
+
+        Queue::assertPushed(BuildDocumentArchive::class, 1);
+    });
+
+    it('shows the refusal as a danger notification and creates nothing', function (): void {
+        config(['kokpit.documents.archive.max_files' => 1]);
+        $first = archiveFile('one-example.txt', 'Fictional one');
+        $second = archiveFile('two-example.txt', 'Fictional two');
+
+        Queue::fake();
+
+        Livewire::test(ListDocuments::class)
+            ->mountTableBulkAction('bulkArchive', [$first->getKey(), $second->getKey()])
+            ->callMountedTableBulkAction()
+            ->assertNotified(__('documents.archives.errors.too_many', ['max' => 1]));
+
+        Queue::assertNothingPushed();
+
+        expect(DocumentArchive::query()->count())->toBe(0);
+    });
 });
