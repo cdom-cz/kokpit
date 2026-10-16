@@ -221,3 +221,146 @@ describe('deleting', function (): void {
         RawSql::expectAllowed(fn () => DB::delete('delete from transaction_categories where id = ?', [$root]));
     });
 });
+
+describe('the system category freeze (KP001)', function (): void {
+    it('lets the Admin rename the system category and move it in the order', function (): void {
+        $this->actingAs(Canary::admin());
+        $id = TransactionCategory::invoicePayments()->id;
+
+        RawSql::expectAllowed(fn () => DB::update("update transaction_categories set name = 'Fictional payments', position = 7 where id = ?", [$id]));
+
+        $row = DB::selectOne('select name, position, is_system, system_key from transaction_categories where id = ?', [$id]);
+
+        expect($row->name)->toBe('Fictional payments')
+            ->and($row->position)->toBe(7)
+            ->and($row->is_system)->toBeTrue()
+            ->and($row->system_key)->toBe('invoice_payments');
+    });
+
+    it('refuses every other change to the system row', function (string $change): void {
+        $id = DB::selectOne("select id from transaction_categories where system_key = 'invoice_payments'")->id;
+        $other = transactionCategoriesInsert(['type' => 'income']);
+
+        $set = match ($change) {
+            'archive' => ['archived_at = now()', []],
+            'type' => ["type = 'expense'", []],
+            'parent' => ['parent_id = ?', [$other]],
+            'unflag' => ['is_system = false', []],
+            'key' => ['system_key = null', []],
+            'depth' => ['depth = 1', []],
+        };
+
+        RawSql::expectSqlState('KP001', fn () => DB::update('update transaction_categories set '.$set[0].' where id = ?', [...$set[1], $id]));
+    })->with(['archive', 'type', 'parent', 'unflag', 'key', 'depth']);
+
+    it('refuses to delete the system row', function (): void {
+        $id = DB::selectOne("select id from transaction_categories where system_key = 'invoice_payments'")->id;
+
+        RawSql::expectSqlState('KP001', fn () => DB::delete('delete from transaction_categories where id = ?', [$id]));
+    });
+
+    it('refuses to delete the system row through the model', function (): void {
+        $this->actingAs(Canary::admin());
+        $category = TransactionCategory::invoicePayments();
+
+        RawSql::expectSqlState('KP001', fn () => $category->delete());
+
+        expect(TransactionCategory::query()->where('system_key', 'invoice_payments')->count())->toBe(1);
+    });
+
+    it('lets every other category be archived, renamed and deleted when it is unused and childless', function (): void {
+        $id = transactionCategoriesInsert();
+
+        RawSql::expectAllowed(fn () => DB::update('update transaction_categories set archived_at = now() where id = ?', [$id]));
+        RawSql::expectAllowed(fn () => DB::update("update transaction_categories set name = 'Fictional renamed' where id = ?", [$id]));
+        RawSql::expectAllowed(fn () => DB::delete('delete from transaction_categories where id = ?', [$id]));
+    });
+});
+
+describe('the starter set', function (): void {
+    /**
+     * The seeded tree as `type/root` or `type/root/child` => position, read through the Admin.
+     *
+     * @return array<string, int>
+     */
+    function transactionCategoriesTree(): array
+    {
+        $rows = TransactionCategory::query()->with('parent')->get();
+        $tree = [];
+
+        foreach ($rows as $row) {
+            $path = $row->type->value.'/'.($row->parent !== null ? $row->parent->name.'/' : '').$row->name;
+            $tree[$path] = $row->position;
+        }
+
+        ksort($tree);
+
+        return $tree;
+    }
+
+    it('seeds the generic Czech categories with the right types, parents and positions', function (): void {
+        $this->actingAs(Canary::admin());
+
+        $expected = [
+            'income/Úhrady faktur' => 1,
+            'income/Ostatní příjmy' => 2,
+            'expense/Software' => 1,
+            'expense/Software/Předplatné' => 1,
+            'expense/Software/Hosting' => 2,
+            'expense/Poplatky' => 2,
+            'expense/Poplatky/Bankovní poplatky' => 1,
+            'expense/Daně a odvody' => 3,
+            'expense/Daně a odvody/Daň z příjmů' => 1,
+            'expense/Daně a odvody/Pojištění' => 2,
+            'expense/Kancelář' => 4,
+            'expense/Ostatní výdaje' => 5,
+        ];
+        ksort($expected);
+
+        expect(transactionCategoriesTree())->toBe($expected);
+    });
+
+    it('adds nothing when the seed migration runs a second time and keeps a renamed system category', function (): void {
+        $this->actingAs(Canary::admin());
+
+        DB::update("update transaction_categories set name = 'Fictional payments' where system_key = 'invoice_payments'");
+        $before = transactionCategoriesTree();
+
+        $migration = require database_path('migrations/2026_10_16_000300_seed_transaction_categories.php');
+        $migration->up();
+
+        expect(transactionCategoriesTree())->toBe($before)
+            ->and(TransactionCategory::query()->where('system_key', 'invoice_payments')->sole()->name)->toBe('Fictional payments');
+    });
+});
+
+describe('selectable categories', function (): void {
+    it('offers active categories of the type, without an archived one or a child of an archived parent', function (): void {
+        $this->actingAs(Canary::admin());
+
+        $active = transactionCategoriesInsert();
+        $archived = transactionCategoriesInsert(['archived_at' => '2026-10-15 10:00:00+00']);
+        $activeChild = transactionCategoriesInsert(['parent_id' => $active]);
+        $archivedChild = transactionCategoriesInsert(['parent_id' => $active, 'archived_at' => '2026-10-15 10:00:00+00']);
+        $orphanedChild = transactionCategoriesInsert(['parent_id' => $archived]);
+        $income = transactionCategoriesInsert(['type' => 'income']);
+
+        $offered = TransactionCategory::query()->selectable(TransactionType::Expense)->pluck('id')->all();
+
+        expect($offered)->toContain($active, $activeChild)
+            ->not->toContain($archived, $archivedChild, $orphanedChild, $income);
+
+        $types = TransactionCategory::query()->selectable(TransactionType::Expense)->get()->map(fn (TransactionCategory $c) => $c->type->value)->unique()->all();
+        expect($types)->toBe(['expense']);
+    });
+
+    it('tells whether a category is archived', function (): void {
+        $this->actingAs(Canary::admin());
+
+        $active = TransactionCategory::query()->findOrFail(transactionCategoriesInsert());
+        $archived = TransactionCategory::query()->findOrFail(transactionCategoriesInsert(['archived_at' => '2026-10-15 10:00:00+00']));
+
+        expect($active->isArchived())->toBeFalse()
+            ->and($archived->isArchived())->toBeTrue();
+    });
+});

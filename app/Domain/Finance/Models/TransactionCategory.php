@@ -85,6 +85,36 @@ final class TransactionCategory extends KokpitModel implements PartnerIsolated, 
     }
 
     /**
+     * The categories a picker may offer for a transaction of this type: not archived, and not a child of an
+     * archived parent (D-15). Every category picker uses this scope instead of repeating the rule. The Partner
+     * scope still applies on top of it.
+     *
+     * @param  Builder<TransactionCategory>  $query
+     */
+    public function scopeSelectable(Builder $query, TransactionType $type): void
+    {
+        $table = $this->getTable();
+
+        $query
+            ->where("{$table}.type", $type->value)
+            ->whereNull("{$table}.archived_at")
+            ->where(static fn (Builder $inner) => $inner
+                ->whereNull("{$table}.parent_id")
+                ->orWhereExists(static fn ($sub) => $sub->selectRaw('1')
+                    ->from("{$table} as parent")
+                    ->whereColumn('parent.id', "{$table}.parent_id")
+                    ->whereNull('parent.archived_at')));
+    }
+
+    /**
+     * An archived category keeps its history but is not offered for new transactions.
+     */
+    public function isArchived(): bool
+    {
+        return $this->archived_at !== null;
+    }
+
+    /**
      * @return BelongsTo<TransactionCategory, $this>
      */
     public function parent(): BelongsTo
