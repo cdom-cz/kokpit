@@ -42,6 +42,7 @@
         <env name="FILESYSTEM_DISK" value="local"/>
         <env name="KOKPIT_CANARY_HARNESS" value="true"/>
         <env name="KOKPIT_REQUIRE_ADMIN_2FA" value="false"/>
+        <env name="LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK" value="s3"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="MEDIA_DISK" value="local"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
