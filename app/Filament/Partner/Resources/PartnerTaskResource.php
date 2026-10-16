@@ -18,6 +18,7 @@ use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerT
 use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerTaskDocumentsRelationManager;
 use App\Filament\Support\TaskColumns;
 use Closure;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -38,9 +39,9 @@ use Illuminate\Support\Str;
  * built only from the pinned Partner builders of `TaskColumns`; there is no edit
  * page, no record action, no bulk action, no board, no
  * export and no global search. The create form offers the project, the title and
- * the description and nothing else: status, priority and people are decided by
- * the domain Action CreateTask. The one relation is the comments tab (non-internal
- * comments only). The slug differs from the Admin task resource.
+ * the description and the files and nothing else: status, priority and people are
+ * decided by the domain Action CreateTask, the files go to AttachDocuments (D-05).
+ * The relations are the comments tab (non-internal comments only) and the files tab. The slug differs from the Admin task resource.
  */
 #[AccessRule(Audience::PartnerAllowed, reason: 'A Partner sees the tasks of the own client\'s client-visible projects read-only and may create one; only Partner-safe fields are shown.')]
 final class PartnerTaskResource extends Resource
@@ -130,7 +131,8 @@ final class PartnerTaskResource extends Resource
                 ->label(__('kokpit.tasks.fields.title'))
                 ->required()
                 ->maxLength(255),
-            // No file attachments and no attach button: nothing an upload could land on (A10).
+            // Files do not go into the editor: it keeps no attachments (D-22) and the separate `files` field
+            // below hands them to AttachDocuments with the new task as owner (D-05).
             // The server cleans the value again (CreateTask), so the editor is only a convenience.
             RichEditor::make('description')
                 ->label(__('kokpit.tasks.fields.description'))
@@ -143,6 +145,18 @@ final class PartnerTaskResource extends Resource
                     ['undo', 'redo'],
                 ])
                 ->helperText(__('kokpit.partner_tasks.hints.description')),
+            // Not stored by the field: the temporary objects stay where Livewire put them until the Action has
+            // checked, copied and removed them. The limits are the Admin's (D-06).
+            FileUpload::make('files')
+                ->label(__('documents.fields.files'))
+                ->helperText(__('documents.hints.partner_files', [
+                    'count' => (int) config('kokpit.documents.max_files_per_upload'),
+                    'max' => (int) ((int) config('kokpit.documents.max_size_kb') / 1024),
+                ]))
+                ->multiple()
+                ->storeFiles(false)
+                ->maxSize((int) config('kokpit.documents.max_size_kb'))
+                ->maxFiles((int) config('kokpit.documents.max_files_per_upload')),
         ]);
     }
 

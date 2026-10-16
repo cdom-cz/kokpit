@@ -6,9 +6,11 @@ namespace App\Domain\Documents\Actions;
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Notifications\DocumentNotifier;
 use App\Domain\Documents\Support\DocumentFileName;
 use App\Domain\Documents\Support\DocumentOwnerResolver;
 use App\Domain\Identity\Models\User;
+use App\Domain\Identity\RoleName;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Models\Task;
@@ -30,14 +32,16 @@ use Throwable;
  * The single upload entry point for files (DO-01, D-01, D-03, D-20).
  *
  * The actor needs the `attach` ability on documents for the given owner (the Admin through the policy's
- * `before()`; a Partner is turned away until a later plan grants it). Everything that decides what a file
+ * `before()`; a Partner only on an own open task or an own non-internal comment, D-05). Everything that decides what a file
  * hangs on comes from the server: DocumentOwnerResolver derives the owner pair, the client and the project,
  * and nothing but the client's original file name (as the display name) and the description comes from the
  * request. The stored object is named `<document uuid>.<extension>` and never contains user text.
  *
  * Visibility: the caller's wish, or the owner's default when null, applies only to an owner that can be
  * shared (project, task, a non-internal comment); a client file, an unattached file and an internal comment's
- * file are stored hidden even when the caller asks for visible. The database CHECK is the backstop.
+ * file are stored hidden even when the caller asks for visible. The database CHECK is the backstop. A Partner
+ * has no say: whatever they pass, their file is stored visible (D-05), and once the files are written, inside
+ * the same transaction, every active Admin gets one bell for the submission (DocumentNotifier).
  *
  * The MIME type is detected from the file content, never taken from the client. The media write runs as
  * system after the policy passed, because `Media` stays closed to Partners. One database transaction covers
@@ -56,6 +60,7 @@ final class AttachDocuments
     public function __construct(
         private readonly DocumentOwnerResolver $resolver,
         private readonly PartnerContext $context,
+        private readonly DocumentNotifier $notifier,
     ) {}
 
     /**
@@ -85,12 +90,18 @@ final class AttachDocuments
                 $this->assertOwnerNotArchived($owner);
 
                 $resolved = $this->resolver->resolve($owner);
-                $visible = $resolved['shareable'] && ($visibleToClient ?? $resolved['default_visible']);
+                $isAdmin = $actor->hasRole(RoleName::Admin->value);
+                // D-05: a Partner's upload is always visible; the caller's flag is ignored for them.
+                $visible = $resolved['shareable'] && ($isAdmin ? ($visibleToClient ?? $resolved['default_visible']) : true);
 
                 $documents = new Collection;
 
                 foreach ($files as $file) {
                     $documents->push($this->store($actor, $resolved, $visible, $file, $description, $written));
+                }
+
+                if (! $isAdmin) {
+                    $this->tellAdmin($actor, $owner, $documents->count());
                 }
 
                 return $documents;
@@ -104,6 +115,25 @@ final class AttachDocuments
         $this->deleteTemporaryUploads($files);
 
         return $documents;
+    }
+
+    /**
+     * One bell per Partner submission (D-05): the task is the owner itself or the task of the owner comment,
+     * read as system with archived rows included so the reference is always found.
+     */
+    private function tellAdmin(User $partner, ?Model $owner, int $count): void
+    {
+        $task = $this->context->runAsSystem(static fn (): ?Task => match (true) {
+            $owner instanceof Task => Task::query()->withTrashed()->whereKey($owner->getKey())->first(),
+            $owner instanceof TaskComment => Task::query()->withTrashed()
+                ->whereIn('tasks.id', TaskComment::query()->whereKey($owner->getKey())->select('task_comments.task_id'))
+                ->first(),
+            default => null,
+        });
+
+        if ($task !== null) {
+            $this->notifier->partnerUploaded($partner, $task, $count);
+        }
     }
 
     /**

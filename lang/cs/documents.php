@@ -17,6 +17,7 @@ return [
         'name_required' => 'Název souboru musí být vyplněn.',
         'not_shareable' => 'Tento soubor nelze sdílet s klientem.',
         'upload_unreadable' => 'Nahraný soubor se nepodařilo přečíst. Zkuste ho nahrát znovu.',
+        'partner_not_allowed' => 'K tomuto úkolu nelze přidat soubory.',
     ],
 
     // The tab on a client, project, task or transaction (plan 09-05). The Partner tabs (plan 09-08) read the same keys.
@@ -62,6 +63,7 @@ return [
         'files' => 'Najednou nejvýše :count souborů, každý do :max MB.',
         'visible_to_client' => 'Klient uvidí tento soubor i jeho popis. Později to můžete změnit.',
         'client_hidden' => 'Soubory přidané ke klientovi vidíte jen vy.',
+        'partner_files' => 'Soubory uvidíte vy i správce. Najednou nejvýše :count souborů, každý do :max MB.',
     ],
 
     'empty' => [
@@ -75,6 +77,15 @@ return [
     ],
 
     'owner_none' => 'Nepřiřazeno',
+
+    // The Admin's bell when a Partner hands over files (plan 09-10, D-05).
+    'bell' => [
+        'partner_uploaded' => [
+            'title' => 'Klient nahrál soubory',
+            'body' => '{1} :partner přidal(a) k úkolu :reference :count soubor.|[2,4] :partner přidal(a) k úkolu :reference :count soubory.|[5,*] :partner přidal(a) k úkolu :reference :count souborů.',
+            'action' => 'Otevřít úkol',
+        ],
+    ],
 
     'notifications' => [
         'renamed' => 'Soubor byl upraven.',
