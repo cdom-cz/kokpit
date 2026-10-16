@@ -1,0 +1,246 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Clients\Models\Client;
+use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Models\Document;
+use App\Domain\Projects\Actions\CreateProject;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Shared\Auth\PartnerContext;
+use App\Filament\RelationManagers\ProjectDocumentsRelationManager;
+use App\Filament\Resources\ProjectResource;
+use App\Filament\Resources\ProjectResource\Pages\ViewProject;
+use App\Filament\Support\DocumentColumns;
+use Filament\Actions\Testing\TestAction;
+use Filament\Facades\Filament;
+use Filament\Forms\Components\Toggle;
+use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
+use Livewire\Features\SupportTesting\Testable;
+use Livewire\Livewire;
+use Tests\Support\Canary;
+use Tests\Support\DocumentFixtures;
+
+/*
+ * The Admin's "Soubory" tab on the project, task and client detail (DO-01, DO-03, D-02, D-03): one shared
+ * behaviour, three final relation managers. Every name and content is fictional.
+ */
+
+/**
+ * A client-visible project of a fresh client, written through the domain Action.
+ */
+function tabProject(string $key = 'TAB'): Project
+{
+    return app(CreateProject::class)->handle(Client::factory()->create(), [
+        'name' => 'Example tab project',
+        'key' => $key,
+        'billing_type' => 'hourly',
+        'client_visible' => true,
+    ]);
+}
+
+/**
+ * Mounts the Soubory tab of a project as the Admin sees it on the detail page.
+ */
+function projectDocumentsTab(Project $project): Testable
+{
+    return Livewire::test(ProjectDocumentsRelationManager::class, ['ownerRecord' => $project, 'pageClass' => ViewProject::class]);
+}
+
+/**
+ * A fictional upload that Livewire's test upload can send (it reads the name of a fake file).
+ */
+function tabUpload(string $name, ?string $content = null): UploadedFile
+{
+    return UploadedFile::fake()->createWithContent($name, $content ?? implode(' ', ['Fictional', 'file', 'content', Str::random(12)]));
+}
+
+/**
+ * Opens the upload modal and sends the files one by one, like the browser does on the private bucket
+ * (Livewire refuses a list of files in one call there), then submits the modal with the rest of the data.
+ *
+ * @param  list<UploadedFile>  $files
+ * @param  array<string, mixed>  $data
+ */
+function uploadThroughTab(Testable $tab, array $files, array $data = []): Testable
+{
+    $tab->mountAction(TestAction::make('upload')->table());
+
+    foreach ($files as $file) {
+        // Filament sends each file to its own key of the field, which is the single-file path of the S3 driver.
+        $tab->upload('mountedActions.0.data.files.'.Str::uuid()->toString(), [$file]);
+    }
+
+    if ($data !== []) {
+        $tab->setActionData($data);
+    }
+
+    return $tab->callMountedAction();
+}
+
+beforeEach(function (): void {
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    DocumentFixtures::fakeDisk();
+
+    $this->admin = Canary::admin();
+    $this->actingAs($this->admin);
+});
+
+it('lists the Soubory tab among the relations of the project resource', function (): void {
+    expect(ProjectResource::getRelations())->toContain(ProjectDocumentsRelationManager::class);
+});
+
+it('stores two files with a description on the project from the upload modal, visible by default', function (): void {
+    $project = tabProject();
+
+    $tab = uploadThroughTab(projectDocumentsTab($project), [
+        tabUpload('first-example.txt'),
+        tabUpload('second-example.txt'),
+    ], ['description' => 'Example shared notes']);
+
+    $tab->assertHasNoFormErrors();
+
+    $documents = Document::query()->orderBy('name')->get();
+
+    expect($documents)->toHaveCount(2)
+        ->and($documents->pluck('name')->all())->toBe(['first-example.txt', 'second-example.txt'])
+        ->and($documents->every(fn (Document $d): bool => $d->owner_type === 'project' && $d->owner_id === $project->id))->toBeTrue()
+        ->and($documents->every(fn (Document $d): bool => $d->visible_to_client === true && $d->description === 'Example shared notes'))->toBeTrue()
+        ->and($documents->every(fn (Document $d): bool => $d->uploaded_by_id === $this->admin->id))->toBeTrue();
+
+    projectDocumentsTab($project)
+        ->assertCanSeeTableRecords($documents)
+        ->assertSee('first-example.txt')
+        ->assertSee('second-example.txt');
+});
+
+it('lets the Admin hide a project file at upload', function (): void {
+    $project = tabProject();
+
+    uploadThroughTab(projectDocumentsTab($project), [tabUpload('hidden-example.txt')], ['visible_to_client' => false]);
+
+    expect(Document::query()->firstOrFail()->visible_to_client)->toBeFalse();
+});
+
+it('redirects a download click to a signed link of the checked file route for the Admin', function (): void {
+    $project = tabProject();
+    $document = app(AttachDocuments::class)
+        ->handle($this->admin, $project, [DocumentFixtures::upload('download-example.txt')])
+        ->firstOrFail();
+
+    $tab = projectDocumentsTab($project)
+        ->callAction(TestAction::make('download')->table($document));
+
+    $url = data_get($tab->effects, 'redirect');
+
+    expect($url)->toBeString()
+        ->and($url)->toContain(route('filament.admin.files.document', ['document' => $document->id], false));
+
+    $request = Request::create($url);
+
+    expect(URL::hasValidSignature($request))->toBeTrue();
+
+    parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+
+    expect($query['u'])->toBe($this->admin->id)
+        ->and($query['mode'])->toBe('download');
+});
+
+it('shows a preview action only for a type the browser may render', function (): void {
+    $project = tabProject();
+    $text = app(AttachDocuments::class)
+        ->handle($this->admin, $project, [DocumentFixtures::upload('plain-example.txt')])
+        ->firstOrFail();
+    $png = app(AttachDocuments::class)
+        ->handle($this->admin, $project, [DocumentFixtures::upload('picture-example.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='))])
+        ->firstOrFail();
+
+    projectDocumentsTab($project)
+        ->assertTableActionHidden('preview', $text)
+        ->assertTableActionVisible('preview', $png);
+});
+
+it('renders no signed link and no bucket host into the tab', function (): void {
+    $project = tabProject();
+    app(AttachDocuments::class)
+        ->handle($this->admin, $project, [DocumentFixtures::upload('quiet-example.txt')]);
+
+    $html = projectDocumentsTab($project)->html();
+
+    $bucketHost = (string) parse_url((string) config('filesystems.disks.s3.endpoint'), PHP_URL_HOST);
+
+    expect($html)->toContain('quiet-example.txt')
+        ->and($html)->not->toContain('signature=')
+        ->and($html)->not->toContain('/admin/files/documents/');
+
+    if ($bucketHost !== '') {
+        expect($html)->not->toContain($bucketHost);
+    }
+});
+
+it('answers 403 when a Partner mounts the project Soubory tab', function (): void {
+    $project = tabProject();
+    $partner = Canary::partnerFor($project->client_id);
+
+    $this->actingAs($partner);
+
+    expect(app(PartnerContext::class)->runAsSystem(static fn (): bool => ProjectDocumentsRelationManager::canViewForRecord($project, ViewProject::class)))->toBeFalse();
+
+    projectDocumentsTab($project)->assertForbidden();
+});
+
+it('shows a domain refusal next to the files field and stores nothing', function (): void {
+    $project = tabProject();
+
+    $tab = uploadThroughTab(projectDocumentsTab($project), [tabUpload('archive-example.phar')]);
+
+    expect($tab->errors()->get('mountedActions.0.data.files'))->toBe([__('documents.errors.extension_not_allowed', ['name' => 'archive-example.phar'])])
+        ->and(Document::query()->count())->toBe(0);
+});
+
+it('explains on the upload modal that the client will see a project file and its description', function (): void {
+    $project = tabProject();
+
+    projectDocumentsTab($project)
+        ->mountAction(TestAction::make('upload')->table())
+        ->assertSchemaComponentVisible('visible_to_client')
+        ->assertSchemaComponentExists('visible_to_client', checkComponentUsing: static fn (Toggle $toggle): bool => str_contains((string) $toggle->getChildSchema(Toggle::BELOW_CONTENT_SCHEMA_KEY)?->toHtmlString(), e(__('documents.hints.visible_to_client')))
+            && $toggle->getDefaultState() === true);
+});
+
+it('writes file sizes in binary units with a Czech decimal comma', function (): void {
+    expect(DocumentColumns::humanSize(0))->toBe('0 B')
+        ->and(DocumentColumns::humanSize(512))->toBe('512 B')
+        ->and(DocumentColumns::humanSize(1024))->toBe('1 KB')
+        ->and(DocumentColumns::humanSize(1536))->toBe('1,5 KB')
+        ->and(DocumentColumns::humanSize(1572864))->toBe('1,5 MB')
+        ->and(DocumentColumns::humanSize(1048575))->toBe('1 MB')
+        ->and(DocumentColumns::humanSize(10 * 1048576))->toBe('10 MB')
+        ->and(DocumentColumns::humanSize(3 * 1073741824))->toBe('3 GB');
+});
+
+it('names the admin columns the tab is built from', function (): void {
+    $columns = array_map(static fn ($column): string => $column->getName(), DocumentColumns::admin(showOwner: false));
+
+    expect(DocumentColumns::ADMIN_COLUMN_NAMES)->toBe(['name', 'owner', 'size_bytes', 'uploader.name', 'created_at', 'visible_to_client'])
+        ->and($columns)->toBe(['name', 'size_bytes', 'uploader.name', 'created_at', 'visible_to_client']);
+});
+
+it('sorts the names of the files in Czech order', function (): void {
+    $project = tabProject();
+
+    foreach (['Chata-example.txt', 'Čočka-example.txt', 'Cihla-example.txt'] as $name) {
+        app(AttachDocuments::class)->handle($this->admin, $project, [DocumentFixtures::upload($name)]);
+    }
+
+    $names = fn (Testable $tab): array => array_values(array_map(
+        static fn (Document $document): string => $document->name,
+        $tab->instance()->getTableRecords()->all(),
+    ));
+
+    expect($names(projectDocumentsTab($project)->sortTable('name')))->toBe(['Cihla-example.txt', 'Čočka-example.txt', 'Chata-example.txt'])
+        ->and($names(projectDocumentsTab($project)->sortTable('name', 'desc')))->toBe(['Chata-example.txt', 'Čočka-example.txt', 'Cihla-example.txt']);
+});
