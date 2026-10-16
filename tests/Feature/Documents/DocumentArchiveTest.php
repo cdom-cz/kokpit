@@ -398,7 +398,7 @@ describe('the build job', function (): void {
             ->and(Storage::disk()->exists($brokenArchive->storagePath()))->toBeFalse();
     });
 
-    it('leaves out a file that was deleted after the request and fails when none is left', function (): void {
+    it('leaves out a file that was deleted after the request', function (): void {
         $kept = archiveFile('kept-example.txt', 'Fictional kept');
         $gone = archiveFile('gone-example.txt', 'Fictional gone');
         $archive = archivePending([$kept, $gone]);
@@ -413,13 +413,6 @@ describe('the build job', function (): void {
             ->and($zip->getFromName('kept-example.txt'))->toBe('Fictional kept');
 
         $zip->close();
-
-        $lonely = archiveFile('lonely-example.txt', 'Fictional lonely');
-        $emptied = archivePending([$lonely]);
-        $lonely->delete();
-
-        expect(fn () => archiveRun($emptied->getKey()))->toThrow(RuntimeException::class)
-            ->and(archiveRecord($emptied->getKey())->status)->toBe(DocumentArchiveStatus::Pending);
     });
 
     it('reads a file the Partner cannot see, because the job runs as system', function (): void {
@@ -540,5 +533,113 @@ describe('the bells', function (): void {
             ->and($failed->via($this->admin))->toBe(['database'])
             ->and($ready)->not->toBeInstanceOf(ShouldQueue::class)
             ->and($failed)->not->toBeInstanceOf(ShouldQueue::class);
+    });
+});
+
+describe('the entry names and the limits of the job', function (): void {
+    it('keeps two documents of the same name apart inside the ZIP with the right bytes', function (): void {
+        $first = archiveFile('Faktura.pdf', 'Fictional first invoice');
+        $second = archiveFile('Faktura.pdf', 'Fictional second invoice');
+        $third = archiveFile('faktura.PDF', 'Fictional third invoice');
+        $archive = archivePending([$first, $second, $third]);
+
+        archiveRun($archive->getKey());
+
+        $zip = new ZipArchive;
+        expect($zip->open(Storage::disk()->path($archive->storagePath())))->toBeTrue();
+
+        expect($zip->numFiles)->toBe(3)
+            ->and($zip->getFromName('Faktura.pdf'))->toBe('Fictional first invoice')
+            ->and($zip->getFromName('Faktura (2).pdf'))->toBe('Fictional second invoice')
+            ->and($zip->getFromName('faktura (3).pdf'))->toBe('Fictional third invoice');
+
+        $zip->close();
+    });
+
+    it('writes no entry name with a separator or a parent segment, even for a name stored that way', function (): void {
+        $document = archiveFile('plain-example.txt', 'Fictional plain');
+        // Stored names are cleaned on upload, but the job must not rely on that.
+        $document->forceFill(['name' => implode('/', ['..', '..', 'escape.txt'])])->saveQuietly();
+        $archive = archivePending([$document]);
+
+        archiveRun($archive->getKey());
+
+        $zip = new ZipArchive;
+        expect($zip->open(Storage::disk()->path($archive->storagePath())))->toBeTrue();
+
+        $name = (string) $zip->getNameIndex(0);
+
+        expect($zip->numFiles)->toBe(1)
+            ->and($name)->not->toContain('/')
+            ->and($name)->not->toContain('..')
+            ->and($name)->not->toStartWith('.')
+            ->and($zip->getFromIndex(0))->toBe('Fictional plain');
+
+        $zip->close();
+    });
+
+    it('counts only the included files in the ready bell when a file was deleted after the request', function (): void {
+        $kept = archiveFile('kept-example.txt', 'Fictional kept');
+        $gone = archiveFile('gone-example.txt', 'Fictional gone');
+        $archive = archivePending([$kept, $gone]);
+        $gone->delete();
+
+        archiveRun($archive->getKey());
+
+        $bell = archiveBell($this->admin);
+
+        expect(archiveRecord($archive->getKey())->status)->toBe(DocumentArchiveStatus::Ready)
+            ->and($bell)->toHaveCount(1)
+            ->and($bell[0]['body'])->toContain('1 soubor');
+    });
+
+    it('fails with the failure bell, without throwing, when every document was deleted', function (): void {
+        $lonely = archiveFile('lonely-example.txt', 'Fictional lonely');
+        $archive = archivePending([$lonely]);
+        $lonely->delete();
+
+        archiveRun($archive->getKey());
+
+        $bell = archiveBell($this->admin);
+
+        expect(archiveRecord($archive->getKey())->status)->toBe(DocumentArchiveStatus::Failed)
+            ->and(Storage::disk()->exists($archive->storagePath()))->toBeFalse()
+            ->and($bell)->toHaveCount(1)
+            ->and($bell[0]['title'])->toBe(__('documents.archives.bell.failed.title'));
+    });
+
+    it('fails with the failure bell when the file limit was lowered below the stored count', function (): void {
+        $archive = archivePending([archiveFile('one-example.txt', 'Fictional one'), archiveFile('two-example.txt', 'Fictional two')]);
+        config(['kokpit.documents.archive.max_files' => 1]);
+
+        archiveRun($archive->getKey());
+
+        $bell = archiveBell($this->admin);
+
+        expect(archiveRecord($archive->getKey())->status)->toBe(DocumentArchiveStatus::Failed)
+            ->and(Storage::disk()->allFiles('document-archives'))->toBe([])
+            ->and($bell)->toHaveCount(1)
+            ->and($bell[0]['title'])->toBe(__('documents.archives.bell.failed.title'));
+    });
+
+    it('fails with the failure bell when the files outgrew the byte limit', function (): void {
+        $before = archiveTemporaryFiles();
+        $archive = archivePending([archiveFile('big-example.txt', str_repeat('a', 2000))]);
+        config(['kokpit.documents.archive.max_bytes' => 1000]);
+
+        archiveRun($archive->getKey());
+
+        expect(archiveRecord($archive->getKey())->status)->toBe(DocumentArchiveStatus::Failed)
+            ->and(archiveBell($this->admin))->toHaveCount(1)
+            ->and(archiveTemporaryFiles())->toBe($before);
+    });
+
+    it('builds an archive of exactly the configured limits', function (): void {
+        $archive = archivePending([archiveFile('one-example.txt', str_repeat('a', 500)), archiveFile('two-example.txt', str_repeat('b', 500))]);
+        config(['kokpit.documents.archive.max_files' => 2, 'kokpit.documents.archive.max_bytes' => 1000]);
+
+        archiveRun($archive->getKey());
+
+        expect(archiveRecord($archive->getKey())->status)->toBe(DocumentArchiveStatus::Ready);
     });
 });

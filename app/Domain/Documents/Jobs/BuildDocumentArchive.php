@@ -9,6 +9,7 @@ use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\Documents\Notifications\DocumentArchiveFailedNotification;
 use App\Domain\Documents\Notifications\DocumentArchiveReadyNotification;
+use App\Domain\Documents\Support\ArchiveEntryNames;
 use App\Domain\Identity\Models\User;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
@@ -34,9 +35,17 @@ use ZipStream\ZipStream;
  * ready in one transaction. The temporary file is removed whatever happens. The timeout stays under the 300 s of
  * the Horizon supervisor.
  *
- * The files go in as the requested ids list them, under the display name of the document. A document deleted
- * after the request is left out; a request none of whose files can be read fails. Safe entry names, the second
- * check of the limits and the entry names are plan 09-19; the bells and the failure handling are in place.
+ * The limits of the request (file count and summed size) are read again from the database before anything is
+ * built: the configuration may have been lowered and the files changed since. An archive that exceeds them, or
+ * none of whose documents still exists, is marked failed at once and the Admin is told in the bell; retrying
+ * cannot help. The files go in as the requested ids list them, a document deleted after the request is left out
+ * and only the included files are counted. Every entry name is the display name of the document passed through
+ * {@see ArchiveEntryNames}: no separator, no parent segment, and equal names are numbered instead of overwritten.
+ *
+ * The Admin who asked gets one bell when the archive is ready (with the count and the expiry day) or failed,
+ * both with a link to the archives list; the ready bell is sent in the transaction that marks the record ready.
+ * A technical failure (a stored object that cannot be read) is thrown, retried by the queue and, after the last
+ * attempt, handled by {@see self::failed()}.
  */
 #[Idempotent(how: 'identified by the archive id; a record that is not pending is skipped and the file path is the archive id, so a rerun overwrites the same object instead of adding another')]
 #[Timeout(240)]
@@ -44,6 +53,10 @@ final class BuildDocumentArchive extends KokpitJob
 {
     /** How many documents are read from the database at once. */
     private const int CHUNK = 50;
+
+    private const int DEFAULT_MAX_FILES = 200;
+
+    private const int DEFAULT_MAX_BYTES = 209715200;
 
     /** The time zone the dates of the notices are shown in. */
     private const string DISPLAY_TIMEZONE = 'Europe/Prague';
@@ -56,6 +69,14 @@ final class BuildDocumentArchive extends KokpitJob
 
         // Pruned in the meantime, failed, or already built by an earlier run: nothing to do.
         if ($archive === null || $archive->status !== DocumentArchiveStatus::Pending) {
+            return;
+        }
+
+        // The limits of the request are checked again: the configuration may have been lowered, the files may have
+        // grown or been deleted since. Retrying cannot help, so the archive fails at once instead of throwing.
+        if (! $this->withinLimits($archive)) {
+            $this->giveUp($archive->getKey());
+
             return;
         }
 
@@ -122,6 +143,33 @@ final class BuildDocumentArchive extends KokpitJob
     }
 
     /**
+     * Whether the documents that still exist can go into one archive: at least one is left, and their number and
+     * summed size are within `kokpit.documents.archive.max_files` and `kokpit.documents.archive.max_bytes`. The
+     * numbers come from the database, not from the record, because the record was written at the request.
+     */
+    private function withinLimits(DocumentArchive $archive): bool
+    {
+        $maxFiles = max(1, (int) config('kokpit.documents.archive.max_files', self::DEFAULT_MAX_FILES));
+        $maxBytes = max(1, (int) config('kokpit.documents.archive.max_bytes', self::DEFAULT_MAX_BYTES));
+
+        $files = 0;
+        $bytes = 0;
+
+        foreach (array_chunk($archive->document_ids, self::CHUNK) as $ids) {
+            $totals = Document::query()
+                ->selectRaw('COUNT(*) AS files, COALESCE(SUM(documents.size_bytes), 0) AS bytes')
+                ->whereIn('documents.id', $ids)
+                ->toBase()
+                ->first();
+
+            $files += (int) ($totals->files ?? 0);
+            $bytes += (int) ($totals->bytes ?? 0);
+        }
+
+        return $files > 0 && $files <= $maxFiles && $bytes <= $maxBytes;
+    }
+
+    /**
      * Streams the requested documents into the ZIP file, in the order of the request, and returns how many were
      * added.
      *
@@ -136,6 +184,7 @@ final class BuildDocumentArchive extends KokpitJob
         }
 
         $added = 0;
+        $names = new ArchiveEntryNames;
 
         try {
             $zip = new ZipStream(outputStream: $output, sendHttpHeaders: false);
@@ -147,7 +196,7 @@ final class BuildDocumentArchive extends KokpitJob
                     $document = $documents->get($id);
 
                     if ($document instanceof Document) {
-                        $this->add($zip, $document);
+                        $this->add($zip, $document, $names);
                         $added++;
                     }
                 }
@@ -166,11 +215,11 @@ final class BuildDocumentArchive extends KokpitJob
     }
 
     /**
-     * Adds the stored object of one document under its display name.
+     * Adds the stored object of one document under a safe, unique entry name made of its display name.
      *
      * @throws RuntimeException when the document has no stored object or it cannot be read
      */
-    private function add(ZipStream $zip, Document $document): void
+    private function add(ZipStream $zip, Document $document, ArchiveEntryNames $names): void
     {
         $media = $document->getFirstMedia(Document::MEDIA_COLLECTION);
 
@@ -186,7 +235,7 @@ final class BuildDocumentArchive extends KokpitJob
         }
 
         try {
-            $zip->addFileFromStream(fileName: $document->name, stream: $stream);
+            $zip->addFileFromStream(fileName: $names->unique(ArchiveEntryNames::safe($document->name, $document->extension)), stream: $stream);
         } finally {
             fclose($stream);
         }
