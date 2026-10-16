@@ -10,6 +10,7 @@ use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
 use App\Domain\Dashboard\Models\DashboardWidgetPreference;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
@@ -71,6 +72,7 @@ final class MorphMap
         'transaction_category' => TransactionCategory::class,
         'dashboard_widget_preference' => DashboardWidgetPreference::class,
         'document' => Document::class,
+        'document_archive' => DocumentArchive::class,
         'exchange_rate' => ExchangeRate::class,
         'report_export' => ReportExport::class,
         'signal_day_override' => SignalDayOverride::class,

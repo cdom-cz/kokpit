@@ -6,6 +6,7 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
@@ -109,6 +110,7 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         ClientInvitation::class,
         Contact::class,
         Document::class,
+        DocumentArchive::class,
         ExchangeRate::class,
         Media::class,
         Project::class,

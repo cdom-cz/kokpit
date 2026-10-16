@@ -8,7 +8,9 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
 use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Enums\DocumentArchiveStatus;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
@@ -356,6 +358,25 @@ final class CanaryRegistry
                         'czk_source' => 'identity',
                         'client_id' => $clientId,
                     ])->save();
+                });
+            },
+
+            // A ZIP archive request belongs to one Admin and is closed to Partners (OwnedByUser + DeniesPartners).
+            // The canary is the summary; the row is a finished one with one fictional document id and a fictional
+            // path (no object is needed for the scope proof), written in the system context for the one planner
+            // owner, because the owner scope limits even an Admin.
+            DocumentArchive::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    $now = TimerClock::now();
+
+                    (new DocumentArchive(['summary' => $canary, 'document_ids' => [(string) Str::uuid()], 'document_count' => 1, 'total_bytes' => 1024]))
+                        ->forceFill([
+                            'user_id' => self::plannerOwner()->getKey(),
+                            'status' => DocumentArchiveStatus::Ready,
+                            'path' => 'document-archives/'.Str::uuid().'.zip',
+                            'completed_at' => $now,
+                            'expires_at' => $now->addDays(7),
+                        ])->save();
                 });
             },
 

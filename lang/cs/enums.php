@@ -143,6 +143,12 @@ return [
         'failed' => 'Selhalo',
     ],
 
+    'document_archive_status' => [
+        'pending' => 'Připravuje se',
+        'ready' => 'Hotovo',
+        'failed' => 'Selhalo',
+    ],
+
     'report_export_format' => [
         'csv' => 'CSV',
         'xlsx' => 'XLSX',

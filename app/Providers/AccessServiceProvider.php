@@ -10,6 +10,7 @@ use App\Domain\Clients\Models\Contact;
 use App\Domain\Dashboard\Models\DashboardWidgetPreference;
 use App\Domain\Dashboard\Policies\DashboardWidgetPreferencePolicy;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\Documents\Policies\DocumentPolicy;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Models\Transaction;
@@ -116,6 +117,10 @@ final class AccessServiceProvider extends ServiceProvider
 
         // Transactions are finance data, the Admin's alone (D-12).
         Gate::policy(Transaction::class, AdminOnlyPolicy::class);
+
+        // A ZIP archive bundles files of every client: Admin-only, and the owner scope of the model keeps even a
+        // second Admin away from it.
+        Gate::policy(DocumentArchive::class, AdminOnlyPolicy::class);
 
         // An export request names the clients and periods of one Admin: Admin-only, and the owner scope of the
         // model keeps even a second Admin away from it.
