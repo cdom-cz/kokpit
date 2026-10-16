@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-20-PLAN.md
-last_updated: "2026-10-16T18:02:26.372Z"
+stopped_at: Completed 09-25-PLAN.md
+last_updated: "2026-10-16T18:06:40.102Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 2d2397deb4c2f06ca2ea9e8f4051b2f2ba032d46
+state_head: c88b51b3cfd823bdfd53a0231e83e774498c141a
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 175
-  completed_plans: 171
+  completed_plans: 172
   percent: 58
 ---
 
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 ## Current Position
 
-Phase: 09 (Documents and Finance) — READY TO EXECUTE
-Plan: 24 of 24
+Phase: 09 (Documents and Finance) — EXECUTING
+Plan: 25 of 28 (gap closure 09-25 complete)
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -233,6 +233,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P18 | 20 min | 3 tasks | 13 files |
 | Phase 09 P19 | 40 min | 3 tasks | 10 files |
 | Phase 09 P20 | 15 min | 3 tasks | 8 files |
+| Phase 09 P25 | 15min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -568,6 +569,7 @@ Recent decisions affecting current work:
 - [Phase 09]: No reconcile command; the storage consistency check is a test whose consistencyViolations() a later health indicator can reuse
 - [Phase 09]: The Phase 9 hand-over note is replaced by an extended Phase 10 note (invoice owner kind and archived-owner behaviour, invoice PDF through AttachDocuments, invoicePayments() for FI-03, invoice_id on transactions, payment-transaction edit restriction)
 - [Phase 09]: kokpit.tasks.attachments copy removed; its one test reader now asserts the old placeholder sentence literally
+- [Phase 09]: 09-25: ArchiveEntryNames::unique() reads the counter with a default of 1 and registers every handed-out name with its own counter; BuildDocumentArchive left unguarded
 
 ### Pending Todos
 
@@ -618,6 +620,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T16:56:40.012Z
-Stopped at: Completed 09-20-PLAN.md
+Last session: 2026-10-16T18:06:35.114Z
+Stopped at: Completed 09-25-PLAN.md
 Resume file: None
