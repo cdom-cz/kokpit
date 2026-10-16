@@ -67,7 +67,7 @@ return [
             'in_use' => 'Kategorii nelze smazat, protože má podkategorie nebo už byla použita. Archivujte ji, zmizí z nabídky a historie zůstane.',
             'system_locked' => 'Systémovou kategorii lze jen přejmenovat nebo posunout v pořadí. Nelze ji archivovat, smazat ani změnit její typ.',
             'duplicate_name' => 'Kategorie s tímto názvem už na stejné úrovni existuje.',
-            'parent_invalid' => 'Nadřazená kategorie musí být aktivní kategorie nejvyšší úrovně.',
+            'parent_invalid' => 'Nadřazená kategorie musí být aktivní kategorie nejvyšší úrovně stejného typu.',
             'has_children' => 'Kategorie s podkategoriemi se nemůže stát podkategorií.',
             'type_locked' => 'Typ kategorie nelze změnit, protože má podkategorie nebo už byla použita.',
         ],

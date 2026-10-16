@@ -13,6 +13,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
 
 /*
@@ -258,5 +259,203 @@ describe('moving inside the siblings', function (): void {
 
         expect(fn () => app(MoveTransactionCategory::class)->handle($partner, $root, 'up'))
             ->toThrow(AuthorizationException::class);
+    });
+});
+
+/**
+ * The field error an Action raised, or null when nothing was raised.
+ */
+function ruleErrorOf(Closure $call): ?ValidationException
+{
+    try {
+        $call();
+    } catch (ValidationException $e) {
+        return $e;
+    }
+
+    return null;
+}
+
+describe('edits that would break the tree', function (): void {
+    it('refuses a child under a child', function (): void {
+        $root = ruleRoot($this->admin);
+        $child = ruleChild($this->admin, $root);
+
+        $error = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, null, ['name' => categoryName(), 'parent_id' => $child->id]));
+
+        expect($error)->not->toBeNull()
+            ->and($error->errors())->toBe(['parent_id' => [__('finance.categories.errors.parent_invalid')]]);
+    });
+
+    it('refuses a child under an archived root and under an unknown parent', function (): void {
+        $root = ruleRoot($this->admin);
+        app(ArchiveTransactionCategory::class)->handle($this->admin, $root, true);
+
+        foreach ([$root->id, 'not-a-uuid', '00000000-0000-7000-8000-000000000000'] as $parentId) {
+            $error = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, null, ['name' => categoryName(), 'parent_id' => $parentId]));
+
+            expect($error?->errors())->toBe(['parent_id' => [__('finance.categories.errors.parent_invalid')]], $parentId);
+        }
+    });
+
+    it('refuses to move a category under a root of the other type', function (): void {
+        $income = ruleRoot($this->admin, 'income');
+        $expense = ruleRoot($this->admin, 'expense');
+        $leaf = ruleChild($this->admin, $expense);
+
+        // The type of the category stays; a parent of the other type is not a valid parent.
+        $error = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, $leaf, ['name' => $leaf->name, 'type' => 'expense', 'parent_id' => $income->id]));
+
+        expect($error?->errors())->toBe(['parent_id' => [__('finance.categories.errors.parent_invalid')]])
+            ->and($leaf->refresh()->parent_id)->toBe($expense->id);
+    });
+
+    it('refuses to make a category its own parent', function (): void {
+        $root = ruleRoot($this->admin);
+
+        $error = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, $root, ['name' => $root->name, 'parent_id' => $root->id]));
+
+        expect($error?->errors())->toHaveKey('parent_id');
+    });
+
+    it('refuses a parent for a category that has children', function (): void {
+        $other = ruleRoot($this->admin);
+        $root = ruleRoot($this->admin);
+        ruleChild($this->admin, $root);
+
+        $error = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, $root, ['name' => $root->name, 'parent_id' => $other->id]));
+
+        expect($error?->errors())->toBe(['parent_id' => [__('finance.categories.errors.has_children')]])
+            ->and($root->refresh()->parent_id)->toBeNull();
+    });
+
+    it('moves a childless root under another root and a child back to the top level', function (): void {
+        $first = ruleRoot($this->admin);
+        $second = ruleRoot($this->admin);
+        $child = ruleChild($this->admin, $first);
+
+        $moved = app(SaveTransactionCategory::class)->handle($this->admin, $second, ['name' => $second->name, 'parent_id' => $first->id]);
+
+        expect($moved->parent_id)->toBe($first->id)
+            ->and($moved->depth)->toBe(1)
+            ->and($moved->position)->toBe($child->position + 1);
+
+        $top = app(SaveTransactionCategory::class)->handle($this->admin, $child, ['name' => $child->name, 'parent_id' => null]);
+
+        expect($top->parent_id)->toBeNull()
+            ->and($top->depth)->toBe(0)
+            ->and($top->type)->toBe(TransactionType::Expense);
+    });
+
+    it('refuses to change the type of a root that has children', function (): void {
+        $root = ruleRoot($this->admin);
+        $child = ruleChild($this->admin, $root);
+
+        $error = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, $root, ['name' => $root->name, 'type' => 'income']));
+
+        expect($error?->errors())->toBe(['type' => [__('finance.categories.errors.type_locked')]])
+            ->and($root->refresh()->type)->toBe(TransactionType::Expense)
+            ->and($child->refresh()->type)->toBe(TransactionType::Expense);
+    });
+
+    it('changes the type of a childless root', function (): void {
+        $root = ruleRoot($this->admin, 'expense');
+        $sibling = ruleRoot($this->admin, 'income');
+
+        $changed = app(SaveTransactionCategory::class)->handle($this->admin, $root, ['name' => $root->name, 'type' => 'income']);
+
+        expect($changed->type)->toBe(TransactionType::Income)
+            ->and($changed->position)->toBe($sibling->position + 1);
+    });
+
+    it('translates the key refusal of the database when a used category changes type', function (): void {
+        // A probe table stands in for the transactions of a later plan: a row that points at the id and the type.
+        Schema::create('category_type_probe', function (Blueprint $table): void {
+            $table->uuid('category_id');
+            $table->string('type', 16);
+            $table->foreign(['category_id', 'type'])->references(['id', 'type'])->on('transaction_categories');
+        });
+
+        $root = ruleRoot($this->admin, 'expense');
+        DB::table('category_type_probe')->insert(['category_id' => $root->id, 'type' => 'expense']);
+
+        $error = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, $root, ['name' => $root->name, 'type' => 'income']));
+
+        expect($error?->errors())->toBe(['type' => [__('finance.categories.errors.type_locked')]])
+            ->and($root->refresh()->type)->toBe(TransactionType::Expense);
+    });
+
+    it('refuses a duplicate root name of the same type in any case, and allows it for the other type', function (): void {
+        $name = categoryName('Duplikát');
+        app(SaveTransactionCategory::class)->handle($this->admin, null, ['name' => $name, 'type' => 'expense']);
+
+        $error = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, null, ['name' => mb_strtoupper($name), 'type' => 'expense']));
+
+        expect($error?->errors())->toBe(['name' => [__('finance.categories.errors.duplicate_name')]]);
+
+        $other = app(SaveTransactionCategory::class)->handle($this->admin, null, ['name' => $name, 'type' => 'income']);
+
+        expect($other->type)->toBe(TransactionType::Income);
+    });
+
+    it('refuses a duplicate child name under one parent and allows it under another', function (): void {
+        $root = ruleRoot($this->admin);
+        $other = ruleRoot($this->admin);
+        $name = categoryName('Dítě');
+        app(SaveTransactionCategory::class)->handle($this->admin, null, ['name' => $name, 'parent_id' => $root->id]);
+
+        $error = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, null, ['name' => $name, 'parent_id' => $root->id]));
+
+        expect($error?->errors())->toBe(['name' => [__('finance.categories.errors.duplicate_name')]]);
+
+        $elsewhere = app(SaveTransactionCategory::class)->handle($this->admin, null, ['name' => $name, 'parent_id' => $other->id]);
+
+        expect($elsewhere->parent_id)->toBe($other->id);
+    });
+
+    it('lets the system category be renamed and refuses a change of its type or parent', function (): void {
+        $system = TransactionCategory::invoicePayments();
+        $original = $system->name;
+        $other = ruleRoot($this->admin, 'income');
+
+        $renamed = app(SaveTransactionCategory::class)->handle($this->admin, $system, ['name' => 'Úhrady '.bin2hex(random_bytes(3))]);
+
+        expect($renamed->name)->not->toBe($original)
+            ->and($renamed->is_system)->toBeTrue();
+
+        $typeError = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, $system, ['name' => $renamed->name, 'type' => 'expense']));
+        $parentError = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, $system, ['name' => $renamed->name, 'parent_id' => $other->id]));
+
+        expect($typeError?->errors())->toBe(['type' => [__('finance.categories.errors.system_locked')]])
+            ->and($parentError?->errors())->toBe(['parent_id' => [__('finance.categories.errors.system_locked')]])
+            ->and($system->refresh()->type)->toBe(TransactionType::Income)
+            ->and($system->parent_id)->toBeNull();
+    });
+
+    it('accepts the unchanged type and parent of the system category in a rename', function (): void {
+        $system = TransactionCategory::invoicePayments();
+
+        $renamed = app(SaveTransactionCategory::class)->handle($this->admin, $system, ['name' => $system->name, 'type' => 'income', 'parent_id' => null]);
+
+        expect($renamed->is_system)->toBeTrue();
+    });
+
+    it('refuses a blank or oversize name with an error under the name', function (): void {
+        foreach (['', '   ', str_repeat('x', 121)] as $name) {
+            $error = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, null, ['name' => $name, 'type' => 'expense']));
+
+            expect($error?->errors())->toHaveKey('name');
+        }
+
+        $root = ruleRoot($this->admin);
+        $error = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, $root, ['name' => '  ']));
+
+        expect($error?->errors())->toHaveKey('name');
+    });
+
+    it('requires a type for a root and ignores a stray type string', function (): void {
+        $error = ruleErrorOf(fn () => app(SaveTransactionCategory::class)->handle($this->admin, null, ['name' => categoryName(), 'type' => 'transfer']));
+
+        expect($error?->errors())->toHaveKey('type');
     });
 });

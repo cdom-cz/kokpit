@@ -18,8 +18,9 @@ use Illuminate\Validation\ValidationException;
 /**
  * Creates or edits a transaction category (FI-01, D-15, D-16): the one place that knows the rules of the tree.
  *
- * The tree has two levels. A root has a type; a child takes the type of its parent whatever the data carries.
- * A parent must be an active root. A category with children cannot become a child, and the type of a category
+ * The tree has two levels. A root has a type; a new child takes the type of its parent whatever the data carries.
+ * A parent must be an active root, and moving an existing category never retypes it by itself: the parent must
+ * have the type the category has (or the type the data names). A category with children cannot become a child, and the type of a category
  * that has children or is used cannot change. The system category accepts only a new name.
  *
  * Every refusal is a field error keyed by the data key (`name`, `type`, `parent_id`) with a Czech message from
@@ -178,7 +179,17 @@ final class SaveTransactionCategory
         }
 
         $parent = $this->activeRoot($newParentId, $locked->id);
-        $locked->forceFill(['parent_id' => $parent->id, 'depth' => 1, 'type' => $parent->type]);
+
+        // Moving never retypes by itself: the parent must be of the type the category has, or of the type the
+        // data names (the screen sends the type of the chosen parent). A used category refuses a new type at
+        // the database.
+        $type = $this->type($data['type'] ?? null) ?? $locked->type;
+
+        if ($parent->type !== $type) {
+            throw ValidationException::withMessages(['parent_id' => __('finance.categories.errors.parent_invalid')]);
+        }
+
+        $locked->forceFill(['parent_id' => $parent->id, 'depth' => 1, 'type' => $type]);
     }
 
     /**

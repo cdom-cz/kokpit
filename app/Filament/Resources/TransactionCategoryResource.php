@@ -139,7 +139,8 @@ final class TransactionCategoryResource extends Resource
                 ->required(static fn (Get $get): bool => blank($get('parent_id')))
                 ->live()
                 ->disabled(static fn (Get $get, ?Model $record): bool => filled($get('parent_id')) || self::lockedStructure($record))
-                ->dehydrated(static fn (Get $get, ?Model $record): bool => blank($get('parent_id')) && ! self::lockedStructure($record)),
+                // Sent even while a parent locks the field: the screen has set it to the type of the parent.
+                ->dehydrated(static fn (?Model $record): bool => ! self::lockedStructure($record)),
             Select::make('parent_id')
                 ->label(__('finance.categories.fields.parent'))
                 ->helperText(__('finance.categories.hints.parent'))
