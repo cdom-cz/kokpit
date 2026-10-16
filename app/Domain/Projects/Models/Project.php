@@ -7,6 +7,7 @@ namespace App\Domain\Projects\Models;
 use App\Domain\Audit\LoggedAttributes;
 use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Clients\Models\Client;
+use App\Domain\Documents\Models\Document;
 use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Shared\Auth\IsolatesPartners;
@@ -24,6 +25,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Tags\HasTags;
 
@@ -188,6 +190,16 @@ final class Project extends KokpitModel implements PartnerIsolated
     public function timeEntries(): HasMany
     {
         return $this->hasMany(TimeEntry::class)->orderByDesc('started_at')->orderByDesc('id');
+    }
+
+    /**
+     * The files that hang directly on this project.
+     *
+     * @return MorphMany<Document, $this>
+     */
+    public function documents(): MorphMany
+    {
+        return $this->morphMany(Document::class, 'owner');
     }
 
     /**

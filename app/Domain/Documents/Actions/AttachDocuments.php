@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Documents\Actions;
 
 use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Support\DocumentFileName;
 use App\Domain\Documents\Support\DocumentOwnerResolver;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -13,6 +14,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 /**
  * The single upload entry point for files (DO-01, D-01, D-03, D-20).
@@ -34,19 +36,21 @@ use Illuminate\Support\Facades\Gate;
  */
 final class AttachDocuments
 {
-    private const int MAX_NAME_LENGTH = 255;
-
     public function __construct(
         private readonly DocumentOwnerResolver $resolver,
         private readonly PartnerContext $context,
     ) {}
 
     /**
-     * @param  list<UploadedFile>  $files
+     * @param  array<array-key, mixed>  $files  only UploadedFile instances are accepted; anything else is refused
      * @return Collection<int, Document>
+     *
+     * @throws ValidationException under the key 'files' for an empty list or a value that is not an uploaded file
      */
     public function handle(User $actor, ?Model $owner, array $files, ?bool $visibleToClient = null, ?string $description = null): Collection
     {
+        $files = $this->uploadedFiles($files);
+
         Gate::forUser($actor)->authorize('attach', [Document::class, $owner]);
 
         /** @var Collection<int, Document> */
@@ -69,10 +73,10 @@ final class AttachDocuments
      */
     private function store(User $actor, array $resolved, bool $visible, UploadedFile $file, ?string $description): Document
     {
-        $extension = $this->extension($file);
+        $extension = DocumentFileName::extension($file->getClientOriginalName());
         $size = $file->getSize();
 
-        $document = new Document(['name' => $this->displayName($file), 'description' => $description]);
+        $document = new Document(['name' => DocumentFileName::displayName($file->getClientOriginalName()), 'description' => $description]);
         $document->forceFill([
             'owner_type' => $resolved['owner_type'],
             'owner_id' => $resolved['owner_id'],
@@ -99,24 +103,31 @@ final class AttachDocuments
     }
 
     /**
-     * The lower-case last segment of the client's file name when it is a plain `[a-z0-9]{1,10}` token,
-     * otherwise none (the object then has no extension part).
+     * Only an uploaded file object reaches storage: a Filament file state is client-controlled and can
+     * be a string naming an existing path, so every other value is refused before anything is written
+     * (D-06, research Pattern 3).
+     *
+     * @param  array<array-key, mixed>  $files
+     * @return list<UploadedFile>
+     *
+     * @throws ValidationException
      */
-    private function extension(UploadedFile $file): ?string
+    private function uploadedFiles(array $files): array
     {
-        $extension = strtolower(pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION));
+        if ($files === []) {
+            throw ValidationException::withMessages(['files' => __('documents.errors.empty_upload')]);
+        }
 
-        return preg_match('/^[a-z0-9]{1,10}$/', $extension) === 1 ? $extension : null;
-    }
+        $uploads = [];
 
-    /**
-     * The client's file name as a display name, kept inside the column length; a blank name falls back to
-     * a neutral one so the non-blank CHECK of the table cannot fail on a pathological upload.
-     */
-    private function displayName(UploadedFile $file): string
-    {
-        $name = mb_substr(trim(basename(str_replace('\\', '/', $file->getClientOriginalName()))), 0, self::MAX_NAME_LENGTH);
+        foreach ($files as $file) {
+            if (! $file instanceof UploadedFile) {
+                throw ValidationException::withMessages(['files' => __('documents.errors.invalid_upload')]);
+            }
 
-        return trim($name) === '' ? 'file' : $name;
+            $uploads[] = $file;
+        }
+
+        return $uploads;
     }
 }

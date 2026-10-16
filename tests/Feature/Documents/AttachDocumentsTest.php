@@ -15,6 +15,7 @@ use App\Domain\Tasks\Actions\CreateTask;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
 
@@ -26,11 +27,11 @@ use Tests\Support\DocumentFixtures;
 /**
  * A client-visible project ABC of a fresh client, written through the domain Action.
  */
-function documentProject(?Client $client = null): Project
+function documentProject(?Client $client = null, string $key = 'ABC'): Project
 {
     return app(CreateProject::class)->handle($client ?? Client::factory()->create(), [
         'name' => 'Example document project',
-        'key' => 'ABC',
+        'key' => $key,
         'billing_type' => 'hourly',
         'client_visible' => true,
     ]);
@@ -195,4 +196,82 @@ it('keeps every documents setting in one config block', function (): void {
         ->and(config('kokpit.documents.archive.ttl_days'))->toBe(7)
         ->and(config('kokpit.documents.archive.max_files'))->toBe(200)
         ->and(config('kokpit.documents.archive.max_bytes'))->toBe(209715200);
+});
+
+/**
+ * The field errors of a refused upload, or none when it was accepted.
+ *
+ * @param  array<array-key, mixed>  $files
+ * @return array<string, list<string>>
+ */
+function uploadErrors(User $admin, ?Model $owner, array $files): array
+{
+    try {
+        app(AttachDocuments::class)->handle($admin, $owner, $files);
+    } catch (ValidationException $e) {
+        return $e->errors();
+    }
+
+    return [];
+}
+
+/**
+ * Nothing of a refused upload remains: no documents row, no media row, no stored object.
+ */
+function expectNothingStored(): void
+{
+    expect(Document::query()->count())->toBe(0)
+        ->and(app(PartnerContext::class)->runAsSystem(static fn () => Media::query()->count()))->toBe(0)
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+}
+
+it('stores a hostile file name as a clean NFC display name and lists it on its task', function (): void {
+    $project = documentProject();
+    $task = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example task']);
+    $hostile = implode('', ['Zpra', "\u{0301}", 'va', mb_chr(7), mb_chr(0x202E), 'fdp', '.txt']);
+
+    app(AttachDocuments::class)->handle($this->admin, $task, [DocumentFixtures::upload($hostile)]);
+
+    $names = $task->documents()->pluck('name')->all();
+
+    expect($names)->toBe(['Zprávafdp.txt'])
+        ->and(Normalizer::isNormalized($names[0], Normalizer::FORM_C))->toBeTrue()
+        ->and(preg_match('/[\p{Cc}\x{202A}-\x{202E}\x{2066}-\x{2069}]/u', $names[0]))->toBe(0);
+});
+
+it('refuses a forged string or nested array state under files and stores nothing', function (): void {
+    $project = documentProject();
+    $existing = 'livewire-tmp/'.implode('-', ['existing', 'note']).'.txt';
+
+    foreach ([[$existing], [[$existing]], [DocumentFixtures::upload(), $existing]] as $files) {
+        expect(uploadErrors($this->admin, $project, $files))->toBe(['files' => [__('documents.errors.invalid_upload')]]);
+    }
+
+    expectNothingStored();
+});
+
+it('refuses an empty list of files', function (): void {
+    expect(uploadErrors($this->admin, documentProject(), []))->toBe(['files' => [__('documents.errors.empty_upload')]]);
+
+    expectNothingStored();
+});
+
+it('lists the files of a client, project, task and comment through their documents relations', function (): void {
+    $client = Client::factory()->create();
+    $project = documentProject($client);
+    $task = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example task']);
+    $comment = app(AddTaskComment::class)->handle($this->admin, $task, '<p>Example comment</p>');
+
+    $onClient = attachOne($this->admin, $client);
+    $onProject = attachOne($this->admin, $project);
+    $onTask = attachOne($this->admin, $task);
+    $onComment = attachOne($this->admin, $comment);
+    attachOne($this->admin, documentProject(key: 'XYZ'));
+
+    $ids = static fn ($documents): array => $documents->pluck('id')->sort()->values()->all();
+
+    expect($ids($client->documents))->toBe($ids(collect([$onClient, $onProject, $onTask, $onComment])))
+        ->and($ids($project->documents))->toBe([$onProject->getKey()])
+        ->and($ids($task->documents))->toBe([$onTask->getKey()])
+        ->and($ids($comment->documents))->toBe([$onComment->getKey()]);
 });
