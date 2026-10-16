@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Support;
 
 use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Actions\DeleteDocument;
 use App\Domain\Documents\Enums\DocumentOwnerType;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Support\DocumentDisposition;
@@ -21,10 +22,13 @@ use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component;
+use RuntimeException;
+use Throwable;
 
 /**
  * The actions every documents surface of the Admin shares (D-02): upload, download and preview.
@@ -33,6 +37,9 @@ use Livewire\Component;
  * flag to AttachDocuments; the owner, the client and the project come from the host's own record, never from
  * the form. Files are not stored by the field itself (`storeFiles(false)`): the temporary object stays where
  * Livewire put it until the Action has checked, copied and removed it.
+ *
+ * Delete is permanent (D-09): it asks for a confirmation that names the file, and it removes the row, the media
+ * and the stored object through DeleteDocument or not at all.
  *
  * Download and preview authorize the file and mint the signed link at click time, then redirect to it. A
  * link is never rendered into the page, because a page that stays open longer than the link lives would
@@ -95,6 +102,47 @@ final class DocumentActions
 
                 $livewire->redirect(DocumentUrl::preview($record, self::user()));
             });
+    }
+
+    public static function delete(): Action
+    {
+        return Action::make('delete')
+            ->label(__('documents.actions.delete'))
+            ->icon(Heroicon::OutlinedTrash)
+            ->color('danger')
+            ->requiresConfirmation()
+            ->modalHeading(__('documents.actions.delete_heading'))
+            ->modalDescription(static fn (Document $record): string => __('documents.actions.delete_description', ['name' => $record->name]))
+            ->modalSubmitActionLabel(__('documents.actions.delete'))
+            ->action(static function (Document $record): void {
+                if (self::deleteOne($record)) {
+                    Notification::make()->success()->title(__('documents.notifications.deleted'))->send();
+
+                    return;
+                }
+
+                Notification::make()->danger()->title(__('documents.notifications.delete_failed'))->send();
+            });
+    }
+
+    /**
+     * Deletes one file for the signed-in Admin. A refusal by the policy is not swallowed; any other failure
+     * (the stored object cannot be removed, the file was deleted in the meantime) is reported without the
+     * file name and answered with false, so nothing is half done.
+     */
+    private static function deleteOne(Document $document): bool
+    {
+        try {
+            app(DeleteDocument::class)->handle(self::user(), $document);
+        } catch (AuthorizationException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            report(new RuntimeException('A document could not be deleted ('.$e::class.').', previous: $e));
+
+            return false;
+        }
+
+        return true;
     }
 
     /**

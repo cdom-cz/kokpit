@@ -398,6 +398,7 @@ return [
             'project_billing' => 'Fakturace projektu',
             'task_billing' => 'Fakturace úkolu',
             'contact' => 'Kontakt',
+            'document' => 'Soubor',
             'task' => 'Úkol',
             'time_entry' => 'Časový záznam',
             'personal_access_token' => 'API token',
@@ -428,6 +429,12 @@ return [
                 'position' => 'Pozice',
                 'is_primary' => 'Hlavní kontakt',
                 'is_billing' => 'Fakturační kontakt',
+            ],
+            'document' => [
+                'name' => 'Název',
+                'visible_to_client' => 'Vidí klient',
+                'owner_type' => 'Patří k',
+                'size_bytes' => 'Velikost (B)',
             ],
             'project' => [
                 'client_id' => 'Klient',

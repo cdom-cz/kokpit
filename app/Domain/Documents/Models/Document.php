@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Documents\Models;
 
+use App\Domain\Audit\LoggedAttributes;
+use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
@@ -36,6 +38,9 @@ use Spatie\MediaLibrary\InteractsWithMedia;
  * the flag and the file facts are set with `forceFill` by AttachDocuments. The owner is immutable after
  * upload. `Media` stays closed to Partners, so every media write and read runs as system after the policy.
  *
+ * Changes to the name and the flag, and every deletion, are written to the activity log with the allowlist
+ * above; the description is never logged, because it is text the client may or may not be meant to see.
+ *
  * @property string $id
  * @property string $name
  * @property string|null $description
@@ -52,9 +57,10 @@ use Spatie\MediaLibrary\InteractsWithMedia;
  * @property CarbonInterface|null $updated_at
  */
 #[Fillable(['name', 'description'])]
+#[LoggedAttributes(['name', 'visible_to_client', 'owner_type', 'size_bytes'])]
 final class Document extends KokpitModel implements HasMedia, PartnerIsolated
 {
-    use InteractsWithMedia, IsolatesPartners;
+    use InteractsWithMedia, IsolatesPartners, LogsAllowlistedActivity;
 
     public const string MEDIA_COLLECTION = 'file';
 

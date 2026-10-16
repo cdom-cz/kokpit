@@ -37,6 +37,9 @@ return [
         'upload_submit' => 'Nahrát',
         'download' => 'Stáhnout',
         'preview' => 'Zobrazit',
+        'delete' => 'Smazat',
+        'delete_heading' => 'Smazat soubor?',
+        'delete_description' => 'Soubor „:name“ bude trvale smazán, včetně uloženého souboru. Tento krok nelze vrátit zpět.',
     ],
 
     'fields' => [
@@ -64,6 +67,8 @@ return [
     'owner_none' => 'Nepřiřazeno',
 
     'notifications' => [
+        'deleted' => 'Soubor byl trvale smazán.',
+        'delete_failed' => 'Soubor se nepodařilo smazat. Zkuste to znovu.',
         'uploaded' => '{1} Byl nahrán :count soubor.|[2,4] Byly nahrány :count soubory.|[5,*] Bylo nahráno :count souborů.',
     ],
 ];

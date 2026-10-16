@@ -56,6 +56,7 @@ trait ManagesDocuments
             ->recordActions([
                 DocumentActions::preview(),
                 DocumentActions::download(),
+                DocumentActions::delete(),
             ])
             ->emptyStateHeading(__('documents.empty.heading'))
             ->emptyStateDescription(__('documents.empty.description'));
