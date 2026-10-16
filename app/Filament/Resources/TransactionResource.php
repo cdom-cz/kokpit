@@ -186,6 +186,10 @@ final class TransactionResource extends Resource
                         ->afterStateUpdated(static function (Get $get, Set $set, mixed $state): void {
                             self::manualSwitched($get, $set, $state === true);
                         })
+                        // While the figure is manual a change of date, currency or amount keeps it (Pitfall 13).
+                        ->helperText(static fn (Get $get): ?string => $get('czk_manual') === true
+                            ? (string) __('finance.transactions.hints.czk_manual_kept')
+                            : null)
                         ->visible(static fn (Get $get): bool => self::isForeign($get('currency')))
                         ->columnSpanFull(),
                     TextInput::make('czk_amount')

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\ExchangeRates\Models\ExchangeRate;
+use App\Domain\Finance\Actions\ArchiveTransactionCategory;
 use App\Domain\Finance\Actions\RecordTransaction;
 use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Enums\TransactionType;
@@ -238,5 +239,147 @@ describe('the edit page is part of the screen', function (): void {
                 'amount' => '100,00',
                 'category_id' => $transaction->category_id,
             ]);
+    });
+});
+
+describe('the edit page follows the recompute-versus-manual rule', function (): void {
+    it('stores the figure of another list when a computed transaction moves to a day with one', function (): void {
+        txScreenRate();
+        txScreenRate(['rate_date' => '2026-10-12', 'rate' => '24.000']);
+        $transaction = txScreenRecord(['transaction_date' => '2026-10-10']);
+
+        expect($transaction->czk_minor)->toBe(251250);
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['transaction_date' => '2026-10-13'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $transaction->refresh();
+
+        expect($transaction->czk_source)->toBe(CzkSource::Cnb)
+            ->and($transaction->czk_minor)->toBe(240000)
+            ->and($transaction->exchange_rate_date?->toDateString())->toBe('2026-10-12');
+    });
+
+    it('shows the manual hint on a manual transaction and keeps the bank figure when the amount changes', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord(['czk_amount' => '2 600,00']);
+
+        expect($transaction->czk_source)->toBe(CzkSource::Manual);
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->assertSee(__('finance.transactions.hints.czk_manual_kept'))
+            ->assertFormSet(['czk_manual' => true, 'czk_amount' => '2600,00'])
+            ->fillForm(['amount' => '200,00', 'transaction_date' => '2026-10-15'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $transaction->refresh();
+
+        expect($transaction->czk_source)->toBe(CzkSource::Manual)
+            ->and($transaction->czk_minor)->toBe(260000)
+            ->and($transaction->amount->equals(Money::ofMinor(20000, 'EUR')))->toBeTrue();
+    });
+
+    it('does not show the manual hint on a computed transaction', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->assertDontSee(__('finance.transactions.hints.czk_manual_kept'));
+    });
+
+    it('computes the figure again when the manual switch is turned off on a day with a list', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord(['czk_amount' => '2 600,00']);
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['czk_manual' => false])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $transaction->refresh();
+
+        expect($transaction->czk_source)->toBe(CzkSource::Cnb)
+            ->and($transaction->czk_minor)->toBe(251250);
+    });
+
+    it('turns a computed transaction into a manual one when the switch is turned on with the bank figure', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['czk_manual' => true, 'czk_amount' => '2 480,00'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $transaction->refresh();
+
+        expect($transaction->czk_source)->toBe(CzkSource::Manual)
+            ->and($transaction->czk_minor)->toBe(248000);
+    });
+
+    it('asks for the CZK amount when the date moves to a day without any list, and refuses an empty value in Czech', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        $page = Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['transaction_date' => '2026-10-01'])
+            ->call('save')
+            ->assertHasFormErrors(['czk_amount']);
+
+        expect(implode(' ', $page->errors()->get('data.czk_amount')))->toContain('není uložen kurz ČNB');
+
+        $transaction->refresh();
+
+        expect($transaction->transaction_date->toDateString())->toBe('2026-10-14')
+            ->and($transaction->czk_source)->toBe(CzkSource::Cnb);
+    });
+
+    it('saves as manual once the CZK amount is typed for a day without any list', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['transaction_date' => '2026-10-01', 'czk_amount' => '2 400,00'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $transaction->refresh();
+
+        expect($transaction->czk_source)->toBe(CzkSource::Manual)
+            ->and($transaction->czk_minor)->toBe(240000)
+            ->and($transaction->transaction_date->toDateString())->toBe('2026-10-01');
+    });
+
+    it('opens and saves a transaction whose category was archived later, without changing the category', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+        $category = txScreenHosting();
+
+        app(ArchiveTransactionCategory::class)->handle($this->admin, $category, true);
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->assertFormSet(['category_id' => $category->getKey()])
+            ->fillForm(['description' => 'Fictional note'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $transaction->refresh();
+
+        expect($transaction->category_id)->toBe($category->getKey())
+            ->and($transaction->description)->toBe('Fictional note');
+    });
+
+    it('does not offer an archived category for a new transaction', function (): void {
+        $category = txScreenHosting();
+
+        app(ArchiveTransactionCategory::class)->handle($this->admin, $category, true);
+
+        Livewire::test(CreateTransaction::class)
+            ->fillForm(txScreenForm(['currency' => 'CZK', 'category_id' => $category->getKey()]))
+            ->call('create')
+            ->assertHasFormErrors(['category_id']);
     });
 });
