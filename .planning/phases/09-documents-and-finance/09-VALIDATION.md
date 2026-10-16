@@ -57,10 +57,17 @@ created: "2026-10-16"
 | FI-01 | CZK conversion rules | feature | `ddev exec vendor/bin/pest tests/Feature/Finance/TransactionCzkTest.php` | ✅ green (plan 09-22) |
 | FI-01 | Category rules | feature | `ddev exec vendor/bin/pest tests/Feature/Finance/CategoryRulesTest.php` | ✅ green (plan 09-04) |
 | FI-02 | Overview per month/year, category, client in CZK | feature | `ddev exec vendor/bin/pest tests/Feature/Finance/FinanceOverviewTest.php` | ✅ green (plan 09-15) |
+| DO-02 | CR-01 entry-name numbering is total for every order of names | unit + feature | `ddev exec vendor/bin/pest tests/Unit/Documents/ArchiveEntryNamesTest.php tests/Feature/Documents/DocumentArchiveTest.php` | ✅ green (plan 09-25) |
+| DO-02 | WR-02 archive cleanup: prune by `storagePath()` whatever the status, build-job removal of a failed or vanished ZIP | feature | `ddev exec vendor/bin/pest tests/Feature/Documents/DocumentArchivePruneTest.php tests/Feature/Documents/DocumentArchiveCleanupTest.php` | ✅ green (plan 09-26) |
+| DO-03 | WR-01 object removed after the commit, refused object retried by the queued job | feature | `ddev exec vendor/bin/pest tests/Feature/Documents/DeleteDocumentTest.php tests/Feature/Documents/RemoveDocumentObjectsTest.php` | ✅ green (plan 09-27) |
+| FI-01 | WR-01 transaction delete keeps its receipts on rollback | feature | `ddev exec vendor/bin/pest tests/Feature/Finance/TransactionReceiptsTest.php` | ✅ green (plan 09-27) |
+| DO-03 | WR-01 the three stores stay consistent through every delete path | feature | `ddev exec vendor/bin/pest tests/Feature/Documents/DocumentStorageConsistencyTest.php` | ✅ green (plan 09-28) |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
 Every row is green in the full suite of the phase gate (plan 09-20, 4550 passed, 3 skipped, the same three as before the phase) and, for the rows that name `--group=s3`, against RustFS. The Partner leak sweep over all Phase 9 surfaces is `tests/Isolation/DocumentFinanceLeakTest.php` and the storage consistency check is `tests/Feature/Documents/DocumentStorageConsistencyTest.php` (both plan 09-20).
+
+The gap round of plans 09-25 to 09-28 (2026-10-16) closed CR-01, WR-01 and WR-02 of 09-REVIEW.md; its five rows above are green in the full suite of the gap-round phase gate (plan 09-28), the `s3` group included.
 
 ---
 
