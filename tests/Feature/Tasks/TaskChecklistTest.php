@@ -266,3 +266,64 @@ it('refuses a malformed checklist item in the database', function (): void {
     RawSql::expectSqlState('23514', $insert(['position' => -1]));
     RawSql::expectSqlState('23503', $insert(['task_id' => (string) Str::uuid7()]));
 });
+
+/**
+ * The checklist item of a task at the given position (1 based), read straight from the table.
+ */
+function taskChecklistItemAt(Task $task, int $position): TaskChecklistItem
+{
+    return TaskChecklistItem::query()
+        ->where('task_id', $task->getKey())
+        ->where('position', $position)
+        ->firstOrFail();
+}
+
+it('lists the checklist on the task page and ticks and unticks one item with one call', function (): void {
+    $task = taskChecklistTask(taskChecklistProject());
+    taskChecklistFill($task, 2, 0);
+    $first = taskChecklistItemAt($task, 1);
+
+    $page = Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->assertSeeText(__('kokpit.tasks.checklist.heading'))
+        ->assertSeeText('Example item 1')
+        ->assertSeeText('Example item 2')
+        ->assertSeeHtml('toggleChecklistItem');
+
+    $page->call('toggleChecklistItem', $first->id, true)
+        ->assertSeeText('1/2');
+
+    expect(taskChecklistRows($task))->toBe([['Example item 1', true], ['Example item 2', false]]);
+
+    // The target state, not a flip: the same call again changes nothing.
+    $page->call('toggleChecklistItem', $first->id, true);
+
+    expect(taskChecklistRows($task))->toBe([['Example item 1', true], ['Example item 2', false]]);
+
+    $page->call('toggleChecklistItem', $first->id, false)
+        ->assertSeeText('0/2');
+
+    expect(taskChecklistRows($task))->toBe([['Example item 1', false], ['Example item 2', false]]);
+});
+
+it('shows no checklist section on the task page of a task without an item', function (): void {
+    $task = taskChecklistTask(taskChecklistProject());
+
+    Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->assertDontSeeText(__('kokpit.tasks.checklist.heading'));
+});
+
+it('ticks the items of a subtask on its own page and leaves the parent alone', function (): void {
+    $project = taskChecklistProject();
+    $parent = taskChecklistTask($project);
+    $subtask = taskChecklistTask($project, $parent);
+    taskChecklistFill($parent, 1, 0);
+    taskChecklistFill($subtask, 2, 0);
+
+    Livewire::test(ViewTask::class, ['record' => $subtask->reference])
+        ->assertSeeText('Example item 2')
+        ->call('toggleChecklistItem', taskChecklistItemAt($subtask, 2)->id, true)
+        ->assertSeeText('1/2');
+
+    expect(taskChecklistRows($subtask))->toBe([['Example item 1', false], ['Example item 2', true]])
+        ->and(taskChecklistRows($parent))->toBe([['Example item 1', false]]);
+});
