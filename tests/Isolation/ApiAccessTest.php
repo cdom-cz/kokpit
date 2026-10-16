@@ -198,7 +198,8 @@ it('finds the list routes of the walk, so the forged cursor tests are not vacuou
 
     expect($paths)->toContain('api/v1/time-entries')
         ->and($paths)->toContain('api/v1/clients')
-        ->and($paths)->toContain('api/v1/transactions');
+        ->and($paths)->toContain('api/v1/transactions')
+        ->and($paths)->toContain('api/v1/transaction-categories');
 });
 
 it('answers 401 to a guest with a forged cursor on every list route, never 422 or 500', function (): void {
@@ -273,6 +274,14 @@ describe('with canaries of two clients seeded', function (): void {
     it('lets an Admin token with every ability read the transaction canaries of both clients from the list', function (): void {
         $token = ApiFixtures::token(Canary::admin(), ApiAbility::values());
         $body = $this->withToken($token)->getJson('/api/v1/transactions?per_page=200')->assertOk()->getContent();
+
+        expect($body)->toContain($this->canaryA)
+            ->and($body)->toContain($this->canaryB);
+    });
+
+    it('lets an Admin token with every ability read the transaction category canaries of both clients from the list', function (): void {
+        $token = ApiFixtures::token(Canary::admin(), ApiAbility::values());
+        $body = $this->withToken($token)->getJson('/api/v1/transaction-categories?per_page=200')->assertOk()->getContent();
 
         expect($body)->toContain($this->canaryA)
             ->and($body)->toContain($this->canaryB);

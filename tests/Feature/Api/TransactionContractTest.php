@@ -176,3 +176,34 @@ it('documents a list whose items all have the keys and types of the resource', f
         TransactionContract::assertShape($item);
     }
 });
+
+it('documents a category list and detail whose items have the five keys, and an example cursor the API accepts', function (): void {
+    $keys = ['id', 'parent_id', 'name', 'type', 'archived'];
+
+    expect(array_keys(TransactionExamples::CATEGORY['data']))->toBe($keys);
+
+    foreach (TransactionExamples::CATEGORY_LIST['data'] as $item) {
+        expect(array_keys($item))->toBe($keys);
+    }
+
+    $example = Cursor::fromEncoded(TransactionExamples::CATEGORY_LIST['meta']['next_cursor']);
+
+    expect($example)->not->toBeNull()
+        ->and($example->parameter('name'))->toBe(TransactionExamples::CATEGORY_LIST['data'][1]['name'])
+        ->and($example->parameter('transaction_categories.id'))->toBe(TransactionExamples::CATEGORY_LIST['data'][1]['id']);
+
+    parse_str((string) parse_url(TransactionExamples::CATEGORY_LIST['links']['next'], PHP_URL_QUERY), $query);
+    expect($query['cursor'])->toBe(TransactionExamples::CATEGORY_LIST['meta']['next_cursor']);
+
+    $this->withToken(ApiFixtures::token(ApiFixtures::admin(), ['finance:read']))
+        ->getJson('/api/v1/transaction-categories?per_page=2&cursor='.urlencode(TransactionExamples::CATEGORY_LIST['meta']['next_cursor']))
+        ->assertOk();
+
+    $real = $this->withToken(ApiFixtures::token(ApiFixtures::admin(), ['finance:read']))->getJson('/api/v1/transaction-categories?per_page=1')->assertOk();
+    $realKeys = array_keys(Cursor::fromEncoded($real->json('meta.next_cursor'))->toArray());
+    $exampleKeys = array_keys($example->toArray());
+    sort($realKeys);
+    sort($exampleKeys);
+
+    expect($exampleKeys)->toBe($realKeys);
+});

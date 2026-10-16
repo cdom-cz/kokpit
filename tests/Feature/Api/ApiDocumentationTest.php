@@ -162,6 +162,8 @@ it('pins the routes of the API, no more and no fewer', function (): void {
         'GET /api/v1/tasks/{task}',
         'GET /api/v1/time-entries',
         'GET /api/v1/time-entries/{timeEntry}',
+        'GET /api/v1/transaction-categories',
+        'GET /api/v1/transaction-categories/{category}',
         'GET /api/v1/transactions',
         'GET /api/v1/transactions/{transaction}',
         'POST /api/v1/time-entries',
@@ -326,7 +328,7 @@ it('states exactly the limits of config/kokpit.php in the intro and in every per
     $descriptions = documentedPerPageDescriptions();
 
     expect($intro)->toBeString()
-        ->and($descriptions)->toHaveCount(5)
+        ->and($descriptions)->toHaveCount(6)
         ->and(documentedLimitProblems((string) $intro, $descriptions, (array) config('kokpit.api')))->toBe([]);
 });
 

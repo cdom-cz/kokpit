@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TimeEntryBatchController;
 use App\Http\Controllers\Api\V1\TimeEntryController;
+use App\Http\Controllers\Api\V1\TransactionCategoryController;
 use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Middleware\EnsureIdempotency;
 use Illuminate\Support\Facades\Route;
@@ -75,4 +76,12 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::FinanceRead->value, 
     Route::get('transactions/{transaction}', [TransactionController::class, 'show'])
         ->whereUuid('transaction')
         ->name('api.v1.transactions.show');
+
+    // Categories are read-only (D-02): the list and the detail are all there is, so an importer finds the UUID to
+    // book into. Creating, renaming, archiving and ordering stay in the Admin panel.
+    Route::get('transaction-categories', [TransactionCategoryController::class, 'index'])
+        ->name('api.v1.transaction-categories.index');
+    Route::get('transaction-categories/{category}', [TransactionCategoryController::class, 'show'])
+        ->whereUuid('category')
+        ->name('api.v1.transaction-categories.show');
 });

@@ -82,4 +82,46 @@ final class TransactionExamples
             'prev_cursor' => null,
         ],
     ];
+
+    /**
+     * A child category, the one the TRANSACTION example is booked into.
+     */
+    public const array CATEGORY = [
+        'data' => [
+            'id' => '0199e3b0-2b3c-7d4e-9f50-b2c3d4e5f6a7',
+            'parent_id' => '0199e3b0-1f2a-7b3c-8d4e-a1b2c3d4e5f6',
+            'name' => 'Example hosting',
+            'type' => 'expense',
+            'archived' => false,
+        ],
+    ];
+
+    /**
+     * A page of categories sorted by name: a root and its child, with the cursor of the next page. The cursor is the
+     * one the paginator issues after the second item (its name and its id), so it is accepted by the API.
+     */
+    public const array CATEGORY_LIST = [
+        'data' => [
+            [
+                'id' => '0199e3b0-1f2a-7b3c-8d4e-a1b2c3d4e5f6',
+                'parent_id' => null,
+                'name' => 'Example expenses',
+                'type' => 'expense',
+                'archived' => false,
+            ],
+            self::CATEGORY['data'],
+        ],
+        'links' => [
+            'first' => null,
+            'last' => null,
+            'prev' => null,
+            'next' => 'https://kokpit.example.com/api/v1/transaction-categories?per_page=2&cursor=eyJuYW1lIjoiRXhhbXBsZSBob3N0aW5nIiwidHJhbnNhY3Rpb25fY2F0ZWdvcmllcy5pZCI6IjAxOTllM2IwLTJiM2MtN2Q0ZS05ZjUwLWIyYzNkNGU1ZjZhNyIsIl9wb2ludHNUb05leHRJdGVtcyI6dHJ1ZX0',
+        ],
+        'meta' => [
+            'path' => 'https://kokpit.example.com/api/v1/transaction-categories',
+            'per_page' => 2,
+            'next_cursor' => 'eyJuYW1lIjoiRXhhbXBsZSBob3N0aW5nIiwidHJhbnNhY3Rpb25fY2F0ZWdvcmllcy5pZCI6IjAxOTllM2IwLTJiM2MtN2Q0ZS05ZjUwLWIyYzNkNGU1ZjZhNyIsIl9wb2ludHNUb05leHRJdGVtcyI6dHJ1ZX0',
+            'prev_cursor' => null,
+        ],
+    ];
 }
