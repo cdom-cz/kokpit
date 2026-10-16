@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\DocumentResource\Pages;
 
 use App\Filament\Resources\DocumentResource;
+use App\Filament\Resources\DocumentResource\Widgets\DocumentStorageByClient;
 use App\Filament\Resources\DocumentResource\Widgets\DocumentStorageStats;
 use App\Filament\Support\DocumentActions;
 use Filament\Actions\Action;
@@ -33,6 +34,7 @@ final class ListDocuments extends ListRecords
     {
         return [
             DocumentStorageStats::class,
+            DocumentStorageByClient::class,
         ];
     }
 

@@ -18,6 +18,7 @@ use App\Domain\Tasks\Models\TaskComment;
 use App\Domain\TimeTracking\Support\PragueDay;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
+use App\Filament\Resources\DocumentResource\Widgets\DocumentStorageByClient;
 use App\Filament\Resources\DocumentResource\Widgets\DocumentStorageStats;
 use App\Filament\Support\DocumentActions;
 use App\Filament\Support\DocumentColumns;
@@ -146,6 +147,7 @@ final class DocumentResource extends Resource
     {
         return [
             DocumentStorageStats::class,
+            DocumentStorageByClient::class,
         ];
     }
 
