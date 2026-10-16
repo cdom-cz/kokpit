@@ -5,13 +5,16 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Tasks\Actions\ArchiveTask;
 use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Actions\ToggleTaskChecklistItem;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskChecklistItem;
 use App\Filament\Resources\TaskResource\Pages\EditTask;
 use App\Filament\Resources\TaskResource\Pages\ListTasks;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use Filament\Facades\Filament;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Features\SupportTesting\Testable;
@@ -326,4 +329,91 @@ it('ticks the items of a subtask on its own page and leaves the parent alone', f
 
     expect(taskChecklistRows($subtask))->toBe([['Example item 1', false], ['Example item 2', true]])
         ->and(taskChecklistRows($parent))->toBe([['Example item 1', false]]);
+});
+
+/**
+ * The first `<input ...>` tag of the page html that holds the item id.
+ */
+function taskChecklistInputTag(string $html, string $itemId): string
+{
+    preg_match('/<input\b[^>]*'.preg_quote($itemId, '/').'[^>]*>/', $html, $match);
+
+    return $match[0] ?? '';
+}
+
+it('renders the checklist of an archived task read-only and refuses a forged toggle', function (): void {
+    $task = taskChecklistTask(taskChecklistProject());
+    taskChecklistFill($task, 1, 0);
+    $item = taskChecklistItemAt($task, 1);
+
+    $page = Livewire::test(ViewTask::class, ['record' => $task->reference]);
+    $tag = taskChecklistInputTag($page->html(), $item->id);
+
+    expect($tag)->not->toBe('')
+        ->and($tag)->not->toMatch('/\sdisabled(?=[\s=>\/])/');
+
+    app(ArchiveTask::class)->handle($this->admin, $task);
+
+    // The key must really exist, or assertNotified would compare the raw key with itself.
+    expect(__('kokpit.tasks.errors.checklist_archived'))->not->toBe('kokpit.tasks.errors.checklist_archived');
+
+    $archived = Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->assertSeeText('Example item 1');
+
+    expect(taskChecklistInputTag($archived->html(), $item->id))->toMatch('/\sdisabled(?=[\s=>\/])/');
+
+    $archived->call('toggleChecklistItem', $item->id, true)
+        ->assertNotified(__('kokpit.tasks.errors.checklist_archived'));
+
+    expect(taskChecklistRows($task))->toBe([['Example item 1', false]]);
+});
+
+it('answers 404 to a toggle of an item of another task or with a malformed id', function (): void {
+    $project = taskChecklistProject();
+    $task = taskChecklistTask($project);
+    $other = taskChecklistTask($project);
+    taskChecklistFill($task, 1, 0);
+    taskChecklistFill($other, 1, 0);
+
+    Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->call('toggleChecklistItem', taskChecklistItemAt($other, 1)->id, true)
+        ->assertNotFound();
+
+    Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->call('toggleChecklistItem', 'not-a-uuid', true)
+        ->assertNotFound();
+
+    expect(taskChecklistRows($task))->toBe([['Example item 1', false]])
+        ->and(taskChecklistRows($other))->toBe([['Example item 1', false]]);
+});
+
+it('keeps the checklist from a Partner on the Admin page, in the Action and on the own task page', function (): void {
+    $project = taskChecklistProject('PRT', true);
+    $task = taskChecklistTask($project);
+    $canary = Canary::canary('checklist');
+    $task->checklistItems()->create(['text' => $canary, 'position' => 1]);
+    $itemId = taskChecklistItemAt($task, 1)->id;
+    $partner = Canary::partnerFor($project->client_id);
+
+    // The page was mounted by the Admin; the session then switches to a Partner.
+    $page = Livewire::test(ViewTask::class, ['record' => $task->reference]);
+
+    $this->actingAs($partner);
+
+    $page->call('toggleChecklistItem', $itemId, true)->assertForbidden();
+
+    $this->get('/admin/tasks/'.$task->reference)->assertForbidden()->assertDontSee($canary);
+
+    expect(fn () => app(ToggleTaskChecklistItem::class)->handle($partner, $task, $itemId, true))
+        ->toThrow(ModelNotFoundException::class);
+
+    $own = $this->get('/admin/my-tasks/'.$task->reference)->assertOk();
+    $body = (string) $own->getContent();
+
+    expect($body)->not->toContain($canary)
+        ->and($body)->not->toContain(__('kokpit.tasks.checklist.heading'));
+
+    $this->actingAs($this->admin);
+
+    expect(taskChecklistRows($task))->toBe([[$canary, false]]);
 });
