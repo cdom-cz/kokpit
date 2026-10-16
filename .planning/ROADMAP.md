@@ -566,7 +566,7 @@ Plans:
   4. Every download goes through the app with a permission check and a short-lived signed URL (no public bucket URL), and deleting a record also removes its stored object
   5. Admin records income and expense transactions with hierarchical categories, currency, CZK amount, optional client and project and receipts as attachments, and sees an overview per month and year, per category and per client in CZK
 
-**Plans:** 24/24 plans executed
+**Plans:** 24/28 plans executed (4 gap-closure plans 09-25 to 09-28 from 09-VERIFICATION.md and 09-REVIEW.md in 2 gap waves)
 **UI hint**: yes
 
 Plans:
@@ -615,6 +615,16 @@ Plans:
 
 **Wave 11** *(blocked on Wave 10 completion)*
 - [x] 09-20-PLAN.md — Partner leak sweep, storage consistency check, CONTRIBUTING and README, .gitignore review, phase gate, VALIDATION sign-off
+
+**Gap closure** *(from 09-VERIFICATION.md and 09-REVIEW.md; gap plans waves 1-2, run with `/gsd-execute-phase 09 --gaps-only`)*
+
+**Gap wave 1**
+- [ ] 09-25-PLAN.md — CR-01: ZIP entry numbering total for every order of names, so a.pdf, a.pdf, a (2).pdf is built in the background with the ready bell (DO-02, SC3 gap)
+- [ ] 09-26-PLAN.md — WR-02: the prune deletes `storagePath()` whatever the status, and the build job removes the ZIP of an archive that failed or vanished during the build (DO-02)
+- [ ] 09-27-PLAN.md — WR-01: rows in the transaction, objects after the commit, refused objects queued to `RemoveDocumentObjects`; a transaction delete keeps every receipt on rollback (DO-03, FI-01)
+
+**Gap wave 2** *(blocked on gap wave 1 completion)*
+- [ ] 09-28-PLAN.md — Consistency proof through every delete path, CONTRIBUTING update, CR-01/WR-01/WR-02 closed in the disposition, validation rows, phase gate
 
 ### Phase 10: Invoicing
 
