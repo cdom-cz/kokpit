@@ -112,3 +112,38 @@ it('has no task_comments column whose name looks like money, a rate, a price, an
 
     expect($suspicious)->toBe([], 'Admin-only attributes do not belong in the Partner-readable task_comments table.');
 });
+
+/*
+ * The documents table is readable by every Partner of the client for the files shared with them (DO-01, D-03,
+ * D-04): every column of a shared file, the name and the description included, is shown to the client. Its column
+ * list is pinned in migration order as well. A new column fails this test until a reviewer has decided that every
+ * Partner may read it.
+ */
+
+it('pins the Partner-safe column list of the documents table', function (): void {
+    expect(Schema::getColumnListing('documents'))->toBe([
+        'id',
+        'name',
+        'description',
+        'visible_to_client',
+        'owner_type',
+        'owner_id',
+        'client_id',
+        'project_id',
+        'uploaded_by_id',
+        'extension',
+        'mime_type',
+        'size_bytes',
+        'created_at',
+        'updated_at',
+    ], 'The documents table is readable by Partners for the files shared with them, and the description is shown to the client when the file is shared. Put Admin-only attributes (an internal note, a price, a rate, a cost, billing data) into an Admin-only table; extend this list only after reviewing that every Partner may read the new column.');
+});
+
+it('has no documents column whose name looks like money, a rate, a price, an estimate, billing, a cost or an internal note', function (): void {
+    $suspicious = array_values(array_filter(
+        Schema::getColumnListing('documents'),
+        static fn (string $column): bool => preg_match('/money|rate|price|estimate|billing|internal|note|cost|budget/i', $column) === 1,
+    ));
+
+    expect($suspicious)->toBe([], 'Admin-only attributes do not belong in the Partner-readable documents table.');
+});

@@ -22,7 +22,10 @@ use Illuminate\Support\Facades\Schema;
  *
  * Flag rule (D-03): a file is shared with the client only when it hangs on a project, a task or a task comment.
  * A client file, a transaction file and an unattached file can never be flagged visible, whatever code writes the
- * row. (An internal comment's file is hidden by the Action and the scope; the row cannot tell comments apart.)
+ * row (the COALESCE matters: an unattached file has a NULL owner type, and a CHECK passes on NULL). An internal
+ * comment's file is hidden by the Action and the scope; the row cannot tell comments apart.
+ *
+ * The name must hold a character that is not whitespace (a tab-only name is as blank as an empty one).
  *
  * client_id and project_id are denormalized from the owner once at upload (owners never change, only a
  * transaction's client can). The composite foreign key (project_id, client_id) -> projects (id, client_id) keeps
@@ -65,9 +68,9 @@ return new class extends Migration
         });
 
         DB::statement('ALTER TABLE documents ADD CONSTRAINT documents_owner_pair_check CHECK ((owner_type IS NULL) = (owner_id IS NULL))');
-        DB::statement("ALTER TABLE documents ADD CONSTRAINT documents_visible_owner_check CHECK (NOT visible_to_client OR owner_type IN ('project', 'task', 'task_comment'))");
+        DB::statement("ALTER TABLE documents ADD CONSTRAINT documents_visible_owner_check CHECK (NOT visible_to_client OR COALESCE(owner_type IN ('project', 'task', 'task_comment'), false))");
         DB::statement('ALTER TABLE documents ADD CONSTRAINT documents_project_needs_client_check CHECK (project_id IS NULL OR client_id IS NOT NULL)');
-        DB::statement('ALTER TABLE documents ADD CONSTRAINT documents_name_check CHECK (length(btrim(name)) > 0)');
+        DB::statement("ALTER TABLE documents ADD CONSTRAINT documents_name_check CHECK (name ~ '[^[:space:]]')");
         DB::statement('ALTER TABLE documents ADD CONSTRAINT documents_size_check CHECK (size_bytes >= 0)');
         DB::statement("ALTER TABLE documents ADD CONSTRAINT documents_extension_check CHECK (extension IS NULL OR extension ~ '^[a-z0-9]{1,10}\$')");
         DB::statement('ALTER TABLE documents ADD CONSTRAINT documents_project_client_fk FOREIGN KEY (project_id, client_id) REFERENCES projects (id, client_id) ON DELETE NO ACTION');
