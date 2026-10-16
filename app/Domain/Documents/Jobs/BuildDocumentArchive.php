@@ -20,6 +20,7 @@ use App\Providers\LocalisationServiceProvider;
 use Illuminate\Queue\Attributes\Timeout;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 use ZipStream\ZipStream;
@@ -46,6 +47,13 @@ use ZipStream\ZipStream;
  * both with a link to the archives list; the ready bell is sent in the transaction that marks the record ready.
  * A technical failure (a stored object that cannot be read) is thrown, retried by the queue and, after the last
  * attempt, handled by {@see self::failed()}.
+ *
+ * The ZIP never outlives a record that failed or vanished (WR-02): when the queue gives up, or the final transaction
+ * finds the record gone or failed, the object at the path of the record id is removed after that transaction
+ * commits, so the failed state is stored before the object goes. The ZIP of a ready record is never touched: the
+ * path is shared by every run of the same id, so it is the finished archive of a concurrent run. A removal that
+ * fails is reported without the path and swallowed, the failure handling completes, and the prune removes the
+ * object later.
  */
 #[Idempotent(how: 'identified by the archive id; a record that is not pending is skipped and the file path is the archive id, so a rerun overwrites the same object instead of adding another')]
 #[Timeout(240)]
@@ -98,7 +106,15 @@ final class BuildDocumentArchive extends KokpitJob
         DB::transaction(function () use ($archive, $added): void {
             $locked = DocumentArchive::query()->whereKey($archive->getKey())->lockForUpdate()->first();
 
-            if ($locked === null || $locked->status !== DocumentArchiveStatus::Pending) {
+            if ($locked === null || $locked->status === DocumentArchiveStatus::Failed) {
+                // Gone or failed while the build ran: nobody will ever offer this ZIP.
+                $this->removeZipAfterCommit($archive->storagePath());
+
+                return;
+            }
+
+            // Ready: a concurrent run of the same id finished, and the object at this shared path is its ZIP.
+            if ($locked->status !== DocumentArchiveStatus::Pending) {
                 return;
             }
 
@@ -125,20 +141,61 @@ final class BuildDocumentArchive extends KokpitJob
     }
 
     /**
-     * Marks a still pending record failed and sends the failure bell in one transaction.
+     * Marks a still pending record failed and sends the failure bell in one transaction, then removes the ZIP an
+     * earlier attempt may have stored once that transaction commits. A record that is gone or already failed only
+     * loses its ZIP; a ready one is left alone with its object.
      */
     private function giveUp(string $archiveId): void
     {
+        // The id comes from the queue payload: a value that is no UUID is no record (the uuid column would refuse
+        // the lookup) and never becomes part of a path.
+        if (! Str::isUuid($archiveId)) {
+            return;
+        }
+
         DB::transaction(function () use ($archiveId): void {
             $locked = DocumentArchive::query()->whereKey($archiveId)->lockForUpdate()->first();
 
-            if ($locked === null || $locked->status !== DocumentArchiveStatus::Pending) {
+            if ($locked === null) {
+                // Built through a model carrying the id, so storagePath() stays the one place that knows the shape.
+                $probe = new DocumentArchive;
+                $probe->setAttribute($probe->getKeyName(), $archiveId);
+                $this->removeZipAfterCommit($probe->storagePath());
+
+                return;
+            }
+
+            if ($locked->status === DocumentArchiveStatus::Failed) {
+                $this->removeZipAfterCommit($locked->storagePath());
+
+                return;
+            }
+
+            if ($locked->status !== DocumentArchiveStatus::Pending) {
                 return;
             }
 
             $locked->markFailed();
 
             User::query()->find($locked->user_id)?->notifyNow(new DocumentArchiveFailedNotification(DocumentArchiveResource::getUrl('index')));
+
+            $this->removeZipAfterCommit($locked->storagePath());
+        });
+    }
+
+    /**
+     * Deletes the ZIP at the path on the default disk once the surrounding transaction has committed. A failing
+     * removal is reported with the exception class only (the path names the archive) and never rethrown: the
+     * failure handling must complete, and the daily prune removes the object later.
+     */
+    private function removeZipAfterCommit(string $path): void
+    {
+        DB::afterCommit(static function () use ($path): void {
+            try {
+                Storage::disk()->delete($path);
+            } catch (Throwable $e) {
+                report(new RuntimeException('The ZIP of a document archive could not be removed ('.$e::class.').'));
+            }
         });
     }
 
