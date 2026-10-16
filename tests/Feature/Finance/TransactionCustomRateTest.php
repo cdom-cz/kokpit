@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Actions\RecordTransaction;
+use App\Domain\Finance\Actions\UpdateTransaction;
 use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
@@ -264,5 +265,58 @@ describe('the checks of an own rate', function (): void {
         ]);
 
         expect($errors)->toHaveKey('amount');
+    });
+});
+
+describe('editing a transaction booked at an own rate', function (): void {
+    beforeEach(function (): void {
+        $this->admin = Canary::admin();
+        $this->actingAs($this->admin);
+        ownRateCnb(['rate_date' => '2026-10-09', 'rate' => '24.000']);
+        $this->update = fn (Transaction $transaction, array $data) => app(UpdateTransaction::class)->handle($this->admin, $transaction, $data);
+    });
+
+    /**
+     * A EUR expense of 100,00 on 2026-10-14 recorded at the own rate 25.125 (251 250 minor CZK), with overrides.
+     *
+     * @param  array<string, mixed>  $overrides
+     */
+    $record = function (array $overrides = []): Transaction {
+        return app(RecordTransaction::class)->handle(test()->admin, ownRateData(['exchange_rate' => '25.125', ...$overrides]));
+    };
+
+    it('recomputes the figure at the stored rate when the amount changes and keeps the rate date', function () use ($record): void {
+        $transaction = $record();
+
+        $updated = ($this->update)($transaction, ['amount' => '200,00']);
+
+        expect($updated->amount_minor)->toBe(20000)
+            ->and($updated->czk_minor)->toBe(502500)
+            ->and($updated->czk_source)->toBe(CzkSource::Custom)
+            ->and($updated->exchange_rate)->toBe('25.1250000000')
+            ->and($updated->exchange_unit_amount)->toBe(1)
+            ->and($updated->exchange_rate_date->toDateString())->toBe('2026-10-14');
+    });
+
+    it('recomputes with the stored unit amount', function () use ($record): void {
+        ownRateCnb(['currency' => 'JPY', 'unit_amount' => 100, 'rate' => '16.000']);
+        $transaction = $record(['amount' => '15000', 'currency' => 'JPY', 'exchange_rate' => '16.25', 'exchange_unit_amount' => 100]);
+
+        $updated = ($this->update)($transaction, ['amount' => '30000']);
+
+        expect($updated->czk_minor)->toBe(487500)
+            ->and($updated->czk_source)->toBe(CzkSource::Custom)
+            ->and($updated->exchange_unit_amount)->toBe(100)
+            ->and($updated->exchange_rate)->toBe('16.2500000000');
+    });
+
+    it('keeps the stored rate date when the amount and the date change together', function () use ($record): void {
+        $transaction = $record();
+
+        $updated = ($this->update)($transaction, ['amount' => '200,00', 'transaction_date' => '2026-10-15']);
+
+        expect($updated->czk_minor)->toBe(502500)
+            ->and($updated->czk_source)->toBe(CzkSource::Custom)
+            ->and($updated->exchange_rate_date->toDateString())->toBe('2026-10-14');
     });
 });
