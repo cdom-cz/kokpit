@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-14-PLAN.md
-last_updated: "2026-10-16T15:29:46.617Z"
+stopped_at: Completed 09-15-PLAN.md
+last_updated: "2026-10-16T15:45:38.261Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: dd96b3e12c55a112a1321dce772e5720e12747cb
+state_head: 44d37b83720639ec616fe28ecf841ace096e2de7
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 165
+  completed_plans: 166
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 19 of 24
+Plan: 20 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -227,6 +227,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P12 | 14 min | 3 tasks | 8 files |
 | Phase 09 P13 | 40 min | 3 tasks | 13 files |
 | Phase 09 P14 | 17 min | 3 tasks | 8 files |
+| Phase 09 P15 | 20 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -550,6 +551,8 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-14: client and uploader sorts of the central documents listing use an aliased leftJoin plus CzechCollation::orderBy (a collation cannot wrap a subselect through the helper)
 - [Phase 09]: 09-14: every filter of the central listing accepts only a known value and otherwise narrows nothing; archived_owners defaults to false (files of active owners) and the blank option shows all files
 - [Phase 09]: 09-14: bulkDelete reads its selection in chunks of 100 (chunkSelectedRecords) and counts files gone before they were read as failed
+- [Phase 09]: 09-15: FinanceFilters::fromInput is the single validation entry for the finance overview; any invalid period, year or month falls back to the current Prague month, filters are not persisted in the session
+- [Phase 09]: 09-15: the finance overview chart is the one place where CZK minor units become whole-crown numbers (rounded half up); tiles and tables format Money
 
 ### Pending Todos
 
@@ -600,6 +603,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T15:29:45.705Z
-Stopped at: Completed 09-14-PLAN.md
+Last session: 2026-10-16T15:45:37.329Z
+Stopped at: Completed 09-15-PLAN.md
 Resume file: None
