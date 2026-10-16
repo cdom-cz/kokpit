@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
-status: executing
-stopped_at: Completed 09-19-PLAN.md
-last_updated: "2026-10-16T16:39:15.912Z"
+status: verifying
+stopped_at: Completed 09-20-PLAN.md
+last_updated: "2026-10-16T16:56:41.016Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 750596b23616f982058cba2891b9fcdb1009745f
+state_head: b8e20945247552f7020860a405adc33b6b449802
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 170
+  completed_plans: 171
   percent: 58
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 Phase: 09 (Documents and Finance) — EXECUTING
 Plan: 24 of 24
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-16 — Phase 09 execution started
 
 Progress: [██████░░░░] 58%
@@ -232,6 +232,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P17 | 25 min | 3 tasks | 6 files |
 | Phase 09 P18 | 20 min | 3 tasks | 13 files |
 | Phase 09 P19 | 40 min | 3 tasks | 10 files |
+| Phase 09 P20 | 15 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -564,6 +565,9 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-18: archive download route is filament.admin.files.archive; isDownloadable is re-checked on every request so a valid signed link never outlives the 7-day retention; foreign, unfinished, expired and missing archives all answer 404
 - [Phase 09]: 09-19: permanent ZIP failures (limits exceeded, no document left) fail the record directly with a failure bell; read errors throw and failed() gives up after the retries
 - [Phase 09]: 09-19: the ready bell counts the files actually added to the ZIP; entry names pass ArchiveEntryNames::safe() and a per-archive unique()
+- [Phase 09]: No reconcile command; the storage consistency check is a test whose consistencyViolations() a later health indicator can reuse
+- [Phase 09]: The Phase 9 hand-over note is replaced by an extended Phase 10 note (invoice owner kind and archived-owner behaviour, invoice PDF through AttachDocuments, invoicePayments() for FI-03, invoice_id on transactions, payment-transaction edit restriction)
+- [Phase 09]: kokpit.tasks.attachments copy removed; its one test reader now asserts the old placeholder sentence literally
 
 ### Pending Todos
 
@@ -614,6 +618,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T16:39:14.944Z
-Stopped at: Completed 09-19-PLAN.md
+Last session: 2026-10-16T16:56:40.012Z
+Stopped at: Completed 09-20-PLAN.md
 Resume file: None
