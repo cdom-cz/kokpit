@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-24-PLAN.md
-last_updated: "2026-10-16T12:16:17.257Z"
+stopped_at: Completed 09-05-PLAN.md
+last_updated: "2026-10-16T12:33:58.601Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: bd1ff172f6e74182e41768c93ca8539a966d6cf6
+state_head: 48ad9724e828a7a763a21e392e76894cb5cd052b
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 153
+  completed_plans: 154
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 7 of 24
+Plan: 8 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -215,6 +215,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P04 | 11 min | 3 tasks | 13 files |
 | Phase 09 P21 | 25min | 3 tasks | 5 files |
 | Phase 09 P24 | 13 min | 3 tasks | 7 files |
+| Phase 09 P05 | 40 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -515,6 +516,8 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-21: archived-owner files are those of client, project, task and comment owners only; unattached files and transaction receipts never count
 - [Phase 09]: 09-21: documents CHECKs fixed in place - visible-owner check uses COALESCE (CHECK passes on NULL), name check rejects any whitespace-only name
 - [Phase 09]: 09-24: Livewire temporary-upload disk defaults to s3 itself (not FILESYSTEM_DISK); phpunit.xml pins s3; DDEV overrides to local via .env.example; ProductionConfigGuard refuses a non-s3-driver temporary disk in production; preview_mimes empty (D-18, D-10)
+- [Phase 09]: 09-05: the Soubory tabs share one ManagesDocuments trait with three final Admin-only relation managers; the client tab lists every file of the client with an eager-loaded owner column and archived owners stay listed for the Admin — AccessRule is not inherited, so the behaviour is a trait; the client tab follows research A10 and D-21 hides archived owners only from the Partner and the default central listing
+- [Phase 09]: 09-05: upload domain errors are re-keyed to mountedActions.0.data.<key> inside the modal instead of using withFormErrors(), whose data. prefix is the page-form state path — Only the modal state path lands the message next to the field; same mapping as the Kontakty tab
 
 ### Pending Todos
 
@@ -565,6 +568,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T12:16:16.790Z
-Stopped at: Completed 09-24-PLAN.md
+Last session: 2026-10-16T12:33:58.112Z
+Stopped at: Completed 09-05-PLAN.md
 Resume file: None
