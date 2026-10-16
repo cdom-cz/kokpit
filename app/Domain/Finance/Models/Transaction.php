@@ -7,6 +7,7 @@ namespace App\Domain\Finance\Models;
 use App\Domain\Audit\LoggedAttributes;
 use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Clients\Models\Client;
+use App\Domain\Documents\Models\Document;
 use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Projects\Models\Project;
@@ -18,6 +19,7 @@ use App\Domain\Shared\Money\MoneyCast;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 /**
  * One income or expense of the finance module (D-12, D-13).
@@ -103,6 +105,16 @@ final class Transaction extends KokpitModel implements PartnerIsolated
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class)->withTrashed();
+    }
+
+    /**
+     * The receipts of the transaction: files that hang directly on it (D-12). Admin only, never shared.
+     *
+     * @return MorphMany<Document, $this>
+     */
+    public function documents(): MorphMany
+    {
+        return $this->morphMany(Document::class, 'owner');
     }
 
     /**

@@ -21,6 +21,7 @@ use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Support\PragueDay;
 use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
+use App\Filament\RelationManagers\TransactionDocumentsRelationManager;
 use App\Filament\RelationManagers\TransactionHistoryRelationManager;
 use App\Filament\Resources\TransactionResource\Pages\CreateTransaction;
 use App\Filament\Resources\TransactionResource\Pages\EditTransaction;
@@ -107,6 +108,7 @@ final class TransactionResource extends Resource
     public static function getRelations(): array
     {
         return [
+            TransactionDocumentsRelationManager::class,
             TransactionHistoryRelationManager::class,
         ];
     }

@@ -8,7 +8,7 @@ use Filament\Support\Contracts\HasLabel;
 
 /**
  * What a file can hang on. The values are the morph aliases stored in `documents.owner_type`
- * (`transaction` is added in the finance plans, `invoice` in Phase 10).
+ * (`invoice` is added in Phase 10).
  *
  * Only a project, a task and a task comment can be shared with a Partner (D-03); the database
  * CHECK `documents_visible_owner_check` mirrors that list.
@@ -19,6 +19,7 @@ enum DocumentOwnerType: string implements HasLabel
     case Project = 'project';
     case Task = 'task';
     case TaskComment = 'task_comment';
+    case Transaction = 'transaction';
 
     public function getLabel(): string
     {
@@ -29,7 +30,7 @@ enum DocumentOwnerType: string implements HasLabel
     {
         return match ($this) {
             self::Project, self::Task, self::TaskComment => true,
-            self::Client => false,
+            self::Client, self::Transaction => false,
         };
     }
 }

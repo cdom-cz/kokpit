@@ -27,6 +27,7 @@ return [
         'project' => 'Projekt',
         'task' => 'Úkol',
         'task_comment' => 'Komentář',
+        'transaction' => 'Transakce',
     ],
 
     'vat_mode' => [

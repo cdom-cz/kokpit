@@ -6,6 +6,7 @@ namespace App\Domain\Documents\Support;
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Enums\DocumentOwnerType;
+use App\Domain\Finance\Models\Transaction;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Models\Task;
@@ -75,6 +76,21 @@ final class DocumentOwnerResolver
                     'client_id' => $clientId,
                     'project_id' => null,
                     'shareable' => DocumentOwnerType::Client->isShareable(),
+                    'default_visible' => false,
+                ];
+            }
+
+            if ($owner instanceof Transaction) {
+                // A receipt counts for the client and project of its transaction, either of which may be missing (D-11);
+                // a transaction is finance data and never shared with a Partner (D-03).
+                $transaction = Transaction::query()->whereKey($owner->getKey())->sharedLock()->firstOrFail();
+
+                return [
+                    'owner_type' => DocumentOwnerType::Transaction->value,
+                    'owner_id' => (string) $transaction->getKey(),
+                    'client_id' => $transaction->client_id === null ? null : (string) $transaction->client_id,
+                    'project_id' => $transaction->project_id === null ? null : (string) $transaction->project_id,
+                    'shareable' => DocumentOwnerType::Transaction->isShareable(),
                     'default_visible' => false,
                 ];
             }

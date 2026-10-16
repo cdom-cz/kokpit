@@ -147,6 +147,12 @@ return [
             'saved' => 'Transakce byla uložena.',
             'deleted' => 'Transakce byla smazána.',
         ],
+        'receipts' => [
+            'relation_title' => 'Doklady',
+            'column' => 'Doklady',
+            'filter_without' => 'Bez dokladu',
+            'delete_with_receipts' => 'Transakce se smaže natrvalo spolu s doklady (počet: :count). Soubory doloží jen tato transakce a nelze je obnovit. Změna zůstane v historii.',
+        ],
         'empty' => [
             'heading' => 'Zatím žádné transakce',
             'description' => 'Zapište první příjem nebo výdaj.',
