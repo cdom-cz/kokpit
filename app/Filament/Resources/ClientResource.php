@@ -24,6 +24,7 @@ use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Shared\Tags\TagType;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
+use App\Filament\RelationManagers\ClientDocumentsRelationManager;
 use App\Filament\RelationManagers\ClientHistoryRelationManager;
 use App\Filament\Resources\ClientResource\Pages\CreateClient;
 use App\Filament\Resources\ClientResource\Pages\EditClient;
@@ -441,6 +442,7 @@ final class ClientResource extends Resource
             ContactsRelationManager::class,
             InvitationsRelationManager::class,
             PartnerAccountsRelationManager::class,
+            ClientDocumentsRelationManager::class,
             ClientHistoryRelationManager::class,
         ];
     }

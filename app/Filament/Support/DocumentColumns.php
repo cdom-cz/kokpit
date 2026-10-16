@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 namespace App\Filament\Support;
 
+use App\Domain\Clients\Models\Client;
+use App\Domain\Documents\Enums\DocumentOwnerType;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Database\CzechCollation;
+use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskComment;
 use App\Providers\LocalisationServiceProvider;
 use Filament\Tables\Columns\Column;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 /**
  * The table columns of the Admin's documents surfaces (D-02): the "Soubory" tab on a client, project and task,
@@ -41,6 +47,14 @@ final class DocumentColumns
                 ->sortable(query: static fn (Builder $query, string $direction): Builder => self::orderByName($query, $direction)),
         ];
 
+        if ($showOwner) {
+            // The query behind the list must call withOwners(), or each row loads its owner on its own.
+            $columns[] = TextColumn::make('owner')
+                ->label(__('documents.columns.owner'))
+                ->state(static fn (Document $record): string => self::ownerLabel($record))
+                ->description(static fn (Document $record): ?string => self::ownerName($record));
+        }
+
         return [
             ...$columns,
             TextColumn::make('size_bytes')
@@ -57,6 +71,47 @@ final class DocumentColumns
                 ->label(__('documents.columns.visible_to_client'))
                 ->boolean(),
         ];
+    }
+
+    /**
+     * Loads the owner of every row in a fixed number of queries, whatever the owner kinds (a clients, projects,
+     * tasks and comments mix), archived owners included: the Admin still sees where a file of an archived
+     * project or task hangs. A comment is shown with the reference of its task, so that is loaded with it.
+     *
+     * @param  Builder<Document>  $query
+     * @return Builder<Document>
+     */
+    public static function withOwners(Builder $query): Builder
+    {
+        return $query->with(['owner' => static fn (MorphTo $owner) => $owner
+            ->withTrashed()
+            ->morphWith([TaskComment::class => ['task' => static fn ($task) => $task->withTrashed()]])]);
+    }
+
+    /**
+     * What the file hangs on, in words: Klient, Projekt, Úkol, Komentář, or "Nepřiřazeno" for a file without an owner.
+     */
+    public static function ownerLabel(Document $document): string
+    {
+        $type = $document->owner_type === null ? null : DocumentOwnerType::tryFrom($document->owner_type);
+
+        return $type === null ? __('documents.owner_none') : $type->getLabel();
+    }
+
+    /**
+     * The name of the owner: the client or project name, the task reference, or the reference of the task
+     * a comment sits on. Null when there is no owner row to name.
+     */
+    public static function ownerName(Document $document): ?string
+    {
+        $owner = $document->owner;
+
+        return match (true) {
+            $owner instanceof Client, $owner instanceof Project => $owner->name,
+            $owner instanceof Task => $owner->reference,
+            $owner instanceof TaskComment => $owner->task?->reference,
+            default => null,
+        };
     }
 
     /**

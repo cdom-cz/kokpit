@@ -47,6 +47,8 @@ trait ManagesDocuments
         return $table
             ->recordTitleAttribute('name')
             ->columns(DocumentColumns::admin(showOwner: $showOwner))
+            // One query per owner kind instead of one per row (research Pitfall 7).
+            ->modifyQueryUsing(static fn (Builder $query): Builder => $showOwner ? DocumentColumns::withOwners($query) : $query)
             ->defaultSort(static fn (Builder $query): Builder => $query->orderByDesc($query->qualifyColumn('created_at'))->orderBy($query->qualifyColumn('id')))
             ->headerActions([
                 DocumentActions::upload(),

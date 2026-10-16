@@ -22,6 +22,13 @@ return [
         'task' => 'Úkol',
     ],
 
+    'document_owner_type' => [
+        'client' => 'Klient',
+        'project' => 'Projekt',
+        'task' => 'Úkol',
+        'task_comment' => 'Komentář',
+    ],
+
     'vat_mode' => [
         'non_payer' => 'Neplátce DPH',
         'payer' => 'Plátce DPH',

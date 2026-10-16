@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Enums\DocumentOwnerType;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Actions\ArchiveTask;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Filament\RelationManagers\ClientDocumentsRelationManager;
 use App\Filament\RelationManagers\ProjectDocumentsRelationManager;
 use App\Filament\RelationManagers\TaskDocumentsRelationManager;
+use App\Filament\Resources\ClientResource;
+use App\Filament\Resources\ClientResource\Pages\ViewClient;
 use App\Filament\Resources\ProjectResource;
 use App\Filament\Resources\ProjectResource\Pages\ViewProject;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
@@ -22,6 +27,7 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\Toggle;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Livewire\Features\SupportTesting\Testable;
@@ -326,4 +332,152 @@ it('answers 403 when a Partner mounts the task Soubory tab', function (): void {
     $this->actingAs(Canary::partnerFor(Project::query()->findOrFail($task->project_id)->client_id));
 
     taskDocumentsTab($task)->assertForbidden();
+});
+
+/**
+ * Mounts the Soubory tab of a client as the Admin sees it on the detail page.
+ */
+function clientDocumentsTab(Client $client): Testable
+{
+    return Livewire::test(ClientDocumentsRelationManager::class, ['ownerRecord' => $client, 'pageClass' => ViewClient::class]);
+}
+
+/**
+ * One fictional file on each kind of owner of a client: the client, a project, a task and a comment.
+ *
+ * @return array{client: Client, project: Project, task: Task, files: array<string, Document>}
+ */
+function clientWithFilesOfEveryOwner(string $key = 'CLD'): array
+{
+    $project = tabProject($key);
+    $client = Client::query()->findOrFail($project->client_id);
+    $task = app(CreateTask::class)->handle(test()->admin, $project, ['title' => 'Example client tab task']);
+    $comment = app(AddTaskComment::class)->handle(test()->admin, $task, 'Example comment body');
+    $attach = static fn (object $owner, string $name): Document => app(AttachDocuments::class)
+        ->handle(test()->admin, $owner, [DocumentFixtures::upload($name)])
+        ->firstOrFail();
+
+    return [
+        'client' => $client,
+        'project' => $project,
+        'task' => $task,
+        'files' => [
+            'client' => $attach($client, 'client-example.txt'),
+            'project' => $attach($project, 'project-example.txt'),
+            'task' => $attach($task, 'task-example.txt'),
+            'task_comment' => $attach($comment, 'comment-example.txt'),
+        ],
+    ];
+}
+
+it('lists the Soubory tab among the relations of the client resource', function (): void {
+    expect(ClientResource::getRelations())->toContain(ClientDocumentsRelationManager::class);
+});
+
+it('has Czech labels for the owner kinds', function (): void {
+    expect(array_map(static fn (DocumentOwnerType $type): string => $type->getLabel(), DocumentOwnerType::cases()))
+        ->toBe(['Klient', 'Projekt', 'Úkol', 'Komentář']);
+});
+
+it('lists every file of the client with the label and name of its owner', function (): void {
+    $set = clientWithFilesOfEveryOwner();
+    $files = $set['files'];
+
+    clientDocumentsTab($set['client'])
+        ->assertCanSeeTableRecords(array_values($files))
+        ->assertTableColumnStateSet('owner', 'Klient', $files['client'])
+        ->assertTableColumnStateSet('owner', 'Projekt', $files['project'])
+        ->assertTableColumnStateSet('owner', 'Úkol', $files['task'])
+        ->assertTableColumnStateSet('owner', 'Komentář', $files['task_comment']);
+
+    $ownerName = static fn (Document $document): ?string => DocumentColumns::ownerName(Document::query()->with('owner')->findOrFail($document->id));
+
+    expect($ownerName($files['client']))->toBe($set['client']->name)
+        ->and($ownerName($files['project']))->toBe($set['project']->name)
+        ->and($ownerName($files['task']))->toBe($set['task']->reference)
+        ->and($ownerName($files['task_comment']))->toBe($set['task']->reference);
+});
+
+it('never lists a file of another client', function (): void {
+    $mine = clientWithFilesOfEveryOwner('MIN');
+    $theirs = clientWithFilesOfEveryOwner('THR');
+
+    clientDocumentsTab($mine['client'])
+        ->assertCanSeeTableRecords(array_values($mine['files']))
+        ->assertCanNotSeeTableRecords(array_values($theirs['files']));
+});
+
+it('keeps listing the files of an archived project and task of the client with their owner', function (): void {
+    $set = clientWithFilesOfEveryOwner();
+
+    app(ArchiveTask::class)->handle($this->admin, $set['task']);
+    $set['project']->delete();
+
+    clientDocumentsTab($set['client'])
+        ->assertCanSeeTableRecords(array_values($set['files']))
+        ->assertTableColumnStateSet('owner', 'Projekt', $set['files']['project'])
+        ->assertTableColumnStateSet('owner', 'Úkol', $set['files']['task'])
+        ->assertTableColumnStateSet('owner', 'Komentář', $set['files']['task_comment']);
+
+    $archived = DocumentColumns::withOwners(Document::query())->findOrFail($set['files']['project']->id);
+    $comment = DocumentColumns::withOwners(Document::query())->findOrFail($set['files']['task_comment']->id);
+
+    expect(DocumentColumns::ownerName($archived))->toBe($set['project']->name)
+        ->and(DocumentColumns::ownerName($comment))->toBe($set['task']->reference);
+});
+
+it('loads the owners of the rows without one query per row', function (): void {
+    $few = clientWithFilesOfEveryOwner('FEW');
+    $queries = static function (Client $client): int {
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $documents = DocumentColumns::withOwners(Document::query()->where('client_id', $client->id))->get();
+        $documents->each(static fn (Document $document): ?string => DocumentColumns::ownerName($document));
+
+        $count = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        return $count;
+    };
+
+    $baseline = $queries($few['client']);
+
+    // Four more files on the same kinds of owner: the count of queries must not grow.
+    foreach (['project', 'task'] as $kind) {
+        $owner = $kind === 'project' ? $few['project'] : $few['task'];
+
+        foreach (['more-one', 'more-two'] as $name) {
+            app(AttachDocuments::class)->handle($this->admin, $owner, [DocumentFixtures::upload($name.'-'.$kind.'.txt')]);
+        }
+    }
+
+    expect(Document::query()->where('client_id', $few['client']->id)->count())->toBe(8)
+        ->and($queries($few['client']))->toBe($baseline);
+});
+
+it('stores an upload on the client tab as a client file that is hidden, with no visibility switch', function (): void {
+    $client = Client::factory()->create();
+
+    $tab = clientDocumentsTab($client)->mountAction(TestAction::make('upload')->table());
+
+    $tab->assertSchemaComponentHidden('visible_to_client');
+
+    uploadThroughTab(clientDocumentsTab($client), [tabUpload('client-upload-example.txt')], ['visible_to_client' => true])
+        ->assertHasNoFormErrors();
+
+    $document = Document::query()->firstOrFail();
+
+    expect($document->owner_type)->toBe('client')
+        ->and($document->owner_id)->toBe($client->id)
+        ->and($document->client_id)->toBe($client->id)
+        ->and($document->project_id)->toBeNull()
+        ->and($document->visible_to_client)->toBeFalse();
+});
+
+it('answers 403 when a Partner mounts the client Soubory tab', function (): void {
+    $client = Client::factory()->create();
+    $this->actingAs(Canary::partnerFor($client->id));
+
+    clientDocumentsTab($client)->assertForbidden();
 });
