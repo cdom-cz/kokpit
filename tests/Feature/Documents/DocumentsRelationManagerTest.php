@@ -8,9 +8,14 @@ use App\Domain\Documents\Models\Document;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Tasks\Actions\ArchiveTask;
+use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Models\Task;
 use App\Filament\RelationManagers\ProjectDocumentsRelationManager;
+use App\Filament\RelationManagers\TaskDocumentsRelationManager;
 use App\Filament\Resources\ProjectResource;
 use App\Filament\Resources\ProjectResource\Pages\ViewProject;
+use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use App\Filament\Support\DocumentColumns;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
@@ -243,4 +248,82 @@ it('sorts the names of the files in Czech order', function (): void {
 
     expect($names(projectDocumentsTab($project)->sortTable('name')))->toBe(['Cihla-example.txt', 'Čočka-example.txt', 'Chata-example.txt'])
         ->and($names(projectDocumentsTab($project)->sortTable('name', 'desc')))->toBe(['Chata-example.txt', 'Čočka-example.txt', 'Cihla-example.txt']);
+});
+
+/**
+ * A task of a fresh project, written through the domain Action.
+ */
+function tabTask(string $key = 'TSK'): Task
+{
+    return app(CreateTask::class)->handle(test()->admin, tabProject($key), ['title' => 'Example tab task']);
+}
+
+/**
+ * Mounts the Soubory tab of a task as the Admin sees it on the detail page.
+ */
+function taskDocumentsTab(Task $task): Testable
+{
+    return Livewire::test(TaskDocumentsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => ViewTask::class]);
+}
+
+it('stores a task file with the project and client of the task, visible by default', function (): void {
+    $task = tabTask();
+    $project = Project::query()->findOrFail($task->project_id);
+
+    uploadThroughTab(taskDocumentsTab($task), [tabUpload('task-example.txt')], ['description' => 'Example task notes'])
+        ->assertHasNoFormErrors();
+
+    $document = Document::query()->firstOrFail();
+
+    expect($document->owner_type)->toBe('task')
+        ->and($document->owner_id)->toBe($task->id)
+        ->and($document->project_id)->toBe($project->id)
+        ->and($document->client_id)->toBe($project->client_id)
+        ->and($document->visible_to_client)->toBeTrue()
+        ->and($document->description)->toBe('Example task notes');
+
+    taskDocumentsTab($task)->assertCanSeeTableRecords([$document]);
+});
+
+it('stores a task file hidden when the Admin turns the switch off at upload', function (): void {
+    $task = tabTask();
+
+    uploadThroughTab(taskDocumentsTab($task), [tabUpload('hidden-task-example.txt')], ['visible_to_client' => false]);
+
+    expect(Document::query()->firstOrFail()->visible_to_client)->toBeFalse();
+});
+
+it('lists the files of a task only on that task and not the files of the project or another task', function (): void {
+    $task = tabTask();
+    $other = app(CreateTask::class)->handle($this->admin, Project::query()->findOrFail($task->project_id), ['title' => 'Example other task']);
+    $own = app(AttachDocuments::class)->handle($this->admin, $task, [DocumentFixtures::upload('own-task-example.txt')])->firstOrFail();
+    $foreign = app(AttachDocuments::class)->handle($this->admin, $other, [DocumentFixtures::upload('other-task-example.txt')])->firstOrFail();
+    $onProject = app(AttachDocuments::class)->handle($this->admin, Project::query()->findOrFail($task->project_id), [DocumentFixtures::upload('project-example.txt')])->firstOrFail();
+
+    taskDocumentsTab($task)
+        ->assertCanSeeTableRecords([$own])
+        ->assertCanNotSeeTableRecords([$foreign, $onProject]);
+});
+
+it('lists the files of an archived task for the Admin and refuses a new upload with the archived error', function (): void {
+    $task = tabTask();
+    $document = app(AttachDocuments::class)->handle($this->admin, $task, [DocumentFixtures::upload('kept-example.txt')])->firstOrFail();
+
+    app(ArchiveTask::class)->handle($this->admin, $task);
+
+    $archived = Task::query()->onlyTrashed()->findOrFail($task->id);
+
+    $tab = taskDocumentsTab($archived)->assertCanSeeTableRecords([$document]);
+
+    uploadThroughTab($tab, [tabUpload('late-example.txt')]);
+
+    expect($tab->errors()->get('mountedActions.0.data.files'))->toBe([__('documents.errors.owner_archived')])
+        ->and(Document::query()->count())->toBe(1);
+});
+
+it('answers 403 when a Partner mounts the task Soubory tab', function (): void {
+    $task = tabTask();
+    $this->actingAs(Canary::partnerFor(Project::query()->findOrFail($task->project_id)->client_id));
+
+    taskDocumentsTab($task)->assertForbidden();
 });
