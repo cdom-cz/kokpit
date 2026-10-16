@@ -547,3 +547,102 @@ describe('matrix', function (): void {
         expect(fn () => Gate::forUser($partnerB)->authorize('view', $world['kinds']['project_visible']))->toThrow(AuthorizationException::class);
     });
 });
+
+/**
+ * The ids a hand-built provider returns for the client of a viewer: the scope written out as plain queries that
+ * run as the Admin with a fixed client filter. With both switches on it is the rule of Document::constrainForPartner()
+ * and must agree with the real scope; each switch removes one rule, which is the mutation the self-check applies.
+ *
+ * @param  bool  $flagRule  keep the `visible_to_client` condition (the leaky provider drops it)
+ * @param  bool  $internalRule  keep the delegation to the non-internal comments (the leaky provider takes every comment)
+ * @return list<string>
+ */
+function documentVisibilityHandBuiltIds(?string $clientId, bool $flagRule, bool $internalRule): array
+{
+    if ($clientId === null) {
+        return [];
+    }
+
+    $projects = Project::query()->where('client_id', $clientId)->where('client_visible', true)->select('projects.id');
+    $tasks = Task::query()->whereIn('project_id', $projects)->select('tasks.id');
+    $comments = TaskComment::query()->whereIn('task_id', $tasks)->when($internalRule, static fn ($query) => $query->where('is_internal', false))->select('task_comments.id');
+
+    $query = Document::query()
+        ->where('client_id', $clientId)
+        ->where(static fn ($owners) => $owners
+            ->where(static fn ($project) => $project->where('owner_type', 'project')->whereIn('owner_id', $projects))
+            ->orWhere(static fn ($task) => $task->where('owner_type', 'task')->whereIn('owner_id', $tasks))
+            ->orWhere(static fn ($comment) => $comment->where('owner_type', 'task_comment')->whereIn('owner_id', $comments)))
+        ->when($flagRule, static fn ($files) => $files->where('visible_to_client', true));
+
+    /** @var list<string> $ids */
+    $ids = $query->pluck('id')->all();
+    sort($ids, SORT_STRING);
+
+    return $ids;
+}
+
+/**
+ * A provider over the hand-built query, run as the Admin, for the viewers 'a', 'b' and 'none'.
+ *
+ * @return Closure(string): list<string>
+ */
+function documentVisibilityHandBuiltProvider(object $test, User $admin, string $clientA, string $clientB, bool $flagRule, bool $internalRule): Closure
+{
+    return static function (string $viewer) use ($test, $admin, $clientA, $clientB, $flagRule, $internalRule): array {
+        $test->actingAs($admin);
+
+        return documentVisibilityHandBuiltIds(match ($viewer) {
+            'a' => $clientA,
+            'b' => $clientB,
+            default => null,
+        }, $flagRule, $internalRule);
+    };
+}
+
+describe('mutation self-check', function (): void {
+    it('reports no violation for the real scope and for the hand-built reference that keeps both rules', function (): void {
+        $world = documentVisibilityWorld($this->admin, $this->clientA, $this->clientB);
+        $viewers = ['a' => $this->partnerA, 'b' => Canary::partnerFor($this->clientB), 'none' => Canary::partnerFor(null)];
+
+        $real = function (string $viewer) use ($viewers): array {
+            $this->actingAs($viewers[$viewer]);
+
+            return documentVisibilityScopedIds();
+        };
+        $reference = documentVisibilityHandBuiltProvider($this, $this->admin, $this->clientA, $this->clientB, flagRule: true, internalRule: true);
+
+        expect(documentVisibilityViolations($world['kinds'], 'initial', $real))->toBe([])
+            ->and(documentVisibilityViolations($world['kinds'], 'initial', $reference))->toBe([]);
+    });
+
+    it('names the hidden project file and the hidden task file when the scope loses the flag condition', function (): void {
+        $world = documentVisibilityWorld($this->admin, $this->clientA, $this->clientB);
+        $leaky = documentVisibilityHandBuiltProvider($this, $this->admin, $this->clientA, $this->clientB, flagRule: false, internalRule: true);
+
+        $violations = documentVisibilityViolations($world['kinds'], 'initial', $leaky);
+
+        expect($violations)->toContain('a sees project_hidden')
+            ->and($violations)->toContain('a sees task_hidden')
+            ->and($violations)->not->toBe([]);
+    });
+
+    it('names the internal-comment file when the scope delegates to an unscoped comment set', function (): void {
+        $world = documentVisibilityWorld($this->admin, $this->clientA, $this->clientB);
+        $leaky = documentVisibilityHandBuiltProvider($this, $this->admin, $this->clientA, $this->clientB, flagRule: true, internalRule: false);
+
+        $violations = documentVisibilityViolations($world['kinds'], 'initial', $leaky);
+
+        expect($violations)->toBe(['a sees internal_comment_visible']);
+    });
+
+    it('names a missing file as well, so a scope that hides too much fails the matrix too', function (): void {
+        $world = documentVisibilityWorld($this->admin, $this->clientA, $this->clientB);
+        $silent = static fn (string $viewer): array => [];
+
+        $violations = documentVisibilityViolations($world['kinds'], 'initial', $silent);
+
+        expect($violations)->toContain('a misses project_visible')
+            ->and($violations)->toContain('b misses other_client_project_visible');
+    });
+});
