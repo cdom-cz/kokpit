@@ -16,6 +16,7 @@ use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Pipeline\Pipeline;
+use Illuminate\Queue\Attributes\Timeout;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -61,6 +62,31 @@ function archiveRun(string $archiveId): void
 function archiveRecord(string $archiveId): DocumentArchive
 {
     return DocumentArchive::query()->findOrFail($archiveId);
+}
+
+/**
+ * Records a pending archive request of the given documents for the signed-in Admin; the build is not run.
+ *
+ * @param  list<Document>  $documents
+ */
+function archivePending(array $documents): DocumentArchive
+{
+    $admin = auth()->user();
+    assert($admin instanceof User);
+
+    Queue::fake();
+
+    return app(RequestDocumentArchive::class)->handle($admin, array_map(static fn (Document $document): string => $document->getKey(), $documents));
+}
+
+/**
+ * The temporary files of the archive build that are lying around.
+ *
+ * @return list<string>
+ */
+function archiveTemporaryFiles(): array
+{
+    return glob(sys_get_temp_dir().'/kokpit-zip-*') ?: [];
 }
 
 /**
@@ -285,5 +311,126 @@ describe('the bulk action', function (): void {
         Queue::assertNothingPushed();
 
         expect(DocumentArchive::query()->count())->toBe(0);
+    });
+});
+
+describe('the build job', function (): void {
+    it('does nothing on a second run for the same record', function (): void {
+        $archive = archivePending([archiveFile('once-example.txt', 'Fictional once')]);
+
+        archiveRun($archive->getKey());
+
+        $ready = archiveRecord($archive->getKey());
+        $path = $ready->path;
+        assert(is_string($path));
+        Storage::disk()->put($path, 'marker of the first run');
+
+        archiveRun($archive->getKey());
+
+        expect(archiveRecord($archive->getKey())->completed_at?->equalTo($ready->completed_at))->toBeTrue()
+            ->and(Storage::disk()->get($path))->toBe('marker of the first run')
+            ->and(Storage::disk()->allFiles('document-archives'))->toBe([$path]);
+    });
+
+    it('does nothing for a failed record and for a record that does not exist', function (): void {
+        $archive = archivePending([archiveFile('failed-example.txt', 'Fictional failed')]);
+        $archive->markFailed();
+
+        archiveRun($archive->getKey());
+        archiveRun((string) Str::uuid());
+
+        expect(archiveRecord($archive->getKey())->status)->toBe(DocumentArchiveStatus::Failed)
+            ->and(Storage::disk()->allFiles('document-archives'))->toBe([]);
+    });
+
+    it('overwrites the object of an earlier attempt that died after writing and becomes ready', function (): void {
+        $archive = archivePending([archiveFile('rerun-example.txt', 'Fictional rerun')]);
+        Storage::disk()->put($archive->storagePath(), 'half of an earlier attempt');
+
+        archiveRun($archive->getKey());
+
+        $zip = new ZipArchive;
+        expect(archiveRecord($archive->getKey())->status)->toBe(DocumentArchiveStatus::Ready)
+            ->and(Storage::disk()->allFiles('document-archives'))->toBe([$archive->storagePath()])
+            ->and($zip->open(Storage::disk()->path($archive->storagePath())))->toBeTrue();
+
+        expect($zip->numFiles)->toBe(1)
+            ->and($zip->getFromName('rerun-example.txt'))->toBe('Fictional rerun');
+
+        $zip->close();
+    });
+
+    it('removes its temporary file after a success and after an exception', function (): void {
+        $before = archiveTemporaryFiles();
+
+        $good = archivePending([archiveFile('good-example.txt', 'Fictional good')]);
+        archiveRun($good->getKey());
+
+        expect(archiveTemporaryFiles())->toBe($before);
+
+        $broken = archiveFile('broken-example.txt', 'Fictional broken');
+        $brokenArchive = archivePending([$broken]);
+        Storage::disk()->deleteDirectory('');
+
+        expect(fn () => archiveRun($brokenArchive->getKey()))->toThrow(RuntimeException::class)
+            ->and(archiveTemporaryFiles())->toBe($before)
+            ->and(archiveRecord($brokenArchive->getKey())->status)->toBe(DocumentArchiveStatus::Pending)
+            ->and(Storage::disk()->exists($brokenArchive->storagePath()))->toBeFalse();
+    });
+
+    it('leaves out a file that was deleted after the request and fails when none is left', function (): void {
+        $kept = archiveFile('kept-example.txt', 'Fictional kept');
+        $gone = archiveFile('gone-example.txt', 'Fictional gone');
+        $archive = archivePending([$kept, $gone]);
+        $gone->delete();
+
+        archiveRun($archive->getKey());
+
+        $zip = new ZipArchive;
+        expect($zip->open(Storage::disk()->path($archive->storagePath())))->toBeTrue();
+
+        expect($zip->numFiles)->toBe(1)
+            ->and($zip->getFromName('kept-example.txt'))->toBe('Fictional kept');
+
+        $zip->close();
+
+        $lonely = archiveFile('lonely-example.txt', 'Fictional lonely');
+        $emptied = archivePending([$lonely]);
+        $lonely->delete();
+
+        expect(fn () => archiveRun($emptied->getKey()))->toThrow(RuntimeException::class)
+            ->and(archiveRecord($emptied->getKey())->status)->toBe(DocumentArchiveStatus::Pending);
+    });
+
+    it('reads a file the Partner cannot see, because the job runs as system', function (): void {
+        $client = Client::factory()->create();
+        $hidden = app(AttachDocuments::class)->handle($this->admin, $client, [DocumentFixtures::upload('hidden-example.txt', 'Fictional hidden')])->firstOrFail();
+        $archive = archivePending([$hidden]);
+
+        $this->actingAs(Canary::partnerFor((string) $client->getKey()));
+
+        // The Partner reads neither the file nor the archive record ...
+        expect(Document::query()->count())->toBe(0)
+            ->and(DocumentArchive::query()->count())->toBe(0);
+
+        // ... but the job, entered through its own middleware, does.
+        archiveRun($archive->getKey());
+
+        $this->actingAs($this->admin);
+
+        $zip = new ZipArchive;
+        expect(archiveRecord($archive->getKey())->status)->toBe(DocumentArchiveStatus::Ready)
+            ->and($zip->open(Storage::disk()->path($archive->storagePath())))->toBeTrue();
+
+        expect($zip->getFromName('hidden-example.txt'))->toBe('Fictional hidden');
+
+        $zip->close();
+    });
+
+    it('declares its idempotence and a timeout below the supervisor', function (): void {
+        $timeout = (new ReflectionClass(BuildDocumentArchive::class))->getAttributes(Timeout::class);
+
+        expect($timeout)->toHaveCount(1)
+            ->and($timeout[0]->newInstance()->timeout)->toBeLessThan(300);
     });
 });
