@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Support\DocumentUrl;
+use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -148,6 +149,11 @@ function walkedResourceMap(string $canaryRecordA, string $canaryRecordB, string 
         static fn (): string => TimeEntry::query()->where('description', $canary)->firstOrFail()->id,
     );
 
+    // The transaction canary is the counterparty.
+    $transactionId = static fn (string $canary): string => app(PartnerContext::class)->runAsSystem(
+        static fn (): string => Transaction::query()->where('counterparty', $canary)->firstOrFail()->id,
+    );
+
     return [
         'canary-records' => ['partner' => true, 'a' => $canaryRecordA, 'b' => $canaryRecordB],
         'my-projects' => ['partner' => true, 'a' => $projectId($canaryA), 'b' => $projectId($canaryB)],
@@ -155,6 +161,7 @@ function walkedResourceMap(string $canaryRecordA, string $canaryRecordB, string 
         'clients' => ['partner' => false, 'a' => $clientId($canaryA), 'b' => $clientId($canaryB)],
         'tasks' => ['partner' => false, 'a' => $taskReference($canaryA), 'b' => $taskReference($canaryB)],
         'time-entries' => ['partner' => false, 'a' => $entryId($canaryA), 'b' => $entryId($canaryB)],
+        'transactions' => ['partner' => false, 'a' => $transactionId($canaryA), 'b' => $transactionId($canaryB)],
         'my-tasks' => ['partner' => true, 'a' => $taskReference($canaryA), 'b' => $taskReference($canaryB)],
     ];
 }
