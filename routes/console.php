@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Api\Jobs\PurgeExpiredIdempotencyKeys;
+use App\Domain\Documents\Jobs\PruneExpiredDocumentArchives;
 use App\Domain\Operations\Health\Heartbeats;
 use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
 use App\Domain\Reports\Jobs\PruneExpiredReportExports;
@@ -86,4 +87,12 @@ Schedule::command('kokpit:rates:download', ['--final'])
 Schedule::job(new PruneExpiredReportExports)
     ->daily()
     ->name('kokpit-report-export-prune')
+    ->onOneServer();
+
+// Deletes the object and the record of every ZIP archive past kokpit.documents.archive.ttl_days (7), so no archive of
+// client files outlives the promise of D-08. A pending or failed record goes 7 days after its creation. Runs as
+// system, so it prunes the archives of every Admin.
+Schedule::job(new PruneExpiredDocumentArchives)
+    ->daily()
+    ->name('kokpit-document-archive-prune')
     ->onOneServer();
