@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-07-PLAN.md
-last_updated: "2026-10-16T13:19:48.681Z"
+stopped_at: Completed 09-08-PLAN.md
+last_updated: "2026-10-16T13:35:19.749Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 0f8c2add163218c87307a9e2f68dec4ceb9469c7
+state_head: ac05585d9618dcffaa2d416753a9371ecc5462a2
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 157
+  completed_plans: 158
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 11 of 24
+Plan: 12 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -219,6 +219,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P06 | 25 min | 3 tasks | 10 files |
 | Phase 09 P09 | 12 min | 2 tasks | 10 files |
 | Phase 09 P07 | 35 min | 3 tasks | 11 files |
+| Phase 09 P08 | 45 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -527,6 +528,7 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-07: DeleteDocument verifies each stored object is gone after the Eloquent delete (the medialibrary remover swallows disk errors) and rolls back otherwise
 - [Phase 09]: 09-07: the client visibility switch is decided per file (project, task and non-internal comment files), also on the client tab
 - [Phase 09]: 09-07: bulk delete counts the selection from the selection state, not from getSelectedTableRecords(false), which Filament caches
+- [Phase 09]: 09-08: Partner file read grant is the Document scope repeated by DocumentPolicy::view (flag, shareable owner, own client, still returned by the scoped query); Partner Soubory tabs are read-only over a shared ShowsPartnerDocuments trait with the pinned four-column Partner builder
 
 ### Pending Todos
 
@@ -577,6 +579,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T13:19:48.117Z
-Stopped at: Completed 09-07-PLAN.md
+Last session: 2026-10-16T13:35:19.105Z
+Stopped at: Completed 09-08-PLAN.md
 Resume file: None
