@@ -27,6 +27,9 @@ use OverflowException;
  * value. The first problem is thrown as a field error keyed by the data key, with a Czech message from
  * `finance.transactions.errors`.
  *
+ * An own exchange rate (`exchange_rate`, with `exchange_unit_amount`, default 1) is read by `customRate()`; the
+ * data naming `exchange_rate` with null sets `customRateCleared`, which the update Action turns into dropping it.
+ *
  * The category, client and project are read under a share lock, so the caller MUST run inside its transaction
  * or the locks end with the statement. A category, client, project or currency that the stored transaction
  * already carries is accepted as it is (a later archive must not block editing the description), but a changed
@@ -48,6 +51,8 @@ final readonly class TransactionInput
         public Money $amount,
         public ?Money $czkAmount,
         public ?bool $czkManual,
+        public ?CustomRate $customRate,
+        public bool $customRateCleared,
         public ?string $description,
         public ?string $counterparty,
         public ?string $documentNumber,
@@ -64,6 +69,8 @@ final readonly class TransactionInput
     {
         $type = self::type($data, $current);
         $day = self::day($data, $current);
+        $czkAmount = self::czkAmount($data);
+        $customRate = self::customRate($data);
         $currency = self::currency($data, $current);
         $amount = self::amount($data, $current, $currency);
         $categoryId = self::categoryId($data, $current);
@@ -78,8 +85,10 @@ final readonly class TransactionInput
             transactionDate: $day,
             categoryId: $categoryId,
             amount: $amount,
-            czkAmount: self::czkAmount($data),
+            czkAmount: $czkAmount,
             czkManual: self::flag($data['czk_manual'] ?? null),
+            customRate: $customRate,
+            customRateCleared: array_key_exists('exchange_rate', $data) && $data['exchange_rate'] === null,
             description: self::text($data, $current, 'description', 'description', self::DESCRIPTION_MAX_LENGTH),
             counterparty: self::text($data, $current, 'counterparty', 'counterparty', self::COUNTERPARTY_MAX_LENGTH),
             documentNumber: self::text($data, $current, 'document_number', 'document_number', self::DOCUMENT_NUMBER_MAX_LENGTH),
@@ -222,6 +231,25 @@ final readonly class TransactionInput
         }
 
         return $czk;
+    }
+
+    /**
+     * The own rate of this transaction, null when none is given (D-06).
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private static function customRate(array $data): ?CustomRate
+    {
+        $value = $data['exchange_rate'] ?? null;
+
+        if ($value === null) {
+            return null;
+        }
+
+        $rate = str_replace(',', '.', self::decimal($value, 'exchange_rate', 'rate_invalid'));
+        $unit = $data['exchange_unit_amount'] ?? 1;
+
+        return new CustomRate($rate, is_int($unit) ? $unit : 1);
     }
 
     /**

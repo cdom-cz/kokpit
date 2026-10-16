@@ -287,6 +287,71 @@ describe('the CZK figure and its snapshot', function (): void {
     });
 });
 
+describe('the custom CZK source', function (): void {
+    /**
+     * A valid EUR transaction booked at an own rate; overrides replace single columns.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    $custom = static fn (array $overrides = []): array => [
+        'amount_minor' => 10000,
+        'amount_currency' => 'EUR',
+        'czk_minor' => 251250,
+        'czk_source' => 'custom',
+        'exchange_rate' => '25.1250000000',
+        'exchange_unit_amount' => 1,
+        'exchange_rate_date' => '2026-10-14',
+        ...$overrides,
+    ];
+
+    it('accepts an own rate with its complete positive snapshot', function () use ($custom): void {
+        RawSql::expectAllowed(fn () => transactionTablesInsert($custom()));
+        RawSql::expectAllowed(fn () => transactionTablesInsert($custom(['exchange_unit_amount' => 100])));
+    });
+
+    it('refuses an own rate with an incomplete or non-positive snapshot', function (array $overrides) use ($custom): void {
+        RawSql::expectSqlState('23514', fn () => transactionTablesInsert($custom($overrides)));
+    })->with([
+        'without a rate' => [['exchange_rate' => null]],
+        'without a unit amount' => [['exchange_unit_amount' => null]],
+        'without a rate date' => [['exchange_rate_date' => null]],
+        'a zero rate' => [['exchange_rate' => '0']],
+        'a zero unit amount' => [['exchange_unit_amount' => 0]],
+    ]);
+
+    it('refuses an own rate on a CZK row because the identity check is unchanged', function () use ($custom): void {
+        RawSql::expectSqlState('23514', fn () => transactionTablesInsert($custom(['amount_currency' => 'CZK'])));
+    });
+
+    it('still refuses a snapshot on a manual row and an unknown source', function () use ($custom): void {
+        RawSql::expectSqlState('23514', fn () => transactionTablesInsert($custom(['czk_source' => 'manual'])));
+        RawSql::expectSqlState('23514', fn () => transactionTablesInsert($custom(['czk_source' => 'guess'])));
+    });
+
+    it('turns own-rate rows into manual rows when the migration is rolled back', function () use ($custom): void {
+        $id = transactionTablesInsert($custom());
+
+        $migration = require database_path('migrations/2026_10_16_000600_add_custom_czk_source_to_transactions.php');
+        $migration->down();
+
+        /** @var object{czk_source: string, czk_minor: int, exchange_rate: string|null, exchange_unit_amount: int|null, exchange_rate_date: string|null} $row */
+        $row = DB::selectOne('select czk_source, czk_minor, exchange_rate, exchange_unit_amount, exchange_rate_date from transactions where id = ?', [$id]);
+
+        expect($row->czk_source)->toBe('manual')
+            ->and($row->czk_minor)->toBe(251250)
+            ->and($row->exchange_rate)->toBeNull()
+            ->and($row->exchange_unit_amount)->toBeNull()
+            ->and($row->exchange_rate_date)->toBeNull();
+
+        RawSql::expectSqlState('23514', fn () => transactionTablesInsert($custom()));
+
+        $migration->up();
+
+        RawSql::expectAllowed(fn () => transactionTablesInsert($custom()));
+    });
+});
+
 describe('client and project', function (): void {
     /**
      * Two fictional clients, one project of the first, and a client without a project.
