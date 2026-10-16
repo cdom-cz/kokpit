@@ -20,6 +20,7 @@ use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportTesting\Testable;
@@ -192,15 +193,99 @@ function failDeletingOn(array $paths, bool $throw): void
     Storage::set('local', $failing);
 }
 
-it('keeps the row, the media and the object when the disk throws on delete', function (): void {
+it('deletes the rows and leaves the reported object standing when the disk throws on delete (WR-01)', function (): void {
     $document = app(AttachDocuments::class)
         ->handle($this->admin, deletionProject(), [DocumentFixtures::upload('kept-example.txt')])
         ->firstOrFail();
     $path = deletionObjectPath($document);
 
     failDeletingOn([$path], throw: true);
+    Exceptions::fake();
 
-    expect(fn () => app(DeleteDocument::class)->handle($this->admin, $document))->toThrow(RuntimeException::class);
+    app(DeleteDocument::class)->handle($this->admin, $document);
+
+    expect(Document::query()->whereKey($document->id)->exists())->toBeFalse()
+        ->and(deletionMedia($document->id))->toBe([])
+        ->and(Activity::query()->forSubject($document)->forEvent('deleted')->count())->toBe(1)
+        ->and(Storage::disk('local')->exists($path))->toBeTrue();
+
+    Exceptions::assertReported(static fn (RuntimeException $e): bool => str_contains($e->getMessage(), 'could not be removed'));
+    Exceptions::assertNotReported(static fn (Throwable $e): bool => str_contains($e->getMessage(), 'kept-example') || str_contains($e->getMessage(), $path));
+});
+
+it('deletes the rows and leaves the reported object standing when the disk answers false (WR-01)', function (): void {
+    $document = app(AttachDocuments::class)
+        ->handle($this->admin, deletionProject(), [DocumentFixtures::upload('stuck-example.txt')])
+        ->firstOrFail();
+    $path = deletionObjectPath($document);
+
+    failDeletingOn([$path], throw: false);
+    Exceptions::fake();
+
+    app(DeleteDocument::class)->handle($this->admin, $document);
+
+    expect(Document::query()->whereKey($document->id)->exists())->toBeFalse()
+        ->and(deletionMedia($document->id))->toBe([])
+        ->and(Activity::query()->forSubject($document)->forEvent('deleted')->count())->toBe(1)
+        ->and(Storage::disk('local')->exists($path))->toBeTrue();
+
+    Exceptions::assertReported(static fn (RuntimeException $e): bool => str_contains($e->getMessage(), 'could not be removed'));
+    Exceptions::assertNotReported(static fn (Throwable $e): bool => str_contains($e->getMessage(), 'stuck-example') || str_contains($e->getMessage(), $path));
+});
+
+it('confirms the delete the Admin asked for even when the object cannot be removed afterwards, without naming it in the report (WR-01)', function (): void {
+    $project = deletionProject();
+    $document = app(AttachDocuments::class)
+        ->handle($this->admin, $project, [DocumentFixtures::upload('failing-example.txt')])
+        ->firstOrFail();
+    $path = deletionObjectPath($document);
+
+    failDeletingOn([$path], throw: true);
+    Exceptions::fake();
+
+    deletionTab($project)
+        ->callAction(TestAction::make('delete')->table($document))
+        ->assertNotified(__('documents.notifications.deleted'));
+
+    Exceptions::assertReported(static fn (RuntimeException $e): bool => str_contains($e->getMessage(), 'could not be removed'));
+    Exceptions::assertNotReported(static fn (Throwable $e): bool => str_contains($e->getMessage(), 'failing-example') || str_contains($e->getMessage(), $path));
+
+    expect(Document::query()->whereKey($document->id)->exists())->toBeFalse()
+        ->and(Storage::disk('local')->exists($path))->toBeTrue();
+});
+
+it('removes the stored object only once the enclosing transaction commits (WR-01)', function (): void {
+    $document = app(AttachDocuments::class)
+        ->handle($this->admin, deletionProject(), [DocumentFixtures::upload('committed-example.txt')])
+        ->firstOrFail();
+    $path = deletionObjectPath($document);
+
+    DB::transaction(function () use ($document, $path): void {
+        app(DeleteDocument::class)->handle($this->admin, $document);
+
+        expect(Document::query()->whereKey($document->id)->exists())->toBeFalse()
+            ->and(Storage::disk('local')->exists($path))->toBeTrue();
+    });
+
+    expect(Storage::disk('local')->exists($path))->toBeFalse()
+        ->and(deletionMedia($document->id))->toBe([]);
+});
+
+it('keeps the row, the media row and the object when the enclosing transaction rolls back (WR-01)', function (): void {
+    $document = app(AttachDocuments::class)
+        ->handle($this->admin, deletionProject(), [DocumentFixtures::upload('rolled-back-example.txt')])
+        ->firstOrFail();
+    $path = deletionObjectPath($document);
+
+    try {
+        DB::transaction(function () use ($document): void {
+            app(DeleteDocument::class)->handle($this->admin, $document);
+
+            throw new RuntimeException('Fictional later failure.');
+        });
+    } catch (RuntimeException) {
+        // The failure after the delete is the point of the test.
+    }
 
     expect(Document::query()->whereKey($document->id)->exists())->toBeTrue()
         ->and(deletionMedia($document->id))->toHaveCount(1)
@@ -208,28 +293,16 @@ it('keeps the row, the media and the object when the disk throws on delete', fun
         ->and(Activity::query()->forSubject($document)->forEvent('deleted')->count())->toBe(0);
 });
 
-it('keeps the row and the media when the disk answers false and leaves the object standing', function (): void {
+it('keeps everything and tells the Admin when the database refuses the delete (WR-01)', function (): void {
+    $project = deletionProject();
     $document = app(AttachDocuments::class)
-        ->handle($this->admin, deletionProject(), [DocumentFixtures::upload('stuck-example.txt')])
+        ->handle($this->admin, $project, [DocumentFixtures::upload('refused-example.txt')])
         ->firstOrFail();
     $path = deletionObjectPath($document);
 
-    failDeletingOn([$path], throw: false);
-
-    expect(fn () => app(DeleteDocument::class)->handle($this->admin, $document))->toThrow(RuntimeException::class, 'could not be removed');
-
-    expect(Document::query()->whereKey($document->id)->exists())->toBeTrue()
-        ->and(deletionMedia($document->id))->toHaveCount(1)
-        ->and(Storage::disk('local')->exists($path))->toBeTrue();
-});
-
-it('tells the Admin the file was not deleted when the object cannot be removed, without naming it in the report', function (): void {
-    $project = deletionProject();
-    $document = app(AttachDocuments::class)
-        ->handle($this->admin, $project, [DocumentFixtures::upload('failing-example.txt')])
-        ->firstOrFail();
-
-    failDeletingOn([deletionObjectPath($document)], throw: true);
+    Document::deleting(static function (): void {
+        throw new RuntimeException('Fictional database refusal.');
+    });
     Exceptions::fake();
 
     deletionTab($project)
@@ -237,9 +310,10 @@ it('tells the Admin the file was not deleted when the object cannot be removed, 
         ->assertNotified(__('documents.notifications.delete_failed'));
 
     Exceptions::assertReported(static fn (RuntimeException $e): bool => str_contains($e->getMessage(), 'could not be deleted'));
-    Exceptions::assertNotReported(static fn (RuntimeException $e): bool => str_contains($e->getMessage(), 'failing-example'));
 
-    expect(Document::query()->whereKey($document->id)->exists())->toBeTrue();
+    expect(Document::query()->whereKey($document->id)->exists())->toBeTrue()
+        ->and(deletionMedia($document->id))->toHaveCount(1)
+        ->and(Storage::disk('local')->exists($path))->toBeTrue();
 });
 
 it('deletes the files of an archived task for the Admin', function (): void {
@@ -296,16 +370,19 @@ it('keeps going when one selected file was deleted in the meantime and reports b
     $tab->assertNotified(__('documents.notifications.bulk_deleted', ['deleted' => 2, 'failed' => 1]));
 });
 
-it('keeps going when the object of one selected file cannot be removed and reports both numbers', function (): void {
+it('deletes every selected file when the object of one cannot be removed and reports both numbers (WR-01)', function (): void {
     $project = deletionProject();
     $documents = collect(['alpha-example.txt', 'beta-example.txt', 'gamma-example.txt'])
         ->map(fn (string $name): Document => app(AttachDocuments::class)->handle($this->admin, $project, [DocumentFixtures::upload($name)])->firstOrFail());
+    $refused = deletionObjectPath($documents[1]);
 
-    failDeletingOn([deletionObjectPath($documents[1])], throw: true);
+    failDeletingOn([$refused], throw: true);
+    Exceptions::fake();
 
     deletionTab($project)
         ->callTableBulkAction('bulkDelete', $documents)
-        ->assertNotified(__('documents.notifications.bulk_deleted', ['deleted' => 2, 'failed' => 1]));
+        ->assertNotified(__('documents.notifications.bulk_deleted', ['deleted' => 3, 'failed' => 0]));
 
-    expect(Document::query()->pluck('name')->all())->toBe(['beta-example.txt']);
+    expect(Document::query()->count())->toBe(0)
+        ->and(Storage::disk('local')->exists($refused))->toBeTrue();
 });

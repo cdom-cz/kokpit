@@ -12,29 +12,40 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
+use Spatie\MediaLibrary\MediaCollections\Filesystem;
+use Throwable;
 
 /**
- * Permanently deletes a file: the documents row, its media row and the stored object (DO-03, D-09).
+ * Permanently deletes a file: the documents row, its media row and the stored object (DO-03, D-09, D-23).
  *
  * The deletion is one-way by the owner's decision (no trash, nothing to restore), so the caller asks for a
  * confirmation before it gets here. The actor is checked against the `delete` ability first; the work then
- * runs as system, because `Media` is closed to Partners and the package hook that removes the media would
- * otherwise find no rows in a Partner's context and leave the object behind (research Pitfall 3).
+ * runs as system, because `Media` is closed to Partners and the media rows would otherwise be invisible in a
+ * Partner's context (research Pitfall 3).
  *
- * Inside one transaction the row is re-read with `lockForUpdate()` and deleted through Eloquent, so the
- * medialibrary hook removes the media row and its observer the object, and the allowlisted activity row
- * of the deleted event is written. The package's file remover swallows (and reports) a failing disk, so
- * the Action does not trust it: it checks that every object is gone, makes one strict attempt where one is
- * left, and throws when it still stands. The transaction then rolls back and the row, the media row and
- * the activity record stay as they were (research Pitfall 4). The rare orphan left by a commit that fails
- * after the object was removed is found by the consistency check of plan 09-20.
+ * The database comes first and the irreversible side effect last (09-REVIEW.md WR-01, which supersedes the
+ * order of plan 09-07). Inside one transaction the row is re-read with `lockForUpdate()`, its media rows are
+ * deleted with a query-builder delete (no model event, so the medialibrary observer cannot remove the file
+ * now) and the document is deleted with `deletePreservingMedia()`; the allowlisted activity row of the deleted
+ * event is written in the same transaction. The stored objects are removed by a `DB::afterCommit()` callback,
+ * which Laravel runs only after the outermost enclosing transaction commits and drops when any enclosing
+ * transaction rolls back. A rollback anywhere (a later receipt, the transaction row, the commit itself)
+ * therefore never costs an object: row, media row and object all stay.
+ *
+ * That timing deviates from D-09 ("together with the row") by the owner decision D-23: the object is removed
+ * after the commit; an object the disk then refuses is reported and retried by the queued job (3 tries), and
+ * when every try fails the failed-job alert reaches the Admin. A refused object can no longer undo or block a
+ * delete the actor confirmed.
+ *
+ * The after-commit callback may run outside the system context, so it queries no model: it works on the media
+ * instances read inside the transaction and on the disk only, and it never throws.
  */
 final class DeleteDocument
 {
     public function __construct(private readonly PartnerContext $context) {}
 
     /**
-     * @throws RuntimeException when a stored object cannot be removed; nothing is deleted then
+     * @throws RuntimeException when the delete is refused or the database fails; nothing is deleted then
      */
     public function handle(User $actor, Document $document): void
     {
@@ -44,51 +55,72 @@ final class DeleteDocument
             DB::transaction(function () use ($document): void {
                 $locked = Document::query()->whereKey($document->getKey())->lockForUpdate()->firstOrFail();
 
-                $objects = $this->objectsOf($locked);
+                $media = Media::query()
+                    ->where('model_type', $locked->getMorphClass())
+                    ->where('model_id', $locked->getKey())
+                    ->get();
 
-                $locked->delete();
+                $objects = [];
 
-                $this->assertObjectsRemoved($objects);
+                foreach ($media as $item) {
+                    $objects[] = ['disk' => $item->disk, 'path' => $item->getPathRelativeToRoot()];
+                }
+
+                if ($media->isNotEmpty()) {
+                    // A query-builder delete fires no model event: the package observer must not remove the file yet.
+                    Media::query()->whereKey($media->modelKeys())->delete();
+                }
+
+                $locked->deletePreservingMedia();
+
+                DB::afterCommit(fn () => $this->removeObjects(array_values($media->all()), $objects));
             });
         });
     }
 
     /**
-     * Where the objects of a document live, read before the media rows go.
+     * Removes the objects of a deleted document after the commit. Queries no model and never throws: the
+     * delete is already committed, so a failure here is reported and left to the retry, not undone.
      *
-     * @return list<array{disk: string, path: string}>
-     */
-    private function objectsOf(Document $document): array
-    {
-        $objects = [];
-
-        foreach (Media::query()->where('model_type', $document->getMorphClass())->where('model_id', $document->getKey())->get() as $media) {
-            $objects[] = ['disk' => $media->disk, 'path' => $media->getPathRelativeToRoot()];
-        }
-
-        return $objects;
-    }
-
-    /**
+     * @param  list<Media>  $media
      * @param  list<array{disk: string, path: string}>  $objects
-     *
-     * @throws RuntimeException when an object is still there after a strict delete
      */
-    private function assertObjectsRemoved(array $objects): void
+    private function removeObjects(array $media, array $objects): void
     {
-        foreach ($objects as $object) {
-            if (! $this->exists($object)) {
-                continue;
-            }
-
-            // The package remover reported its failure and went on; try once more where the error is not swallowed.
-            Storage::disk($object['disk'])->delete($object['path']);
-
-            if ($this->exists($object)) {
-                // No path in the message: the exception can reach a log or a screen.
-                throw new RuntimeException('The stored object of a document could not be removed.');
+        // The package remover (conversions and the empty directory included) swallows and reports a failing disk.
+        foreach ($media as $item) {
+            try {
+                app(Filesystem::class)->removeAllFiles($item);
+            } catch (Throwable) {
+                // The strict check below finds what is left.
             }
         }
+
+        $standing = [];
+        $cause = null;
+
+        foreach ($objects as $object) {
+            try {
+                if ($this->exists($object)) {
+                    // The package remover went on after a failure; try once more where the error is not swallowed.
+                    Storage::disk($object['disk'])->delete($object['path']);
+                }
+
+                if ($this->exists($object)) {
+                    $standing[] = $object;
+                }
+            } catch (Throwable $e) {
+                $cause = $e;
+                $standing[] = $object;
+            }
+        }
+
+        if ($standing === []) {
+            return;
+        }
+
+        // No name and no path in the message: the exception can reach a log or a screen.
+        report(new RuntimeException('A stored object of a deleted document could not be removed ('.($cause === null ? 'the disk kept it' : $cause::class).').'));
     }
 
     /**
