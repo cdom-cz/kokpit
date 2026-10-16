@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Finance\Models;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\DeniesPartners;
@@ -27,7 +28,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * `amount` is the virtual Money attribute over `amount_minor` and `amount_currency`. `czk_minor` is the CZK
  * figure and `czk_source` says where it came from (identity, cnb or manual); for a CNB conversion the three
  * `exchange_*` columns keep the rate that was used. They are a snapshot, never looked up again. `czk_source`
- * stays a plain string here; the write Actions of a later plan bring the enum and the CZK accessor.
+ * casts to {@see CzkSource} and `czk()` reads the figure as Money; the write Actions set both.
  *
  * Only the free text is fillable. The type, category, amounts, CZK figure, snapshot, client and project are set
  * with `forceFill` by trusted code (the Actions), so a request can never write them by mass assignment.
@@ -40,7 +41,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $amount_minor
  * @property string $amount_currency
  * @property int $czk_minor
- * @property string $czk_source
+ * @property CzkSource $czk_source
  * @property numeric-string|null $exchange_rate
  * @property int|null $exchange_unit_amount
  * @property CarbonImmutable|null $exchange_rate_date
@@ -58,6 +59,15 @@ final class Transaction extends KokpitModel implements PartnerIsolated
     use DeniesPartners;
 
     protected $table = 'transactions';
+
+    /**
+     * The CZK figure of the transaction (D-13): the amount itself for CZK, the CNB conversion kept as a
+     * snapshot, or the figure the Admin typed.
+     */
+    public function czk(): Money
+    {
+        return Money::ofMinor($this->czk_minor, 'CZK');
+    }
 
     /**
      * The category, archived or not: an archived category stays on the transactions that used it.
@@ -100,6 +110,7 @@ final class Transaction extends KokpitModel implements PartnerIsolated
             'amount' => MoneyCast::class,
             'amount_minor' => 'integer',
             'czk_minor' => 'integer',
+            'czk_source' => CzkSource::class,
             'exchange_rate' => 'decimal:10',
             'exchange_unit_amount' => 'integer',
             'exchange_rate_date' => 'immutable_date',

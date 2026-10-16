@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
@@ -58,7 +59,7 @@ describe('storing and reading a transaction', function (): void {
             ->and($transaction->amount)->toBeInstanceOf(Money::class)
             ->and($transaction->amount->equals(Money::ofMinor(123450, 'CZK')))->toBeTrue()
             ->and($transaction->czk_minor)->toBe(123450)
-            ->and($transaction->czk_source)->toBe('identity')
+            ->and($transaction->czk_source)->toBe(CzkSource::Identity)
             ->and($transaction->exchange_rate)->toBeNull()
             ->and($transaction->exchange_unit_amount)->toBeNull()
             ->and($transaction->exchange_rate_date)->toBeNull()

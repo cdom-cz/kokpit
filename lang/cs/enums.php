@@ -153,4 +153,10 @@ return [
         'expense' => 'Výdaj',
     ],
 
+    'czk_source' => [
+        'identity' => 'Kč',
+        'cnb' => 'Kurz ČNB',
+        'manual' => 'Zadáno ručně',
+    ],
+
 ];
