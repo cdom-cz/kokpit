@@ -10,6 +10,7 @@ use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
 use App\Domain\TimeTracking\Support\TimerClock;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
@@ -45,6 +46,9 @@ final class DocumentArchive extends KokpitModel implements PartnerIsolated
 
     /** The retention in days when the configuration carries no usable value. */
     private const int DEFAULT_TTL_DAYS = 7;
+
+    /** The day of the download name is the Prague day, like every day the user sees. */
+    private const string DISPLAY_TIMEZONE = 'Europe/Prague';
 
     protected $table = 'document_archives';
 
@@ -97,5 +101,52 @@ final class DocumentArchive extends KokpitModel implements PartnerIsolated
     public function storagePath(): string
     {
         return 'document-archives/'.$this->getKey().'.zip';
+    }
+
+    /**
+     * The name the ZIP is offered under: `soubory-YYYY-MM-DD.zip` with the Prague day of the creation. A file,
+     * client or project name never appears in it.
+     */
+    public function downloadFileName(): string
+    {
+        $created = $this->created_at ?? CarbonImmutable::now();
+
+        return 'soubory-'.$created->setTimezone(self::DISPLAY_TIMEZONE)->format('Y-m-d').'.zip';
+    }
+
+    /**
+     * Whether the ZIP may be offered for download at this instant: finished, with a stored path and not yet
+     * expired (the expiry instant itself is already expired).
+     */
+    public function isDownloadable(CarbonInterface $now): bool
+    {
+        return $this->status === DocumentArchiveStatus::Ready
+            && $this->path !== null
+            && $this->expires_at->greaterThan($now);
+    }
+
+    /**
+     * The archive is finished: the ZIP sits at `$path` and is kept for the retention from now on. One of the two
+     * lifecycle writes (with markFailed()); the database refuses a path that is not the server-generated shape.
+     */
+    public function markReady(string $path, CarbonInterface $now): void
+    {
+        $completedAt = TimerClock::truncate($now);
+
+        $this->forceFill([
+            'status' => DocumentArchiveStatus::Ready,
+            'path' => $path,
+            'completed_at' => $completedAt,
+            'expires_at' => $completedAt->addDays(self::ttlDays()),
+        ])->save();
+    }
+
+    /**
+     * The archive could not be built. The expiry of its creation stays, so the prune removes the record on
+     * schedule. One of the two lifecycle writes.
+     */
+    public function markFailed(): void
+    {
+        $this->forceFill(['status' => DocumentArchiveStatus::Failed])->save();
     }
 }

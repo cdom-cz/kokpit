@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Documents\Enums\DocumentArchiveStatus;
 use App\Domain\Documents\Models\DocumentArchive;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Tests\Support\Canary;
@@ -117,5 +118,112 @@ describe('labels', function (): void {
             ->and(DocumentArchiveStatus::Pending->getColor())->toBe('info')
             ->and(DocumentArchiveStatus::Ready->getColor())->toBe('success')
             ->and(DocumentArchiveStatus::Failed->getColor())->toBe('danger');
+    });
+});
+
+describe('naming', function (): void {
+    it('builds the storage path from the archive id only', function (): void {
+        $this->actingAs(Canary::admin());
+        $archive = documentArchiveCreate();
+
+        expect($archive->storagePath())->toBe('document-archives/'.$archive->getKey().'.zip');
+    });
+
+    it('names the download after the Prague creation day', function (): void {
+        $this->actingAs(Canary::admin());
+
+        // 23:30 UTC on 16 October is already 17 October in Prague.
+        $this->travelTo(CarbonImmutable::parse('2026-10-16 23:30:00', 'UTC'));
+        $archive = documentArchiveCreate(['summary' => 'Příklad Klient s.r.o., faktura.pdf'])->refresh();
+
+        expect($archive->downloadFileName())->toBe('soubory-2026-10-17.zip')
+            ->and($archive->downloadFileName())->not->toContain('Klient');
+
+        $this->travelTo(CarbonImmutable::parse('2026-10-16 10:00:00', 'UTC'));
+
+        expect(documentArchiveCreate()->refresh()->downloadFileName())->toBe('soubory-2026-10-16.zip');
+    });
+});
+
+describe('lifecycle', function (): void {
+    it('expires a new pending archive seven days after its creation', function (): void {
+        $this->actingAs(Canary::admin());
+        $this->travelTo(CarbonImmutable::parse('2026-10-01 10:00:00', 'UTC'));
+
+        $archive = documentArchiveCreate()->refresh();
+
+        expect($archive->expires_at->equalTo(CarbonImmutable::parse('2026-10-08 10:00:00', 'UTC')))->toBeTrue();
+    });
+
+    it('marks an archive ready with the path, the completion time and a fresh expiry', function (): void {
+        $this->actingAs(Canary::admin());
+        $archive = documentArchiveCreate();
+        $now = CarbonImmutable::parse('2026-10-01 10:00:00');
+
+        $archive->markReady($archive->storagePath(), $now);
+        $fresh = DocumentArchive::query()->findOrFail($archive->getKey());
+
+        expect($fresh->status)->toBe(DocumentArchiveStatus::Ready)
+            ->and($fresh->path)->toBe($archive->storagePath())
+            ->and($fresh->completed_at?->equalTo($now))->toBeTrue()
+            ->and($fresh->expires_at->equalTo($now->addDays(7)))->toBeTrue();
+    });
+
+    it('marks an archive failed and keeps the expiry of its creation', function (): void {
+        $this->actingAs(Canary::admin());
+        $archive = documentArchiveCreate();
+        $expires = DocumentArchive::query()->findOrFail($archive->getKey())->expires_at;
+
+        $archive->markFailed();
+        $fresh = DocumentArchive::query()->findOrFail($archive->getKey());
+
+        expect($fresh->status)->toBe(DocumentArchiveStatus::Failed)
+            ->and($fresh->path)->toBeNull()
+            ->and($fresh->completed_at)->toBeNull()
+            ->and($fresh->expires_at->equalTo($expires))->toBeTrue();
+    });
+
+    it('is downloadable only when ready, with a path and strictly before its expiry', function (): void {
+        $this->actingAs(Canary::admin());
+        $now = CarbonImmutable::parse('2026-10-01 10:00:00');
+
+        $pending = documentArchiveCreate();
+        $failed = documentArchiveCreate();
+        $failed->markFailed();
+        $ready = documentArchiveCreate();
+        $ready->markReady($ready->storagePath(), $now);
+        $atExpiry = $ready->expires_at;
+        $pathless = documentArchiveCreate()->forceFill(['status' => DocumentArchiveStatus::Ready, 'expires_at' => $now->addDay()]);
+
+        expect($pending->isDownloadable($now))->toBeFalse()
+            ->and($failed->isDownloadable($now))->toBeFalse()
+            ->and($pathless->isDownloadable($now))->toBeFalse()
+            ->and($ready->isDownloadable($now))->toBeTrue()
+            ->and($ready->isDownloadable($atExpiry->subSecond()))->toBeTrue()
+            ->and($ready->isDownloadable($atExpiry))->toBeFalse()
+            ->and($ready->isDownloadable($atExpiry->addDay()))->toBeFalse();
+    });
+
+    it('reads the retention from the configuration and never returns less than one day', function (): void {
+        expect(DocumentArchive::ttlDays())->toBe(7);
+
+        config(['kokpit.documents.archive.ttl_days' => 3]);
+        expect(DocumentArchive::ttlDays())->toBe(3);
+
+        config(['kokpit.documents.archive.ttl_days' => 0]);
+        expect(DocumentArchive::ttlDays())->toBe(1);
+
+        config(['kokpit.documents.archive.ttl_days' => -5]);
+        expect(DocumentArchive::ttlDays())->toBe(1);
+    });
+
+    it('uses the configured retention for a new record', function (): void {
+        config(['kokpit.documents.archive.ttl_days' => 2]);
+        $this->actingAs(Canary::admin());
+        $this->travelTo(CarbonImmutable::parse('2026-10-01 10:00:00', 'UTC'));
+
+        $archive = documentArchiveCreate()->refresh();
+
+        expect($archive->expires_at->equalTo(CarbonImmutable::parse('2026-10-03 10:00:00', 'UTC')))->toBeTrue();
     });
 });
