@@ -16,7 +16,7 @@ return [
     'title' => 'Kokpit API',
 
     // A short description of your API. Will be included in the docs webpage, Postman collection and OpenAPI spec.
-    'description' => 'REST API for reading and recording time entries, and for looking up clients, projects and tasks.',
+    'description' => 'REST API for reading and recording time entries, for reading and recording finance transactions and their categories, and for looking up clients, projects and tasks.',
 
     // Text to place in the "Introduction" section, right after the `description`. Markdown and HTML are supported.
     'intro_text' => <<<'INTRO'
@@ -24,10 +24,14 @@ return [
 
             ## Abilities
 
-            A token carries one or both abilities. A request whose token lacks the ability of the endpoint is refused with `403`.
+            A token carries one or more abilities. A request whose token lacks the ability of the endpoint is refused with `403`.
 
             - `time:read`: read time entries and look up clients, projects and tasks (GET endpoints).
             - `time:write`: create, change and delete time entries (POST, PATCH and DELETE endpoints).
+            - `finance:read`: read transactions and transaction categories (GET endpoints).
+            - `finance:write`: create, change and delete transactions (POST, PATCH and DELETE endpoints).
+
+            The time and the finance abilities are separate: a token with only `time:*` abilities is refused with `403` on every finance endpoint, and a token with only `finance:*` abilities is refused with `403` on every time entry and lookup endpoint.
 
             ## Rate limits
 
@@ -35,12 +39,15 @@ return [
 
             ## Lists and pagination
 
-            List endpoints are cursor paginated and answer `{"data": [...], "links": {...}, "meta": {...}}`. A page holds 50 items; ask for another size with `per_page` (1 to 200). To read the next page send the `meta.next_cursor` of the previous answer as `cursor`; when it is `null` there is no further page. The time entry list is newest first by start and breaks ties by id, so paging never skips or repeats an entry.
+            List endpoints are cursor paginated and answer `{"data": [...], "links": {...}, "meta": {...}}`. A page holds 50 items; ask for another size with `per_page` (1 to 200). To read the next page send the `meta.next_cursor` of the previous answer as `cursor`; when it is `null` there is no further page. The time entry list is newest first by start and breaks ties by id, so paging never skips or repeats an entry. The transaction list is newest first by transaction date and breaks ties by id for the same reason.
 
             ## Formats and errors
 
             - Instants are ISO 8601 with an offset, for example `2026-10-12T08:00:00+00:00`. Responses are in UTC.
             - Every key is always present. A value that does not exist is `null`: for example `ended_at` and `duration_seconds` of a running time entry, or `project_id` of an entry that has only a client.
+            - Amounts of transactions are integers in minor units, for example `amount_minor` in the currency of the transaction and `czk_minor` in Czech crowns, both counted in the smallest unit of the currency (for two-decimal currencies `123450` is 1234.50). The `currency` is an ISO 4217 code such as `CZK` or `EUR`.
+            - `transaction_date` is a day written as `YYYY-MM-DD`, with no time and no offset.
+            - `exchange_rate` is a decimal string, never a JSON number, so no digit is lost. The `czk_source` of a transaction tells where its Czech crown figure comes from and is one of `identity` (the transaction is in CZK), `cnb` (the rate of the Czech National Bank), `manual` (a rate entered by hand) or `custom` (an own rate of the transaction).
             - A validation error answers `422` with `{"message": "...", "errors": {"field": ["..."]}}`.
             - A conflict (for example a locked or running entry) answers `409` with `{"message": "...", "code": "..."}`.
 
@@ -174,7 +181,7 @@ return [
         'placeholder' => '{YOUR_API_TOKEN}',
 
         // Any extra authentication-related info for your users. Markdown and HTML are supported.
-        'extra_info' => 'Create a token in the admin panel, on the screen <b>API tokeny</b>. The token is shown once, right after it is created, so store it then. Choose the abilities <code>time:read</code> and <code>time:write</code> the token needs.',
+        'extra_info' => 'Create a token in the admin panel, on the screen <b>API tokeny</b>. The token is shown once, right after it is created, so store it then. Choose the abilities the token needs: <code>time:read</code> and <code>time:write</code> for time entries and lookups, <code>finance:read</code> and <code>finance:write</code> for transactions and their categories. A token without the ability of an endpoint is refused with <code>403</code>.',
     ],
 
     // Example requests for each endpoint will be shown in each of these languages.
