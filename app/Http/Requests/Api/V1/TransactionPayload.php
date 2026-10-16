@@ -9,6 +9,7 @@ use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Shared\Money\Money;
 use Closure;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -99,6 +100,26 @@ final class TransactionPayload
         }
 
         return [...$data, ...self::figure($validated)];
+    }
+
+    /**
+     * The data of `RecordTransaction::handle()` for one item of a batch: the single-create rules, then the same
+     * mapping. An item that is not a JSON object (a scalar, null or a non-empty list) fails under `transaction`.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws ValidationException
+     */
+    public static function forBatchItem(mixed $item, ReferenceResolver $refs): array
+    {
+        if (! is_array($item) || ($item !== [] && array_is_list($item))) {
+            throw ValidationException::withMessages(['transaction' => __('api.errors.batch_item_not_object')]);
+        }
+
+        /** @var array<string, mixed> $validated */
+        $validated = Validator::make($item, self::rules(true))->validate();
+
+        return self::forCreate($validated, $refs);
     }
 
     /**

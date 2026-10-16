@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TimeEntryBatchController;
 use App\Http\Controllers\Api\V1\TimeEntryController;
+use App\Http\Controllers\Api\V1\TransactionBatchController;
 use App\Http\Controllers\Api\V1\TransactionCategoryController;
 use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Middleware\EnsureIdempotency;
@@ -92,6 +93,11 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::FinanceWrite->value,
     Route::post('transactions', [TransactionController::class, 'store'])
         ->middleware(EnsureIdempotency::class)
         ->name('api.v1.transactions.store');
+    // The batch counts as one write against the limit and carries the key like the single create (D-04). It is
+    // declared before the PATCH and DELETE routes; the path has no parameter, so it never clashes.
+    Route::post('transactions/batch', TransactionBatchController::class)
+        ->middleware(EnsureIdempotency::class)
+        ->name('api.v1.transactions.batch');
     Route::patch('transactions/{transaction}', [TransactionController::class, 'update'])
         ->whereUuid('transaction')
         ->name('api.v1.transactions.update');

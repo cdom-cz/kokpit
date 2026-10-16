@@ -210,6 +210,7 @@ it('pins the routes of the API, no more and no fewer', function (): void {
         'POST /api/v1/time-entries',
         'POST /api/v1/time-entries/batch',
         'POST /api/v1/transactions',
+        'POST /api/v1/transactions/batch',
         'PATCH /api/v1/transactions/{transaction}',
         'DELETE /api/v1/transactions/{transaction}',
         'PATCH /api/v1/time-entries/{timeEntry}',
@@ -226,7 +227,7 @@ it('describes every pinned route in the published spec with its method', functio
     }
 });
 
-it('documents the Idempotency-Key on exactly the three create operations', function (): void {
+it('documents the Idempotency-Key on exactly the four create operations', function (): void {
     $withKey = [];
 
     foreach (ApiDocs::spec()['paths'] as $path => $operations) {
@@ -240,7 +241,7 @@ it('documents the Idempotency-Key on exactly the three create operations', funct
     }
     sort($withKey);
 
-    expect($withKey)->toBe(['POST /api/v1/time-entries', 'POST /api/v1/time-entries/batch', 'POST /api/v1/transactions']);
+    expect($withKey)->toBe(['POST /api/v1/time-entries', 'POST /api/v1/time-entries/batch', 'POST /api/v1/transactions', 'POST /api/v1/transactions/batch']);
 });
 
 it('documents 201, 207, 409 and 422 on the batch operation', function (): void {
@@ -311,6 +312,7 @@ function documentedLimitProblems(string $intro, array $perPageDescriptions, arra
         'kokpit.api.page_size.default' => '/A page holds (\d+) items/',
         'kokpit.api.page_size.max' => '/`per_page` \(1 to (\d+)\)/',
         'kokpit.api.batch_max_items' => '/records up to (\d+) entries/',
+        'kokpit.api.transaction_batch_max_items' => '/records up to (\d+) transactions/',
         'kokpit.api.idempotency_ttl_hours' => '/kept for (\d+) hours/',
     ];
     $problems = [];
@@ -330,6 +332,12 @@ function documentedLimitProblems(string $intro, array $perPageDescriptions, arra
         $problems[] = 'the intro has no refusal sentence for kokpit.api.batch_max_items';
     } elseif ((int) $found[1] !== $configured('batch_max_items')) {
         $problems[] = "kokpit.api.batch_max_items is {$configured('batch_max_items')} but the intro refuses at {$found[1]}";
+    }
+
+    if (preg_match('/more than (\d+) transactions, answers `422`/', $intro, $found) !== 1) {
+        $problems[] = 'the intro has no refusal sentence for kokpit.api.transaction_batch_max_items';
+    } elseif ((int) $found[1] !== $configured('transaction_batch_max_items')) {
+        $problems[] = "kokpit.api.transaction_batch_max_items is {$configured('transaction_batch_max_items')} but the intro refuses at {$found[1]}";
     }
 
     foreach ($perPageDescriptions as $description) {
@@ -390,8 +398,12 @@ it('reports a documented limit that differs from the configuration (the limits c
     $batchChanged = $api;
     $batchChanged['batch_max_items'] = 101;
 
+    $transactionBatchChanged = $api;
+    $transactionBatchChanged['transaction_batch_max_items'] = 501;
+
     expect(documentedLimitProblems($intro, $descriptions, $readChanged))->toBe(['kokpit.api.rate_limit.read is 121 but the intro says 120'])
         ->and(implode("\n", documentedLimitProblems($intro, $descriptions, $maxChanged)))->toContain('kokpit.api.page_size.max is 201')
         ->and(implode("\n", documentedLimitProblems($intro, $descriptions, $batchChanged)))->toContain('kokpit.api.batch_max_items is 101')
+        ->and(implode("\n", documentedLimitProblems($intro, $descriptions, $transactionBatchChanged)))->toContain('kokpit.api.transaction_batch_max_items is 501')
         ->and(documentedLimitProblems('A reworded intro.', $descriptions, $api))->toContain('the intro has no sentence for kokpit.api.rate_limit.read');
 });

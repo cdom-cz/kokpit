@@ -132,4 +132,52 @@ final class TransactionExamples
         'message' => 'Transakci nelze smazat, protože na ni odkazuje jiný záznam.',
         'code' => 'transaction_in_use',
     ];
+
+    /**
+     * The answer of a batch in which every transaction was saved (201).
+     */
+    public const array BATCH_ALL_SAVED = [
+        'saved' => 3,
+        'failed' => 0,
+        'errors' => [],
+    ];
+
+    /**
+     * The answer of a batch in which the second of three transactions failed (207).
+     */
+    public const array BATCH_MIXED = [
+        'saved' => 2,
+        'failed' => 1,
+        'errors' => [
+            [
+                'index' => 1,
+                'errors' => [
+                    'category_id' => ['Tuto kategorii nelze použít, je archivovaná nebo neexistuje.'],
+                ],
+            ],
+        ],
+    ];
+
+    /**
+     * The answer of a batch in which no transaction could be saved (422).
+     */
+    public const array BATCH_NONE_SAVED = [
+        'message' => 'Nepodařilo se uložit žádnou položku.',
+        'saved' => 0,
+        'failed' => 2,
+        'errors' => [
+            [
+                'index' => 0,
+                'errors' => [
+                    'amount_minor' => ['Částka musí být větší než nula.'],
+                ],
+            ],
+            [
+                'index' => 1,
+                'errors' => [
+                    'transaction' => ['Položka musí být objekt JSON.'],
+                ],
+            ],
+        ],
+    ];
 }

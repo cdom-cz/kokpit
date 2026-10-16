@@ -133,6 +133,8 @@ return [
     | page_size.default / page_size.max: items of one list page when the client
     |   names no size, and the largest size it may ask for.
     | batch_max_items: largest number of entries one batch request may carry.
+    | transaction_batch_max_items: largest number of transactions one batch
+    |   request may carry.
     | external_max_bytes: largest size in bytes of the free-form `external`
     |   object an API client may store with an entry.
     | idempotency_ttl_hours: how long a stored Idempotency-Key and its response
@@ -153,6 +155,7 @@ return [
             'max' => 200,
         ],
         'batch_max_items' => 100,
+        'transaction_batch_max_items' => 500,
         'external_max_bytes' => 4096,
         'idempotency_ttl_hours' => 24,
         'idempotency_stale_lock_seconds' => 120,

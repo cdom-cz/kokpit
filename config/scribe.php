@@ -53,7 +53,7 @@ return [
 
             ## Retrying a create safely: the Idempotency-Key
 
-            The create endpoints, `POST /api/v1/time-entries`, `POST /api/v1/time-entries/batch` and `POST /api/v1/transactions`, accept an optional `Idempotency-Key` header, so a request that timed out can be sent again without creating a second entry or transaction. PATCH, DELETE and GET ignore it.
+            The create endpoints, `POST /api/v1/time-entries`, `POST /api/v1/time-entries/batch`, `POST /api/v1/transactions` and `POST /api/v1/transactions/batch`, accept an optional `Idempotency-Key` header, so a request that timed out can be sent again without creating a second entry or transaction. PATCH, DELETE and GET ignore it.
 
             - Send 1 to 255 visible characters, a fresh value for every new request (a UUID works well). Keys belong to the token that sent them and are kept for 24 hours.
             - The same key with the same body does not create anything a second time: the answer stored for the first request is sent again, byte for byte, with the response header `Idempotent-Replayed: true`.
@@ -71,6 +71,12 @@ return [
             - A batch counts as one write against the rate limit of the token.
             - To retry a batch, send it again with the same `Idempotency-Key`: a stored `201` or `207` is replayed and nothing new is saved, and a `422` stored nothing, so the corrected batch can be sent with the same key. Do not resend only the failed items under the old key; that is a different body.
             - Keys protect only a retry of the same request. If a batch is sent again under a different key, or the server stops in the middle of a batch (for example a restart or a lost connection), items may already be saved: deduplicate on your side: store your own id in `external` (it comes back with every entry), and list the entries of the period before you resend.
+
+            `POST /api/v1/transactions/batch` records up to 500 transactions in one request and works the same way, with the list in `transactions`. Every item takes the fields of a single create and is saved on its own, in its own transaction.
+
+            - The answer has the layout above. An item that is not a JSON object fails under the field `transaction`, and so does an item that could not be saved because of a fault on the server: send such an item again in a new batch, with a new key.
+            - A list with no item, or with more than 500 transactions, answers `422` under `transactions` and saves nothing. A batch counts as one write against the rate limit of the token.
+            - A transaction has no field for an id of your own. Deduplicate on your side: `document_number`, the date and the counterparty are its natural keys, so list the transactions of the period before you send a batch again under a new key.
             INTRO,
 
     // The base URL displayed in the docs.
