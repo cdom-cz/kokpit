@@ -23,11 +23,15 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * and the screens that come after it, build their list from here so the columns cannot drift.
  *
  * The Admin sees every column, including who uploaded a file and whether the client sees it. The Partner
- * tabs (plan 09-08) have their own, shorter builder next to this one and never show the uploader, the flag
- * or the client; the name list below is the one a test pins.
+ * tabs have their own, shorter builder next to this one (`partner()`) and never show the uploader, the flag,
+ * the owner or the client; the name lists above are the ones a test pins. Both builders share the column
+ * definitions below, so the two cannot drift apart.
  */
 final class DocumentColumns
 {
+    /** @var list<string> */
+    public const array PARTNER_COLUMN_NAMES = ['name', 'description', 'size_bytes', 'created_at'];
+
     /** @var list<string> */
     public const array ADMIN_COLUMN_NAMES = ['name', 'owner', 'size_bytes', 'uploader.name', 'created_at', 'visible_to_client'];
 
@@ -39,12 +43,9 @@ final class DocumentColumns
     public static function admin(bool $showOwner): array
     {
         $columns = [
-            TextColumn::make('name')
-                ->label(__('documents.columns.name'))
+            self::nameColumn()
                 ->description(static fn (Document $record): ?string => $record->description)
-                ->wrap()
-                ->searchable(['name', 'description'])
-                ->sortable(query: static fn (Builder $query, string $direction): Builder => self::orderByName($query, $direction)),
+                ->searchable(['name', 'description']),
         ];
 
         if ($showOwner) {
@@ -57,19 +58,34 @@ final class DocumentColumns
 
         return [
             ...$columns,
-            TextColumn::make('size_bytes')
-                ->label(__('documents.columns.size'))
-                ->formatStateUsing(static fn (int $state): string => self::humanSize($state))
-                ->sortable(),
+            self::sizeColumn(),
             TextColumn::make('uploader.name')
                 ->label(__('documents.columns.uploaded_by')),
-            TextColumn::make('created_at')
-                ->label(__('documents.columns.created_at'))
-                ->dateTime(LocalisationServiceProvider::DATE_TIME_FORMAT, self::DISPLAY_TIMEZONE)
-                ->sortable(),
+            self::createdAtColumn(),
             IconColumn::make('visible_to_client')
                 ->label(__('documents.columns.visible_to_client'))
                 ->boolean(),
+        ];
+    }
+
+    /**
+     * The columns of a Partner's "Soubory" tab (D-04): name, description, size and date, exactly
+     * {@see self::PARTNER_COLUMN_NAMES}. No uploader account, owner kind, flag or client.
+     *
+     * @return list<Column>
+     */
+    public static function partner(): array
+    {
+        return [
+            self::nameColumn()
+                ->searchable(),
+            TextColumn::make('description')
+                ->label(__('documents.columns.description'))
+                ->wrap()
+                ->searchable()
+                ->placeholder('–'),
+            self::sizeColumn(),
+            self::createdAtColumn(),
         ];
     }
 
@@ -146,6 +162,30 @@ final class DocumentColumns
         $text = rtrim(rtrim(number_format($value, 1, ',', ''), '0'), ',');
 
         return $text.' '.$units[$unit];
+    }
+
+    private static function nameColumn(): TextColumn
+    {
+        return TextColumn::make('name')
+            ->label(__('documents.columns.name'))
+            ->wrap()
+            ->sortable(query: static fn (Builder $query, string $direction): Builder => self::orderByName($query, $direction));
+    }
+
+    private static function sizeColumn(): TextColumn
+    {
+        return TextColumn::make('size_bytes')
+            ->label(__('documents.columns.size'))
+            ->formatStateUsing(static fn (int $state): string => self::humanSize($state))
+            ->sortable();
+    }
+
+    private static function createdAtColumn(): TextColumn
+    {
+        return TextColumn::make('created_at')
+            ->label(__('documents.columns.created_at'))
+            ->dateTime(LocalisationServiceProvider::DATE_TIME_FORMAT, self::DISPLAY_TIMEZONE)
+            ->sortable();
     }
 
     /**

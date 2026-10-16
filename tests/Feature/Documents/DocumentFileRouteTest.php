@@ -139,12 +139,15 @@ it('answers 404 for a malformed and for an unknown document id', function (): vo
     }
 });
 
-it('answers a Partner of another client 404 and a Partner of the own client 403 until the read grant exists', function (): void {
-    $document = fileRouteDocument($this->project, 'example-note.txt', 'Fictional bytes');
+it('streams a visible file to a Partner of the own client and answers a Partner of another client 404', function (): void {
+    $content = implode(' ', ['Fictional', 'partner', 'bytes', Str::random(8)]);
+    $document = fileRouteDocument($this->project, 'example-note.txt', $content);
 
     $own = Canary::partnerFor($this->project->client_id);
     $this->actingAs($own);
-    $this->get(DocumentUrl::download($document, $own))->assertForbidden();
+    $response = $this->get(DocumentUrl::download($document, $own))->assertOk();
+
+    expect($response->streamedContent())->toBe($content);
 
     $other = Canary::partnerFor(Client::factory()->create()->getKey());
     $this->actingAs($other);

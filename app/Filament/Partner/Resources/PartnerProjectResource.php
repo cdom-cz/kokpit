@@ -12,6 +12,7 @@ use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Partner\Resources\PartnerProjectResource\Pages\ListPartnerProjects;
 use App\Filament\Partner\Resources\PartnerProjectResource\Pages\ViewPartnerProject;
+use App\Filament\Partner\Resources\PartnerProjectResource\RelationManagers\PartnerProjectDocumentsRelationManager;
 use App\Filament\Support\ProjectColumns;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -24,8 +25,9 @@ use Filament\Tables\Table;
  * The query is the scoped `Project` model: only the own client's client-visible,
  * non-archived projects exist for a Partner. The table and the infolist are built
  * only from the Partner-safe builders of `ProjectColumns`; there is no create or
- * edit page, no action, no bulk action, no relation manager, no export and no
- * global search. The slug differs from the Admin project resource.
+ * edit page, no action, no bulk action, no export and no global search. The one
+ * relation manager is the read-only "Soubory" tab of the shared files. The slug
+ * differs from the Admin project resource.
  */
 #[AccessRule(Audience::PartnerAllowed, reason: 'A Partner sees the own client\'s client-visible projects read-only; only Partner-safe fields are shown.')]
 final class PartnerProjectResource extends Resource
@@ -92,6 +94,16 @@ final class PartnerProjectResource extends Resource
     public static function infolist(Schema $schema): Schema
     {
         return $schema->components(ProjectColumns::partnerEntries());
+    }
+
+    /**
+     * The only relation of the Partner project page: the shared files.
+     */
+    public static function getRelations(): array
+    {
+        return [
+            PartnerProjectDocumentsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array
