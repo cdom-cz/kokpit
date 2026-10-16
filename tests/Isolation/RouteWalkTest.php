@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\Documents\Support\DocumentUrl;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\Models\User;
@@ -13,6 +14,7 @@ use App\Domain\TimeTracking\Models\TimeEntry;
 use Filament\Facades\Filament;
 use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\CanaryRecord;
@@ -78,9 +80,10 @@ function walkedRoutes(): array
 
 /**
  * The URL of a walked route. A route with a {record} parameter gets the given record id; the file route
- * (a {document} parameter) gets the visible canary document of the requested side ('a' or 'b'), signed for
- * the signed-in user through DocumentUrl so that the walk reaches the controller instead of stopping at the
- * signature check. Any other parameter fails the walk so that a new kind of route is looked at on purpose.
+ * (a {document} parameter) gets the visible canary document of the requested side ('a' or 'b'), and the archive
+ * route (an {archive} parameter) gets the canary ZIP archive of that side, both signed for the signed-in user
+ * through DocumentUrl so that the walk reaches the controller instead of stopping at the signature check. Any
+ * other parameter fails the walk so that a new kind of route is looked at on purpose.
  */
 function walkedUrl(LaravelRoute $route, string $recordId, string $side = 'a'): string
 {
@@ -95,6 +98,16 @@ function walkedUrl(LaravelRoute $route, string $recordId, string $side = 'a'): s
             }
 
             return DocumentUrl::download(walkedDocument($side), $user);
+        }
+
+        if ($parameter === 'archive' && $route->getName() === DocumentUrl::ARCHIVE_ROUTE) {
+            $user = auth()->user();
+
+            if (! $user instanceof User) {
+                throw new LogicException('The route walk signs the archive route for the signed-in user; sign in before walking.');
+            }
+
+            return DocumentUrl::archive(walkedArchive($side), $user);
         }
 
         if ($parameter !== 'record') {
@@ -117,6 +130,19 @@ function walkedDocument(string $side): Document
 
     return app(PartnerContext::class)->runAsSystem(
         static fn (): Document => Document::query()->where('name', $canary.'.txt')->firstOrFail(),
+    );
+}
+
+/**
+ * The canary ZIP archive of a side: the fixture row whose summary is the canary. Both rows belong to the one
+ * planner owner, so only that Admin can ever be served one.
+ */
+function walkedArchive(string $side): DocumentArchive
+{
+    $canary = $side === 'a' ? test()->canaryA : test()->canaryB;
+
+    return app(PartnerContext::class)->runAsSystem(
+        static fn (): DocumentArchive => DocumentArchive::query()->where('summary', $canary)->firstOrFail(),
     );
 }
 
@@ -227,7 +253,8 @@ it('walks at least the dashboard, the canary list and the canary record route', 
         ->and($names)->toContain('filament.admin.resources.canary-records.view')
         ->and($names)->toContain('filament.admin.resources.my-projects.index')
         ->and($names)->toContain('filament.admin.resources.my-projects.view')
-        ->and($names)->toContain('filament.admin.files.document');
+        ->and($names)->toContain('filament.admin.files.document')
+        ->and($names)->toContain('filament.admin.files.archive');
 });
 
 it('refuses a record route of a resource it does not know, so a new resource is looked at on purpose', function (): void {
@@ -388,6 +415,51 @@ it('answers a Partner without a client 403 or 404 on the file route and shows no
         expect($response->getStatusCode())->toBeIn([403, 404])
             ->and(str_contains($body, $this->canaryA))->toBeFalse()
             ->and(str_contains($body, $this->canaryB))->toBeFalse();
+    }
+});
+
+it('refuses the archive route for the canary archives to Partner A with a 404 and no trace of either client', function (): void {
+    $this->actingAs(Canary::partnerFor($this->clientA));
+
+    foreach (['a', 'b'] as $side) {
+        $url = walkedUrl(Route::getRoutes()->getByName(DocumentUrl::ARCHIVE_ROUTE), $this->recordA->id, $side);
+        $response = $this->get($url)->assertNotFound();
+        $body = (string) $response->getContent();
+
+        expect(str_contains($body, $this->canaryA))->toBeFalse()
+            ->and(str_contains($body, $this->canaryB))->toBeFalse()
+            ->and(str_contains($body, $this->clientB))->toBeFalse();
+    }
+});
+
+it('answers a Partner without a client 403 or 404 on the archive route and shows nothing of either client', function (): void {
+    $this->actingAs(Canary::partnerFor(null));
+
+    foreach (['a', 'b'] as $side) {
+        $url = walkedUrl(Route::getRoutes()->getByName(DocumentUrl::ARCHIVE_ROUTE), $this->recordA->id, $side);
+        $response = $this->get($url);
+        $body = (string) $response->getContent();
+
+        expect($response->getStatusCode())->toBeIn([403, 404])
+            ->and(str_contains($body, $this->canaryA))->toBeFalse()
+            ->and(str_contains($body, $this->canaryB))->toBeFalse();
+    }
+});
+
+it('serves the owning Admin the archive route and refuses a second Admin, so the refusal comes from the owner scope', function (): void {
+    $owner = CanaryRegistry::plannerOwner();
+
+    foreach (['a', 'b'] as $side) {
+        $this->actingAs($owner);
+
+        $archive = walkedArchive($side);
+        Storage::disk()->put((string) $archive->path, 'Fictional archive bytes');
+
+        $this->get(walkedUrl(Route::getRoutes()->getByName(DocumentUrl::ARCHIVE_ROUTE), $this->recordA->id, $side))->assertOk();
+
+        $this->actingAs(Canary::admin());
+
+        $this->get(walkedUrl(Route::getRoutes()->getByName(DocumentUrl::ARCHIVE_ROUTE), $this->recordA->id, $side))->assertNotFound();
     }
 });
 
