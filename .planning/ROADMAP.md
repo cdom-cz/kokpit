@@ -566,7 +566,7 @@ Plans:
   4. Every download goes through the app with a permission check and a short-lived signed URL (no public bucket URL), and deleting a record also removes its stored object
   5. Admin records income and expense transactions with hierarchical categories, currency, CZK amount, optional client and project and receipts as attachments, and sees an overview per month and year, per category and per client in CZK
 
-**Plans:** 22/24 plans executed
+**Plans:** 23/24 plans executed
 **UI hint**: yes
 
 Plans:
@@ -611,7 +611,7 @@ Plans:
 - [x] 09-18-PLAN.md — Archives list, signed archive download route, 7-day prune on schedule
 
 **Wave 10** *(blocked on Wave 9 completion)*
-- [ ] 09-19-PLAN.md — ZIP hardening: safe unique entry names, limits re-checked, ready and failed bells, ZipStream as a direct dependency
+- [x] 09-19-PLAN.md — ZIP hardening: safe unique entry names, limits re-checked, ready and failed bells, ZipStream as a direct dependency
 
 **Wave 11** *(blocked on Wave 10 completion)*
 - [ ] 09-20-PLAN.md — Partner leak sweep, storage consistency check, CONTRIBUTING and README, .gitignore review, phase gate, VALIDATION sign-off
@@ -683,7 +683,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
 | 8. Exchange Rates and Reports | 27/27 | In Progress | - |
-| 9. Documents and Finance | 22/24 | In Progress | - |
+| 9. Documents and Finance | 23/24 | In Progress | - |
 | 10. Invoicing | 0/0 | Not started | - |
 | 11. Stripe Payments | 0/0 | Not started | - |
 | 12. Partner Audit | 0/0 | Not started | - |

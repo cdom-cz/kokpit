@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-18-PLAN.md
-last_updated: "2026-10-16T16:26:07.403Z"
+stopped_at: Completed 09-19-PLAN.md
+last_updated: "2026-10-16T16:39:15.912Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 180cd7009f39f1fe45e05ffcbe0b1745d9ffede8
+state_head: 750596b23616f982058cba2891b9fcdb1009745f
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 169
+  completed_plans: 170
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 23 of 24
+Plan: 24 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -231,6 +231,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P16 | 25 min | 2 tasks | 6 files |
 | Phase 09 P17 | 25 min | 3 tasks | 6 files |
 | Phase 09 P18 | 20 min | 3 tasks | 13 files |
+| Phase 09 P19 | 40 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -561,6 +562,8 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-17: RequestDocumentArchive validates the selection (empty, non-UUID, unknown, duplicated, over max_files or max_bytes) and sets the record owner from the actor; the build job is pushed only after the creating transaction returned
 - [Phase 09]: 09-17: BuildDocumentArchive never produces an empty ZIP; a request none of whose documents exists throws and the record stays pending until plan 09-19 adds failure marking
 - [Phase 09]: 09-18: archive download route is filament.admin.files.archive; isDownloadable is re-checked on every request so a valid signed link never outlives the 7-day retention; foreign, unfinished, expired and missing archives all answer 404
+- [Phase 09]: 09-19: permanent ZIP failures (limits exceeded, no document left) fail the record directly with a failure bell; read errors throw and failed() gives up after the retries
+- [Phase 09]: 09-19: the ready bell counts the files actually added to the ZIP; entry names pass ArchiveEntryNames::safe() and a per-archive unique()
 
 ### Pending Todos
 
@@ -611,6 +614,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T16:26:06.413Z
-Stopped at: Completed 09-18-PLAN.md
+Last session: 2026-10-16T16:39:14.944Z
+Stopped at: Completed 09-19-PLAN.md
 Resume file: None
