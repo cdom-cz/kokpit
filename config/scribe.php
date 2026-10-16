@@ -53,7 +53,7 @@ return [
 
             ## Retrying a create safely: the Idempotency-Key
 
-            The two create endpoints, `POST /api/v1/time-entries` and `POST /api/v1/time-entries/batch`, accept an optional `Idempotency-Key` header, so a request that timed out can be sent again without creating a second entry. PATCH, DELETE and GET ignore it.
+            The create endpoints, `POST /api/v1/time-entries`, `POST /api/v1/time-entries/batch` and `POST /api/v1/transactions`, accept an optional `Idempotency-Key` header, so a request that timed out can be sent again without creating a second entry or transaction. PATCH, DELETE and GET ignore it.
 
             - Send 1 to 255 visible characters, a fresh value for every new request (a UUID works well). Keys belong to the token that sent them and are kept for 24 hours.
             - The same key with the same body does not create anything a second time: the answer stored for the first request is sent again, byte for byte, with the response header `Idempotent-Replayed: true`.

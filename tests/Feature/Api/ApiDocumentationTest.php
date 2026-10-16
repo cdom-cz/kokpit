@@ -168,6 +168,7 @@ it('pins the routes of the API, no more and no fewer', function (): void {
         'GET /api/v1/transactions/{transaction}',
         'POST /api/v1/time-entries',
         'POST /api/v1/time-entries/batch',
+        'POST /api/v1/transactions',
         'PATCH /api/v1/time-entries/{timeEntry}',
         'DELETE /api/v1/time-entries/{timeEntry}',
     ];
@@ -182,7 +183,7 @@ it('describes every pinned route in the published spec with its method', functio
     }
 });
 
-it('documents the Idempotency-Key on exactly the two create operations', function (): void {
+it('documents the Idempotency-Key on exactly the three create operations', function (): void {
     $withKey = [];
 
     foreach (ApiDocs::spec()['paths'] as $path => $operations) {
@@ -196,7 +197,7 @@ it('documents the Idempotency-Key on exactly the two create operations', functio
     }
     sort($withKey);
 
-    expect($withKey)->toBe(['POST /api/v1/time-entries', 'POST /api/v1/time-entries/batch']);
+    expect($withKey)->toBe(['POST /api/v1/time-entries', 'POST /api/v1/time-entries/batch', 'POST /api/v1/transactions']);
 });
 
 it('documents 201, 207, 409 and 422 on the batch operation', function (): void {

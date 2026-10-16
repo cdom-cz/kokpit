@@ -5,15 +5,23 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Domain\Api\ReferenceResolver;
+use App\Domain\Finance\Actions\RecordTransaction;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\ApiAbility;
+use App\Domain\Identity\Models\User;
 use App\Http\Requests\Api\V1\ListTransactionsRequest;
+use App\Http\Requests\Api\V1\StoreTransactionRequest;
+use App\Http\Requests\Api\V1\TransactionPayload;
 use App\Http\Resources\Api\V1\TransactionResource;
 use Illuminate\Contracts\Database\Query\Builder as QueryContract;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Validation\ValidationException;
 use Knuckles\Scribe\Attributes\Endpoint;
 use Knuckles\Scribe\Attributes\Group;
+use Knuckles\Scribe\Attributes\Header;
 use Knuckles\Scribe\Attributes\QueryParam;
 use Knuckles\Scribe\Attributes\Response;
 use Knuckles\Scribe\Attributes\ResponseField;
@@ -148,6 +156,47 @@ final class TransactionController
         return new TransactionResource(self::find($transaction));
     }
 
+    #[Endpoint(
+        'Create a transaction',
+        'Requires ability `'.ApiAbility::FinanceWrite->value.'`. Records an income or expense through the same rules as the application. Give `type`, `transaction_date`, `category_id`, `amount_minor` (minor units, a positive integer) and `currency`. The category is referenced by its UUID (see the transaction categories), the client by its UUID and the project by its UUID or its key; a name is refused. A client and a project are optional, but a project needs its client and must belong to it. The CZK figure is fixed in one of three ways: send `exchange_rate` (a string; with `exchange_unit_amount` for a rate quoted per several units, default 1) to book at an own rate, send `czk_amount_minor` to book the figure the bank used, or send neither and the Czech National Bank rate of the transaction date (or the last banking day before it) is used. Sending both a rate and a figure answers 422 under `exchange_rate`. A transaction in CZK takes none of the three and answers 422 under the field you sent. A currency without any stored rate list is accepted with a rate or a figure; without them it answers 422 under `currency`. When no rate is stored for the day, the answer is 422 under `czk_amount_minor`: send a rate or the figure. Every 422 is keyed by the field names of this request. The answer is 201 with the transaction and a `Location` header. To retry safely, send an optional `Idempotency-Key` header (1 to 255 visible characters, a fresh value for every new transaction; keys are kept for 24 hours and belong to the token that sent them): the same key with the same body creates the transaction once, and every repeat gets the stored 201 and the identical body again, marked with the response header `Idempotent-Replayed: true` (the replay carries no `Location`). Only successful answers are stored, so a request that failed can be corrected and sent again with the same key. The same key with a different body answers 422 with the code `idempotency_key_reused`, a malformed key 422 with `idempotency_key_invalid`, and a repeat while the first request is still running 409 with `idempotency_in_progress`; wait a moment and send it again.',
+    )]
+    #[Header('Idempotency-Key', 'demo-key-0003')]
+    #[Response(TransactionExamples::TRANSACTION, 201, 'The transaction was created.')]
+    #[ResponseField('data.id', 'string', 'UUID of the transaction.')]
+    #[ResponseField('data.type', 'string', 'income or expense.')]
+    #[ResponseField('data.transaction_date', 'string', 'Date of the transaction, YYYY-MM-DD.')]
+    #[ResponseField('data.category_id', 'string', 'UUID of the transaction category.')]
+    #[ResponseField('data.amount_minor', 'integer', 'Amount in minor units of the currency, always positive; the type gives the direction.')]
+    #[ResponseField('data.currency', 'string', 'ISO 4217 currency code of the amount.')]
+    #[ResponseField('data.czk_minor', 'integer', 'Amount in CZK, in haléře.')]
+    #[ResponseField('data.czk_source', 'string', 'How the CZK figure was booked: identity, cnb, manual or custom.')]
+    #[ResponseField('data.exchange_rate', 'string', 'Exchange rate as a decimal string, or null unless the source is cnb or custom.', nullable: true)]
+    #[ResponseField('data.exchange_unit_amount', 'integer', 'Units of the currency the rate is quoted for, or null unless the source is cnb or custom.', nullable: true)]
+    #[ResponseField('data.exchange_rate_date', 'string', 'Date of the rate, YYYY-MM-DD, or null unless the source is cnb or custom.', nullable: true)]
+    #[ResponseField('data.description', 'string', 'Free text, or null.', nullable: true)]
+    #[ResponseField('data.counterparty', 'string', 'The other party of the transaction, or null.', nullable: true)]
+    #[ResponseField('data.document_number', 'string', 'Number of the receipt or invoice, or null.', nullable: true)]
+    #[ResponseField('data.client_id', 'string', 'UUID of the client the transaction belongs to, or null.', nullable: true)]
+    #[ResponseField('data.project_id', 'string', 'UUID of the project the transaction belongs to, or null.', nullable: true)]
+    #[ResponseField('data.created_at', 'string', 'Creation instant, ISO 8601 in UTC.')]
+    #[ResponseField('data.updated_at', 'string', 'Last change instant, ISO 8601 in UTC.')]
+    #[Response(ApiExamples::IDEMPOTENCY_IN_PROGRESS, 409, 'A request with the same Idempotency-Key is still running (code `idempotency_in_progress`).')]
+    #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A field is not valid or the application refuses the transaction; the errors are keyed by field.')]
+    #[Response(ApiExamples::IDEMPOTENCY_KEY_REUSED, 422, 'The Idempotency-Key was used with a different body (code `idempotency_key_reused`), or is malformed (code `idempotency_key_invalid`).')]
+    public function store(StoreTransactionRequest $request, RecordTransaction $record, ReferenceResolver $refs): JsonResponse
+    {
+        try {
+            $transaction = $record->handle(self::actor($request), TransactionPayload::forCreate($request->validated(), $refs));
+        } catch (ValidationException $e) {
+            throw TransactionPayload::remap($e);
+        }
+
+        return (new TransactionResource($transaction))
+            ->response()
+            ->setStatusCode(201)
+            ->header('Location', route('api.v1.transactions.show', $transaction->id));
+    }
+
     /**
      * The transaction of the UUID, or the Czech 404 of the API.
      */
@@ -160,5 +209,19 @@ final class TransactionController
         }
 
         return $transaction;
+    }
+
+    /**
+     * The Admin the token belongs to; the token check has already refused every other kind of user.
+     */
+    private static function actor(Request $request): User
+    {
+        $user = $request->user();
+
+        if (! $user instanceof User) {
+            abort(401);
+        }
+
+        return $user;
     }
 }

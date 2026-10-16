@@ -17,6 +17,7 @@ return [
         'batch_item_not_object' => 'Položka musí být objekt JSON.',
         'batch_item_failed' => 'Položku se nepodařilo uložit kvůli chybě na serveru. Pošlete ji znovu v nové dávce.',
         'batch_none_saved' => 'Nepodařilo se uložit žádnou položku.',
+        'czk_needs_no_rate' => 'Transakce v korunách nemá kurz ani částku v Kč, pole vynechte.',
         'idempotency_in_progress' => 'Požadavek s tímto klíčem Idempotency-Key se právě zpracovává. Zkuste to za chvíli znovu.',
     ],
 
