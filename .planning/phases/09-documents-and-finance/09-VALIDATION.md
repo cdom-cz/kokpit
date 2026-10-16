@@ -50,7 +50,9 @@ created: "2026-10-16"
 | DO-02 | Bulk delete removes rows and objects | feature | `ddev exec vendor/bin/pest tests/Feature/Documents/DeleteDocumentTest.php` | ❌ W0 |
 | DO-03 | Signed download route and headers | feature | `ddev exec vendor/bin/pest tests/Feature/Documents/DocumentFileRouteTest.php` | ❌ W0 |
 | DO-03 | Object removed on delete (S3) | feature | `ddev exec vendor/bin/pest tests/Feature/Documents/DeleteDocumentTest.php --group=s3` | ❌ W0 |
-| DO-03 | Upload config (local temp disk, limits) | feature | `ddev exec vendor/bin/pest tests/Feature/Documents/UploadConfigTest.php` | ❌ W0 |
+| DO-03 | Upload config (temp disk on the private bucket per D-18, limits, no previews) | feature | `ddev exec vendor/bin/pest tests/Feature/Documents/UploadConfigTest.php` | ❌ W0 |
+| DO-01 | Temporary upload held on the real bucket stored with content MIME (D-18) | feature | `ddev exec vendor/bin/pest tests/Feature/Documents/TemporaryUploadS3Test.php --group=s3` | ❌ W0 |
+| DO-01 | Archiving hides files, restore brings them back, objects kept (D-21) | feature | `ddev exec vendor/bin/pest tests/Feature/Documents/ArchivedOwnerDocumentsTest.php tests/Feature/Documents/DocumentOwnerDeletionTest.php` | ❌ W0 |
 | FI-01 | Transaction CRUD and DB-enforced integrity | schema | `ddev exec vendor/bin/pest tests/Feature/Schema/TransactionTablesTest.php` | ❌ W0 |
 | FI-01 | CZK conversion rules | feature | `ddev exec vendor/bin/pest tests/Feature/Finance/TransactionCzkTest.php` | ❌ W0 |
 | FI-01 | Category rules | feature | `ddev exec vendor/bin/pest tests/Feature/Finance/CategoryRulesTest.php` | ❌ W0 |
@@ -75,7 +77,7 @@ created: "2026-10-16"
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Multi-container temp upload behaviour | DO-01 | Depends on the deployment topology | Confirm in the deploy rehearsal (research Open Question 1) |
+| Multi-container temp upload behaviour | DO-01 | Browser-to-bucket upload needs the production bucket (CORS, expiry rule); the DDEV bucket is not browser-reachable | Confirm in the deploy rehearsal of plan 09-20 (D-18, research Open Question 1 resolved) |
 
 ---
 

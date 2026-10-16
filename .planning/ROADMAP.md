@@ -566,8 +566,55 @@ Plans:
   4. Every download goes through the app with a permission check and a short-lived signed URL (no public bucket URL), and deleting a record also removes its stored object
   5. Admin records income and expense transactions with hierarchical categories, currency, CZK amount, optional client and project and receipts as attachments, and sees an overview per month and year, per category and per client in CZK
 
-**Plans**: TBD
+**Plans:** 24 plans
 **UI hint**: yes
+
+Plans:
+**Wave 1**
+- [ ] 09-01-PLAN.md — Documents record: a file attached to a project is stored privately as one document; owner resolver, Partner scope with four hidden canary twins, documents settings
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 09-02-PLAN.md — Upload safety: only uploaded files, clean names, shared limits, disallowed extensions, archived owners, all-or-nothing; owner relations; one byte-level path for temporary uploads held on the bucket
+- [ ] 09-03-PLAN.md — Signed, user-bound, short-lived streaming file route with inline allowlist, nosniff, SPA exception and route walk
+- [ ] 09-04-PLAN.md — Transaction categories in the database: two levels, inherited type, system income category guard, generic Czech seed
+- [ ] 09-21-PLAN.md — Archived owners (D-21): files hidden from the Partner and the default Admin query, back on restore, objects kept; documents schema refusals; Partner-safe column pin
+- [ ] 09-24-PLAN.md — Livewire temporary uploads on the private bucket (D-18): published config, production boot guard, DDEV path, CORS and expiry requirements
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 09-05-PLAN.md — Admin "Soubory" tabs on project, task and client: upload, download, preview; task placeholder replaced
+- [ ] 09-06-PLAN.md — Category screen and Actions: create, rename, move, archive, delete unused; finance copy contract
+- [ ] 09-09-PLAN.md — Transactions record: table with CZK snapshot columns and composite keys, Admin-only model and registrations, database integrity
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 09-07-PLAN.md — Rename, visibility toggle and permanent delete (object removed, activity logged), single and bulk
+- [ ] 09-08-PLAN.md — Partner read: policy grant, Partner Soubory tabs, visibility matrix with archive and restore pass and mutation self-check
+- [ ] 09-22-PLAN.md — Transaction write paths: CZK identity, CNB snapshot of the day, manual amount, record, update with recompute-versus-manual, delete
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 09-10-PLAN.md — Partner upload on create-task, own deletion while the task is open, Admin bell
+- [ ] 09-11-PLAN.md — Transactions screen: create with CNB preview, edit with the manual switch, delete with confirmation, activity and history
+- [ ] 09-23-PLAN.md — ZIP archive record: owner-scoped table and model, status, expiry and download state, registrations
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 09-12-PLAN.md — Comment attachments for Admin and Partner; internal-comment files never reach a Partner
+- [ ] 09-13-PLAN.md — Receipts on transactions, receipt count and filter, client sync, deletion with the transaction, owner deletion guard with archive and restore proofs
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 09-14-PLAN.md — Central documents listing: owner links, D-07 filters, archived-owners filter, sorting, search, unattached upload, bulk delete
+- [ ] 09-15-PLAN.md — Finance overview: month/year tiles, category rollup, by-client table, monthly bar chart
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 09-16-PLAN.md — Storage totals: tiles and by-client table with the no-client row, archived owners counted and labelled
+- [ ] 09-17-PLAN.md — ZIP request and background build on private storage
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 09-18-PLAN.md — Archives list, signed archive download route, 7-day prune on schedule
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 09-19-PLAN.md — ZIP hardening: safe unique entry names, limits re-checked, ready and failed bells, ZipStream as a direct dependency
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [ ] 09-20-PLAN.md — Partner leak sweep, storage consistency check, CONTRIBUTING and README, .gitignore review, phase gate, VALIDATION sign-off
 
 ### Phase 10: Invoicing
 

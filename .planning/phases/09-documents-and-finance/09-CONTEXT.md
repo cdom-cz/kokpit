@@ -45,6 +45,14 @@ Already fixed in earlier phases (not re-opened): Partner never sees time, rates,
 ### Claude's Discretion
 Class, file, table and index names; the exact shape of the owner morph and how `client_id` is kept consistent (DB trigger, model hook or action); whether comment file uploads reuse the relation-manager component; signed-URL mechanism details (redirect to S3 temporary URL vs stream); the file-type group definitions for the filter; ZIP library and entry naming; category seed names (Czech, generic); exact CHECK constraints (type match, project-belongs-to-client); Czech wording; chart styling; how a Partner upload form is added to the create-task and own-comment forms; test structure.
 
+### Owner decisions recorded at plan check (2026-10-16)
+
+- **D-18:** Production runs more than one web container, so Livewire temporary uploads must NOT use the local disk of a single container: temporary uploads go through the S3-compatible private bucket (Livewire S3 temporary upload variant, with bucket CORS documented and a deploy-rehearsal check). This supersedes research assumption A4 (local temp disk); the DDEV bucket must be reachable from the browser or the test/dev path documented in CONTRIBUTING.
+- **D-19:** "Task open" (Partner may delete own files) means the task is not archived and its status is not `done` (research A2).
+- **D-20:** Files on non-internal comments default to visible to the Partner; files on internal comments are always hidden; the Admin can toggle visibility (research A1).
+- **D-21:** Archiving a client, project or task hides its files too: files of archived owners disappear from the Partner view and from the default Admin listing (shown under an "archived owners" filter), and reappear on restore; archiving never deletes stored objects. Real deletion of files happens only by explicit file delete (D-09) and by deleting a transaction. This amends D-09's "deleting an owning record also removes its files" to mean real deletion of a transaction.
+- **D-22:** The rich editors for task descriptions and comments keep inline attachments off (`fileAttachments(false)`) by design; files go only through the documents flow, so uploads cannot bypass the policy and sanitiser. This amends D-02 and was accepted by the owner.
+
 </decisions>
 
 <canonical_refs>

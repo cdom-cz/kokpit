@@ -525,27 +525,33 @@ Register with `Gate::policy(Document::class, DocumentPolicy::class)` in `AccessS
 | A18 | One Admin bell per Partner upload **submission** (grouped file count), not per file, and no preference switch | Notifications | D-05 says "every upload"; per-file notices would flood |
 | A19 | `kokpit_guard_frozen_row` can freeze the system category rows with `is_system` as the state column | Pattern 6 | Falls back to a dedicated trigger or Action-only guard |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Production container count and Livewire temp storage**
+   - **RESOLVED (owner, D-18):** multiple web containers; use the S3 temporary-upload variant with bucket CORS, not the local temp disk.
    - What we know: `zerops.yml` has one setup, `crontab.allContainers: true`; Horizon runs on each container; nothing pins a container count.
    - What's unclear: whether the web tier is ever scaled out.
    - Recommendation: ship the local temp disk (works in DDEV and one container) and add the S3-temp-upload variant (CORS, public endpoint) to the deploy rehearsal checklist; ask the owner to confirm single-container intent.
 
 2. **Visibility of comment files and of `description` for Partners (A1)**
+   - **RESOLVED (owner, D-20):** visible by default on non-internal comments, hidden on internal ones.
    - Recommendation: comment files by the Admin default true on non-internal comments, forced false on internal ones; `description` visible when shared, with helper text in the form saying so.
 
 3. **"Task is open" wording (A2)**
+   - **RESOLVED (owner, D-19):** not archived and status not `done`.
    - Recommendation: not archived and not `done`; confirm with the owner in plan check.
 
 4. **Orphan reconciliation**
+   - **RESOLVED (planner, as recommended):** no reconcile command; verification test only.
    - What we know: S3 and PostgreSQL cannot commit together; the S3 disk throws on failure.
    - Recommendation: no reconcile command in this phase; document the one-liner SQL "documents without media and media of document without a documents row" as a verification test, and revisit if the health page should show it.
 
 5. **Client tab content and the "Unattached" row label (A10, A17)**
+   - **RESOLVED (planner, as recommended).**
    - Recommendation: as in the log; both are cheap to flip.
 
-6. **Do archived (soft-deleted) transactions exist?** CONTEXT says "freely editable and deletable"; this research assumes hard delete (files removed). If the owner wanted soft delete, the file-removal rule (Pitfall 6) changes.
+6. **Do archived (soft-deleted) transactions exist?**
+   - **RESOLVED (D-14, D-21):** transactions are hard-deleted with their files; clients, projects and tasks are archived, which hides their files without deleting objects. CONTEXT says "freely editable and deletable"; this research assumes hard delete (files removed). If the owner wanted soft delete, the file-removal rule (Pitfall 6) changes.
 
 ## Environment Availability
 
