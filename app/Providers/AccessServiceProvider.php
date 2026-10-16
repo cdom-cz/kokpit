@@ -9,6 +9,8 @@ use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
 use App\Domain\Dashboard\Models\DashboardWidgetPreference;
 use App\Domain\Dashboard\Policies\DashboardWidgetPreferencePolicy;
+use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Policies\DocumentPolicy;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
@@ -92,6 +94,10 @@ final class AccessServiceProvider extends ServiceProvider
         // Comments: a Partner reads the non-internal comments of the visible tasks and
         // writes new ones; nobody edits or deletes a comment (TA-04, D-08, A6).
         Gate::policy(TaskComment::class, TaskCommentPolicy::class);
+
+        // Files: the Admin manages them; a Partner is granted nothing yet. The Partner grants are explicit and
+        // added in plans 09-08 (read a shared file) and 09-10 (the own upload and delete).
+        Gate::policy(Document::class, DocumentPolicy::class);
 
         // API tokens are minted and revoked by the Admin only (AP-01); strict authorization needs the
         // registration, because the token screen is a Resource on this model.

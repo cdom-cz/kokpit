@@ -7,6 +7,8 @@ namespace Tests\Support;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Models\Document;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\BillingType;
@@ -252,6 +254,21 @@ final class CanaryRegistry
 
                     app(AddTaskComment::class)->handle($admin, $task, '<p>'.$canary.'</p>');
                     app(AddTaskComment::class)->handle($admin, $task, '<p>'.$canary.'</p>', internal: true);
+                });
+            },
+
+            // The visible file of the canary project of that client (found by name; the Project fixture runs
+            // before this one), attached through the real Action by an Admin. The canary is the file name, so a
+            // Partner reading any document would be caught. A Partner reads exactly this one row.
+            Document::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+
+                    app(AttachDocuments::class)->handle(
+                        Canary::admin(),
+                        $project,
+                        [DocumentFixtures::upload($canary.'.txt', 'Fictional file content '.$canary)],
+                    );
                 });
             },
 

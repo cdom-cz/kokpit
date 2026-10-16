@@ -9,6 +9,7 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
 use App\Domain\Dashboard\Models\DashboardWidgetPreference;
+use App\Domain\Documents\Models\Document;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
@@ -65,6 +66,7 @@ final class MorphMap
         'task_comment' => TaskComment::class,
         'time_entry' => TimeEntry::class,
         'dashboard_widget_preference' => DashboardWidgetPreference::class,
+        'document' => Document::class,
         'exchange_rate' => ExchangeRate::class,
         'report_export' => ReportExport::class,
         'signal_day_override' => SignalDayOverride::class,

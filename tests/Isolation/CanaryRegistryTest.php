@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\Documents\Models\Document;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
@@ -105,6 +106,7 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         Client::class,
         ClientInvitation::class,
         Contact::class,
+        Document::class,
         ExchangeRate::class,
         Media::class,
         Project::class,
