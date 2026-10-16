@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Filament\Resources;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Documents\Enums\DocumentOwnerType;
+use App\Domain\Documents\Enums\DocumentTypeGroup;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Projects\Models\Project;
@@ -13,17 +15,25 @@ use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Database\CzechCollation;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\TimeTracking\Support\PragueDay;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
 use App\Filament\Support\DocumentActions;
 use App\Filament\Support\DocumentColumns;
+use App\Providers\LocalisationServiceProvider;
+use Carbon\CarbonImmutable;
 use Filament\Actions\BulkActionGroup;
+use Filament\Forms\Components\DatePicker;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\Column;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Str;
 
 /**
  * The Admin's central "Soubory" listing (DO-02, D-07): every stored file of every owner, and the files that
@@ -47,6 +57,9 @@ final class DocumentResource extends Resource
     protected static ?int $navigationSort = 55;
 
     protected static bool $isGloballySearchable = false;
+
+    /** The value of the owner-type filter that selects the files without an owner. */
+    private const string UNATTACHED = 'unattached';
 
     public static function getNavigationLabel(): string
     {
@@ -98,6 +111,8 @@ final class DocumentResource extends Resource
             ->defaultSort(static fn (Builder $query): Builder => $query->orderByDesc($query->qualifyColumn('created_at'))->orderByDesc($query->qualifyColumn('id')))
             ->defaultPaginationPageOption(25)
             ->paginated([10, 25, 50, 100])
+            ->filters(self::filters())
+            ->filtersFormColumns(2)
             ->recordUrl(null)
             ->recordActions([
                 DocumentActions::preview(),
@@ -157,6 +172,184 @@ final class DocumentResource extends Resource
             $shared['visible_to_client']
                 ->sortable(),
         ];
+    }
+
+    /**
+     * The filters of the listing (D-07, D-21), combined with AND. A value the Admin did not pick from the
+     * options (a forged one) narrows nothing, so it can neither raise an error nor hide a file: the queries
+     * below accept only a known owner kind, a real key, a real calendar day, a known group and a known flag.
+     * Only the archived-owners filter starts on a value: the files of active owners.
+     *
+     * @return list<Filter|SelectFilter|TernaryFilter>
+     */
+    private static function filters(): array
+    {
+        return [
+            SelectFilter::make('owner_type')
+                ->label(__('documents.filters.owner_type'))
+                ->options(self::ownerTypeOptions())
+                ->query(static function (Builder $query, array $data): Builder {
+                    $value = $data['value'] ?? null;
+
+                    if ($value === self::UNATTACHED) {
+                        return $query->whereNull($query->qualifyColumn('owner_type'));
+                    }
+
+                    $type = is_string($value) ? DocumentOwnerType::tryFrom($value) : null;
+
+                    return $type === null ? $query : $query->where($query->qualifyColumn('owner_type'), $type->value);
+                }),
+            SelectFilter::make('client_id')
+                ->label(__('documents.filters.client'))
+                ->options(static fn (): array => self::clientOptions())
+                ->searchable()
+                ->query(static fn (Builder $query, array $data): Builder => self::whereKeyIs($query, 'client_id', $data['value'] ?? null)),
+            SelectFilter::make('project_id')
+                ->label(__('documents.filters.project'))
+                ->options(static fn (): array => self::projectOptions())
+                ->searchable()
+                ->query(static fn (Builder $query, array $data): Builder => self::whereKeyIs($query, 'project_id', $data['value'] ?? null)),
+            Filter::make('created')
+                ->label(__('documents.filters.created'))
+                ->schema([
+                    DatePicker::make('from')->label(__('documents.filters.created_from')),
+                    DatePicker::make('until')->label(__('documents.filters.created_until')),
+                ])
+                ->query(static function (Builder $query, array $data): Builder {
+                    $from = PragueDay::day($data['from'] ?? null);
+                    $until = PragueDay::day($data['until'] ?? null);
+
+                    // Half-open range on the UTC instants of the Prague day boundaries, so both days are whole days.
+                    return $query
+                        ->when($from !== null, static fn (Builder $query): Builder => $query->whereRaw('documents.created_at >= ?::timestamptz', [PragueDay::start((string) $from)->format('Y-m-d H:i:sP')]))
+                        ->when($until !== null, static fn (Builder $query): Builder => $query->whereRaw('documents.created_at < ?::timestamptz', [PragueDay::endExclusive((string) $until)->format('Y-m-d H:i:sP')]));
+                })
+                ->indicateUsing(static function (array $data): array {
+                    $from = PragueDay::day($data['from'] ?? null);
+                    $until = PragueDay::day($data['until'] ?? null);
+                    $label = __('documents.filters.created');
+
+                    return array_values(array_filter([
+                        $from === null ? null : $label.' '.mb_strtolower(__('documents.filters.created_from')).': '.self::dayText($from),
+                        $until === null ? null : $label.' '.mb_strtolower(__('documents.filters.created_until')).': '.self::dayText($until),
+                    ]));
+                }),
+            SelectFilter::make('type_group')
+                ->label(__('documents.filters.type_group'))
+                ->options(DocumentTypeGroup::class)
+                ->query(static function (Builder $query, array $data): Builder {
+                    $group = is_string($data['value'] ?? null) ? DocumentTypeGroup::tryFrom($data['value']) : null;
+
+                    return $group === null ? $query : $group->constrain($query);
+                }),
+            TernaryFilter::make('visible_to_client')
+                ->label(__('documents.filters.visibility'))
+                ->trueLabel(__('documents.filters.visibility_visible'))
+                ->falseLabel(__('documents.filters.visibility_hidden'))
+                ->placeholder(__('documents.filters.visibility_all'))
+                ->query(static function (Builder $query, array $data): Builder {
+                    $visible = self::ternary($data['value'] ?? null);
+
+                    return $visible === null ? $query : $query->where($query->qualifyColumn('visible_to_client'), $visible);
+                }),
+            // D-21: the files of archived clients, projects and tasks leave the default listing; the rule is in the
+            // Document scopes, this filter only chooses. The blank option shows every file.
+            TernaryFilter::make('archived_owners')
+                ->label(__('documents.filters.archived_owners'))
+                ->trueLabel(__('documents.filters.archived_owners_only'))
+                ->falseLabel(__('documents.filters.archived_owners_without'))
+                ->placeholder(__('documents.filters.archived_owners_all'))
+                ->default(false)
+                ->query(static fn (Builder $query, array $data): Builder => self::archivedOwners($query, self::ternary($data['value'] ?? null))),
+        ];
+    }
+
+    /**
+     * The archived-owners choice (D-21): false is the files of active owners, true only the files of archived
+     * owners, null every file. The rule is in the Document scopes.
+     *
+     * @param  Builder<Document>  $query
+     * @return Builder<Document>
+     */
+    private static function archivedOwners(Builder $query, ?bool $archived): Builder
+    {
+        return match ($archived) {
+            true => $query->onlyArchivedOwners(),
+            false => $query->withoutArchivedOwners(),
+            null => $query,
+        };
+    }
+
+    /**
+     * What a ternary filter was set to: true, false, or null for the blank option and for anything that is
+     * not one of the two (a forged value shows every file).
+     */
+    private static function ternary(mixed $value): ?bool
+    {
+        return match (true) {
+            $value === true, $value === 1, $value === '1', $value === 'true' => true,
+            $value === false, $value === 0, $value === '0', $value === 'false' => false,
+            default => null,
+        };
+    }
+
+    /**
+     * Narrows to the rows whose key column equals the picked key; anything but a UUID narrows nothing.
+     *
+     * @param  Builder<Document>  $query
+     * @return Builder<Document>
+     */
+    private static function whereKeyIs(Builder $query, string $column, mixed $value): Builder
+    {
+        return is_string($value) && Str::isUuid($value) ? $query->where($query->qualifyColumn($column), $value) : $query;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function ownerTypeOptions(): array
+    {
+        $options = [];
+
+        foreach (DocumentOwnerType::cases() as $type) {
+            $options[$type->value] = $type->getLabel();
+        }
+
+        $options[self::UNATTACHED] = __('documents.filters.unattached');
+
+        return $options;
+    }
+
+    /**
+     * Every client, archived ones included: an archived client still owns files (D-07). Czech order.
+     *
+     * @return array<string, string>
+     */
+    private static function clientOptions(): array
+    {
+        /** @var array<string, string> */
+        return CzechCollation::orderBy(Client::query()->withTrashed(), 'name')->pluck('name', 'id')->all();
+    }
+
+    /**
+     * Every project, archived ones included, as "KEY · name" by key.
+     *
+     * @return array<string, string>
+     */
+    private static function projectOptions(): array
+    {
+        $options = [];
+
+        foreach (Project::query()->withTrashed()->orderBy('key')->get(['id', 'key', 'name']) as $project) {
+            $options[$project->id] = $project->key.' · '.$project->name;
+        }
+
+        return $options;
+    }
+
+    private static function dayText(string $day): string
+    {
+        return CarbonImmutable::createFromFormat('!Y-m-d', $day)?->format(LocalisationServiceProvider::DATE_FORMAT) ?? $day;
     }
 
     /**

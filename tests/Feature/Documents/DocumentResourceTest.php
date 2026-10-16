@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Actions\ArchiveClient;
+use App\Domain\Clients\Actions\RestoreClient;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Enums\DocumentTypeGroup;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Finance\Actions\RecordTransaction;
 use App\Domain\Finance\Models\Transaction;
@@ -12,7 +15,9 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Tasks\Actions\AddTaskComment;
+use App\Domain\Tasks\Actions\ArchiveTask;
 use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Actions\RestoreTask;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\DocumentResource;
@@ -95,6 +100,20 @@ function listingPage(): Testable
 }
 
 /**
+ * The row of the given file as the table loaded it, with the eager-loaded owner, client and uploader.
+ */
+function listingRow(Testable $listing, Document $document): Document
+{
+    foreach ($listing->instance()->getTableRecords() as $row) {
+        if ($row instanceof Document && $row->getKey() === $document->getKey()) {
+            return $row;
+        }
+    }
+
+    throw new RuntimeException('The file is not on the loaded page of the listing.');
+}
+
+/**
  * The URL the owner column links to for the given file.
  */
 function listingOwnerUrl(Testable $listing, Document $document): ?string
@@ -102,7 +121,7 @@ function listingOwnerUrl(Testable $listing, Document $document): ?string
     $column = $listing->instance()->getTable()->getColumn('owner');
     assert($column !== null);
 
-    return $column->record($document)->getUrl();
+    return $column->record(listingRow($listing, $document))->getUrl();
 }
 
 beforeEach(function (): void {
@@ -265,4 +284,375 @@ it('is not globally searchable and the global search of the panel finds no file,
 it('lists no create page and no record page, only the index', function (): void {
     expect(array_keys(DocumentResource::getPages()))->toBe(['index'])
         ->and(DocumentResource::canCreate())->toBeFalse();
+});
+
+/**
+ * Moves the upload instant of a file, as an UTC instant (the filters work on Prague days).
+ */
+function listingCreatedAt(Document $document, string $utc): Document
+{
+    Document::query()->whereKey($document->getKey())->update(['created_at' => $utc.'+00']);
+
+    return $document->refresh();
+}
+
+/**
+ * A client with a project, a task, a comment, a transaction and one file on each, plus a loose file, for the
+ * filters that tell the owner kinds apart.
+ *
+ * @return array{client: Client, project: Project, task: Task, files: array{client: Document, project: Document, task: Document, comment: Document, transaction: Document, unattached: Document}}
+ */
+function listingTree(User $admin, ?Client $client = null, string $key = 'LST'): array
+{
+    $client ??= Client::factory()->create();
+    $project = listingProject($client, $key);
+    $task = app(CreateTask::class)->handle($admin, $project, ['title' => 'Example listing task']);
+    $comment = app(AddTaskComment::class)->handle($admin, $task, 'Example listing comment');
+    $transaction = listingTransaction($client);
+
+    return [
+        'client' => $client,
+        'project' => $project,
+        'task' => $task,
+        'files' => [
+            'client' => listingAttach($client, 'client-example.txt'),
+            'project' => listingAttach($project, 'project-example.txt'),
+            'task' => listingAttach($task, 'task-example.txt'),
+            'comment' => listingAttach($comment, 'comment-example.txt'),
+            'transaction' => listingAttach($transaction, 'transaction-example.txt'),
+            'unattached' => listingAttach(null, 'unattached-example.txt'),
+        ],
+    ];
+}
+
+/**
+ * The listing with the default archived-owners filter switched off, so every file is a candidate.
+ */
+function listingAll(): Testable
+{
+    return listingPage()->set('tableFilters.archived_owners.value', null);
+}
+
+it('filters by owner type, each kind returning only its files and "unattached" only the loose ones', function (): void {
+    $files = listingTree($this->admin)['files'];
+
+    foreach (['client' => 'client', 'project' => 'project', 'task' => 'task', 'task_comment' => 'comment', 'transaction' => 'transaction'] as $type => $key) {
+        $others = array_values(array_filter($files, static fn (Document $document, string $name): bool => $name !== $key, ARRAY_FILTER_USE_BOTH));
+
+        listingPage()
+            ->filterTable('owner_type', $type)
+            ->assertCanSeeTableRecords([$files[$key]])
+            ->assertCanNotSeeTableRecords($others)
+            ->assertCountTableRecords(1);
+    }
+
+    listingPage()
+        ->filterTable('owner_type', 'unattached')
+        ->assertCanSeeTableRecords([$files['unattached']])
+        ->assertCountTableRecords(1);
+});
+
+it('filters by client across every owner kind, receipts included, and by project', function (): void {
+    $tree = listingTree($this->admin, null, 'AAA');
+    $other = listingTree($this->admin, null, 'BBB');
+    $ownFiles = array_values(array_filter($tree['files'], static fn (Document $document): bool => $document->client_id !== null));
+
+    listingPage()
+        ->filterTable('client_id', $tree['client']->getKey())
+        ->assertCanSeeTableRecords($ownFiles)
+        ->assertCanNotSeeTableRecords([...array_values($other['files']), $tree['files']['unattached']])
+        ->assertCountTableRecords(5);
+
+    // The project filter matches the project_id column: the project file, its task file and its comment file.
+    listingPage()
+        ->filterTable('project_id', $tree['project']->getKey())
+        ->assertCanSeeTableRecords([$tree['files']['project'], $tree['files']['task'], $tree['files']['comment']])
+        ->assertCountTableRecords(3);
+});
+
+it('offers archived clients and projects in the client and project filter', function (): void {
+    $client = Client::factory()->create(['name' => 'Example archived-filter client']);
+    $project = listingProject($client, 'ARC');
+
+    $project->delete();
+    $client->delete();
+
+    $table = listingPage()->instance()->getTable();
+
+    expect($table->getFilter('client_id')?->getOptions())->toHaveKey($client->getKey())
+        ->and($table->getFilter('project_id')?->getOptions())->toHaveKey($project->getKey());
+});
+
+it('filters by the inclusive Prague days of the upload', function (): void {
+    // 2026-10-01 is summer time in Prague (UTC+2): the Prague day runs from 2026-09-30 22:00 to 2026-10-01 22:00 UTC.
+    $first = listingCreatedAt(listingAttach(null, 'first-instant-example.txt'), '2026-09-30 22:00:00');
+    $late = listingCreatedAt(listingAttach(null, 'late-evening-example.txt'), '2026-10-01 21:30:00');
+    $before = listingCreatedAt(listingAttach(null, 'day-before-example.txt'), '2026-09-30 21:59:00');
+    $next = listingCreatedAt(listingAttach(null, 'next-day-example.txt'), '2026-10-01 22:10:00');
+
+    listingPage()
+        ->filterTable('created', ['from' => '2026-10-01', 'until' => '2026-10-01'])
+        ->assertCanSeeTableRecords([$first, $late])
+        ->assertCanNotSeeTableRecords([$before, $next]);
+
+    listingPage()
+        ->filterTable('created', ['from' => '2026-10-02', 'until' => null])
+        ->assertCanSeeTableRecords([$next])
+        ->assertCanNotSeeTableRecords([$first, $late, $before]);
+
+    listingPage()
+        ->filterTable('created', ['from' => null, 'until' => '2026-09-30'])
+        ->assertCanSeeTableRecords([$before])
+        ->assertCanNotSeeTableRecords([$first, $late, $next]);
+});
+
+it('filters by file-type group', function (): void {
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==');
+    $pdf = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n";
+
+    $documents = [
+        'image' => listingAttach(null, 'picture-example.png', $png),
+        'pdf' => listingAttach(null, 'paper-example.pdf', $pdf),
+        'text' => listingAttach(null, 'letter-example.docx', 'Fictional letter body'),
+        'spreadsheet' => listingAttach(null, 'table-example.csv', "first,second\n1,2\n"),
+        'presentation' => listingAttach(null, 'slides-example.pptx', 'Fictional slides'),
+        'archive' => listingAttach(null, 'bundle-example.zip', "PK\x05\x06".str_repeat("\x00", 18)),
+        'other' => listingAttach(null, 'blob-example.bin', "\x00\x01\x02\x03\xff\xfe"),
+        'no-extension' => listingAttach(null, 'plain-example', 'Fictional text without an extension'),
+    ];
+
+    $expected = [
+        'image' => ['image'],
+        'pdf' => ['pdf'],
+        'text' => ['text'],
+        'spreadsheet' => ['spreadsheet'],
+        'presentation' => ['presentation'],
+        'archive' => ['archive'],
+        'other' => ['other', 'no-extension'],
+    ];
+
+    foreach ($expected as $group => $keys) {
+        $inGroup = array_map(static fn (string $key): Document => $documents[$key], $keys);
+        $outside = array_values(array_filter($documents, static fn (string $key): bool => ! in_array($key, $keys, true), ARRAY_FILTER_USE_KEY));
+
+        listingPage()
+            ->filterTable('type_group', $group)
+            ->assertCanSeeTableRecords($inGroup)
+            ->assertCanNotSeeTableRecords($outside)
+            ->assertCountTableRecords(count($keys));
+    }
+
+    // The label of a file and the filter agree.
+    foreach ($documents as $key => $document) {
+        $group = DocumentTypeGroup::of($document);
+
+        expect(in_array($key, $expected[$group->value], true))->toBeTrue("{$key} is in {$group->value}");
+    }
+});
+
+it('filters by what the client sees', function (): void {
+    $tree = listingTree($this->admin);
+    $visible = array_values(array_filter($tree['files'], static fn (Document $document): bool => $document->visible_to_client));
+    $hidden = array_values(array_filter($tree['files'], static fn (Document $document): bool => ! $document->visible_to_client));
+
+    expect($visible)->not->toBeEmpty()
+        ->and($hidden)->not->toBeEmpty();
+
+    listingPage()
+        ->filterTable('visible_to_client', true)
+        ->assertCanSeeTableRecords($visible)
+        ->assertCanNotSeeTableRecords($hidden);
+
+    listingPage()
+        ->filterTable('visible_to_client', false)
+        ->assertCanSeeTableRecords($hidden)
+        ->assertCanNotSeeTableRecords($visible);
+});
+
+it('sorts the names in Czech order and every other column without an error', function (): void {
+    $data = listingAttach(null, 'Data.txt');
+    $quarter = listingAttach(null, implode('', ['Čtvrt', 'letí']).'.txt');
+    $price = listingAttach(null, 'Cena.txt');
+
+    listingPage()
+        ->sortTable('name')
+        ->assertCanSeeTableRecords([$price, $quarter, $data], inOrder: true)
+        ->sortTable('name', 'desc')
+        ->assertCanSeeTableRecords([$data, $quarter, $price], inOrder: true);
+
+    foreach (['owner', 'client.name', 'size_bytes', 'mime_type', 'uploader.name', 'created_at', 'visible_to_client'] as $column) {
+        listingPage()
+            ->sortTable($column)
+            ->assertSuccessful()
+            ->assertCanSeeTableRecords([$data, $quarter, $price])
+            ->sortTable($column, 'desc')
+            ->assertSuccessful()
+            ->assertCanSeeTableRecords([$data, $quarter, $price]);
+    }
+});
+
+it('sorts by client name in Czech order and keeps the files without a client', function (): void {
+    $dvorak = listingAttach(Client::factory()->create(['name' => implode(' ', ['Dvořák', 'Example'])]), 'dvorak-example.txt');
+    $capek = listingAttach(Client::factory()->create(['name' => implode(' ', ['Čapek', 'Example'])]), 'capek-example.txt');
+    $cihla = listingAttach(Client::factory()->create(['name' => implode(' ', ['Cihla', 'Example'])]), 'cihla-example.txt');
+    $loose = listingAttach(null, 'loose-example.txt');
+
+    listingPage()
+        ->sortTable('client.name')
+        ->assertCanSeeTableRecords([$cihla, $capek, $dvorak, $loose], inOrder: true)
+        ->sortTable('client.name', 'desc')
+        ->assertCanSeeTableRecords([$loose, $dvorak, $capek, $cihla], inOrder: true);
+});
+
+it('sorts by the uploader name in Czech order', function (): void {
+    $other = Canary::admin();
+
+    User::query()->whereKey($this->admin->getKey())->update(['name' => implode(' ', ['Zeta', 'Example'])]);
+    User::query()->whereKey($other->getKey())->update(['name' => implode(' ', ['Čapek', 'Example'])]);
+
+    $byZeta = listingAttach(null, 'by-zeta-example.txt');
+    $byCapek = listingAttach(null, 'by-capek-example.txt');
+
+    Document::query()->whereKey($byCapek->getKey())->update(['uploaded_by_id' => $other->getKey()]);
+
+    listingPage()
+        ->sortTable('uploader.name')
+        ->assertCanSeeTableRecords([$byCapek, $byZeta], inOrder: true)
+        ->sortTable('uploader.name', 'desc')
+        ->assertCanSeeTableRecords([$byZeta, $byCapek], inOrder: true);
+});
+
+it('finds a file by a part of its name, whatever the letter case', function (): void {
+    $contract = listingAttach(null, implode(' ', ['Smlouva', 'o', 'dílo']).'.pdf');
+    $other = listingAttach(null, 'invoice-example.txt');
+
+    listingPage()
+        ->searchTable('smlouva')
+        ->assertCanSeeTableRecords([$contract])
+        ->assertCanNotSeeTableRecords([$other]);
+});
+
+it('falls back to no filter for a forged filter value', function (): void {
+    $tree = listingTree($this->admin);
+    $all = array_values($tree['files']);
+
+    $listing = listingAll();
+
+    foreach ([
+        'owner_type' => 'not-an-owner-type',
+        'client_id' => 'not-a-uuid',
+        'project_id' => "'; drop table documents; --",
+        'type_group' => 'not-a-group',
+        'visible_to_client' => 'maybe',
+    ] as $name => $value) {
+        $listing->set("tableFilters.{$name}.value", $value)->assertSuccessful()->assertCanSeeTableRecords($all);
+        $listing->set("tableFilters.{$name}.value", null);
+    }
+
+    $listing
+        ->set('tableFilters.created.from', 'garbage')
+        ->set('tableFilters.created.until', '2026-13-45')
+        ->assertSuccessful()
+        ->assertCanSeeTableRecords($all);
+
+    $listing
+        ->set('tableFilters.archived_owners.value', 'garbage')
+        ->assertSuccessful()
+        ->assertCanSeeTableRecords($all);
+});
+
+it('hides the files of an archived project by default, shows only them under the archived filter and brings them back on restore', function (): void {
+    $tree = listingTree($this->admin);
+    $files = $tree['files'];
+    $projectFiles = [$files['project'], $files['task'], $files['comment']];
+    $rest = [$files['client'], $files['transaction'], $files['unattached']];
+
+    $tree['project']->delete();
+
+    listingPage()
+        ->assertCanSeeTableRecords($rest)
+        ->assertCanNotSeeTableRecords($projectFiles);
+
+    listingPage()
+        ->filterTable('archived_owners', true)
+        ->assertCanSeeTableRecords($projectFiles)
+        ->assertCanNotSeeTableRecords($rest);
+
+    listingAll()->assertCanSeeTableRecords([...$rest, ...$projectFiles]);
+
+    $tree['project']->restore();
+
+    listingPage()->assertCanSeeTableRecords([...$rest, ...$projectFiles]);
+});
+
+it('hides the files of an archived task and of its comments, keeping the project file', function (): void {
+    $tree = listingTree($this->admin);
+    $files = $tree['files'];
+
+    app(ArchiveTask::class)->handle($this->admin, $tree['task']);
+
+    listingPage()
+        ->assertCanSeeTableRecords([$files['client'], $files['project'], $files['transaction'], $files['unattached']])
+        ->assertCanNotSeeTableRecords([$files['task'], $files['comment']]);
+
+    listingPage()
+        ->filterTable('archived_owners', true)
+        ->assertCanSeeTableRecords([$files['task'], $files['comment']])
+        ->assertCountTableRecords(2);
+
+    app(RestoreTask::class)->handle($this->admin, $tree['task']);
+
+    listingPage()->assertCanSeeTableRecords(array_values($files));
+});
+
+it('hides the files of an archived client but never a receipt or a loose file', function (): void {
+    $tree = listingTree($this->admin);
+    $files = $tree['files'];
+    $archived = [$files['client'], $files['project'], $files['task'], $files['comment']];
+
+    app(ArchiveClient::class)->handle($tree['client']);
+
+    // The receipt of a transaction of the archived client is a finance record and stays findable.
+    listingPage()
+        ->assertCanSeeTableRecords([$files['transaction'], $files['unattached']])
+        ->assertCanNotSeeTableRecords($archived);
+
+    listingPage()
+        ->filterTable('archived_owners', true)
+        ->assertCanSeeTableRecords($archived)
+        ->assertCanNotSeeTableRecords([$files['transaction'], $files['unattached']]);
+
+    app(RestoreClient::class)->handle($tree['client']);
+
+    listingPage()->assertCanSeeTableRecords(array_values($files));
+});
+
+it('shows archived owners by name and link, and the archived client by name, without lazy-loading a relation', function (): void {
+    $client = Client::factory()->create(['name' => 'Example archived client']);
+    $tree = listingTree($this->admin, $client, 'ARC');
+    $files = $tree['files'];
+
+    $tree['project']->delete();
+    $client->delete();
+
+    // A relation loaded on its own for a row would throw here instead of costing a query per row.
+    Model::preventLazyLoading();
+
+    try {
+        $listing = listingAll()->assertCanSeeTableRecords(array_values($files));
+
+        expect(listingOwnerUrl($listing, $files['client']))->toBe(ClientResource::getUrl('view', ['record' => $client]))
+            ->and(listingOwnerUrl($listing, $files['project']))->toBe(ProjectResource::getUrl('view', ['record' => $tree['project']]))
+            ->and(listingOwnerUrl($listing, $files['task']))->toBe(TaskResource::getUrl('view', ['record' => $tree['task']]))
+            ->and(listingOwnerUrl($listing, $files['comment']))->toBe(TaskResource::getUrl('view', ['record' => $tree['task']]));
+
+        $listing
+            ->assertTableColumnHasDescription('owner', 'Example archived client', $files['client'])
+            ->assertTableColumnHasDescription('owner', $tree['project']->name, $files['project'])
+            ->assertTableColumnHasDescription('owner', $tree['task']->reference, $files['task'])
+            ->assertTableColumnHasDescription('owner', $tree['task']->reference, $files['comment'])
+            ->assertTableColumnStateSet('client.name', 'Example archived client', $files['project']);
+    } finally {
+        Model::preventLazyLoading(false);
+    }
 });

@@ -30,6 +30,17 @@ return [
         'transaction' => 'Transakce',
     ],
 
+    // DocumentTypeGroup: the file-type groups of the central documents listing (plan 09-14).
+    'document_type_group' => [
+        'image' => 'Obrázky',
+        'pdf' => 'PDF',
+        'text' => 'Textové dokumenty',
+        'spreadsheet' => 'Tabulky',
+        'presentation' => 'Prezentace',
+        'archive' => 'Archivy',
+        'other' => 'Ostatní',
+    ],
+
     'vat_mode' => [
         'non_payer' => 'Neplátce DPH',
         'payer' => 'Plátce DPH',
