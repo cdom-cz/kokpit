@@ -319,4 +319,182 @@ describe('editing a transaction booked at an own rate', function (): void {
             ->and($updated->czk_source)->toBe(CzkSource::Custom)
             ->and($updated->exchange_rate_date->toDateString())->toBe('2026-10-14');
     });
+    it('leaves the figure and the snapshot as stored when only the date changes', function () use ($record): void {
+        $transaction = $record();
+        ownRateCnb(['rate_date' => '2026-10-15', 'rate' => '30.000']);
+
+        $updated = ($this->update)($transaction, ['transaction_date' => '2026-10-15']);
+
+        expect($updated->transaction_date->toDateString())->toBe('2026-10-15')
+            ->and($updated->czk_minor)->toBe(251250)
+            ->and($updated->czk_source)->toBe(CzkSource::Custom)
+            ->and($updated->exchange_rate)->toBe('25.1250000000')
+            ->and($updated->exchange_unit_amount)->toBe(1)
+            ->and($updated->exchange_rate_date->toDateString())->toBe('2026-10-14');
+    });
+
+    it('leaves the figure and the snapshot as stored when only the description changes', function () use ($record): void {
+        $transaction = $record();
+
+        $updated = ($this->update)($transaction, ['description' => 'Changed text']);
+
+        expect($updated->description)->toBe('Changed text')
+            ->and($updated->czk_minor)->toBe(251250)
+            ->and($updated->czk_source)->toBe(CzkSource::Custom)
+            ->and($updated->exchange_rate)->toBe('25.1250000000');
+    });
+
+    it('falls back to the CNB rule of the transaction date when the currency changes', function () use ($record): void {
+        ownRateCnb(['currency' => 'USD', 'rate_date' => '2026-10-09', 'rate' => '22.500']);
+        $transaction = $record();
+
+        $updated = ($this->update)($transaction, ['currency' => 'USD']);
+
+        expect($updated->amount_currency)->toBe('USD')
+            ->and($updated->czk_minor)->toBe(225000)
+            ->and($updated->czk_source)->toBe(CzkSource::Cnb)
+            ->and($updated->exchange_rate)->toBe('22.5000000000')
+            ->and($updated->exchange_rate_date->toDateString())->toBe('2026-10-09');
+    });
+
+    it('refuses a currency change without a CNB list for the day under czk_amount and keeps the row', function () use ($record): void {
+        ownRateCnb(['currency' => 'USD', 'rate_date' => '2026-10-20', 'rate' => '22.500']);
+        $transaction = $record();
+
+        $errors = ownRateErrors(fn () => ($this->update)($transaction, ['currency' => 'USD']));
+
+        expect($errors)->toHaveKey('czk_amount')
+            ->and($transaction->refresh()->czk_source)->toBe(CzkSource::Custom)
+            ->and($transaction->amount_currency)->toBe('EUR')
+            ->and($transaction->czk_minor)->toBe(251250);
+    });
+
+    it('turns into identity without a snapshot when the currency changes to CZK', function () use ($record): void {
+        $transaction = $record();
+
+        $updated = ($this->update)($transaction, ['currency' => 'CZK']);
+
+        expect($updated->czk_minor)->toBe(10000)
+            ->and($updated->czk_source)->toBe(CzkSource::Identity)
+            ->and($updated->exchange_rate)->toBeNull()
+            ->and($updated->exchange_unit_amount)->toBeNull()
+            ->and($updated->exchange_rate_date)->toBeNull();
+    });
+
+    it('takes a new own rate with the transaction date as the rate date', function () use ($record): void {
+        $transaction = $record();
+
+        $updated = ($this->update)($transaction, ['exchange_rate' => '26.000', 'transaction_date' => '2026-10-15']);
+
+        expect($updated->czk_minor)->toBe(260000)
+            ->and($updated->czk_source)->toBe(CzkSource::Custom)
+            ->and($updated->exchange_rate)->toBe('26.0000000000')
+            ->and($updated->exchange_rate_date->toDateString())->toBe('2026-10-15');
+    });
+
+    it('makes a CNB or a manual transaction custom when an own rate is typed', function (array $first): void {
+        $transaction = app(RecordTransaction::class)->handle($this->admin, ownRateData($first));
+        ownRateCnb(['rate_date' => '2026-10-14', 'rate' => '24.000']);
+
+        $updated = ($this->update)($transaction, ['exchange_rate' => '25.125']);
+
+        expect($updated->czk_source)->toBe(CzkSource::Custom)
+            ->and($updated->czk_minor)->toBe(251250)
+            ->and($updated->exchange_rate)->toBe('25.1250000000')
+            ->and($updated->exchange_rate_date->toDateString())->toBe('2026-10-14');
+    })->with([
+        'cnb' => [[]],
+        'manual' => [['czk_amount' => '2 400,00']],
+    ]);
+
+    it('turns a custom transaction into a manual one when a CZK figure is typed', function () use ($record): void {
+        $transaction = $record();
+
+        $updated = ($this->update)($transaction, ['czk_amount' => '2 600,00']);
+
+        expect($updated->czk_minor)->toBe(260000)
+            ->and($updated->czk_source)->toBe(CzkSource::Manual)
+            ->and($updated->exchange_rate)->toBeNull()
+            ->and($updated->exchange_unit_amount)->toBeNull()
+            ->and($updated->exchange_rate_date)->toBeNull();
+    });
+
+    it('returns a custom transaction to CNB when the rate is cleared and czk_manual is false, with nothing else changed', function () use ($record): void {
+        $transaction = $record();
+
+        $updated = ($this->update)($transaction, ['exchange_rate' => null, 'czk_manual' => false]);
+
+        expect($updated->czk_source)->toBe(CzkSource::Cnb)
+            ->and($updated->czk_minor)->toBe(240000)
+            ->and($updated->exchange_rate)->toBe('24.0000000000')
+            ->and($updated->exchange_rate_date->toDateString())->toBe('2026-10-09');
+    });
+
+    it('refuses clearing the rate of a custom transaction without a CNB list under czk_amount and keeps the row', function (): void {
+        $transaction = app(RecordTransaction::class)->handle($this->admin, ownRateData(['currency' => 'USD', 'exchange_rate' => '22.5']));
+
+        $errors = ownRateErrors(fn () => ($this->update)($transaction, ['exchange_rate' => null, 'czk_manual' => false]));
+
+        expect($errors)->toHaveKey('czk_amount')
+            ->and($transaction->refresh()->czk_source)->toBe(CzkSource::Custom)
+            ->and($transaction->czk_minor)->toBe(225000);
+    });
+
+    it('leaves a CNB transaction untouched when the rate is cleared, even if a newer list exists', function (): void {
+        ownRateCnb(['rate_date' => '2026-10-14', 'rate' => '24.000']);
+        $transaction = app(RecordTransaction::class)->handle($this->admin, ownRateData());
+        ownRateCnb(['rate_date' => '2026-10-14', 'rate' => '30.000']);
+
+        $updated = ($this->update)($transaction, ['exchange_rate' => null, 'czk_manual' => false]);
+
+        expect($updated->czk_source)->toBe(CzkSource::Cnb)
+            ->and($updated->czk_minor)->toBe(240000)
+            ->and($updated->exchange_rate)->toBe('24.0000000000');
+    });
+
+    it('does not touch a manual figure when the rate is cleared without czk_manual and recomputes it with czk_manual false', function (): void {
+        $transaction = app(RecordTransaction::class)->handle($this->admin, ownRateData(['czk_amount' => '2 400,00']));
+
+        $kept = ($this->update)($transaction, ['exchange_rate' => null]);
+
+        expect($kept->czk_source)->toBe(CzkSource::Manual)
+            ->and($kept->czk_minor)->toBe(240000);
+
+        $computed = ($this->update)($kept, ['exchange_rate' => null, 'czk_manual' => false]);
+
+        expect($computed->czk_source)->toBe(CzkSource::Cnb)
+            ->and($computed->czk_minor)->toBe(240000)
+            ->and($computed->exchange_rate)->toBe('24.0000000000');
+    });
+
+    it('stores a custom row as cnb when the UI flag czk_manual false comes with a changed amount', function () use ($record): void {
+        $transaction = $record();
+
+        $updated = ($this->update)($transaction, ['amount' => '200,00', 'czk_manual' => false]);
+
+        expect($updated->czk_source)->toBe(CzkSource::Cnb)
+            ->and($updated->czk_minor)->toBe(480000)
+            ->and($updated->exchange_rate)->toBe('24.0000000000');
+    });
+
+    it('stores a custom row as cnb when the UI flag czk_manual false comes with a changed date', function () use ($record): void {
+        $transaction = $record();
+
+        $updated = ($this->update)($transaction, ['transaction_date' => '2026-10-15', 'czk_manual' => false]);
+
+        expect($updated->czk_source)->toBe(CzkSource::Cnb)
+            ->and($updated->czk_minor)->toBe(240000);
+    });
+
+    it('keeps the custom figure and snapshot when the UI flag czk_manual false comes with a description only', function () use ($record): void {
+        $transaction = $record();
+
+        $updated = ($this->update)($transaction, ['description' => 'Changed text', 'czk_manual' => false]);
+
+        expect($updated->description)->toBe('Changed text')
+            ->and($updated->czk_source)->toBe(CzkSource::Custom)
+            ->and($updated->czk_minor)->toBe(251250)
+            ->and($updated->exchange_rate)->toBe('25.1250000000')
+            ->and($updated->exchange_rate_date->toDateString())->toBe('2026-10-14');
+    });
 });

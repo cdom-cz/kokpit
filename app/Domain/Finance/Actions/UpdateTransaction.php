@@ -36,7 +36,10 @@ use Illuminate\Validation\ValidationException;
  * - a custom transaction (booked at an own rate) keeps that rate while the data says nothing about `czk_manual`: a
  *   changed amount in the same currency is recomputed at the stored rate and unit amount with the stored rate date,
  *   a changed currency falls back to the CNB rule of the transaction date, and a changed date or any other edit
- *   leaves the figure and the snapshot as stored.
+ *   leaves the figure and the snapshot as stored;
+ * - data naming `exchange_rate` with null (the API's way back to CNB, together with `czk_manual` false) recomputes
+ *   a custom transaction through the CNB rule even when nothing else changed; it does not touch a manual
+ *   transaction (unless `czk_manual` is false) and does not recompute a CNB one.
  * A CZK transaction needs no rate: it is identity whatever was typed or kept.
  *
  * A receipt counts for the client and project of its transaction (D-11), so when either changes the receipts
@@ -113,14 +116,16 @@ final readonly class UpdateTransaction
             return $this->czk->resolve($input->amount, $input->transactionDate, $manual);
         }
 
-        if ($wasCustom && $input->czkManual === null) {
+        if ($wasCustom && $input->czkManual === null && ! $input->customRateCleared) {
             return $this->stickyFigure($stored, $input);
         }
 
         $changed = $input->transactionDate !== $stored->transaction_date->toDateString()
             || ! $input->amount->equals($stored->amount);
 
-        if ($wasManual || $changed) {
+        // A cleared own rate returns a custom transaction to the CNB rule even when nothing else changed; a CNB
+        // transaction is never recomputed by it alone.
+        if ($wasManual || $changed || ($wasCustom && $input->customRateCleared)) {
             return $this->czk->resolve($input->amount, $input->transactionDate, null);
         }
 
