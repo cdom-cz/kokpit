@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: "09.1"
 current_phase_name: Transactions API (INSERTED)
-status: executing
-stopped_at: Completed 09.1-07-PLAN.md
-last_updated: "2026-10-16T22:58:42.917Z"
+status: verifying
+stopped_at: Completed 09.1-08-PLAN.md
+last_updated: "2026-10-16T23:07:47.119Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09.1 execution started
-state_head: cc3a73098ceb564b7e0093f6d40a56699b0a24d9
+state_head: 73c7e4aa6d05737e75460fb0f0af45fb6e8b6a5b
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 223
-  completed_plans: 182
+  completed_plans: 183
   percent: 54
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 Phase: 09.1 (Transactions API (INSERTED)) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-16 — Phase 09.1 execution started
 
 Progress: [█████░░░░░] 54%
@@ -244,6 +244,7 @@ Progress: [█████░░░░░] 54%
 | Phase 09.1 P05 | 45 min | 3 tasks | 15 files |
 | Phase 09.1 P06 | 8 min | 3 tasks | 13 files |
 | Phase 09.1 P07 | 6 min | 3 tasks | 12 files |
+| Phase 09.1 P08 | 21 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -596,6 +597,7 @@ Recent decisions affecting current work:
 - [Phase 09.1]: Transaction PATCH nulls: exchange_rate null drops an own rate, czk_amount_minor null drops a bank figure, both null return any transaction to CNB; a CZK transaction with a rate, unit amount or CZK figure is refused in the API layer under that field.
 - [Phase 09.1]: Transaction batch uses request key transactions, item error key transaction and api.transaction_batch_max_items = 500 (separate from the time entry batch limit of 100)
 - [Phase 09.1]: A 500-item transaction batch was measured at 0.83-0.87 s locally (CZK items), far below the 60 s threshold; limit and stale lock unchanged; production PHP request time limit stays an open item for the owner
+- [Phase 09.1]: Plan 09.1-08: Phase 10 plan 10-19 adds one API test per transaction endpoint for its payment-income refusal and adds PATCH to TransactionController::CONFLICT_METHODS only if that refusal becomes a 409 (CONTRIBUTING hand-over 7)
 
 ### Pending Todos
 
@@ -651,6 +653,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T22:58:42.026Z
-Stopped at: Completed 09.1-07-PLAN.md
+Last session: 2026-10-16T23:07:46.279Z
+Stopped at: Completed 09.1-08-PLAN.md
 Resume file: None

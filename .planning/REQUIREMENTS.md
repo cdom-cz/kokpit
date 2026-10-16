@@ -118,7 +118,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Finance
 
-- [ ] **FI-01**: Income and expense transactions with hierarchical categories, currency, CZK amount, optional client/project/invoice, receipts as attachments
+- [x] **FI-01**: Income and expense transactions with hierarchical categories, currency, CZK amount, optional client/project/invoice, receipts as attachments
 - [ ] **FI-02**: Overview per month/year, per category and per client in CZK
 - [ ] **FI-03**: Payment of an invoice creates an income transaction (automatically for Stripe; editable date and category for manual payment)
 
@@ -271,7 +271,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DO-01 | Phase 9 | Gaps Found |
 | DO-02 | Phase 9 | Gaps Found |
 | DO-03 | Phase 9 | Gaps Found |
-| FI-01 | Phase 9 | Gaps Found |
+| FI-01 | Phase 9 | Complete |
 | FI-02 | Phase 9 | Gaps Found |
 | FI-03 | Phase 10 | Pending |
 | IN-01 | Phase 10 | Pending |
