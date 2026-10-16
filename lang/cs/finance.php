@@ -146,12 +146,15 @@ return [
             'created' => 'Transakce byla uložena.',
             'saved' => 'Transakce byla uložena.',
             'deleted' => 'Transakce byla smazána.',
+            'delete_failed' => 'Transakci se nepodařilo smazat, uložený soubor dokladu nelze odstranit. Zkuste to znovu.',
         ],
         'receipts' => [
             'relation_title' => 'Doklady',
             'column' => 'Doklady',
             'filter_without' => 'Bez dokladu',
-            'delete_with_receipts' => 'Transakce se smaže natrvalo spolu s doklady (počet: :count). Soubory doloží jen tato transakce a nelze je obnovit. Změna zůstane v historii.',
+            'filter_with' => 'S dokladem',
+            'filter_all' => 'Všechny',
+            'delete_with_receipts' => '{1} Transakce se smaže natrvalo spolu s :count dokladem, včetně uloženého souboru. Tento krok nelze vrátit zpět. Změna zůstane v historii.|[2,*] Transakce se smaže natrvalo spolu s :count doklady, včetně uložených souborů. Tento krok nelze vrátit zpět. Změna zůstane v historii.',
         ],
         'empty' => [
             'heading' => 'Zatím žádné transakce',

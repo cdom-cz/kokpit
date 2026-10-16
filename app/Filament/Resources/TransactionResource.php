@@ -46,6 +46,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -279,7 +280,14 @@ final class TransactionResource extends Resource
                 TextColumn::make('project.name')
                     ->label(__('finance.transactions.columns.project'))
                     ->placeholder(__('finance.transactions.placeholders.empty_value')),
+                TextColumn::make('documents_count')
+                    ->label(__('finance.transactions.receipts.column'))
+                    ->numeric()
+                    ->alignEnd()
+                    ->sortable(),
             ])
+            // The receipt count in one grouped query for the page, not one query per row.
+            ->modifyQueryUsing(static fn (Builder $query): Builder => $query->withCount('documents'))
             // Newest first. The id is the tie-breaker, so rows of one day keep one order across pages.
             ->defaultSort(static fn (Builder $query): Builder => $query
                 ->orderByDesc($query->qualifyColumn('transaction_date'))
@@ -300,7 +308,7 @@ final class TransactionResource extends Resource
      * The filters of the list, combined with AND and none on by default: type, category (a parent includes its
      * children), client, project, currency and an inclusive range of days.
      *
-     * @return list<Filter|SelectFilter>
+     * @return list<Filter|SelectFilter|TernaryFilter>
      */
     public static function filters(): array
     {
@@ -334,6 +342,16 @@ final class TransactionResource extends Resource
                 ->label(__('finance.transactions.filters.project'))
                 ->options(static fn (): array => self::projectFilterOptions())
                 ->searchable(),
+            TernaryFilter::make('without_receipt')
+                ->label(__('finance.transactions.receipts.column'))
+                ->placeholder(__('finance.transactions.receipts.filter_all'))
+                ->trueLabel(__('finance.transactions.receipts.filter_without'))
+                ->falseLabel(__('finance.transactions.receipts.filter_with'))
+                ->queries(
+                    true: static fn (Builder $query): Builder => $query->whereDoesntHave('documents'),
+                    false: static fn (Builder $query): Builder => $query->whereHas('documents'),
+                    blank: static fn (Builder $query): Builder => $query,
+                ),
             SelectFilter::make('amount_currency')
                 ->label(__('finance.transactions.filters.currency'))
                 ->options(static fn (): array => self::currencyFilterOptions()),

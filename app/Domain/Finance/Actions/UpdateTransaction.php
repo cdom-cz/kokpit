@@ -31,6 +31,10 @@ use Illuminate\Validation\ValidationException;
  *   the snapshot exactly as stored, so a list added or corrected later never moves them;
  * - switching a manual transaction back to computed always recomputes.
  * A CZK transaction needs no rate: it is identity whatever was typed or kept.
+ *
+ * A receipt counts for the client and project of its transaction (D-11), so when either changes the receipts
+ * get the new pair in the same database transaction (research Pitfall 5). That is one query update, not a model
+ * event: the logged attributes of a document do not include the client or the project.
  */
 final readonly class UpdateTransaction
 {
@@ -64,6 +68,13 @@ final readonly class UpdateTransaction
                 ...$this->figure($locked, $input),
             ]);
             $locked->save();
+
+            if ($locked->wasChanged(['client_id', 'project_id'])) {
+                $locked->documents()->update([
+                    'client_id' => $locked->client_id,
+                    'project_id' => $locked->project_id,
+                ]);
+            }
 
             return $locked->refresh();
         });

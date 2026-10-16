@@ -14,6 +14,7 @@ use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
+use RuntimeException;
 
 /**
  * Corrects a transaction through the domain Action UpdateTransaction, which owns the recompute-versus-manual
@@ -59,19 +60,42 @@ final class EditTransaction extends EditRecord
                 ->label(__('finance.transactions.actions.delete'))
                 ->requiresConfirmation()
                 ->modalHeading(__('finance.transactions.actions.delete_heading'))
-                ->modalDescription(__('finance.transactions.actions.delete_description'))
+                ->modalDescription(static fn (Transaction $record): string => self::deleteDescription($record))
                 ->modalSubmitActionLabel(__('finance.transactions.actions.delete'))
                 ->successNotificationTitle(__('finance.transactions.notifications.deleted'))
                 ->successRedirectUrl(TransactionResource::getUrl('index'))
+                ->failureNotificationTitle(__('finance.transactions.notifications.delete_failed'))
                 ->using(static function (Transaction $record): bool {
                     $actor = auth()->user();
                     assert($actor instanceof User);
 
-                    app(DeleteTransaction::class)->handle($actor, $record);
+                    try {
+                        app(DeleteTransaction::class)->handle($actor, $record);
+                    } catch (RuntimeException $e) {
+                        // A stored receipt object could not be removed: nothing was deleted. Reported without the path.
+                        report($e);
+
+                        return false;
+                    }
 
                     return true;
                 }),
         ];
+    }
+
+    /**
+     * The confirmation names how many receipts go with the transaction, so the permanent deletion of their files
+     * is never a surprise (D-14).
+     */
+    private static function deleteDescription(Transaction $transaction): string
+    {
+        $receipts = $transaction->documents()->count();
+
+        if ($receipts === 0) {
+            return __('finance.transactions.actions.delete_description');
+        }
+
+        return trans_choice('finance.transactions.receipts.delete_with_receipts', $receipts, ['count' => $receipts]);
     }
 
     /**
