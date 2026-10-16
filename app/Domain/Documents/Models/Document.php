@@ -59,6 +59,12 @@ final class Document extends KokpitModel implements HasMedia, PartnerIsolated
     public const string MEDIA_COLLECTION = 'file';
 
     /**
+     * The owner kinds whose files can belong to an archived owner (D-21): clients, projects, tasks and comments.
+     * Not `transaction` (never archived) and not an unattached file.
+     */
+    private const array ARCHIVABLE_OWNER_TYPES = ['client', 'project', 'task', 'task_comment'];
+
+    /**
      * Flagged visible, of the own client, and hanging on an owner the Partner can see. The client check is
      * belt and braces and never the only rule; the owner pair sits inside the already-scoped id subqueries,
      * never with `withTrashed()`.
@@ -80,6 +86,56 @@ final class Document extends KokpitModel implements HasMedia, PartnerIsolated
                     ->orWhere(fn (Builder $comment) => $comment
                         ->where($this->qualifyColumn('owner_type'), 'task_comment')
                         ->whereIn($this->qualifyColumn('owner_id'), TaskComment::query()->select('task_comments.id')));
+            });
+    }
+
+    /**
+     * The files of owners that are not archived: unattached files, files of owner kinds that are never archived
+     * (transaction receipts) and files whose client, project or task is active (D-21). The default Admin listing.
+     *
+     * @param  Builder<Document>  $query
+     */
+    public function scopeWithoutArchivedOwners(Builder $query): void
+    {
+        $query->where(function (Builder $files): void {
+            $files->whereNull($this->qualifyColumn('owner_type'))
+                ->orWhereNotIn($this->qualifyColumn('owner_type'), self::ARCHIVABLE_OWNER_TYPES)
+                ->orWhereNot(fn (Builder $archived) => $this->constrainToArchivedOwner($archived));
+        });
+    }
+
+    /**
+     * Exactly the files of archived owners: the complement of {@see self::scopeWithoutArchivedOwners()}. Shown
+     * under the "archived owners" filter of the central listing (D-21).
+     *
+     * @param  Builder<Document>  $query
+     */
+    public function scopeOnlyArchivedOwners(Builder $query): void
+    {
+        $query->where(fn (Builder $files) => $this->constrainToArchivedOwner($files));
+    }
+
+    /**
+     * A file is a file of an archived owner (D-21) when its owner is a client, project, task or task comment and
+     * its client or project is archived, or it is a task file of an archived task, or a comment file of a comment
+     * on an archived task. Unattached files and transaction receipts never are: transactions are never archived
+     * and a receipt is a finance record that must stay findable.
+     *
+     * The checks are plain `EXISTS` subqueries on `deleted_at`, in the style of `Project::constrainForPartner()`:
+     * they do not go through the `Client` model (closed to Partners) or the SoftDeletes scopes, which would hide
+     * exactly the archived rows looked for. Archiving is a soft delete that touches no document, media row or
+     * stored object, so this is a pure read filter.
+     *
+     * @param  Builder<Document>  $query
+     */
+    private function constrainToArchivedOwner(Builder $query): void
+    {
+        $query->whereIn($this->qualifyColumn('owner_type'), self::ARCHIVABLE_OWNER_TYPES)
+            ->where(function (Builder $archived): void {
+                $archived->whereExists(fn ($sub) => $sub->selectRaw('1')
+                    ->from('projects')
+                    ->whereColumn('projects.id', $this->qualifyColumn('project_id'))
+                    ->whereNotNull('projects.deleted_at'));
             });
     }
 
