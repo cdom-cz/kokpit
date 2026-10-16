@@ -36,7 +36,7 @@ it('registers the known scheduled events', function (): void {
         app(Schedule::class)->events(),
     );
 
-    expect($descriptions)->toContain('kokpit-heartbeat', 'kokpit-worker-heartbeat', 'kokpit-horizon-snapshot', 'kokpit-long-running-timers', 'kokpit-end-overrun-timers', 'kokpit-api-idempotency-prune', 'kokpit-activity-log-prune', 'kokpit-cnb-rates', 'kokpit-cnb-rates-final', 'kokpit-report-export-prune');
+    expect($descriptions)->toContain('kokpit-heartbeat', 'kokpit-worker-heartbeat', 'kokpit-horizon-snapshot', 'kokpit-long-running-timers', 'kokpit-end-overrun-timers', 'kokpit-api-idempotency-prune', 'kokpit-activity-log-prune', 'kokpit-cnb-rates', 'kokpit-cnb-rates-final', 'kokpit-report-export-prune', 'kokpit-document-archive-prune');
 });
 
 it('schedules the CNB download at the configured Prague hours and the final run an hour later', function (): void {
@@ -58,6 +58,17 @@ it('schedules the export prune daily on one server', function (): void {
     $events = array_values(array_filter(
         app(Schedule::class)->events(),
         static fn ($event): bool => $event->description === 'kokpit-report-export-prune',
+    ));
+
+    expect($events)->toHaveCount(1)
+        ->and($events[0]->onOneServer)->toBeTrue()
+        ->and($events[0]->expression)->toBe('0 0 * * *');
+});
+
+it('schedules the document archive prune daily on one server', function (): void {
+    $events = array_values(array_filter(
+        app(Schedule::class)->events(),
+        static fn ($event): bool => $event->description === 'kokpit-document-archive-prune',
     ));
 
     expect($events)->toHaveCount(1)

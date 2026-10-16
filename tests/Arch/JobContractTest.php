@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Api\Jobs\PurgeExpiredIdempotencyKeys;
 use App\Domain\Documents\Jobs\BuildDocumentArchive;
+use App\Domain\Documents\Jobs\PruneExpiredDocumentArchives;
 use App\Domain\ExchangeRates\Jobs\BackfillCnbRates;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
@@ -30,7 +31,7 @@ use Tests\Support\Probes\SettingsReadingProbeJob;
  *
  * @var list<class-string<KokpitJob>>
  */
-const EXPECTED_APPLICATION_JOBS = [RecordWorkerHeartbeat::class, NotifyLongRunningTimers::class, PurgeExpiredIdempotencyKeys::class, PruneExpiredReportExports::class, BuildReportExport::class, BackfillCnbRates::class, BuildDocumentArchive::class];
+const EXPECTED_APPLICATION_JOBS = [RecordWorkerHeartbeat::class, NotifyLongRunningTimers::class, PurgeExpiredIdempotencyKeys::class, PruneExpiredReportExports::class, BuildReportExport::class, BackfillCnbRates::class, BuildDocumentArchive::class, PruneExpiredDocumentArchives::class];
 
 /** A concrete job that a self-check subclasses, to prove the declaration is not inherited. */
 #[Idempotent(how: 'Does nothing, so a second run changes nothing')]
