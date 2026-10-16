@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: "09.1"
 current_phase_name: Transactions API (INSERTED)
 status: executing
-stopped_at: Completed 09.1-05-PLAN.md
-last_updated: "2026-10-16T22:42:02.161Z"
+stopped_at: Completed 09.1-06-PLAN.md
+last_updated: "2026-10-16T22:52:08.478Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09.1 execution started
-state_head: 547a17c9edb796fac545a680c92c445418dabd91
+state_head: bb5e0215c3f37d4207e0765635b5e3aa00e2dbd4
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 223
-  completed_plans: 180
+  completed_plans: 181
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09.1 (Transactions API (INSERTED)) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09.1 execution started
 
@@ -242,6 +242,7 @@ Progress: [█████░░░░░] 54%
 | Phase 09.1 P03 | 20 min | 2 tasks | 3 files |
 | Phase 09.1 P04 | 10 min | 3 tasks | 5 files |
 | Phase 09.1 P05 | 45 min | 3 tasks | 15 files |
+| Phase 09.1 P06 | 8 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -590,6 +591,8 @@ Recent decisions affecting current work:
 - [Phase 09.1]: Transaction list sort amount orders by czk_minor (SORT_COLUMNS maps public names to ORDER BY columns) so currencies compare
 - [Phase 09.1]: ApiCursor DATE accepts Y-m-d and Y-m-d 00:00:00, INTEGER accepts only a JSON integer; a forged cursor of any list sort answers 422
 - [Phase 09.1]: Category archived flag is true for an archived category or a child of an archived parent; categories stay read-only over the API
+- [Phase 09.1]: Transaction write API: a delete refused with SQLSTATE 23503 or KP001 answers 409 transaction_in_use, any other database fault stays a 500; TransactionController::CONFLICT_METHODS lists DELETE and ApiDocs requires 409 only on listed methods (Phase 10 plan 10-19 adds PATCH).
+- [Phase 09.1]: Transaction PATCH nulls: exchange_rate null drops an own rate, czk_amount_minor null drops a bank figure, both null return any transaction to CNB; a CZK transaction with a rate, unit amount or CZK figure is refused in the API layer under that field.
 
 ### Pending Todos
 
@@ -645,6 +648,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T22:42:01.319Z
-Stopped at: Completed 09.1-05-PLAN.md
+Last session: 2026-10-16T22:52:00.656Z
+Stopped at: Completed 09.1-06-PLAN.md
 Resume file: None

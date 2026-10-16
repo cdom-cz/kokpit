@@ -633,7 +633,7 @@ Plans:
 **Goal:** REST API for the transactions and transaction_categories tables, including bulk creation of transactions
 **Requirements**: TBD
 **Depends on:** Phase 9
-**Plans:** 5/8 plans executed in 5 waves
+**Plans:** 6/8 plans executed in 5 waves
 
 Plans:
 **Wave 1**
@@ -646,7 +646,7 @@ Plans:
 - [x] 09.1-05-PLAN.md — Listing (D-09): transaction list with filters, sorts and date/integer cursors; read-only transaction categories list and detail
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 09.1-06-PLAN.md — Single writes (D-02, D-03, D-06, D-08): POST, PATCH, DELETE through the Actions, `TransactionPayload` mapping and error-key remap, 409 `transaction_in_use`
+- [x] 09.1-06-PLAN.md — Single writes (D-02, D-03, D-06, D-08): POST, PATCH, DELETE through the Actions, `TransactionPayload` mapping and error-key remap, 409 `transaction_in_use`
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 09.1-07-PLAN.md — Bulk create (D-04, D-05): partial-success batch of up to 500 with its duration measured against the idempotency stale lock; Idempotency-Key on both creates
