@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-12-PLAN.md
-last_updated: "2026-10-16T14:50:44.197Z"
+stopped_at: Completed 09-13-PLAN.md
+last_updated: "2026-10-16T15:08:41.319Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 62b07a0e7657f03bb444140cd08baa0920fbdadd
+state_head: 58e09bbb87c984738ef7fa7b3252fb64b4120d3f
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 163
+  completed_plans: 164
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 17 of 24
+Plan: 18 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -225,6 +225,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P11 | 14 min | 3 tasks | 11 files |
 | Phase 09 P23 | 25 min | 2 tasks | 10 files |
 | Phase 09 P12 | 14 min | 3 tasks | 8 files |
+| Phase 09 P13 | 40 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -543,6 +544,8 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-23: document_archives_count_check guards jsonb_array_length with CASE on jsonb_typeof — Constraints are checked in name order; the guard makes document_archives_ids_check refuse a non-array instead of a function error
 - [Phase 09]: 09-12: comment file delete is a Filament confirmation action calling DeleteDocument (no unconfirmed public delete method); the thread view renders its own action-modals outlet
 - [Phase 09]: 09-12: component methods taking a document id re-read through the scoped query limited to this task's comment files (UUID check first), so a foreign or internal id is a 404
+- [Phase 09]: 09-13: a receipt keeps the client and project of its transaction; UpdateTransaction moves them by one query in the same DB transaction, DeleteTransaction deletes receipts through DeleteDocument under the transaction row lock
+- [Phase 09]: 09-13: DocumentOwnerDeletionTest guards that clients, projects and tasks are archived only, comments are append-only and only a transaction deletes files; archive and restore never touch objects (D-21)
 
 ### Pending Todos
 
@@ -593,6 +596,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T14:50:43.274Z
-Stopped at: Completed 09-12-PLAN.md
+Last session: 2026-10-16T15:08:40.383Z
+Stopped at: Completed 09-13-PLAN.md
 Resume file: None
