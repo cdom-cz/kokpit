@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-15-PLAN.md
-last_updated: "2026-10-16T15:45:38.261Z"
+stopped_at: Completed 09-16-PLAN.md
+last_updated: "2026-10-16T16:01:34.934Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 44d37b83720639ec616fe28ecf841ace096e2de7
+state_head: 9b02bdb32ee17f3133ad9cf7d51ccb607a71311c
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 166
+  completed_plans: 167
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 20 of 24
+Plan: 21 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -228,6 +228,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P13 | 40 min | 3 tasks | 13 files |
 | Phase 09 P14 | 17 min | 3 tasks | 8 files |
 | Phase 09 P15 | 20 min | 3 tasks | 10 files |
+| Phase 09 P16 | 25 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -553,6 +554,8 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-14: bulkDelete reads its selection in chunks of 100 (chunkSelectedRecords) and counts files gone before they were read as failed
 - [Phase 09]: 09-15: FinanceFilters::fromInput is the single validation entry for the finance overview; any invalid period, year or month falls back to the current Prague month, filters are not persisted in the session
 - [Phase 09]: 09-15: the finance overview chart is the one place where CZK minor units become whole-crown numbers (rounded half up); tiles and tables format Money
+- [Phase 09]: 09-16: StorageTotals::byClient() returns the no-client row with a null client_id and empty name; the widget supplies the Czech label so the domain reader carries no UI copy
+- [Phase 09]: 09-16: storage totals read through Document::query()->toBase() with a by-name clients join, not DB::table(), to stay inside the query escape-hatch allowlist
 
 ### Pending Todos
 
@@ -603,6 +606,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T15:45:37.329Z
-Stopped at: Completed 09-15-PLAN.md
+Last session: 2026-10-16T16:01:33.976Z
+Stopped at: Completed 09-16-PLAN.md
 Resume file: None
