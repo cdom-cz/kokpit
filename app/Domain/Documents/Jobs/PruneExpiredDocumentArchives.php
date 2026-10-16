@@ -16,12 +16,14 @@ use Illuminate\Support\Facades\Storage;
  * The expiry is 7 days after completion for a finished archive and 7 days after creation for a pending or failed
  * one, so a record that never became a file is removed on schedule as well.
  *
- * Runs as system (KokpitJob), so the owner scope shows the archives of every Admin. Only the stored `path` of an
- * expired record is deleted, and the database pins that path to `document-archives/<uuid>.zip`, so no other file
- * of the disk can be reached. A pending or failed record has no path and a ready one may have lost its object; both
- * are deleted without an error. Records are read in chunks by id, so a large backlog is never loaded at once.
+ * Runs as system (KokpitJob), so the owner scope shows the archives of every Admin. The object path is
+ * `DocumentArchive::storagePath()`, a pure function of the record id and the shape the database pins for `path`
+ * (`document-archives/<uuid>.zip`), so it is deleted whatever the status of the record: a failed or raced build can
+ * leave a ZIP although no path was recorded (WR-02). A missing object is not an error. Nothing outside
+ * `document-archives/<uuid>.zip` of an expired record is reachable. Records are read in chunks by id, so a large
+ * backlog is never loaded at once.
  */
-#[Idempotent(how: 'deletes the object and the row of every archive past expires_at; a second run finds nothing to delete and a missing object is skipped')]
+#[Idempotent(how: 'deletes the id-derived object and the row of every archive past expires_at; a second run finds nothing to delete and a missing object is skipped')]
 final class PruneExpiredDocumentArchives extends KokpitJob
 {
     private const int CHUNK = 100;
@@ -35,9 +37,7 @@ final class PruneExpiredDocumentArchives extends KokpitJob
             ->chunkById(self::CHUNK, static function ($archives) use ($disk): void {
                 foreach ($archives as $archive) {
                     // Object first: a record whose object could not be deleted stays and is retried by the next run.
-                    if ($archive->path !== null) {
-                        $disk->delete($archive->path);
-                    }
+                    $disk->delete($archive->storagePath());
 
                     $archive->delete();
                 }

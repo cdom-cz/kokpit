@@ -225,3 +225,44 @@ it('never touches a file outside the archive area of the same disk', function ()
         ->and(Storage::disk()->exists('document-archives/not-a-record.zip'))->toBeTrue()
         ->and(pruneArchiveIds())->toBe([]);
 });
+
+it('deletes the ZIP an expired failed archive left behind, together with its record (WR-02)', function (): void {
+    $admin = Canary::admin();
+    $failed = pruneArchiveMake($admin, CarbonImmutable::now()->subDay(), 'failed');
+
+    // The object a build stored before the record failed; the path column stays null.
+    Storage::disk()->put($failed->storagePath(), 'Fictional archive bytes');
+
+    expect($failed->path)->toBeNull();
+
+    PruneExpiredDocumentArchives::dispatchSync();
+
+    expect(Storage::disk()->exists($failed->storagePath()))->toBeFalse()
+        ->and(pruneArchiveIds())->toBe([]);
+});
+
+it('deletes the ZIP of an expired pending archive with its record (WR-02)', function (): void {
+    $admin = Canary::admin();
+    $pending = pruneArchiveMake($admin, CarbonImmutable::now()->subHour(), 'pending');
+
+    Storage::disk()->put($pending->storagePath(), 'Fictional archive bytes');
+
+    expect($pending->path)->toBeNull();
+
+    PruneExpiredDocumentArchives::dispatchSync();
+
+    expect(Storage::disk()->exists($pending->storagePath()))->toBeFalse()
+        ->and(pruneArchiveIds())->toBe([]);
+});
+
+it('keeps a fresh failed archive and its ZIP until it expires (WR-02)', function (): void {
+    $admin = Canary::admin();
+    $fresh = pruneArchiveMake($admin, CarbonImmutable::now()->addHour(), 'failed');
+
+    Storage::disk()->put($fresh->storagePath(), 'Fictional archive bytes');
+
+    PruneExpiredDocumentArchives::dispatchSync();
+
+    expect(Storage::disk()->exists($fresh->storagePath()))->toBeTrue()
+        ->and(pruneArchiveIds())->toBe([$fresh->getKey()]);
+});
