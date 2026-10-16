@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Concerns;
 
 use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Actions\DeleteDocument;
 use App\Domain\Documents\Enums\DocumentOwnerType;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Support\DocumentDisposition;
@@ -14,12 +15,14 @@ use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskComment;
 use Filament\Actions\Action;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +30,8 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use RuntimeException;
+use Throwable;
 
 /**
  * The comment thread of a task page: the comments one under another, oldest first,
@@ -223,6 +228,42 @@ trait RendersTaskCommentThread
         abort_unless(DocumentDisposition::isInline($document), 404);
 
         $this->redirect(DocumentUrl::preview($document, $actor));
+    }
+
+    /**
+     * Deletes a file of a comment after a confirmation (D-09, D-19). The comment stays (comments are
+     * append-only). DeleteDocument checks the `delete` ability again, so a forged call is refused: the
+     * Admin may delete any file, a Partner only an own upload while the task is open.
+     */
+    public function deleteCommentDocumentAction(): Action
+    {
+        return Action::make('deleteCommentDocument')
+            ->label(__('documents.comments.delete'))
+            ->icon(Heroicon::OutlinedTrash)
+            ->color('danger')
+            ->requiresConfirmation()
+            ->modalHeading(__('documents.comments.delete_heading'))
+            ->modalDescription(fn (array $arguments): string => __('documents.comments.delete_description', [
+                'name' => $this->findCommentDocument(is_string($arguments['document'] ?? null) ? $arguments['document'] : '')->name ?? '',
+            ]))
+            ->modalSubmitActionLabel(__('documents.comments.delete'))
+            ->action(function (array $arguments): void {
+                $document = $this->commentDocument(is_string($arguments['document'] ?? null) ? $arguments['document'] : '');
+
+                try {
+                    app(DeleteDocument::class)->handle($this->commentActor(), $document);
+                } catch (AuthorizationException $e) {
+                    throw $e;
+                } catch (Throwable $e) {
+                    report(new RuntimeException('A comment file could not be deleted ('.$e::class.').', previous: $e));
+
+                    Notification::make()->danger()->title(__('documents.notifications.delete_failed'))->send();
+
+                    return;
+                }
+
+                Notification::make()->success()->title(__('documents.notifications.deleted'))->send();
+            });
     }
 
     /**

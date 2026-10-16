@@ -34,6 +34,13 @@
                                     {{ __('documents.comments.preview') }}
                                 </x-filament::button>
                             @endif
+
+                            {{-- Shown only where the policy grants the delete (the Admin always, a Partner for an own file of an open task). --}}
+                            @can('delete', $document)
+                                <x-filament::button color="danger" size="xs" wire:click="mountAction('deleteCommentDocument', { document: '{{ $document->id }}' })">
+                                    {{ __('documents.comments.delete') }}
+                                </x-filament::button>
+                            @endcan
                         </li>
                     @endforeach
                 </ul>
@@ -46,3 +53,6 @@
         </x-filament::section>
     @endforelse
 </div>
+
+{{-- The confirmation dialog of the delete action (the component is not a page, so it renders its own modals). --}}
+<x-filament-actions::modals />

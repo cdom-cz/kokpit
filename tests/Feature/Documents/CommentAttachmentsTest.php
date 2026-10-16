@@ -8,11 +8,13 @@ use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Notifications\PartnerUploadedFilesNotification;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
+use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Media;
 use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskComment;
 use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ViewPartnerTask;
@@ -23,6 +25,7 @@ use Filament\Facades\Filament;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -320,4 +323,142 @@ it('keeps the file fields off the escalation and description editors of the Part
             ->assertSchemaComponentExists($editor, 'mountedActionSchema0')
             ->assertSchemaComponentDoesNotExist('files', 'mountedActionSchema0');
     }
+});
+
+/**
+ * The media rows of a document, read as system because Media is closed to Partners.
+ *
+ * @return list<string>
+ */
+function caMedia(string $documentId): array
+{
+    return app(PartnerContext::class)->runAsSystem(
+        static fn (): array => Media::query()->where('model_id', $documentId)->pluck('id')->map(strval(...))->all(),
+    );
+}
+
+/**
+ * The delete button the thread shows for a file; the thread renders it as a plain mount of the confirmation action.
+ */
+function caDeleteButton(string $documentId): string
+{
+    return "mountAction('deleteCommentDocument', { document: '{$documentId}' })";
+}
+
+it('lets the Admin delete a comment file of a Partner after the confirmation, object included, and keeps the comment', function (): void {
+    $task = caTask($this->partner, $this->project);
+    [$comment, $document] = caCommentWithFile($this->partner, $task, 'to-remove-example.txt');
+
+    expect(Storage::disk('local')->allFiles())->toHaveCount(1);
+
+    $this->actingAs($this->admin);
+    $thread = caAdminThread($task);
+
+    expect($thread->html())->toContain(caDeleteButton($document->id));
+
+    $thread->mountAction('deleteCommentDocument', ['document' => $document->id]);
+
+    // The dialog is rendered by the thread's own modal outlet (the component is not a page) and names the file.
+    $thread->assertMountedActionModalSee([__('documents.comments.delete_heading'), 'to-remove-example.txt']);
+
+    // Opening the dialog deletes nothing, and the dialog names the file.
+    expect((string) $thread->instance()->getMountedAction()?->getModalDescription())->toBe(__('documents.comments.delete_description', ['name' => 'to-remove-example.txt']))
+        ->and((string) $thread->instance()->getMountedAction()?->getModalHeading())->toBe(__('documents.comments.delete_heading'))
+        ->and($thread->instance()->getMountedAction()?->isConfirmationRequired())->toBeTrue()
+        ->and(caDocuments())->toHaveCount(1);
+
+    $thread->callMountedAction();
+
+    expect(caDocuments())->toHaveCount(0)
+        ->and(caMedia($document->id))->toBe([])
+        ->and(Storage::disk('local')->allFiles())->toBe([])
+        ->and(app(PartnerContext::class)->runAsSystem(static fn (): bool => TaskComment::query()->whereKey($comment->id)->exists()))->toBeTrue();
+
+    $thread->assertNotified(__('documents.notifications.deleted'));
+});
+
+it('lets a Partner delete only an own comment file of an open task, with the button, and refuses a forged call', function (): void {
+    $task = caTask($this->partner, $this->project);
+    $other = Canary::partnerFor($this->clientA);
+
+    [, $mine] = caCommentWithFile($this->partner, $task, 'mine-example.txt');
+    [, $fromAdmin] = caCommentWithFile($this->admin, $task, 'admin-example.txt');
+    [, $fromOther] = caCommentWithFile($this->admin, $task, 'other-partner-example.txt');
+    app(PartnerContext::class)->runAsSystem(static function () use ($fromOther, $other): void {
+        Document::query()->whereKey($fromOther->id)->firstOrFail()->forceFill(['uploaded_by_id' => $other->id])->save();
+    });
+
+    $html = caPartnerThread($this->partner, $task)->html();
+
+    expect($html)->toContain(caDeleteButton($mine->id))
+        ->not->toContain(caDeleteButton($fromAdmin->id))
+        ->not->toContain(caDeleteButton($fromOther->id));
+
+    // A forged call for a file the Partner may read but not delete is refused and deletes nothing.
+    foreach ([$fromAdmin, $fromOther] as $foreign) {
+        caPartnerThread($this->partner, $task)
+            ->mountAction('deleteCommentDocument', ['document' => $foreign->id])
+            ->callMountedAction()
+            ->assertForbidden();
+    }
+
+    expect(caDocuments())->toHaveCount(3);
+
+    // The own file goes after the confirmation.
+    $thread = caPartnerThread($this->partner, $task)->mountAction('deleteCommentDocument', ['document' => $mine->id]);
+
+    expect(caDocuments())->toHaveCount(3);
+
+    $thread->callMountedAction();
+
+    expect(caDocuments()->pluck('id')->all())->not->toContain($mine->id)
+        ->and(caDocuments())->toHaveCount(2)
+        ->and(caMedia($mine->id))->toBe([]);
+});
+
+it('takes the delete button away from the Partner once the task is done, and keeps it for the Admin', function (): void {
+    $task = caTask($this->partner, $this->project);
+    [, $document] = caCommentWithFile($this->partner, $task, 'finished-example.txt');
+
+    expect(caPartnerThread($this->partner, $task)->html())->toContain(caDeleteButton($document->id));
+
+    $this->actingAs($this->admin);
+    app(UpdateTask::class)->handle($this->admin, $task, ['status' => ProjectStatus::Done->value]);
+
+    expect(caPartnerThread($this->partner, $task)->html())->not->toContain(caDeleteButton($document->id));
+
+    caPartnerThread($this->partner, $task)
+        ->mountAction('deleteCommentDocument', ['document' => $document->id])
+        ->callMountedAction()
+        ->assertForbidden();
+
+    expect(caDocuments())->toHaveCount(1);
+
+    $this->actingAs($this->admin);
+    expect(caAdminThread($task)->html())->toContain(caDeleteButton($document->id));
+});
+
+it('answers 404 to a forged delete call with a file of another task or another client, and deletes nothing', function (): void {
+    $task = caTask($this->partner, $this->project);
+    $otherTask = caTask($this->admin, $this->project);
+    $taskB = caTask($this->admin, caProject($this->clientB));
+
+    [, $otherTaskFile] = caCommentWithFile($this->admin, $otherTask, 'other-task-example.txt');
+    [, $otherClientFile] = caCommentWithFile($this->admin, $taskB, 'other-client-example.txt');
+
+    foreach ([$otherTaskFile->id, $otherClientFile->id, 'not-a-uuid'] as $forged) {
+        caPartnerThread($this->partner, $task)
+            ->mountAction('deleteCommentDocument', ['document' => $forged])
+            ->callMountedAction()
+            ->assertNotFound();
+    }
+
+    $this->actingAs($this->admin);
+
+    caAdminThread($task)
+        ->mountAction('deleteCommentDocument', ['document' => $otherTaskFile->id])
+        ->callMountedAction()
+        ->assertNotFound();
+
+    expect(caDocuments())->toHaveCount(2);
 });
