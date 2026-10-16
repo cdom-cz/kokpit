@@ -119,8 +119,7 @@ it('shows the Soubory tab on a task and a subtask page and no attachments placeh
     foreach ([$task, $subtask] as $record) {
         $page = Livewire::test(ViewTask::class, ['record' => $record->reference])
             ->assertSee(__('documents.relation_title'))
-            ->assertDontSee(__('kokpit.tasks.attachments.later'))
-            ->assertDontSee(__('kokpit.tasks.attachments.heading'));
+            ->assertDontSee('Soubory půjde k úkolu přidávat po zprovoznění modulu dokumentů');
 
         expect(array_values($page->instance()->getRelationManagers()))->toContain(TaskDocumentsRelationManager::class);
     }

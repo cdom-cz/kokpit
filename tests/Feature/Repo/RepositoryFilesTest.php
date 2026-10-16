@@ -7,6 +7,7 @@ use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Database\CzechCollation;
+use App\Filament\Support\DocumentColumns;
 use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Yaml\Yaml;
 
@@ -736,30 +737,156 @@ it('names the Phase 8 enforcing tests, and each of them exists', function () {
     }
 });
 
-it('hands over to Phases 7, 9 and 10, carries no Phase 8 note and no longer carries the Phase 6 note or the stale labels', function () {
+it('only names Phase 9 classes in CONTRIBUTING.md that exist in app/', function () {
     $contributing = repoFile('CONTRIBUTING.md');
 
-    foreach (['Phase 7 (', 'Phase 9 (', 'Phase 10 ('] as $note) {
+    // The documentation must not name a Phase 9 mechanism that is gone.
+    $names = [
+        'AttachDocuments' => 'App\Domain\Documents\Actions\AttachDocuments',
+        'DeleteDocument' => 'App\Domain\Documents\Actions\DeleteDocument',
+        'RequestDocumentArchive' => 'App\Domain\Documents\Actions\RequestDocumentArchive',
+        'DocumentOwnerType' => 'App\Domain\Documents\Enums\DocumentOwnerType',
+        'BuildDocumentArchive' => 'App\Domain\Documents\Jobs\BuildDocumentArchive',
+        'PruneExpiredDocumentArchives' => 'App\Domain\Documents\Jobs\PruneExpiredDocumentArchives',
+        'Document' => 'App\Domain\Documents\Models\Document',
+        'DocumentArchive' => 'App\Domain\Documents\Models\DocumentArchive',
+        'DocumentArchiveReadyNotification' => 'App\Domain\Documents\Notifications\DocumentArchiveReadyNotification',
+        'DocumentArchiveFailedNotification' => 'App\Domain\Documents\Notifications\DocumentArchiveFailedNotification',
+        'DocumentPolicy' => 'App\Domain\Documents\Policies\DocumentPolicy',
+        'ArchiveEntryNames' => 'App\Domain\Documents\Support\ArchiveEntryNames',
+        'DocumentDisposition' => 'App\Domain\Documents\Support\DocumentDisposition',
+        'DocumentFileName' => 'App\Domain\Documents\Support\DocumentFileName',
+        'DocumentOwnerResolver' => 'App\Domain\Documents\Support\DocumentOwnerResolver',
+        'DocumentUrl' => 'App\Domain\Documents\Support\DocumentUrl',
+        'DocumentFileController' => 'App\Http\Controllers\DocumentFileController',
+        'DocumentArchiveFileController' => 'App\Http\Controllers\DocumentArchiveFileController',
+        'ManagesDocuments' => 'App\Filament\Concerns\ManagesDocuments',
+        'ShowsPartnerDocuments' => 'App\Filament\Concerns\ShowsPartnerDocuments',
+        'DocumentColumns' => 'App\Filament\Support\DocumentColumns',
+        'DocumentActions' => 'App\Filament\Support\DocumentActions',
+        'Transaction' => 'App\Domain\Finance\Models\Transaction',
+        'TransactionCategory' => 'App\Domain\Finance\Models\TransactionCategory',
+        'CzkSource' => 'App\Domain\Finance\Enums\CzkSource',
+        'RecordTransaction' => 'App\Domain\Finance\Actions\RecordTransaction',
+        'UpdateTransaction' => 'App\Domain\Finance\Actions\UpdateTransaction',
+        'DeleteTransaction' => 'App\Domain\Finance\Actions\DeleteTransaction',
+        'SaveTransactionCategory' => 'App\Domain\Finance\Actions\SaveTransactionCategory',
+        'MoveTransactionCategory' => 'App\Domain\Finance\Actions\MoveTransactionCategory',
+        'ArchiveTransactionCategory' => 'App\Domain\Finance\Actions\ArchiveTransactionCategory',
+        'DeleteTransactionCategory' => 'App\Domain\Finance\Actions\DeleteTransactionCategory',
+        'TransactionInput' => 'App\Domain\Finance\TransactionInput',
+        'TransactionCzk' => 'App\Domain\Finance\TransactionCzk',
+        'FinanceFilters' => 'App\Domain\Finance\FinanceFilters',
+        'FinanceOverview' => 'App\Domain\Finance\Queries\FinanceOverview',
+    ];
+
+    foreach ($names as $short => $class) {
+        expect($contributing)->toContain($short);
+        expect(class_exists($class) || trait_exists($class) || interface_exists($class) || enum_exists($class))
+            ->toBeTrue("CONTRIBUTING.md names {$short} but {$class} does not exist");
+    }
+
+    // Methods and constants the Phase 9 conventions rely on, and the spelling the text uses for each of them.
+    $methods = [
+        ['App\Domain\Documents\Models\Document', 'scopeWithoutArchivedOwners', 'Document::withoutArchivedOwners()'],
+        ['App\Domain\Documents\Models\Document', 'scopeOnlyArchivedOwners', 'Document::onlyArchivedOwners()'],
+        ['App\Domain\Documents\Models\Document', 'constrainForPartner', 'Document::constrainForPartner()'],
+        ['App\Domain\Finance\Models\TransactionCategory', 'invoicePayments', 'TransactionCategory::invoicePayments()'],
+        ['App\Domain\ExchangeRates\ExchangeRateConverter', 'rateFor', 'ExchangeRateConverter::rateFor()'],
+    ];
+
+    foreach ($methods as [$class, $method, $spelled]) {
+        expect(method_exists($class, $method))->toBeTrue("{$class}::{$method} does not exist");
+        expect($contributing)->toContain($spelled);
+    }
+
+    expect(DocumentColumns::PARTNER_COLUMN_NAMES)->not->toBe([])
+        ->and($contributing)->toContain('PARTNER_COLUMN_NAMES');
+
+    // The phrases that carry a rule of the phase, the schedule event and the bullets themselves.
+    foreach ([
+        '- **Documents.**', '- **Finance.**', 'fileAttachments(false)', 'kokpit-document-archive-prune', 'D-21', 'D-22',
+        'consistencyViolations()', 'streamed through the application',
+    ] as $phrase) {
+        expect($contributing)->toContain($phrase);
+    }
+
+    // The schedule event the text names exists.
+    expect(repoFile('routes/console.php'))->toContain('kokpit-document-archive-prune');
+
+    // The old toCzk() hand-over note is gone with the Phase 9 note; the converter is still named for rates in general.
+    expect($contributing)->not->toContain('Transaction amounts in CZK (FI-01) come through');
+});
+
+it('names the Phase 9 enforcing tests, and each of them exists', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    $tests = [
+        'AttachDocumentsTest' => 'tests/Feature/Documents/AttachDocumentsTest.php',
+        'PartnerUploadTest' => 'tests/Feature/Documents/PartnerUploadTest.php',
+        'DeleteDocumentTest' => 'tests/Feature/Documents/DeleteDocumentTest.php',
+        'DocumentFileRouteTest' => 'tests/Feature/Documents/DocumentFileRouteTest.php',
+        'DocumentResourceTest' => 'tests/Feature/Documents/DocumentResourceTest.php',
+        'DocumentsRelationManagerTest' => 'tests/Feature/Documents/DocumentsRelationManagerTest.php',
+        'CommentAttachmentsTest' => 'tests/Feature/Documents/CommentAttachmentsTest.php',
+        'StorageTotalsTest' => 'tests/Feature/Documents/StorageTotalsTest.php',
+        'ArchivedOwnerDocumentsTest' => 'tests/Feature/Documents/ArchivedOwnerDocumentsTest.php',
+        'DocumentOwnerDeletionTest' => 'tests/Feature/Documents/DocumentOwnerDeletionTest.php',
+        'DocumentArchiveTest' => 'tests/Feature/Documents/DocumentArchiveTest.php',
+        'DocumentArchiveRecordTest' => 'tests/Feature/Documents/DocumentArchiveRecordTest.php',
+        'DocumentArchivePruneTest' => 'tests/Feature/Documents/DocumentArchivePruneTest.php',
+        'DocumentArchiveResourceTest' => 'tests/Feature/Documents/DocumentArchiveResourceTest.php',
+        'UploadConfigTest' => 'tests/Feature/Documents/UploadConfigTest.php',
+        'TemporaryUploadS3Test' => 'tests/Feature/Documents/TemporaryUploadS3Test.php',
+        'DocumentStorageConsistencyTest' => 'tests/Feature/Documents/DocumentStorageConsistencyTest.php',
+        'DocumentVisibilityTest' => 'tests/Isolation/DocumentVisibilityTest.php',
+        'DocumentFinanceLeakTest' => 'tests/Isolation/DocumentFinanceLeakTest.php',
+        'DocumentsTableTest' => 'tests/Feature/Schema/DocumentsTableTest.php',
+        'TransactionCzkTest' => 'tests/Feature/Finance/TransactionCzkTest.php',
+        'CategoryRulesTest' => 'tests/Feature/Finance/CategoryRulesTest.php',
+        'TransactionResourceTest' => 'tests/Feature/Finance/TransactionResourceTest.php',
+        'TransactionCategoryResourceTest' => 'tests/Feature/Finance/TransactionCategoryResourceTest.php',
+        'TransactionReceiptsTest' => 'tests/Feature/Finance/TransactionReceiptsTest.php',
+        'FinanceOverviewTest' => 'tests/Feature/Finance/FinanceOverviewTest.php',
+        'TransactionTablesTest' => 'tests/Feature/Schema/TransactionTablesTest.php',
+        'TransactionCategoriesTableTest' => 'tests/Feature/Schema/TransactionCategoriesTableTest.php',
+    ];
+
+    foreach ($tests as $short => $path) {
+        expect($contributing)->toContain($short);
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$short} but {$path} does not exist");
+    }
+});
+
+it('tells the operator what the Phase 9 documents need from the bucket', function () {
+    $readme = repoFile('README.md');
+
+    expect($readme)->toContain('### Documents and finance')
+        ->and($readme)->toContain('CORS')
+        ->and($readme)->toContain('livewire-tmp/')
+        ->and($readme)->toContain('php artisan livewire:configure-s3-upload-cleanup')
+        ->and($readme)->toContain('LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK')
+        ->and($readme)->toContain('streamed through the application')
+        ->and($readme)->toContain('7 days');
+});
+
+it('hands over to Phases 7 and 10, carries no Phase 8 or Phase 9 note and no longer carries the Phase 6 note or the stale labels', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    foreach (['Phase 7 (', 'Phase 10 ('] as $note) {
         expect($contributing)->toContain("**{$note}");
     }
 
-    // The Phase 6 note is gone now that the phase is built, and so is the Phase 8 note; the labels that did not match
-    // the ROADMAP are gone with them.
+    // The Phase 6 note is gone now that the phase is built, and so are the Phase 8 and the Phase 9 notes; the labels that
+    // did not match the ROADMAP are gone with them.
     expect($contributing)->not->toContain('**Phase 6 (')
         ->and($contributing)->not->toContain('**Phase 8 (')
+        ->and($contributing)->not->toContain('**Phase 9 (')
         ->and($contributing)->not->toContain('**Phase 7 (calendar and reports)')
         ->and($contributing)->not->toContain('**Phase 8 (exports)')
         ->and($contributing)->not->toContain('**Phase 12 (')
         ->and($contributing)->toContain('**Phase 7 (REST API).**')
         ->and($contributing)->toContain('**Phase 10 (invoicing).**');
-
-    // Phase 9 reuses the converter for transaction amounts (FI-01) and stores the work report.
-    $phaseNine = substr($contributing, (int) strpos($contributing, '**Phase 9 (documents).**'));
-    $phaseNine = substr($phaseNine, 0, (int) strpos($phaseNine, '**Phase 10 (invoicing).**'));
-
-    expect($phaseNine)->toContain('ExchangeRateConverter')
-        ->and($phaseNine)->toContain('FI-01')
-        ->and($phaseNine)->toContain('WorkReportPdf');
 
     // Phase 10 must re-create the guard of time_entries with the extended list (research Open Question 5, Pattern 8).
     $phaseTen = substr($contributing, (int) strpos($contributing, '**Phase 10 (invoicing).**'));
@@ -773,6 +900,18 @@ it('hands over to Phases 7, 9 and 10, carries no Phase 8 note and no longer carr
         ->and($phaseTen)->toContain('ExchangeRateConverter')
         ->and($phaseTen)->toContain('WorkReportSource::fromEntryIds')
         ->and($phaseTen)->toContain('Dashboard');
+
+    // What Phase 9 hands to Phase 10: the invoice owner kind and its archived-owner behaviour, the invoice PDF through
+    // AttachDocuments, the system income category for FI-03 and the payment transaction.
+    expect($phaseTen)->toContain('DocumentOwnerType')
+        ->and($phaseTen)->toContain('DocumentOwnerResolver')
+        ->and($phaseTen)->toContain('archived-owner scopes')
+        ->and($phaseTen)->toContain('AttachDocuments')
+        ->and($phaseTen)->toContain('TransactionCategory::invoicePayments()')
+        ->and($phaseTen)->toContain('FI-03')
+        ->and($phaseTen)->toContain('invoice_id')
+        ->and($phaseTen)->toContain('TransactionCzk')
+        ->and($phaseTen)->toContain('WorkReportPdf');
 });
 
 it('documents the Czech ICU collation requirement and its check for the operator', function () {

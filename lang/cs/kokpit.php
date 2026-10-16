@@ -1092,10 +1092,6 @@ return [
             'empty_heading' => 'Úkol zatím nemá žádné podúkoly',
             'empty_description' => 'Rozdělte úkol na menší části tlačítkem Nový podúkol.',
         ],
-        'attachments' => [
-            'heading' => 'Přílohy',
-            'later' => 'Soubory půjde k úkolu přidávat po zprovoznění modulu dokumentů. Zatím sem nic nahrát nelze.',
-        ],
         'sections' => [
             'main' => 'Úkol',
             'status' => 'Stav a priorita',
