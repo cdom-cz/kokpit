@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
+use App\Domain\Finance\Actions\DeleteTransaction;
 use App\Domain\Finance\Actions\RecordTransaction;
+use App\Domain\Finance\Actions\UpdateTransaction;
 use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
@@ -304,5 +306,206 @@ describe('the references of a transaction', function (): void {
         expect(czkTestErrors(fn () => app(RecordTransaction::class)->handle($this->admin, czkTestData([
             'document_number' => str_repeat('a', 65),
         ]))))->toHaveKey('document_number');
+    });
+});
+
+describe('editing a transaction', function (): void {
+    beforeEach(function (): void {
+        $this->admin = Canary::admin();
+        $this->actingAs($this->admin);
+        czkTestRate(['rate_date' => '2026-10-09', 'rate' => '25.125']);
+        czkTestRate(['rate_date' => '2026-10-13', 'rate' => '26.000']);
+    });
+
+    /**
+     * A recorded EUR expense of 100,00 on 2026-10-09 (CNB, 2 512,50 CZK), with overrides.
+     *
+     * @param  array<string, mixed>  $overrides
+     */
+    $record = function (array $overrides = []): Transaction {
+        return app(RecordTransaction::class)->handle(test()->admin, czkTestData([
+            'transaction_date' => '2026-10-09',
+            'amount' => '100,00',
+            'currency' => 'EUR',
+            ...$overrides,
+        ]));
+    };
+
+    it('recomputes the figure and the snapshot when the date changes on a CNB transaction', function () use ($record): void {
+        $transaction = $record();
+
+        $updated = app(UpdateTransaction::class)->handle($this->admin, $transaction, ['transaction_date' => '2026-10-14']);
+
+        expect($updated->czk_minor)->toBe(260000)
+            ->and($updated->czk_source)->toBe(CzkSource::Cnb)
+            ->and($updated->exchange_rate)->toBe('26.0000000000')
+            ->and($updated->exchange_rate_date->toDateString())->toBe('2026-10-13');
+    });
+
+    it('leaves the figure and the snapshot alone when only the description changes', function () use ($record): void {
+        $transaction = $record();
+        czkTestRate(['rate_date' => '2026-10-09', 'rate' => '30.000']);
+
+        $updated = app(UpdateTransaction::class)->handle($this->admin, $transaction, ['description' => 'Changed text']);
+
+        expect($updated->description)->toBe('Changed text')
+            ->and($updated->czk_minor)->toBe(251250)
+            ->and($updated->exchange_rate)->toBe('25.1250000000');
+    });
+
+    it('keeps a manual figure when the amount, date or currency changes', function () use ($record): void {
+        $transaction = $record(['czk_amount' => '2 400,00']);
+
+        $updated = app(UpdateTransaction::class)->handle($this->admin, $transaction, [
+            'amount' => '200,00',
+            'transaction_date' => '2026-10-14',
+        ]);
+
+        expect($updated->amount_minor)->toBe(20000)
+            ->and($updated->czk_minor)->toBe(240000)
+            ->and($updated->czk_source)->toBe(CzkSource::Manual)
+            ->and($updated->exchange_rate)->toBeNull();
+    });
+
+    it('recomputes a manual transaction when the manual flag is switched off', function () use ($record): void {
+        $transaction = $record(['czk_amount' => '2 400,00']);
+
+        $updated = app(UpdateTransaction::class)->handle($this->admin, $transaction, ['czk_manual' => false]);
+
+        expect($updated->czk_minor)->toBe(251250)
+            ->and($updated->czk_source)->toBe(CzkSource::Cnb)
+            ->and($updated->exchange_rate_date->toDateString())->toBe('2026-10-09');
+    });
+
+    it('stores a new manual figure and keeps the source manual', function () use ($record): void {
+        $transaction = $record(['czk_amount' => '2 400,00']);
+
+        $updated = app(UpdateTransaction::class)->handle($this->admin, $transaction, ['czk_amount' => '2 450,50']);
+
+        expect($updated->czk_minor)->toBe(245050)
+            ->and($updated->czk_source)->toBe(CzkSource::Manual);
+    });
+
+    it('turns a computed transaction into a manual one with the typed figure', function () use ($record): void {
+        $transaction = $record();
+
+        $updated = app(UpdateTransaction::class)->handle($this->admin, $transaction, ['czk_amount' => '2 000,00']);
+
+        expect($updated->czk_minor)->toBe(200000)
+            ->and($updated->czk_source)->toBe(CzkSource::Manual)
+            ->and($updated->exchange_rate)->toBeNull()
+            ->and($updated->exchange_rate_date)->toBeNull();
+    });
+
+    it('changes a foreign transaction to CZK as identity and clears the snapshot', function () use ($record): void {
+        $transaction = $record();
+
+        $updated = app(UpdateTransaction::class)->handle($this->admin, $transaction, ['currency' => 'CZK', 'amount' => '2 500,00']);
+
+        expect($updated->amount_currency)->toBe('CZK')
+            ->and($updated->czk_minor)->toBe(250000)
+            ->and($updated->czk_source)->toBe(CzkSource::Identity)
+            ->and($updated->exchange_rate)->toBeNull()
+            ->and($updated->exchange_unit_amount)->toBeNull()
+            ->and($updated->exchange_rate_date)->toBeNull();
+    });
+
+    it('refuses a date without any list unless a figure is typed', function () use ($record): void {
+        $transaction = $record();
+
+        $errors = czkTestErrors(fn () => app(UpdateTransaction::class)->handle($this->admin, $transaction, ['transaction_date' => '2026-10-01']));
+
+        expect($errors)->toHaveKey('czk_amount')
+            ->and(Transaction::query()->findOrFail($transaction->getKey())->czk_minor)->toBe(251250);
+
+        $updated = app(UpdateTransaction::class)->handle($this->admin, $transaction, [
+            'transaction_date' => '2026-10-01',
+            'czk_amount' => '2 111,00',
+        ]);
+
+        expect($updated->czk_minor)->toBe(211100)
+            ->and($updated->czk_source)->toBe(CzkSource::Manual);
+    });
+
+    it('keeps an archived category that is unchanged and refuses a change to another archived one', function () use ($record): void {
+        $transaction = $record();
+        $other = TransactionCategory::query()->where('type', 'expense')->whereNull('parent_id')->where('id', '!=', czkTestSoftware()->getKey())->firstOrFail();
+        $other->forceFill(['archived_at' => now()])->save();
+        czkTestSoftware()->forceFill(['archived_at' => now()])->save();
+
+        $updated = app(UpdateTransaction::class)->handle($this->admin, $transaction, [
+            'category_id' => $transaction->category_id,
+            'description' => 'Still editable',
+        ]);
+
+        expect($updated->description)->toBe('Still editable')
+            ->and($updated->category_id)->toBe($transaction->category_id)
+            ->and(czkTestErrors(fn () => app(UpdateTransaction::class)->handle($this->admin, $transaction, ['category_id' => $other->getKey()])))
+            ->toHaveKey('category_id');
+    });
+
+    it('keeps an archived client and project that are unchanged', function (): void {
+        $client = Client::factory()->create();
+        $project = Project::factory()->create(['client_id' => $client->getKey()]);
+        $transaction = app(RecordTransaction::class)->handle($this->admin, czkTestData([
+            'client_id' => $client->getKey(),
+            'project_id' => $project->getKey(),
+        ]));
+        $project->delete();
+        $client->delete();
+
+        $updated = app(UpdateTransaction::class)->handle($this->admin, $transaction, ['description' => 'After the archive']);
+
+        expect($updated->description)->toBe('After the archive')
+            ->and($updated->client_id)->toBe($client->getKey())
+            ->and($updated->project_id)->toBe($project->getKey());
+    });
+
+    it('refuses a type change that leaves the category of the other type', function () use ($record): void {
+        $transaction = $record();
+
+        expect(czkTestErrors(fn () => app(UpdateTransaction::class)->handle($this->admin, $transaction, ['type' => 'income'])))
+            ->toHaveKey('category_id');
+    });
+
+    it('refuses a Partner and changes nothing', function () use ($record): void {
+        $transaction = $record();
+        [$clientA] = Canary::twoClients();
+        $partner = Canary::partnerFor($clientA);
+        $this->actingAs($partner);
+
+        expect(fn () => app(UpdateTransaction::class)->handle($partner, $transaction, ['description' => 'Hijacked']))
+            ->toThrow(AuthorizationException::class);
+
+        $this->actingAs($this->admin);
+        expect(Transaction::query()->findOrFail($transaction->getKey())->description)->toBe('Fictional licence');
+    });
+});
+
+describe('deleting a transaction', function (): void {
+    beforeEach(function (): void {
+        $this->admin = Canary::admin();
+        $this->actingAs($this->admin);
+    });
+
+    it('removes the row for the Admin', function (): void {
+        $transaction = app(RecordTransaction::class)->handle($this->admin, czkTestData());
+
+        app(DeleteTransaction::class)->handle($this->admin, $transaction);
+
+        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeFalse();
+    });
+
+    it('refuses a Partner and keeps the row', function (): void {
+        $transaction = app(RecordTransaction::class)->handle($this->admin, czkTestData());
+        [$clientA] = Canary::twoClients();
+        $partner = Canary::partnerFor($clientA);
+        $this->actingAs($partner);
+
+        expect(fn () => app(DeleteTransaction::class)->handle($partner, $transaction))
+            ->toThrow(AuthorizationException::class);
+
+        $this->actingAs($this->admin);
+        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeTrue();
     });
 });
