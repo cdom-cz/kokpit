@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Documents\Actions;
 
+use App\Domain\Documents\Jobs\RemoveDocumentObjects;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -33,9 +34,9 @@ use Throwable;
  * therefore never costs an object: row, media row and object all stay.
  *
  * That timing deviates from D-09 ("together with the row") by the owner decision D-23: the object is removed
- * after the commit; an object the disk then refuses is reported and retried by the queued job (3 tries), and
- * when every try fails the failed-job alert reaches the Admin. A refused object can no longer undo or block a
- * delete the actor confirmed.
+ * after the commit; an object the disk then refuses is reported and handed to {@see RemoveDocumentObjects}
+ * (3 tries with backoff), and when every try fails the failed-job alert reaches the Admin. A refused object can
+ * no longer undo or block a delete the actor confirmed.
  *
  * The after-commit callback may run outside the system context, so it queries no model: it works on the media
  * instances read inside the transaction and on the disk only, and it never throws.
@@ -121,6 +122,13 @@ final class DeleteDocument
 
         // No name and no path in the message: the exception can reach a log or a screen.
         report(new RuntimeException('A stored object of a deleted document could not be removed ('.($cause === null ? 'the disk kept it' : $cause::class).').'));
+
+        // The retry job removes exactly the objects left, 3 tries, then the failed-job alert to the Admin (D-23).
+        try {
+            RemoveDocumentObjects::dispatch($standing);
+        } catch (Throwable $e) {
+            report(new RuntimeException('The removal of a stored object of a deleted document could not be queued ('.$e::class.').'));
+        }
     }
 
     /**

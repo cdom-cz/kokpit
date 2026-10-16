@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Actions\AttachDocuments;
 use App\Domain\Documents\Actions\DeleteDocument;
+use App\Domain\Documents\Jobs\RemoveDocumentObjects;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
@@ -20,8 +21,10 @@ use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
+use Illuminate\Pipeline\Pipeline;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -98,7 +101,11 @@ it('deletes the row, the media and the stored object and records the deletion wi
 
     Storage::disk('local')->assertExists($path);
 
+    Queue::fake();
+
     app(DeleteDocument::class)->handle($this->admin, $document);
+
+    Queue::assertNotPushed(RemoveDocumentObjects::class);
 
     $rows = Activity::query()->forSubject($document)->forEvent('deleted')->get();
     $old = (array) $rows->first()?->attribute_changes->get('old');
@@ -193,6 +200,26 @@ function failDeletingOn(array $paths, bool $throw): void
     Storage::set('local', $failing);
 }
 
+/**
+ * Asserts that exactly one removal job was queued, listing exactly the one object left.
+ */
+function deletionAssertQueued(string $path): void
+{
+    Queue::assertPushed(RemoveDocumentObjects::class, 1);
+    Queue::assertPushed(RemoveDocumentObjects::class, static fn (RemoveDocumentObjects $job): bool => $job->objects === [['disk' => 'local', 'path' => $path]]);
+}
+
+/**
+ * Runs a queued removal job like a worker does: through its own middleware.
+ */
+function deletionRunQueued(RemoveDocumentObjects $job): void
+{
+    (new Pipeline(app()))
+        ->send($job)
+        ->through($job->middleware())
+        ->then(static fn (RemoveDocumentObjects $job): mixed => app()->call($job->handle(...)));
+}
+
 it('deletes the rows and leaves the reported object standing when the disk throws on delete (WR-01)', function (): void {
     $document = app(AttachDocuments::class)
         ->handle($this->admin, deletionProject(), [DocumentFixtures::upload('kept-example.txt')])
@@ -201,8 +228,11 @@ it('deletes the rows and leaves the reported object standing when the disk throw
 
     failDeletingOn([$path], throw: true);
     Exceptions::fake();
+    Queue::fake();
 
     app(DeleteDocument::class)->handle($this->admin, $document);
+
+    deletionAssertQueued($path);
 
     expect(Document::query()->whereKey($document->id)->exists())->toBeFalse()
         ->and(deletionMedia($document->id))->toBe([])
@@ -221,8 +251,11 @@ it('deletes the rows and leaves the reported object standing when the disk answe
 
     failDeletingOn([$path], throw: false);
     Exceptions::fake();
+    Queue::fake();
 
     app(DeleteDocument::class)->handle($this->admin, $document);
+
+    deletionAssertQueued($path);
 
     expect(Document::query()->whereKey($document->id)->exists())->toBeFalse()
         ->and(deletionMedia($document->id))->toBe([])
@@ -242,16 +275,46 @@ it('confirms the delete the Admin asked for even when the object cannot be remov
 
     failDeletingOn([$path], throw: true);
     Exceptions::fake();
+    Queue::fake();
 
     deletionTab($project)
         ->callAction(TestAction::make('delete')->table($document))
         ->assertNotified(__('documents.notifications.deleted'));
+
+    deletionAssertQueued($path);
 
     Exceptions::assertReported(static fn (RuntimeException $e): bool => str_contains($e->getMessage(), 'could not be removed'));
     Exceptions::assertNotReported(static fn (Throwable $e): bool => str_contains($e->getMessage(), 'failing-example') || str_contains($e->getMessage(), $path));
 
     expect(Document::query()->whereKey($document->id)->exists())->toBeFalse()
         ->and(Storage::disk('local')->exists($path))->toBeTrue();
+});
+
+it('runs the queued removal once the disk recovered (WR-01)', function (): void {
+    $document = app(AttachDocuments::class)
+        ->handle($this->admin, deletionProject(), [DocumentFixtures::upload('recovered-example.txt')])
+        ->firstOrFail();
+    $path = deletionObjectPath($document);
+    $real = Storage::disk('local');
+
+    failDeletingOn([$path], throw: true);
+    Exceptions::fake();
+    Queue::fake();
+
+    app(DeleteDocument::class)->handle($this->admin, $document);
+
+    deletionAssertQueued($path);
+
+    $job = Queue::pushed(RemoveDocumentObjects::class)->first();
+
+    expect($job)->toBeInstanceOf(RemoveDocumentObjects::class)
+        ->and($real->exists($path))->toBeTrue();
+
+    Storage::set('local', $real);
+
+    deletionRunQueued($job);
+
+    expect($real->exists($path))->toBeFalse();
 });
 
 it('removes the stored object only once the enclosing transaction commits (WR-01)', function (): void {
@@ -378,6 +441,7 @@ it('deletes every selected file when the object of one cannot be removed and rep
 
     failDeletingOn([$refused], throw: true);
     Exceptions::fake();
+    Queue::fake();
 
     deletionTab($project)
         ->callTableBulkAction('bulkDelete', $documents)
@@ -385,4 +449,6 @@ it('deletes every selected file when the object of one cannot be removed and rep
 
     expect(Document::query()->count())->toBe(0)
         ->and(Storage::disk('local')->exists($refused))->toBeTrue();
+
+    deletionAssertQueued($refused);
 });
