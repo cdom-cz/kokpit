@@ -566,7 +566,7 @@ Plans:
   4. Every download goes through the app with a permission check and a short-lived signed URL (no public bucket URL), and deleting a record also removes its stored object
   5. Admin records income and expense transactions with hierarchical categories, currency, CZK amount, optional client and project and receipts as attachments, and sees an overview per month and year, per category and per client in CZK
 
-**Plans:** 1/24 plans executed
+**Plans:** 2/24 plans executed
 **UI hint**: yes
 
 Plans:
@@ -574,7 +574,7 @@ Plans:
 - [x] 09-01-PLAN.md — Documents record: a file attached to a project is stored privately as one document; owner resolver, Partner scope with four hidden canary twins, documents settings
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 09-02-PLAN.md — Upload safety: only uploaded files, clean names, shared limits, disallowed extensions, archived owners, all-or-nothing; owner relations; one byte-level path for temporary uploads held on the bucket
+- [x] 09-02-PLAN.md — Upload safety: only uploaded files, clean names, shared limits, disallowed extensions, archived owners, all-or-nothing; owner relations; one byte-level path for temporary uploads held on the bucket
 - [ ] 09-03-PLAN.md — Signed, user-bound, short-lived streaming file route with inline allowlist, nosniff, SPA exception and route walk
 - [ ] 09-04-PLAN.md — Transaction categories in the database: two levels, inherited type, system income category guard, generic Czech seed
 - [ ] 09-21-PLAN.md — Archived owners (D-21): files hidden from the Partner and the default Admin query, back on restore, objects kept; documents schema refusals; Partner-safe column pin
@@ -683,7 +683,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
 | 8. Exchange Rates and Reports | 27/27 | In Progress | - |
-| 9. Documents and Finance | 1/24 | In Progress | - |
+| 9. Documents and Finance | 2/24 | In Progress | - |
 | 10. Invoicing | 0/0 | Not started | - |
 | 11. Stripe Payments | 0/0 | Not started | - |
 | 12. Partner Audit | 0/0 | Not started | - |

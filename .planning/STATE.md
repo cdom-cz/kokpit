@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-01-PLAN.md
-last_updated: "2026-10-16T11:14:57.505Z"
+stopped_at: Completed 09-02-PLAN.md
+last_updated: "2026-10-16T11:28:02.845Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 82070554ba59e92ebabba5fadd6704b71da3501e
+state_head: 697d969fe68819174136e5d67dc3fb9ae8ded1f1
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 148
+  completed_plans: 149
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 2 of 24
+Plan: 3 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -210,6 +210,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P26 | 5 min | 2 tasks | 7 files |
 | Phase 08 P27 | 25min | 2 tasks | 5 files |
 | Phase 09 P01 | 25 min | 3 tasks | 14 files |
+| Phase 09 P02 | 30 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -502,6 +503,8 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-01: projects_id_client_unique already exists from the time entries migration; the documents migration reuses it and neither adds nor drops it — Research A12 treated the key as new; adding it again fails with 42P07
 - [Phase 09]: 09-01: DocumentPolicy declares attach() returning false so the Admin passes through before() and a Partner is refused — The Gate skips before() for an ability the policy has no method for, which would deny the Admin too
 - [Phase 09]: 09-01: owner resolution re-reads the owner as system under a shared lock, archived rows included; stored visibility is shareable and (requested or owner default) — A stale instance must not yield a wrong client; the CHECK documents_visible_owner_check is only the backstop
+- [Phase 09]: 09-02: Only UploadedFile instances reach AttachDocuments storage; every upload is copied to a local file bounded at the size limit and its MIME type comes from finfo on that copy, never from the declared type or bucket metadata
+- [Phase 09]: 09-02: Disallowed extensions stay the media-library package list (D-06); the plan's x.exe example was replaced by archive.phar in tests
 
 ### Pending Todos
 
@@ -552,6 +555,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T11:14:57.086Z
-Stopped at: Completed 09-01-PLAN.md
+Last session: 2026-10-16T11:28:02.432Z
+Stopped at: Completed 09-02-PLAN.md
 Resume file: None
