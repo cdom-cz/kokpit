@@ -115,6 +115,7 @@ return [
             'czk_preview' => 'Kurz ČNB: :amount = :czk (kurz :rate Kč za :unit :currency ze dne :date).',
             'czk_missing_rate' => 'Pro měnu :currency a den :date není uložen kurz ČNB. Zadejte částku v korunách podle banky.',
             'czk_manual_kept' => 'Částka v korunách je zadaná ručně. Změna data, měny nebo částky ji nepřepíše. Vypněte přepínač, aby se znovu přepočítala podle kurzu ČNB.',
+            'czk_custom_kept' => 'Zaúčtováno vlastním kurzem: :amount = :czk (kurz :rate Kč za :unit :currency). Změna data, měny nebo částky vypočítá částku v korunách znovu podle kurzu ČNB.',
         ],
         'placeholders' => [
             'empty_value' => '—',
@@ -123,6 +124,7 @@ return [
         ],
         'badges' => [
             'manual' => 'ručně',
+            'custom' => 'vlastní kurz',
         ],
         'filters' => [
             'type' => 'Typ',

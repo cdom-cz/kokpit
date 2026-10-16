@@ -186,16 +186,16 @@ final class TransactionResource extends Resource
                         ->native(false),
                     TextEntry::make('czk_preview')
                         ->label(__('finance.transactions.fields.czk_preview'))
-                        ->state(static fn (Get $get): string => self::preview($get)['text'])
-                        ->color(static fn (Get $get): string => self::preview($get)['kind'] === 'missing' ? 'warning' : 'gray')
-                        ->visible(static fn (Get $get): bool => self::preview($get)['kind'] !== 'none')
+                        ->state(static fn (Get $get, ?Transaction $record): string => self::figureNote($get, $record)['text'])
+                        ->color(static fn (Get $get, ?Transaction $record): string => self::figureNote($get, $record)['kind'] === 'missing' ? 'warning' : 'gray')
+                        ->visible(static fn (Get $get, ?Transaction $record): bool => self::figureNote($get, $record)['kind'] !== 'none')
                         ->columnSpanFull(),
                     Toggle::make('czk_manual')
                         ->label(__('finance.transactions.fields.czk_manual'))
                         ->default(false)
                         ->live()
-                        ->afterStateUpdated(static function (Get $get, Set $set, mixed $state): void {
-                            self::manualSwitched($get, $set, $state === true);
+                        ->afterStateUpdated(static function (Get $get, Set $set, ?Transaction $record, mixed $state): void {
+                            self::manualSwitched($get, $set, $record, $state === true);
                         })
                         // While the figure is manual a change of date, currency or amount keeps it (Pitfall 13).
                         ->helperText(static fn (Get $get): ?string => $get('czk_manual') === true
@@ -208,8 +208,8 @@ final class TransactionResource extends Resource
                         ->suffix('Kč')
                         ->inputMode('decimal')
                         ->maxLength(32)
-                        ->visible(static fn (Get $get): bool => self::czkAmountNeeded($get))
-                        ->required(static fn (Get $get): bool => self::czkAmountNeeded($get))
+                        ->visible(static fn (Get $get, ?Transaction $record): bool => self::czkAmountNeeded($get, $record))
+                        ->required(static fn (Get $get, ?Transaction $record): bool => self::czkAmountNeeded($get, $record))
                         ->helperText(static fn (Get $get): ?string => self::preview($get)['kind'] === 'missing'
                             ? self::preview($get)['text']
                             : null)
@@ -529,15 +529,77 @@ final class TransactionResource extends Resource
     }
 
     /**
-     * Whether the CZK field is on the form: the Admin switched the manual figure on, or the day has no list.
+     * Whether the CZK field is on the form: the Admin switched the manual figure on, or the day has no list. A
+     * row kept at its own rate asks for nothing while its amount, date and currency are unchanged, even in a
+     * currency without any CNB list.
      */
-    private static function czkAmountNeeded(Get $get): bool
+    private static function czkAmountNeeded(Get $get, ?Transaction $record): bool
     {
         if (! self::isForeign($get('currency'))) {
             return false;
         }
 
-        return $get('czk_manual') === true || self::preview($get)['kind'] === 'missing';
+        if ($get('czk_manual') === true) {
+            return true;
+        }
+
+        return ! self::customKept($get, $record) && self::preview($get)['kind'] === 'missing';
+    }
+
+    /**
+     * Whether the record is booked at an own rate and the form still holds its stored amount, date and currency:
+     * saving then keeps the own rate (owner decision A1 on D-06). Changing any of the three computes the figure
+     * again at the CNB rate, which is what the Action does when the UI sends `czk_manual` false.
+     */
+    private static function customKept(Get $get, ?Transaction $record): bool
+    {
+        if (! $record instanceof Transaction || $record->czk_source !== CzkSource::Custom) {
+            return false;
+        }
+
+        $currency = self::currencyOf($get('currency'));
+        $text = $get('amount');
+
+        if ($currency !== $record->amount_currency || ! is_string($text)) {
+            return false;
+        }
+
+        if (PragueDay::day($get('transaction_date')) !== $record->transaction_date->toDateString()) {
+            return false;
+        }
+
+        try {
+            $amount = Money::fromMajor((string) preg_replace('/[\s\x{00A0}\x{202F}]+/u', '', $text), $currency);
+        } catch (InvalidArgumentException|OverflowException) {
+            return false;
+        }
+
+        return $amount->equals($record->amount);
+    }
+
+    /**
+     * The note under the amount: the stored own rate of a kept custom row (kind `custom`), otherwise the CNB
+     * preview of the current input.
+     *
+     * @return array{kind: 'none'|'cnb'|'missing'|'custom', text: string, czk: string|null}
+     */
+    private static function figureNote(Get $get, ?Transaction $record): array
+    {
+        if ($record instanceof Transaction && $get('czk_manual') !== true && self::customKept($get, $record)) {
+            return [
+                'kind' => 'custom',
+                'text' => (string) __('finance.transactions.hints.czk_custom_kept', [
+                    'amount' => $record->amount->format('cs'),
+                    'czk' => $record->czk()->format('cs'),
+                    'rate' => RateFormat::display((string) $record->exchange_rate),
+                    'unit' => (string) $record->exchange_unit_amount,
+                    'currency' => $record->amount_currency,
+                ]),
+                'czk' => self::decimalText($record->czk()),
+            ];
+        }
+
+        return self::preview($get);
     }
 
     private static function isForeign(mixed $currency): bool
@@ -566,15 +628,18 @@ final class TransactionResource extends Resource
     }
 
     /**
-     * Switching the manual figure on starts from the figure the list gives, so the Admin corrects it to the
-     * bank's number instead of typing it from nothing.
+     * Switching the manual figure on starts from the figure the list gives (the stored figure of a row kept at
+     * its own rate), so the Admin corrects it to the bank's number instead of typing it from nothing.
      */
-    private static function manualSwitched(Get $get, Set $set, bool $on): void
+    private static function manualSwitched(Get $get, Set $set, ?Transaction $record, bool $on): void
     {
         $typed = $get('czk_amount');
 
         if ($on && (! is_string($typed) || trim($typed) === '')) {
-            $set('czk_amount', self::preview($get)['czk']);
+            // A kept own-rate row starts from its stored figure, any other from the figure the list gives.
+            $set('czk_amount', $record instanceof Transaction && self::customKept($get, $record)
+                ? self::decimalText($record->czk())
+                : self::preview($get)['czk']);
         }
     }
 
@@ -804,19 +869,26 @@ final class TransactionResource extends Resource
     }
 
     /**
-     * The CZK figure with a "ručně" badge when the Admin typed it.
+     * The CZK figure with a "ručně" badge when the Admin typed it and a "vlastní kurz" badge when it was booked
+     * at an own rate.
      */
     private static function czkCell(Transaction $record): HtmlString
     {
         $text = e($record->czk()->format('cs'));
 
-        if ($record->czk_source !== CzkSource::Manual) {
+        [$label, $color] = match ($record->czk_source) {
+            CzkSource::Manual => [__('finance.transactions.badges.manual'), 'warning'],
+            CzkSource::Custom => [__('finance.transactions.badges.custom'), 'info'],
+            default => [null, null],
+        };
+
+        if ($label === null) {
             return new HtmlString($text);
         }
 
         $badge = Blade::render(
-            '<x-filament::badge color="warning" size="sm">{{ $label }}</x-filament::badge>',
-            ['label' => __('finance.transactions.badges.manual')],
+            '<x-filament::badge :color="$color" size="sm">{{ $label }}</x-filament::badge>',
+            ['label' => $label, 'color' => $color],
         );
 
         return new HtmlString($text.' '.$badge);
