@@ -34,8 +34,9 @@ final readonly class TransactionCzk
      * @param  CustomRate|null  $customRate  an own rate for this transaction; ignored for a CZK amount and when a figure is typed
      * @return array{czk_minor: int, czk_source: CzkSource, exchange_rate: string|null, exchange_unit_amount: int|null, exchange_rate_date: string|null}
      *
-     * @throws ValidationException `czk_amount` when a foreign amount has neither a figure nor a CNB list; `amount` when the
-     *                             converted figure does not fit
+     * @throws ValidationException `czk_amount` when a foreign amount has neither a figure, an own rate nor a CNB list;
+     *                             `exchange_rate` when the own rate cannot convert; `amount` when the converted figure does
+     *                             not fit
      */
     public function resolve(Money $amount, string $day, ?Money $manualCzk, ?CustomRate $customRate = null): array
     {
@@ -54,6 +55,8 @@ final readonly class TransactionCzk
         if ($customRate instanceof CustomRate) {
             try {
                 $czk = $amount->convert($customRate->rate, 'CZK', $customRate->unitAmount);
+            } catch (InvalidArgumentException) {
+                throw ValidationException::withMessages(['exchange_rate' => __('finance.transactions.errors.rate_invalid')]);
             } catch (OverflowException) {
                 throw ValidationException::withMessages(['amount' => __('finance.transactions.errors.amount_invalid')]);
             }
