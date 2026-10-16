@@ -269,6 +269,45 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Documents
+    |--------------------------------------------------------------------------
+    |
+    | Fixed settings of the files area (DO-01 to DO-06). Literal starting
+    | points, not editable in the UI; the upload rules, the file route and the
+    | ZIP job all read them from here.
+    |
+    | max_size_kb (D-06): the largest single file. Filament and Livewire count
+    |   KILOBYTES, the medialibrary ceiling (media-library.max_file_size) counts
+    |   BYTES; the two are the same 10 MB and a test pins them together.
+    |
+    | max_files_per_upload (D-06): how many files one upload may carry.
+    |
+    | signed_url_ttl_seconds (D-10): how long a signed download link lives. Kept
+    |   short on purpose: the link is minted again on every click.
+    |
+    | download_rate_limit_per_minute: downloads a minute per signed-in user.
+    |
+    | archive (D-08, research A6): a ZIP of a selection is built once and kept
+    |   ttl_days days, then pruned; one archive holds at most max_files files
+    |   and max_bytes bytes (200 MB) of source files, so a request cannot ask
+    |   the job for unbounded work.
+    |
+    */
+
+    'documents' => [
+        'max_size_kb' => 10240,
+        'max_files_per_upload' => 10,
+        'signed_url_ttl_seconds' => 120,
+        'download_rate_limit_per_minute' => 120,
+        'archive' => [
+            'ttl_days' => 7,
+            'max_files' => 200,
+            'max_bytes' => 209715200,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Time report
     |--------------------------------------------------------------------------
     |

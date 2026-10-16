@@ -185,3 +185,14 @@ it('refuses an owner of an unknown class and stores nothing', function (): void 
 
     expect(Document::query()->count())->toBe(0);
 });
+
+it('keeps every documents setting in one config block', function (): void {
+    expect(config('kokpit.documents.max_size_kb'))->toBe(10240)
+        ->and(config('kokpit.documents.max_size_kb') * 1024)->toBe(config('media-library.max_file_size'))
+        ->and(config('kokpit.documents.max_files_per_upload'))->toBe(10)
+        ->and(config('kokpit.documents.signed_url_ttl_seconds'))->toBe(120)
+        ->and(config('kokpit.documents.download_rate_limit_per_minute'))->toBe(120)
+        ->and(config('kokpit.documents.archive.ttl_days'))->toBe(7)
+        ->and(config('kokpit.documents.archive.max_files'))->toBe(200)
+        ->and(config('kokpit.documents.archive.max_bytes'))->toBe(209715200);
+});
