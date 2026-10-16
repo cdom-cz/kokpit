@@ -8,6 +8,8 @@ use App\Domain\Finance\FinanceFilters;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Concerns\EnforcesPageAccessRule;
+use App\Filament\Finance\Widgets\FinanceCategoryTable;
+use App\Filament\Finance\Widgets\FinanceClientTable;
 use App\Filament\Finance\Widgets\FinanceStats;
 use Carbon\CarbonImmutable;
 use Filament\Forms\Components\Select;
@@ -157,6 +159,8 @@ class FinanceOverviewPage extends Page
         return Grid::make(['default' => 1, 'lg' => 2])
             ->schema(fn (): array => $this->getWidgetsSchemaComponents([
                 FinanceStats::class,
+                FinanceCategoryTable::class,
+                FinanceClientTable::class,
             ]));
     }
 

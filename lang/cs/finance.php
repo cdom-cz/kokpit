@@ -196,6 +196,7 @@ return [
         'categories' => [
             'heading' => 'Kategorie',
             'columns' => [
+                'type' => 'Typ',
                 'category' => 'Kategorie',
                 'total' => 'Částka v Kč',
             ],
