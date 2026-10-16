@@ -49,8 +49,10 @@ use Throwable;
  * Rename and the visibility switch (D-02, D-03) go through RenameDocument and SetDocumentVisibility, which own
  * the rules; the actions only collect the input and report the result.
  *
- * Delete is permanent (D-09): it asks for a confirmation that names the file, and it removes the row, the media
- * and the stored object through DeleteDocument or not at all.
+ * Delete is permanent (D-09, D-23): it asks for a confirmation that names the file, and it goes through
+ * DeleteDocument, which removes the row and the media row in one transaction and the stored object after the
+ * commit (or, when the disk refuses it then, through the queued RemoveDocumentObjects job). The rows are deleted
+ * together or not at all; a refused object never undoes a delete the Admin confirmed.
  *
  * Download and preview authorize the file and mint the signed link at click time, then redirect to it. A
  * link is never rendered into the page, because a page that stays open longer than the link lives would
@@ -326,8 +328,9 @@ final class DocumentActions
 
     /**
      * Deletes one file for the signed-in Admin. A refusal by the policy is not swallowed; any other failure
-     * (the stored object cannot be removed, the file was deleted in the meantime) is reported without the
-     * file name and answered with false, so nothing is half done.
+     * (the file was deleted in the meantime, the database failed) is reported without the file name and
+     * answered with false, and nothing is deleted then. An object the disk refuses after the commit is no
+     * failure here: the rows are gone and the stored object is removed after the commit or by the queued job.
      */
     private static function deleteOne(Document $document): bool
     {
