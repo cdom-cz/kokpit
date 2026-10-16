@@ -21,6 +21,7 @@ use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Support\PragueDay;
 use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
+use App\Filament\RelationManagers\TransactionHistoryRelationManager;
 use App\Filament\Resources\TransactionResource\Pages\CreateTransaction;
 use App\Filament\Resources\TransactionResource\Pages\EditTransaction;
 use App\Filament\Resources\TransactionResource\Pages\ListTransactions;
@@ -101,6 +102,13 @@ final class TransactionResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->with(['category.parent', 'client', 'project']);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            TransactionHistoryRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

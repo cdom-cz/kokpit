@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Finance\Models;
 
+use App\Domain\Audit\LoggedAttributes;
+use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Enums\TransactionType;
@@ -30,6 +32,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * `exchange_*` columns keep the rate that was used. They are a snapshot, never looked up again. `czk_source`
  * casts to {@see CzkSource} and `czk()` reads the figure as Money; the write Actions set both.
  *
+ * Changes are written to the activity log with an explicit allowlist (D-14): the money, the CZK figure with its
+ * source and rate, the references and the short text columns. The free-text `description` is never logged.
+ *
  * Only the free text is fillable. The type, category, amounts, CZK figure, snapshot, client and project are set
  * with `forceFill` by trusted code (the Actions), so a request can never write them by mass assignment.
  *
@@ -54,9 +59,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $updated_at
  */
 #[Fillable(['description', 'counterparty', 'document_number'])]
+#[LoggedAttributes(['type', 'transaction_date', 'category_id', 'amount_minor', 'amount_currency', 'czk_minor', 'czk_source', 'exchange_rate', 'client_id', 'project_id', 'counterparty', 'document_number'])]
 final class Transaction extends KokpitModel implements PartnerIsolated
 {
-    use DeniesPartners;
+    use DeniesPartners, LogsAllowlistedActivity;
 
     protected $table = 'transactions';
 

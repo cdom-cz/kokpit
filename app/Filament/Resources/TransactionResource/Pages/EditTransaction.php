@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\TransactionResource\Pages;
 
+use App\Domain\Finance\Actions\DeleteTransaction;
 use App\Domain\Finance\Actions\UpdateTransaction;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\Models\User;
 use App\Filament\Concerns\RethrowsDomainValidation;
 use App\Filament\Resources\TransactionResource;
+use Filament\Actions\Action;
+use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 
@@ -41,6 +44,34 @@ final class EditTransaction extends EditRecord
     protected function getSavedNotificationTitle(): string
     {
         return __('finance.transactions.notifications.saved');
+    }
+
+    /**
+     * "Smazat transakci" behind a confirmation, through DeleteTransaction (D-14). The row goes for real; the
+     * change stays in the activity log.
+     *
+     * @return array<Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            DeleteAction::make()
+                ->label(__('finance.transactions.actions.delete'))
+                ->requiresConfirmation()
+                ->modalHeading(__('finance.transactions.actions.delete_heading'))
+                ->modalDescription(__('finance.transactions.actions.delete_description'))
+                ->modalSubmitActionLabel(__('finance.transactions.actions.delete'))
+                ->successNotificationTitle(__('finance.transactions.notifications.deleted'))
+                ->successRedirectUrl(TransactionResource::getUrl('index'))
+                ->using(static function (Transaction $record): bool {
+                    $actor = auth()->user();
+                    assert($actor instanceof User);
+
+                    app(DeleteTransaction::class)->handle($actor, $record);
+
+                    return true;
+                }),
+        ];
     }
 
     /**

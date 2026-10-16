@@ -11,11 +11,14 @@ use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Money\Money;
+use App\Filament\RelationManagers\TransactionHistoryRelationManager;
 use App\Filament\Resources\TransactionResource;
 use App\Filament\Resources\TransactionResource\Pages\CreateTransaction;
 use App\Filament\Resources\TransactionResource\Pages\EditTransaction;
 use App\Filament\Resources\TransactionResource\Pages\ListTransactions;
+use Filament\Actions\DeleteAction;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -381,5 +384,125 @@ describe('the edit page follows the recompute-versus-manual rule', function (): 
             ->fillForm(txScreenForm(['currency' => 'CZK', 'category_id' => $category->getKey()]))
             ->call('create')
             ->assertHasFormErrors(['category_id']);
+    });
+});
+
+describe('deleting a transaction', function (): void {
+    it('asks for a confirmation and deletes through the Action only after it', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        $page = Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->mountAction(DeleteAction::class)
+            ->assertActionMounted(DeleteAction::class);
+
+        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeTrue();
+
+        $page->callMountedAction()->assertRedirect(TransactionResource::getUrl('index'));
+
+        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeFalse();
+    });
+
+    it('does not offer the delete action to a Partner, who cannot reach the page at all', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])->assertForbidden();
+
+        $this->actingAs($this->admin);
+        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeTrue();
+    });
+});
+
+describe('the activity trail', function (): void {
+    it('writes one row for the creation with the allowlisted attributes and never the description', function (): void {
+        txScreenRate();
+        $form = txScreenForm(['description' => 'Fictional secret note', 'document_number' => 'INV-1']);
+
+        Livewire::test(CreateTransaction::class)->fillForm($form)->call('create')->assertHasNoFormErrors();
+
+        $transaction = Transaction::query()->where('counterparty', $form['counterparty'])->sole();
+        $rows = Activity::query()->forSubject($transaction)->forEvent('created')->get();
+        $attributes = $rows->first()?->attribute_changes->get('attributes') ?? [];
+
+        expect($rows)->toHaveCount(1)
+            ->and($attributes)->toHaveKeys(['type', 'transaction_date', 'category_id', 'amount_minor', 'amount_currency', 'czk_minor', 'czk_source', 'exchange_rate', 'counterparty', 'document_number'])
+            ->and($attributes)->not->toHaveKey('description')
+            ->and($attributes['amount_minor'])->toBe(10000)
+            ->and($attributes['czk_source'])->toBe('cnb')
+            ->and(json_encode($rows->first()?->attribute_changes))->not->toContain('Fictional secret note');
+    });
+
+    it('writes one row for an edit that lists only the changed allowlisted attributes', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['counterparty' => 'Example Hosting Ltd', 'description' => 'Fictional new note'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $rows = Activity::query()->forSubject($transaction)->forEvent('updated')->get();
+
+        expect($rows)->toHaveCount(1)
+            ->and($rows->first()?->attribute_changes->get('attributes'))->toBe(['counterparty' => 'Example Hosting Ltd'])
+            ->and(json_encode($rows->first()?->attribute_changes))->not->toContain('Fictional new note');
+    });
+
+    it('writes no row for a change of the description alone', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['description' => 'Only a note'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(Activity::query()->forSubject($transaction)->forEvent('updated')->count())->toBe(0);
+    });
+
+    it('writes one row for the deletion', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord(['description' => 'Fictional deleted note']);
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->callAction(DeleteAction::class);
+
+        $rows = Activity::query()->forSubject($transaction)->forEvent('deleted')->get();
+
+        expect($rows)->toHaveCount(1)
+            ->and(json_encode($rows->first()?->attribute_changes))->not->toContain('Fictional deleted note');
+    });
+
+    it('lists the rows in the history tab with Czech attribute labels', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['counterparty' => 'Example Hosting Ltd'])
+            ->call('save');
+
+        $activities = $transaction->activitiesAsSubject()->get();
+
+        expect($activities)->toHaveCount(2)
+            ->and(TransactionResource::getRelations())->toContain(TransactionHistoryRelationManager::class)
+            ->and(TransactionHistoryRelationManager::canViewForRecord($transaction, EditTransaction::class))->toBeTrue();
+
+        Livewire::test(TransactionHistoryRelationManager::class, ['ownerRecord' => $transaction, 'pageClass' => EditTransaction::class])
+            ->assertSuccessful()
+            ->assertCanSeeTableRecords($activities)
+            ->assertSee('Protistrana')
+            ->assertSee('Částka (v nejmenších jednotkách měny)');
+    });
+
+    it('hides the history tab from a Partner', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
+
+        expect(TransactionHistoryRelationManager::canViewForRecord($transaction, EditTransaction::class))->toBeFalse();
     });
 });

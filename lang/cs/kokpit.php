@@ -401,6 +401,7 @@ return [
             'document' => 'Soubor',
             'task' => 'Úkol',
             'time_entry' => 'Časový záznam',
+            'transaction' => 'Transakce',
             'personal_access_token' => 'API token',
         ],
         'attributes' => [
@@ -476,6 +477,20 @@ return [
                 'fixed_price_minor' => 'Pevná cena (v nejmenších jednotkách měny)',
                 'fixed_price_currency' => 'Měna pevné ceny',
                 'estimate_seconds' => 'Odhad (v sekundách)',
+            ],
+            'transaction' => [
+                'type' => 'Typ',
+                'transaction_date' => 'Datum',
+                'category_id' => 'Kategorie',
+                'amount_minor' => 'Částka (v nejmenších jednotkách měny)',
+                'amount_currency' => 'Měna',
+                'czk_minor' => 'Částka v Kč (v haléřích)',
+                'czk_source' => 'Zdroj částky v Kč',
+                'exchange_rate' => 'Kurz ČNB',
+                'client_id' => 'Klient',
+                'project_id' => 'Projekt',
+                'counterparty' => 'Protistrana',
+                'document_number' => 'Číslo dokladu',
             ],
             'time_entry' => [
                 'client_id' => 'Klient',
