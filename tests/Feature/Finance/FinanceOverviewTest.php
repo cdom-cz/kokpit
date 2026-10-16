@@ -12,6 +12,7 @@ use App\Domain\Finance\Queries\FinanceOverview;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Finance\Widgets\FinanceCategoryTable;
 use App\Filament\Finance\Widgets\FinanceClientTable;
+use App\Filament\Finance\Widgets\FinanceMonthsChart;
 use App\Filament\Finance\Widgets\FinanceStats;
 use App\Filament\Pages\FinanceOverviewPage;
 use Filament\Facades\Filament;
@@ -315,5 +316,145 @@ describe('a month and a year', function (): void {
             ->and($clients[0]['expense_minor'])->toBe(5000)
             ->and($overview->byCategory($year))->toHaveCount(2)
             ->and($overview->byCategory(FinanceFilters::fromInput('month', 2026, 12)))->toHaveCount(1);
+    });
+});
+
+describe('the monthly chart', function (): void {
+    beforeEach(function (): void {
+        $income = finOverviewCategory('income', 'Ostatní příjmy');
+        $office = finOverviewCategory('expense', 'Kancelář');
+
+        finOverviewTx('income', '2026-10-05', $income, 1000050);
+        finOverviewTx('income', '2026-10-25', $income, 249950);
+        finOverviewTx('expense', '2026-10-14', $office, 251250);
+        finOverviewTx('income', '2026-01-31', $income, 70000);
+        finOverviewTx('income', '2025-03-10', $income, 333300);
+    });
+
+    it('returns twelve rows for the year, empty months as zero', function (): void {
+        $months = app(FinanceOverview::class)->months(2026);
+
+        expect($months)->toHaveCount(12)
+            ->and(array_column($months, 'month'))->toBe(range(1, 12))
+            ->and($months[9])->toBe(['month' => 10, 'income_minor' => 1250000, 'expense_minor' => 251250])
+            ->and($months[0]['income_minor'])->toBe(70000)
+            ->and($months[1])->toBe(['month' => 2, 'income_minor' => 0, 'expense_minor' => 0]);
+    });
+
+    it('refuses a year out of range and the Partner', function (): void {
+        expect(fn () => app(FinanceOverview::class)->months(1999))->toThrow(InvalidArgumentException::class)
+            ->and(fn () => app(FinanceOverview::class)->months(2101))->toThrow(InvalidArgumentException::class);
+
+        $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
+
+        expect(fn () => app(FinanceOverview::class)->months(2026))->toThrow(AuthorizationException::class);
+    });
+
+    it('is a bar chart with the Czech month labels and two datasets in whole CZK', function (): void {
+        $chart = Livewire::test(FinanceMonthsChart::class, ['pageFilters' => ['period' => 'year', 'year' => 2026, 'month' => 1]])->instance();
+        assert($chart instanceof FinanceMonthsChart);
+        $data = $chart->chartData();
+
+        expect($data['labels'])->toBe(['leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'])
+            ->and($data['datasets'])->toHaveCount(2)
+            ->and($data['datasets'][0]['label'])->toBe(__('finance.overview.chart.income'))
+            ->and($data['datasets'][1]['label'])->toBe(__('finance.overview.chart.expense'))
+            ->and($data['datasets'][0]['data'][9])->toBe(12500)
+            ->and($data['datasets'][1]['data'][9])->toBe(2513)
+            ->and($data['datasets'][0]['data'][0])->toBe(700);
+    });
+
+    it('shows the year of the chosen month in Month mode', function (): void {
+        $chart = Livewire::test(FinanceMonthsChart::class, ['pageFilters' => finOverviewOctober()])->instance();
+        assert($chart instanceof FinanceMonthsChart);
+
+        expect($chart->chartData()['datasets'][0]['data'][9])->toBe(12500);
+
+        $other = Livewire::test(FinanceMonthsChart::class, ['pageFilters' => ['period' => 'month', 'year' => 2025, 'month' => 3]])->instance();
+        assert($other instanceof FinanceMonthsChart);
+
+        expect($other->chartData()['datasets'][0]['data'][2])->toBe(3333)
+            ->and($other->chartData()['datasets'][0]['data'][9])->toBe(0);
+    });
+
+    it('renders on the page', function (): void {
+        $this->get(FinanceOverviewPage::getUrl())->assertOk()->assertSee(__('finance.overview.chart.heading'));
+    });
+
+    it('refuses a Partner mounting the chart', function (): void {
+        Livewire::actingAs(Canary::partnerFor(Canary::twoClients()[0]))->test(FinanceMonthsChart::class)->assertForbidden();
+    });
+});
+
+describe('forged filters', function (): void {
+    beforeEach(function (): void {
+        $income = finOverviewCategory('income', 'Ostatní příjmy');
+
+        finOverviewTx('income', '2026-10-05', $income, 1000000);
+        finOverviewTx('income', '2026-09-05', $income, 555500);
+    });
+
+    it('falls back to the current Prague month for every invalid value', function (mixed $forged): void {
+        $october = FinanceFilters::fromInput('month', 2026, 10);
+        $filters = FinanceFilters::fromInput($forged['period'] ?? null, $forged['year'] ?? null, $forged['month'] ?? null);
+
+        expect($filters->toState())->toBe($october->toState())
+            ->and($filters->period())->toBe(['from' => '2026-10-01', 'until' => '2026-11-01']);
+
+        Livewire::test(FinanceStats::class, ['pageFilters' => $forged])
+            ->assertSee(Money::ofMinor(1000000, 'CZK')->format('cs'))
+            ->assertDontSee(Money::ofMinor(555500, 'CZK')->format('cs'));
+    })->with([
+        'unknown period' => [['period' => 'week']],
+        'year before the range' => [['period' => 'month', 'year' => '1999', 'month' => '10']],
+        'year after the range' => [['period' => 'year', 'year' => 2101]],
+        'month 13' => [['period' => 'month', 'year' => 2026, 'month' => '13']],
+        'month 0' => [['period' => 'month', 'year' => 2026, 'month' => 0]],
+        'array year' => [['period' => 'month', 'year' => ['x'], 'month' => 10]],
+        'array period' => [['period' => ['month'], 'year' => 2026, 'month' => 10]],
+        'float year' => [['period' => 'year', 'year' => 2026.5]],
+        'text month' => [['period' => 'month', 'year' => 2026, 'month' => 'ten']],
+        'nothing' => [[]],
+    ]);
+
+    it('knows the Prague month on the last evening of a UTC month', function (): void {
+        $this->travelTo('2026-10-31 23:30:00');
+
+        expect(FinanceFilters::fromInput(null, null, null)->period())->toBe(['from' => '2026-11-01', 'until' => '2026-12-01']);
+    });
+
+    it('accepts the edges of the year range and a December month', function (): void {
+        expect(FinanceFilters::fromInput('year', '2000', null)->period())->toBe(['from' => '2000-01-01', 'until' => '2001-01-01'])
+            ->and(FinanceFilters::fromInput('year', 2100, null)->period())->toBe(['from' => '2100-01-01', 'until' => '2101-01-01'])
+            ->and(FinanceFilters::fromInput('month', 2026, 12)->period())->toBe(['from' => '2026-12-01', 'until' => '2027-01-01'])
+            ->and(FinanceFilters::fromInput('month', 2026, 3)->label())->toBe('březen 2026')
+            ->and(FinanceFilters::fromInput('year', 2026, null)->label())->toBe('2026');
+    });
+
+    it('replaces a forged URL state of the page by the current month', function (): void {
+        Livewire::withQueryParams(['filters' => ['period' => 'week', 'year' => '1999', 'month' => '13']])
+            ->test(FinanceOverviewPage::class)
+            ->assertSet('filters', ['period' => 'month', 'year' => 2026, 'month' => 10]);
+
+        Livewire::withQueryParams(['filters' => ['period' => 'month', 'year' => ['x'], 'month' => '4']])
+            ->test(FinanceOverviewPage::class)
+            ->assertSet('filters', ['period' => 'month', 'year' => 2026, 'month' => 10]);
+    });
+
+    it('keeps a valid URL state of the page', function (): void {
+        Livewire::withQueryParams(['filters' => ['period' => 'month', 'year' => '2026', 'month' => '9']])
+            ->test(FinanceOverviewPage::class)
+            ->assertSet('filters', ['period' => 'month', 'year' => 2026, 'month' => 9]);
+    });
+
+    it('normalises a forged change of the form state', function (): void {
+        Livewire::test(FinanceOverviewPage::class)
+            ->set('filters.year', '1999')
+            ->assertSet('filters', ['period' => 'month', 'year' => 2026, 'month' => 10]);
+    });
+
+    it('switches to the year and shows the year figures', function (): void {
+        Livewire::test(FinanceStats::class, ['pageFilters' => ['period' => 'year', 'year' => 2026, 'month' => 10]])
+            ->assertSee(Money::ofMinor(1555500, 'CZK')->format('cs'));
     });
 });

@@ -10,6 +10,7 @@ use App\Domain\Shared\Auth\Audience;
 use App\Filament\Concerns\EnforcesPageAccessRule;
 use App\Filament\Finance\Widgets\FinanceCategoryTable;
 use App\Filament\Finance\Widgets\FinanceClientTable;
+use App\Filament\Finance\Widgets\FinanceMonthsChart;
 use App\Filament\Finance\Widgets\FinanceStats;
 use Carbon\CarbonImmutable;
 use Filament\Forms\Components\Select;
@@ -161,6 +162,7 @@ class FinanceOverviewPage extends Page
                 FinanceStats::class,
                 FinanceCategoryTable::class,
                 FinanceClientTable::class,
+                FinanceMonthsChart::class,
             ]));
     }
 

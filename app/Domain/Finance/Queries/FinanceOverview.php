@@ -14,6 +14,7 @@ use App\Domain\Shared\Money\Money;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use InvalidArgumentException;
 
 /**
  * The figures of the finance overview: income, expense and balance of a period, in CZK (FI-02, D-17).
@@ -159,6 +160,47 @@ final class FinanceOverview
             'expense_minor' => (int) $row->expense,
             'balance_minor' => (int) $row->income - (int) $row->expense,
         ])->all());
+    }
+
+    /**
+     * Income and expense of each month of a Prague calendar year in CZK, twelve rows, a month without
+     * transactions as zeros. The chart is the one place where these minor units become plain numbers.
+     *
+     * @return list<array{month: int, income_minor: int, expense_minor: int}>
+     *
+     * @throws AuthorizationException when neither the Admin nor a system run asks
+     * @throws InvalidArgumentException when the year is outside the supported range
+     */
+    public function months(int $year): array
+    {
+        $this->authorise();
+
+        if ($year < FinanceFilters::MIN_YEAR || $year > FinanceFilters::MAX_YEAR) {
+            throw new InvalidArgumentException('The year is outside the supported range.');
+        }
+
+        $rows = $this->inPeriod(FinanceFilters::fromInput(FinanceFilters::PERIOD_YEAR, $year, null))
+            ->selectRaw('EXTRACT(MONTH FROM transactions.transaction_date)::int AS month, transactions.type AS type, COALESCE(SUM(transactions.czk_minor), 0) AS total')
+            ->groupByRaw('EXTRACT(MONTH FROM transactions.transaction_date), transactions.type')
+            ->toBase()
+            ->get();
+
+        $months = [];
+
+        for ($month = 1; $month <= 12; $month++) {
+            $months[$month] = ['month' => $month, 'income_minor' => 0, 'expense_minor' => 0];
+        }
+
+        foreach ($rows as $row) {
+            $month = (int) $row->month;
+            $key = $row->type === TransactionType::Income->value ? 'income_minor' : 'expense_minor';
+
+            if (isset($months[$month])) {
+                $months[$month][$key] = (int) $row->total;
+            }
+        }
+
+        return array_values($months);
     }
 
     /**
