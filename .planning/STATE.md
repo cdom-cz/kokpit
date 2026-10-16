@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 08
-current_phase_name: Exchange Rates and Reports
+current_phase: 09
+current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 08-27-PLAN.md
-last_updated: "2026-10-15T07:59:55.878Z"
-last_activity: 2026-10-15
-last_activity_desc: Phase 08 execution started
-state_head: f9dc2e7cbc2ebed354ecd320f9696b715ccbb874
+stopped_at: Phase 10 context gathered
+last_updated: "2026-10-16T19:03:58.879Z"
+last_activity: 2026-10-16
+last_activity_desc: Phase 09 execution started
+state_head: e36c0414836e4081684dc7b3a48dae92d8cbf1fe
 progress:
   total_phases: 12
   completed_phases: 7
-  total_plans: 147
-  completed_plans: 147
+  total_plans: 175
+  completed_plans: 175
   percent: 58
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 08 — Exchange Rates and Reports
+**Current focus:** Phase 09 — Documents and Finance
 
 ## Current Position
 
-Phase: 08 (Exchange Rates and Reports) — EXECUTING
-Plan: 27 of 27 complete
-Status: All plans executed; awaiting phase verification
-Last activity: 2026-10-15 - Completed quick task 261015-diz: Add overdue highlight to the admin tasks list
+Phase: 09 (Documents and Finance) — EXECUTING
+Plan: 28 of 28 done (gap closure 09-25 to 09-28 complete; phase ready for re-verification, three human checks pending)
+Status: Ready to execute
+Last activity: 2026-10-16 — Phase 09 execution started
 
 Progress: [██████░░░░] 58%
 
@@ -209,6 +209,34 @@ Progress: [██████░░░░] 58%
 | Phase 08 P25 | 25 min | 2 tasks | 4 files |
 | Phase 08 P26 | 5 min | 2 tasks | 7 files |
 | Phase 08 P27 | 25min | 2 tasks | 5 files |
+| Phase 09 P01 | 25 min | 3 tasks | 14 files |
+| Phase 09 P02 | 30 min | 3 tasks | 10 files |
+| Phase 09 P03 | 30 min | 3 tasks | 7 files |
+| Phase 09 P04 | 11 min | 3 tasks | 13 files |
+| Phase 09 P21 | 25min | 3 tasks | 5 files |
+| Phase 09 P24 | 13 min | 3 tasks | 7 files |
+| Phase 09 P05 | 40 min | 3 tasks | 14 files |
+| Phase 09 P06 | 25 min | 3 tasks | 10 files |
+| Phase 09 P09 | 12 min | 2 tasks | 10 files |
+| Phase 09 P07 | 35 min | 3 tasks | 11 files |
+| Phase 09 P08 | 45 min | 3 tasks | 11 files |
+| Phase 09 P22 | 13 min | 3 tasks | 11 files |
+| Phase 09 P10 | 50 min | 3 tasks | 11 files |
+| Phase 09 P11 | 14 min | 3 tasks | 11 files |
+| Phase 09 P23 | 25 min | 2 tasks | 10 files |
+| Phase 09 P12 | 14 min | 3 tasks | 8 files |
+| Phase 09 P13 | 40 min | 3 tasks | 13 files |
+| Phase 09 P14 | 17 min | 3 tasks | 8 files |
+| Phase 09 P15 | 20 min | 3 tasks | 10 files |
+| Phase 09 P16 | 25 min | 2 tasks | 6 files |
+| Phase 09 P17 | 25 min | 3 tasks | 6 files |
+| Phase 09 P18 | 20 min | 3 tasks | 13 files |
+| Phase 09 P19 | 40 min | 3 tasks | 10 files |
+| Phase 09 P20 | 15 min | 3 tasks | 8 files |
+| Phase 09 P25 | 15min | 2 tasks | 3 files |
+| Phase 09 P27 | 55min | 3 tasks | 9 files |
+| Phase 09 P26 | 15min | 2 tasks | 4 files |
+| Phase 09 P28 | 40min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -498,6 +526,56 @@ Recent decisions affecting current work:
 - [Phase 08]: [08-27] openDepth from validated filters (0 no client, 1 client, 2 project) drives the initial tree state and the server hidden attributes
 - [Phase 08]: [08-27] Report levels styled by one static kokpit-report- style block (sticky Nazev column, client band, secondary gray) with dark variants; contrast of secondary gray computed 4.83:1 light, 6.99:1 dark, owner confirms in ledger 6
 - [Quick 261015-cdq]: the Admin dashboard shows the Signal plan of today (Europe/Prague day) instead of tomorrow, as TodayPlan (sort 15) right under HoursStats, full width, before the unbilled and deadlines row; still read-only, owner-scoped, three items visible, and it never materialises today's recurring templates (it shows them as not-yet-materialised items); a done task is struck through with Splněno; replaces the 'plan for tomorrow' part of Phase 08 D-11 on the owner's request
+- [Phase 09]: 09-01: projects_id_client_unique already exists from the time entries migration; the documents migration reuses it and neither adds nor drops it — Research A12 treated the key as new; adding it again fails with 42P07
+- [Phase 09]: 09-01: DocumentPolicy declares attach() returning false so the Admin passes through before() and a Partner is refused — The Gate skips before() for an ability the policy has no method for, which would deny the Admin too
+- [Phase 09]: 09-01: owner resolution re-reads the owner as system under a shared lock, archived rows included; stored visibility is shareable and (requested or owner default) — A stale instance must not yield a wrong client; the CHECK documents_visible_owner_check is only the backstop
+- [Phase 09]: 09-02: Only UploadedFile instances reach AttachDocuments storage; every upload is copied to a local file bounded at the size limit and its MIME type comes from finfo on that copy, never from the declared type or bucket metadata
+- [Phase 09]: 09-02: Disallowed extensions stay the media-library package list (D-06); the plan's x.exe example was replaced by archive.phar in tests
+- [Phase 09]: 09-03: Every document download and preview is streamed by the app through the signed, user-bound route filament.admin.files.document (120 s TTL); no redirect to a presigned bucket URL, so nosniff and no bucket host in responses
+- [Phase 09]: 09-03: Only png, jpeg, gif, webp and pdf are inline and only on request; every other type, SVG and HTML included, is an octet-stream attachment; Partner view grant is deferred to plan 09-08 (403 until then)
+- [Phase 09]: 09-04: transaction categories are a typed two-level tree via composite FK (parent_id, type, parent_depth) -> (id, type, depth) with NO ACTION; the system invoice_payments category is frozen by the Phase 2 guard (KP001) except name and position
+- [Phase 09]: 09-21: archived-owner files are those of client, project, task and comment owners only; unattached files and transaction receipts never count
+- [Phase 09]: 09-21: documents CHECKs fixed in place - visible-owner check uses COALESCE (CHECK passes on NULL), name check rejects any whitespace-only name
+- [Phase 09]: 09-24: Livewire temporary-upload disk defaults to s3 itself (not FILESYSTEM_DISK); phpunit.xml pins s3; DDEV overrides to local via .env.example; ProductionConfigGuard refuses a non-s3-driver temporary disk in production; preview_mimes empty (D-18, D-10)
+- [Phase 09]: 09-05: the Soubory tabs share one ManagesDocuments trait with three final Admin-only relation managers; the client tab lists every file of the client with an eager-loaded owner column and archived owners stay listed for the Admin — AccessRule is not inherited, so the behaviour is a trait; the client tab follows research A10 and D-21 hides archived owners only from the Partner and the default central listing
+- [Phase 09]: 09-05: upload domain errors are re-keyed to mountedActions.0.data.<key> inside the modal instead of using withFormErrors(), whose data. prefix is the page-form state path — Only the modal state path lands the message next to the field; same mapping as the Kontakty tab
+- [Phase 09]: 09-06: creating a child takes its parent's type; moving an existing category never retypes it by itself (a parent of another type is parent_invalid); the edit modal sends the chosen parent's type
+- [Phase 09]: 09-06: category refusals of archive and delete are field-less DomainException (danger notification), save refusals are field errors; 23503 maps to in_use or type_locked, KP001 to system_locked; used-by-transactions relies on the 09-09 foreign keys until then
+- [Phase 09]: 09-09: added an index on transactions.project_id and used withTrashed() on the client and project relations of Transaction
+- [Phase 09]: 09-07: DeleteDocument verifies each stored object is gone after the Eloquent delete (the medialibrary remover swallows disk errors) and rolls back otherwise
+- [Phase 09]: 09-07: the client visibility switch is decided per file (project, task and non-internal comment files), also on the client tab
+- [Phase 09]: 09-07: bulk delete counts the selection from the selection state, not from getSelectedTableRecords(false), which Filament caches
+- [Phase 09]: 09-08: Partner file read grant is the Document scope repeated by DocumentPolicy::view (flag, shareable owner, own client, still returned by the scoped query); Partner Soubory tabs are read-only over a shared ShowsPartnerDocuments trait with the pinned four-column Partner builder
+- [Phase 09]: 09-22: the CZK figure is fixed once at write from one rateFor() lookup and Money::convert; editing recomputes a computed transaction only when date, currency or amount change, and a manual figure stays manual until czk_manual is switched off
+- [Phase 09]: 09-22: TransactionInput re-validates category, client, project and currency under share locks; an unchanged archived reference stays acceptable on edit; a project without a client is refused
+- [Phase 09]: 09-10: a Partner may attach files only to an own open task or own non-internal comment (open = not archived, not done); upload always visible; delete only own uploads on an open task
+- [Phase 09]: 09-10: one Admin bell per Partner upload submission (count and task reference, never a file name), sent with notifyNow inside the upload transaction
+- [Phase 09]: Transaction form: the CZK field shows when the manual switch is on or the CNB preview finds no list for the day; the project select is never disabled — The preview runs the same TransactionCzk rule as the Actions; a disabled field is not dehydrated and the Action would keep the stored project
+- [Phase 09]: 09-23: DocumentArchive copies ReportExport (OwnedByUser + AdminOnlyPolicy); download name soubory-YYYY-MM-DD.zip from the Prague creation day — An archive bundles files of every client, so it is owner-scoped and Admin-only; the name carries no user text
+- [Phase 09]: 09-23: document_archives_count_check guards jsonb_array_length with CASE on jsonb_typeof — Constraints are checked in name order; the guard makes document_archives_ids_check refuse a non-array instead of a function error
+- [Phase 09]: 09-12: comment file delete is a Filament confirmation action calling DeleteDocument (no unconfirmed public delete method); the thread view renders its own action-modals outlet
+- [Phase 09]: 09-12: component methods taking a document id re-read through the scoped query limited to this task's comment files (UUID check first), so a foreign or internal id is a 404
+- [Phase 09]: 09-13: a receipt keeps the client and project of its transaction; UpdateTransaction moves them by one query in the same DB transaction, DeleteTransaction deletes receipts through DeleteDocument under the transaction row lock
+- [Phase 09]: 09-13: DocumentOwnerDeletionTest guards that clients, projects and tasks are archived only, comments are append-only and only a transaction deletes files; archive and restore never touch objects (D-21)
+- [Phase 09]: 09-14: client and uploader sorts of the central documents listing use an aliased leftJoin plus CzechCollation::orderBy (a collation cannot wrap a subselect through the helper)
+- [Phase 09]: 09-14: every filter of the central listing accepts only a known value and otherwise narrows nothing; archived_owners defaults to false (files of active owners) and the blank option shows all files
+- [Phase 09]: 09-14: bulkDelete reads its selection in chunks of 100 (chunkSelectedRecords) and counts files gone before they were read as failed
+- [Phase 09]: 09-15: FinanceFilters::fromInput is the single validation entry for the finance overview; any invalid period, year or month falls back to the current Prague month, filters are not persisted in the session
+- [Phase 09]: 09-15: the finance overview chart is the one place where CZK minor units become whole-crown numbers (rounded half up); tiles and tables format Money
+- [Phase 09]: 09-16: StorageTotals::byClient() returns the no-client row with a null client_id and empty name; the widget supplies the Czech label so the domain reader carries no UI copy
+- [Phase 09]: 09-16: storage totals read through Document::query()->toBase() with a by-name clients join, not DB::table(), to stay inside the query escape-hatch allowlist
+- [Phase 09]: 09-17: RequestDocumentArchive validates the selection (empty, non-UUID, unknown, duplicated, over max_files or max_bytes) and sets the record owner from the actor; the build job is pushed only after the creating transaction returned
+- [Phase 09]: 09-17: BuildDocumentArchive never produces an empty ZIP; a request none of whose documents exists throws and the record stays pending until plan 09-19 adds failure marking
+- [Phase 09]: 09-18: archive download route is filament.admin.files.archive; isDownloadable is re-checked on every request so a valid signed link never outlives the 7-day retention; foreign, unfinished, expired and missing archives all answer 404
+- [Phase 09]: 09-19: permanent ZIP failures (limits exceeded, no document left) fail the record directly with a failure bell; read errors throw and failed() gives up after the retries
+- [Phase 09]: 09-19: the ready bell counts the files actually added to the ZIP; entry names pass ArchiveEntryNames::safe() and a per-archive unique()
+- [Phase 09]: No reconcile command; the storage consistency check is a test whose consistencyViolations() a later health indicator can reuse
+- [Phase 09]: The Phase 9 hand-over note is replaced by an extended Phase 10 note (invoice owner kind and archived-owner behaviour, invoice PDF through AttachDocuments, invoicePayments() for FI-03, invoice_id on transactions, payment-transaction edit restriction)
+- [Phase 09]: kokpit.tasks.attachments copy removed; its one test reader now asserts the old placeholder sentence literally
+- [Phase 09]: 09-25: ArchiveEntryNames::unique() reads the counter with a default of 1 and registers every handed-out name with its own counter; BuildDocumentArchive left unguarded
+- [Phase 09]: D-23 (owner, amends D-09): stored object removed after the outermost commit via DB::afterCommit; a refused object is retried 3 times by RemoveDocumentObjects, then the failed-job alert reaches the Admin (WR-01)
+- [Phase 09]: 09-26: the archive prune deletes the id-derived storagePath() of every expired record whatever its status; the build job removes the ZIP of a gone or failed record after commit and keeps a ready one (WR-02)
+- [Phase 09]: D-23 (plan 09-28): user-accepted deviation from D-09, DO-03 means objects removed after the commit, retried 3 times by RemoveDocumentObjects, then the failed-job alert reaches the Admin; recorded in 09-CONTEXT.md and the WR-01 closure note
 
 ### Pending Todos
 
@@ -548,6 +626,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-15T06:17:53.469Z
-Stopped at: Completed 08-27-PLAN.md
-Resume file: None
+Last session: 2026-10-16T19:03:57.782Z
+Stopped at: Phase 10 context gathered
+Resume file: .planning/phases/10-invoicing/10-CONTEXT.md

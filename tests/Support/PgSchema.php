@@ -31,6 +31,9 @@ final class PgSchema
         'sessions.id' => 'opaque session string; sessions.user_id is still checked',
         'password_reset_tokens.email' => 'framework table keyed by e-mail',
         'tasks.parent_depth' => 'generated depth discriminator (0 for a subtask) in the composite parent key, not an identifier',
+        'transactions.type' => 'income or expense, a member of the composite category key (category_id, type) of the transaction, not an identifier',
+        'transaction_categories.type' => 'income or expense, a member of the composite parent key and of the key a transaction points at, not an identifier',
+        'transaction_categories.parent_depth' => 'generated depth discriminator (0 for a child) in the composite parent key, not an identifier',
     ];
 
     /**

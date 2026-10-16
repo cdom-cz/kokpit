@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks\Models;
 
+use App\Domain\Documents\Models\Document;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Auth\IsolatesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 /**
  * One comment on a task or a subtask (TA-04, D-08).
@@ -67,6 +69,16 @@ final class TaskComment extends KokpitModel implements PartnerIsolated
     public function author(): BelongsTo
     {
         return $this->belongsTo(User::class, 'author_id');
+    }
+
+    /**
+     * The files that hang directly on this comment.
+     *
+     * @return MorphMany<Document, $this>
+     */
+    public function documents(): MorphMany
+    {
+        return $this->morphMany(Document::class, 'owner');
     }
 
     /**

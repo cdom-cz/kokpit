@@ -22,6 +22,25 @@ return [
         'task' => 'Úkol',
     ],
 
+    'document_owner_type' => [
+        'client' => 'Klient',
+        'project' => 'Projekt',
+        'task' => 'Úkol',
+        'task_comment' => 'Komentář',
+        'transaction' => 'Transakce',
+    ],
+
+    // DocumentTypeGroup: the file-type groups of the central documents listing (plan 09-14).
+    'document_type_group' => [
+        'image' => 'Obrázky',
+        'pdf' => 'PDF',
+        'text' => 'Textové dokumenty',
+        'spreadsheet' => 'Tabulky',
+        'presentation' => 'Prezentace',
+        'archive' => 'Archivy',
+        'other' => 'Ostatní',
+    ],
+
     'vat_mode' => [
         'non_payer' => 'Neplátce DPH',
         'payer' => 'Plátce DPH',
@@ -136,9 +155,26 @@ return [
         'failed' => 'Selhalo',
     ],
 
+    'document_archive_status' => [
+        'pending' => 'Připravuje se',
+        'ready' => 'Hotovo',
+        'failed' => 'Selhalo',
+    ],
+
     'report_export_format' => [
         'csv' => 'CSV',
         'xlsx' => 'XLSX',
+    ],
+
+    'transaction_type' => [
+        'income' => 'Příjem',
+        'expense' => 'Výdaj',
+    ],
+
+    'czk_source' => [
+        'identity' => 'Kč',
+        'cnb' => 'Kurz ČNB',
+        'manual' => 'Zadáno ručně',
     ],
 
 ];

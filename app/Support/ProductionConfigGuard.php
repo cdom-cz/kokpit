@@ -74,6 +74,33 @@ final class ProductionConfigGuard
                 .'A per-container store (array, file) would run every scheduled task once per container.',
             );
         }
+
+        // D-18: several web containers serve the app, and the local disk of one container would lose a temporary upload between requests.
+        if (! self::temporaryUploadDiskIsBucket($config)) {
+            throw new RuntimeException(
+                'Refusing to boot in production: LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK must be unset or name the private bucket disk (a configured disk with the s3 driver). '
+                .'Production runs more than one web container, so a temporary upload held on the local disk of one container would be missing when another container handles the submit. '
+                .'The local disk is allowed for local development only.',
+            );
+        }
+    }
+
+    /**
+     * The disk Livewire resolves for temporary uploads: its own key, then the default disk, matched by driver like Livewire's isUsingS3().
+     */
+    private static function temporaryUploadDiskIsBucket(Repository $config): bool
+    {
+        $disk = $config->get('livewire.temporary_file_upload.disk');
+
+        if ($disk === null || $disk === '') {
+            $disk = $config->get('filesystems.default');
+        }
+
+        if (! is_string($disk) || $disk === '') {
+            return false;
+        }
+
+        return $config->get('filesystems.disks.'.strtolower($disk).'.driver') === 's3';
     }
 
     private static function isPublicHttpsUrl(mixed $url): bool

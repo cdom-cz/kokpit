@@ -94,6 +94,23 @@ After that the scheduler keeps the rates current without help. On every Czech wo
 
 The time report ("Report času") exports to CSV and XLSX in the background and keeps each file for 7 days, then deletes it together with its record every night. The work report ("Pracovní výkaz") is a PDF made on the spot. The PDF and the XLSX export need the PHP extensions `dom`, `mbstring`, `gd` and `zip`, and a rendering of a long report needs enough memory: the deploy rehearsal on the target server must confirm that `php -m` lists all four and read the effective `memory_limit` of the PHP-FPM and the queue worker (`php -i | grep memory_limit` shows the command line value, which may differ from the one of the web process). The PDF renderer raises a limit below 256M for its own run, so a lower value is not fatal, but a rehearsal on a long period should be done once.
 
+### Documents and finance
+
+Files (documents) and money records need three things from the operator.
+
+**The private bucket takes the uploads straight from the browser.** The application runs on more than one web container, so a file chosen in a form is not sent to one container: the browser uploads it directly to the private bucket (a presigned `PUT`, valid five minutes, object under `livewire-tmp/`) and the submit, served by any container, reads it from there and stores it as a document. Two rules must exist on the bucket, and the deploy rehearsal checks both:
+
+1. A CORS rule that allows the `PUT` method from the origin of the instance only (the URL the panel is served from, no wildcard, no other origin, no read methods). Without it the browser refuses the upload and the file field shows an error.
+2. A one-day expiry rule on the prefix `livewire-tmp/`. Livewire does not clean temporary uploads on S3 by itself. Set the rule with `php artisan livewire:configure-s3-upload-cleanup` on the server, or in the storage console of the provider.
+
+`LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK` stays unset in production: the application then uses the bucket, and it refuses to boot in production when the temporary disk is anything but a configured S3 disk. The one place that sets it is DDEV (`local`, see `.env.example`), because the DDEV object storage cannot be reached from a browser. Downloads are different: every download is streamed through the application behind a signed, short-lived link bound to the signed-in user, never a link to the bucket, so the bucket needs no read access from the browser and no CORS rule for reading.
+
+**ZIP archives live 7 days.** "Stáhnout jako ZIP" in the file list builds one archive in the background (this needs the queue worker), tells the Admin in the bell when it is ready and keeps it for 7 days (`kokpit.documents.archive.ttl_days` in `config/kokpit.php`); the scheduler deletes the file and its record every night. One archive holds at most 200 files and 200 MB of source files. The PHP extension `zip` is required, as for the XLSX export.
+
+**The system income category is seeded.** The migrations create a Czech starter set of finance categories and one frozen system income category ("Úhrady faktur"), which invoicing books payments into. It can be renamed or reordered in "Kategorie" but not archived, deleted or changed in type. Nothing needs to be created by hand; if the category is missing the instance was not migrated.
+
+The finance overview ("Přehled financí") and the transaction list are Admin only and show CZK figures: a foreign amount is converted with the CNB list of the transaction date once, when it is saved, and the rate used is stored with it, so a later list never changes a recorded figure. A transaction in a foreign currency on a day without a list (a weekend) uses the newest earlier list; when the instance holds no list at all the form asks for the CZK figure instead of waiting, so download the first list as described above.
+
 ## Language and time
 
 The whole interface is Czech (`lang/cs`), the fallback locale is English. Times are stored in UTC and shown in Europe/Prague as `j. n. Y H:i`.

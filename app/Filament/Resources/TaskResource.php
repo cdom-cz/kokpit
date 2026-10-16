@@ -21,6 +21,7 @@ use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\TaskPeople;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
+use App\Filament\RelationManagers\TaskDocumentsRelationManager;
 use App\Filament\RelationManagers\TaskHistoryRelationManager;
 use App\Filament\Resources\TaskResource\Pages\EditTask;
 use App\Filament\Resources\TaskResource\Pages\ListTasks;
@@ -203,8 +204,10 @@ final class TaskResource extends Resource
                         ->required()
                         ->maxLength(255)
                         ->columnSpanFull(),
-                    // No file attachments and no attach button: nothing an upload could land on (A10).
-                    // The server cleans the value again (UpdateTask), so the editor is only a convenience.
+                    // Files go through the Soubory tab and AttachDocuments, never through this editor: inline
+                    // editor files would bypass `documents`, its policy and the sanitiser, so the editor keeps
+                    // `fileAttachments(false)` on purpose (D-22, research Anti-Patterns). The server cleans the
+                    // value again (UpdateTask), so the editor is only a convenience.
                     RichEditor::make('description')
                         ->label(__('kokpit.tasks.fields.description'))
                         ->fileAttachments(false)
@@ -346,13 +349,6 @@ final class TaskResource extends Resource
                     return $parent === null ? null : self::getUrl('view', ['record' => $parent]);
                 })
                 ->visible(static fn (Task $record): bool => $record->parent_id !== null),
-            // Files arrive with the documents module; no upload control exists yet (D-11).
-            Section::make(__('kokpit.tasks.attachments.heading'))
-                ->schema([
-                    TextEntry::make('attachments_note')
-                        ->hiddenLabel()
-                        ->state(__('kokpit.tasks.attachments.later')),
-                ]),
         ]);
     }
 
@@ -600,6 +596,7 @@ final class TaskResource extends Resource
         return [
             TaskCommentsRelationManager::class,
             SubtasksRelationManager::class,
+            TaskDocumentsRelationManager::class,
             TaskHistoryRelationManager::class,
         ];
     }

@@ -1,0 +1,508 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\ExchangeRates\Models\ExchangeRate;
+use App\Domain\Finance\Actions\ArchiveTransactionCategory;
+use App\Domain\Finance\Actions\RecordTransaction;
+use App\Domain\Finance\Enums\CzkSource;
+use App\Domain\Finance\Enums\TransactionType;
+use App\Domain\Finance\Models\Transaction;
+use App\Domain\Finance\Models\TransactionCategory;
+use App\Domain\Identity\Models\User;
+use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Activity;
+use App\Domain\Shared\Money\Money;
+use App\Filament\RelationManagers\TransactionHistoryRelationManager;
+use App\Filament\Resources\TransactionResource;
+use App\Filament\Resources\TransactionResource\Pages\CreateTransaction;
+use App\Filament\Resources\TransactionResource\Pages\EditTransaction;
+use App\Filament\Resources\TransactionResource\Pages\ListTransactions;
+use Filament\Actions\DeleteAction;
+use Filament\Facades\Filament;
+use Livewire\Livewire;
+use Tests\Support\Canary;
+
+/*
+ * The Admin-only "Transakce" screen (FI-01, D-12, D-13, D-14): create with a live CNB preview, edit with the
+ * manual CZK switch, delete with a confirmation, the activity trail and the list. The rule itself is tested in
+ * TransactionCzkTest; here the screen follows it. Names, amounts and rates are invented.
+ */
+
+beforeEach(function (): void {
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    $this->admin = Canary::admin();
+    $this->actingAs($this->admin);
+});
+
+/**
+ * The seeded child expense category "Software › Hosting".
+ */
+function txScreenHosting(): TransactionCategory
+{
+    $parent = TransactionCategory::query()->where('type', 'expense')->whereNull('parent_id')->where('name', 'Software')->sole();
+
+    return TransactionCategory::query()->where('parent_id', $parent->getKey())->where('name', 'Hosting')->sole();
+}
+
+/**
+ * Stores one invented CNB rate row in the system context, as the download Action does.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function txScreenRate(array $overrides = []): void
+{
+    $row = [
+        'rate_date' => '2026-10-09',
+        'currency' => 'EUR',
+        'unit_amount' => 1,
+        'rate' => '25.125',
+        'fetched_at' => '2026-10-09 14:45:00+00',
+        'created_at' => '2026-10-09 14:45:00+00',
+        'updated_at' => '2026-10-09 14:45:00+00',
+        ...$overrides,
+    ];
+
+    app(PartnerContext::class)->runAsSystem(static function () use ($row): void {
+        ExchangeRate::query()->upsert([$row], ['currency', 'rate_date'], ['rate', 'unit_amount']);
+    });
+}
+
+/**
+ * The form state of a valid foreign-currency expense; the overrides replace single keys.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function txScreenForm(array $overrides = []): array
+{
+    return [
+        'type' => 'expense',
+        'transaction_date' => '2026-10-14',
+        'category_id' => txScreenHosting()->getKey(),
+        'amount' => '100,00',
+        'currency' => 'EUR',
+        'counterparty' => Canary::canary('counterparty'),
+        ...$overrides,
+    ];
+}
+
+/**
+ * Records a transaction through the Action, as the Admin.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function txScreenRecord(array $overrides = []): Transaction
+{
+    $admin = auth()->user();
+    assert($admin instanceof User);
+
+    return app(RecordTransaction::class)->handle($admin, [
+        'type' => 'expense',
+        'transaction_date' => '2026-10-14',
+        'category_id' => txScreenHosting()->getKey(),
+        'amount' => '100,00',
+        'currency' => 'EUR',
+        'counterparty' => Canary::canary('counterparty'),
+        ...$overrides,
+    ]);
+}
+
+describe('the tracer: record a foreign-currency expense and find it in the list', function (): void {
+    it('opens the list and the create page for the Admin', function (): void {
+        $this->get(TransactionResource::getUrl('index'))->assertOk()->assertSee('Transakce');
+        $this->get(TransactionResource::getUrl('create'))->assertOk();
+    });
+
+    it('shows the CNB preview of the chosen currency, amount and date', function (): void {
+        txScreenRate();
+
+        Livewire::test(CreateTransaction::class)
+            ->fillForm(txScreenForm())
+            ->assertSee('Kurz ČNB')
+            ->assertSee(Money::ofMinor(251250, 'CZK')->format('cs'));
+    });
+
+    it('asks for the CZK amount when the date has no list', function (): void {
+        txScreenRate();
+
+        Livewire::test(CreateTransaction::class)
+            ->fillForm(txScreenForm(['transaction_date' => '2026-10-01']))
+            ->assertSee('není uložen kurz ČNB');
+    });
+
+    it('stores a CNB transaction through RecordTransaction when the form is submitted', function (): void {
+        txScreenRate();
+        $form = txScreenForm();
+
+        Livewire::test(CreateTransaction::class)
+            ->fillForm($form)
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $stored = Transaction::query()->where('counterparty', $form['counterparty'])->sole();
+
+        expect($stored->czk_source)->toBe(CzkSource::Cnb)
+            ->and($stored->czk_minor)->toBe(251250)
+            ->and($stored->amount->equals(Money::ofMinor(10000, 'EUR')))->toBeTrue()
+            ->and($stored->exchange_rate_date?->toDateString())->toBe('2026-10-09');
+    });
+
+    it('saves a foreign amount without a list once the CZK amount is typed, as a manual figure', function (): void {
+        txScreenRate();
+        $form = txScreenForm(['transaction_date' => '2026-10-01', 'czk_amount' => '2 500,00']);
+
+        Livewire::test(CreateTransaction::class)
+            ->fillForm($form)
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $stored = Transaction::query()->where('counterparty', $form['counterparty'])->sole();
+
+        expect($stored->czk_source)->toBe(CzkSource::Manual)
+            ->and($stored->czk_minor)->toBe(250000);
+    });
+
+    it('refuses a foreign amount without a list and without a CZK amount, next to the field', function (): void {
+        txScreenRate();
+        $form = txScreenForm(['transaction_date' => '2026-10-01']);
+
+        Livewire::test(CreateTransaction::class)
+            ->fillForm($form)
+            ->call('create')
+            ->assertHasFormErrors(['czk_amount']);
+
+        expect(Transaction::query()->where('counterparty', $form['counterparty'])->exists())->toBeFalse();
+    });
+
+    it('saves a CZK transaction without any rate', function (): void {
+        $form = txScreenForm(['currency' => 'CZK', 'amount' => '1 234,50']);
+
+        Livewire::test(CreateTransaction::class)
+            ->fillForm($form)
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $stored = Transaction::query()->where('counterparty', $form['counterparty'])->sole();
+
+        expect($stored->czk_source)->toBe(CzkSource::Identity)
+            ->and($stored->czk_minor)->toBe(123450);
+    });
+
+    it('lists the row with its original and CZK amounts and the category with its parent', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(ListTransactions::class)
+            ->assertCanSeeTableRecords([$transaction])
+            ->assertSee('Software › Hosting')
+            ->assertSee($transaction->amount->format('cs'))
+            ->assertSee($transaction->czk()->format('cs'))
+            ->assertSee($transaction->counterparty);
+    });
+
+    it('lists the newest transaction date first', function (): void {
+        txScreenRate();
+        $old = txScreenRecord(['transaction_date' => '2026-10-12']);
+        $new = txScreenRecord(['transaction_date' => '2026-10-15']);
+
+        Livewire::test(ListTransactions::class)
+            ->assertCanSeeTableRecords([$new, $old], inOrder: true);
+    });
+
+    it('refuses a Partner on the list, the create page and the edit page of another client', function (): void {
+        txScreenRate();
+        [$clientA, $clientB] = Canary::twoClients();
+        $other = txScreenRecord(['client_id' => $clientB]);
+
+        $this->actingAs(Canary::partnerFor($clientA));
+
+        $this->get(TransactionResource::getUrl('index'))->assertForbidden();
+        $this->get(TransactionResource::getUrl('create'))->assertForbidden();
+        $this->get(TransactionResource::getUrl('edit', ['record' => $other->getKey()]))->assertForbidden();
+    });
+
+    it('refuses a Partner on the Livewire components', function (): void {
+        $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
+
+        Livewire::test(ListTransactions::class)->assertForbidden();
+        Livewire::test(CreateTransaction::class)->assertForbidden();
+    });
+});
+
+describe('the edit page is part of the screen', function (): void {
+    it('opens for the Admin with the stored values', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->assertFormSet([
+                'type' => TransactionType::Expense,
+                'currency' => 'EUR',
+                'amount' => '100,00',
+                'category_id' => $transaction->category_id,
+            ]);
+    });
+});
+
+describe('the edit page follows the recompute-versus-manual rule', function (): void {
+    it('stores the figure of another list when a computed transaction moves to a day with one', function (): void {
+        txScreenRate();
+        txScreenRate(['rate_date' => '2026-10-12', 'rate' => '24.000']);
+        $transaction = txScreenRecord(['transaction_date' => '2026-10-10']);
+
+        expect($transaction->czk_minor)->toBe(251250);
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['transaction_date' => '2026-10-13'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $transaction->refresh();
+
+        expect($transaction->czk_source)->toBe(CzkSource::Cnb)
+            ->and($transaction->czk_minor)->toBe(240000)
+            ->and($transaction->exchange_rate_date?->toDateString())->toBe('2026-10-12');
+    });
+
+    it('shows the manual hint on a manual transaction and keeps the bank figure when the amount changes', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord(['czk_amount' => '2 600,00']);
+
+        expect($transaction->czk_source)->toBe(CzkSource::Manual);
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->assertSee(__('finance.transactions.hints.czk_manual_kept'))
+            ->assertFormSet(['czk_manual' => true, 'czk_amount' => '2600,00'])
+            ->fillForm(['amount' => '200,00', 'transaction_date' => '2026-10-15'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $transaction->refresh();
+
+        expect($transaction->czk_source)->toBe(CzkSource::Manual)
+            ->and($transaction->czk_minor)->toBe(260000)
+            ->and($transaction->amount->equals(Money::ofMinor(20000, 'EUR')))->toBeTrue();
+    });
+
+    it('does not show the manual hint on a computed transaction', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->assertDontSee(__('finance.transactions.hints.czk_manual_kept'));
+    });
+
+    it('computes the figure again when the manual switch is turned off on a day with a list', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord(['czk_amount' => '2 600,00']);
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['czk_manual' => false])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $transaction->refresh();
+
+        expect($transaction->czk_source)->toBe(CzkSource::Cnb)
+            ->and($transaction->czk_minor)->toBe(251250);
+    });
+
+    it('turns a computed transaction into a manual one when the switch is turned on with the bank figure', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['czk_manual' => true, 'czk_amount' => '2 480,00'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $transaction->refresh();
+
+        expect($transaction->czk_source)->toBe(CzkSource::Manual)
+            ->and($transaction->czk_minor)->toBe(248000);
+    });
+
+    it('asks for the CZK amount when the date moves to a day without any list, and refuses an empty value in Czech', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        $page = Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['transaction_date' => '2026-10-01'])
+            ->call('save')
+            ->assertHasFormErrors(['czk_amount']);
+
+        expect(implode(' ', $page->errors()->get('data.czk_amount')))->toContain('není uložen kurz ČNB');
+
+        $transaction->refresh();
+
+        expect($transaction->transaction_date->toDateString())->toBe('2026-10-14')
+            ->and($transaction->czk_source)->toBe(CzkSource::Cnb);
+    });
+
+    it('saves as manual once the CZK amount is typed for a day without any list', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['transaction_date' => '2026-10-01', 'czk_amount' => '2 400,00'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $transaction->refresh();
+
+        expect($transaction->czk_source)->toBe(CzkSource::Manual)
+            ->and($transaction->czk_minor)->toBe(240000)
+            ->and($transaction->transaction_date->toDateString())->toBe('2026-10-01');
+    });
+
+    it('opens and saves a transaction whose category was archived later, without changing the category', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+        $category = txScreenHosting();
+
+        app(ArchiveTransactionCategory::class)->handle($this->admin, $category, true);
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->assertFormSet(['category_id' => $category->getKey()])
+            ->fillForm(['description' => 'Fictional note'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $transaction->refresh();
+
+        expect($transaction->category_id)->toBe($category->getKey())
+            ->and($transaction->description)->toBe('Fictional note');
+    });
+
+    it('does not offer an archived category for a new transaction', function (): void {
+        $category = txScreenHosting();
+
+        app(ArchiveTransactionCategory::class)->handle($this->admin, $category, true);
+
+        Livewire::test(CreateTransaction::class)
+            ->fillForm(txScreenForm(['currency' => 'CZK', 'category_id' => $category->getKey()]))
+            ->call('create')
+            ->assertHasFormErrors(['category_id']);
+    });
+});
+
+describe('deleting a transaction', function (): void {
+    it('asks for a confirmation and deletes through the Action only after it', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        $page = Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->mountAction(DeleteAction::class)
+            ->assertActionMounted(DeleteAction::class);
+
+        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeTrue();
+
+        $page->callMountedAction()->assertRedirect(TransactionResource::getUrl('index'));
+
+        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeFalse();
+    });
+
+    it('does not offer the delete action to a Partner, who cannot reach the page at all', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])->assertForbidden();
+
+        $this->actingAs($this->admin);
+        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeTrue();
+    });
+});
+
+describe('the activity trail', function (): void {
+    it('writes one row for the creation with the allowlisted attributes and never the description', function (): void {
+        txScreenRate();
+        $form = txScreenForm(['description' => 'Fictional secret note', 'document_number' => 'INV-1']);
+
+        Livewire::test(CreateTransaction::class)->fillForm($form)->call('create')->assertHasNoFormErrors();
+
+        $transaction = Transaction::query()->where('counterparty', $form['counterparty'])->sole();
+        $rows = Activity::query()->forSubject($transaction)->forEvent('created')->get();
+        $attributes = $rows->first()?->attribute_changes->get('attributes') ?? [];
+
+        expect($rows)->toHaveCount(1)
+            ->and($attributes)->toHaveKeys(['type', 'transaction_date', 'category_id', 'amount_minor', 'amount_currency', 'czk_minor', 'czk_source', 'exchange_rate', 'counterparty', 'document_number'])
+            ->and($attributes)->not->toHaveKey('description')
+            ->and($attributes['amount_minor'])->toBe(10000)
+            ->and($attributes['czk_source'])->toBe('cnb')
+            ->and(json_encode($rows->first()?->attribute_changes))->not->toContain('Fictional secret note');
+    });
+
+    it('writes one row for an edit that lists only the changed allowlisted attributes', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['counterparty' => 'Example Hosting Ltd', 'description' => 'Fictional new note'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $rows = Activity::query()->forSubject($transaction)->forEvent('updated')->get();
+
+        expect($rows)->toHaveCount(1)
+            ->and($rows->first()?->attribute_changes->get('attributes'))->toBe(['counterparty' => 'Example Hosting Ltd'])
+            ->and(json_encode($rows->first()?->attribute_changes))->not->toContain('Fictional new note');
+    });
+
+    it('writes no row for a change of the description alone', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['description' => 'Only a note'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(Activity::query()->forSubject($transaction)->forEvent('updated')->count())->toBe(0);
+    });
+
+    it('writes one row for the deletion', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord(['description' => 'Fictional deleted note']);
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->callAction(DeleteAction::class);
+
+        $rows = Activity::query()->forSubject($transaction)->forEvent('deleted')->get();
+
+        expect($rows)->toHaveCount(1)
+            ->and(json_encode($rows->first()?->attribute_changes))->not->toContain('Fictional deleted note');
+    });
+
+    it('lists the rows in the history tab with Czech attribute labels', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->fillForm(['counterparty' => 'Example Hosting Ltd'])
+            ->call('save');
+
+        $activities = $transaction->activitiesAsSubject()->get();
+
+        expect($activities)->toHaveCount(2)
+            ->and(TransactionResource::getRelations())->toContain(TransactionHistoryRelationManager::class)
+            ->and(TransactionHistoryRelationManager::canViewForRecord($transaction, EditTransaction::class))->toBeTrue();
+
+        Livewire::test(TransactionHistoryRelationManager::class, ['ownerRecord' => $transaction, 'pageClass' => EditTransaction::class])
+            ->assertSuccessful()
+            ->assertCanSeeTableRecords($activities)
+            ->assertSee('Protistrana')
+            ->assertSee('Částka (v nejmenších jednotkách měny)');
+    });
+
+    it('hides the history tab from a Partner', function (): void {
+        txScreenRate();
+        $transaction = txScreenRecord();
+
+        $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
+
+        expect(TransactionHistoryRelationManager::canViewForRecord($transaction, EditTransaction::class))->toBeFalse();
+    });
+});

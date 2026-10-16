@@ -233,6 +233,7 @@ final readonly class Money implements JsonSerializable
      * @param  string  $decimalRate  a positive number: digits with an optional point and at most ten fraction digits, no sign, no comma, no exponent
      *
      * @throws InvalidArgumentException when the rate is malformed, zero or negative, the target currency is malformed or the unit amount is below one
+     * @throws OverflowException when the converted amount does not fit into an integer
      */
     public function convert(string $decimalRate, string $toCurrency, int $unitAmount = 1): self
     {

@@ -37,5 +37,11 @@ class AppServiceProvider extends ServiceProvider
         Password::defaults(static fn (): Password => Password::min(12));
 
         RateLimiter::for('invitation', fn (Request $request): Limit => Limit::perMinute(10)->by($request->ip()));
+
+        // File downloads and previews (D-10): the limit per minute is one value in config/kokpit.php, counted
+        // per signed-in user and per IP address for the rare request without a session. Used by the route
+        // middleware `throttle:document-files`.
+        RateLimiter::for('document-files', fn (Request $request): Limit => Limit::perMinute(max(1, (int) config('kokpit.documents.download_rate_limit_per_minute')))
+            ->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip())));
     }
 }

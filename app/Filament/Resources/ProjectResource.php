@@ -16,6 +16,7 @@ use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Tags\TagType;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
+use App\Filament\RelationManagers\ProjectDocumentsRelationManager;
 use App\Filament\RelationManagers\ProjectHistoryRelationManager;
 use App\Filament\Resources\ProjectResource\Pages\CreateProject;
 use App\Filament\Resources\ProjectResource\Pages\EditProject;
@@ -334,6 +335,7 @@ final class ProjectResource extends Resource
     public static function getRelations(): array
     {
         return [
+            ProjectDocumentsRelationManager::class,
             ProjectHistoryRelationManager::class,
             ProjectTasksTimeRelationManager::class,
             ProjectTimeEntriesRelationManager::class,

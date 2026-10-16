@@ -8,6 +8,7 @@ use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Tags\TagType;
 use App\Filament\Partner\Resources\PartnerProjectResource;
 use App\Filament\Partner\Resources\PartnerProjectResource\Pages\ListPartnerProjects;
+use App\Filament\Partner\Resources\PartnerProjectResource\RelationManagers\PartnerProjectDocumentsRelationManager;
 use App\Filament\Support\ProjectColumns;
 use Filament\Facades\Filament;
 use Filament\Schemas\Schema;
@@ -186,7 +187,7 @@ it('offers no header, record or bulk action and no global search', function (): 
         ->and($table->getFlatActions())->toBe([])
         ->and($table->getFlatBulkActions())->toBe([])
         ->and(PartnerProjectResource::canGloballySearch())->toBeFalse()
-        ->and(PartnerProjectResource::getRelations())->toBe([])
+        ->and(PartnerProjectResource::getRelations())->toBe([PartnerProjectDocumentsRelationManager::class])
         ->and(array_keys(PartnerProjectResource::getPages()))->toBe(['index', 'view']);
 });
 

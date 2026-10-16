@@ -8,6 +8,7 @@ use App\Domain\Projects\Models\Project;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Filament\RelationManagers\TaskDocumentsRelationManager;
 use App\Filament\Resources\TaskResource;
 use App\Filament\Resources\TaskResource\Pages\EditTask;
 use App\Filament\Resources\TaskResource\Pages\ListTasks;
@@ -111,13 +112,19 @@ it('keeps the status of a subtask and of its parent independent of each other', 
         ->and($subtask->refresh()->status->value)->toBe('done');
 });
 
-it('shows the attachments section with the note and offers no upload', function (): void {
+it('shows the Soubory tab on a task and a subtask page and no attachments placeholder', function (): void {
     $task = app(CreateTask::class)->handle($this->admin, subtaskProject(), ['title' => 'Example attachments task']);
+    $subtask = app(CreateTask::class)->handle($this->admin, Project::query()->findOrFail($task->project_id), ['title' => 'Example attachments subtask'], $task);
 
-    Livewire::test(ViewTask::class, ['record' => $task->reference])
-        ->assertSee(__('kokpit.tasks.attachments.heading'))
-        ->assertSee(__('kokpit.tasks.attachments.later'))
-        ->assertDontSeeHtml('type="file"');
+    foreach ([$task, $subtask] as $record) {
+        $page = Livewire::test(ViewTask::class, ['record' => $record->reference])
+            ->assertSee(__('documents.relation_title'))
+            ->assertDontSee('Soubory půjde k úkolu přidávat po zprovoznění modulu dokumentů');
+
+        expect(array_values($page->instance()->getRelationManagers()))->toContain(TaskDocumentsRelationManager::class);
+    }
+
+    expect(TaskResource::getRelations())->toContain(TaskDocumentsRelationManager::class);
 });
 
 /**

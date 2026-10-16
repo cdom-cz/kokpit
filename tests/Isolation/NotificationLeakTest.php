@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Notifications\PartnerUploadedFilesNotification;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Enums\ProjectPriority;
@@ -33,6 +35,7 @@ use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
 use Tests\Support\Canary;
+use Tests\Support\DocumentFixtures;
 
 /*
  * Nothing internal, financial or foreign reaches a Partner through a notification
@@ -360,4 +363,53 @@ it('links every notification of the Admin to the tasks route and never to my-tas
         expect(notifLeakDecoded($message))->not->toContain($this->taskB->title)
             ->and(notifLeakDecoded($message))->not->toContain($this->projectB->key);
     }
+});
+
+it('tells only the Admin of a Partner upload, with the count and never a file name', function (): void {
+    DocumentFixtures::fakeDisk();
+
+    $names = [Canary::canary('filea').'.txt', Canary::canary('fileb').'.txt'];
+
+    // Partner A hands over two files on the own task (D-05); the names carry the canary.
+    test()->actingAs($this->partnerA);
+    app(AttachDocuments::class)->handle($this->partnerA, notifLeakSeen($this->partnerA, $this->taskA), [
+        DocumentFixtures::upload($names[0]),
+        DocumentFixtures::upload($names[1]),
+    ]);
+
+    // The Admin holds exactly one bell of the submission, with the count and the reference.
+    $bells = DatabaseNotification::query()->where('type', PartnerUploadedFilesNotification::class)->get();
+
+    expect($bells)->toHaveCount(1)
+        ->and($bells->first()->notifiable_id)->toBe($this->admin->id);
+
+    /** @var array<string, mixed> $stored */
+    $stored = $bells->first()->data;
+    $body = (string) $stored['body'];
+
+    expect($stored['title'])->toBe(__('documents.bell.partner_uploaded.title'))
+        ->and($body)->toContain('2')
+        ->toContain($this->taskA->reference)
+        ->toContain($this->partnerA->name)
+        ->and((string) $stored['actions'][0]['url'])->toContain('/admin/tasks/'.$this->taskA->reference)
+        ->and((string) $stored['actions'][0]['url'])->not->toContain('/admin/my-tasks/');
+
+    // No Partner row of the notification type, and no row of anybody holds a file name.
+    $partnerIds = [$this->partnerA->id, $this->partnerA2->id, $this->partnerB->id];
+
+    expect(DatabaseNotification::query()->whereIn('notifiable_id', $partnerIds)->where('type', PartnerUploadedFilesNotification::class)->count())->toBe(0);
+
+    foreach ([...$names, $this->taskB->title, $this->taskB->reference] as $canary) {
+        expect(DB::table('notifications')->whereRaw('data::text like ?', ['%'.$canary.'%'])->count())->toBe(0);
+    }
+
+    // The Partner's own bell does not carry the notification either.
+    test()->actingAs($this->partnerA);
+
+    $page = Livewire::test(DatabaseNotifications::class)->instance()->getNotifications();
+
+    /** @var list<DatabaseNotification> $bell */
+    $bell = $page instanceof Paginator ? $page->items() : $page->all();
+
+    expect(array_filter($bell, static fn (DatabaseNotification $row): bool => $row->type === PartnerUploadedFilesNotification::class))->toBe([]);
 });

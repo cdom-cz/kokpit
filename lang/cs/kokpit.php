@@ -398,8 +398,10 @@ return [
             'project_billing' => 'Fakturace projektu',
             'task_billing' => 'Fakturace úkolu',
             'contact' => 'Kontakt',
+            'document' => 'Soubor',
             'task' => 'Úkol',
             'time_entry' => 'Časový záznam',
+            'transaction' => 'Transakce',
             'personal_access_token' => 'API token',
         ],
         'attributes' => [
@@ -428,6 +430,12 @@ return [
                 'position' => 'Pozice',
                 'is_primary' => 'Hlavní kontakt',
                 'is_billing' => 'Fakturační kontakt',
+            ],
+            'document' => [
+                'name' => 'Název',
+                'visible_to_client' => 'Vidí klient',
+                'owner_type' => 'Patří k',
+                'size_bytes' => 'Velikost (B)',
             ],
             'project' => [
                 'client_id' => 'Klient',
@@ -469,6 +477,20 @@ return [
                 'fixed_price_minor' => 'Pevná cena (v nejmenších jednotkách měny)',
                 'fixed_price_currency' => 'Měna pevné ceny',
                 'estimate_seconds' => 'Odhad (v sekundách)',
+            ],
+            'transaction' => [
+                'type' => 'Typ',
+                'transaction_date' => 'Datum',
+                'category_id' => 'Kategorie',
+                'amount_minor' => 'Částka (v nejmenších jednotkách měny)',
+                'amount_currency' => 'Měna',
+                'czk_minor' => 'Částka v Kč (v haléřích)',
+                'czk_source' => 'Zdroj částky v Kč',
+                'exchange_rate' => 'Kurz ČNB',
+                'client_id' => 'Klient',
+                'project_id' => 'Projekt',
+                'counterparty' => 'Protistrana',
+                'document_number' => 'Číslo dokladu',
             ],
             'time_entry' => [
                 'client_id' => 'Klient',
@@ -1069,10 +1091,6 @@ return [
             ],
             'empty_heading' => 'Úkol zatím nemá žádné podúkoly',
             'empty_description' => 'Rozdělte úkol na menší části tlačítkem Nový podúkol.',
-        ],
-        'attachments' => [
-            'heading' => 'Přílohy',
-            'later' => 'Soubory půjde k úkolu přidávat po zprovoznění modulu dokumentů. Zatím sem nic nahrát nelze.',
         ],
         'sections' => [
             'main' => 'Úkol',

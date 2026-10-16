@@ -7,7 +7,14 @@ namespace Tests\Support;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Documents\Enums\DocumentArchiveStatus;
+use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
+use App\Domain\Finance\Enums\TransactionType;
+use App\Domain\Finance\Models\Transaction;
+use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Enums\ProjectStatus;
@@ -255,6 +262,32 @@ final class CanaryRegistry
                 });
             },
 
+            // Five files that all carry the canary in their name. The visible file of the canary project of
+            // that client (found by name; the Project and TaskComment fixtures run before this one) is attached
+            // through the real Action by an Admin. It has four hidden twins that a Partner must never read: a
+            // hidden file of the same project, a file of the internal canary comment flagged visible by a system
+            // forceFill (the CHECK allows it, only the scope drops it), a client-owned file and an unattached
+            // file. The exact-one-row check fails if any twin is ever returned.
+            Document::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+                    $task = Task::query()->where('project_id', $project->getKey())->firstOrFail();
+                    $internalComment = TaskComment::query()->where('task_id', $task->getKey())->where('is_internal', true)->firstOrFail();
+                    $admin = Canary::admin();
+                    $attach = app(AttachDocuments::class);
+                    $file = static fn (string $suffix) => DocumentFixtures::upload($canary.$suffix.'.txt', 'Fictional file content '.$canary.$suffix);
+
+                    $attach->handle($admin, $project, [$file('')]);
+                    $attach->handle($admin, $project, [$file('-hidden')], visibleToClient: false);
+
+                    $attach->handle($admin, $internalComment, [$file('-internal')])
+                        ->each(static fn (Document $document) => $document->forceFill(['visible_to_client' => true])->save());
+
+                    $attach->handle($admin, Client::query()->whereKey($clientId)->firstOrFail(), [$file('-client')]);
+                    $attach->handle($admin, null, [$file('-unattached')]);
+                });
+            },
+
             // One finished time entry of the Admin on the canary project and canary task of
             // that client (found by the project name; the Task fixture runs before this
             // one). The canary is the description, so a Partner reading any entry would be
@@ -291,6 +324,59 @@ final class CanaryRegistry
                         'created_at' => $now,
                         'updated_at' => $now,
                     ]);
+                });
+            },
+
+            // A finance category is Admin-only. The canary is the name of a root expense category (unique per
+            // type, so two canaries never collide); a Partner reading any category would be caught by it.
+            TransactionCategory::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new TransactionCategory(['name' => $canary]))->forceFill([
+                        'type' => TransactionType::Expense,
+                        'depth' => 0,
+                    ])->save();
+                });
+            },
+
+            // A finance transaction is Admin-only. The canary is the counterparty and the description of an
+            // expense in the seeded "Software" category, tied to the client of the canary and booked in CZK
+            // (identity), written in the system context; a Partner reading any transaction would be caught.
+            Transaction::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    $category = TransactionCategory::query()
+                        ->where('type', TransactionType::Expense->value)
+                        ->whereNull('parent_id')
+                        ->where('name', 'Software')
+                        ->sole();
+
+                    (new Transaction(['counterparty' => $canary, 'description' => $canary]))->forceFill([
+                        'type' => TransactionType::Expense,
+                        'transaction_date' => '2026-10-14',
+                        'category_id' => $category->getKey(),
+                        'amount' => Money::ofMinor(123450, 'CZK'),
+                        'czk_minor' => 123450,
+                        'czk_source' => 'identity',
+                        'client_id' => $clientId,
+                    ])->save();
+                });
+            },
+
+            // A ZIP archive request belongs to one Admin and is closed to Partners (OwnedByUser + DeniesPartners).
+            // The canary is the summary; the row is a finished one with one fictional document id and a fictional
+            // path (no object is needed for the scope proof), written in the system context for the one planner
+            // owner, because the owner scope limits even an Admin.
+            DocumentArchive::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    $now = TimerClock::now();
+
+                    (new DocumentArchive(['summary' => $canary, 'document_ids' => [(string) Str::uuid()], 'document_count' => 1, 'total_bytes' => 1024]))
+                        ->forceFill([
+                            'user_id' => self::plannerOwner()->getKey(),
+                            'status' => DocumentArchiveStatus::Ready,
+                            'path' => 'document-archives/'.Str::uuid().'.zip',
+                            'completed_at' => $now,
+                            'expires_at' => $now->addDays(7),
+                        ])->save();
                 });
             },
 

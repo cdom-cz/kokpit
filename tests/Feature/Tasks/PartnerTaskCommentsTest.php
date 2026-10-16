@@ -14,6 +14,7 @@ use App\Domain\Tasks\Models\TaskComment;
 use App\Filament\Partner\Resources\PartnerTaskResource;
 use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ViewPartnerTask;
 use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerTaskCommentsRelationManager;
+use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerTaskDocumentsRelationManager;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use App\Filament\Resources\TaskResource\RelationManagers\TaskCommentsRelationManager;
 use Filament\Facades\Filament;
@@ -90,7 +91,7 @@ it('shows a Partner the non-internal comment of an own task and not the internal
 });
 
 it('registers the comments tab on the Partner task page', function (): void {
-    expect(PartnerTaskResource::getRelations())->toBe([PartnerTaskCommentsRelationManager::class]);
+    expect(PartnerTaskResource::getRelations())->toBe([PartnerTaskCommentsRelationManager::class, PartnerTaskDocumentsRelationManager::class]);
 
     $this->actingAs($this->partnerA);
 
@@ -159,7 +160,8 @@ it('offers a Partner no internal badge, toggle, edit or delete', function (): vo
     $schema = $instance->commentForm(Schema::make($instance));
     $fields = array_map(static fn ($component): ?string => method_exists($component, 'getName') ? $component->getName() : null, $schema->getComponents());
 
-    expect($fields)->toBe(['body']);
+    // The body and the separate upload field (plan 09-12, D-05); still no internal switch.
+    expect($fields)->toBe(['body', 'files']);
 });
 
 it('refuses the comments tab of a task of another client', function (): void {

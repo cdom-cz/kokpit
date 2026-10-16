@@ -6,6 +6,7 @@ namespace App\Domain\Tasks\Models;
 
 use App\Domain\Audit\LoggedAttributes;
 use App\Domain\Audit\LogsAllowlistedActivity;
+use App\Domain\Documents\Models\Document;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
@@ -24,6 +25,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\EloquentSortable\Sortable;
 use Spatie\EloquentSortable\SortableTrait;
@@ -250,6 +252,16 @@ final class Task extends KokpitModel implements PartnerIsolated, Sortable
     public function escalatedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'escalated_by_id');
+    }
+
+    /**
+     * The files that hang directly on this task.
+     *
+     * @return MorphMany<Document, $this>
+     */
+    public function documents(): MorphMany
+    {
+        return $this->morphMany(Document::class, 'owner');
     }
 
     /**

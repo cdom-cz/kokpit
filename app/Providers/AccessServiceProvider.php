@@ -9,7 +9,12 @@ use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
 use App\Domain\Dashboard\Models\DashboardWidgetPreference;
 use App\Domain\Dashboard\Policies\DashboardWidgetPreferencePolicy;
+use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Models\DocumentArchive;
+use App\Domain\Documents\Policies\DocumentPolicy;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
+use App\Domain\Finance\Models\Transaction;
+use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Policies\UserPolicy;
@@ -93,6 +98,10 @@ final class AccessServiceProvider extends ServiceProvider
         // writes new ones; nobody edits or deletes a comment (TA-04, D-08, A6).
         Gate::policy(TaskComment::class, TaskCommentPolicy::class);
 
+        // Files: the Admin manages them; a Partner is granted nothing yet. The Partner grants are explicit and
+        // added in plans 09-08 (read a shared file) and 09-10 (the own upload and delete).
+        Gate::policy(Document::class, DocumentPolicy::class);
+
         // API tokens are minted and revoked by the Admin only (AP-01); strict authorization needs the
         // registration, because the token screen is a Resource on this model.
         Gate::policy(PersonalAccessToken::class, AdminOnlyPolicy::class);
@@ -102,6 +111,16 @@ final class AccessServiceProvider extends ServiceProvider
 
         // Public CNB data, but finance-like and closed to Partners like every rate.
         Gate::policy(ExchangeRate::class, AdminOnlyPolicy::class);
+
+        // Finance is closed to Partners: the categories of income and expenses are the Admin's alone.
+        Gate::policy(TransactionCategory::class, AdminOnlyPolicy::class);
+
+        // Transactions are finance data, the Admin's alone (D-12).
+        Gate::policy(Transaction::class, AdminOnlyPolicy::class);
+
+        // A ZIP archive bundles files of every client: Admin-only, and the owner scope of the model keeps even a
+        // second Admin away from it.
+        Gate::policy(DocumentArchive::class, AdminOnlyPolicy::class);
 
         // An export request names the clients and periods of one Admin: Admin-only, and the owner scope of the
         // model keeps even a second Admin away from it.

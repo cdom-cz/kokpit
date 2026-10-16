@@ -268,11 +268,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RE-03 | Phase 8 | Complete |
 | RE-04 | Phase 8 | Complete |
 | RE-05 | Phase 8 | Gaps Found |
-| DO-01 | Phase 9 | Pending |
-| DO-02 | Phase 9 | Pending |
-| DO-03 | Phase 9 | Pending |
-| FI-01 | Phase 9 | Pending |
-| FI-02 | Phase 9 | Pending |
+| DO-01 | Phase 9 | Gaps Found |
+| DO-02 | Phase 9 | Gaps Found |
+| DO-03 | Phase 9 | Gaps Found |
+| FI-01 | Phase 9 | Gaps Found |
+| FI-02 | Phase 9 | Gaps Found |
 | FI-03 | Phase 10 | Pending |
 | IN-01 | Phase 10 | Pending |
 | IN-02 | Phase 10 | Pending |
