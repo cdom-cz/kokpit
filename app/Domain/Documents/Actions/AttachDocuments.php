@@ -13,6 +13,7 @@ use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskComment;
+use finfo;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -20,6 +21,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use RuntimeException;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Throwable;
 
@@ -77,8 +80,8 @@ final class AttachDocuments
         $written = [];
 
         try {
-            /** @var Collection<int, Document> */
-            return DB::transaction(function () use ($actor, $owner, $files, $visibleToClient, $description, &$written): Collection {
+            /** @var Collection<int, Document> $documents */
+            $documents = DB::transaction(function () use ($actor, $owner, $files, $visibleToClient, $description, &$written): Collection {
                 $this->assertOwnerNotArchived($owner);
 
                 $resolved = $this->resolver->resolve($owner);
@@ -97,42 +100,139 @@ final class AttachDocuments
 
             throw $e;
         }
+
+        $this->deleteTemporaryUploads($files);
+
+        return $documents;
     }
 
     /**
+     * One byte-level path for every upload, wherever Livewire held it (D-06, D-18): the bytes are copied
+     * into a local working file (at most one byte past the limit is ever read), the MIME type is detected
+     * from that copy and the size taken from it, and the copy, not the original, is handed to the media
+     * library. Nothing the browser declared, and no object metadata of a bucket, is believed.
+     *
      * @param  array{owner_type: ?string, owner_id: ?string, client_id: ?string, project_id: ?string, shareable: bool, default_visible: bool}  $resolved
      * @param  list<Media>  $written  receives the media of this call, for cleanup when the call fails
+     *
+     * @throws ValidationException when the file cannot be read or is larger than the limit
      */
     private function store(User $actor, array $resolved, bool $visible, UploadedFile $file, ?string $description, array &$written): Document
     {
-        $extension = DocumentFileName::extension($file->getClientOriginalName());
-        $size = $file->getSize();
+        $local = $this->copyToLocal($file);
 
-        $document = new Document(['name' => DocumentFileName::displayName($file->getClientOriginalName()), 'description' => $description]);
-        $document->forceFill([
-            'owner_type' => $resolved['owner_type'],
-            'owner_id' => $resolved['owner_id'],
-            'client_id' => $resolved['client_id'],
-            'project_id' => $resolved['project_id'],
-            'uploaded_by_id' => $actor->getKey(),
-            'visible_to_client' => $visible,
-            'extension' => $extension,
-            // Content detection, not the client's claim.
-            'mime_type' => $file->getMimeType() ?? 'application/octet-stream',
-            'size_bytes' => $size === false ? 0 : $size,
-        ])->save();
+        try {
+            $size = filesize($local);
+            $mime = (new finfo(FILEINFO_MIME_TYPE))->file($local);
+            $extension = DocumentFileName::extension($file->getClientOriginalName());
 
-        $objectName = $document->getKey().($extension === null ? '' : '.'.$extension);
+            $document = new Document(['name' => DocumentFileName::displayName($file->getClientOriginalName()), 'description' => $description]);
+            $document->forceFill([
+                'owner_type' => $resolved['owner_type'],
+                'owner_id' => $resolved['owner_id'],
+                'client_id' => $resolved['client_id'],
+                'project_id' => $resolved['project_id'],
+                'uploaded_by_id' => $actor->getKey(),
+                'visible_to_client' => $visible,
+                'extension' => $extension,
+                // Content detection on the local copy, not the client's claim and not object metadata.
+                'mime_type' => $mime === false || $mime === '' ? 'application/octet-stream' : $mime,
+                'size_bytes' => $size === false ? 0 : $size,
+            ])->save();
 
-        /** @var Media $media */
-        $media = $this->context->runAsSystem(static fn (): Media => $document->addMedia($file)
-            ->usingName($document->name)
-            ->usingFileName($objectName)
-            ->toMediaCollection(Document::MEDIA_COLLECTION));
+            $objectName = $document->getKey().($extension === null ? '' : '.'.$extension);
 
-        $written[] = $media;
+            /** @var Media $media */
+            $media = $this->context->runAsSystem(static fn (): Media => $document->addMedia($local)
+                ->usingName($document->name)
+                ->usingFileName($objectName)
+                ->toMediaCollection(Document::MEDIA_COLLECTION));
+
+            $written[] = $media;
+        } finally {
+            if (is_file($local)) {
+                @unlink($local);
+            }
+        }
 
         return $document;
+    }
+
+    /**
+     * Copies the bytes of an upload into a fresh local file and returns its path. The copy is bounded at
+     * one byte past the limit, so an object that is larger than it claims is never read in full; a read
+     * that fails or yields nothing is refused. On any refusal the local file is removed.
+     *
+     * @throws ValidationException
+     */
+    private function copyToLocal(UploadedFile $file): string
+    {
+        $local = tempnam(sys_get_temp_dir(), 'kokpit-upload-');
+
+        if ($local === false) {
+            throw ValidationException::withMessages(['files' => __('documents.errors.upload_unreadable')]);
+        }
+
+        $maxBytes = (int) config('kokpit.documents.max_size_kb') * 1024;
+        $source = null;
+        $target = null;
+
+        try {
+            $source = $file instanceof TemporaryUploadedFile
+                ? $file->readStream()
+                : ($file->getRealPath() === false ? false : @fopen($file->getRealPath(), 'rb'));
+            $target = @fopen($local, 'wb');
+
+            if (! is_resource($source) || ! is_resource($target)) {
+                throw ValidationException::withMessages(['files' => __('documents.errors.upload_unreadable')]);
+            }
+
+            $copied = stream_copy_to_stream($source, $target, $maxBytes + 1);
+        } catch (ValidationException $e) {
+            $this->discard($source, $target, $local);
+
+            throw $e;
+        } catch (Throwable $e) {
+            $this->discard($source, $target, $local);
+
+            throw ValidationException::withMessages(['files' => __('documents.errors.upload_unreadable')]);
+        }
+
+        $this->discard($source, $target, null);
+        clearstatcache(true, $local);
+
+        if ($copied === false || $copied === 0) {
+            @unlink($local);
+
+            throw ValidationException::withMessages(['files' => __('documents.errors.upload_unreadable')]);
+        }
+
+        if ((int) filesize($local) > $maxBytes) {
+            @unlink($local);
+
+            throw ValidationException::withMessages(['files' => __('documents.errors.too_large', ['max' => $this->megabytes($maxBytes)])]);
+        }
+
+        return $local;
+    }
+
+    /**
+     * Closes what is open and optionally removes the local file.
+     *
+     * @param  resource|false|null  $source
+     * @param  resource|false|null  $target
+     */
+    private function discard(mixed $source, mixed $target, ?string $local): void
+    {
+        foreach ([$source, $target] as $handle) {
+            if (is_resource($handle)) {
+                @fclose($handle);
+            }
+        }
+
+        if ($local !== null && is_file($local)) {
+            @unlink($local);
+        }
     }
 
     /**
@@ -226,6 +326,30 @@ final class AttachDocuments
         $description = trim((string) $description);
 
         return $description === '' ? null : trim(mb_substr($description, 0, self::MAX_DESCRIPTION_LENGTH));
+    }
+
+    /**
+     * Removes the Livewire temporary objects of files that became documents (D-18): the private bucket
+     * must not keep a copy of every upload. Best effort after the commit; a failure is reported by class
+     * only, because the message of a storage exception can name the object. The temporary objects of a
+     * refused or failed submit are not touched, so the user can submit again; the bucket's lifecycle rule
+     * expires leftovers (plan 09-24).
+     *
+     * @param  list<UploadedFile>  $files
+     */
+    private function deleteTemporaryUploads(array $files): void
+    {
+        foreach ($files as $file) {
+            if (! $file instanceof TemporaryUploadedFile) {
+                continue;
+            }
+
+            try {
+                $file->delete();
+            } catch (Throwable $e) {
+                report(new RuntimeException('A temporary upload could not be deleted ('.$e::class.').'));
+            }
+        }
     }
 
     /**

@@ -15,7 +15,10 @@ use App\Domain\Tasks\Actions\CreateTask;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportFileUploads\FileUploadConfiguration;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
 
@@ -377,6 +380,144 @@ it('leaves no row and no object when the third file of an upload fails, and reth
 
     expect(fn () => app(AttachDocuments::class)->handle($this->admin, $project, $files))
         ->toThrow(RuntimeException::class, 'forced media failure');
+
+    expectNothingStored();
+});
+
+/**
+ * A file held by Livewire on its temporary disk, with the metadata a browser would have declared: the
+ * declared type and size are what getMimeType() and getSize() answer under tests, so a lying type can
+ * be set. The Action must not believe it.
+ */
+function temporaryUpload(string $name, string $content, string $declaredType = 'image/png', ?int $declaredSize = null): TemporaryUploadedFile
+{
+    $stored = TemporaryUploadedFile::generateHashNameWithOriginalNameEmbedded(DocumentFixtures::upload($name, $content));
+    $storage = FileUploadConfiguration::storage();
+
+    $storage->put(FileUploadConfiguration::path($stored, false), $content);
+    $storage->put(FileUploadConfiguration::path($stored.'.json', false), (string) json_encode([
+        'name' => $name,
+        'type' => $declaredType,
+        'size' => $declaredSize ?? strlen($content),
+    ]));
+
+    return new TemporaryUploadedFile($stored, FileUploadConfiguration::disk());
+}
+
+/**
+ * Whether the object of a temporary upload is still on its temporary disk.
+ */
+function temporaryObjectExists(TemporaryUploadedFile $file): bool
+{
+    return FileUploadConfiguration::storage()->exists(FileUploadConfiguration::path($file->getFilename(), false));
+}
+
+/**
+ * The local working copies of uploads that are lying in the system temp directory.
+ *
+ * @return list<string>
+ */
+function localUploadCopies(): array
+{
+    return glob(sys_get_temp_dir().'/kokpit-upload-*') ?: [];
+}
+
+it('stores a temporary upload with the type its bytes show, not the type the browser declared', function (): void {
+    $content = 'Fictional plain text '.Str::random(8);
+    $file = temporaryUpload('plain-note.png', $content);
+
+    expect($file->getMimeType())->toBe('image/png');
+
+    /** @var Document $document */
+    $document = app(AttachDocuments::class)->handle($this->admin, documentProject(), [$file])->firstOrFail();
+
+    expect($document->mime_type)->toBe('text/plain')
+        ->and($document->size_bytes)->toBe(strlen($content))
+        ->and($document->extension)->toBe('png');
+});
+
+it('refuses a temporary upload over the limit by its stored size without opening its stream', function (): void {
+    $limit = (int) config('kokpit.documents.max_size_kb') * 1024;
+    $stored = temporaryUpload('big.txt', 'Fictional content')->getFilename();
+
+    $file = Mockery::mock(TemporaryUploadedFile::class.'[getSize,readStream]', [$stored, FileUploadConfiguration::disk()]);
+    $file->shouldReceive('getSize')->andReturn($limit + 1024);
+    $file->shouldNotReceive('readStream');
+
+    expect(uploadErrors($this->admin, documentProject(), [$file]))
+        ->toBe(['files' => [__('documents.errors.too_large', ['max' => '10'])]]);
+
+    expectNothingStored();
+});
+
+it('never reads more than the limit from a stream whose real size exceeds it', function (): void {
+    config(['kokpit.documents.max_size_kb' => 2]);
+    $file = temporaryUpload('liar.txt', str_repeat('a', 5 * 1024), 'text/plain', 100);
+
+    expect(uploadErrors($this->admin, documentProject(), [$file]))->toHaveKey('files');
+
+    expectNothingStored();
+    expect(localUploadCopies())->toBe([]);
+});
+
+it('deletes the temporary object after a successful attach and keeps it after a refusal', function (): void {
+    $project = documentProject();
+    $kept = temporaryUpload('malicious.php.txt', 'Fictional content');
+    $stored = temporaryUpload('fine.txt', 'Fictional content');
+
+    expect(temporaryObjectExists($kept))->toBeTrue()
+        ->and(uploadErrors($this->admin, $project, [$kept]))->toHaveKey('files')
+        ->and(temporaryObjectExists($kept))->toBeTrue();
+
+    app(AttachDocuments::class)->handle($this->admin, $project, [$stored]);
+
+    expect(temporaryObjectExists($stored))->toBeFalse();
+});
+
+it('keeps the temporary object when the submit fails after the files were written', function (): void {
+    $file = temporaryUpload('fine.txt', 'Fictional content');
+    Media::creating(static fn () => throw new RuntimeException('forced media failure'));
+
+    expect(fn () => app(AttachDocuments::class)->handle($this->admin, documentProject(), [$file]))
+        ->toThrow(RuntimeException::class);
+
+    expect(temporaryObjectExists($file))->toBeTrue();
+});
+
+it('leaves no local working copy behind after success, refusal or a forced failure', function (): void {
+    $project = documentProject();
+
+    app(AttachDocuments::class)->handle($this->admin, $project, [temporaryUpload('fine.txt', 'Fictional content'), DocumentFixtures::upload()]);
+    uploadErrors($this->admin, $project, [temporaryUpload('bad.php', 'Fictional content')]);
+
+    expect(localUploadCopies())->toBe([]);
+
+    Media::creating(static fn () => throw new RuntimeException('forced media failure'));
+
+    expect(fn () => app(AttachDocuments::class)->handle($this->admin, $project, [temporaryUpload('fine.txt', 'Fictional content')]))
+        ->toThrow(RuntimeException::class);
+
+    expect(localUploadCopies())->toBe([]);
+});
+
+it('refuses a temporary upload that cannot be read', function (): void {
+    $stored = temporaryUpload('fine.txt', 'Fictional content')->getFilename();
+
+    $file = Mockery::mock(TemporaryUploadedFile::class.'[readStream]', [$stored, FileUploadConfiguration::disk()]);
+    $file->shouldReceive('readStream')->andReturn(false);
+
+    expect(uploadErrors($this->admin, documentProject(), [$file]))
+        ->toBe(['files' => [__('documents.errors.upload_unreadable')]]);
+
+    expectNothingStored();
+    expect(localUploadCopies())->toBe([]);
+});
+
+it('refuses an empty temporary upload', function (): void {
+    $file = temporaryUpload('empty.txt', '', 'text/plain', 0);
+
+    expect(uploadErrors($this->admin, documentProject(), [$file]))
+        ->toBe(['files' => [__('documents.errors.upload_unreadable')]]);
 
     expectNothingStored();
 });
