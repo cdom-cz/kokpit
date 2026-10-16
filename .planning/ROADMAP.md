@@ -566,7 +566,7 @@ Plans:
   4. Every download goes through the app with a permission check and a short-lived signed URL (no public bucket URL), and deleting a record also removes its stored object
   5. Admin records income and expense transactions with hierarchical categories, currency, CZK amount, optional client and project and receipts as attachments, and sees an overview per month and year, per category and per client in CZK
 
-**Plans:** 26/28 plans executed (4 gap-closure plans 09-25 to 09-28 from 09-VERIFICATION.md and 09-REVIEW.md in 3 gap waves)
+**Plans:** 27/28 plans executed (4 gap-closure plans 09-25 to 09-28 from 09-VERIFICATION.md and 09-REVIEW.md in 3 gap waves)
 **UI hint**: yes
 
 Plans:
@@ -623,7 +623,7 @@ Plans:
 - [x] 09-27-PLAN.md — WR-01: rows in the transaction, objects after the commit, refused objects queued to `RemoveDocumentObjects`; a transaction delete keeps every receipt on rollback (DO-03, FI-01; user-accepted deviation from D-09 recorded as D-23)
 
 **Gap wave 2** *(blocked on gap wave 1 completion)*
-- [ ] 09-26-PLAN.md — WR-02: the prune deletes `storagePath()` whatever the status, and the build job removes the ZIP of an archive that failed or vanished during the build (DO-02; after 09-25, whose DocumentArchiveTest.php it runs)
+- [x] 09-26-PLAN.md — WR-02: the prune deletes `storagePath()` whatever the status, and the build job removes the ZIP of an archive that failed or vanished during the build (DO-02; after 09-25, whose DocumentArchiveTest.php it runs)
 
 **Gap wave 3** *(blocked on gap wave 2 completion)*
 - [ ] 09-28-PLAN.md — Consistency proof through every delete path, CONTRIBUTING update, CR-01/WR-01/WR-02 closed in the disposition, D-23 recorded in 09-CONTEXT.md and the WR-01 note, validation rows, phase gate
@@ -695,7 +695,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
 | 8. Exchange Rates and Reports | 27/27 | In Progress | - |
-| 9. Documents and Finance | 26/28 | In Progress | - |
+| 9. Documents and Finance | 27/28 | In Progress | - |
 | 10. Invoicing | 0/0 | Not started | - |
 | 11. Stripe Payments | 0/0 | Not started | - |
 | 12. Partner Audit | 0/0 | Not started | - |
