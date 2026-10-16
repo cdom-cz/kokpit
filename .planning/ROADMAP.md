@@ -633,12 +633,12 @@ Plans:
 **Goal:** REST API for the transactions and transaction_categories tables, including bulk creation of transactions
 **Requirements**: TBD
 **Depends on:** Phase 9
-**Plans:** 1/8 plans executed in 5 waves
+**Plans:** 2/8 plans executed in 5 waves
 
 Plans:
 **Wave 1**
 - [x] 09.1-01-PLAN.md — Own exchange rate (D-06): `custom` CZK source in the database, `CustomRate`, the custom branch of `TransactionCzk`, rate rules in `TransactionInput`, `RecordTransaction` wiring
-- [ ] 09.1-02-PLAN.md — Finance abilities (D-01) and reading one transaction (D-07): finance read group, show endpoint, response contract, route-walk and docs pins
+- [x] 09.1-02-PLAN.md — Finance abilities (D-01) and reading one transaction (D-07): finance read group, show endpoint, response contract, route-walk and docs pins
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 09.1-03-PLAN.md — Finance token on the token screen (D-01), public docs intro and CONTRIBUTING for the four abilities and the finance formats
