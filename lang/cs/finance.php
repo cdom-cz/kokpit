@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 /*
  * The Czech words of the finance module: the Admin's category screen and the error contract of the
- * transaction Actions (read by the transaction input and CZK rules of the later plans). Names in examples are
- * invented. Strings are Unicode NFC.
+ * transaction Actions (read by the transaction input and CZK rules of the later plans) and the finance overview.
+ * Names in examples are invented. Strings are Unicode NFC.
  */
 return [
     'categories' => [
@@ -176,5 +176,61 @@ return [
             'project_not_of_client' => 'Projekt nepatří vybranému klientovi.',
             'text_too_long' => 'Text je příliš dlouhý.',
         ],
+    ],
+
+    'overview' => [
+        'navigation' => 'Přehled financí',
+        'title' => 'Přehled financí',
+        'filters' => [
+            'period' => 'Období',
+            'month' => 'Měsíc',
+            'year' => 'Rok',
+            'period_month' => 'Měsíc',
+            'period_year' => 'Rok',
+        ],
+        'tiles' => [
+            'income' => 'Příjmy',
+            'expense' => 'Výdaje',
+            'balance' => 'Bilance',
+        ],
+        'categories' => [
+            'heading' => 'Kategorie',
+            'columns' => [
+                'category' => 'Kategorie',
+                'total' => 'Částka v Kč',
+            ],
+            'income' => 'Příjmy',
+            'expense' => 'Výdaje',
+        ],
+        'clients' => [
+            'heading' => 'Klienti',
+            'no_client' => 'Bez klienta',
+            'columns' => [
+                'client' => 'Klient',
+                'income' => 'Příjmy',
+                'expense' => 'Výdaje',
+                'balance' => 'Bilance',
+            ],
+        ],
+        'chart' => [
+            'heading' => 'Příjmy a výdaje po měsících',
+            'income' => 'Příjmy',
+            'expense' => 'Výdaje',
+        ],
+        'months' => [
+            1 => 'leden',
+            2 => 'únor',
+            3 => 'březen',
+            4 => 'duben',
+            5 => 'květen',
+            6 => 'červen',
+            7 => 'červenec',
+            8 => 'srpen',
+            9 => 'září',
+            10 => 'říjen',
+            11 => 'listopad',
+            12 => 'prosinec',
+        ],
+        'empty' => 'V tomto období nejsou žádné transakce.',
     ],
 ];
