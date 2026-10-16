@@ -653,6 +653,7 @@ it('only names Phase 8 classes in CONTRIBUTING.md that exist in app/', function 
         'CollapsedWidgets' => 'App\Domain\Dashboard\Queries\CollapsedWidgets',
         'CollapsibleDashboardWidget' => 'App\Filament\Concerns\CollapsibleDashboardWidget',
         'TaskDueDate' => 'App\Filament\Support\TaskDueDate',
+        'ToggleTaskChecklistItem' => 'App\Domain\Tasks\Actions\ToggleTaskChecklistItem',
         'TimeReportPage' => 'App\Filament\Pages\TimeReportPage',
         'ExchangeRateResource' => 'App\Filament\Resources\ExchangeRateResource',
         'ReportExportResource' => 'App\Filament\Resources\ReportExportResource',
