@@ -21,6 +21,53 @@ function entryNameIsHostile(string $name): bool
         || preg_match('/[\p{Cc}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}]/u', $name) === 1;
 }
 
+/**
+ * Runs the callback with every warning and notice turned into an ErrorException, the way the queue worker sees
+ * them: Unit tests run without the Laravel error handler, so a read of an unset array key would pass silently.
+ *
+ * @param  callable(): list<string>  $callback
+ * @return list<string>
+ */
+function entryNamesWithoutWarnings(callable $callback): array
+{
+    set_error_handler(static function (int $severity, string $message, string $file, int $line): never {
+        throw new ErrorException($message, 0, $severity, $file, $line);
+    });
+
+    try {
+        return $callback();
+    } finally {
+        restore_error_handler();
+    }
+}
+
+/**
+ * Every ordering of the given list, as a list of lists; equal values are permuted by position, so duplicates give
+ * duplicate orderings.
+ *
+ * @param  list<string>  $names
+ * @return list<list<string>>
+ */
+function entryNamesPermutations(array $names): array
+{
+    if (count($names) <= 1) {
+        return [$names];
+    }
+
+    $orders = [];
+
+    foreach (array_keys($names) as $index) {
+        $rest = $names;
+        unset($rest[$index]);
+
+        foreach (entryNamesPermutations(array_values($rest)) as $tail) {
+            $orders[] = [$names[$index], ...$tail];
+        }
+    }
+
+    return $orders;
+}
+
 describe('safe()', function (): void {
     it('leaves no path separator and no parent-directory segment of a traversal name', function (): void {
         $name = ArchiveEntryNames::safe(implode('/', ['..', '..', 'etc', 'passwd']), null);
@@ -127,5 +174,67 @@ describe('unique()', function (): void {
         $first->unique('same.txt');
 
         expect($second->unique('same.txt'))->toBe('same.txt');
+    });
+
+    it('numbers a name that equals an earlier generated name instead of reading an unset counter (CR-01)', function (): void {
+        $names = new ArchiveEntryNames;
+
+        $result = entryNamesWithoutWarnings(static fn (): array => [
+            $names->unique('a.pdf'),
+            $names->unique('a.pdf'),
+            $names->unique('a (2).pdf'),
+        ]);
+
+        expect($result)->toBe(['a.pdf', 'a (2).pdf', 'a (2) (2).pdf']);
+    });
+
+    it('numbers the reverse order a (2).pdf, a.pdf, a.pdf past the taken number (CR-01)', function (): void {
+        $names = new ArchiveEntryNames;
+
+        $result = entryNamesWithoutWarnings(static fn (): array => [
+            $names->unique('a (2).pdf'),
+            $names->unique('a.pdf'),
+            $names->unique('a.pdf'),
+        ]);
+
+        expect($result)->toBe(['a (2).pdf', 'a.pdf', 'a (3).pdf']);
+    });
+
+    it('numbers a mixed-case name that equals an earlier generated name (CR-01)', function (): void {
+        $names = new ArchiveEntryNames;
+
+        $result = entryNamesWithoutWarnings(static fn (): array => [
+            $names->unique('a.pdf'),
+            $names->unique('A.pdf'),
+            $names->unique('a (2).PDF'),
+        ]);
+
+        expect($result)->toBe(['a.pdf', 'A (2).pdf', 'a (2) (2).PDF']);
+    });
+
+    it('returns pairwise distinct names without a warning for every order of names that look generated (CR-01)', function (): void {
+        $orders = entryNamesPermutations(['a.pdf', 'a.pdf', 'a (2).pdf', 'A (2).PDF', 'a (3).pdf', 'a']);
+
+        expect($orders)->toHaveCount(720);
+
+        foreach ($orders as $order) {
+            $names = new ArchiveEntryNames;
+            $outputs = entryNamesWithoutWarnings(static fn (): array => array_map($names->unique(...), $order));
+
+            $keys = array_map(mb_strtolower(...), $outputs);
+            $label = implode(' | ', $order);
+
+            expect(count(array_unique($keys)))->toBe(count($keys), 'not distinct for '.$label);
+
+            $earlier = [];
+
+            foreach ($order as $index => $input) {
+                $seenBefore = in_array(mb_strtolower($input), $earlier, true);
+
+                expect($outputs[$index] === $input)->toBe(! $seenBefore, 'unchanged-name rule broken at '.$index.' for '.$label);
+
+                $earlier[] = mb_strtolower($outputs[$index]);
+            }
+        }
     });
 });
