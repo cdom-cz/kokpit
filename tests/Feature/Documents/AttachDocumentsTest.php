@@ -275,3 +275,108 @@ it('lists the files of a client, project, task and comment through their documen
         ->and($ids($task->documents))->toBe([$onTask->getKey()])
         ->and($ids($comment->documents))->toBe([$onComment->getKey()]);
 });
+
+it('refuses a file over the configured size with a Czech message and stores a file exactly at the limit', function (): void {
+    $project = documentProject();
+    $limit = (int) config('kokpit.documents.max_size_kb') * 1024;
+
+    expect(uploadErrors($this->admin, $project, [DocumentFixtures::upload('over-limit.txt', str_repeat('a', $limit + 1024))]))
+        ->toBe(['files' => [__('documents.errors.too_large', ['max' => '10'])]])
+        ->and(__('documents.errors.too_large', ['max' => '10']))->toContain('10 MB');
+
+    expectNothingStored();
+
+    expect(uploadErrors($this->admin, $project, [DocumentFixtures::upload('at-limit.txt', str_repeat('a', $limit))]))->toBe([])
+        ->and(Document::query()->count())->toBe(1);
+});
+
+it('takes the size limit from the one config value', function (): void {
+    config(['kokpit.documents.max_size_kb' => 2]);
+    $project = documentProject();
+
+    expect(uploadErrors($this->admin, $project, [DocumentFixtures::upload('small.txt', str_repeat('a', 3 * 1024))]))->toHaveKey('files')
+        ->and(uploadErrors($this->admin, $project, [DocumentFixtures::upload('small.txt', str_repeat('a', 2 * 1024))]))->toBe([]);
+});
+
+it('refuses more files than the limit of one upload and stores none', function (): void {
+    $files = [];
+
+    for ($i = 0; $i < 11; $i++) {
+        $files[] = DocumentFixtures::upload();
+    }
+
+    expect(uploadErrors($this->admin, documentProject(), $files))
+        ->toBe(['files' => [__('documents.errors.too_many_files', ['max' => 10])]]);
+
+    expectNothingStored();
+});
+
+it('refuses a disallowed extension in any segment of the name', function (string $name): void {
+    $project = documentProject();
+
+    expect(uploadErrors($this->admin, $project, [DocumentFixtures::upload($name)]))
+        ->toBe(['files' => [__('documents.errors.extension_not_allowed', ['name' => $name])]]);
+
+    expectNothingStored();
+})->with(['report.php.pdf', 'Script.PHTML', 'archive.phar']);
+
+it('accepts a plain document name', function (): void {
+    expect(uploadErrors($this->admin, documentProject(), [DocumentFixtures::upload('smlouva.pdf')]))->toBe([])
+        ->and(Document::query()->count())->toBe(1);
+});
+
+it('collects every refusal of a list before anything is written', function (): void {
+    $files = [DocumentFixtures::upload('ok.txt'), DocumentFixtures::upload('bad.php'), DocumentFixtures::upload('worse.phtml')];
+
+    expect(uploadErrors($this->admin, documentProject(), $files)['files'])->toHaveCount(2);
+
+    expectNothingStored();
+});
+
+it('refuses to attach to an archived project, task, comment task or client and keeps the existing files (D-21)', function (): void {
+    $client = Client::factory()->create();
+    $project = documentProject($client);
+    $task = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example task']);
+    $comment = app(AddTaskComment::class)->handle($this->admin, $task, '<p>Example comment</p>');
+
+    $before = [$project, $task, $client];
+    foreach ($before as $owner) {
+        attachOne($this->admin, $owner);
+    }
+
+    $stored = Storage::disk('local')->allFiles();
+    expect($stored)->toHaveCount(3);
+
+    $task->delete();
+    $project->delete();
+    $client->delete();
+
+    foreach ([$project, $task, $comment, $client] as $owner) {
+        expect(uploadErrors($this->admin, $owner, [DocumentFixtures::upload()]))
+            ->toBe(['files' => [__('documents.errors.owner_archived')]]);
+    }
+
+    expect(Document::query()->count())->toBe(3)
+        ->and(Storage::disk('local')->allFiles())->toBe($stored)
+        ->and($project->documents()->count())->toBe(1)
+        ->and($task->documents()->count())->toBe(1)
+        ->and($client->documents()->count())->toBe(3);
+});
+
+it('leaves no row and no object when the third file of an upload fails, and rethrows the original error', function (): void {
+    $project = documentProject();
+    $created = 0;
+
+    Media::creating(static function () use (&$created): void {
+        if (++$created === 3) {
+            throw new RuntimeException('forced media failure');
+        }
+    });
+
+    $files = [DocumentFixtures::upload(), DocumentFixtures::upload(), DocumentFixtures::upload()];
+
+    expect(fn () => app(AttachDocuments::class)->handle($this->admin, $project, $files))
+        ->toThrow(RuntimeException::class, 'forced media failure');
+
+    expectNothingStored();
+});
