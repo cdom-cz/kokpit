@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-22-PLAN.md
-last_updated: "2026-10-16T13:48:56.855Z"
+stopped_at: Completed 09-10-PLAN.md
+last_updated: "2026-10-16T14:03:56.999Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 08e9352c490a36bab5137d3f394a51354e58dbeb
+state_head: 5512d5ad43e17081e647b276826101886c822192
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 159
+  completed_plans: 160
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 13 of 24
+Plan: 14 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -221,6 +221,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P07 | 35 min | 3 tasks | 11 files |
 | Phase 09 P08 | 45 min | 3 tasks | 11 files |
 | Phase 09 P22 | 13 min | 3 tasks | 11 files |
+| Phase 09 P10 | 50 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -532,6 +533,8 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-08: Partner file read grant is the Document scope repeated by DocumentPolicy::view (flag, shareable owner, own client, still returned by the scoped query); Partner Soubory tabs are read-only over a shared ShowsPartnerDocuments trait with the pinned four-column Partner builder
 - [Phase 09]: 09-22: the CZK figure is fixed once at write from one rateFor() lookup and Money::convert; editing recomputes a computed transaction only when date, currency or amount change, and a manual figure stays manual until czk_manual is switched off
 - [Phase 09]: 09-22: TransactionInput re-validates category, client, project and currency under share locks; an unchanged archived reference stays acceptable on edit; a project without a client is refused
+- [Phase 09]: 09-10: a Partner may attach files only to an own open task or own non-internal comment (open = not archived, not done); upload always visible; delete only own uploads on an open task
+- [Phase 09]: 09-10: one Admin bell per Partner upload submission (count and task reference, never a file name), sent with notifyNow inside the upload transaction
 
 ### Pending Todos
 
@@ -582,6 +585,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T13:48:56.220Z
-Stopped at: Completed 09-22-PLAN.md
+Last session: 2026-10-16T14:03:56.343Z
+Stopped at: Completed 09-10-PLAN.md
 Resume file: None

@@ -566,7 +566,7 @@ Plans:
   4. Every download goes through the app with a permission check and a short-lived signed URL (no public bucket URL), and deleting a record also removes its stored object
   5. Admin records income and expense transactions with hierarchical categories, currency, CZK amount, optional client and project and receipts as attachments, and sees an overview per month and year, per category and per client in CZK
 
-**Plans:** 12/24 plans executed
+**Plans:** 13/24 plans executed
 **UI hint**: yes
 
 Plans:
@@ -591,7 +591,7 @@ Plans:
 - [x] 09-22-PLAN.md — Transaction write paths: CZK identity, CNB snapshot of the day, manual amount, record, update with recompute-versus-manual, delete
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 09-10-PLAN.md — Partner upload on create-task, own deletion while the task is open, Admin bell
+- [x] 09-10-PLAN.md — Partner upload on create-task, own deletion while the task is open, Admin bell
 - [ ] 09-11-PLAN.md — Transactions screen: create with CNB preview, edit with the manual switch, delete with confirmation, activity and history
 - [ ] 09-23-PLAN.md — ZIP archive record: owner-scoped table and model, status, expiry and download state, registrations
 
@@ -683,7 +683,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
 | 8. Exchange Rates and Reports | 27/27 | In Progress | - |
-| 9. Documents and Finance | 12/24 | In Progress | - |
+| 9. Documents and Finance | 13/24 | In Progress | - |
 | 10. Invoicing | 0/0 | Not started | - |
 | 11. Stripe Payments | 0/0 | Not started | - |
 | 12. Partner Audit | 0/0 | Not started | - |
