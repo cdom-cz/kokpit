@@ -39,6 +39,9 @@ return [
         'preview' => 'Zobrazit',
         'delete' => 'Smazat',
         'delete_heading' => 'Smazat soubor?',
+        'bulk_delete' => 'Smazat vybrané',
+        'bulk_delete_heading' => 'Smazat vybrané soubory?',
+        'bulk_delete_description' => '{1} Bude trvale smazán :count soubor, včetně uloženého souboru. Tento krok nelze vrátit zpět.|[2,4] Budou trvale smazány :count soubory, včetně uložených souborů. Tento krok nelze vrátit zpět.|[5,*] Bude trvale smazáno :count souborů, včetně uložených souborů. Tento krok nelze vrátit zpět.',
         'delete_description' => 'Soubor „:name“ bude trvale smazán, včetně uloženého souboru. Tento krok nelze vrátit zpět.',
     ],
 
@@ -68,6 +71,7 @@ return [
 
     'notifications' => [
         'deleted' => 'Soubor byl trvale smazán.',
+        'bulk_deleted' => 'Trvale smazáno: :deleted, nepodařilo se smazat: :failed.',
         'delete_failed' => 'Soubor se nepodařilo smazat. Zkuste to znovu.',
         'uploaded' => '{1} Byl nahrán :count soubor.|[2,4] Byly nahrány :count soubory.|[5,*] Bylo nahráno :count souborů.',
     ],

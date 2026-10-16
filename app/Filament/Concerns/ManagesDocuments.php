@@ -6,6 +6,7 @@ namespace App\Filament\Concerns;
 
 use App\Filament\Support\DocumentActions;
 use App\Filament\Support\DocumentColumns;
+use Filament\Actions\BulkActionGroup;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -57,6 +58,11 @@ trait ManagesDocuments
                 DocumentActions::preview(),
                 DocumentActions::download(),
                 DocumentActions::delete(),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DocumentActions::bulkDelete(),
+                ]),
             ])
             ->emptyStateHeading(__('documents.empty.heading'))
             ->emptyStateDescription(__('documents.empty.description'));

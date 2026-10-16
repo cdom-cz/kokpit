@@ -15,6 +15,7 @@ use App\Domain\Projects\Models\Project;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskComment;
 use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Textarea;
@@ -22,8 +23,10 @@ use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Contracts\HasTable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component;
@@ -123,6 +126,64 @@ final class DocumentActions
 
                 Notification::make()->danger()->title(__('documents.notifications.delete_failed'))->send();
             });
+    }
+
+    /**
+     * Deletes the selected files after one confirmation. Every file goes through DeleteDocument on its own, so
+     * one that cannot be deleted never stops the others; the Admin is told how many went and how many did not.
+     * A selected file that no longer exists counts as one that did not go.
+     */
+    public static function bulkDelete(): BulkAction
+    {
+        return BulkAction::make('bulkDelete')
+            ->label(__('documents.actions.bulk_delete'))
+            ->icon(Heroicon::OutlinedTrash)
+            ->color('danger')
+            ->requiresConfirmation()
+            ->modalHeading(__('documents.actions.bulk_delete_heading'))
+            ->modalDescription(static fn (HasTable $livewire): string => trans_choice('documents.actions.bulk_delete_description', self::selectedCount($livewire), ['count' => self::selectedCount($livewire)]))
+            ->modalSubmitActionLabel(__('documents.actions.bulk_delete'))
+            ->action(static function (Collection $records, HasTable $livewire): void {
+                $failed = max(0, self::selectedCount($livewire) - $records->count());
+                $deleted = 0;
+
+                foreach ($records as $record) {
+                    if ($record instanceof Document && self::deleteOne($record)) {
+                        $deleted++;
+                    } else {
+                        $failed++;
+                    }
+                }
+
+                $notification = Notification::make()
+                    ->title(__('documents.notifications.bulk_deleted', ['deleted' => $deleted, 'failed' => $failed]));
+
+                match (true) {
+                    $failed === 0 => $notification->success(),
+                    $deleted === 0 => $notification->danger(),
+                    default => $notification->warning(),
+                };
+
+                $notification->send();
+            })
+            ->deselectRecordsAfterCompletion();
+    }
+
+    /**
+     * How many files the Admin selected, from the client's selection state and without loading the records
+     * (the loaded records are cached by Filament and must stay the ones the action receives). With "select all"
+     * the count is every selectable row minus the deselected ones.
+     */
+    private static function selectedCount(HasTable $livewire): int
+    {
+        $selected = data_get($livewire, 'selectedTableRecords');
+        $deselected = data_get($livewire, 'deselectedTableRecords');
+
+        if (data_get($livewire, 'isTrackingDeselectedTableRecords') === true) {
+            return max(0, $livewire->getAllSelectableTableRecordsCount() - (is_array($deselected) ? count($deselected) : 0));
+        }
+
+        return is_array($selected) ? count($selected) : 0;
     }
 
     /**

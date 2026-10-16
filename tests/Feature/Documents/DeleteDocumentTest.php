@@ -10,11 +10,17 @@ use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Media;
+use App\Domain\Tasks\Actions\ArchiveTask;
+use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Models\Task;
 use App\Filament\RelationManagers\ProjectDocumentsRelationManager;
+use App\Filament\RelationManagers\TaskDocumentsRelationManager;
 use App\Filament\Resources\ProjectResource\Pages\ViewProject;
+use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -159,3 +165,147 @@ it('removes the object from the real bucket', function (): void {
         Storage::disk('s3')->deleteDirectory(dirname($path));
     }
 })->group('s3');
+
+/**
+ * Replaces the faked private disk by one that fails to delete the objects at the given paths: either by
+ * throwing, as the s3 disk does, or by answering false without removing anything, as a local disk can.
+ *
+ * @param  list<string>  $paths
+ */
+function failDeletingOn(array $paths, bool $throw): void
+{
+    $real = Storage::disk('local');
+    $failing = Mockery::mock($real)->makePartial();
+
+    $failing->shouldReceive('delete')->andReturnUsing(static function (mixed $target) use ($real, $paths, $throw): bool {
+        if (is_string($target) && in_array($target, $paths, true)) {
+            if ($throw) {
+                throw new RuntimeException('Fictional disk failure.');
+            }
+
+            return false;
+        }
+
+        return $real->delete($target);
+    });
+
+    Storage::set('local', $failing);
+}
+
+it('keeps the row, the media and the object when the disk throws on delete', function (): void {
+    $document = app(AttachDocuments::class)
+        ->handle($this->admin, deletionProject(), [DocumentFixtures::upload('kept-example.txt')])
+        ->firstOrFail();
+    $path = deletionObjectPath($document);
+
+    failDeletingOn([$path], throw: true);
+
+    expect(fn () => app(DeleteDocument::class)->handle($this->admin, $document))->toThrow(RuntimeException::class);
+
+    expect(Document::query()->whereKey($document->id)->exists())->toBeTrue()
+        ->and(deletionMedia($document->id))->toHaveCount(1)
+        ->and(Storage::disk('local')->exists($path))->toBeTrue()
+        ->and(Activity::query()->forSubject($document)->forEvent('deleted')->count())->toBe(0);
+});
+
+it('keeps the row and the media when the disk answers false and leaves the object standing', function (): void {
+    $document = app(AttachDocuments::class)
+        ->handle($this->admin, deletionProject(), [DocumentFixtures::upload('stuck-example.txt')])
+        ->firstOrFail();
+    $path = deletionObjectPath($document);
+
+    failDeletingOn([$path], throw: false);
+
+    expect(fn () => app(DeleteDocument::class)->handle($this->admin, $document))->toThrow(RuntimeException::class, 'could not be removed');
+
+    expect(Document::query()->whereKey($document->id)->exists())->toBeTrue()
+        ->and(deletionMedia($document->id))->toHaveCount(1)
+        ->and(Storage::disk('local')->exists($path))->toBeTrue();
+});
+
+it('tells the Admin the file was not deleted when the object cannot be removed, without naming it in the report', function (): void {
+    $project = deletionProject();
+    $document = app(AttachDocuments::class)
+        ->handle($this->admin, $project, [DocumentFixtures::upload('failing-example.txt')])
+        ->firstOrFail();
+
+    failDeletingOn([deletionObjectPath($document)], throw: true);
+    Exceptions::fake();
+
+    deletionTab($project)
+        ->callAction(TestAction::make('delete')->table($document))
+        ->assertNotified(__('documents.notifications.delete_failed'));
+
+    Exceptions::assertReported(static fn (RuntimeException $e): bool => str_contains($e->getMessage(), 'could not be deleted'));
+    Exceptions::assertNotReported(static fn (RuntimeException $e): bool => str_contains($e->getMessage(), 'failing-example'));
+
+    expect(Document::query()->whereKey($document->id)->exists())->toBeTrue();
+});
+
+it('deletes the files of an archived task for the Admin', function (): void {
+    $task = app(CreateTask::class)->handle($this->admin, deletionProject('ARC'), ['title' => 'Example archived task']);
+    $document = app(AttachDocuments::class)->handle($this->admin, $task, [DocumentFixtures::upload('archived-example.txt')])->firstOrFail();
+    $path = deletionObjectPath($document);
+
+    app(ArchiveTask::class)->handle($this->admin, $task);
+
+    $archived = Task::query()->onlyTrashed()->findOrFail($task->id);
+
+    Livewire::test(TaskDocumentsRelationManager::class, ['ownerRecord' => $archived, 'pageClass' => ViewTask::class])
+        ->callAction(TestAction::make('delete')->table($document));
+
+    expect(Document::query()->whereKey($document->id)->exists())->toBeFalse()
+        ->and(Storage::disk('local')->exists($path))->toBeFalse();
+});
+
+it('deletes every selected file after one confirmation that names the number of files', function (): void {
+    $project = deletionProject();
+    $documents = collect(['one-example.txt', 'two-example.txt', 'three-example.txt'])
+        ->map(fn (string $name): Document => app(AttachDocuments::class)->handle($this->admin, $project, [DocumentFixtures::upload($name)])->firstOrFail());
+    $paths = $documents->map(fn (Document $document): string => deletionObjectPath($document));
+
+    $tab = deletionTab($project)->mountTableBulkAction('bulkDelete', $documents);
+
+    $mounted = $tab->instance()->getMountedAction();
+
+    expect(Document::query()->count())->toBe(3)
+        ->and((string) $mounted?->getModalDescription())->toBe(trans_choice('documents.actions.bulk_delete_description', 3, ['count' => 3]))
+        ->and((string) $mounted?->getModalHeading())->toBe(__('documents.actions.bulk_delete_heading'));
+
+    $tab->callMountedTableBulkAction();
+
+    expect(Document::query()->count())->toBe(0)
+        ->and($paths->filter(fn (string $path): bool => Storage::disk('local')->exists($path))->all())->toBe([]);
+
+    $tab->assertNotified(__('documents.notifications.bulk_deleted', ['deleted' => 3, 'failed' => 0]));
+});
+
+it('keeps going when one selected file was deleted in the meantime and reports both numbers', function (): void {
+    $project = deletionProject();
+    $documents = collect(['first-example.txt', 'second-example.txt', 'third-example.txt'])
+        ->map(fn (string $name): Document => app(AttachDocuments::class)->handle($this->admin, $project, [DocumentFixtures::upload($name)])->firstOrFail());
+
+    $tab = deletionTab($project)->mountTableBulkAction('bulkDelete', $documents);
+
+    app(DeleteDocument::class)->handle($this->admin, $documents[1]);
+
+    $tab->callMountedTableBulkAction();
+
+    expect(Document::query()->count())->toBe(0);
+
+    $tab->assertNotified(__('documents.notifications.bulk_deleted', ['deleted' => 2, 'failed' => 1]));
+});
+
+it('keeps going when the object of one selected file cannot be removed and reports both numbers', function (): void {
+    $project = deletionProject();
+    $documents = collect(['alpha-example.txt', 'beta-example.txt', 'gamma-example.txt'])
+        ->map(fn (string $name): Document => app(AttachDocuments::class)->handle($this->admin, $project, [DocumentFixtures::upload($name)])->firstOrFail());
+
+    failDeletingOn([deletionObjectPath($documents[1])], throw: true);
+
+    deletionTab($project)
+        ->callTableBulkAction('bulkDelete', $documents)
+        ->assertNotified(__('documents.notifications.bulk_deleted', ['deleted' => 2, 'failed' => 1]));
+
+    expect(Document::query()->pluck('name')->all())->toBe(['beta-example.txt']);
+});
