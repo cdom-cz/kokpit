@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-10-PLAN.md
-last_updated: "2026-10-16T14:03:56.999Z"
+stopped_at: Completed 09-11-PLAN.md
+last_updated: "2026-10-16T14:22:28.207Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 5512d5ad43e17081e647b276826101886c822192
+state_head: 143348c175a1ced1fccc33a14368739be2c92c94
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 160
+  completed_plans: 161
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 14 of 24
+Plan: 15 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -222,6 +222,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P08 | 45 min | 3 tasks | 11 files |
 | Phase 09 P22 | 13 min | 3 tasks | 11 files |
 | Phase 09 P10 | 50 min | 3 tasks | 11 files |
+| Phase 09 P11 | 14 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -535,6 +536,7 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-22: TransactionInput re-validates category, client, project and currency under share locks; an unchanged archived reference stays acceptable on edit; a project without a client is refused
 - [Phase 09]: 09-10: a Partner may attach files only to an own open task or own non-internal comment (open = not archived, not done); upload always visible; delete only own uploads on an open task
 - [Phase 09]: 09-10: one Admin bell per Partner upload submission (count and task reference, never a file name), sent with notifyNow inside the upload transaction
+- [Phase 09]: Transaction form: the CZK field shows when the manual switch is on or the CNB preview finds no list for the day; the project select is never disabled — The preview runs the same TransactionCzk rule as the Actions; a disabled field is not dehydrated and the Action would keep the stored project
 
 ### Pending Todos
 
@@ -585,6 +587,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T14:03:56.343Z
-Stopped at: Completed 09-10-PLAN.md
+Last session: 2026-10-16T14:22:21.256Z
+Stopped at: Completed 09-11-PLAN.md
 Resume file: None
