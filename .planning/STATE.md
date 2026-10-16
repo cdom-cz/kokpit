@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-05-PLAN.md
-last_updated: "2026-10-16T12:33:58.601Z"
+stopped_at: Completed 09-06-PLAN.md
+last_updated: "2026-10-16T12:51:19.816Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 48ad9724e828a7a763a21e392e76894cb5cd052b
+state_head: bc90c81283241687d6d4af40ff5285cb47678bea
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 154
+  completed_plans: 155
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 8 of 24
+Plan: 9 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -216,6 +216,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P21 | 25min | 3 tasks | 5 files |
 | Phase 09 P24 | 13 min | 3 tasks | 7 files |
 | Phase 09 P05 | 40 min | 3 tasks | 14 files |
+| Phase 09 P06 | 25 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -518,6 +519,8 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-24: Livewire temporary-upload disk defaults to s3 itself (not FILESYSTEM_DISK); phpunit.xml pins s3; DDEV overrides to local via .env.example; ProductionConfigGuard refuses a non-s3-driver temporary disk in production; preview_mimes empty (D-18, D-10)
 - [Phase 09]: 09-05: the Soubory tabs share one ManagesDocuments trait with three final Admin-only relation managers; the client tab lists every file of the client with an eager-loaded owner column and archived owners stay listed for the Admin — AccessRule is not inherited, so the behaviour is a trait; the client tab follows research A10 and D-21 hides archived owners only from the Partner and the default central listing
 - [Phase 09]: 09-05: upload domain errors are re-keyed to mountedActions.0.data.<key> inside the modal instead of using withFormErrors(), whose data. prefix is the page-form state path — Only the modal state path lands the message next to the field; same mapping as the Kontakty tab
+- [Phase 09]: 09-06: creating a child takes its parent's type; moving an existing category never retypes it by itself (a parent of another type is parent_invalid); the edit modal sends the chosen parent's type
+- [Phase 09]: 09-06: category refusals of archive and delete are field-less DomainException (danger notification), save refusals are field errors; 23503 maps to in_use or type_locked, KP001 to system_locked; used-by-transactions relies on the 09-09 foreign keys until then
 
 ### Pending Todos
 
@@ -568,6 +571,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T12:33:58.112Z
-Stopped at: Completed 09-05-PLAN.md
+Last session: 2026-10-16T12:51:19.269Z
+Stopped at: Completed 09-06-PLAN.md
 Resume file: None
