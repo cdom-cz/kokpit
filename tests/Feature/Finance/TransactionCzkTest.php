@@ -2,13 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
+use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Actions\RecordTransaction;
 use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
 
 /*
@@ -46,6 +51,45 @@ function czkTestData(array $overrides = []): array
         'counterparty' => Canary::canary('counterparty'),
         ...$overrides,
     ];
+}
+
+/**
+ * Stores one invented CNB rate row in the system context, as the download Action does.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function czkTestRate(array $overrides = []): void
+{
+    $row = [
+        'rate_date' => '2026-10-09',
+        'currency' => 'EUR',
+        'unit_amount' => 1,
+        'rate' => '25.125',
+        'fetched_at' => '2026-10-09 14:45:00+00',
+        'created_at' => '2026-10-09 14:45:00+00',
+        'updated_at' => '2026-10-09 14:45:00+00',
+        ...$overrides,
+    ];
+
+    app(PartnerContext::class)->runAsSystem(static function () use ($row): void {
+        ExchangeRate::query()->upsert([$row], ['currency', 'rate_date'], ['rate', 'unit_amount']);
+    });
+}
+
+/**
+ * The field errors of a ValidationException a callback raises, or null when it raises nothing.
+ *
+ * @return array<string, list<string>>|null
+ */
+function czkTestErrors(Closure $callback): ?array
+{
+    try {
+        $callback();
+    } catch (ValidationException $e) {
+        return $e->errors();
+    }
+
+    return null;
 }
 
 describe('recording a CZK transaction', function (): void {
@@ -88,5 +132,177 @@ describe('the CZK source labels', function (): void {
         expect(CzkSource::Identity->getLabel())->toBe('Kč')
             ->and(CzkSource::Cnb->getLabel())->toBe('Kurz ČNB')
             ->and(CzkSource::Manual->getLabel())->toBe('Zadáno ručně');
+    });
+});
+
+describe('recording a foreign-currency transaction', function (): void {
+    beforeEach(function (): void {
+        $this->admin = Canary::admin();
+        $this->actingAs($this->admin);
+    });
+
+    it('converts at the list of the newest day not after a Sunday and keeps the rate as a snapshot', function (): void {
+        czkTestRate(['rate_date' => '2026-10-09', 'rate' => '25.125']);
+
+        $transaction = app(RecordTransaction::class)->handle($this->admin, czkTestData([
+            'transaction_date' => '2026-10-11',
+            'amount' => '100,00',
+            'currency' => 'EUR',
+        ]));
+
+        expect($transaction->amount_minor)->toBe(10000)
+            ->and($transaction->amount_currency)->toBe('EUR')
+            ->and($transaction->czk_minor)->toBe(251250)
+            ->and($transaction->czk_source)->toBe(CzkSource::Cnb)
+            ->and($transaction->exchange_rate)->toBe('25.1250000000')
+            ->and($transaction->exchange_unit_amount)->toBe(1)
+            ->and($transaction->exchange_rate_date->toDateString())->toBe('2026-10-09');
+    });
+
+    it('divides a rate quoted per 100 by its unit amount', function (): void {
+        czkTestRate(['currency' => 'JPY', 'unit_amount' => 100, 'rate' => '15.0']);
+
+        $transaction = app(RecordTransaction::class)->handle($this->admin, czkTestData([
+            'transaction_date' => '2026-10-09',
+            'amount' => '20000',
+            'currency' => 'JPY',
+        ]));
+
+        // 20 000 JPY at 15,00 CZK per 100 JPY is 3 000,00 CZK.
+        expect($transaction->czk_minor)->toBe(300000)
+            ->and($transaction->exchange_unit_amount)->toBe(100)
+            ->and($transaction->czk_source)->toBe(CzkSource::Cnb);
+    });
+
+    it('keeps the stored figure when a corrected list is inserted afterwards', function (): void {
+        czkTestRate(['rate_date' => '2026-10-09', 'rate' => '25.125']);
+        $transaction = app(RecordTransaction::class)->handle($this->admin, czkTestData([
+            'transaction_date' => '2026-10-09',
+            'amount' => '100,00',
+            'currency' => 'EUR',
+        ]));
+
+        czkTestRate(['rate_date' => '2026-10-09', 'rate' => '30.000']);
+        czkTestRate(['rate_date' => '2026-10-10', 'rate' => '31.000']);
+
+        $fresh = Transaction::query()->findOrFail($transaction->getKey());
+
+        expect($fresh->czk_minor)->toBe(251250)
+            ->and($fresh->exchange_rate)->toBe('25.1250000000')
+            ->and($fresh->exchange_rate_date->toDateString())->toBe('2026-10-09');
+    });
+
+    it('asks for the CZK amount when no list exists and stores the typed figure as manual', function (): void {
+        $data = czkTestData(['amount' => '50,00', 'currency' => 'USD']);
+        czkTestRate(['currency' => 'USD', 'rate_date' => '2026-10-20', 'rate' => '22.5']);
+
+        $errors = czkTestErrors(fn () => app(RecordTransaction::class)->handle($this->admin, $data));
+
+        expect($errors)->toHaveKey('czk_amount')
+            ->and($errors['czk_amount'][0])->toContain('USD')
+            ->and($errors['czk_amount'][0])->toContain('14. 10. 2026')
+            ->and(Transaction::query()->where('counterparty', $data['counterparty'])->exists())->toBeFalse();
+
+        $transaction = app(RecordTransaction::class)->handle($this->admin, [...$data, 'czk_amount' => '1 999,00']);
+
+        expect($transaction->czk_minor)->toBe(199900)
+            ->and($transaction->czk_source)->toBe(CzkSource::Manual)
+            ->and($transaction->exchange_rate)->toBeNull()
+            ->and($transaction->exchange_rate_date)->toBeNull();
+    });
+
+    it('stores a typed figure as manual even when a rate exists', function (): void {
+        czkTestRate(['rate_date' => '2026-10-09', 'rate' => '25.125']);
+
+        $transaction = app(RecordTransaction::class)->handle($this->admin, czkTestData([
+            'transaction_date' => '2026-10-09',
+            'amount' => '100,00',
+            'currency' => 'EUR',
+            'czk_amount' => '2 500,00',
+        ]));
+
+        expect($transaction->czk_minor)->toBe(250000)
+            ->and($transaction->czk_source)->toBe(CzkSource::Manual)
+            ->and($transaction->exchange_rate)->toBeNull();
+    });
+
+    it('refuses an unknown currency and a known code without any CNB row', function (): void {
+        czkTestRate();
+
+        expect(czkTestErrors(fn () => app(RecordTransaction::class)->handle($this->admin, czkTestData(['currency' => 'XYZ']))))
+            ->toHaveKey('currency')
+            ->and(czkTestErrors(fn () => app(RecordTransaction::class)->handle($this->admin, czkTestData(['currency' => 'CHF']))))
+            ->toHaveKey('currency');
+    });
+
+    it('refuses an amount that is not a positive money figure', function (): void {
+        foreach (['abc', '0', '-5,00', '1,234'] as $value) {
+            expect(czkTestErrors(fn () => app(RecordTransaction::class)->handle($this->admin, czkTestData(['amount' => $value]))))
+                ->toHaveKey('amount');
+        }
+    });
+});
+
+describe('the references of a transaction', function (): void {
+    beforeEach(function (): void {
+        $this->admin = Canary::admin();
+        $this->actingAs($this->admin);
+    });
+
+    it('refuses a category of the other type, an archived category and an unknown one', function (): void {
+        $income = TransactionCategory::query()->where('type', 'income')->whereNull('parent_id')->firstOrFail();
+        $archived = TransactionCategory::query()->where('type', 'expense')->whereNull('parent_id')->where('id', '!=', czkTestSoftware()->getKey())->firstOrFail();
+        $archived->forceFill(['archived_at' => now()])->save();
+
+        foreach ([$income->getKey(), $archived->getKey(), '018f0000-0000-7000-8000-000000000000'] as $id) {
+            expect(czkTestErrors(fn () => app(RecordTransaction::class)->handle($this->admin, czkTestData(['category_id' => $id]))))
+                ->toHaveKey('category_id');
+        }
+    });
+
+    it('accepts a client and a project of that client and refuses the forged combinations', function (): void {
+        $client = Client::factory()->create();
+        $other = Client::factory()->create();
+        $project = Project::factory()->create(['client_id' => $client->getKey()]);
+        $archivedClient = Client::factory()->create();
+        $archivedClient->delete();
+
+        $transaction = app(RecordTransaction::class)->handle($this->admin, czkTestData([
+            'client_id' => $client->getKey(),
+            'project_id' => $project->getKey(),
+        ]));
+
+        expect($transaction->client_id)->toBe($client->getKey())
+            ->and($transaction->project_id)->toBe($project->getKey())
+            ->and(czkTestErrors(fn () => app(RecordTransaction::class)->handle($this->admin, czkTestData([
+                'client_id' => $other->getKey(),
+                'project_id' => $project->getKey(),
+            ]))))->toHaveKey('project_id')
+            ->and(czkTestErrors(fn () => app(RecordTransaction::class)->handle($this->admin, czkTestData([
+                'project_id' => $project->getKey(),
+            ]))))->toHaveKey('project_id')
+            ->and(czkTestErrors(fn () => app(RecordTransaction::class)->handle($this->admin, czkTestData([
+                'client_id' => $archivedClient->getKey(),
+            ]))))->toHaveKey('client_id')
+            ->and(czkTestErrors(fn () => app(RecordTransaction::class)->handle($this->admin, czkTestData([
+                'client_id' => '018f0000-0000-7000-8000-000000000000',
+            ]))))->toHaveKey('client_id');
+    });
+
+    it('refuses an archived project', function (): void {
+        $client = Client::factory()->create();
+        $project = Project::factory()->create(['client_id' => $client->getKey()]);
+        $project->delete();
+
+        expect(czkTestErrors(fn () => app(RecordTransaction::class)->handle($this->admin, czkTestData([
+            'client_id' => $client->getKey(),
+            'project_id' => $project->getKey(),
+        ]))))->toHaveKey('project_id');
+    });
+
+    it('refuses a text that is too long', function (): void {
+        expect(czkTestErrors(fn () => app(RecordTransaction::class)->handle($this->admin, czkTestData([
+            'document_number' => str_repeat('a', 65),
+        ]))))->toHaveKey('document_number');
     });
 });
