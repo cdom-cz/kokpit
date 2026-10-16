@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Finance\Enums\CzkSource;
 use App\Http\Controllers\Api\V1\TransactionExamples;
+use Illuminate\Pagination\Cursor;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\Support\ApiDocs;
@@ -132,4 +133,46 @@ it('answers a path segment that is no UUID with 404 before the controller is rea
         ->assertNotFound();
 
     expect($response->json('message'))->not->toBe(__('api.errors.not_found'));
+});
+
+it('documents an example cursor with the keys of a real cursor of the default sort', function (): void {
+    $example = Cursor::fromEncoded(TransactionExamples::TRANSACTION_LIST['meta']['next_cursor']);
+
+    expect($example)->not->toBeNull()
+        ->and($example->parameter('transaction_date'))->toBe(TransactionExamples::TRANSACTION_LIST['data'][1]['transaction_date'].' 00:00:00')
+        ->and($example->parameter('transactions.id'))->toBe(TransactionExamples::TRANSACTION_LIST['data'][1]['id'])
+        ->and($example->pointsToNextItems())->toBeTrue();
+
+    // The link of the next page carries the very same cursor.
+    parse_str((string) parse_url(TransactionExamples::TRANSACTION_LIST['links']['next'], PHP_URL_QUERY), $query);
+    expect($query['cursor'])->toBe(TransactionExamples::TRANSACTION_LIST['meta']['next_cursor']);
+
+    // A real cursor of the default sort has the same key set, so the example cannot drift from the API.
+    $admin = ApiFixtures::admin();
+    FinanceApiFixtures::transaction($admin, ['transaction_date' => '2026-10-12']);
+    FinanceApiFixtures::transaction($admin, ['transaction_date' => '2026-10-14']);
+
+    $page = $this->withToken(ApiFixtures::token($admin, ['finance:read']))->getJson('/api/v1/transactions?per_page=1')->assertOk();
+    $real = Cursor::fromEncoded($page->json('meta.next_cursor'));
+
+    $exampleKeys = array_keys($example->toArray());
+    $realKeys = array_keys($real->toArray());
+    sort($exampleKeys);
+    sort($realKeys);
+
+    expect($exampleKeys)->toBe($realKeys);
+});
+
+it('accepts the example cursor of the documentation with a 200', function (): void {
+    $this->withToken(ApiFixtures::token(ApiFixtures::admin(), ['finance:read']))
+        ->getJson('/api/v1/transactions?per_page=2&cursor='.urlencode(TransactionExamples::TRANSACTION_LIST['meta']['next_cursor']))
+        ->assertOk();
+});
+
+it('documents a list whose items all have the keys and types of the resource', function (): void {
+    expect(TransactionExamples::TRANSACTION_LIST['data'])->toHaveCount(2);
+
+    foreach (TransactionExamples::TRANSACTION_LIST['data'] as $item) {
+        TransactionContract::assertShape($item);
+    }
 });

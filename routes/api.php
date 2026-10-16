@@ -70,6 +70,8 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeWrite->value, 't
 // Finance reads: GET routes, ability finance:read (D-01). Transactions and categories are Admin-only data;
 // a Partner token is refused with 401 by the token guard.
 Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::FinanceRead->value, 'throttle:api-read'])->group(function (): void {
+    Route::get('transactions', [TransactionController::class, 'index'])
+        ->name('api.v1.transactions.index');
     Route::get('transactions/{transaction}', [TransactionController::class, 'show'])
         ->whereUuid('transaction')
         ->name('api.v1.transactions.show');

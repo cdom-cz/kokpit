@@ -39,4 +39,47 @@ final class TransactionExamples
             'updated_at' => '2026-10-14T09:12:00+00:00',
         ],
     ];
+
+    /**
+     * A page of the list: two transactions newest first, with the cursor of the next page. The cursor is the one the
+     * paginator issues after the second item: its date as the paginator writes a date cast (`Y-m-d 00:00:00`) and its
+     * id, so the example cursor is accepted by the API and cannot drift from the real one (see the contract test).
+     */
+    public const array TRANSACTION_LIST = [
+        'data' => [
+            self::TRANSACTION['data'],
+            [
+                'id' => '0199e3b1-3c4d-7e5f-8a61-c3d4e5f6a7b8',
+                'type' => 'income',
+                'transaction_date' => '2026-10-13',
+                'category_id' => '0199e3b0-3c4d-7e5f-a061-c3d4e5f6a7b8',
+                'amount_minor' => 1500000,
+                'currency' => 'CZK',
+                'czk_minor' => 1500000,
+                'czk_source' => 'identity',
+                'exchange_rate' => null,
+                'exchange_unit_amount' => null,
+                'exchange_rate_date' => null,
+                'description' => 'Example consulting payment',
+                'counterparty' => 'Demo Customer',
+                'document_number' => null,
+                'client_id' => '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9',
+                'project_id' => null,
+                'created_at' => '2026-10-13T15:30:00+00:00',
+                'updated_at' => '2026-10-13T15:30:00+00:00',
+            ],
+        ],
+        'links' => [
+            'first' => null,
+            'last' => null,
+            'prev' => null,
+            'next' => 'https://kokpit.example.com/api/v1/transactions?per_page=2&cursor=eyJ0cmFuc2FjdGlvbl9kYXRlIjoiMjAyNi0xMC0xMyAwMDowMDowMCIsInRyYW5zYWN0aW9ucy5pZCI6IjAxOTllM2IxLTNjNGQtN2U1Zi04YTYxLWMzZDRlNWY2YTdiOCIsIl9wb2ludHNUb05leHRJdGVtcyI6dHJ1ZX0',
+        ],
+        'meta' => [
+            'path' => 'https://kokpit.example.com/api/v1/transactions',
+            'per_page' => 2,
+            'next_cursor' => 'eyJ0cmFuc2FjdGlvbl9kYXRlIjoiMjAyNi0xMC0xMyAwMDowMDowMCIsInRyYW5zYWN0aW9ucy5pZCI6IjAxOTllM2IxLTNjNGQtN2U1Zi04YTYxLWMzZDRlNWY2YTdiOCIsIl9wb2ludHNUb05leHRJdGVtcyI6dHJ1ZX0',
+            'prev_cursor' => null,
+        ],
+    ];
 }
