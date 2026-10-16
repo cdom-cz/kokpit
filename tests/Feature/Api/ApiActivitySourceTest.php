@@ -147,3 +147,22 @@ it('logs a transaction created through the API with the source api and never log
         ->and($rows[0]->causer_id)->toBe($admin->getKey())
         ->and((string) json_encode($rows[0]))->not->toContain('Fictional private note');
 });
+
+it('logs an update and a delete of a transaction through the API with the source api', function (): void {
+    app()->instance(ActivitySource::class, new ActivitySource(fn (): bool => false));
+    $admin = ApiFixtures::admin();
+    $transaction = FinanceApiFixtures::transaction($admin);
+    $token = ApiFixtures::token($admin, ['finance:write']);
+
+    $this->withToken($token)->patchJson('/api/v1/transactions/'.$transaction->id, ['counterparty' => 'Demo Other Vendor'])->assertOk();
+    $this->withToken($token)->deleteJson('/api/v1/transactions/'.$transaction->id)->assertNoContent();
+
+    $updated = apiActivityRows($transaction->id, 'updated');
+    $deleted = apiActivityRows($transaction->id, 'deleted');
+
+    expect($updated)->not->toBeEmpty()
+        ->and(array_unique(array_column($updated, 'source')))->toBe(['api'])
+        ->and($deleted)->not->toBeEmpty()
+        ->and(array_unique(array_column($deleted, 'source')))->toBe(['api'])
+        ->and((string) json_encode([$updated, $deleted]))->not->toContain('Example licence');
+});

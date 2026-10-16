@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Tests\Support\ApiFixtures;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\FinanceApiFixtures;
@@ -322,5 +323,273 @@ describe('deleting a transaction', function (): void {
             ->deleteJson('/api/v1/transactions/'.Str::uuid()->toString())
             ->assertNotFound()
             ->assertJsonPath('message', __('api.errors.not_found'));
+    });
+});
+
+/**
+ * The errors of a refused write. Asserts the status and that the error keys are API field names: the Action keys
+ * `amount` and `czk_amount` must never reach the client (owner decision A2).
+ *
+ * @return array<string, list<string>>
+ */
+function txWriteRefused(TestResponse $response): array
+{
+    $response->assertUnprocessable();
+
+    /** @var array<string, list<string>> $errors */
+    $errors = $response->json('errors');
+
+    expect($errors)->not->toHaveKey('amount')->not->toHaveKey('czk_amount');
+
+    return $errors;
+}
+
+describe('the CZK figure of a created transaction', function (): void {
+    beforeEach(function (): void {
+        $this->token = ApiFixtures::token(ApiFixtures::admin(), ['finance:write']);
+        $this->post = fn (array $overrides) => $this->withToken($this->token)->postJson('/api/v1/transactions', txWriteBody($overrides));
+    });
+
+    it('books at an own rate, sent as a string or as a JSON number, with the transaction date as the rate date', function (): void {
+        $string = ($this->post)(['amount_minor' => 10000, 'currency' => 'EUR', 'exchange_rate' => '25.125'])->assertCreated()->json('data');
+        $number = ($this->post)(['amount_minor' => 10000, 'currency' => 'EUR', 'exchange_rate' => 25.125])->assertCreated()->json('data');
+
+        foreach ([$string, $number] as $data) {
+            expect($data['czk_source'])->toBe('custom')
+                ->and($data['czk_minor'])->toBe(251250)
+                ->and($data['exchange_rate'])->toBe('25.1250000000')
+                ->and($data['exchange_unit_amount'])->toBe(1)
+                ->and($data['exchange_rate_date'])->toBe('2026-10-14');
+        }
+    });
+
+    it('refuses a rate in exponent form and a rate of zero under exchange_rate', function (): void {
+        foreach ([0.00001, '0', '1e3', 'abc', ['25']] as $rate) {
+            $errors = txWriteRefused(($this->post)(['amount_minor' => 10000, 'currency' => 'EUR', 'exchange_rate' => $rate]));
+
+            expect($errors)->toHaveKey('exchange_rate');
+        }
+
+        expect(Transaction::query()->count())->toBe(0);
+    });
+
+    it('refuses a raw JSON rate written with an exponent under exchange_rate', function (): void {
+        $raw = '{"type":"expense","transaction_date":"2026-10-14","category_id":"'.FinanceApiFixtures::softwareCategory()->id
+            .'","amount_minor":10000,"currency":"EUR","exchange_rate":1.0E-5}';
+        $response = $this->call('POST', '/api/v1/transactions', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_AUTHORIZATION' => 'Bearer '.$this->token,
+        ], $raw);
+
+        expect(txWriteRefused($response))->toHaveKey('exchange_rate')
+            ->and(Transaction::query()->count())->toBe(0);
+    });
+
+    it('books a rate quoted per one hundred units', function (): void {
+        $data = ($this->post)(['amount_minor' => 10000, 'currency' => 'JPY', 'exchange_rate' => '16.000', 'exchange_unit_amount' => 100])->assertCreated()->json('data');
+
+        expect($data['exchange_unit_amount'])->toBe(100)
+            ->and($data['czk_source'])->toBe('custom')
+            ->and($data['czk_minor'])->toBe(160000);
+    });
+
+    it('books the figure of the bank as manual, without a rate snapshot', function (): void {
+        $data = ($this->post)(['amount_minor' => 10000, 'currency' => 'EUR', 'czk_amount_minor' => 252000])->assertCreated()->json('data');
+
+        expect($data['czk_source'])->toBe('manual')
+            ->and($data['czk_minor'])->toBe(252000)
+            ->and($data['exchange_rate'])->toBeNull()
+            ->and($data['exchange_unit_amount'])->toBeNull()
+            ->and($data['exchange_rate_date'])->toBeNull();
+
+        expect(txWriteRefused(($this->post)(['amount_minor' => 10000, 'currency' => 'EUR', 'czk_amount_minor' => -1])))->toHaveKey('czk_amount_minor');
+    });
+
+    it('takes the CNB rate when neither a rate nor a figure is sent, and asks for one when no rate is stored', function (): void {
+        FinanceApiFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+
+        $data = ($this->post)(['amount_minor' => 10000, 'currency' => 'EUR'])->assertCreated()->json('data');
+
+        expect($data['czk_source'])->toBe('cnb')
+            ->and($data['czk_minor'])->toBe(251250)
+            ->and($data['exchange_rate_date'])->toBe('2026-10-14');
+
+        // A rate list that starts after the day has nothing to offer.
+        $errors = txWriteRefused(($this->post)(['amount_minor' => 10000, 'currency' => 'EUR', 'transaction_date' => '2026-10-01']));
+
+        expect($errors)->toHaveKey('czk_amount_minor')
+            ->and($errors['czk_amount_minor'][0])->toContain('EUR');
+    });
+
+    it('refuses a rate together with a figure under exchange_rate and a unit amount alone under exchange_unit_amount', function (): void {
+        $both = txWriteRefused(($this->post)(['amount_minor' => 10000, 'currency' => 'EUR', 'exchange_rate' => '25.125', 'czk_amount_minor' => 252000]));
+        $unit = txWriteRefused(($this->post)(['amount_minor' => 10000, 'currency' => 'EUR', 'exchange_unit_amount' => 100, 'czk_amount_minor' => 252000]));
+
+        expect($both)->toHaveKey('exchange_rate')
+            ->and($both['exchange_rate'][0])->toBe(__('finance.transactions.errors.rate_with_czk_amount'))
+            ->and($unit)->toHaveKey('exchange_unit_amount');
+    });
+
+    it('accepts a currency without any CNB list with a rate or a figure and refuses it without, under currency', function (): void {
+        $custom = ($this->post)(['amount_minor' => 10000, 'currency' => 'ISK', 'exchange_rate' => '0.18'])->assertCreated()->json('data');
+        $manual = ($this->post)(['amount_minor' => 10000, 'currency' => 'ISK', 'czk_amount_minor' => 1800])->assertCreated()->json('data');
+
+        expect($custom['czk_source'])->toBe('custom')
+            ->and($manual['czk_source'])->toBe('manual');
+
+        foreach (['ISK', 'XYZ', 'eur', 'EURO', ''] as $currency) {
+            expect(txWriteRefused(($this->post)(['amount_minor' => 10000, 'currency' => $currency])))->toHaveKey('currency');
+        }
+    });
+
+    it('refuses a rate, a unit amount and a CZK figure on a CZK transaction, under the field that was sent', function (): void {
+        foreach ([['exchange_rate', '25'], ['exchange_unit_amount', 1], ['czk_amount_minor', 123450]] as [$field, $value]) {
+            $errors = txWriteRefused(($this->post)([$field => $value]));
+
+            expect($errors)->toHaveKey($field)
+                ->and($errors[$field][0])->toBe(__('api.errors.czk_needs_no_rate'));
+        }
+
+        expect(Transaction::query()->count())->toBe(0);
+    });
+
+    it('refuses an amount that is no integer, too large or overflows on conversion, under amount_minor', function (): void {
+        foreach ([12.5, 'abc', '12.5', true, [1]] as $amount) {
+            expect(txWriteRefused(($this->post)(['amount_minor' => $amount])))->toHaveKey('amount_minor');
+        }
+
+        // A raw JSON number above the largest integer arrives as a float and is no integer.
+        $raw = '{"type":"expense","transaction_date":"2026-10-14","category_id":"'.FinanceApiFixtures::softwareCategory()->id
+            .'","amount_minor":'.str_repeat('9', 25).',"currency":"CZK"}';
+        $response = $this->call('POST', '/api/v1/transactions', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_AUTHORIZATION' => 'Bearer '.$this->token,
+        ], $raw);
+
+        expect(txWriteRefused($response))->toHaveKey('amount_minor');
+
+        // The conversion of a large amount at a large rate does not fit into an integer.
+        $overflow = txWriteRefused(($this->post)(['amount_minor' => intdiv(PHP_INT_MAX, 10), 'currency' => 'EUR', 'exchange_rate' => '9999999999']));
+
+        expect($overflow)->toHaveKey('amount_minor');
+    });
+});
+
+describe('the references of a created transaction', function (): void {
+    beforeEach(function (): void {
+        $this->token = ApiFixtures::token(ApiFixtures::admin(), ['finance:write']);
+        $this->post = fn (array $overrides) => $this->withToken($this->token)->postJson('/api/v1/transactions', txWriteBody($overrides));
+    });
+
+    it('accepts a transaction without a client and a project', function (): void {
+        $data = ($this->post)([])->assertCreated()->json('data');
+
+        expect($data['client_id'])->toBeNull()
+            ->and($data['project_id'])->toBeNull();
+    });
+
+    it('refuses a project without a client and a project of another client, under project_id', function (): void {
+        $client = ApiFixtures::client();
+        $other = ApiFixtures::client();
+        $project = ApiFixtures::project($client, 'DEMO');
+
+        $without = txWriteRefused(($this->post)(['project_id' => $project->id]));
+        $foreign = txWriteRefused(($this->post)(['client_id' => $other->id, 'project_id' => 'DEMO']));
+
+        expect($without)->toHaveKey('project_id')
+            ->and($without['project_id'][0])->toBe(__('finance.transactions.errors.project_not_of_client'))
+            ->and($foreign)->toHaveKey('project_id')
+            ->and($foreign['project_id'][0])->toBe(__('finance.transactions.errors.project_not_of_client'));
+    });
+
+    it('resolves a project key to the project UUID of the client', function (): void {
+        $client = ApiFixtures::client();
+        $project = ApiFixtures::project($client, 'DEMO');
+
+        $data = ($this->post)(['client_id' => $client->id, 'project_id' => 'DEMO'])->assertCreated()->json('data');
+
+        expect($data['client_id'])->toBe($client->id)
+            ->and($data['project_id'])->toBe($project->id);
+    });
+
+    it('refuses a client, a category and a project given by name, under their own field', function (): void {
+        $client = ApiFixtures::client();
+        ApiFixtures::project($client, 'DEMO');
+
+        foreach ([
+            ['client_id', $client->name],
+            ['category_id', 'Software'],
+            ['project_id', 'Example project'],
+        ] as [$field, $value]) {
+            $errors = txWriteRefused(($this->post)([$field => $value]));
+
+            expect($errors)->toHaveKey($field);
+        }
+    });
+
+    it('refuses an archived category, a category of the other type and an archived project, with the messages of the panel', function (): void {
+        $archived = FinanceApiFixtures::softwareChild();
+        DB::table('transaction_categories')->where('id', $archived->id)->update(['archived_at' => '2026-10-10 08:00:00+00']);
+
+        $category = txWriteRefused(($this->post)(['category_id' => $archived->id]));
+        $mismatch = txWriteRefused(($this->post)(['category_id' => FinanceApiFixtures::incomeCategory()->id]));
+
+        $client = ApiFixtures::client();
+        $project = ApiFixtures::project($client, 'DEMO');
+        DB::table('projects')->where('id', $project->id)->update(['deleted_at' => '2026-10-10 08:00:00+00']);
+        $gone = txWriteRefused(($this->post)(['client_id' => $client->id, 'project_id' => $project->id]));
+
+        expect($category['category_id'][0])->toBe(__('finance.transactions.errors.category_unavailable'))
+            ->and($mismatch['category_id'][0])->toBe(__('finance.transactions.errors.category_type_mismatch'))
+            ->and($gone['project_id'][0])->toBe(__('finance.transactions.errors.project_unavailable'));
+    });
+});
+
+describe('smuggled keys', function (): void {
+    beforeEach(function (): void {
+        $this->admin = ApiFixtures::admin();
+        $this->token = ApiFixtures::token($this->admin, ['finance:write']);
+        $this->smuggled = [
+            'id' => Str::uuid()->toString(),
+            'czk_source' => 'manual',
+            'czk_minor' => 1,
+            'czk_manual' => true,
+            'created_at' => '2000-01-01T00:00:00+00:00',
+            'updated_at' => '2000-01-01T00:00:00+00:00',
+            'amount' => '1.00',
+            'czk_amount' => '1.00',
+            'exchange_rate_date' => '2000-01-01',
+            'unknown_key' => 'x',
+        ];
+    });
+
+    it('never reach the Action on create: the row keeps its own values', function (): void {
+        $data = $this->withToken($this->token)->postJson('/api/v1/transactions', txWriteBody($this->smuggled))->assertCreated()->json('data');
+
+        expect($data['id'])->not->toBe($this->smuggled['id'])
+            ->and($data['czk_source'])->toBe('identity')
+            ->and($data['czk_minor'])->toBe(123450)
+            ->and($data['amount_minor'])->toBe(123450)
+            ->and($data['created_at'])->not->toStartWith('2000')
+            ->and(DB::table('transactions')->where('id', $this->smuggled['id'])->exists())->toBeFalse();
+    });
+
+    it('never reach the Action on update: the figure and the timestamps are untouched', function (): void {
+        FinanceApiFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $transaction = FinanceApiFixtures::transaction($this->admin, ['amount' => '100,00', 'currency' => 'EUR']);
+
+        $data = $this->withToken($this->token)
+            ->patchJson('/api/v1/transactions/'.$transaction->id, [...$this->smuggled, 'description' => 'Example smuggle'])
+            ->assertOk()
+            ->json('data');
+
+        expect($data['id'])->toBe($transaction->id)
+            ->and($data['description'])->toBe('Example smuggle')
+            ->and($data['czk_source'])->toBe('cnb')
+            ->and($data['czk_minor'])->toBe(251250)
+            ->and($data['amount_minor'])->toBe(10000)
+            ->and($data['created_at'])->not->toStartWith('2000');
     });
 });
