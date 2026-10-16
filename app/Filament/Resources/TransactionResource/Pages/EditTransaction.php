@@ -72,7 +72,8 @@ final class EditTransaction extends EditRecord
                     try {
                         app(DeleteTransaction::class)->handle($actor, $record);
                     } catch (RuntimeException $e) {
-                        // A stored receipt object could not be removed: nothing was deleted. Reported without the path.
+                        // The database refused the delete: nothing was deleted, the receipts and their objects stay. A refused
+                        // object after the commit never gets here (it is queued); the report carries no path.
                         report($e);
 
                         return false;

@@ -6,6 +6,7 @@ use App\Domain\Clients\Actions\ArchiveClient;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Actions\AttachDocuments;
 use App\Domain\Documents\Enums\DocumentOwnerType;
+use App\Domain\Documents\Jobs\RemoveDocumentObjects;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Support\DocumentOwnerResolver;
 use App\Domain\Finance\Actions\DeleteTransaction;
@@ -27,6 +28,7 @@ use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Exceptions;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Features\SupportTesting\Testable;
@@ -202,6 +204,25 @@ function receiptObjectPaths(array $documents): array
     );
 }
 
+/**
+ * Replaces the faked private disk by one that throws when the object at the path is deleted, as the s3 disk does.
+ */
+function receiptRefuseDelete(string $path): void
+{
+    $real = Storage::disk('local');
+    $failing = Mockery::mock($real)->makePartial();
+
+    $failing->shouldReceive('delete')->andReturnUsing(static function (mixed $target) use ($real, $path): bool {
+        if ($target === $path) {
+            throw new RuntimeException('Fictional disk failure.');
+        }
+
+        return $real->delete($target);
+    });
+
+    Storage::set('local', $failing);
+}
+
 describe('receipts follow the client and project of their transaction', function (): void {
     it('moves both receipts to the new client and no project when the transaction changes', function (): void {
         $clientA = Client::factory()->create();
@@ -310,46 +331,59 @@ describe('deleting a transaction deletes its receipts', function (): void {
             ->and(Document::query()->whereKey($kept[0]->id)->exists())->toBeTrue();
     });
 
-    it('keeps the transaction and the receipt that cannot be removed when an object stays, and reports the error', function (): void {
+    it('deletes the transaction and both receipts and queues the object the disk refused after the commit (WR-01)', function (): void {
         $transaction = receiptTransaction();
         $documents = attachReceipts($transaction, 2);
         $paths = receiptObjectPaths($documents);
-        $stuck = $paths[1];
 
-        $real = Storage::disk('local');
-        $failing = Mockery::mock($real)->makePartial();
-        $failing->shouldReceive('delete')->andReturnUsing(static function (mixed $target) use ($real, $stuck): bool {
-            if ($target === $stuck) {
-                throw new RuntimeException('Fictional disk failure.');
-            }
+        receiptRefuseDelete($paths[1]);
+        Exceptions::fake();
+        Queue::fake();
 
-            return $real->delete($target);
-        });
-        Storage::set('local', $failing);
+        app(DeleteTransaction::class)->handle($this->admin, $transaction);
 
-        expect(fn () => app(DeleteTransaction::class)->handle($this->admin, $transaction))->toThrow(RuntimeException::class);
+        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeFalse()
+            ->and(Document::query()->count())->toBe(0)
+            ->and(receiptObjectPaths($documents))->toBe([])
+            ->and(Storage::disk('local')->exists($paths[0]))->toBeFalse()
+            ->and(Storage::disk('local')->exists($paths[1]))->toBeTrue();
 
-        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeTrue()
-            ->and(Storage::disk('local')->exists($stuck))->toBeTrue()
-            ->and(Document::query()->whereKey($documents[1]->id)->exists())->toBeTrue();
+        Queue::assertPushed(RemoveDocumentObjects::class, 1);
+        Queue::assertPushed(RemoveDocumentObjects::class, static fn (RemoveDocumentObjects $job): bool => $job->objects === [['disk' => 'local', 'path' => $paths[1]]]);
+        Exceptions::assertNotReported(static fn (Throwable $e): bool => str_contains($e->getMessage(), $paths[1]));
     });
 
-    it('tells the Admin the transaction was not deleted when an object cannot be removed', function (): void {
+    it('keeps the transaction, every receipt, every media row and every object when the transaction row cannot be deleted (WR-01)', function (): void {
+        $transaction = receiptTransaction();
+        $documents = attachReceipts($transaction, 2);
+        $paths = receiptObjectPaths($documents);
+
+        Transaction::deleting(static function (): void {
+            throw new RuntimeException('Fictional database refusal.');
+        });
+        Queue::fake();
+
+        expect(fn () => app(DeleteTransaction::class)->handle($this->admin, $transaction))->toThrow(RuntimeException::class, 'Fictional database refusal.');
+
+        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeTrue()
+            ->and(Document::query()->count())->toBe(2)
+            ->and(receiptObjectPaths($documents))->toHaveCount(2)
+            ->and(Storage::disk('local')->exists($paths[0]))->toBeTrue()
+            ->and(Storage::disk('local')->exists($paths[1]))->toBeTrue();
+
+        Queue::assertNothingPushed();
+    });
+
+    it('tells the Admin the transaction was not deleted when the database refuses, and keeps the receipt with its object (WR-01)', function (): void {
         $transaction = receiptTransaction();
         [$document] = attachReceipts($transaction);
-        $stuck = receiptObjectPaths([$document])[0];
+        $path = receiptObjectPaths([$document])[0];
 
-        $real = Storage::disk('local');
-        $failing = Mockery::mock($real)->makePartial();
-        $failing->shouldReceive('delete')->andReturnUsing(static function (mixed $target) use ($real, $stuck): bool {
-            if ($target === $stuck) {
-                throw new RuntimeException('Fictional disk failure.');
-            }
-
-            return $real->delete($target);
+        Transaction::deleting(static function (): void {
+            throw new RuntimeException('Fictional database refusal.');
         });
-        Storage::set('local', $failing);
         Exceptions::fake();
+        Queue::fake();
 
         Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
             ->callAction(DeleteAction::class)
@@ -358,7 +392,33 @@ describe('deleting a transaction deletes its receipts', function (): void {
 
         Exceptions::assertReported(RuntimeException::class);
 
-        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeTrue();
+        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeTrue()
+            ->and(Document::query()->whereKey($document->id)->exists())->toBeTrue()
+            ->and(receiptObjectPaths([$document]))->toHaveCount(1)
+            ->and(Storage::disk('local')->exists($path))->toBeTrue();
+
+        Queue::assertNothingPushed();
+    });
+
+    it('confirms the delete and queues the removal when only a receipt object is refused (WR-01)', function (): void {
+        $transaction = receiptTransaction();
+        [$document] = attachReceipts($transaction);
+        $path = receiptObjectPaths([$document])[0];
+
+        receiptRefuseDelete($path);
+        Exceptions::fake();
+        Queue::fake();
+
+        Livewire::test(EditTransaction::class, ['record' => $transaction->getKey()])
+            ->callAction(DeleteAction::class)
+            ->assertNotified(__('finance.transactions.notifications.deleted'))
+            ->assertRedirect(TransactionResource::getUrl('index'));
+
+        expect(Transaction::query()->whereKey($transaction->getKey())->exists())->toBeFalse()
+            ->and(Document::query()->whereKey($document->id)->exists())->toBeFalse()
+            ->and(Storage::disk('local')->exists($path))->toBeTrue();
+
+        Queue::assertPushed(RemoveDocumentObjects::class, 1);
     });
 });
 

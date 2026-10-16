@@ -146,7 +146,7 @@ return [
             'created' => 'Transakce byla uložena.',
             'saved' => 'Transakce byla uložena.',
             'deleted' => 'Transakce byla smazána.',
-            'delete_failed' => 'Transakci se nepodařilo smazat, uložený soubor dokladu nelze odstranit. Zkuste to znovu.',
+            'delete_failed' => 'Transakci se nepodařilo smazat. Zkuste to znovu.',
         ],
         'receipts' => [
             'relation_title' => 'Doklady',
