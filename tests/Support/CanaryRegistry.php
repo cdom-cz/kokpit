@@ -257,18 +257,29 @@ final class CanaryRegistry
                 });
             },
 
-            // The visible file of the canary project of that client (found by name; the Project fixture runs
-            // before this one), attached through the real Action by an Admin. The canary is the file name, so a
-            // Partner reading any document would be caught. A Partner reads exactly this one row.
+            // Five files that all carry the canary in their name. The visible file of the canary project of
+            // that client (found by name; the Project and TaskComment fixtures run before this one) is attached
+            // through the real Action by an Admin. It has four hidden twins that a Partner must never read: a
+            // hidden file of the same project, a file of the internal canary comment flagged visible by a system
+            // forceFill (the CHECK allows it, only the scope drops it), a client-owned file and an unattached
+            // file. The exact-one-row check fails if any twin is ever returned.
             Document::class => static function (string $clientId, string $canary): void {
                 app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
                     $project = Project::query()->where('client_id', $clientId)->where('name', $canary)->firstOrFail();
+                    $task = Task::query()->where('project_id', $project->getKey())->firstOrFail();
+                    $internalComment = TaskComment::query()->where('task_id', $task->getKey())->where('is_internal', true)->firstOrFail();
+                    $admin = Canary::admin();
+                    $attach = app(AttachDocuments::class);
+                    $file = static fn (string $suffix) => DocumentFixtures::upload($canary.$suffix.'.txt', 'Fictional file content '.$canary.$suffix);
 
-                    app(AttachDocuments::class)->handle(
-                        Canary::admin(),
-                        $project,
-                        [DocumentFixtures::upload($canary.'.txt', 'Fictional file content '.$canary)],
-                    );
+                    $attach->handle($admin, $project, [$file('')]);
+                    $attach->handle($admin, $project, [$file('-hidden')], visibleToClient: false);
+
+                    $attach->handle($admin, $internalComment, [$file('-internal')])
+                        ->each(static fn (Document $document) => $document->forceFill(['visible_to_client' => true])->save());
+
+                    $attach->handle($admin, Client::query()->whereKey($clientId)->firstOrFail(), [$file('-client')]);
+                    $attach->handle($admin, null, [$file('-unattached')]);
                 });
             },
 

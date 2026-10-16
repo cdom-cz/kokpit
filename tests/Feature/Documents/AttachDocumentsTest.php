@@ -5,11 +5,15 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Actions\AttachDocuments;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Media;
+use App\Domain\Tasks\Actions\AddTaskComment;
+use App\Domain\Tasks\Actions\CreateTask;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
@@ -94,4 +98,90 @@ it('refuses a Partner and stores nothing', function (): void {
 
     expect(Document::query()->count())->toBe(0)
         ->and(app(PartnerContext::class)->runAsSystem(static fn () => Media::query()->count()))->toBe(0);
+});
+
+/**
+ * Attaches one fictional file and returns the single document.
+ */
+function attachOne(User $admin, ?Model $owner, ?bool $visible = null): Document
+{
+    /** @var Document */
+    return app(AttachDocuments::class)->handle($admin, $owner, [DocumentFixtures::upload()], $visible)->firstOrFail();
+}
+
+it('gives a task file and a subtask file the client and project of the task and shows them by default', function (): void {
+    $project = documentProject();
+    $task = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example parent task']);
+    $subtask = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example subtask'], $task);
+
+    foreach ([$task, $subtask] as $owner) {
+        $document = attachOne($this->admin, $owner);
+
+        expect($document->owner_type)->toBe('task')
+            ->and($document->owner_id)->toBe($owner->getKey())
+            ->and($document->client_id)->toBe($project->client_id)
+            ->and($document->project_id)->toBe($project->getKey())
+            ->and($document->visible_to_client)->toBeTrue();
+    }
+});
+
+it('gives the file of a non-internal comment the project of its task and shows it by default', function (): void {
+    $project = documentProject();
+    $task = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example task']);
+    $comment = app(AddTaskComment::class)->handle($this->admin, $task, '<p>Example comment</p>');
+
+    $document = attachOne($this->admin, $comment);
+
+    expect($document->owner_type)->toBe('task_comment')
+        ->and($document->owner_id)->toBe($comment->getKey())
+        ->and($document->client_id)->toBe($project->client_id)
+        ->and($document->project_id)->toBe($project->getKey())
+        ->and($document->visible_to_client)->toBeTrue();
+});
+
+it('stores the file of an internal comment hidden even when the caller asks for visible (D-20)', function (): void {
+    $project = documentProject();
+    $task = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example task']);
+    $comment = app(AddTaskComment::class)->handle($this->admin, $task, '<p>Example internal note</p>', internal: true);
+
+    expect(attachOne($this->admin, $comment)->visible_to_client)->toBeFalse()
+        ->and(attachOne($this->admin, $comment, true)->visible_to_client)->toBeFalse();
+});
+
+it('gives a client file the client only and keeps it hidden even when the caller asks for visible (D-03)', function (): void {
+    $client = Client::factory()->create();
+
+    foreach ([null, true] as $visible) {
+        $document = attachOne($this->admin, $client, $visible);
+
+        expect($document->owner_type)->toBe('client')
+            ->and($document->owner_id)->toBe($client->getKey())
+            ->and($document->client_id)->toBe($client->getKey())
+            ->and($document->project_id)->toBeNull()
+            ->and($document->visible_to_client)->toBeFalse();
+    }
+});
+
+it('stores an unattached file with no owner, client or project and hidden', function (): void {
+    foreach ([null, true] as $visible) {
+        $document = attachOne($this->admin, null, $visible);
+
+        expect($document->owner_type)->toBeNull()
+            ->and($document->owner_id)->toBeNull()
+            ->and($document->client_id)->toBeNull()
+            ->and($document->project_id)->toBeNull()
+            ->and($document->visible_to_client)->toBeFalse();
+    }
+});
+
+it('lets the Admin hide a project file at upload (D-03)', function (): void {
+    expect(attachOne($this->admin, documentProject(), false)->visible_to_client)->toBeFalse();
+});
+
+it('refuses an owner of an unknown class and stores nothing', function (): void {
+    $contact = Client::factory()->create()->contacts()->create(['name' => 'Example contact', 'email' => exampleEmail()]);
+
+    expect(fn () => attachOne($this->admin, $contact))->toThrow(InvalidArgumentException::class);
+
+    expect(Document::query()->count())->toBe(0);
 });
