@@ -86,10 +86,16 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::FinanceRead->value, 
         ->name('api.v1.transaction-categories.show');
 });
 
-// Finance writes: POST routes (PATCH and DELETE follow), ability finance:write (D-01). The create carries the optional
+// Finance writes: POST, PATCH and DELETE routes, ability finance:write (D-01). The create carries the optional
 // Idempotency-Key like the time entry creates; it runs after the group's credential check, ability check and limit.
 Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::FinanceWrite->value, 'throttle:api-write'])->group(function (): void {
     Route::post('transactions', [TransactionController::class, 'store'])
         ->middleware(EnsureIdempotency::class)
         ->name('api.v1.transactions.store');
+    Route::patch('transactions/{transaction}', [TransactionController::class, 'update'])
+        ->whereUuid('transaction')
+        ->name('api.v1.transactions.update');
+    Route::delete('transactions/{transaction}', [TransactionController::class, 'destroy'])
+        ->whereUuid('transaction')
+        ->name('api.v1.transactions.destroy');
 });

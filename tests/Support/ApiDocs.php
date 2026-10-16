@@ -308,7 +308,7 @@ final class ApiDocs
             $responses = is_array($operation['responses'] ?? null) ? $operation['responses'] : [];
             $middleware = array_values(array_filter($route->gatherMiddleware(), is_string(...)));
 
-            $expected = [401, 403, 429, ...self::statusCodes($method, str_contains($route->uri(), '{'))];
+            $expected = [401, 403, 429, ...self::statusCodes($method, str_contains($route->uri(), '{'), $route->getControllerClass())];
             if (self::hasMiddleware($middleware, 'EnsureIdempotency')) {
                 $expected = [...$expected, 409, 422];
             }
@@ -370,15 +370,26 @@ final class ApiDocs
     /**
      * The status codes a method must document besides 401, 403 and 429.
      *
+     * PATCH and DELETE owe a 409 unless their controller declares `CONFLICT_METHODS` and leaves the method out of it:
+     * a controller that says nothing is checked exactly as before, and one that lists the methods which can conflict
+     * is held to that list only.
+     *
      * @return list<int>
      */
-    private static function statusCodes(string $method, bool $hasPathParameter): array
+    private static function statusCodes(string $method, bool $hasPathParameter, ?string $controller): array
     {
+        $conflicts = true;
+
+        if ($controller !== null && defined($controller.'::CONFLICT_METHODS')) {
+            $declared = constant($controller.'::CONFLICT_METHODS');
+            $conflicts = is_array($declared) && in_array($method, $declared, true);
+        }
+
         return match ($method) {
             'GET' => $hasPathParameter ? [200, 404] : [200, 422],
             'POST' => [201, 422],
-            'PATCH' => [200, 404, 409, 422],
-            'DELETE' => [204, 404, 409],
+            'PATCH' => $conflicts ? [200, 404, 409, 422] : [200, 404, 422],
+            'DELETE' => $conflicts ? [204, 404, 409] : [204, 404],
             default => [],
         };
     }

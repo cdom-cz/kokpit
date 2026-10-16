@@ -5,19 +5,26 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Domain\Api\ReferenceResolver;
+use App\Domain\Finance\Actions\DeleteTransaction;
 use App\Domain\Finance\Actions\RecordTransaction;
+use App\Domain\Finance\Actions\UpdateTransaction;
 use App\Domain\Finance\Models\Transaction;
+use App\Domain\Finance\Support\SqlState;
 use App\Domain\Identity\ApiAbility;
 use App\Domain\Identity\Models\User;
 use App\Http\Requests\Api\V1\ListTransactionsRequest;
 use App\Http\Requests\Api\V1\StoreTransactionRequest;
 use App\Http\Requests\Api\V1\TransactionPayload;
+use App\Http\Requests\Api\V1\UpdateTransactionRequest;
 use App\Http\Resources\Api\V1\TransactionResource;
+use App\Http\Responses\ApiError;
 use Illuminate\Contracts\Database\Query\Builder as QueryContract;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Validation\ValidationException;
 use Knuckles\Scribe\Attributes\Endpoint;
 use Knuckles\Scribe\Attributes\Group;
@@ -63,6 +70,13 @@ final class TransactionController
      * The tiebreaker of every sort and a key of every cursor of the list.
      */
     public const string ID_COLUMN = 'transactions.id';
+
+    /**
+     * The write methods of this controller that can answer 409. Deleting a transaction something else still refers
+     * to is a conflict; editing one is not, until a later phase locks a transaction that a payment turned into income.
+     * The documentation test requires a 409 response on every PATCH and DELETE that is not left out of this list.
+     */
+    public const array CONFLICT_METHODS = ['DELETE'];
 
     #[Endpoint(
         'List transactions',
@@ -195,6 +209,72 @@ final class TransactionController
             ->response()
             ->setStatusCode(201)
             ->header('Location', route('api.v1.transactions.show', $transaction->id));
+    }
+
+    #[Endpoint(
+        'Update a transaction',
+        'Requires ability `'.ApiAbility::FinanceWrite->value.'`. Edits a transaction through the same rules as the application. Send only the keys to change: an absent key keeps its value, and `null` clears `description`, `counterparty`, `document_number`, `client_id` and `project_id`. A project needs its client, so clearing the client of a transaction that keeps a project answers 422 under `project_id`. `currency` needs `amount_minor` in the same request, because an amount belongs to one currency; without it the answer is 422 under `amount_minor`. A transaction booked at an own rate keeps that rate when its amount changes: the CZK figure is recomputed at the stored rate. A changed currency drops the own rate and uses the Czech National Bank rate. To change how the CZK figure is fixed, send a new `exchange_rate` (a string) for an own rate or a new `czk_amount_minor` for the figure the bank used. `exchange_rate: null` drops an own rate, `czk_amount_minor: null` drops a bank figure, and both `null` return any transaction to the Czech National Bank rate; a `null` of a field the transaction does not use changes nothing. A transaction in CZK takes no rate and no CZK figure. Every 422 is keyed by the field names of this request.',
+    )]
+    #[UrlParam('id', 'string', 'Transaction UUID.', example: '0199e3b0-1a2b-7c3d-8e4f-a1b2c3d4e5f6')]
+    #[Response(TransactionExamples::TRANSACTION, 200, 'The transaction after the change.')]
+    #[ResponseField('data.id', 'string', 'UUID of the transaction.')]
+    #[ResponseField('data.type', 'string', 'income or expense.')]
+    #[ResponseField('data.transaction_date', 'string', 'Date of the transaction, YYYY-MM-DD.')]
+    #[ResponseField('data.category_id', 'string', 'UUID of the transaction category.')]
+    #[ResponseField('data.amount_minor', 'integer', 'Amount in minor units of the currency, always positive; the type gives the direction.')]
+    #[ResponseField('data.currency', 'string', 'ISO 4217 currency code of the amount.')]
+    #[ResponseField('data.czk_minor', 'integer', 'Amount in CZK, in haléře.')]
+    #[ResponseField('data.czk_source', 'string', 'How the CZK figure was booked: identity, cnb, manual or custom.')]
+    #[ResponseField('data.exchange_rate', 'string', 'Exchange rate as a decimal string, or null unless the source is cnb or custom.', nullable: true)]
+    #[ResponseField('data.exchange_unit_amount', 'integer', 'Units of the currency the rate is quoted for, or null unless the source is cnb or custom.', nullable: true)]
+    #[ResponseField('data.exchange_rate_date', 'string', 'Date of the rate, YYYY-MM-DD, or null unless the source is cnb or custom.', nullable: true)]
+    #[ResponseField('data.description', 'string', 'Free text, or null.', nullable: true)]
+    #[ResponseField('data.counterparty', 'string', 'The other party of the transaction, or null.', nullable: true)]
+    #[ResponseField('data.document_number', 'string', 'Number of the receipt or invoice, or null.', nullable: true)]
+    #[ResponseField('data.client_id', 'string', 'UUID of the client the transaction belongs to, or null.', nullable: true)]
+    #[ResponseField('data.project_id', 'string', 'UUID of the project the transaction belongs to, or null.', nullable: true)]
+    #[ResponseField('data.created_at', 'string', 'Creation instant, ISO 8601 in UTC.')]
+    #[ResponseField('data.updated_at', 'string', 'Last change instant, ISO 8601 in UTC.')]
+    #[Response(ApiExamples::NOT_FOUND, 404, 'No transaction has this UUID.')]
+    #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A field is not valid or the application refuses the change; the errors are keyed by field.')]
+    public function update(string $transaction, UpdateTransactionRequest $request, UpdateTransaction $update, ReferenceResolver $refs): TransactionResource
+    {
+        $stored = self::find($transaction);
+
+        try {
+            $changed = $update->handle(self::actor($request), $stored, TransactionPayload::forUpdate($request->validated(), $stored, $refs));
+        } catch (ValidationException $e) {
+            throw TransactionPayload::remap($e);
+        }
+
+        return new TransactionResource($changed);
+    }
+
+    #[Endpoint(
+        'Delete a transaction',
+        'Requires ability `'.ApiAbility::FinanceWrite->value.'`. Deletes a transaction for good, together with its receipts, and answers 204 without a body. The receipt files are not part of the API and cannot be recovered. A transaction that another record still refers to cannot be deleted: the answer is 409 with the code `transaction_in_use` and nothing is deleted.',
+    )]
+    #[UrlParam('id', 'string', 'Transaction UUID.', example: '0199e3b0-1a2b-7c3d-8e4f-a1b2c3d4e5f6')]
+    #[Response(null, 204, 'The transaction was deleted.')]
+    #[Response(ApiExamples::NOT_FOUND, 404, 'No transaction has this UUID.')]
+    #[Response(TransactionExamples::TRANSACTION_IN_USE, 409, 'Another record refers to the transaction, so it cannot be deleted (code `transaction_in_use`).')]
+    public function destroy(string $transaction, Request $request, DeleteTransaction $delete): JsonResponse|HttpResponse
+    {
+        $stored = self::find($transaction);
+
+        try {
+            $delete->handle(self::actor($request), $stored);
+        } catch (QueryException $e) {
+            // The database refused the delete: a foreign key or the frozen-row guard. Any other fault, a lost
+            // connection or a deadlock for example, is no "in use" and stays a server error.
+            if (! in_array(SqlState::of($e), [SqlState::FOREIGN_KEY, SqlState::FROZEN_ROW], true)) {
+                throw $e;
+            }
+
+            return ApiError::conflict('transaction_in_use', __('api.errors.transaction_in_use'));
+        }
+
+        return response()->noContent();
     }
 
     /**

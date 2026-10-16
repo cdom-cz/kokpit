@@ -124,4 +124,12 @@ final class TransactionExamples
             'prev_cursor' => null,
         ],
     ];
+
+    /**
+     * The answer to deleting a transaction that another record still refers to.
+     */
+    public const array TRANSACTION_IN_USE = [
+        'message' => 'Transakci nelze smazat, protože na ni odkazuje jiný záznam.',
+        'code' => 'transaction_in_use',
+    ];
 }

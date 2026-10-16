@@ -126,6 +126,47 @@ it('requires the query parameters a list controller declares and the Idempotency
     expect(ApiDocs::violations([$route], $spec))->toBe([]);
 });
 
+it('requires a 409 on PATCH and DELETE unless the controller declares which methods can conflict', function (): void {
+    $declared = new class
+    {
+        public const array CONFLICT_METHODS = ['DELETE'];
+
+        public function update(): void {}
+
+        public function destroy(): void {}
+    };
+    $undeclared = new class
+    {
+        public function update(): void {}
+    };
+    $spec = static fn (string $path, string $method, array $statuses): array => [
+        'paths' => [$path => [$method => [
+            'description' => 'Requires ability `finance:write`.',
+            'parameters' => [],
+            'responses' => array_fill_keys($statuses, []),
+        ]]],
+    ];
+
+    $patch = Route::middleware(['abilities:finance:write'])->patch('api/v1/probe-declared/{id}', [$declared::class, 'update']);
+    $delete = Route::middleware(['abilities:finance:write'])->delete('api/v1/probe-declared/{id}', [$declared::class, 'destroy']);
+    $plain = Route::middleware(['abilities:finance:write'])->patch('api/v1/probe-undeclared/{id}', [$undeclared::class, 'update']);
+
+    // A controller that leaves PATCH out of CONFLICT_METHODS needs no 409 there ...
+    expect(ApiDocs::violations([$patch], $spec('/api/v1/probe-declared/{id}', 'patch', [200, 401, 403, 404, 422, 429])))->toBe([])
+        // ... but still owes one on DELETE ...
+        ->and(ApiDocs::violations([$delete], $spec('/api/v1/probe-declared/{id}', 'delete', [204, 401, 403, 404, 429])))->toBe(['DELETE /api/v1/probe-declared/{id} documents no 409 response'])
+        // ... and a controller without the constant is checked exactly as before.
+        ->and(ApiDocs::violations([$plain], $spec('/api/v1/probe-undeclared/{id}', 'patch', [200, 401, 403, 404, 422, 429])))->toBe(['PATCH /api/v1/probe-undeclared/{id} documents no 409 response']);
+});
+
+it('documents the status codes of the transaction PATCH and DELETE', function (): void {
+    $patch = ApiDocs::operation(Route::getRoutes()->getByName('api.v1.transactions.update'));
+    $delete = ApiDocs::operation(Route::getRoutes()->getByName('api.v1.transactions.destroy'));
+
+    expect($patch['responses'])->toHaveKeys([200, 404, 422])->not->toHaveKey(409)
+        ->and($delete['responses'])->toHaveKeys([204, 404, 409]);
+});
+
 it('publishes the page assets and no Try It Out script', function (): void {
     expect(glob(public_path('vendor/scribe/css/*')))->not->toBeEmpty()
         ->and(glob(public_path('vendor/scribe/js/*')))->not->toBeEmpty()
@@ -169,6 +210,8 @@ it('pins the routes of the API, no more and no fewer', function (): void {
         'POST /api/v1/time-entries',
         'POST /api/v1/time-entries/batch',
         'POST /api/v1/transactions',
+        'PATCH /api/v1/transactions/{transaction}',
+        'DELETE /api/v1/transactions/{transaction}',
         'PATCH /api/v1/time-entries/{timeEntry}',
         'DELETE /api/v1/time-entries/{timeEntry}',
     ];
