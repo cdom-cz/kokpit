@@ -15,6 +15,7 @@ use App\Filament\Partner\Resources\PartnerTaskResource\Pages\CreatePartnerTask;
 use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ListPartnerTasks;
 use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ViewPartnerTask;
 use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerTaskCommentsRelationManager;
+use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerTaskDocumentsRelationManager;
 use App\Filament\Support\TaskColumns;
 use Closure;
 use Filament\Forms\Components\RichEditor;
@@ -181,12 +182,13 @@ final class PartnerTaskResource extends Resource
     }
 
     /**
-     * The only relation of the Partner task page: the non-internal comments.
+     * The relations of the Partner task page: the non-internal comments and the shared files.
      */
     public static function getRelations(): array
     {
         return [
             PartnerTaskCommentsRelationManager::class,
+            PartnerTaskDocumentsRelationManager::class,
         ];
     }
 
