@@ -5,7 +5,22 @@ declare(strict_types=1);
 use App\Support\ProductionConfigGuard;
 use Illuminate\Config\Repository;
 
-function guardConfig(bool $requireAdminTwoFactor, bool $canaryHarness = false, mixed $activityLog = true, mixed $queueDefault = 'redis', mixed $mailDefault = 'smtp', mixed $appUrl = 'https://kokpit.example.com', mixed $cacheDefault = 'redis'): Repository
+/**
+ * The disks every production fixture below holds: the private bucket 's3', a second disk with the s3
+ * driver under another name, and the local disk of one container.
+ *
+ * @return array<string, array<string, string>>
+ */
+function guardDisks(): array
+{
+    return [
+        'local' => ['driver' => 'local'],
+        's3' => ['driver' => 's3'],
+        'archive' => ['driver' => 's3'],
+    ];
+}
+
+function guardConfig(bool $requireAdminTwoFactor, bool $canaryHarness = false, mixed $activityLog = true, mixed $queueDefault = 'redis', mixed $mailDefault = 'smtp', mixed $appUrl = 'https://kokpit.example.com', mixed $cacheDefault = 'redis', mixed $temporaryDisk = 's3', mixed $defaultDisk = 'local'): Repository
 {
     return new Repository([
         'kokpit' => [
@@ -17,6 +32,8 @@ function guardConfig(bool $requireAdminTwoFactor, bool $canaryHarness = false, m
         'mail' => ['default' => $mailDefault],
         'app' => ['url' => $appUrl],
         'cache' => ['default' => $cacheDefault],
+        'filesystems' => ['default' => $defaultDisk, 'disks' => guardDisks()],
+        'livewire' => ['temporary_file_upload' => ['disk' => $temporaryDisk]],
     ]);
 }
 
@@ -57,7 +74,7 @@ it('allows the canary harness outside production', function (): void {
 });
 
 it('treats a missing canary setting as off in production', function (): void {
-    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true], 'activitylog' => ['enabled' => true], 'queue' => ['default' => 'redis'], 'mail' => ['default' => 'smtp'], 'app' => ['url' => 'https://kokpit.example.com'], 'cache' => ['default' => 'redis']]));
+    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true], 'activitylog' => ['enabled' => true], 'queue' => ['default' => 'redis'], 'mail' => ['default' => 'smtp'], 'app' => ['url' => 'https://kokpit.example.com'], 'cache' => ['default' => 'redis'], 'filesystems' => ['default' => 'local', 'disks' => guardDisks()], 'livewire' => ['temporary_file_upload' => ['disk' => 's3']]]));
 
     expect(true)->toBeTrue();
 });
@@ -185,3 +202,44 @@ it('allows the array cache store outside production', function (): void {
 it('treats a missing cache setting as not redis in production', function (): void {
     ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true], 'activitylog' => ['enabled' => true], 'queue' => ['default' => 'redis'], 'mail' => ['default' => 'smtp'], 'app' => ['url' => 'https://kokpit.example.com']]));
 })->throws(RuntimeException::class, 'CACHE_STORE');
+
+it('throws in production when the temporary upload disk is not a bucket disk', function (mixed $disk): void {
+    ProductionConfigGuard::check(true, guardConfig(true, temporaryDisk: $disk));
+})->with([
+    'the local disk of one container' => 'local',
+    'a disk that is not configured' => 'missing',
+    'a disk name that is not a string' => 5,
+])->throws(RuntimeException::class, 'LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK');
+
+it('allows production with the private bucket as temporary upload disk', function (): void {
+    ProductionConfigGuard::check(true, guardConfig(true, temporaryDisk: 's3'));
+
+    expect(true)->toBeTrue();
+});
+
+it('checks the driver of the temporary upload disk, not its name', function (): void {
+    ProductionConfigGuard::check(true, guardConfig(true, temporaryDisk: 'archive'));
+
+    expect(true)->toBeTrue();
+});
+
+it('falls back to the default disk like Livewire when the temporary upload disk is empty', function (): void {
+    ProductionConfigGuard::check(true, guardConfig(true, temporaryDisk: null, defaultDisk: 's3'));
+    ProductionConfigGuard::check(true, guardConfig(true, temporaryDisk: '', defaultDisk: 's3'));
+
+    expect(true)->toBeTrue();
+});
+
+it('refuses an empty temporary upload disk when the default disk is local', function (mixed $disk): void {
+    ProductionConfigGuard::check(true, guardConfig(true, temporaryDisk: $disk, defaultDisk: 'local'));
+})->with([null, ''])->throws(RuntimeException::class, 'LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK');
+
+it('allows the local temporary upload disk outside production', function (): void {
+    ProductionConfigGuard::check(false, guardConfig(true, temporaryDisk: 'local'));
+
+    expect(true)->toBeTrue();
+});
+
+it('treats a missing temporary upload setting as not a bucket in production', function (): void {
+    ProductionConfigGuard::check(true, new Repository(['kokpit' => ['require_admin_two_factor' => true], 'activitylog' => ['enabled' => true], 'queue' => ['default' => 'redis'], 'mail' => ['default' => 'smtp'], 'app' => ['url' => 'https://kokpit.example.com'], 'cache' => ['default' => 'redis']]));
+})->throws(RuntimeException::class, 'LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK');
