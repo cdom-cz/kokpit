@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources;
 
+use App\Domain\Finance\Actions\ArchiveTransactionCategory;
+use App\Domain\Finance\Actions\DeleteTransactionCategory;
+use App\Domain\Finance\Actions\MoveTransactionCategory;
 use App\Domain\Finance\Actions\SaveTransactionCategory;
 use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\TransactionCategory;
@@ -13,6 +16,9 @@ use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Database\CzechCollation;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Resources\TransactionCategoryResource\Pages\ListTransactionCategories;
+use DomainException;
+use Filament\Actions\Action;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -213,10 +219,88 @@ final class TransactionCategoryResource extends Resource
                             throw self::underModal($e);
                         }
                     }),
+                Action::make('moveUp')
+                    ->label(__('finance.categories.actions.move_up'))
+                    ->tooltip(__('finance.categories.actions.move_up'))
+                    ->icon(Heroicon::OutlinedArrowUp)
+                    ->iconButton()
+                    ->action(static function (Model $record): void {
+                        assert($record instanceof TransactionCategory);
+
+                        app(MoveTransactionCategory::class)->handle(self::actor(), $record, MoveTransactionCategory::UP);
+                    }),
+                Action::make('moveDown')
+                    ->label(__('finance.categories.actions.move_down'))
+                    ->tooltip(__('finance.categories.actions.move_down'))
+                    ->icon(Heroicon::OutlinedArrowDown)
+                    ->iconButton()
+                    ->action(static function (Model $record): void {
+                        assert($record instanceof TransactionCategory);
+
+                        app(MoveTransactionCategory::class)->handle(self::actor(), $record, MoveTransactionCategory::DOWN);
+                    }),
+                // The system category is renamed and moved only: the database refuses the rest, so the
+                // screen does not offer archive or delete for it.
+                Action::make('archive')
+                    ->label(__('finance.categories.actions.archive'))
+                    ->icon(Heroicon::OutlinedArchiveBox)
+                    ->color('gray')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('finance.categories.actions.archive_heading'))
+                    ->modalDescription(__('finance.categories.actions.archive_description'))
+                    ->successNotificationTitle(__('finance.categories.notifications.archived'))
+                    ->hidden(static fn (Model $record): bool => $record instanceof TransactionCategory && ($record->is_system || $record->isArchived()))
+                    ->action(static fn (Model $record, Action $action) => self::archive($record, true, $action)),
+                Action::make('restore')
+                    ->label(__('finance.categories.actions.restore'))
+                    ->icon(Heroicon::OutlinedArrowUturnLeft)
+                    ->color('gray')
+                    ->successNotificationTitle(__('finance.categories.notifications.restored'))
+                    ->visible(static fn (Model $record): bool => $record instanceof TransactionCategory && ! $record->is_system && $record->isArchived())
+                    ->action(static fn (Model $record, Action $action) => self::archive($record, false, $action)),
+                DeleteAction::make()
+                    ->label(__('finance.categories.actions.delete'))
+                    ->modalHeading(__('finance.categories.actions.delete_heading'))
+                    ->modalDescription(__('finance.categories.actions.delete_description'))
+                    ->successNotificationTitle(__('finance.categories.notifications.deleted'))
+                    ->hidden(static fn (Model $record): bool => $record instanceof TransactionCategory && $record->is_system)
+                    ->using(static function (Model $record, DeleteAction $action): bool {
+                        assert($record instanceof TransactionCategory);
+
+                        try {
+                            app(DeleteTransactionCategory::class)->handle(self::actor(), $record);
+                        } catch (DomainException $e) {
+                            // A used category stays: say why in a danger notification and suggest archiving.
+                            $action->failureNotificationTitle($e->getMessage());
+
+                            return false;
+                        }
+
+                        return true;
+                    }),
             ])
             ->emptyStateIcon(Heroicon::OutlinedTag)
             ->emptyStateHeading(__('finance.categories.empty.heading'))
             ->emptyStateDescription(__('finance.categories.empty.description'));
+    }
+
+    /**
+     * Archives or restores a row; the system category is refused by the Action and shown as a danger notification.
+     */
+    private static function archive(Model $record, bool $archive, Action $action): void
+    {
+        assert($record instanceof TransactionCategory);
+
+        try {
+            app(ArchiveTransactionCategory::class)->handle(self::actor(), $record, $archive);
+        } catch (DomainException $e) {
+            $action->failureNotificationTitle($e->getMessage());
+            $action->failure();
+
+            return;
+        }
+
+        $action->success();
     }
 
     /**
