@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\ApiAbility;
+use App\Domain\Shared\Auth\PartnerContext;
 use Filament\Facades\Filament;
 use Illuminate\Pagination\Cursor;
 use Illuminate\Routing\Route as LaravelRoute;
@@ -86,7 +88,12 @@ it('finds at least one api/v1 route, so the walk is not vacuous', function (): v
  */
 function apiWalkProblems(array $routes): array
 {
-    $limits = [ApiAbility::TimeRead->value => 'throttle:api-read', ApiAbility::TimeWrite->value => 'throttle:api-write'];
+    $limits = [
+        ApiAbility::TimeRead->value => 'throttle:api-read',
+        ApiAbility::TimeWrite->value => 'throttle:api-write',
+        ApiAbility::FinanceRead->value => 'throttle:api-read',
+        ApiAbility::FinanceWrite->value => 'throttle:api-write',
+    ];
     $problems = [];
 
     foreach ($routes as $route) {
@@ -241,6 +248,25 @@ describe('with canaries of two clients seeded', function (): void {
 
         expect($body)->toContain($this->canaryA)
             ->and($body)->toContain($this->canaryB);
+    });
+
+    it('lets a finance:read token read the transaction canary of a client by UUID', function (): void {
+        $id = app(PartnerContext::class)->runAsSystem(
+            fn (): string => Transaction::query()->where('counterparty', $this->canaryA)->sole()->id,
+        );
+
+        $response = $this->withToken(ApiFixtures::token(Canary::admin(), [ApiAbility::FinanceRead->value]))
+            ->getJson('/api/v1/transactions/'.$id)
+            ->assertOk();
+
+        expect(array_keys($response->json('data')))->toBe([
+            'id', 'type', 'transaction_date', 'category_id', 'amount_minor', 'currency', 'czk_minor', 'czk_source',
+            'exchange_rate', 'exchange_unit_amount', 'exchange_rate_date', 'description', 'counterparty',
+            'document_number', 'client_id', 'project_id', 'created_at', 'updated_at',
+        ])
+            ->and($response->json('data.id'))->toBe($id)
+            ->and($response->getContent())->toContain($this->canaryA)
+            ->and($response->getContent())->not->toContain($this->canaryB);
     });
 
     it('answers a guest 401 on every api/v1 route and leaks no canary', function (): void {

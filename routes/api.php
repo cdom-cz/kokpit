@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TimeEntryBatchController;
 use App\Http\Controllers\Api\V1\TimeEntryController;
+use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Middleware\EnsureIdempotency;
 use Illuminate\Support\Facades\Route;
 
@@ -18,7 +19,8 @@ use Illuminate\Support\Facades\Route;
  * ApiServiceProvider and config/sanctum.php) carrying the ability of its group, and
  * is rate limited per token (throttle:api-read or throttle:api-write). A route added
  * to a group inherits all three, so there is no route without a credential check, an
- * ability check and a limit.
+ * ability check and a limit. There is one group per ability and never a finance route
+ * in a time group or the reverse (D-01).
  */
 
 // Reads: GET routes, ability time:read.
@@ -63,4 +65,12 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeWrite->value, 't
     Route::delete('time-entries/{timeEntry}', [TimeEntryController::class, 'destroy'])
         ->whereUuid('timeEntry')
         ->name('api.v1.time-entries.destroy');
+});
+
+// Finance reads: GET routes, ability finance:read (D-01). Transactions and categories are Admin-only data;
+// a Partner token is refused with 401 by the token guard.
+Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::FinanceRead->value, 'throttle:api-read'])->group(function (): void {
+    Route::get('transactions/{transaction}', [TransactionController::class, 'show'])
+        ->whereUuid('transaction')
+        ->name('api.v1.transactions.show');
 });

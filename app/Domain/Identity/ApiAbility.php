@@ -16,6 +16,8 @@ enum ApiAbility: string implements HasLabel
 {
     case TimeRead = 'time:read';
     case TimeWrite = 'time:write';
+    case FinanceRead = 'finance:read';
+    case FinanceWrite = 'finance:write';
 
     /**
      * The Czech label shown on the token screen, one place for the list badges and the create options.
