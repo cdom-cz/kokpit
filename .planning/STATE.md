@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-13-PLAN.md
-last_updated: "2026-10-16T15:08:41.319Z"
+stopped_at: Completed 09-14-PLAN.md
+last_updated: "2026-10-16T15:29:46.617Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 58e09bbb87c984738ef7fa7b3252fb64b4120d3f
+state_head: dd96b3e12c55a112a1321dce772e5720e12747cb
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 164
+  completed_plans: 165
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 18 of 24
+Plan: 19 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -226,6 +226,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P23 | 25 min | 2 tasks | 10 files |
 | Phase 09 P12 | 14 min | 3 tasks | 8 files |
 | Phase 09 P13 | 40 min | 3 tasks | 13 files |
+| Phase 09 P14 | 17 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -546,6 +547,9 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-12: component methods taking a document id re-read through the scoped query limited to this task's comment files (UUID check first), so a foreign or internal id is a 404
 - [Phase 09]: 09-13: a receipt keeps the client and project of its transaction; UpdateTransaction moves them by one query in the same DB transaction, DeleteTransaction deletes receipts through DeleteDocument under the transaction row lock
 - [Phase 09]: 09-13: DocumentOwnerDeletionTest guards that clients, projects and tasks are archived only, comments are append-only and only a transaction deletes files; archive and restore never touch objects (D-21)
+- [Phase 09]: 09-14: client and uploader sorts of the central documents listing use an aliased leftJoin plus CzechCollation::orderBy (a collation cannot wrap a subselect through the helper)
+- [Phase 09]: 09-14: every filter of the central listing accepts only a known value and otherwise narrows nothing; archived_owners defaults to false (files of active owners) and the blank option shows all files
+- [Phase 09]: 09-14: bulkDelete reads its selection in chunks of 100 (chunkSelectedRecords) and counts files gone before they were read as failed
 
 ### Pending Todos
 
@@ -596,6 +600,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T15:08:40.383Z
-Stopped at: Completed 09-13-PLAN.md
+Last session: 2026-10-16T15:29:45.705Z
+Stopped at: Completed 09-14-PLAN.md
 Resume file: None
