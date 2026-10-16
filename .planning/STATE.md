@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-10-16T11:28:02.845Z"
+stopped_at: Completed 09-03-PLAN.md
+last_updated: "2026-10-16T11:39:35.085Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 697d969fe68819174136e5d67dc3fb9ae8ded1f1
+state_head: 3da7616e7b63421caf01c650535521b02a90d4f3
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 149
+  completed_plans: 150
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 3 of 24
+Plan: 4 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -211,6 +211,7 @@ Progress: [██████░░░░] 58%
 | Phase 08 P27 | 25min | 2 tasks | 5 files |
 | Phase 09 P01 | 25 min | 3 tasks | 14 files |
 | Phase 09 P02 | 30 min | 3 tasks | 10 files |
+| Phase 09 P03 | 30 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -505,6 +506,8 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-01: owner resolution re-reads the owner as system under a shared lock, archived rows included; stored visibility is shareable and (requested or owner default) — A stale instance must not yield a wrong client; the CHECK documents_visible_owner_check is only the backstop
 - [Phase 09]: 09-02: Only UploadedFile instances reach AttachDocuments storage; every upload is copied to a local file bounded at the size limit and its MIME type comes from finfo on that copy, never from the declared type or bucket metadata
 - [Phase 09]: 09-02: Disallowed extensions stay the media-library package list (D-06); the plan's x.exe example was replaced by archive.phar in tests
+- [Phase 09]: 09-03: Every document download and preview is streamed by the app through the signed, user-bound route filament.admin.files.document (120 s TTL); no redirect to a presigned bucket URL, so nosniff and no bucket host in responses
+- [Phase 09]: 09-03: Only png, jpeg, gif, webp and pdf are inline and only on request; every other type, SVG and HTML included, is an octet-stream attachment; Partner view grant is deferred to plan 09-08 (403 until then)
 
 ### Pending Todos
 
@@ -555,6 +558,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T11:28:02.432Z
-Stopped at: Completed 09-02-PLAN.md
+Last session: 2026-10-16T11:39:34.642Z
+Stopped at: Completed 09-03-PLAN.md
 Resume file: None
