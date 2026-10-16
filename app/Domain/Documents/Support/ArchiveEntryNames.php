@@ -67,7 +67,9 @@ final class ArchiveEntryNames
     /**
      * The name made distinct from every name this instance handed out before, case-insensitively: the first
      * keeps its name, the later ones get ` (2)`, ` (3)` before the extension. A number is skipped when a name
-     * with it is already taken.
+     * with it is already taken. Every name handed out, a numbered one included, gets its own counter, so a later
+     * document named exactly like a generated name is numbered from it (`a (2) (2).pdf`) instead of failing on
+     * a counter that was never set.
      */
     public function unique(string $name): string
     {
@@ -87,15 +89,17 @@ final class ArchiveEntryNames
             [, $stem, $suffix] = $matches;
         }
 
-        $number = $this->counts[$key];
+        $number = $this->counts[$key] ?? 1;
 
         do {
             $number++;
             $candidate = $stem.' ('.$number.')'.$suffix;
-        } while (isset($this->taken[mb_strtolower($candidate)]));
+            $candidateKey = mb_strtolower($candidate);
+        } while (isset($this->taken[$candidateKey]));
 
         $this->counts[$key] = $number;
-        $this->taken[mb_strtolower($candidate)] = true;
+        $this->taken[$candidateKey] = true;
+        $this->counts[$candidateKey] = 1;
 
         return $candidate;
     }

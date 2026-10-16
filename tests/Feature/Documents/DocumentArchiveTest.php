@@ -556,6 +556,69 @@ describe('the entry names and the limits of the job', function (): void {
         $zip->close();
     });
 
+    it('builds the queued ZIP of a.pdf, a.pdf and a (2).pdf with three distinct entries and only the ready bell (CR-01)', function (): void {
+        $contents = [
+            implode(' ', ['Fictional', 'first', 'plain', 'a']),
+            implode(' ', ['Fictional', 'second', 'plain', 'a']),
+            implode(' ', ['Fictional', 'numbered', 'a']),
+        ];
+        $first = archiveFile('a.pdf', $contents[0]);
+        $second = archiveFile('a.pdf', $contents[1]);
+        $numbered = archiveFile('a (2).pdf', $contents[2]);
+
+        expect([$first->name, $second->name, $numbered->name])->toBe(['a.pdf', 'a.pdf', 'a (2).pdf']);
+
+        // No Queue::fake(): the sync connection runs the job like a worker, with its middleware and failed().
+        $archive = app(RequestDocumentArchive::class)->handle($this->admin, [$first->getKey(), $second->getKey(), $numbered->getKey()]);
+        $bell = archiveBell($this->admin);
+        $titles = array_column($bell, 'title');
+
+        $zip = new ZipArchive;
+        expect(archiveRecord($archive->getKey())->status)->toBe(DocumentArchiveStatus::Ready)
+            ->and($zip->open(Storage::disk()->path($archive->storagePath())))->toBeTrue();
+
+        expect($zip->numFiles)->toBe(3)
+            ->and($zip->getFromName('a.pdf'))->toBe($contents[0])
+            ->and($zip->getFromName('a (2).pdf'))->toBe($contents[1])
+            ->and($zip->getFromName('a (2) (2).pdf'))->toBe($contents[2])
+            ->and($bell)->toHaveCount(1)
+            ->and($titles)->toBe([__('documents.archives.bell.ready.title')])
+            ->and($titles)->not->toContain(__('documents.archives.bell.failed.title'));
+
+        $zip->close();
+    });
+
+    it('builds the queued ZIP of the reverse order a (2).pdf, a.pdf, a.pdf (CR-01)', function (): void {
+        $contents = [
+            implode(' ', ['Fictional', 'numbered', 'a']),
+            implode(' ', ['Fictional', 'first', 'plain', 'a']),
+            implode(' ', ['Fictional', 'second', 'plain', 'a']),
+        ];
+        $numbered = archiveFile('a (2).pdf', $contents[0]);
+        $first = archiveFile('a.pdf', $contents[1]);
+        $second = archiveFile('a.pdf', $contents[2]);
+
+        expect([$numbered->name, $first->name, $second->name])->toBe(['a (2).pdf', 'a.pdf', 'a.pdf']);
+
+        $archive = app(RequestDocumentArchive::class)->handle($this->admin, [$numbered->getKey(), $first->getKey(), $second->getKey()]);
+        $bell = archiveBell($this->admin);
+        $titles = array_column($bell, 'title');
+
+        $zip = new ZipArchive;
+        expect(archiveRecord($archive->getKey())->status)->toBe(DocumentArchiveStatus::Ready)
+            ->and($zip->open(Storage::disk()->path($archive->storagePath())))->toBeTrue();
+
+        expect($zip->numFiles)->toBe(3)
+            ->and($zip->getFromName('a (2).pdf'))->toBe($contents[0])
+            ->and($zip->getFromName('a.pdf'))->toBe($contents[1])
+            ->and($zip->getFromName('a (3).pdf'))->toBe($contents[2])
+            ->and($bell)->toHaveCount(1)
+            ->and($titles)->toBe([__('documents.archives.bell.ready.title')])
+            ->and($titles)->not->toContain(__('documents.archives.bell.failed.title'));
+
+        $zip->close();
+    });
+
     it('writes no entry name with a separator or a parent segment, even for a name stored that way', function (): void {
         $document = archiveFile('plain-example.txt', 'Fictional plain');
         // Stored names are cleaned on upload, but the job must not rely on that.
