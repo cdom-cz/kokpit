@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: "09.1"
 current_phase_name: Transactions API (INSERTED)
 status: executing
-stopped_at: Completed 09.1-04-PLAN.md
-last_updated: "2026-10-16T22:26:39.286Z"
+stopped_at: Completed 09.1-05-PLAN.md
+last_updated: "2026-10-16T22:42:02.161Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09.1 execution started
-state_head: a7c0e1811dfba998c4f911c676db34bd31b5e1d2
+state_head: 547a17c9edb796fac545a680c92c445418dabd91
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 223
-  completed_plans: 179
+  completed_plans: 180
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09.1 (Transactions API (INSERTED)) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09.1 execution started
 
@@ -241,6 +241,7 @@ Progress: [█████░░░░░] 54%
 | Phase 09.1 P02 | 35 min | 2 tasks | 12 files |
 | Phase 09.1 P03 | 20 min | 2 tasks | 3 files |
 | Phase 09.1 P04 | 10 min | 3 tasks | 5 files |
+| Phase 09.1 P05 | 45 min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -586,6 +587,9 @@ Recent decisions affecting current work:
 - [Phase 09.1]: 09.1-03: the create-modal ability labels are asserted through the CheckboxList component (assertSchemaComponentExists), because assertSee cannot see a mounted action modal; no production change was needed for the finance token screen
 - [Phase 09.1]: [09.1-04] Edit rule of a custom transaction: typed CZK figure -> manual; typed own rate -> custom; stored manual keeps; stored custom with czk_manual absent follows the sticky rate (amount: stored rate/unit/rate date, currency: CNB, date-only: keep); a cleared rate recomputes a custom row through CNB only
 - [Phase 09.1]: [09.1-04] The Admin UI keeps sending czk_manual false: amount/date/currency change of a custom row stores cnb, any other edit keeps the own rate; the kept state is decided by TransactionResource::customKept()
+- [Phase 09.1]: Transaction list sort amount orders by czk_minor (SORT_COLUMNS maps public names to ORDER BY columns) so currencies compare
+- [Phase 09.1]: ApiCursor DATE accepts Y-m-d and Y-m-d 00:00:00, INTEGER accepts only a JSON integer; a forged cursor of any list sort answers 422
+- [Phase 09.1]: Category archived flag is true for an archived category or a child of an archived parent; categories stay read-only over the API
 
 ### Pending Todos
 
@@ -641,6 +645,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T22:26:38.445Z
-Stopped at: Completed 09.1-04-PLAN.md
+Last session: 2026-10-16T22:42:01.319Z
+Stopped at: Completed 09.1-05-PLAN.md
 Resume file: None
