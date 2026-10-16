@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 09
 current_phase_name: Documents and Finance
 status: executing
-stopped_at: Completed 09-09-PLAN.md
-last_updated: "2026-10-16T13:02:01.036Z"
+stopped_at: Completed 09-07-PLAN.md
+last_updated: "2026-10-16T13:19:48.681Z"
 last_activity: 2026-10-16
 last_activity_desc: Phase 09 execution started
-state_head: 92ccacb67eeb8240faded319eb94afe2028733f9
+state_head: 0f8c2add163218c87307a9e2f68dec4ceb9469c7
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 171
-  completed_plans: 156
+  completed_plans: 157
   percent: 58
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 10 of 24
+Plan: 11 of 24
 Status: Ready to execute
 Last activity: 2026-10-16 — Phase 09 execution started
 
@@ -218,6 +218,7 @@ Progress: [██████░░░░] 58%
 | Phase 09 P05 | 40 min | 3 tasks | 14 files |
 | Phase 09 P06 | 25 min | 3 tasks | 10 files |
 | Phase 09 P09 | 12 min | 2 tasks | 10 files |
+| Phase 09 P07 | 35 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -523,6 +524,9 @@ Recent decisions affecting current work:
 - [Phase 09]: 09-06: creating a child takes its parent's type; moving an existing category never retypes it by itself (a parent of another type is parent_invalid); the edit modal sends the chosen parent's type
 - [Phase 09]: 09-06: category refusals of archive and delete are field-less DomainException (danger notification), save refusals are field errors; 23503 maps to in_use or type_locked, KP001 to system_locked; used-by-transactions relies on the 09-09 foreign keys until then
 - [Phase 09]: 09-09: added an index on transactions.project_id and used withTrashed() on the client and project relations of Transaction
+- [Phase 09]: 09-07: DeleteDocument verifies each stored object is gone after the Eloquent delete (the medialibrary remover swallows disk errors) and rolls back otherwise
+- [Phase 09]: 09-07: the client visibility switch is decided per file (project, task and non-internal comment files), also on the client tab
+- [Phase 09]: 09-07: bulk delete counts the selection from the selection state, not from getSelectedTableRecords(false), which Filament caches
 
 ### Pending Todos
 
@@ -573,6 +577,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T13:02:00.482Z
-Stopped at: Completed 09-09-PLAN.md
+Last session: 2026-10-16T13:19:48.117Z
+Stopped at: Completed 09-07-PLAN.md
 Resume file: None
