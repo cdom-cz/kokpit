@@ -9,6 +9,7 @@ use App\Domain\Projects\EstimateHours;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Tasks\Actions\ClearEscalation;
+use App\Domain\Tasks\Actions\ToggleTaskChecklistItem;
 use App\Domain\Tasks\Billing\BillingSource;
 use App\Domain\Tasks\Billing\EffectiveBilling;
 use App\Domain\Tasks\Billing\TaskBillingResolver;
@@ -19,6 +20,7 @@ use App\Domain\TimeTracking\Support\DurationFormat;
 use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Resources\TaskResource;
 use App\Filament\Resources\TimeEntryResource;
+use App\Filament\Support\TaskColumns;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
@@ -26,8 +28,10 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -72,9 +76,66 @@ final class ViewTask extends ViewRecord
 
         return $schema->components([
             ...$components,
+            $this->checklistSection(),
             $this->effectiveBillingSection(),
             $this->timeSection(),
         ]);
+    }
+
+    /**
+     * The private checklist of the task (TA-03): one checkbox per item, ticked in place. Checked for
+     * the Admin before anything is read, like the billing and time sections, and shown only when the
+     * task has at least one item (the counts are the ones the progress entry already caches). Adding,
+     * editing and removing items stays on the edit page.
+     */
+    private function checklistSection(): Section
+    {
+        return Section::make(__('kokpit.tasks.checklist.heading'))
+            ->columnSpanFull()
+            ->visible(static fn (Task $record): bool => app(PartnerContext::class)->isAdmin()
+                && TaskColumns::checklistProgress($record) !== null)
+            ->schema([
+                View::make('filament.tasks.checklist')
+                    ->viewData(function (): array {
+                        $task = $this->getRecord();
+                        assert($task instanceof Task);
+
+                        return [
+                            'items' => $task->checklistItems()->get(),
+                            'readOnly' => $task->trashed(),
+                        ];
+                    }),
+            ]);
+    }
+
+    /**
+     * Ticks or unticks one checklist item. /livewire/update is public and the page authorizes only
+     * on mount, so the method checks the access itself, and the item id is client-controlled: the
+     * Action refuses a malformed, unknown or foreign id (404) and an archived task (a notification).
+     * The target state is passed, not a flip, so a repeated call changes nothing.
+     */
+    public function toggleChecklistItem(string $itemId, bool $done): void
+    {
+        abort_unless(TaskResource::canAccess(), 403);
+
+        $task = $this->getRecord();
+        assert($task instanceof Task);
+
+        $actor = auth()->user();
+        assert($actor instanceof User);
+
+        try {
+            app(ToggleTaskChecklistItem::class)->handle($actor, $task, $itemId, $done);
+        } catch (ModelNotFoundException) {
+            abort(404);
+        } catch (ValidationException $e) {
+            Notification::make()->danger()->title((string) collect($e->errors())->flatten()->first())->send();
+
+            return;
+        }
+
+        // The progress entry of the same response shows the new done/total.
+        $task->loadCount(TaskColumns::checklistCounts());
     }
 
     /**

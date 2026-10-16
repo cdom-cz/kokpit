@@ -1044,6 +1044,7 @@ return [
             'not_escalated' => 'Úkol není eskalovaný.',
             'description_stale' => 'Popis mezitím změnil někdo jiný. Zavřete okno a otevřete ho znovu, ať vidíte aktuální znění.',
             'description_not_editable' => 'Popis lze upravit jen u úkolu ve stavu Plánovaný nebo K upřesnění. Stav úkolu se mezitím změnil.',
+            'checklist_archived' => 'Úkol je archivovaný, kontrolní seznam nelze měnit. Nejdřív úkol obnovte.',
         ],
         'empty_value' => '—',
         'escalation' => [
