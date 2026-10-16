@@ -8,6 +8,7 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Actions\AttachDocuments;
 use App\Domain\Documents\Actions\DeleteDocument;
 use App\Domain\Documents\Actions\RenameDocument;
+use App\Domain\Documents\Jobs\RemoveDocumentObjects;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Support\DocumentOwnerResolver;
 use App\Domain\Finance\Actions\DeleteTransaction;
@@ -27,7 +28,9 @@ use App\Domain\Tasks\Actions\RestoreTask;
 use App\Domain\Tasks\Models\Task;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Pipeline\Pipeline;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
@@ -185,6 +188,17 @@ function consistencyAttach(User $admin, ?Model $owner, string $name): Document
         ->firstOrFail());
 }
 
+/**
+ * Runs a queued removal job like a worker does: through its own middleware.
+ */
+function consistencyRunQueued(RemoveDocumentObjects $job): void
+{
+    (new Pipeline(app()))
+        ->send($job)
+        ->through($job->middleware())
+        ->then(static fn (RemoveDocumentObjects $job): mixed => app()->call($job->handle(...)));
+}
+
 beforeEach(function (): void {
     DocumentFixtures::fakeDisk();
 
@@ -337,5 +351,97 @@ describe('the check names every kind of drift', function (): void {
         consistencySystem(static fn () => DB::table('documents')->where('id', $document->getKey())->update(['project_id' => null]));
 
         expect(consistencyViolations())->toBe(["document {$document->getKey()} has a client or project that differs from its owner"]);
+    });
+});
+
+describe('the delete paths keep the stores consistent (WR-01)', function (): void {
+    it('stays consistent when a transaction delete rolls back after its receipts went (WR-01)', function (): void {
+        $category = TransactionCategory::query()->where('type', 'expense')->whereNull('parent_id')->where('name', 'Software')->sole();
+        $transaction = app(RecordTransaction::class)->handle($this->admin, [
+            'type' => 'expense',
+            'transaction_date' => '2026-10-14',
+            'category_id' => $category->getKey(),
+            'amount' => '100,00',
+            'currency' => 'CZK',
+        ]);
+
+        consistencyAttach($this->admin, $transaction, 'first-receipt-example.txt');
+        consistencyAttach($this->admin, $transaction, 'second-receipt-example.txt');
+
+        $before = consistencyCounts();
+
+        expect($before['documents'])->toBe(2)
+            ->and(consistencyViolations())->toBe([]);
+
+        Queue::fake();
+        Transaction::deleting(static function (): void {
+            throw new RuntimeException('Fictional database refusal.');
+        });
+
+        expect(fn () => app(DeleteTransaction::class)->handle($this->admin, $transaction->refresh()))
+            ->toThrow(RuntimeException::class, 'Fictional database refusal.')
+            ->and(consistencyCounts())->toBe($before)
+            ->and(consistencyViolations())->toBe([]);
+
+        Queue::assertNotPushed(RemoveDocumentObjects::class);
+    });
+
+    it('stays consistent when an enclosing transaction rolls back after a file was deleted (WR-01)', function (): void {
+        $client = Client::factory()->create();
+        $project = app(CreateProject::class)->handle($client, ['name' => 'Example consistency project', 'key' => 'ENC', 'billing_type' => 'hourly', 'client_visible' => true]);
+        $document = consistencyAttach($this->admin, $project, 'enclosed-example.txt');
+
+        $before = consistencyCounts();
+
+        Queue::fake();
+
+        expect(fn () => DB::transaction(function () use ($document): void {
+            app(DeleteDocument::class)->handle($this->admin, $document);
+
+            throw new RuntimeException('Fictional enclosing failure.');
+        }))->toThrow(RuntimeException::class, 'Fictional enclosing failure.')
+            ->and(consistencyCounts())->toBe($before)
+            ->and(consistencyViolations())->toBe([]);
+
+        Queue::assertNotPushed(RemoveDocumentObjects::class);
+    });
+
+    it('names the object a refused removal leaves and is clean again once the queued removal ran (WR-01)', function (): void {
+        $client = Client::factory()->create();
+        $project = app(CreateProject::class)->handle($client, ['name' => 'Example consistency project', 'key' => 'REF', 'billing_type' => 'hourly', 'client_visible' => true]);
+        $document = consistencyAttach($this->admin, $project, 'refused-example.txt');
+        $media = consistencySystem(static fn (): Media => Media::query()->where('model_id', $document->getKey())->sole());
+        $path = $media->getPathRelativeToRoot();
+
+        Queue::fake();
+
+        $real = Storage::disk('local');
+        $refusing = Mockery::mock($real)->makePartial();
+        $refusing->shouldReceive('delete')->andReturnUsing(static function (mixed $target) use ($real, $path): bool {
+            if ($target === $path) {
+                throw new RuntimeException('Fictional disk failure.');
+            }
+
+            return $real->delete($target);
+        });
+        Storage::set('local', $refusing);
+
+        app(DeleteDocument::class)->handle($this->admin, $document);
+
+        expect(consistencyViolations())->toBe(["object {$path} has no media row"]);
+
+        // The disk works again; the queued job removes exactly the object that was left.
+        Storage::set('local', $real);
+
+        Queue::assertPushed(RemoveDocumentObjects::class, 1);
+
+        $job = Queue::pushed(RemoveDocumentObjects::class)->sole();
+
+        expect($job->objects)->toBe([['disk' => 'local', 'path' => $path]]);
+
+        consistencyRunQueued($job);
+
+        expect(consistencyViolations())->toBe([])
+            ->and(Storage::disk('local')->exists($path))->toBeFalse();
     });
 });
