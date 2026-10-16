@@ -7,13 +7,20 @@ namespace App\Domain\Documents\Jobs;
 use App\Domain\Documents\Enums\DocumentArchiveStatus;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Models\DocumentArchive;
+use App\Domain\Documents\Notifications\DocumentArchiveFailedNotification;
+use App\Domain\Documents\Notifications\DocumentArchiveReadyNotification;
+use App\Domain\Identity\Models\User;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\TimeTracking\Support\TimerClock;
+use App\Filament\Resources\DocumentArchiveResource;
+use App\Providers\LocalisationServiceProvider;
 use Illuminate\Queue\Attributes\Timeout;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
+use Throwable;
 use ZipStream\ZipStream;
 
 /**
@@ -29,7 +36,7 @@ use ZipStream\ZipStream;
  *
  * The files go in as the requested ids list them, under the display name of the document. A document deleted
  * after the request is left out; a request none of whose files can be read fails. Safe entry names, the second
- * check of the limits, failure handling and the bells are plan 09-19.
+ * check of the limits and the entry names are plan 09-19; the bells and the failure handling are in place.
  */
 #[Idempotent(how: 'identified by the archive id; a record that is not pending is skipped and the file path is the archive id, so a rerun overwrites the same object instead of adding another')]
 #[Timeout(240)]
@@ -37,6 +44,9 @@ final class BuildDocumentArchive extends KokpitJob
 {
     /** How many documents are read from the database at once. */
     private const int CHUNK = 50;
+
+    /** The time zone the dates of the notices are shown in. */
+    private const string DISPLAY_TIMEZONE = 'Europe/Prague';
 
     public function __construct(public readonly string $archiveId) {}
 
@@ -56,7 +66,7 @@ final class BuildDocumentArchive extends KokpitJob
         }
 
         try {
-            $this->write($archive, $temporary);
+            $added = $this->write($archive, $temporary);
             $this->store($archive, $temporary);
         } finally {
             if (is_file($temporary)) {
@@ -64,7 +74,7 @@ final class BuildDocumentArchive extends KokpitJob
             }
         }
 
-        DB::transaction(function () use ($archive): void {
+        DB::transaction(function () use ($archive, $added): void {
             $locked = DocumentArchive::query()->whereKey($archive->getKey())->lockForUpdate()->first();
 
             if ($locked === null || $locked->status !== DocumentArchiveStatus::Pending) {
@@ -72,15 +82,52 @@ final class BuildDocumentArchive extends KokpitJob
             }
 
             $locked->markReady($locked->storagePath(), TimerClock::now());
+
+            User::query()->find($locked->user_id)?->notifyNow(new DocumentArchiveReadyNotification(
+                count: $added,
+                expiresOn: $locked->expires_at->setTimezone(self::DISPLAY_TIMEZONE)->format(LocalisationServiceProvider::DATE_FORMAT),
+                url: DocumentArchiveResource::getUrl('index'),
+            ));
         });
     }
 
     /**
-     * Streams the requested documents into the ZIP file, in the order of the request.
+     * The build failed for good: the record is marked failed and the owner is told in the bell. A record that is
+     * gone or no longer pending is left alone. The job middleware does not wrap this method, so the system
+     * context is entered here.
+     */
+    public function failed(Throwable $exception): void
+    {
+        app(PartnerContext::class)->runAsSystem(function (): void {
+            $this->giveUp($this->archiveId);
+        });
+    }
+
+    /**
+     * Marks a still pending record failed and sends the failure bell in one transaction.
+     */
+    private function giveUp(string $archiveId): void
+    {
+        DB::transaction(function () use ($archiveId): void {
+            $locked = DocumentArchive::query()->whereKey($archiveId)->lockForUpdate()->first();
+
+            if ($locked === null || $locked->status !== DocumentArchiveStatus::Pending) {
+                return;
+            }
+
+            $locked->markFailed();
+
+            User::query()->find($locked->user_id)?->notifyNow(new DocumentArchiveFailedNotification(DocumentArchiveResource::getUrl('index')));
+        });
+    }
+
+    /**
+     * Streams the requested documents into the ZIP file, in the order of the request, and returns how many were
+     * added.
      *
      * @throws RuntimeException when the file cannot be opened or no document could be added
      */
-    private function write(DocumentArchive $archive, string $file): void
+    private function write(DocumentArchive $archive, string $file): int
     {
         $output = fopen($file, 'wb');
 
@@ -114,6 +161,8 @@ final class BuildDocumentArchive extends KokpitJob
         } finally {
             fclose($output);
         }
+
+        return $added;
     }
 
     /**

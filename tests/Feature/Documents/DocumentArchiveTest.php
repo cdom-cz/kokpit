@@ -9,14 +9,19 @@ use App\Domain\Documents\Enums\DocumentArchiveStatus;
 use App\Domain\Documents\Jobs\BuildDocumentArchive;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Models\DocumentArchive;
+use App\Domain\Documents\Notifications\DocumentArchiveFailedNotification;
+use App\Domain\Documents\Notifications\DocumentArchiveReadyNotification;
 use App\Domain\Identity\Models\User;
+use App\Filament\Resources\DocumentArchiveResource;
 use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
 use App\Filament\Support\DocumentColumns;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Pipeline\Pipeline;
 use Illuminate\Queue\Attributes\Timeout;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -106,6 +111,21 @@ function archiveRefusal(array $ids): ?string
     }
 
     return null;
+}
+
+/**
+ * The bell entries of a user as decoded arrays, newest first.
+ *
+ * @return list<array<string, mixed>>
+ */
+function archiveBell(User $user): array
+{
+    return DB::table('notifications')
+        ->where('notifiable_id', $user->getKey())
+        ->orderByDesc('created_at')
+        ->get()
+        ->map(static fn (object $row): array => json_decode((string) $row->data, true, 512, JSON_THROW_ON_ERROR))
+        ->all();
 }
 
 beforeEach(function (): void {
@@ -432,5 +452,93 @@ describe('the build job', function (): void {
 
         expect($timeout)->toHaveCount(1)
             ->and($timeout[0]->newInstance()->timeout)->toBeLessThan(300);
+    });
+});
+
+describe('the bells', function (): void {
+    it('rings one bell for the requesting Admin with the count, the expiry day and a link to the archives list', function (): void {
+        $archive = archivePending([
+            archiveFile('first-bell-example.txt', 'Fictional first'),
+            archiveFile('second-bell-example.txt', 'Fictional second'),
+        ]);
+        $otherAdmin = Canary::admin();
+        $partner = Canary::partnerFor((string) Client::factory()->create()->getKey());
+
+        archiveRun($archive->getKey());
+
+        $ready = archiveRecord($archive->getKey());
+        $bell = archiveBell($this->admin);
+
+        expect($bell)->toHaveCount(1)
+            ->and($bell[0]['title'])->toBe(__('documents.archives.bell.ready.title'))
+            ->and($bell[0]['body'])->toBe(trans_choice('documents.archives.bell.ready.body', 2, [
+                'count' => 2,
+                'date' => $ready->expires_at->setTimezone('Europe/Prague')->format('j. n. Y'),
+            ]))
+            ->and($bell[0]['body'])->toContain('2 soubory')
+            ->and($bell[0]['actions'][0]['url'])->toBe(DocumentArchiveResource::getUrl('index'))
+            ->and($bell[0]['actions'][0]['url'])->toEndWith('/admin/document-archives')
+            ->and(archiveBell($otherAdmin))->toBe([])
+            ->and(archiveBell($partner))->toBe([]);
+    });
+
+    it('sends the failure bell and marks the record failed when the queue gives up on the job', function (): void {
+        $archive = archivePending([archiveFile('broken-bell-example.txt', 'Fictional broken')]);
+        Storage::disk()->deleteDirectory('');
+        $otherAdmin = Canary::admin();
+
+        expect(fn () => archiveRun($archive->getKey()))->toThrow(RuntimeException::class)
+            ->and(archiveBell($this->admin))->toBe([]);
+
+        // The worker calls failed() once the attempts are used up.
+        (new BuildDocumentArchive($archive->getKey()))->failed(new RuntimeException('gave up'));
+
+        $bell = archiveBell($this->admin);
+
+        expect(archiveRecord($archive->getKey())->status)->toBe(DocumentArchiveStatus::Failed)
+            ->and($bell)->toHaveCount(1)
+            ->and($bell[0]['title'])->toBe(__('documents.archives.bell.failed.title'))
+            ->and($bell[0]['body'])->toBe(__('documents.archives.bell.failed.body'))
+            ->and($bell[0]['actions'][0]['url'])->toBe(DocumentArchiveResource::getUrl('index'))
+            ->and(archiveBell($otherAdmin))->toBe([]);
+    });
+
+    it('leaves a ready or missing record alone when a late failure arrives', function (): void {
+        $archive = archivePending([archiveFile('late-bell-example.txt', 'Fictional late')]);
+        archiveRun($archive->getKey());
+
+        (new BuildDocumentArchive($archive->getKey()))->failed(new RuntimeException('late'));
+        (new BuildDocumentArchive((string) Str::uuid()))->failed(new RuntimeException('gone'));
+
+        expect(archiveRecord($archive->getKey())->status)->toBe(DocumentArchiveStatus::Ready)
+            ->and(archiveBell($this->admin))->toHaveCount(1);
+    });
+
+    it('sends no bell when the transaction that marks the record ready rolls back', function (): void {
+        $archive = archivePending([archiveFile('rolled-bell-example.txt', 'Fictional rolled')]);
+
+        try {
+            DB::transaction(function () use ($archive): void {
+                archiveRun($archive->getKey());
+
+                throw new RuntimeException('rolled back after the job');
+            });
+        } catch (RuntimeException) {
+            // expected
+        }
+
+        expect(archiveRecord($archive->getKey())->status)->toBe(DocumentArchiveStatus::Pending)
+            ->and(archiveBell($this->admin))->toBe([]);
+    });
+
+    it('escapes a value once and goes to the database only, not through the queue', function (): void {
+        $ready = new DocumentArchiveReadyNotification(3, '<b>1. 1. 2027</b> & y', '/admin/document-archives');
+        $failed = new DocumentArchiveFailedNotification('/admin/document-archives');
+
+        expect($ready->toDatabase($this->admin)['body'])->toBe('ZIP obsahuje 3 soubory. Je ke stažení do &lt;b&gt;1. 1. 2027&lt;/b&gt; &amp; y.')
+            ->and($ready->via($this->admin))->toBe(['database'])
+            ->and($failed->via($this->admin))->toBe(['database'])
+            ->and($ready)->not->toBeInstanceOf(ShouldQueue::class)
+            ->and($failed)->not->toBeInstanceOf(ShouldQueue::class);
     });
 });

@@ -147,8 +147,8 @@ return [
         ],
     ],
 
-    // The ZIP of selected files, built in the background (plan 09-17, D-08). The list, the download and the bells
-    // come with plans 09-18 and 09-19.
+    // The ZIP of selected files, built in the background (plan 09-17, D-08). The list and the download come with
+    // plan 09-18, the bells with plan 09-19.
     'archives' => [
         'navigation' => 'ZIP archivy',
         'model_label' => 'Archiv',
@@ -179,6 +179,18 @@ return [
             'too_many' => 'Do jednoho archivu lze zabalit nejvýše :max souborů.',
             'too_large' => 'Vybrané soubory jsou dohromady větší než povolených :max.',
             'unknown' => 'Výběr obsahuje soubor, který neexistuje. Obnovte stránku a zkuste to znovu.',
+        ],
+        // The Admin's bell when the build ends (plan 09-19, D-08).
+        'bell' => [
+            'ready' => [
+                'title' => 'Archiv je připraven',
+                'body' => '{1} ZIP obsahuje :count soubor. Je ke stažení do :date.|[2,4] ZIP obsahuje :count soubory. Je ke stažení do :date.|[5,*] ZIP obsahuje :count souborů. Je ke stažení do :date.',
+            ],
+            'failed' => [
+                'title' => 'Archiv se nepodařilo vytvořit',
+                'body' => 'ZIP z vybraných souborů se nepodařilo sestavit. Vyberte soubory a požádejte o archiv znovu.',
+            ],
+            'action' => 'Otevřít archivy',
         ],
     ],
 
