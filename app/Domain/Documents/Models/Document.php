@@ -132,10 +132,28 @@ final class Document extends KokpitModel implements HasMedia, PartnerIsolated
     {
         $query->whereIn($this->qualifyColumn('owner_type'), self::ARCHIVABLE_OWNER_TYPES)
             ->where(function (Builder $archived): void {
-                $archived->whereExists(fn ($sub) => $sub->selectRaw('1')
-                    ->from('projects')
-                    ->whereColumn('projects.id', $this->qualifyColumn('project_id'))
-                    ->whereNotNull('projects.deleted_at'));
+                $archived
+                    ->whereExists(fn ($sub) => $sub->selectRaw('1')
+                        ->from('clients')
+                        ->whereColumn('clients.id', $this->qualifyColumn('client_id'))
+                        ->whereNotNull('clients.deleted_at'))
+                    ->orWhereExists(fn ($sub) => $sub->selectRaw('1')
+                        ->from('projects')
+                        ->whereColumn('projects.id', $this->qualifyColumn('project_id'))
+                        ->whereNotNull('projects.deleted_at'))
+                    ->orWhere(fn (Builder $task) => $task
+                        ->where($this->qualifyColumn('owner_type'), 'task')
+                        ->whereExists(fn ($sub) => $sub->selectRaw('1')
+                            ->from('tasks')
+                            ->whereColumn('tasks.id', $this->qualifyColumn('owner_id'))
+                            ->whereNotNull('tasks.deleted_at')))
+                    ->orWhere(fn (Builder $comment) => $comment
+                        ->where($this->qualifyColumn('owner_type'), 'task_comment')
+                        ->whereExists(fn ($sub) => $sub->selectRaw('1')
+                            ->from('task_comments')
+                            ->join('tasks', 'tasks.id', '=', 'task_comments.task_id')
+                            ->whereColumn('task_comments.id', $this->qualifyColumn('owner_id'))
+                            ->whereNotNull('tasks.deleted_at')));
             });
     }
 
