@@ -633,7 +633,7 @@ Plans:
 **Goal:** REST API for the transactions and transaction_categories tables, including bulk creation of transactions
 **Requirements**: TBD
 **Depends on:** Phase 9
-**Plans:** 2/8 plans executed in 5 waves
+**Plans:** 3/8 plans executed in 5 waves
 
 Plans:
 **Wave 1**
@@ -641,7 +641,7 @@ Plans:
 - [x] 09.1-02-PLAN.md — Finance abilities (D-01) and reading one transaction (D-07): finance read group, show endpoint, response contract, route-walk and docs pins
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 09.1-03-PLAN.md — Finance token on the token screen (D-01), public docs intro and CONTRIBUTING for the four abilities and the finance formats
+- [x] 09.1-03-PLAN.md — Finance token on the token screen (D-01), public docs intro and CONTRIBUTING for the four abilities and the finance formats
 - [ ] 09.1-04-PLAN.md — Editing a transaction booked at an own rate: sticky-rate rule in `UpdateTransaction`, Admin UI badge and kept-rate edit state
 - [ ] 09.1-05-PLAN.md — Listing (D-09): transaction list with filters, sorts and date/integer cursors; read-only transaction categories list and detail
 
