@@ -411,3 +411,46 @@ it('stores valid patterns for every kind and reads them back as parsed patterns'
         ->and($fresh->patternFor(DocumentKind::Proforma)->pattern())->toBe('{YY}{MM}9{NNNN}')
         ->and($fresh->patternFor(DocumentKind::Task)->pattern())->toBe('{KEY}-{N}');
 });
+
+/**
+ * Stores a proforma pattern straight in the settings table and runs the
+ * migration that moves the proforma default, returning what is stored after.
+ */
+function runProformaDefaultMigration(string $stored): string
+{
+    DB::table('settings')->where('group', 'numbering')->where('name', 'proforma_pattern')
+        ->update(['payload' => json_encode($stored, JSON_THROW_ON_ERROR)]);
+
+    (require database_path('settings/2026_10_17_000200_distinct_proforma_number_pattern.php'))->up();
+
+    return storedPatterns()['proforma_pattern'];
+}
+
+it('moves the unchanged old proforma default to the distinct one while no proforma number was handed out', function (): void {
+    expect(runProformaDefaultMigration('{YYYY}{NNNN}'))->toBe('{YYYY}9{NNNN}');
+});
+
+it('keeps the old proforma default once a proforma number was handed out', function (): void {
+    DB::transaction(fn (): string => app(DocumentNumbering::class)->next(DocumentKind::Proforma, utcInstant('2026-06-15 10:00:00')));
+
+    expect(runProformaDefaultMigration('{YYYY}{NNNN}'))->toBe('{YYYY}{NNNN}');
+});
+
+it('keeps a custom proforma pattern whatever the counters hold', function (string $custom): void {
+    expect(runProformaDefaultMigration($custom))->toBe($custom);
+})->with([
+    'digits only' => ['{YY}{MM}{NNNNN}'],
+    'with letters, refused by the new rule' => ['ZF-{YYYY}/{NNNN}'],
+    'already the new default' => ['{YYYY}9{NNNN}'],
+]);
+
+it('does not touch the invoice and credit note patterns when it moves the proforma default', function (): void {
+    runProformaDefaultMigration('{YYYY}{NNNN}');
+
+    expect(storedPatterns())->toBe([
+        'credit_note_pattern' => '{YYYY}{NNNN}',
+        'invoice_pattern' => '{YYYY}{NNNN}',
+        'proforma_pattern' => '{YYYY}9{NNNN}',
+        'task_pattern' => '{KEY}-{N}',
+    ]);
+});
