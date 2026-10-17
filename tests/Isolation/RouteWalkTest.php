@@ -7,6 +7,7 @@ use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\Documents\Support\DocumentUrl;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Models\Task;
@@ -150,7 +151,7 @@ function walkedArchive(string $side): DocumentArchive
  * Every resource that has record routes: who may open its record routes and the
  * record id to request for each side (client A is the signed-in Partner, client B
  * the other client). The walk fails on a resource that is not listed, so a new
- * resource is looked at on purpose. Admin-only resources (`projects`, `clients`, `tasks` and `time-entries`) are listed with `partner => false`: a Partner
+ * resource is looked at on purpose. Admin-only resources (`projects`, `clients`, `tasks`, `time-entries`, `transactions` and `invoices`) are listed with `partner => false`: a Partner
  * must get 403 on all their routes, whatever record is requested.
  *
  * @return array<string, array{partner: bool, a: string, b: string}>
@@ -180,6 +181,11 @@ function walkedResourceMap(string $canaryRecordA, string $canaryRecordB, string 
         static fn (): string => Transaction::query()->where('counterparty', $canary)->firstOrFail()->id,
     );
 
+    // The invoice canary is the printed note; the issued twin is the one with a number (the draft twin has none).
+    $invoiceId = static fn (string $canary): string => app(PartnerContext::class)->runAsSystem(
+        static fn (): string => Invoice::query()->where('note', $canary)->whereNotNull('number')->firstOrFail()->id,
+    );
+
     return [
         'canary-records' => ['partner' => true, 'a' => $canaryRecordA, 'b' => $canaryRecordB],
         'my-projects' => ['partner' => true, 'a' => $projectId($canaryA), 'b' => $projectId($canaryB)],
@@ -188,6 +194,7 @@ function walkedResourceMap(string $canaryRecordA, string $canaryRecordB, string 
         'tasks' => ['partner' => false, 'a' => $taskReference($canaryA), 'b' => $taskReference($canaryB)],
         'time-entries' => ['partner' => false, 'a' => $entryId($canaryA), 'b' => $entryId($canaryB)],
         'transactions' => ['partner' => false, 'a' => $transactionId($canaryA), 'b' => $transactionId($canaryB)],
+        'invoices' => ['partner' => false, 'a' => $invoiceId($canaryA), 'b' => $invoiceId($canaryB)],
         'my-tasks' => ['partner' => true, 'a' => $taskReference($canaryA), 'b' => $taskReference($canaryB)],
     ];
 }

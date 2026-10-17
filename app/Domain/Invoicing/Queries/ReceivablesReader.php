@@ -19,6 +19,7 @@ use DateTimeZone;
 use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use InvalidArgumentException;
 
 /**
@@ -60,11 +61,12 @@ final class ReceivablesReader
 
     /**
      * The display status of each given document, keyed by its id: the status, the remaining amount in the
-     * document currency (null for a draft and a credit note, which owe nothing) and the days past the due date
-     * (null unless overdue).
+     * document currency (null for a draft and a credit note, which owe nothing), the days past the due date
+     * (null unless overdue) and the amount paid so far in the document currency (zero for a draft and a credit note),
+     * which tells a partially paid overdue document from an unpaid one.
      *
      * @param  iterable<Invoice>  $invoices
-     * @return array<string, array{status: InvoiceStatus, remaining: Money|null, overdue_days: int|null}>
+     * @return array<string, array{status: InvoiceStatus, remaining: Money|null, overdue_days: int|null, paid: int}>
      *
      * @throws AuthorizationException when neither the Admin nor a system run asks
      * @throws InvalidArgumentException when `$today` is not a calendar day
@@ -187,11 +189,32 @@ final class ReceivablesReader
      */
     private function owed(InvoiceListTab $tab, string $today, ?string $clientId): array
     {
-        $rows = $this->constrain(Invoice::query(), $tab, $today)
-            ->when($clientId !== null, static fn (Builder $query): Builder => $query->where('invoices.client_id', $clientId))
+        return $this->owedFrom(
+            $this->constrain(Invoice::query(), $tab, $today)
+                ->when($clientId !== null, static fn (Builder $query): Builder => $query->where('invoices.client_id', $clientId))
+                ->toBase(),
+        );
+    }
+
+    /**
+     * The count and the CZK sum of the remaining amounts of the documents a query of the table `invoices` selects,
+     * each converted once with its own frozen issue-time rate: the one rule behind the dashboard, the client panels
+     * and the "Celkem v Kč" summarizer of the overdue tab. The query may carry any filters, orders and selected
+     * columns of a list; only its conditions are kept.
+     *
+     * @return array{count: int, czk: Money}
+     *
+     * @throws AuthorizationException when neither the Admin nor a system run asks
+     */
+    public function owedFrom(QueryBuilder $query): array
+    {
+        $this->authorise();
+
+        $rows = $query
+            ->cloneWithout(['columns', 'orders', 'limit', 'offset'])
+            ->cloneWithoutBindings(['select', 'order'])
             ->leftJoin('invoice_admin', 'invoice_admin.invoice_id', '=', 'invoices.id')
             ->selectRaw('invoices.currency AS currency, '.InvoiceBalances::REMAINING_SQL.' AS remaining, invoice_admin.exchange_rate AS rate, invoice_admin.exchange_unit_amount AS unit_amount')
-            ->toBase()
             ->get();
 
         $czk = Money::zero('CZK');
@@ -247,22 +270,22 @@ final class ReceivablesReader
      * issued invoice was made from it and otherwise waits for its invoice (D-18); the rest is unpaid, partly paid,
      * overdue or paid by the remaining amount.
      *
-     * @return array{status: InvoiceStatus, remaining: Money|null, overdue_days: int|null}
+     * @return array{status: InvoiceStatus, remaining: Money|null, overdue_days: int|null, paid: int}
      */
     private function derive(Invoice $invoice, int $paid, ?int $remaining, bool $cancelled, bool $converted, string $today): array
     {
         if ($invoice->state === InvoiceState::Draft) {
-            return ['status' => InvoiceStatus::Draft, 'remaining' => null, 'overdue_days' => null];
+            return ['status' => InvoiceStatus::Draft, 'remaining' => null, 'overdue_days' => null, 'paid' => 0];
         }
 
         if ($invoice->kind === InvoiceKind::CreditNote) {
-            return ['status' => InvoiceStatus::CreditNote, 'remaining' => null, 'overdue_days' => null];
+            return ['status' => InvoiceStatus::CreditNote, 'remaining' => null, 'overdue_days' => null, 'paid' => 0];
         }
 
         $left = Money::ofMinor($cancelled ? 0 : ($remaining ?? 0), $invoice->currency);
 
         if ($cancelled) {
-            return ['status' => InvoiceStatus::Cancelled, 'remaining' => $left, 'overdue_days' => null];
+            return ['status' => InvoiceStatus::Cancelled, 'remaining' => $left, 'overdue_days' => null, 'paid' => $paid];
         }
 
         if ($left->isZero()) {
@@ -272,16 +295,16 @@ final class ReceivablesReader
                 default => InvoiceStatus::AwaitingInvoice,
             };
 
-            return ['status' => $status, 'remaining' => $left, 'overdue_days' => null];
+            return ['status' => $status, 'remaining' => $left, 'overdue_days' => null, 'paid' => $paid];
         }
 
         $late = $this->daysLate($invoice, $today);
 
         if ($late !== null) {
-            return ['status' => InvoiceStatus::Overdue, 'remaining' => $left, 'overdue_days' => $late];
+            return ['status' => InvoiceStatus::Overdue, 'remaining' => $left, 'overdue_days' => $late, 'paid' => $paid];
         }
 
-        return ['status' => $paid > 0 ? InvoiceStatus::PartiallyPaid : InvoiceStatus::Unpaid, 'remaining' => $left, 'overdue_days' => null];
+        return ['status' => $paid > 0 ? InvoiceStatus::PartiallyPaid : InvoiceStatus::Unpaid, 'remaining' => $left, 'overdue_days' => null, 'paid' => $paid];
     }
 
     /**
