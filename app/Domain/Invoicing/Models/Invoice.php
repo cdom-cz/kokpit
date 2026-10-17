@@ -8,6 +8,7 @@ use App\Domain\Audit\LoggedAttributes;
 use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
+use App\Domain\Documents\Models\Document;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Settings\VatMode;
@@ -23,6 +24,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 /**
  * A billing document: an invoice, a proforma or a credit note (IN-01). The table holds only what the document
@@ -243,6 +245,17 @@ final class Invoice extends KokpitModel implements PartnerIsolated
     public function entries(): HasMany
     {
         return $this->hasMany(TimeEntry::class, 'invoice_id')->orderBy('started_at')->orderBy('id');
+    }
+
+    /**
+     * The files that hang on the document: its stored PDF and any file the Admin added (DO-01, D-21). Never shared with
+     * a Partner, a document is finance data; a Partner is served the PDF through its own signed route (plan 10-38).
+     *
+     * @return MorphMany<Document, $this>
+     */
+    public function documents(): MorphMany
+    {
+        return $this->morphMany(Document::class, 'owner');
     }
 
     /**

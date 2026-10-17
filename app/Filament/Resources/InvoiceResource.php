@@ -8,10 +8,13 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
+use App\Filament\RelationManagers\InvoiceDocumentsRelationManager;
+use App\Filament\RelationManagers\InvoiceHistoryRelationManager;
 use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEntriesRelationManager;
+use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelationManager;
 use App\Filament\Support\InvoiceTable;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
@@ -90,13 +93,17 @@ final class InvoiceResource extends Resource
     }
 
     /**
-     * The linked time: "Záznamy času" with the add and unlink actions on a draft, "Navázaný čas" read only on an
-     * issued document (ruling R-25-2). The later plans add the payments, the files, the e-mail log and the history.
+     * The tabs of a document, in the order of UI-SPEC E4: the payments, the linked time ("Záznamy času" with the add and
+     * unlink actions on a draft, "Navázaný čas" read only on an issued document, ruling R-25-2), the files and the
+     * history. The e-mail log ("Odeslání") follows in plan 10-31. Each tab says itself on which documents it is offered.
      */
     public static function getRelations(): array
     {
         return [
+            InvoicePaymentsRelationManager::class,
             InvoiceEntriesRelationManager::class,
+            InvoiceDocumentsRelationManager::class,
+            InvoiceHistoryRelationManager::class,
         ];
     }
 

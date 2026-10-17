@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Actions\DeleteDocument;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Finance\Models\Transaction;
 use App\Domain\Invoicing\Actions\ConvertProforma;
+use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\RecordPayment;
@@ -14,11 +16,19 @@ use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Projects\Actions\CreateProject;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
+use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Filament\RelationManagers\InvoiceDocumentsRelationManager;
+use App\Filament\RelationManagers\InvoiceHistoryRelationManager;
 use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
+use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEntriesRelationManager;
+use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelationManager;
+use App\Filament\Resources\TransactionResource;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
@@ -392,5 +402,197 @@ describe('access', function (): void {
         $this->actingAs(Canary::partnerFor($client->id));
 
         $page->call('$refresh')->assertForbidden();
+    });
+});
+
+/**
+ * A relation manager of the document as the page of an issued one mounts it.
+ *
+ * @param  class-string  $manager
+ */
+function detailTab(string $manager, Invoice $document, string $page = ViewInvoice::class): Testable
+{
+    return Livewire::test($manager, ['ownerRecord' => $document, 'pageClass' => $page]);
+}
+
+function detailProject(Client $client, string $name): Project
+{
+    return app(CreateProject::class)->handle($client, [
+        'name' => $name,
+        'key' => Canary::projectKey(),
+        'billing_type' => 'hourly',
+        'hourly_rate' => '1000',
+    ]);
+}
+
+function detailEntry(Project $project, string $start, string $end, string $description): TimeEntry
+{
+    $factory = TimeEntry::factory()->forProject($project);
+
+    return app(PartnerContext::class)->runAsSystem(static fn (): TimeEntry => TimeEntry::query()->findOrFail($factory->create([
+        'user_id' => test()->admin->id,
+        'started_at' => CarbonImmutable::parse($start, 'UTC'),
+        'ended_at' => CarbonImmutable::parse($end, 'UTC'),
+        'description' => $description,
+    ])->id));
+}
+
+describe('the relation tabs', function (): void {
+    it('registers the tabs in the order of the spec', function (): void {
+        expect(InvoiceResource::getRelations())->toBe([
+            InvoicePaymentsRelationManager::class,
+            InvoiceEntriesRelationManager::class,
+            InvoiceDocumentsRelationManager::class,
+            InvoiceHistoryRelationManager::class,
+        ]);
+    });
+
+    it('shows the payments and the files only on an issued document that can carry them', function (): void {
+        $client = InvoiceFixtures::client();
+        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')]);
+        $invoice = InvoiceFixtures::issued($client);
+        $credit = InvoiceFixtures::stornoed($invoice);
+
+        expect(InvoicePaymentsRelationManager::canViewForRecord($invoice, ViewInvoice::class))->toBeTrue()
+            ->and(InvoicePaymentsRelationManager::canViewForRecord($draft, EditInvoice::class))->toBeFalse()
+            ->and(InvoicePaymentsRelationManager::canViewForRecord($credit, ViewInvoice::class))->toBeFalse()
+            ->and(InvoiceDocumentsRelationManager::canViewForRecord($invoice, ViewInvoice::class))->toBeTrue()
+            ->and(InvoiceDocumentsRelationManager::canViewForRecord($draft, EditInvoice::class))->toBeFalse()
+            ->and(InvoiceHistoryRelationManager::canViewForRecord($invoice, ViewInvoice::class))->toBeTrue();
+    });
+
+    it('lists the payments with their method and the category link, and a dash on a proforma', function (): void {
+        $client = InvoiceFixtures::client();
+        $invoice = InvoiceFixtures::issued($client);
+        detailPay($invoice, '400.00', '2026-10-12');
+        app(RecordPayment::class)->handle($this->admin, $invoice, ['amount' => '100.00', 'paid_on' => '2026-10-13', 'method' => 'cash', 'note' => 'Paid at the desk']);
+
+        $payments = $invoice->payments()->get();
+        $income = app(PartnerContext::class)->runAsSystem(static fn (): Transaction => Transaction::query()->where('invoice_payment_id', $payments->first()->id)->firstOrFail());
+
+        $tab = detailTab(InvoicePaymentsRelationManager::class, $invoice)
+            ->assertSuccessful()
+            ->assertCanSeeTableRecords($payments)
+            ->assertSee('Platby')
+            ->assertSee(detailMoney(40000))
+            ->assertSee(detailMoney(10000))
+            ->assertSee('Převodem')
+            ->assertSee('Hotově')
+            ->assertSee('Paid at the desk')
+            ->assertSee('12. 10. 2026')
+            ->assertSee(TransactionResource::getUrl('edit', ['record' => $income]), escape: false);
+
+        $proforma = InvoiceFixtures::issued($client, [], InvoiceKind::Proforma);
+        detailPay($proforma, '200.00');
+
+        detailTab(InvoicePaymentsRelationManager::class, $proforma)
+            ->assertCanSeeTableRecords($proforma->payments()->get())
+            ->assertTableColumnStateSet('category', null, $proforma->payments()->firstOrFail())
+            ->assertSee('—');
+    });
+
+    it('shows an empty payments tab with its heading and body', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        detailTab(InvoicePaymentsRelationManager::class, $invoice)
+            ->assertSee('Zatím žádná platba')
+            ->assertSee('Platbu zaznamenáte tlačítkem Zaznamenat platbu.');
+    });
+
+    it('lists the billed time read only, with the total in the footer and no add or unlink', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = detailProject($client, 'Alpha project');
+        $one = detailEntry($project, '2026-09-10 08:00:00', '2026-09-10 09:00:00', 'Example one');
+        $two = detailEntry($project, '2026-09-11 08:00:00', '2026-09-11 10:30:00', 'Example two');
+        $draft = app(CreateDraft::class)->handle($this->admin, [
+            'client_id' => $client->id,
+            'kind' => 'invoice',
+            'source' => 'time',
+            'period_from' => '2026-09-01',
+            'period_to' => '2026-09-30',
+            'project_ids' => [$project->id],
+            'without_project' => false,
+            'grouping' => 'project',
+        ]);
+        $invoice = app(IssueDocument::class)->handle($this->admin, $draft);
+
+        $tab = detailTab(InvoiceEntriesRelationManager::class, $invoice)
+            ->assertCanSeeTableRecords([$one, $two])
+            ->assertSee('Navázaný čas')
+            ->assertSee('3:30')
+            ->assertActionHidden(TestAction::make('addTime')->table());
+
+        expect($tab->html())->not->toContain('Odpojit od faktury')->not->toContain('Přidat nový čas');
+    });
+
+    it('lists the stored PDF with preview and download and deletes it only through the confirmed path', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $pdf = detailAdmin($invoice)->pdfDocument;
+
+        $tab = detailTab(InvoiceDocumentsRelationManager::class, $invoice)
+            ->assertSuccessful()
+            ->assertCanSeeTableRecords([$pdf])
+            ->assertTableActionVisible('preview', $pdf)
+            ->assertTableActionVisible('download', $pdf)
+            ->assertDontSee('Přiřazeno')
+            ->mountTableAction('delete', $pdf);
+
+        expect((string) $tab->instance()->getMountedAction()?->getModalHeading())->toBe('Smazat PDF vystaveného dokladu?');
+
+        // Without the tick the PDF stays.
+        $tab->callMountedTableAction()->assertHasTableActionErrors(['confirmIssuedPdf']);
+        expect(detailAdmin($invoice)->pdf_document_id)->toBe($pdf->id);
+
+        detailTab(InvoiceDocumentsRelationManager::class, $invoice)
+            ->callTableAction('delete', $pdf, ['confirmIssuedPdf' => true])
+            ->assertHasNoTableActionErrors();
+
+        expect(detailAdmin($invoice)->pdf_document_id)->toBeNull();
+
+        detail($invoice)->assertSee('PDF dokladu chybí.');
+    });
+
+    it('shows the allowlisted history and never the text of a note', function (): void {
+        $client = InvoiceFixtures::client();
+        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')]);
+        app(UpdateDraft::class)->handle($this->admin, $draft, ['note' => 'Printed history secret', 'internal_note' => 'Internal history secret']);
+        $invoice = app(IssueDocument::class)->handle($this->admin, $draft);
+
+        $activities = $invoice->activitiesAsSubject()->get();
+
+        expect($activities)->not->toBeEmpty();
+
+        $tab = detailTab(InvoiceHistoryRelationManager::class, $invoice)
+            ->assertSuccessful()
+            ->assertCanSeeTableRecords($activities)
+            ->assertSee('Stav')
+            ->assertSee('Číslo')
+            ->assertSee($invoice->number);
+
+        expect($tab->html())->not->toContain('Printed history secret')->not->toContain('Internal history secret');
+    });
+
+    it('shows the cancellation through the banner and writes no history row on the invoice', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $before = $invoice->activitiesAsSubject()->count();
+
+        $credit = app(IssueCreditNote::class)->storno($this->admin, $invoice);
+
+        expect($invoice->activitiesAsSubject()->count())->toBe($before);
+
+        detail($invoice)->assertSee($credit->number)->assertSee('Stornováno');
+    });
+
+    it('answers a Partner with 403 on every relation manager', function (): void {
+        $client = InvoiceFixtures::client();
+        $invoice = InvoiceFixtures::issued($client);
+
+        $this->actingAs(Canary::partnerFor($client->id));
+
+        foreach ([InvoicePaymentsRelationManager::class, InvoiceEntriesRelationManager::class, InvoiceDocumentsRelationManager::class, InvoiceHistoryRelationManager::class] as $manager) {
+            expect($manager::canViewForRecord($invoice, ViewInvoice::class))->toBeFalse();
+
+            detailTab($manager, $invoice)->assertForbidden();
+        }
     });
 });
