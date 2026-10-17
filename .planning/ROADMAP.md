@@ -669,7 +669,7 @@ Plans:
   4. Admin records a manual payment (transfer or cash) with a warning if already paid, which creates an income transaction with editable date and category; overdue status is derived and listed in an overdue overview and as a dashboard tile; a paid proforma converts to a linked invoice
   5. The client detail shows projects, unbilled time and amount, invoices, documents and client accounts, and a Partner sees only their own issued invoices and proformas (list, detail, PDF) read-only, never drafts, internal notes, linked time or rates
 
-**Plans:** 5/41 plans executed in 13 waves
+**Plans:** 6/41 plans executed in 13 waves
 **UI hint**: yes
 
 Plans:
@@ -681,7 +681,7 @@ Plans:
 - [x] 10-33-PLAN.md — Invoicing enums with Czech labels: kinds, states, derived statuses (Admin and Partner wording), line origins, payment methods, e-mail states
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 10-05-PLAN.md — Invoice and InvoiceItem models with the fail-closed Partner scope, policies, morph aliases, registries and canaries
+- [x] 10-05-PLAN.md — Invoice and InvoiceItem models with the fail-closed Partner scope, policies, morph aliases, registries and canaries
 - [ ] 10-06-PLAN.md — Admin-only side tables, payments never edited and deleted only together with their income through the sanctioned path, e-mail log, transactions link with the payment-income lock, and the time_entries invoice link with its lifecycle guard
 - [ ] 10-07-PLAN.md — Number series as variable symbols: digits-only proforma rule (owner acknowledgement point), distinct proforma default, VariableSymbol helper
 
@@ -793,6 +793,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
 | 8. Exchange Rates and Reports | 27/27 | In Progress | - |
 | 9. Documents and Finance | 28/28 | In Progress | - |
-| 10. Invoicing | 5/41 | In Progress | - |
+| 10. Invoicing | 6/41 | In Progress | - |
 | 11. Stripe Payments | 0/0 | Not started | - |
 | 12. Partner Audit | 0/0 | Not started | - |

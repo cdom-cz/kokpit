@@ -124,7 +124,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Invoicing
 
-- [ ] **IN-01**: Invoices, proformas and credit notes with separate number series, number allocated only on issue
+- [x] **IN-01**: Invoices, proformas and credit notes with separate number series, number allocated only on issue
 - [ ] **IN-02**: Draft created from unbilled billable time (client, period, projects; grouping per project or task; fixed sums added) plus manual items; items editable; entries reserved so two drafts cannot bill the same time
 - [ ] **IN-03**: Issue freezes supplier, customer and bank snapshots, rate and amounts; issued invoices are immutable except payment state and internal note, enforced in the database
 - [ ] **IN-04**: PDF generated at issue from snapshots only, stored in documents, with SPAYD QR for CZK bank transfer, in the client's invoice language; sent by queued e-mail with optional work report
@@ -132,7 +132,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [ ] **IN-06**: Proforma converts to invoice with a link after payment
 - [ ] **IN-07**: Invoicing in client currency with CNB rate snapshot and CZK total
 - [ ] **IN-08**: Non-VAT-payer mode is the default and fully tested; data model prepared for VAT payer
-- [ ] **IN-09**: Partner sees own issued invoices and proformas (list, detail, PDF, pay button) read-only, never drafts, internal notes, linked time or rates
+- [x] **IN-09**: Partner sees own issued invoices and proformas (list, detail, PDF, pay button) read-only, never drafts, internal notes, linked time or rates
 - [ ] **IN-10**: Cancelling or deleting a draft, or storno, returns linked entries to unbilled
 
 ### Payments (Stripe)
@@ -274,7 +274,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FI-01 | Phase 9 | Complete |
 | FI-02 | Phase 9 | Gaps Found |
 | FI-03 | Phase 10 | Pending |
-| IN-01 | Phase 10 | Pending |
+| IN-01 | Phase 10 | Complete |
 | IN-02 | Phase 10 | Pending |
 | IN-03 | Phase 10 | Pending |
 | IN-04 | Phase 10 | Pending |
@@ -282,7 +282,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | IN-06 | Phase 10 | Pending |
 | IN-07 | Phase 10 | Pending |
 | IN-08 | Phase 10 | Pending |
-| IN-09 | Phase 10 | Pending |
+| IN-09 | Phase 10 | Complete |
 | IN-10 | Phase 10 | Pending |
 | PA-01 | Phase 11 | Pending |
 | PA-02 | Phase 11 | Pending |
