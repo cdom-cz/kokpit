@@ -67,7 +67,7 @@ final readonly class RecordPayment
                 throw ValidationException::withMessages(['payment' => __('invoices.errors.payment_not_allowed')]);
             }
 
-            $input = PaymentInput::fromArray($data, $locked, IssueContext::now()->today);
+            $input = PaymentInput::fromArray($data, $locked, IssueContext::today());
             $books = $locked->kind === InvoiceKind::Invoice;
 
             if ($books) {

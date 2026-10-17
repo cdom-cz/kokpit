@@ -28,6 +28,7 @@ return [
         'task' => 'Úkol',
         'task_comment' => 'Komentář',
         'transaction' => 'Transakce',
+        'invoice' => 'Doklad',
     ],
 
     // DocumentTypeGroup: the file-type groups of the central documents listing (plan 09-14).

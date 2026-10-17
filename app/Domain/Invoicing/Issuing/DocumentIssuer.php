@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Invoicing\Issuing;
 
+use App\Domain\Documents\Actions\StoreGeneratedDocument;
 use App\Domain\ExchangeRates\ExchangeRateConverter;
 use App\Domain\ExchangeRates\ExchangeRateMissing;
 use App\Domain\Invoicing\Enums\InvoiceKind;
@@ -12,6 +13,7 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
+use App\Domain\Invoicing\Pdf\InvoicePdf;
 use App\Domain\Invoicing\Support\DraftPreview;
 use App\Domain\Invoicing\Support\DraftTotals;
 use App\Domain\Invoicing\Support\InvoiceSnapshot;
@@ -52,6 +54,12 @@ use OverflowException;
  * when its document is already issued (plan 10-06). Every entry the draft holds is locked in id order and must still
  * be exactly what the draft reserved it as; one that is not fails the whole issue with `entries_changed`, and the
  * rollback takes the number, the state and every billed entry back (D-04, D-10, D-15).
+ *
+ * The PDF is the last step (D-21, D-23): it is rendered from the frozen snapshots of the issued row, stored through the
+ * hardened upload path as a document owned by the invoice, and linked from the Admin-only `invoice_admin` row (plan
+ * 10-06 R-06-6), never from `invoices`. A failure of the rendering, of the storage or of the link throws like any
+ * other step, so the caller's transaction takes the number, the state, the billing and the document row back, and the
+ * stored object is removed by the rollback hook of {@see StoreGeneratedDocument}.
  */
 final readonly class DocumentIssuer
 {
@@ -62,6 +70,8 @@ final readonly class DocumentIssuer
         private ExchangeRateConverter $rates,
         private EntryBilling $billing,
         private DraftPreview $conversion,
+        private InvoicePdf $pdf,
+        private StoreGeneratedDocument $storage,
     ) {}
 
     /**
@@ -94,7 +104,7 @@ final readonly class DocumentIssuer
 
         $this->convertTimeLines($lockedDraft, $issueDate);
 
-        $this->writeAdminRow($lockedDraft, $issueDate, $context);
+        $admin = $this->writeAdminRow($lockedDraft, $issueDate, $context);
 
         $supplier = $this->snapshot->supplier();
         $customer = $this->snapshot->customer($client);
@@ -130,7 +140,23 @@ final readonly class DocumentIssuer
 
         $this->billLinkedTime($lockedDraft);
 
-        return $lockedDraft->refresh();
+        $issued = $lockedDraft->refresh();
+
+        $this->storePdf($issued, $admin, $context);
+
+        return $issued;
+    }
+
+    /**
+     * Renders the PDF of the issued document from its snapshots, stores it as a document owned by the invoice and
+     * saves the link on the Admin-only row (D-21, D-23). The `invoices` row takes no write: it is frozen (plan 10-04
+     * R-04-6), which is why the link lives in `invoice_admin`.
+     */
+    private function storePdf(Invoice $issued, InvoiceAdmin $admin, IssueContext $context): void
+    {
+        $document = $this->storage->handle($context->actor, $issued, $this->pdf->render($issued), $this->pdf->fileName($issued));
+
+        $admin->forceFill(['pdf_document_id' => $document->getKey()])->save();
     }
 
     /**
@@ -243,7 +269,7 @@ final readonly class DocumentIssuer
 
     /**
      * The Admin-only row of the document, created while the parent is still a draft because the child guard
-     * refuses an INSERT afterwards (plan 10-20 later writes the PDF link into it). For a document not in CZK it
+     * refuses an INSERT afterwards (the PDF step writes the PDF link into it). For a document not in CZK it
      * also stores the CNB rate, unit and list date valid on the issue date, or the trio the context hands over, and
      * the CZK total computed from them once (D-12, IN-07, EX-03): the rate is never looked up again.
      */

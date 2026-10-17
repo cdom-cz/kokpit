@@ -39,10 +39,10 @@ final readonly class IssueDocument
     {
         Gate::forUser($actor)->authorize('update', $draft);
 
-        return DB::transaction(function () use ($draft): Invoice {
+        return DB::transaction(function () use ($actor, $draft): Invoice {
             $locked = Invoice::query()->whereKey($draft->getKey())->lockForUpdate()->firstOrFail();
 
-            return $this->issuer->issue($locked, IssueContext::now());
+            return $this->issuer->issue($locked, IssueContext::now($actor));
         });
     }
 
@@ -52,7 +52,7 @@ final readonly class IssueDocument
      */
     public function expectedNumber(Invoice $draft): string
     {
-        $day = $draft->issue_date?->format('Y-m-d') ?? IssueContext::now()->today;
+        $day = $draft->issue_date?->format('Y-m-d') ?? IssueContext::today();
         $noon = CarbonImmutable::createFromFormat('!Y-m-d H:i', $day.' 12:00', FilamentTimezone::get()) ?? CarbonImmutable::now();
 
         return $this->numbering->preview($draft->kind->numberingKind(), null, $noon);
