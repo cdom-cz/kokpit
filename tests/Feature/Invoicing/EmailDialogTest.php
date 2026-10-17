@@ -14,8 +14,11 @@ use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
+use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEmailsRelationManager;
 use Carbon\CarbonImmutable;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Features\SupportTesting\Testable;
@@ -271,5 +274,210 @@ describe('who may open it', function (): void {
         $this->actingAs(Canary::partnerFor($client->id));
 
         emailPage($invoice, send: true)->assertForbidden();
+    });
+});
+
+/**
+ * A row of the send log of the document, written the way the job leaves it.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function emailLogRow(Invoice $invoice, InvoiceEmailState $state, string $created, array $overrides = []): InvoiceEmail
+{
+    return app(PartnerContext::class)->runAsSystem(static function () use ($invoice, $state, $created, $overrides): InvoiceEmail {
+        $row = (new InvoiceEmail)->forceFill([
+            'invoice_id' => $invoice->id,
+            'recipient' => 'jane@'.implode('.', ['example', 'com']),
+            'subject' => 'Logged subject '.$state->value,
+            'body' => 'Logged body '.$state->value,
+            'attach_work_report' => false,
+            'state' => $state,
+            'sent_at' => $state === InvoiceEmailState::Sent ? CarbonImmutable::parse($created, 'UTC') : null,
+            'failure_code' => $state === InvoiceEmailState::Failed ? 'transport' : null,
+            'created_by' => Canary::admin()->getKey(),
+            'created_at' => $created,
+            'updated_at' => $created,
+            ...$overrides,
+        ]);
+        $row->save();
+
+        return $row;
+    });
+}
+
+function emailTab(Invoice $invoice): Testable
+{
+    return Livewire::test(InvoiceEmailsRelationManager::class, ['ownerRecord' => $invoice, 'pageClass' => ViewInvoice::class]);
+}
+
+describe('the Odeslání tab', function (): void {
+    it('lists a sent and a failed attempt with their states, attachments and the fixed failure note', function (): void {
+        $invoice = emailInvoiceWithTime();
+        $failed = emailLogRow($invoice, InvoiceEmailState::Failed, '2026-10-12 08:00:00+00', ['attach_work_report' => true]);
+        $sent = emailLogRow($invoice, InvoiceEmailState::Sent, '2026-10-13 08:00:00+00');
+
+        emailTab($invoice)
+            ->assertCanSeeTableRecords([$sent, $failed], inOrder: true)
+            ->assertTableColumnStateSet('attachments', 'PDF', $sent)
+            ->assertTableColumnStateSet('attachments', 'PDF a výkaz', $failed)
+            ->assertTableColumnStateSet('note', 'Odeslání se nepodařilo. Zkuste ho zopakovat.', $failed)
+            ->assertTableColumnStateSet('note', '—', $sent)
+            ->assertSee('Vytvořeno')
+            ->assertSee('Příjemce')
+            ->assertSee('Odesláno')
+            ->assertSee('Odeslání selhalo')
+            ->assertSee('Odeslání se nepodařilo. Zkuste ho zopakovat.')
+            ->assertDontSee('transport')
+            ->assertDontSee('Logged body');
+    });
+
+    it('shows the empty state of a document that was never sent', function (): void {
+        emailTab(emailInvoiceWithTime())->assertSee('Doklad zatím nebyl odeslán');
+    });
+
+    it('reads a queued and a stale sending row, and a fresh sending one, by their wait', function (): void {
+        $invoice = emailInvoiceWithTime();
+        $queued = emailLogRow($invoice, InvoiceEmailState::Queued, '2026-10-14 09:00:00+00');
+        $fresh = emailLogRow($invoice, InvoiceEmailState::Sending, '2026-10-14 09:30:00+00', ['updated_at' => '2026-10-14 09:59:00+00']);
+        $stale = emailLogRow($invoice, InvoiceEmailState::Sending, '2026-10-14 07:00:00+00', ['updated_at' => '2026-10-14 07:00:00+00']);
+
+        emailTab($invoice)
+            ->assertTableColumnStateSet('state', InvoiceEmailState::Queued, $queued)
+            ->assertTableColumnStateSet('state', InvoiceEmailState::Sending, $fresh)
+            ->assertTableColumnStateSet('state', InvoiceEmailState::Failed, $stale)
+            ->assertTableActionHidden('resendEmail', $queued)
+            ->assertTableActionHidden('resendEmail', $fresh)
+            ->assertTableActionVisible('resendEmail', $stale);
+    });
+
+    it('offers Odeslat znovu on a failed row only and opens the dialog with the values of that row', function (): void {
+        Queue::fake();
+        $invoice = emailInvoiceWithTime();
+        $failed = emailLogRow($invoice, InvoiceEmailState::Failed, '2026-10-12 08:00:00+00', ['attach_work_report' => false]);
+        $sent = emailLogRow($invoice, InvoiceEmailState::Sent, '2026-10-13 08:00:00+00');
+
+        $tab = emailTab($invoice)
+            ->assertTableActionVisible('resendEmail', $failed)
+            ->assertTableActionHidden('resendEmail', $sent)
+            ->mountTableAction('resendEmail', $failed)
+            ->assertMountedActionModalSee(['Odeslat fakturu e-mailem', 'Přílohy: '.$invoice->number.'.pdf']);
+
+        expect($tab->get('mountedActions.0.data.subject'))->toBe('Logged subject failed')
+            ->and($tab->get('mountedActions.0.data.body'))->toBe('Logged body failed')
+            ->and($tab->get('mountedActions.0.data.recipient'))->toBe($failed->recipient)
+            ->and($tab->get('mountedActions.0.data.attach_work_report'))->toBeFalse();
+
+        $tab->callMountedTableAction()
+            ->assertNotified('E-mail je ve frontě');
+
+        $rows = InvoiceEmail::query()->where('invoice_id', $invoice->id)->get();
+        $new = $rows->whereNotIn('id', [$failed->id, $sent->id])->sole();
+
+        expect($rows)->toHaveCount(3)
+            ->and($new->state)->toBe(InvoiceEmailState::Queued)
+            ->and($new->subject)->toBe('Logged subject failed')
+            ->and($new->attach_work_report)->toBeFalse()
+            ->and($failed->fresh()?->state)->toBe(InvoiceEmailState::Failed);
+
+        Queue::assertPushed(SendInvoiceEmail::class, static fn (SendInvoiceEmail $job): bool => $job->emailId === $new->id);
+    });
+
+    it('does not borrow the values of a row of another document', function (): void {
+        Queue::fake();
+        $invoice = emailInvoiceWithTime();
+        $other = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $foreign = emailLogRow($other, InvoiceEmailState::Failed, '2026-10-12 08:00:00+00', ['subject' => 'Foreign subject']);
+        emailLogRow($invoice, InvoiceEmailState::Failed, '2026-10-12 08:00:00+00');
+
+        // The tab resolves its rows through the document: a forged record id of another document's row mounts nothing.
+        $tab = emailTab($invoice)->mountAction(TestAction::make('resendEmail')->table($foreign));
+
+        expect($tab->get('mountedActions'))->toBe([]);
+
+        Queue::assertNothingPushed();
+    });
+
+    it('is not offered on a draft and answers a Partner with 403', function (): void {
+        $client = InvoiceFixtures::client();
+        $invoice = InvoiceFixtures::issued($client);
+        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        expect(InvoiceEmailsRelationManager::canViewForRecord($invoice, ViewInvoice::class))->toBeTrue()
+            ->and(InvoiceEmailsRelationManager::canViewForRecord($draft, ViewInvoice::class))->toBeFalse();
+
+        $this->actingAs(Canary::partnerFor($client->id));
+
+        expect(InvoiceEmailsRelationManager::canViewForRecord($invoice, ViewInvoice::class))->toBeFalse();
+
+        emailTab($invoice)->assertForbidden();
+    });
+
+    it('is one of the tabs of the detail, after the files and before the history', function (): void {
+        $invoice = emailInvoiceWithTime();
+
+        emailPage($invoice)->assertSeeInOrder(['Navázaný čas', 'Soubory', 'Odeslání', 'Historie změn']);
+    });
+});
+
+describe('the E-mail column and Odeslat znovu in the list', function (): void {
+    it('shows the sent date, the wait, the failure and nothing for a draft, and the filter Selhalo finds the failed ones', function (): void {
+        $sent = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $queued = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $sending = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $failed = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $never = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        emailLogRow($sent, InvoiceEmailState::Sent, '2026-10-02 08:00:00+00');
+        emailLogRow($queued, InvoiceEmailState::Queued, '2026-10-02 08:00:00+00');
+        emailLogRow($sending, InvoiceEmailState::Sending, '2026-10-02 08:00:00+00');
+        emailLogRow($failed, InvoiceEmailState::Failed, '2026-10-02 08:00:00+00');
+
+        Livewire::test(ListInvoices::class)
+            ->assertTableColumnStateSet('email', 'sent', $sent)
+            ->assertTableColumnStateSet('email', 'queued', $queued)
+            ->assertTableColumnStateSet('email', 'queued', $sending)
+            ->assertTableColumnStateSet('email', 'failed', $failed)
+            ->assertTableColumnStateSet('email', 'none', $never)
+            ->assertTableColumnStateSet('email', null, $draft)
+            ->assertSee(['Odesláno 2. 10. 2026', 'Ve frontě', 'Odeslání selhalo'])
+            ->filterTable('email', 'failed')
+            ->assertCanSeeTableRecords([$failed])
+            ->assertCanNotSeeTableRecords([$sent, $queued, $sending, $never]);
+    });
+
+    it('offers Odeslat znovu for failed and unsent issued documents only', function (): void {
+        $sent = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $queued = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $failed = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $never = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        emailLogRow($sent, InvoiceEmailState::Sent, '2026-10-02 08:00:00+00');
+        emailLogRow($queued, InvoiceEmailState::Queued, '2026-10-02 08:00:00+00');
+        emailLogRow($failed, InvoiceEmailState::Sent, '2026-10-01 08:00:00+00');
+        emailLogRow($failed, InvoiceEmailState::Failed, '2026-10-02 08:00:00+00');
+
+        Livewire::test(ListInvoices::class)
+            ->assertTableActionVisible('resendEmail', $failed)
+            ->assertTableActionVisible('resendEmail', $never)
+            ->assertTableActionHidden('resendEmail', $sent)
+            ->assertTableActionHidden('resendEmail', $queued)
+            ->assertTableActionHidden('resendEmail', $draft);
+    });
+
+    it('queues a new e-mail from the list row after the confirmation', function (): void {
+        Queue::fake();
+        $never = emailInvoiceWithTime();
+
+        Livewire::test(ListInvoices::class)
+            ->mountTableAction('resendEmail', $never)
+            ->assertMountedActionModalSee('Odeslat fakturu e-mailem')
+            ->callMountedTableAction()
+            ->assertNotified('E-mail je ve frontě');
+
+        expect(InvoiceEmail::query()->where('invoice_id', $never->id)->sole()->state)->toBe(InvoiceEmailState::Queued);
+
+        Queue::assertPushed(SendInvoiceEmail::class, 1);
     });
 });

@@ -128,6 +128,7 @@ final class InvoiceTable
             ->recordActions([
                 self::editDraftAction(),
                 self::downloadAction(),
+                self::resendEmailAction(),
                 self::deleteDraftAction(),
             ])
             ->emptyStateIcon(Heroicon::OutlinedInbox)
@@ -281,6 +282,16 @@ final class InvoiceTable
 
                 return $state === null ? null : (string) __('invoices.list.email.'.$state);
             });
+    }
+
+    /**
+     * "Odeslat znovu" (IN-04; D-22; UI-SPEC Surface G): the e-mail dialog for an issued document whose latest send
+     * failed or that was never sent. A document that is queued or sent is not offered it, a draft cannot be sent.
+     */
+    private static function resendEmailAction(): Action
+    {
+        return SendInvoiceEmailAction::forListRow()
+            ->visible(static fn (Invoice $record): bool => in_array(self::emailKey($record), ['failed', 'none'], true));
     }
 
     /**

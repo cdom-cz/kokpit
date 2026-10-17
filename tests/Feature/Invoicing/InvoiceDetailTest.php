@@ -26,6 +26,7 @@ use App\Filament\RelationManagers\InvoiceHistoryRelationManager;
 use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
+use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEmailsRelationManager;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEntriesRelationManager;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelationManager;
 use App\Filament\Resources\TransactionResource;
@@ -443,6 +444,7 @@ describe('the relation tabs', function (): void {
             InvoicePaymentsRelationManager::class,
             InvoiceEntriesRelationManager::class,
             InvoiceDocumentsRelationManager::class,
+            InvoiceEmailsRelationManager::class,
             InvoiceHistoryRelationManager::class,
         ]);
     });

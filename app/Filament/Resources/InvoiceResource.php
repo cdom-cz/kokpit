@@ -13,6 +13,7 @@ use App\Filament\RelationManagers\InvoiceHistoryRelationManager;
 use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
+use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEmailsRelationManager;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEntriesRelationManager;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelationManager;
 use App\Filament\Support\InvoiceTable;
@@ -94,8 +95,8 @@ final class InvoiceResource extends Resource
 
     /**
      * The tabs of a document, in the order of UI-SPEC E4: the payments, the linked time ("Záznamy času" with the add and
-     * unlink actions on a draft, "Navázaný čas" read only on an issued document, ruling R-25-2), the files and the
-     * history. The e-mail log ("Odeslání") follows in plan 10-31. Each tab says itself on which documents it is offered.
+     * unlink actions on a draft, "Navázaný čas" read only on an issued document, ruling R-25-2), the files, the e-mail
+     * log ("Odeslání") and the history. Each tab says itself on which documents it is offered.
      */
     public static function getRelations(): array
     {
@@ -103,6 +104,7 @@ final class InvoiceResource extends Resource
             InvoicePaymentsRelationManager::class,
             InvoiceEntriesRelationManager::class,
             InvoiceDocumentsRelationManager::class,
+            InvoiceEmailsRelationManager::class,
             InvoiceHistoryRelationManager::class,
         ];
     }
