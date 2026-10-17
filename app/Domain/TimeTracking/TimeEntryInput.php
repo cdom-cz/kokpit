@@ -275,6 +275,15 @@ final class TimeEntryInput
     }
 
     /**
+     * The refusal of a change or delete that would alter what an invoice draft bills (D-04, D-05, R-10-1): an
+     * entry reserved by a draft keeps its time, billable flag and context until it is unlinked from the draft.
+     */
+    public static function reserved(): DomainException
+    {
+        return new DomainException(__('kokpit.time.errors.reserved'));
+    }
+
+    /**
      * Whether the database refused the statement through the frozen-row guard
      * (SQLSTATE KP001), which is how a billed entry answers a write that got
      * past the application check.

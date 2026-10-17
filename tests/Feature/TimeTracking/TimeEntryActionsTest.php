@@ -16,13 +16,17 @@ use App\Domain\TimeTracking\Actions\CreateTimeEntry;
 use App\Domain\TimeTracking\Actions\DeleteTimeEntry;
 use App\Domain\TimeTracking\Actions\StopTimer;
 use App\Domain\TimeTracking\Actions\UpdateTimeEntry;
+use App\Domain\TimeTracking\Billing\EntryBilling;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Queries\OverlapFinder;
+use App\Filament\Resources\TimeEntryResource\Pages\EditTimeEntry;
 use Carbon\CarbonImmutable;
 use Database\Factories\ProjectFactory;
+use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Tests\Support\Canary;
 
 /*
@@ -910,4 +914,170 @@ it('names the earliest overlapping entry first and loads archived context', func
         ->and($found?->id)->toBe($early->id)
         ->and($found?->relationLoaded('task'))->toBeTrue()
         ->and($found?->task?->trashed())->toBeTrue();
+});
+
+/*
+ * The reservation lock (D-04, D-05, R-10-1): an entry held by an invoice draft keeps the time, the flag and the
+ * context its draft bills; the description stays editable.
+ */
+
+const ENTRY_RESERVED_MESSAGE = 'Záznam je připojen ke konceptu faktury. Odpojte ho v konceptu.';
+
+/**
+ * Reserves the entry for a draft invoice of its client, written as system with raw SQL (the issuing Actions are
+ * a later plan), and returns the draft id.
+ */
+function entryReserve(TimeEntry $entry): string
+{
+    return entrySystem(static function () use ($entry): string {
+        /** @var object{id: string} $draft */
+        $draft = DB::selectOne(
+            "insert into invoices (client_id, kind, state, currency, language, created_at, updated_at) values (?, 'invoice', 'draft', 'CZK', 'cs', now(), now()) returning id",
+            [$entry->client_id],
+        );
+
+        DB::transaction(static function () use ($entry, $draft): void {
+            $rows = TimeEntry::query()->whereKey($entry->id)->orderBy('id')->lockForUpdate()->get();
+
+            app(EntryBilling::class)->reserve($rows, $draft->id);
+        });
+
+        return $draft->id;
+    });
+}
+
+/**
+ * Frees the reserved entry again, as the unlink of a draft does.
+ */
+function entryUnreserve(TimeEntry $entry): void
+{
+    entrySystem(static function () use ($entry): void {
+        DB::transaction(static function () use ($entry): void {
+            $rows = TimeEntry::query()->whereKey($entry->id)->orderBy('id')->lockForUpdate()->get();
+
+            app(EntryBilling::class)->unreserve($rows);
+        });
+    });
+}
+
+it('refuses a change of time, flag or context of a reserved entry and lets the description through', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $project = entryProject();
+    $otherProject = entryProject($project->client);
+    $task = entryTask($admin, $project);
+    $otherTask = entryTask($admin, $project);
+    $entry = entrySystem(static fn (): TimeEntry => TimeEntry::factory()->forTask($task)->create([
+        'user_id' => $admin->id,
+        'description' => 'Reserved work',
+        'started_at' => CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'),
+        'ended_at' => CarbonImmutable::parse('2026-10-12 09:00:00', 'UTC'),
+        'billable' => true,
+    ])->refresh());
+    entryReserve($entry);
+    $before = entryReload($entry);
+
+    $changes = [
+        'end' => ['ended_at' => '2026-10-12T10:00:00Z'],
+        'start' => ['started_at' => '2026-10-12T07:00:00Z'],
+        'billable' => ['billable' => false],
+        'project' => ['project_id' => $otherProject->id],
+        'task' => ['task_id' => $otherTask->id],
+    ];
+
+    foreach ($changes as $change) {
+        expect(fn () => app(UpdateTimeEntry::class)->handle($admin, $entry, $change))
+            ->toThrow(DomainException::class, ENTRY_RESERVED_MESSAGE);
+    }
+
+    $stored = entryReload($entry);
+
+    expect($stored->only(['started_at', 'ended_at', 'billable', 'client_id', 'project_id', 'task_id']))
+        ->toEqual($before->only(['started_at', 'ended_at', 'billable', 'client_id', 'project_id', 'task_id']))
+        ->and($stored->isReserved())->toBeTrue();
+
+    // The same values as stored are no change; the description is always editable.
+    $updated = app(UpdateTimeEntry::class)->handle($admin, $entry, [
+        'description' => 'Reserved work, corrected',
+        'ended_at' => '2026-10-12T09:00:00Z',
+        'billable' => true,
+    ]);
+
+    expect($updated->description)->toBe('Reserved work, corrected')
+        ->and($updated->isReserved())->toBeTrue();
+});
+
+it('refuses to delete a reserved entry, and both work again after it is unreserved', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $entry = entryStored($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00', ['description' => 'Reserved work']);
+    entryReserve($entry);
+
+    expect(fn () => app(DeleteTimeEntry::class)->handle($admin, $entry))
+        ->toThrow(DomainException::class, ENTRY_RESERVED_MESSAGE)
+        ->and(entryCount())->toBe(1);
+
+    entryUnreserve($entry);
+
+    $updated = app(UpdateTimeEntry::class)->handle($admin, $entry, ['ended_at' => '2026-10-12T10:00:00Z']);
+
+    expect($updated->duration_seconds)->toBe(7200);
+
+    app(DeleteTimeEntry::class)->handle($admin, $updated);
+
+    expect(entryCount())->toBe(0);
+});
+
+it('decides the reserved refusal on the locked row, not on the model the caller holds', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $entry = entryStored($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+
+    // The caller holds a model that still says free; the draft takes the entry in the meantime.
+    expect($entry->isReserved())->toBeFalse();
+    entryReserve($entry);
+
+    expect(fn () => app(UpdateTimeEntry::class)->handle($admin, $entry, ['ended_at' => '2026-10-12T10:00:00Z']))
+        ->toThrow(DomainException::class, ENTRY_RESERVED_MESSAGE)
+        ->and(fn () => app(DeleteTimeEntry::class)->handle($admin, $entry))
+        ->toThrow(DomainException::class, ENTRY_RESERVED_MESSAGE);
+});
+
+it('shows the reserved callout on the edit page, disables the locked fields and still saves the description', function (): void {
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $entry = entryStored($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00', ['description' => 'Reserved work']);
+    entryReserve($entry);
+
+    Livewire::test(EditTimeEntry::class, ['record' => $entry->id])
+        ->assertSee(ENTRY_RESERVED_MESSAGE)
+        ->assertFormFieldIsDisabled('ended_at')
+        ->assertFormFieldIsDisabled('started_at')
+        ->assertFormFieldIsDisabled('billable')
+        ->assertFormFieldIsDisabled('client_id')
+        ->assertFormFieldIsDisabled('project_id')
+        ->assertFormFieldIsDisabled('task_id')
+        ->assertFormFieldIsEnabled('description')
+        ->fillForm(['description' => 'Reserved work, corrected'])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    $stored = entryReload($entry);
+
+    expect($stored->description)->toBe('Reserved work, corrected')
+        ->and($stored->ended_at?->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-12 09:00:00')
+        ->and($stored->isReserved())->toBeTrue();
+});
+
+it('keeps the edit page of a free entry editable and without the reserved callout', function (): void {
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $entry = entryStored($admin, '2026-10-12 08:00:00', '2026-10-12 09:00:00');
+
+    Livewire::test(EditTimeEntry::class, ['record' => $entry->id])
+        ->assertDontSee(ENTRY_RESERVED_MESSAGE)
+        ->assertFormFieldIsEnabled('ended_at')
+        ->assertFormFieldIsEnabled('billable');
 });

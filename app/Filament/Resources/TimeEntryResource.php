@@ -143,17 +143,20 @@ final class TimeEntryResource extends Resource
 
     /**
      * The three sections of the entry form. With `$running` true the entry has no
-     * end yet, so Konec is left out and the "Běží" badge stands in its place.
+     * end yet, so Konec is left out and the "Běží" badge stands in its place. With `$reserved` true the entry is
+     * held by an invoice draft (R-10-1): the client, project, task, times and billable flag are disabled, so
+     * they are not sent and the Action keeps the stored values; the description stays editable.
      *
      * @return list<Section>
      */
-    public static function entryFields(bool $running = false): array
+    public static function entryFields(bool $running = false, bool $reserved = false): array
     {
         return [
             Section::make(__('kokpit.time.sections.entry'))
                 ->columns(2)
                 ->schema([
                     Select::make('client_id')
+                        ->disabled($reserved)
                         ->label(__('kokpit.time.fields.client'))
                         ->options(static fn (?TimeEntry $record, Get $get): array => self::withCurrent(
                             app(EntryContextOptions::class)->clients(),
@@ -173,6 +176,7 @@ final class TimeEntryResource extends Resource
                         })
                         ->native(false),
                     Select::make('project_id')
+                        ->disabled($reserved)
                         ->label(__('kokpit.time.fields.project'))
                         ->options(static fn (?TimeEntry $record, Get $get): array => self::withCurrent(
                             app(EntryContextOptions::class)->projects(self::id($get('client_id'))),
@@ -190,6 +194,7 @@ final class TimeEntryResource extends Resource
                         })
                         ->native(false),
                     Select::make('task_id')
+                        ->disabled($reserved)
                         ->label(__('kokpit.time.fields.task'))
                         ->options(static fn (?TimeEntry $record, Get $get): array => self::withCurrent(
                             app(EntryContextOptions::class)->tasks(self::id($get('client_id')), self::id($get('project_id'))),
@@ -216,11 +221,13 @@ final class TimeEntryResource extends Resource
                 ->columns(2)
                 ->schema([
                     DateTimePicker::make('started_at')
+                        ->disabled($reserved)
                         ->label(__('kokpit.time.fields.started_at'))
                         ->seconds()
                         ->required()
                         ->live(),
                     DateTimePicker::make('ended_at')
+                        ->disabled($reserved)
                         ->label(__('kokpit.time.fields.ended_at'))
                         ->seconds()
                         ->required()
@@ -253,6 +260,7 @@ final class TimeEntryResource extends Resource
                         })
                         ->dehydrated(false),
                     Toggle::make('billable')
+                        ->disabled($reserved)
                         ->label(__('kokpit.time.fields.billable'))
                         ->default(true)
                         ->live()

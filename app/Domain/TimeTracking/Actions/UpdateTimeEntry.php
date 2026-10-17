@@ -26,6 +26,10 @@ use Illuminate\Validation\ValidationException;
  * through the cancel action of the billing). A KP001 from the guard trigger,
  * the writer-independent backstop, is translated to the same message.
  *
+ * A reserved entry (held by an invoice draft, D-04) keeps its start, end, duration, billable flag, client, project
+ * and task: a change of any of them is refused with `kokpit.time.errors.reserved` (R-10-1), decided on the locked
+ * row; the description and `external` still save. The same message refuses its deletion (DeleteTimeEntry).
+ *
  * `external` (D-15) follows the same rule: absent keeps, null clears, an object replaces the stored
  * one whole, nothing is merged. It is not in the activity log.
  *
@@ -61,7 +65,7 @@ final class UpdateTimeEntry
      * @param  EntryChanges  $data
      *
      * @throws ValidationException
-     * @throws DomainException the entry is billed
+     * @throws DomainException the entry is billed, or reserved and the change touches its time, flag or context
      */
     public function handle(User $actor, TimeEntry $entry, array $data): TimeEntry
     {
@@ -78,6 +82,14 @@ final class UpdateTimeEntry
                     throw TimeEntryInput::locked();
                 }
 
+                // A reserved entry keeps the context and the flag its draft bills; its times are checked below,
+                // once the data is parsed (R-10-1). The description and `external` always pass.
+                $reserved = $locked->isReserved();
+
+                if ($reserved && ($this->contextChanged($locked, $data) || $this->billableChanged($locked, $data))) {
+                    throw TimeEntryInput::reserved();
+                }
+
                 if ($this->contextChanged($locked, $data)) {
                     $context = TimeEntryInput::context($this->contextRequest($locked, $data));
 
@@ -89,6 +101,10 @@ final class UpdateTimeEntry
                 }
 
                 $this->applyTimes($locked, $data);
+
+                if ($reserved && $locked->isDirty(['started_at', 'ended_at'])) {
+                    throw TimeEntryInput::reserved();
+                }
 
                 if (array_key_exists('description', $data)) {
                     $locked->description = $description;
@@ -130,6 +146,16 @@ final class UpdateTimeEntry
         }
 
         return false;
+    }
+
+    /**
+     * Whether the data names a billable flag that differs from the stored one.
+     *
+     * @param  EntryChanges  $data
+     */
+    private function billableChanged(TimeEntry $stored, array $data): bool
+    {
+        return is_bool($data['billable'] ?? null) && $data['billable'] !== $stored->billable;
     }
 
     /**

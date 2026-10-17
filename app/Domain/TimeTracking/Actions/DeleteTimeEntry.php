@@ -21,13 +21,14 @@ use Illuminate\Support\Facades\Gate;
  * DomainException `kokpit.time.errors.locked` and stays (TI-05, D-06: it is
  * unlocked only through the cancel action of the billing). A KP001 from the
  * guard trigger, the writer-independent backstop, is translated to the same
- * message. A running entry can be deleted; the list does not offer it, the
+ * message. An entry reserved by an invoice draft is refused with `kokpit.time.errors.reserved` until it is
+ * unlinked from the draft (D-05, R-10-1). A running entry can be deleted; the list does not offer it, the
  * stop of the bar is the normal path.
  */
 final class DeleteTimeEntry
 {
     /**
-     * @throws DomainException the entry is billed
+     * @throws DomainException the entry is billed or reserved by an invoice draft
      */
     public function handle(User $actor, TimeEntry $entry): void
     {
@@ -39,6 +40,10 @@ final class DeleteTimeEntry
 
                 if ($locked->billing_state === BillingState::Billed) {
                     throw TimeEntryInput::locked();
+                }
+
+                if ($locked->isReserved()) {
+                    throw TimeEntryInput::reserved();
                 }
 
                 $locked->delete();
