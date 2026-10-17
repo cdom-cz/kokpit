@@ -3,11 +3,14 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Dashboard\Enums\DashboardWidget;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Queries\ReceivablesReader;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Pages\Dashboard;
+use App\Filament\Resources\InvoiceResource;
 use App\Filament\Widgets\HoursStats;
 use App\Filament\Widgets\TodayPlan;
 use App\Filament\Widgets\UnbilledPerClient;
@@ -15,6 +18,7 @@ use App\Filament\Widgets\UnpaidInvoices;
 use App\Filament\Widgets\UpcomingDeadlines;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
@@ -151,5 +155,94 @@ describe('the receivables card on the Admin dashboard', function (): void {
             ->not->toContain('K úhradě')
             ->not->toContain('Zálohy k vyfakturování')
             ->and(in_array(UnpaidInvoices::class, (new Dashboard)->getWidgets(), true))->toBeFalse();
+    });
+});
+
+describe('the card as one of the collapsible dashboard cards', function (): void {
+    it('shows success text at zero overdue and no advance row at zero', function (): void {
+        $client = unpaidCardClient();
+        unpaidCardIssued($client, '2026-10-05');
+        $this->travelTo(CarbonImmutable::parse('2026-10-10 10:00:00', 'Europe/Prague'));
+
+        $html = Livewire::actingAs($this->admin)->test(UnpaidInvoices::class)->html();
+        $text = unpaidCardText($html);
+
+        expect($text)->toContain('Nic po splatnosti')
+            ->not->toContain('Zálohy k vyfakturování')
+            ->not->toContain('Platba čeká na fakturu')
+            ->and($html)->not->toContain('fi-color-danger');
+    });
+
+    it('stores its own preference key and keeps the overdue count in the collapsed header', function (): void {
+        unpaidCardWorld();
+
+        Livewire::actingAs($this->admin)->test(UnpaidInvoices::class)
+            ->call('storeCollapsedState', true)
+            ->assertReturned(true);
+
+        $rows = DB::table('dashboard_widget_preferences')->where('user_id', $this->admin->id)->get();
+
+        expect($rows)->toHaveCount(1)
+            ->and($rows[0]->widget_key)->toBe('unpaid_invoices')
+            ->and($rows[0]->widget_key)->toBe(DashboardWidget::UnpaidInvoices->value);
+
+        $fresh = Livewire::actingAs($this->admin)->test(UnpaidInvoices::class);
+
+        expect($fresh->get('collapsed'))->toBeTrue()
+            ->and($fresh->html())->toContain('aria-expanded="false"')
+            ->and(unpaidCardText($fresh->html()))->toContain('Po splatnosti: 1');
+    });
+
+    it('does not offer the card to a Partner as a state to store', function (): void {
+        expect(DashboardWidget::UnpaidInvoices->isPartnerWidget())->toBeFalse();
+    });
+
+    it('links each stat to its list tab', function (): void {
+        $client = unpaidCardWorld();
+        $proforma = unpaidCardIssued($client, '2026-10-20', InvoiceKind::Proforma, '4000.00');
+        app(RecordPayment::class)->handle($this->admin, $proforma, ['amount' => '4000', 'paid_on' => '2026-10-20']);
+
+        $html = Livewire::actingAs($this->admin)->test(UnpaidInvoices::class)->html();
+
+        foreach (['overdue', 'unpaid', 'awaiting_invoice'] as $tab) {
+            expect($html)->toContain(e(InvoiceResource::getUrl('index', ['tab' => $tab])));
+        }
+    });
+
+    it('agrees with the counts of the list tabs', function (): void {
+        // Issue dates only move forward within a series: two overdue invoices first, then one that is still due.
+        $client = unpaidCardClient();
+        unpaidCardIssued($client, '2026-10-05');
+        unpaidCardIssued($client, '2026-10-06');
+        unpaidCardIssued($client, '2026-10-20');
+        $this->travelTo(CarbonImmutable::parse('2026-10-21 10:00:00', 'Europe/Prague'));
+
+        $counts = app(ReceivablesReader::class)->tabCounts(ReceivablesReader::today());
+        $text = unpaidCardText(Livewire::actingAs($this->admin)->test(UnpaidInvoices::class)->html());
+
+        expect($counts['overdue'])->toBe(2)
+            ->and($counts['unpaid'])->toBe(1);
+
+        preg_match('/Po splatnosti (\d+)/', $text, $overdue);
+        preg_match('/K úhradě (\d+)/', $text, $unpaid);
+
+        expect((int) ($overdue[1] ?? -1))->toBe($counts['overdue'])
+            ->and((int) ($unpaid[1] ?? -1))->toBe($counts['unpaid']);
+    });
+
+    it('reads the figures again when a payment is saved elsewhere', function (): void {
+        $client = unpaidCardClient();
+        $overdue = unpaidCardIssued($client, '2026-10-05');
+        $this->travelTo(CarbonImmutable::parse('2026-10-20 10:00:00', 'Europe/Prague'));
+
+        $component = Livewire::actingAs($this->admin)->test(UnpaidInvoices::class);
+
+        expect(unpaidCardText($component->html()))->not->toContain('Nic po splatnosti');
+
+        app(RecordPayment::class)->handle($this->admin, $overdue, ['amount' => '10000', 'paid_on' => '2026-10-20']);
+
+        $component->dispatch('invoice-payment-saved');
+
+        expect(unpaidCardText($component->html()))->toContain('Nic po splatnosti');
     });
 });
