@@ -5,21 +5,29 @@ declare(strict_types=1);
 namespace App\Domain\Invoicing\Actions;
 
 use App\Domain\Clients\Enums\InvoiceLanguage;
+use App\Domain\ExchangeRates\ExchangeRateConverter;
+use App\Domain\ExchangeRates\ExchangeRateMissing;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
+use App\Domain\Invoicing\Support\DraftPreview;
 use App\Domain\Invoicing\Support\DraftTotals;
 use App\Domain\Invoicing\Support\InvoiceItemInput;
+use App\Domain\Invoicing\Support\InvoiceQuantity;
+use App\Domain\Invoicing\Support\IssueChecks;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Support\PragueDay;
+use App\Domain\TimeTracking\Support\TimerClock;
 use DomainException;
+use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use LogicException;
 use OverflowException;
 
 /**
@@ -46,10 +54,22 @@ use OverflowException;
  * D-06). Changing the unit price of a line that was generated from time or a fixed amount marks its source as a manual
  * price and keeps its origin; the later conversion step leaves such a price alone.
  *
- * Every line total is computed here with {@see DraftTotals::lineTotal()} and stored with `price_converted` false; the
- * subtotal and the total are the sum of the stored line totals, the VAT is zero in the non-payer mode. A total or a
- * line total in the data is never read (T-10-28). The plan that converts lines of another currency re-prices the
- * non-manual ones at issue.
+ * Every line total is computed here, never read from the data (T-10-28); the subtotal and the total are the sum of the
+ * stored line totals, the VAT is zero in the non-payer mode. An ordinary line costs {@see DraftTotals::lineTotal()} and
+ * is stored with `price_converted` false. A line generated from time whose hourly rate is in another currency than
+ * the draft and whose price was not typed is re-previewed on every save through {@see DraftPreview::convertLine()}
+ * with the CNB lists of today (UI-SPEC C1, ruling R-17-1): the printed unit price is the display figure, the line
+ * amount is rounded once from the exact conversion, `price_converted` is true, so an edit of the quantity or the text
+ * never turns a preview into a two-rounding figure. The price shown for such a line is not a typed price: only a
+ * unit price that differs from the stored one is, and it makes the line manual and exact. When no list exists for a
+ * needed currency an ordinary save keeps the stored preview of those lines (the issue blocks with `cnb_missing`
+ * anyway).
+ *
+ * Changing the `currency` re-previews the generated lines for the new currency, with or without `items`: a rate in the
+ * new currency is restored exactly, the others are converted again, a unit price typed by hand is never changed. A
+ * change to a currency whose list is missing for a line that needs it is refused with `cnb_missing` under `currency`,
+ * like the draft creation (R-13-4), and nothing is written. The issue converts these lines again with the lists of the
+ * issue date and never reuses the preview.
  */
 final readonly class UpdateDraft
 {
@@ -61,7 +81,11 @@ final readonly class UpdateDraft
 
     private const int NOTE_MAX_LENGTH = 500;
 
-    public function __construct(private UpdateInternalNote $internalNote) {}
+    public function __construct(
+        private UpdateInternalNote $internalNote,
+        private DraftPreview $preview,
+        private ExchangeRateConverter $rates,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $data
@@ -81,6 +105,12 @@ final readonly class UpdateDraft
             }
 
             $header = $this->header($data, $locked);
+            $currencyChanged = $header['currency'] !== $locked->currency;
+            $today = TimerClock::now()->setTimezone(FilamentTimezone::get())->format('Y-m-d');
+
+            if ($currencyChanged) {
+                $this->assertListsFor($locked, $header['currency'], $today);
+            }
 
             if (array_key_exists('internal_note', $data)) {
                 $this->internalNote->handle($actor, $locked, is_string($data['internal_note']) ? $data['internal_note'] : null);
@@ -91,7 +121,9 @@ final readonly class UpdateDraft
                     throw new InvalidArgumentException('The items of a draft are a list of lines.');
                 }
 
-                $this->saveItems($locked, $data['items'], $header['currency']);
+                $this->saveItems($locked, $data['items'], $header['currency'], $currencyChanged, $today);
+            } elseif ($currencyChanged) {
+                $this->repriceGenerated($locked, $header['currency'], $today);
             }
 
             $totals = $this->totals($locked, $header['currency']);
@@ -200,7 +232,7 @@ final readonly class UpdateDraft
      *
      * @throws ValidationException
      */
-    private function saveItems(Invoice $draft, array $items, string $currency): void
+    private function saveItems(Invoice $draft, array $items, string $currency, bool $currencyChanged, string $today): void
     {
         $inputs = InvoiceItemInput::list($items, $currency, $draft->kind, (int) config('kokpit.invoicing.max_items'));
 
@@ -225,8 +257,10 @@ final readonly class UpdateDraft
             }
         }
 
+        $quotes = [];
+
         foreach ($inputs as $index => $input) {
-            $this->writeLine($draft, $input, $input->id === null ? null : $existing->get($input->id), $index + 1);
+            $this->writeLine($draft, $input, $input->id === null ? null : $existing->get($input->id), $index + 1, $currency, $currencyChanged, $today, $quotes);
         }
     }
 
@@ -267,25 +301,43 @@ final readonly class UpdateDraft
         return $kept;
     }
 
-    private function writeLine(Invoice $draft, InvoiceItemInput $input, ?InvoiceItem $stored, int $position): void
+    /**
+     * @param  array<string, array{rate: string, unit_amount: int, rate_date: string|null}>  $quotes  the quotes found so far, filled in
+     *
+     * @throws ValidationException
+     */
+    private function writeLine(Invoice $draft, InvoiceItemInput $input, ?InvoiceItem $stored, int $position, string $currency, bool $currencyChanged, string $today, array &$quotes): void
     {
         $item = $stored ?? new InvoiceItem;
-        $priceChanged = $stored instanceof InvoiceItem && $stored->unit_price_minor !== $input->unitPrice->minor;
+        $source = $stored instanceof InvoiceItem ? $stored->source : null;
+        $generated = $stored instanceof InvoiceItem && $source instanceof InvoiceItemSource && self::isGenerated($source);
+
+        // The price a generated line shows is the preview, not a typed price; on a change of currency the editor
+        // cannot know the new preview, so the figure it sends for such a line is never read as typed.
+        $priceChanged = $stored instanceof InvoiceItem
+            && ! ($generated && $currencyChanged)
+            && $stored->unit_price_minor !== $input->unitPrice->minor;
+
+        $unitPrice = $input->unitPrice;
+        $lineTotal = DraftTotals::lineTotal($unitPrice, $input->quantity);
+        $converted = false;
+
+        if ($generated && ! $priceChanged) {
+            [$unitPrice, $lineTotal, $converted] = $this->generatedPrice($source, $stored, $input->quantity, $currency, $currencyChanged, $today, $quotes);
+        }
 
         $item->fill(['description' => $input->description, 'unit' => $input->unit]);
         $item->forceFill([
             'invoice_id' => $draft->id,
             'position' => $position,
             'quantity' => $input->quantity->toDecimal(),
-            'unit_price_minor' => $input->unitPrice->minor,
-            'line_total_minor' => DraftTotals::lineTotal($input->unitPrice, $input->quantity)->minor,
-            'price_converted' => false,
+            'unit_price_minor' => $unitPrice->minor,
+            'line_total_minor' => $lineTotal->minor,
+            'price_converted' => $converted,
             'vat_rate' => null,
             'vat_minor' => 0,
         ]);
         $item->save();
-
-        $source = $stored instanceof InvoiceItem ? $stored->source : null;
 
         if (! $source instanceof InvoiceItemSource) {
             $source = new InvoiceItemSource;
@@ -301,6 +353,124 @@ final readonly class UpdateDraft
 
         if ($priceChanged && ! $source->price_manual) {
             $source->forceFill(['price_manual' => true])->save();
+        }
+    }
+
+    /**
+     * Whether the price of the line follows its hourly rate: generated from time, the price not typed by hand.
+     */
+    private static function isGenerated(InvoiceItemSource $source): bool
+    {
+        return $source->origin === InvoiceItemOrigin::Time && ! $source->price_manual && $source->sourceRate() instanceof Money;
+    }
+
+    /**
+     * The unit price, the amount and the converted flag of a generated line for the quantity: a rate in another
+     * currency than the draft is previewed with the lists of today (one rounding, ruling R-17-1) or, when the list is
+     * missing, keeps the stored preview; a rate in the draft's currency stays as it is, and is restored exactly after
+     * a change of currency.
+     *
+     * @param  array<string, array{rate: string, unit_amount: int, rate_date: string|null}>  $quotes
+     * @return array{0: Money, 1: Money, 2: bool}
+     *
+     * @throws ValidationException when an amount does not fit
+     */
+    private function generatedPrice(InvoiceItemSource $source, InvoiceItem $stored, InvoiceQuantity $quantity, string $currency, bool $currencyChanged, string $today, array &$quotes): array
+    {
+        $rate = $source->sourceRate() ?? throw new LogicException('A generated line has its source rate.');
+
+        try {
+            if ($rate->currency !== $currency) {
+                $converted = $this->preview->convertLine($rate, $quantity->toDecimal(), $currency, $today, $quotes);
+
+                return [$converted['unit_price'], $converted['line_total'], true];
+            }
+
+            if ($currencyChanged) {
+                return [$rate, DraftTotals::lineTotal($rate, $quantity), false];
+            }
+        } catch (ExchangeRateMissing) {
+            // Keep what the draft shows; the issue refuses it with cnb_missing until the list is there.
+            $unitPrice = Money::ofMinor($stored->unit_price_minor, $currency);
+            $lineTotal = $stored->quantity === $quantity->toDecimal()
+                ? Money::ofMinor($stored->line_total_minor, $currency)
+                : DraftTotals::lineTotal($unitPrice, $quantity);
+
+            return [$unitPrice, $lineTotal, $stored->price_converted];
+        } catch (OverflowException) {
+            throw ValidationException::withMessages(['items' => __('invoices.errors.item_price')]);
+        }
+
+        $unitPrice = Money::ofMinor($stored->unit_price_minor, $currency);
+
+        return [$unitPrice, DraftTotals::lineTotal($unitPrice, $quantity), false];
+    }
+
+    /**
+     * Re-previews the generated lines of a draft for a new currency when the save carries no lines; the lines typed by
+     * hand, the fixed amounts and the manual lines are not touched.
+     *
+     * @throws ValidationException
+     */
+    private function repriceGenerated(Invoice $draft, string $currency, string $today): void
+    {
+        $quotes = [];
+
+        /** @var Collection<int, InvoiceItem> $items */
+        $items = InvoiceItem::query()->where('invoice_id', $draft->id)->with('source')->get();
+
+        foreach ($items as $item) {
+            $source = $item->source;
+
+            if (! $source instanceof InvoiceItemSource || ! self::isGenerated($source)) {
+                continue;
+            }
+
+            [$unitPrice, $lineTotal, $converted] = $this->generatedPrice($source, $item, InvoiceQuantity::fromDecimal($item->quantity), $currency, true, $today, $quotes);
+
+            $item->forceFill([
+                'unit_price_minor' => $unitPrice->minor,
+                'line_total_minor' => $lineTotal->minor,
+                'price_converted' => $converted,
+            ])->save();
+        }
+    }
+
+    /**
+     * A change of currency needs the CNB list of every currency the generated lines are converted with: the new
+     * currency and the currency of each rate that differs from it (CZK needs none). One missing list refuses the
+     * change under `currency`, like the draft creation (plan 10-13 R-13-4).
+     *
+     * @throws ValidationException
+     */
+    private function assertListsFor(Invoice $draft, string $currency, string $today): void
+    {
+        /** @var list<string> $rateCurrencies */
+        $rateCurrencies = InvoiceItemSource::query()
+            ->where('invoice_id', $draft->id)
+            ->where('origin', InvoiceItemOrigin::Time->value)
+            ->where('price_manual', false)
+            ->whereNotNull('source_rate_currency')
+            ->where('source_rate_currency', '<>', $currency)
+            ->distinct()
+            ->orderBy('source_rate_currency')
+            ->pluck('source_rate_currency')
+            ->all();
+
+        if ($rateCurrencies === []) {
+            return;
+        }
+
+        foreach (array_unique([...$rateCurrencies, $currency]) as $needed) {
+            if ($needed === 'CZK') {
+                continue;
+            }
+
+            try {
+                $this->rates->rateFor($needed, $today);
+            } catch (ExchangeRateMissing) {
+                throw ValidationException::withMessages(['currency' => [__('invoices.errors.cnb_missing', ['currency' => $needed, 'date' => IssueChecks::czechDate($today)])]]);
+            }
         }
     }
 

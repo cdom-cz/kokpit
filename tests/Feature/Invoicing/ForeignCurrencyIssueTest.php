@@ -11,12 +11,14 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
+use App\Domain\Invoicing\Support\DraftPreview;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
@@ -260,5 +262,259 @@ describe('the tracer: a EUR invoice built from CZK-rated time', function (): voi
 
         expect(foreignIssueStored($draft)->state->value)->toBe('draft')
             ->and(foreignIssueSequences())->toBe($sequences);
+    });
+});
+
+/**
+ * The editor payload of the stored lines, every field as the editor sends it back; a price is replaced where the
+ * test types one.
+ *
+ * @param  array<string, string>  $typed  the typed major unit price by line description
+ * @return list<array<string, string>>
+ */
+function foreignIssueItems(Invoice $draft, string $currency, array $typed = []): array
+{
+    return array_map(static fn (InvoiceItem $item): array => [
+        'id' => $item->id,
+        'description' => $item->description,
+        'quantity' => $item->quantity,
+        'unit' => $item->unit,
+        'unit_price' => $typed[$item->description] ?? Money::ofMinor($item->unit_price_minor, $currency)->toMajor(),
+    ], foreignIssueLines($draft));
+}
+
+describe('the draft preview', function (): void {
+    it('previews a converted line and the CZK equivalent with the lists of today and nothing for a manual line', function (): void {
+        $client = InvoiceFixtures::client();
+        $alpha = foreignIssueProject($client, 'Alpha project', '1500');
+        $bravo = foreignIssueProject($client, 'Bravo project', '900');
+        foreignIssueEntry($alpha, '2026-09-10', 10);
+        foreignIssueEntry($bravo, '2026-09-11', 2);
+
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $draft = foreignIssueDraft($client, [$alpha, $bravo]);
+        $draft = app(UpdateDraft::class)->handle($this->admin, $draft, ['items' => foreignIssueItems($draft, 'EUR', ['Bravo project' => '40.00'])]);
+
+        [$converted, $typed] = foreignIssueLines($draft);
+        $preview = app(DraftPreview::class);
+
+        $line = $preview->linePreview($converted, '2026-10-14');
+
+        expect($line)->not->toBeNull()
+            ->and($line['unit_price']->minor)->toBe(5970)
+            ->and($line['unit_price']->currency)->toBe('EUR')
+            ->and($line['line_total']->minor)->toBe(59701)
+            ->and((float) $line['rate'])->toBe(25.125)
+            ->and($line['rate_date'])->toBe('2026-10-14')
+            ->and($preview->linePreview($typed, '2026-10-14'))->toBeNull();
+
+        $czk = $preview->czkPreview(foreignIssueStored($draft), '2026-10-14');
+
+        // The total of 677,01 EUR is converted once with the list of today.
+        expect($czk)->not->toBeNull()
+            ->and($czk['czk']->currency)->toBe('CZK')
+            ->and($czk['czk']->minor)->toBe(Money::ofMinor(67701, 'EUR')->convert('25.125', 'CZK')->minor)
+            ->and((float) $czk['rate'])->toBe(25.125)
+            ->and($czk['unit'])->toBe(1)
+            ->and($czk['rate_date'])->toBe('2026-10-14');
+    });
+
+    it('has no CZK equivalent for a draft in CZK', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = foreignIssueProject($client, 'Alpha project', '1500');
+        foreignIssueEntry($project, '2026-09-10', 2);
+
+        $draft = foreignIssueDraft($client, [$project], 'CZK');
+
+        expect(app(DraftPreview::class)->czkPreview($draft, '2026-10-14'))->toBeNull()
+            ->and(app(DraftPreview::class)->linePreview(foreignIssueLines($draft)[0], '2026-10-14'))->toBeNull();
+    });
+
+    it('gives the issued line the figures of the last preview when the list is the same', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = foreignIssueProject($client, 'Alpha project', '1500');
+        foreignIssueEntry($project, '2026-09-10', 10);
+
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $draft = foreignIssueDraft($client, [$project]);
+        $preview = app(DraftPreview::class)->linePreview(foreignIssueLines($draft)[0], '2026-10-14');
+
+        $issued = app(IssueDocument::class)->handle($this->admin, $draft);
+        [$line] = foreignIssueLines($issued);
+
+        expect($preview)->not->toBeNull()
+            ->and($line->unit_price_minor)->toBe($preview['unit_price']->minor)
+            ->and($line->line_total_minor)->toBe($preview['line_total']->minor);
+    });
+
+    it('refuses a Partner both methods', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = foreignIssueProject($client, 'Alpha project', '1500');
+        foreignIssueEntry($project, '2026-09-10', 2);
+
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $draft = foreignIssueDraft($client, [$project]);
+        $line = foreignIssueLines($draft)[0];
+
+        $this->actingAs(Canary::partnerFor($client->id));
+        app()->forgetScopedInstances();
+
+        $preview = app(DraftPreview::class);
+
+        expect(fn () => $preview->linePreview($line, '2026-10-14'))->toThrow(AuthorizationException::class)
+            ->and(fn () => $preview->czkPreview($draft, '2026-10-14'))->toThrow(AuthorizationException::class);
+    });
+});
+
+describe('saving a draft keeps converted lines single-rounded', function (): void {
+    it('re-previews a converted line when only its text or its quantity changes', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = foreignIssueProject($client, 'Alpha project', '1500');
+        foreignIssueEntry($project, '2026-09-10', 10);
+
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $draft = foreignIssueDraft($client, [$project]);
+
+        $items = foreignIssueItems($draft, 'EUR');
+        $items[0]['description'] = 'Alpha project, September';
+        app(UpdateDraft::class)->handle($this->admin, $draft, ['items' => $items]);
+        [$renamed] = foreignIssueLines($draft);
+
+        expect($renamed->description)->toBe('Alpha project, September')
+            ->and($renamed->unit_price_minor)->toBe(5970)
+            ->and($renamed->line_total_minor)->toBe(59701)
+            ->and($renamed->price_converted)->toBeTrue()
+            ->and($renamed->source?->price_manual)->toBeFalse();
+
+        // 12 h: 12 x 5970 = 71 640 is the two-rounding figure; rounded once from the exact amount it is 71 642.
+        $items = foreignIssueItems($draft, 'EUR');
+        $items[0]['quantity'] = '12';
+        app(UpdateDraft::class)->handle($this->admin, $draft, ['items' => $items]);
+        [$longer] = foreignIssueLines($draft);
+
+        expect($longer->quantity)->toBe('12.0000')
+            ->and($longer->unit_price_minor)->toBe(5970)
+            ->and($longer->line_total_minor)->toBe(71642)
+            ->and($longer->price_converted)->toBeTrue()
+            ->and($longer->source?->price_manual)->toBeFalse()
+            ->and(foreignIssueStored($draft)->total_minor)->toBe(71642);
+    });
+
+    it('keeps the stored preview of a line when no list exists, instead of failing the save', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = foreignIssueProject($client, 'Alpha project', '1500');
+        foreignIssueEntry($project, '2026-09-10', 10);
+
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $draft = foreignIssueDraft($client, [$project]);
+
+        // The rows of the draft are writable: pretend the line is rated in a currency that has no list.
+        app(PartnerContext::class)->runAsSystem(static fn (): int => InvoiceItemSource::query()->where('invoice_id', $draft->id)->update(['source_rate_currency' => 'GBP']));
+
+        $items = foreignIssueItems($draft, 'EUR');
+        $items[0]['description'] = 'Alpha project, September';
+        app(UpdateDraft::class)->handle($this->admin, $draft, ['items' => $items]);
+        [$line] = foreignIssueLines($draft);
+
+        expect($line->description)->toBe('Alpha project, September')
+            ->and($line->unit_price_minor)->toBe(5970)
+            ->and($line->line_total_minor)->toBe(59701)
+            ->and($line->price_converted)->toBeTrue();
+    });
+
+    it('marks a typed price as manual and keeps it exact', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = foreignIssueProject($client, 'Alpha project', '1500');
+        foreignIssueEntry($project, '2026-09-10', 10);
+
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $draft = foreignIssueDraft($client, [$project]);
+
+        app(UpdateDraft::class)->handle($this->admin, $draft, ['items' => foreignIssueItems($draft, 'EUR', ['Alpha project' => '61.00'])]);
+        [$line] = foreignIssueLines($draft);
+
+        expect($line->unit_price_minor)->toBe(6100)
+            ->and($line->line_total_minor)->toBe(61000)
+            ->and($line->price_converted)->toBeFalse()
+            ->and($line->source?->price_manual)->toBeTrue();
+    });
+});
+
+describe('changing the currency of a draft', function (): void {
+    it('restores the source price in CZK, previews again on the way back and never touches a typed price', function (): void {
+        $client = InvoiceFixtures::client();
+        $alpha = foreignIssueProject($client, 'Alpha project', '1500');
+        $bravo = foreignIssueProject($client, 'Bravo project', '900');
+        foreignIssueEntry($alpha, '2026-09-10', 10);
+        foreignIssueEntry($bravo, '2026-09-11', 2);
+
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $draft = foreignIssueDraft($client, [$alpha, $bravo]);
+        app(UpdateDraft::class)->handle($this->admin, $draft, ['items' => foreignIssueItems($draft, 'EUR', ['Bravo project' => '40.00'])]);
+
+        // To CZK: the editor sends the lines again; the figure it shows for the generated line is not a typed price.
+        app(UpdateDraft::class)->handle($this->admin, $draft, ['currency' => 'CZK', 'items' => foreignIssueItems($draft, 'EUR')]);
+        [$restored, $typed] = foreignIssueLines($draft);
+
+        expect(foreignIssueStored($draft)->currency)->toBe('CZK')
+            ->and($restored->unit_price_minor)->toBe(150000)
+            ->and($restored->line_total_minor)->toBe(1500000)
+            ->and($restored->price_converted)->toBeFalse()
+            ->and($restored->source?->price_manual)->toBeFalse()
+            ->and($typed->unit_price_minor)->toBe(4000)
+            ->and($typed->line_total_minor)->toBe(8000)
+            ->and($typed->source?->price_manual)->toBeTrue()
+            ->and(foreignIssueStored($draft)->total_minor)->toBe(1508000);
+
+        // And back to EUR: the generated line is previewed again, the typed price is still as typed.
+        app(UpdateDraft::class)->handle($this->admin, $draft, ['currency' => 'EUR', 'items' => foreignIssueItems($draft, 'CZK')]);
+        [$again, $stillTyped] = foreignIssueLines($draft);
+
+        expect($again->unit_price_minor)->toBe(5970)
+            ->and($again->line_total_minor)->toBe(59701)
+            ->and($again->price_converted)->toBeTrue()
+            ->and($stillTyped->unit_price_minor)->toBe(4000)
+            ->and($stillTyped->line_total_minor)->toBe(8000)
+            ->and($stillTyped->price_converted)->toBeFalse()
+            ->and(foreignIssueStored($draft)->total_minor)->toBe(67701);
+    });
+
+    it('re-previews the generated lines even when the save carries no lines', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = foreignIssueProject($client, 'Alpha project', '1500');
+        foreignIssueEntry($project, '2026-09-10', 10);
+
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $draft = foreignIssueDraft($client, [$project]);
+
+        app(UpdateDraft::class)->handle($this->admin, $draft, ['currency' => 'CZK']);
+        [$line] = foreignIssueLines($draft);
+
+        expect($line->unit_price_minor)->toBe(150000)
+            ->and($line->line_total_minor)->toBe(1500000)
+            ->and($line->price_converted)->toBeFalse()
+            ->and(foreignIssueStored($draft)->total_minor)->toBe(1500000);
+    });
+
+    it('refuses a currency without a CNB list under currency and changes nothing', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = foreignIssueProject($client, 'Alpha project', '1500');
+        foreignIssueEntry($project, '2026-09-10', 10);
+
+        $draft = foreignIssueDraft($client, [$project], 'CZK');
+
+        try {
+            app(UpdateDraft::class)->handle($this->admin, $draft, ['currency' => 'EUR', 'items' => foreignIssueItems($draft, 'CZK')]);
+            $this->fail('The currency change had to be refused.');
+        } catch (ValidationException $exception) {
+            expect($exception->errors())->toHaveKey('currency')
+                ->and($exception->errors()['currency'][0])->toContain('EUR');
+        }
+
+        [$line] = foreignIssueLines($draft);
+
+        expect(foreignIssueStored($draft)->currency)->toBe('CZK')
+            ->and($line->unit_price_minor)->toBe(150000)
+            ->and($line->price_converted)->toBeFalse();
     });
 });
