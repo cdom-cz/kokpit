@@ -7,12 +7,14 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\DeleteDraft;
 use App\Domain\Invoicing\Actions\UpdateDraft;
+use App\Domain\Invoicing\Actions\UpdateInternalNote;
+use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Shared\Auth\PartnerContext;
-use App\Domain\Shared\Money\Money;
+use App\Domain\Shared\Models\Activity;
 use App\Domain\TimeTracking\Billing\EntryBilling;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
@@ -21,6 +23,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
+use Tests\Support\InvoiceFixtures;
 
 /*
  * The draft lifecycle (IN-02, IN-08, IN-10; D-01, D-03, D-05, D-08, D-11): creating an empty draft, saving manual
@@ -39,21 +42,6 @@ use Tests\Support\Canary;
 function draftSystem(Closure $callback): mixed
 {
     return app(PartnerContext::class)->runAsSystem($callback);
-}
-
-/**
- * A fictional client with the given billing defaults.
- *
- * @param  array<string, mixed>  $attributes
- */
-function draftClient(array $attributes = []): Client
-{
-    $currency = is_string($attributes['currency'] ?? null) ? $attributes['currency'] : 'CZK';
-
-    return draftSystem(static fn (): Client => Client::factory()->create([
-        'hourly_rate' => Money::ofMinor(0, $currency),
-        ...$attributes,
-    ]));
 }
 
 /**
@@ -81,16 +69,6 @@ function draftSave(User $admin, Invoice $draft, array $data): Invoice
 }
 
 /**
- * One line of the editor payload.
- *
- * @return array<string, mixed>
- */
-function draftLine(string $description, string $quantity, string $unitPrice, string $unit = 'h'): array
-{
-    return ['description' => $description, 'quantity' => $quantity, 'unit' => $unit, 'unit_price' => $unitPrice];
-}
-
-/**
  * The stored lines of the draft in order, as plain rows.
  *
  * @return list<InvoiceItem>
@@ -102,7 +80,7 @@ function draftLines(Invoice $draft): array
 
 it('creates an empty draft with the defaults of the client and consumes no number', function (): void {
     $admin = Canary::admin();
-    $client = draftClient(['currency' => 'EUR', 'payment_terms_days' => 14, 'invoice_language' => 'en']);
+    $client = InvoiceFixtures::client(['currency' => 'EUR', 'payment_terms_days' => 14, 'invoice_language' => 'en']);
     $sequences = DB::table('number_sequences')->count();
 
     $draft = draftCreate($admin, $client);
@@ -123,13 +101,13 @@ it('creates an empty draft with the defaults of the client and consumes no numbe
 
 it('saves manual lines with the totals computed on the server and ignores a forged total', function (): void {
     $admin = Canary::admin();
-    $draft = draftCreate($admin, draftClient(['currency' => 'EUR', 'payment_terms_days' => 14, 'invoice_language' => 'en']));
+    $draft = draftCreate($admin, InvoiceFixtures::client(['currency' => 'EUR', 'payment_terms_days' => 14, 'invoice_language' => 'en']));
     $sequences = DB::table('number_sequences')->count();
 
     $saved = draftSave($admin, $draft, [
         'items' => [
-            [...draftLine('Konzultace', '2,5', '80,00'), 'line_total_minor' => 1, 'line_total' => '1.00'],
-            draftLine('Licence', '1', '120,50', 'ks'),
+            [...InvoiceFixtures::item('Konzultace', '2,5', '80,00'), 'line_total_minor' => 1, 'line_total' => '1.00'],
+            InvoiceFixtures::item('Licence', '1', '120,50', 'ks'),
         ],
         'subtotal_minor' => 5,
         'total_minor' => 5,
@@ -151,7 +129,7 @@ it('saves manual lines with the totals computed on the server and ignores a forg
 
 it('refuses a Partner both Actions', function (): void {
     $admin = Canary::admin();
-    $client = draftClient();
+    $client = InvoiceFixtures::client();
     $draft = draftCreate($admin, $client);
     $partner = Canary::partnerFor($client->id);
 
@@ -217,17 +195,17 @@ function draftSources(Invoice $draft): array
 
 it('refuses bad lines as field errors in Czech and stores nothing', function (): void {
     $admin = Canary::admin();
-    $draft = draftCreate($admin, draftClient(['currency' => 'CZK']));
+    $draft = draftCreate($admin, InvoiceFixtures::client(['currency' => 'CZK']));
 
     $errors = draftRefused(fn () => draftSave($admin, $draft, ['items' => [
-        draftLine('', '1', '10'),
-        draftLine(str_repeat('a', 501), '1', '10'),
-        draftLine('Zero quantity', '0', '10'),
-        draftLine('Long quantity', '1,23456', '10'),
-        draftLine('No unit', '1', '10', ''),
-        draftLine('Three decimals', '1', '10,123'),
-        draftLine('Negative price', '1', '-5'),
-        draftLine('Not a number', 'abc', 'x'),
+        InvoiceFixtures::item('', '1', '10'),
+        InvoiceFixtures::item(str_repeat('a', 501), '1', '10'),
+        InvoiceFixtures::item('Zero quantity', '0', '10'),
+        InvoiceFixtures::item('Long quantity', '1,23456', '10'),
+        InvoiceFixtures::item('No unit', '1', '10', ''),
+        InvoiceFixtures::item('Three decimals', '1', '10,123'),
+        InvoiceFixtures::item('Negative price', '1', '-5'),
+        InvoiceFixtures::item('Not a number', 'abc', 'x'),
     ]]));
 
     expect($errors)->toBe([
@@ -247,13 +225,13 @@ it('refuses bad lines as field errors in Czech and stores nothing', function ():
 
 it('needs the explicit confirmation for a zero unit price', function (): void {
     $admin = Canary::admin();
-    $draft = draftCreate($admin, draftClient());
+    $draft = draftCreate($admin, InvoiceFixtures::client());
 
-    $errors = draftRefused(fn () => draftSave($admin, $draft, ['items' => [draftLine('Free of charge', '1', '0')]]));
+    $errors = draftRefused(fn () => draftSave($admin, $draft, ['items' => [InvoiceFixtures::item('Free of charge', '1', '0')]]));
 
     expect($errors)->toBe(['items.0.unit_price' => ['Jednotkovou cenu nula potvrďte u položky.']]);
 
-    $saved = draftSave($admin, $draft, ['items' => [[...draftLine('Free of charge', '1', '0'), 'confirm_zero_price' => true]]]);
+    $saved = draftSave($admin, $draft, ['items' => [[...InvoiceFixtures::item('Free of charge', '1', '0'), 'confirm_zero_price' => true]]]);
 
     expect(draftLines($saved))->toHaveCount(1)
         ->and(draftLines($saved)[0]->unit_price_minor)->toBe(0)
@@ -262,8 +240,8 @@ it('needs the explicit confirmation for a zero unit price', function (): void {
 
 it('caps a draft at the configured number of lines', function (): void {
     $admin = Canary::admin();
-    $draft = draftCreate($admin, draftClient());
-    $line = static fn (int $n): array => draftLine('Line '.$n, '1', '1', 'ks');
+    $draft = draftCreate($admin, InvoiceFixtures::client());
+    $line = static fn (int $n): array => InvoiceFixtures::item('Line '.$n, '1', '1', 'ks');
 
     $errors = draftRefused(fn () => draftSave($admin, $draft, ['items' => array_map($line, range(1, 201))]));
 
@@ -278,14 +256,14 @@ it('caps a draft at the configured number of lines', function (): void {
 
 it('refuses the id of a line of another draft and writes nothing', function (): void {
     $admin = Canary::admin();
-    $client = draftClient();
+    $client = InvoiceFixtures::client();
     $mine = draftCreate($admin, $client);
     $other = draftCreate($admin, $client);
-    $foreign = draftLines(draftSave($admin, $other, ['items' => [draftLine('Foreign', '1', '100')]]))[0];
-    draftSave($admin, $mine, ['items' => [draftLine('Mine', '1', '50')]]);
+    $foreign = draftLines(draftSave($admin, $other, ['items' => [InvoiceFixtures::item('Foreign', '1', '100')]]))[0];
+    draftSave($admin, $mine, ['items' => [InvoiceFixtures::item('Mine', '1', '50')]]);
 
     $errors = draftRefused(fn () => draftSave($admin, $mine, ['items' => [
-        [...draftLine('Hijacked', '1', '1'), 'id' => $foreign->id],
+        [...InvoiceFixtures::item('Hijacked', '1', '1'), 'id' => $foreign->id],
     ]]));
 
     $mineLines = draftLines($mine);
@@ -299,20 +277,20 @@ it('refuses the id of a line of another draft and writes nothing', function (): 
 
 it('updates a line by id, keeps its row and source, deletes a missing line with its source and follows the order sent', function (): void {
     $admin = Canary::admin();
-    $draft = draftCreate($admin, draftClient());
+    $draft = draftCreate($admin, InvoiceFixtures::client());
     $saved = draftSave($admin, $draft, ['items' => [
-        draftLine('First', '1', '10'),
-        draftLine('Second', '1', '20'),
-        draftLine('Third', '1', '30'),
+        InvoiceFixtures::item('First', '1', '10'),
+        InvoiceFixtures::item('Second', '1', '20'),
+        InvoiceFixtures::item('Third', '1', '30'),
     ]]);
     [$first, $second, $third] = draftLines($saved);
 
     expect(draftSources($saved))->toHaveCount(3);
 
     $updated = draftSave($admin, $saved, ['items' => [
-        [...draftLine('Third renamed', '2', '30'), 'id' => $third->id],
-        [...draftLine('First', '1', '10'), 'id' => $first->id],
-        draftLine('Brand new', '1', '5'),
+        [...InvoiceFixtures::item('Third renamed', '2', '30'), 'id' => $third->id],
+        [...InvoiceFixtures::item('First', '1', '10'), 'id' => $first->id],
+        InvoiceFixtures::item('Brand new', '1', '5'),
     ]]);
 
     $lines = draftLines($updated);
@@ -333,8 +311,8 @@ it('updates a line by id, keeps its row and source, deletes a missing line with 
 
 it('marks the price of a line generated from time as manual only when the unit price changes, and keeps its origin', function (): void {
     $admin = Canary::admin();
-    $draft = draftCreate($admin, draftClient());
-    $saved = draftSave($admin, $draft, ['items' => [draftLine('Billed time', '1', '100')]]);
+    $draft = draftCreate($admin, InvoiceFixtures::client());
+    $saved = draftSave($admin, $draft, ['items' => [InvoiceFixtures::item('Billed time', '1', '100')]]);
     $line = draftLines($saved)[0];
 
     // A line made from tracked time: written as system, the way the plan that adds time will write it.
@@ -352,13 +330,13 @@ it('marks the price of a line generated from time as manual only when the unit p
     $sourceOf = static fn (): InvoiceItemSource => draftSources($saved)[0];
 
     // The quantity and the text change; the unit price does not.
-    draftSave($admin, $saved, ['items' => [[...draftLine('Billed time, renamed', '2', '100'), 'id' => $line->id]]]);
+    draftSave($admin, $saved, ['items' => [[...InvoiceFixtures::item('Billed time, renamed', '2', '100'), 'id' => $line->id]]]);
 
     expect($sourceOf()->price_manual)->toBeFalse()
         ->and($sourceOf()->origin->value)->toBe('time');
 
     // The unit price changes.
-    $after = draftSave($admin, $saved, ['items' => [[...draftLine('Billed time, renamed', '2', '90'), 'id' => $line->id]]]);
+    $after = draftSave($admin, $saved, ['items' => [[...InvoiceFixtures::item('Billed time, renamed', '2', '90'), 'id' => $line->id]]]);
     $stored = draftLines($after)[0];
 
     expect($sourceOf()->price_manual)->toBeTrue()
@@ -370,7 +348,7 @@ it('marks the price of a line generated from time as manual only when the unit p
 
 it('refuses a due date before the issue date', function (): void {
     $admin = Canary::admin();
-    $draft = draftCreate($admin, draftClient());
+    $draft = draftCreate($admin, InvoiceFixtures::client());
 
     $errors = draftRefused(fn () => draftSave($admin, $draft, ['issue_date' => '2026-10-20', 'due_date' => '2026-10-19']));
 
@@ -389,8 +367,8 @@ it('refuses a due date before the issue date', function (): void {
 
 it('refuses to update an issued document', function (): void {
     $admin = Canary::admin();
-    $draft = draftCreate($admin, draftClient());
-    draftSave($admin, $draft, ['items' => [draftLine('Work', '1', '100')]]);
+    $draft = draftCreate($admin, InvoiceFixtures::client());
+    draftSave($admin, $draft, ['items' => [InvoiceFixtures::item('Work', '1', '100')]]);
     $issued = draftIssue($draft);
 
     expect(fn () => draftSave($admin, $issued, ['note' => 'Too late']))
@@ -429,9 +407,9 @@ function draftReserveEntries(User $admin, Client $client, Invoice $draft): array
 
 it('deletes a draft, releases its reserved entries and consumes no number', function (): void {
     $admin = Canary::admin();
-    $client = draftClient();
+    $client = InvoiceFixtures::client();
     $draft = draftCreate($admin, $client);
-    $saved = draftSave($admin, $draft, ['items' => [draftLine('One', '1', '10'), draftLine('Two', '1', '20')]]);
+    $saved = draftSave($admin, $draft, ['items' => [InvoiceFixtures::item('One', '1', '10'), InvoiceFixtures::item('Two', '1', '20')]]);
     $entries = draftReserveEntries($admin, $client, $saved);
     $sequences = DB::table('number_sequences')->count();
 
@@ -456,8 +434,8 @@ it('deletes a draft, releases its reserved entries and consumes no number', func
 
 it('never deletes an issued document, in the Action or in the database', function (): void {
     $admin = Canary::admin();
-    $draft = draftCreate($admin, draftClient());
-    draftSave($admin, $draft, ['items' => [draftLine('Work', '1', '100')]]);
+    $draft = draftCreate($admin, InvoiceFixtures::client());
+    draftSave($admin, $draft, ['items' => [InvoiceFixtures::item('Work', '1', '100')]]);
     $issued = draftIssue($draft);
 
     $this->actingAs($admin);
@@ -467,4 +445,113 @@ it('never deletes an issued document, in the Action or in the database', functio
         ->and(fn () => DB::transaction(static fn (): int => DB::delete('delete from invoices where id = ?', [$issued->id])))
         ->toThrow(QueryException::class)
         ->and(draftSystem(static fn (): int => Invoice::query()->whereKey($issued->id)->count()))->toBe(1);
+});
+
+/**
+ * The Admin-only row of the document, read as system.
+ */
+function draftAdminRow(Invoice $invoice): InvoiceAdmin
+{
+    return draftSystem(static fn (): InvoiceAdmin => InvoiceAdmin::query()->where('invoice_id', $invoice->id)->firstOrFail());
+}
+
+it('stores the internal note of a draft and of an issued document with a new marker and never logs the text', function (): void {
+    $admin = Canary::admin();
+    $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Work', '1', '100')], actor: $admin);
+    $draftCanary = Canary::canary('draftnote');
+    $issuedCanary = Canary::canary('issuednote');
+
+    app(UpdateInternalNote::class)->handle($admin, $draft, $draftCanary);
+
+    $onDraft = draftAdminRow($draft);
+
+    expect($onDraft->internal_note)->toBe($draftCanary)
+        ->and($onDraft->internal_note_updated_at)->not->toBeNull();
+
+    $issued = draftIssue($draft);
+    $this->travel(1)->hours();
+    $this->actingAs($admin);
+    app(UpdateInternalNote::class)->handle($admin, $issued, $issuedCanary);
+
+    $onIssued = draftAdminRow($draft);
+    $rows = Activity::query()->where('subject_type', 'invoice_admin')->where('subject_id', $onIssued->id)->get();
+    $json = (string) json_encode($rows->map(static fn (Activity $row): mixed => $row->attribute_changes)->all());
+
+    expect($onIssued->internal_note)->toBe($issuedCanary)
+        ->and($onIssued->internal_note_updated_at?->gt($onDraft->internal_note_updated_at))->toBeTrue()
+        ->and($rows->count())->toBeGreaterThanOrEqual(2)
+        ->and($json)->toContain('internal_note_updated_at')
+        ->and($json)->not->toContain($draftCanary)
+        ->and($json)->not->toContain($issuedCanary)
+        ->and($json)->not->toContain('"internal_note"');
+});
+
+it('leaves the marker alone when the internal note does not change and clears it with a blank note', function (): void {
+    $admin = Canary::admin();
+    $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), actor: $admin);
+
+    app(UpdateInternalNote::class)->handle($admin, $draft, '  Remember the discount  ');
+    $first = draftAdminRow($draft);
+
+    $this->travel(1)->hours();
+    app(UpdateInternalNote::class)->handle($admin, $draft, 'Remember the discount');
+
+    expect(draftAdminRow($draft)->internal_note_updated_at?->equalTo($first->internal_note_updated_at))->toBeTrue();
+
+    app(UpdateInternalNote::class)->handle($admin, $draft, '   ');
+
+    expect(draftAdminRow($draft)->internal_note)->toBeNull();
+});
+
+it('saves the internal note together with the draft', function (): void {
+    $admin = Canary::admin();
+    $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), actor: $admin);
+
+    draftSave($admin, $draft, ['internal_note' => 'Private reminder', 'note' => 'Printed text', 'items' => [InvoiceFixtures::item('Work', '1', '10')]]);
+
+    expect(draftAdminRow($draft)->internal_note)->toBe('Private reminder')
+        ->and($draft->refresh()->note)->toBe('Printed text');
+
+    $errors = draftRefused(fn () => draftSave($admin, $draft, ['internal_note' => str_repeat('a', 2001), 'items' => [InvoiceFixtures::item('Other', '1', '99')]]));
+
+    expect($errors)->toBe(['internal_note' => ['Interní poznámka může mít nejvýše 2 000 znaků.']])
+        ->and(array_map(static fn (InvoiceItem $item): string => $item->description, draftLines($draft)))->toBe(['Work']);
+});
+
+it('refuses an internal note over 2000 characters and refuses a Partner', function (): void {
+    $admin = Canary::admin();
+    $client = InvoiceFixtures::client();
+    $draft = InvoiceFixtures::draft($client, actor: $admin);
+
+    $errors = draftRefused(fn () => app(UpdateInternalNote::class)->handle($admin, $draft, str_repeat('a', 2001)));
+
+    app(UpdateInternalNote::class)->handle($admin, $draft, str_repeat('b', 2000));
+
+    expect($errors)->toBe(['internal_note' => ['Interní poznámka může mít nejvýše 2 000 znaků.']])
+        ->and(mb_strlen((string) draftAdminRow($draft)->internal_note))->toBe(2000);
+
+    $partner = Canary::partnerFor($client->id);
+    $this->actingAs($partner);
+
+    expect(fn () => app(UpdateInternalNote::class)->handle($partner, $draft, 'Partner note'))
+        ->toThrow(AuthorizationException::class);
+});
+
+it('builds fictional clients and drafts for later tests', function (): void {
+    $client = InvoiceFixtures::client(['currency' => 'EUR']);
+    $draft = InvoiceFixtures::draft($client, [
+        InvoiceFixtures::item('Design', '3', '40'),
+        InvoiceFixtures::item('Hosting', '1', '15,50', 'ks'),
+    ]);
+    $proforma = InvoiceFixtures::draft($client, kind: InvoiceKind::Proforma);
+
+    expect($client->invoice_email)->toEndWith('@example.com')
+        ->and($client->company_number)->toMatch('/^\d{8}$/D')
+        ->and($client->street)->not->toBeNull()
+        ->and($client->currency)->toBe('EUR')
+        ->and($draft->kind->value)->toBe('invoice')
+        ->and($draft->currency)->toBe('EUR')
+        ->and($draft->total_minor)->toBe(13550)
+        ->and($proforma->kind->value)->toBe('proforma')
+        ->and($proforma->total_minor)->toBe(0);
 });

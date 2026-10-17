@@ -35,6 +35,7 @@ use OverflowException;
  *   "today (Europe/Prague) at issue" and a null due date "the issue date plus the client's payment terms at issue";
  *   only a value the Admin typed is stored (R-11-1);
  * - `note` (at most 500 characters), printed on the document;
+ * - `internal_note` (at most 2 000 characters), saved through {@see UpdateInternalNote} in the same transaction;
  * - `items`: the whole list of lines, `id?`, `description`, `quantity`, `unit`, `unit_price`, `confirm_zero_price?`
  *   (see {@see InvoiceItemInput}).
  *
@@ -60,6 +61,8 @@ final readonly class UpdateDraft
 
     private const int NOTE_MAX_LENGTH = 500;
 
+    public function __construct(private UpdateInternalNote $internalNote) {}
+
     /**
      * @param  array<string, mixed>  $data
      *
@@ -70,7 +73,7 @@ final readonly class UpdateDraft
     {
         Gate::forUser($actor)->authorize('update', $draft);
 
-        return DB::transaction(function () use ($draft, $data): Invoice {
+        return DB::transaction(function () use ($actor, $draft, $data): Invoice {
             $locked = Invoice::query()->whereKey($draft->getKey())->lockForUpdate()->firstOrFail();
 
             if (! $locked->isDraft()) {
@@ -78,6 +81,10 @@ final readonly class UpdateDraft
             }
 
             $header = $this->header($data, $locked);
+
+            if (array_key_exists('internal_note', $data)) {
+                $this->internalNote->handle($actor, $locked, is_string($data['internal_note']) ? $data['internal_note'] : null);
+            }
 
             if (array_key_exists('items', $data)) {
                 if (! is_array($data['items'])) {
