@@ -633,7 +633,7 @@ Plans:
 **Goal:** REST API for the transactions and transaction_categories tables, including bulk creation of transactions
 **Requirements**: TBD
 **Depends on:** Phase 9
-**Plans:** 9/9 plans executed in 5 waves (gap-closure plan 09.1-09 from 09.1-VERIFICATION.md and 09.1-REVIEW.md planned in gap wave 1)
+**Plans:** 9/9 plans complete in 5 waves (gap-closure plan 09.1-09 from 09.1-VERIFICATION.md and 09.1-REVIEW.md planned in gap wave 1)
 
 Plans:
 **Wave 1**
