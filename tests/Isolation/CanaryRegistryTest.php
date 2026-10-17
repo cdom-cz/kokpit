@@ -11,7 +11,11 @@ use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Models\InvoiceItemSource;
+use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Reports\Models\ReportExport;
@@ -115,7 +119,11 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         DocumentArchive::class,
         ExchangeRate::class,
         Invoice::class,
+        InvoiceAdmin::class,
+        InvoiceEmail::class,
         InvoiceItem::class,
+        InvoiceItemSource::class,
+        InvoicePayment::class,
         Media::class,
         Project::class,
         ProjectBilling::class,

@@ -16,10 +16,17 @@ use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Enums\InvoiceEmailState;
+use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
+use App\Domain\Invoicing\Enums\PaymentMethod;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Models\InvoiceItemSource;
+use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
@@ -327,6 +334,30 @@ final class CanaryRegistry
                 self::invoiceDocuments($clientId, $canary);
             },
 
+            // The Admin-only half of the issued document: the internal note carries the canary, and a Partner must
+            // read no row of it, even though the issued invoice itself is the Partner's own (IN-09). The rows are
+            // written by the same idempotent helper as the documents, because the Admin-only row and the line
+            // source go in while the document is a draft.
+            InvoiceAdmin::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
+            // The generation source of the printed line: the canary sits in the conversion snapshot, and the
+            // project is the canary project of the client when the Project fixture ran before.
+            InvoiceItemSource::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
+            // One payment of the issued document; the canary is its note.
+            InvoicePayment::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
+            // One queued e-mail of the issued document; the canary is its subject.
+            InvoiceEmail::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
             // A CNB rate row has no text and no client: the canary is the published day (the Monday of the
             // canary), under a fictional currency code, so two canaries never collide on the unique key of a
             // currency and day. A Partner reading any rate would be caught by that day.
@@ -574,7 +605,42 @@ final class CanaryRegistry
 
             $issued = $draft();
             $issued->save();
-            $line($issued)->save();
+            $issuedLine = $line($issued);
+            $issuedLine->save();
+
+            // The Admin-only rows go in while the document is a draft: an issued document accepts no new child row.
+            $projectId = Project::query()->where('client_id', $clientId)->where('name', $canary)->value('id');
+            $owner = Canary::admin()->getKey();
+
+            (new InvoiceAdmin(['internal_note' => $canary]))->forceFill([
+                'invoice_id' => $issued->getKey(),
+                'internal_note_updated_at' => TimerClock::now(),
+                'exchange_rate' => '24.5000000000',
+                'exchange_unit_amount' => 1,
+                'exchange_rate_date' => '2026-10-16',
+                'czk_total_minor' => 245000,
+            ])->save();
+
+            (new InvoiceItemSource)->forceFill([
+                'invoice_item_id' => $issuedLine->getKey(),
+                'invoice_id' => $issued->getKey(),
+                'origin' => $projectId === null ? InvoiceItemOrigin::Manual : InvoiceItemOrigin::Time,
+                'project_id' => $projectId,
+                'source_rate_minor' => $projectId === null ? null : 150000,
+                'source_rate_currency' => $projectId === null ? null : 'CZK',
+                'source_seconds' => $projectId === null ? null : 7200,
+                'conversion_snapshot' => ['note' => $canary],
+            ])->save();
+
+            (new InvoiceEmail)->forceFill([
+                'invoice_id' => $issued->getKey(),
+                'recipient' => 'jane@'.implode('.', ['example', 'com']),
+                'subject' => $canary,
+                'body' => 'Fictional body',
+                'state' => InvoiceEmailState::Queued,
+                'created_by' => $owner,
+            ])->save();
+
             $issued->forceFill([
                 'state' => InvoiceState::Issued,
                 'number' => implode('', ['C', (string) random_int(100000, 999999), (string) random_int(1000, 9999)]),
@@ -587,6 +653,15 @@ final class CanaryRegistry
                 'bank_snapshot' => ['account' => 'Example account'],
                 'appearance_snapshot' => ['accent' => '#000000'],
                 'issued_at' => TimerClock::now(),
+            ])->save();
+
+            (new InvoicePayment(['note' => $canary]))->forceFill([
+                'invoice_id' => $issued->getKey(),
+                'currency' => 'CZK',
+                'amount_minor' => 4000,
+                'paid_on' => '2026-10-20',
+                'method' => PaymentMethod::Transfer,
+                'created_by' => $owner,
             ])->save();
         });
     }
