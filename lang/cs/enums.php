@@ -214,4 +214,22 @@ return [
         'credit_note' => 'Dobropis',
     ],
 
+    'invoice_item_origin' => [
+        'time' => 'Z času',
+        'fixed_amount' => 'Pevná částka',
+        'manual' => 'Ruční položka',
+    ],
+
+    'payment_method' => [
+        'transfer' => 'Převodem',
+        'cash' => 'Hotově',
+    ],
+
+    'invoice_email_state' => [
+        'queued' => 'Ve frontě',
+        'sending' => 'Odesílá se',
+        'sent' => 'Odesláno',
+        'failed' => 'Odeslání selhalo',
+    ],
+
 ];

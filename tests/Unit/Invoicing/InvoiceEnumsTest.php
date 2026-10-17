@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Domain\Invoicing\Enums\InvoiceEmailState;
+use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Enums\InvoiceStatus;
+use App\Domain\Invoicing\Enums\PaymentMethod;
 use App\Domain\Settings\Numbering\DocumentKind;
 use Tests\TestCase;
 
@@ -96,4 +99,28 @@ it('words no Partner label with a draft, a payment row, an e-mail state or a lin
             expect($status->partnerLabel())->not->toContain($word);
         }
     }
+});
+
+it('labels where a line of a document came from', function (): void {
+    expect(InvoiceItemOrigin::Time->getLabel())->toBe('Z času')
+        ->and(InvoiceItemOrigin::FixedAmount->getLabel())->toBe('Pevná částka')
+        ->and(InvoiceItemOrigin::Manual->getLabel())->toBe('Ruční položka')
+        ->and(array_map(fn (InvoiceItemOrigin $origin): string => $origin->value, InvoiceItemOrigin::cases()))
+        ->toBe(['time', 'fixed_amount', 'manual']);
+});
+
+it('labels the payment methods', function (): void {
+    expect(PaymentMethod::Transfer->getLabel())->toBe('Převodem')
+        ->and(PaymentMethod::Cash->getLabel())->toBe('Hotově')
+        ->and(array_map(fn (PaymentMethod $method): string => $method->value, PaymentMethod::cases()))
+        ->toBe(['transfer', 'cash']);
+});
+
+it('labels the e-mail states, with the claim state of the sending job', function (): void {
+    expect(InvoiceEmailState::Queued->getLabel())->toBe('Ve frontě')
+        ->and(InvoiceEmailState::Sending->getLabel())->toBe('Odesílá se')
+        ->and(InvoiceEmailState::Sent->getLabel())->toBe('Odesláno')
+        ->and(InvoiceEmailState::Failed->getLabel())->toBe('Odeslání selhalo')
+        ->and(array_map(fn (InvoiceEmailState $state): string => $state->value, InvoiceEmailState::cases()))
+        ->toBe(['queued', 'sending', 'sent', 'failed']);
 });
