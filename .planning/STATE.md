@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-13-PLAN.md
-last_updated: "2026-10-17T08:52:32.124Z"
+stopped_at: Completed 10-14-PLAN.md
+last_updated: "2026-10-17T09:25:44.106Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 789102023490cb12d3467e16180fb967dc335894
+state_head: 3b0a5c9fab4483a7fddd4d0178dae89da356f05c
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 199
+  completed_plans: 200
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 16 of 41
+Plan: 17 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -262,6 +262,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P34 | 25 min | 2 tasks | 6 files |
 | Phase 10 P12 | 26 min | 2 tasks | 7 files |
 | Phase 10 P13 | 7 min | 2 tasks | 12 files |
+| Phase 10 P14 | 30 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -647,6 +648,8 @@ Recent decisions affecting current work:
 - [Phase 10]: 10-13: draft candidates require an hourly effective billing type (allow-list), so fixed-price and non-billable-task time is never claimed
 - [Phase 10]: 10-13: reservation is lock-then-claim on locked rows (EntryReservation::claim); lines are built from claimed rows with seconds read under the lock
 - [Phase 10]: 10-13: needs_conversion of a preview line is derived (source rate currency differs from draft currency, price not manual), not stored; conversion_snapshot stays null until issue (10-17)
+- [Phase 10]: R-14-1/R-14-2 tightened: fixed-amount time link is limited to entries of effective fixed-price type; the billed fixed amount counts issued invoices only (proformas excluded, credit notes netted)
+- [Phase 10]: Draft line appends (time, new time, fixed amount) go through one writer, DraftLines, that only appends after the last position so edited lines are never rewritten
 
 ### Pending Todos
 
@@ -702,6 +705,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T08:52:31.099Z
-Stopped at: Completed 10-13-PLAN.md
+Last session: 2026-10-17T09:25:43.056Z
+Stopped at: Completed 10-14-PLAN.md
 Resume file: None
