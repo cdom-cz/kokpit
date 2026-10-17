@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Documents\Actions;
 
+use App\Domain\Documents\Enums\DocumentOwnerType;
 use App\Domain\Documents\Jobs\RemoveDocumentObjects;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Media;
+use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
@@ -38,6 +41,11 @@ use Throwable;
  * (3 tries with backoff), and when every try fails the failed-job alert reaches the Admin. A refused object can
  * no longer undo or block a delete the actor confirmed.
  *
+ * The PDF of an issued document (the file named by `invoice_admin.pdf_document_id`) needs the explicit confirmation
+ * flag (DO-03, D-21, ruling R-36-1): without it the delete is refused before anything changes. The foreign key of
+ * that column is `ON DELETE SET NULL`, so the row delete clears the Admin-only link itself and the issued `invoices`
+ * row takes no write (D-13, plan 10-04 R-04-6). Any other file an Admin uploaded to an invoice deletes as usual.
+ *
  * The after-commit callback may run outside the system context, so it queries no model: it works on the media
  * instances read inside the transaction and on the disk only, and it never throws.
  */
@@ -46,15 +54,22 @@ final class DeleteDocument
     public function __construct(private readonly PartnerContext $context) {}
 
     /**
+     * @param  bool  $confirmedIssuedPdf  the Admin explicitly confirmed deleting the PDF of an issued document
+     *
+     * @throws DomainException when the file is the PDF of an issued document and the confirmation is missing
      * @throws RuntimeException when the delete is refused or the database fails; nothing is deleted then
      */
-    public function handle(User $actor, Document $document): void
+    public function handle(User $actor, Document $document, bool $confirmedIssuedPdf = false): void
     {
         Gate::forUser($actor)->authorize('delete', $document);
 
-        $this->context->runAsSystem(function () use ($document): void {
-            DB::transaction(function () use ($document): void {
+        $this->context->runAsSystem(function () use ($document, $confirmedIssuedPdf): void {
+            DB::transaction(function () use ($document, $confirmedIssuedPdf): void {
                 $locked = Document::query()->whereKey($document->getKey())->lockForUpdate()->firstOrFail();
+
+                if (! $confirmedIssuedPdf && $this->isLockedIssuedPdf($locked)) {
+                    throw new DomainException(__('invoices.errors.pdf_unconfirmed'));
+                }
 
                 $media = Media::query()
                     ->where('model_type', $locked->getMorphClass())
@@ -77,6 +92,35 @@ final class DeleteDocument
                 DB::afterCommit(fn () => $this->removeObjects(array_values($media->all()), $objects));
             });
         });
+    }
+
+    /**
+     * Whether the file is the stored PDF of an issued document: a file owned by an invoice that an `invoice_admin`
+     * row names (ruling R-36-1). Read without a lock, for the screens that decide which confirmation to ask for; the
+     * delete itself decides again under the lock.
+     */
+    public static function isIssuedPdf(Document $document): bool
+    {
+        if ($document->owner_type !== DocumentOwnerType::Invoice->value) {
+            return false;
+        }
+
+        return app(PartnerContext::class)->runAsSystem(
+            static fn (): bool => InvoiceAdmin::query()->where('pdf_document_id', $document->getKey())->exists(),
+        );
+    }
+
+    /**
+     * The same question under the row lock of the delete: the foreign key rewrites the `invoice_admin` row when the
+     * document goes, so a concurrent regeneration or delete waits here. Runs inside the system context of the delete.
+     */
+    private function isLockedIssuedPdf(Document $document): bool
+    {
+        if ($document->owner_type !== DocumentOwnerType::Invoice->value) {
+            return false;
+        }
+
+        return InvoiceAdmin::query()->where('pdf_document_id', $document->getKey())->lockForUpdate()->first() instanceof InvoiceAdmin;
     }
 
     /**

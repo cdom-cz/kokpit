@@ -56,6 +56,20 @@ return [
         'bulk_delete_heading' => 'Smazat vybrané soubory?',
         'bulk_delete_description' => '{1} Bude trvale smazán :count soubor, včetně uloženého souboru. Tento krok nelze vrátit zpět.|[2,4] Budou trvale smazány :count soubory, včetně uložených souborů. Tento krok nelze vrátit zpět.|[5,*] Bude trvale smazáno :count souborů, včetně uložených souborů. Tento krok nelze vrátit zpět.',
         'delete_description' => 'Soubor „:name“ bude trvale smazán, včetně uloženého souboru. Tento krok nelze vrátit zpět.',
+
+        // The PDF of an issued document: the delete confirmation is extended with an explicit tick (DO-03, D-21).
+        'delete_issued_pdf' => [
+            'heading' => 'Smazat PDF vystaveného dokladu?',
+            'description' => 'Soubor „:name“ je PDF vystaveného dokladu :number. Smazáním ho trvale odstraníte i z úložiště; doklad samotný zůstane beze změny a PDF lze vytvořit znovu ze zmrazených údajů. Tento krok nelze vrátit zpět.',
+            'confirm' => 'Rozumím, chci smazat PDF vystaveného dokladu',
+            'submit' => 'Smazat PDF',
+            'cancel' => 'Ponechat PDF',
+            'deleted' => 'PDF bylo smazáno',
+            'unconfirmed' => 'Potvrďte, že chcete smazat PDF vystaveného dokladu.',
+            'bulk_skipped' => 'Přeskočeno PDF vystavených dokladů: :skipped. Smažte je jednotlivě s výslovným potvrzením.',
+            'regenerate_failed' => 'PDF se nepodařilo vytvořit',
+            'regenerate_failed_hint' => 'Zkuste to znovu. Pokud chyba přetrvá, zkontrolujte úložiště souborů.',
+        ],
     ],
 
     'fields' => [
