@@ -4,14 +4,22 @@ declare(strict_types=1);
 
 namespace App\Domain\Invoicing\Queries;
 
+use App\Domain\ExchangeRates\ExchangeRateMissing;
+use App\Domain\Invoicing\Enums\ItemGrouping;
+use App\Domain\Invoicing\Support\TimeItemGrouping;
 use App\Domain\Reports\Queries\EffectiveBillingSql;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\PragueDay;
 use Carbon\CarbonInterface;
+use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
+use OverflowException;
 
 /**
  * The time a draft can bill: the picker of unbilled time and its live summary (IN-02, D-02, D-04, D-07; research
@@ -29,11 +37,18 @@ use Illuminate\Support\Str;
  * (research A6). The projects are the chosen ones, and `withoutProject` adds the entries that have none (TI-03);
  * with neither, nothing is a candidate. Archived clients, projects and tasks stay in.
  *
+ * The summary is the live result of the picker (UI-SPEC Surface B): how many candidates there are, their exact seconds,
+ * what they are worth in the currency of the draft as the lines {@see TimeItemGrouping} would build today, how many
+ * entries of the period another draft already holds (they still count as unbilled everywhere else, R-06-3), and which
+ * of the chosen projects have a fixed price, whose hours are never added (R-13-1).
+ *
  * The raw joins bypass the Partner scope of the joined tables, so this reader refuses everyone but the Admin and a
  * system run (T-10-36).
  */
 final class InvoiceableEntries
 {
+    public function __construct(private readonly TimeItemGrouping $grouping) {}
+
     /**
      * The candidates in the order they started, one array each.
      *
@@ -91,6 +106,72 @@ final class InvoiceableEntries
         }
 
         return $candidates;
+    }
+
+    /**
+     * The live result of the picker for the same filters.
+     *
+     * `estimate` is the sum of the line amounts a draft created now would get, in the draft currency, or null when a
+     * CNB list that a converted line needs is missing (the draft would be refused then); `reserved_elsewhere` counts
+     * the entries that fit the filters but are held by another draft; `fixed_price_projects` are the names of the
+     * chosen projects billed for a fixed price.
+     *
+     * @param  list<string>  $projectIds
+     * @return array{count: int, seconds: int, estimate: ?Money, reserved_elsewhere: int, fixed_price_projects: list<string>}
+     *
+     * @throws AuthorizationException when neither the Admin nor a system run asks
+     * @throws InvalidArgumentException when the currency is not valid
+     */
+    public function summary(string $clientId, string $from, string $to, array $projectIds, bool $withoutProject, ItemGrouping $grouping, string $currency, CarbonInterface $now): array
+    {
+        $candidates = $this->candidates($clientId, $from, $to, $projectIds, $withoutProject, $now);
+
+        $estimate = Money::zero($currency);
+
+        try {
+            foreach ($this->grouping->lines($candidates, $grouping, $currency, 'cs', $now->setTimezone(FilamentTimezone::get())->format('Y-m-d')) as $line) {
+                $estimate = $estimate->plus($line['line_total']);
+            }
+        } catch (ExchangeRateMissing|OverflowException) {
+            $estimate = null;
+        }
+
+        $held = $this->filtered($clientId, $from, $to, $projectIds, $withoutProject);
+
+        return [
+            'count' => count($candidates),
+            'seconds' => (int) array_sum(array_column($candidates, 'seconds')),
+            'estimate' => $estimate,
+            'reserved_elsewhere' => $held === null ? 0 : $held->whereNotNull('time_entries.invoice_id')->count(),
+            'fixed_price_projects' => $this->fixedPriceProjects($clientId, $projectIds),
+        ];
+    }
+
+    /**
+     * The names of the chosen projects of the client that are billed for a fixed price, archived ones included.
+     *
+     * @param  list<string>  $projectIds
+     * @return list<string>
+     */
+    private function fixedPriceProjects(string $clientId, array $projectIds): array
+    {
+        $projectIds = array_values(array_filter($projectIds, static fn (string $id): bool => Str::isUuid($id)));
+
+        if ($projectIds === [] || ! Str::isUuid($clientId)) {
+            return [];
+        }
+
+        $names = DB::table('projects')
+            ->join('project_billing', 'project_billing.project_id', '=', 'projects.id')
+            ->where('projects.client_id', $clientId)
+            ->whereIn('projects.id', $projectIds)
+            ->where('project_billing.billing_type', 'fixed_price')
+            ->orderBy('projects.name')
+            ->orderBy('projects.id')
+            ->pluck('projects.name')
+            ->map(static fn (mixed $name): string => (string) $name);
+
+        return array_values($names->all());
     }
 
     /**
