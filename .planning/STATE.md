@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-27-PLAN.md
-last_updated: "2026-10-17T16:43:43.594Z"
+stopped_at: Completed 10-28-PLAN.md
+last_updated: "2026-10-17T16:57:31.698Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: c0c7c7a2a446f7e649c62364c635224277adb513
+state_head: d8ff957bd337ed8bed1e92c1125e3c1c05b1fe8c
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 213
+  completed_plans: 214
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 30 of 41
+Plan: 31 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -276,6 +276,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P24 | 19 min | 2 tasks | 9 files |
 | Phase 10 P25 | 25 min | 3 tasks | 10 files |
 | Phase 10 P27 | 55 min | 3 tasks | 12 files |
+| Phase 10 P28 | 25 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -687,6 +688,8 @@ Recent decisions affecting current work:
 - [Phase 10]: A date the Admin did not type is stored as null: the editor shows the derived date and a hidden default decides on save whether it was typed
 - [Phase 10]: 10-27: Nevyfakturováno on the client page counts reserved time as unbilled and names its draft share; K úhradě lists one amount per document currency (client currency first) with the CZK total from ReceivablesReader::summary()
 - [Phase 10]: 10-27: the client variant of InvoiceTable filters by Druh and Stav, Stav reusing the list-tab conditions via ReceivablesReader::constrain(); Nová faktura is the only create action on the Faktury tab
+- [Phase 10]: R-28-1: the receivables dashboard card is collapsible with its own widget key unpaid_invoices and a migration widening the preference CHECK
+- [Phase 10]: R-28-2: the collapsed receivables card shows the overdue count in its header; the card is hidden until an issued invoice or proforma exists
 
 ### Pending Todos
 
@@ -742,6 +745,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T16:43:42.244Z
-Stopped at: Completed 10-27-PLAN.md
+Last session: 2026-10-17T16:57:30.303Z
+Stopped at: Completed 10-28-PLAN.md
 Resume file: None
