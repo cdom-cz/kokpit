@@ -13,8 +13,10 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Settings\Numbering\InvalidNumberPattern;
 use App\Domain\Settings\Settings\BankAccountSettings;
+use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\NumberingSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
+use App\Domain\Settings\VatMode;
 use Carbon\CarbonImmutable;
 use Illuminate\Validation\ValidationException;
 
@@ -25,7 +27,9 @@ use Illuminate\Validation\ValidationException;
  * freeze an incomplete document (T-10-32).
  *
  * A draft whose lines are priced in other currencies needs the CNB list of each of them on the issue date, a
- * `cnb_missing` blocker for every currency without one (EX-03, ruling R-17-1).
+ * `cnb_missing` blocker for every currency without one (EX-03, ruling R-17-1). While the VAT-payer calculations are not
+ * built, the payer mode blocks issuing with `vat_payer_unsupported`, so no document without VAT is issued by a payer
+ * (IN-08, ruling R-17-3).
  *
  * The chronology blocker here is advisory: the authoritative check runs after the allocation, under the sequence
  * lock, in the issuer (ruling R-12-1). A stored number pattern that the pattern rule of plan 10-07 refuses is the
@@ -63,6 +67,10 @@ final readonly class IssueChecks
 
         if ($this->supplierIncomplete()) {
             $add('supplier_missing');
+        }
+
+        if (app(InvoicingSettings::class)->vat_mode !== VatMode::NonPayer) {
+            $add('vat_payer_unsupported');
         }
 
         if (! $creditNote && app(BankAccountSettings::class)->forCurrency($draft->currency) === null) {

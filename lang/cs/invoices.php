@@ -36,6 +36,7 @@ return [
         'supplier_missing' => 'Doplňte údaje dodavatele v Nastavení.',
         'bank_missing' => 'Pro měnu :currency není nastaven bankovní účet. Přidejte ho v Nastavení.',
         'cnb_missing' => 'Pro měnu :currency není ke dni :date k dispozici kurz ČNB. Stáhněte kurzy v přehledu Kurzy ČNB.',
+        'vat_payer_unsupported' => 'Režim plátce DPH zatím není podporován. Přepněte režim DPH v Nastavení.',
         'client_address_missing' => 'Klient nemá vyplněnou fakturační adresu.',
         'issue_date_future' => 'Datum vystavení nesmí být později než dnes.',
         'issue_date_before_latest' => 'Datum vystavení nesmí být dříve než :date, kdy byl vystaven poslední doklad této řady.',
