@@ -49,7 +49,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 - [x] **CL-01**: Admin manages clients with billing data, stage, currency, rate, payment terms, invoice e-mail and language, online-payment flag
 - [x] **CL-02**: Admin manages multiple contacts per client with primary and billing flags
-- [ ] **CL-03**: Client detail shows projects, unbilled time and amount, invoices, documents and client accounts
+- [x] **CL-03**: Client detail shows projects, unbilled time and amount, invoices, documents and client accounts
 - [x] **CL-04**: Admin loads client data from ARES by company ID via a synchronous button in the form; errors show next to the field and leave the form unchanged
 - [x] **CL-05**: Clients are archived (soft delete) rather than hard-deleted; tags are available on clients
 
@@ -129,8 +129,8 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **IN-03**: Issue freezes supplier, customer and bank snapshots, rate and amounts; issued invoices are immutable except payment state and internal note, enforced in the database
 - [x] **IN-04**: PDF generated at issue from snapshots only, stored in documents, with SPAYD QR for CZK bank transfer, in the client's invoice language; sent by queued e-mail with optional work report
 - [x] **IN-05**: Manual payment (transfer, cash) recorded in a payments table; warning if already paid; overdue status derived; overdue overview
-- [ ] **IN-06**: Proforma converts to invoice with a link after payment
-- [ ] **IN-07**: Invoicing in client currency with CNB rate snapshot and CZK total
+- [x] **IN-06**: Proforma converts to invoice with a link after payment
+- [x] **IN-07**: Invoicing in client currency with CNB rate snapshot and CZK total
 - [x] **IN-08**: Non-VAT-payer mode is the default and fully tested; data model prepared for VAT payer
 - [x] **IN-09**: Partner sees own issued invoices and proformas (list, detail, PDF, pay button) read-only, never drafts, internal notes, linked time or rates
 - [x] **IN-10**: Cancelling or deleting a draft, or storno, returns linked entries to unbilled
@@ -228,7 +228,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | US-02 | Phase 4 | Complete |
 | CL-01 | Phase 4 | Complete |
 | CL-02 | Phase 4 | Complete |
-| CL-03 | Phase 10 | Pending |
+| CL-03 | Phase 10 | Complete |
 | CL-04 | Phase 4 | Complete |
 | CL-05 | Phase 4 | Complete |
 | PR-01 | Phase 4 | Complete |
@@ -279,8 +279,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | IN-03 | Phase 10 | Complete |
 | IN-04 | Phase 10 | Complete |
 | IN-05 | Phase 10 | Complete |
-| IN-06 | Phase 10 | Pending |
-| IN-07 | Phase 10 | Pending |
+| IN-06 | Phase 10 | Complete |
+| IN-07 | Phase 10 | Complete |
 | IN-08 | Phase 10 | Complete |
 | IN-09 | Phase 10 | Complete |
 | IN-10 | Phase 10 | Complete |

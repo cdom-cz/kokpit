@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
-status: executing
-stopped_at: Completed 10-31-PLAN.md
-last_updated: "2026-10-17T21:11:37.498Z"
+status: verifying
+stopped_at: Completed 10-32-PLAN.md
+last_updated: "2026-10-17T21:32:01.814Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 048d97680ce78778ef88d02039a5daea1ed0fde9
+state_head: 6c6eb0464fe7314008f6142ae406048a25e718dc
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 224
+  completed_plans: 225
   percent: 54
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 Phase: 10 (Invoicing) — EXECUTING
 Plan: 41 of 41
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-17 — Phase 10 execution started
 
 Progress: [█████░░░░░] 54%
@@ -287,6 +287,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P41 | 75 min | 3 tasks | 5 files |
 | Phase 10 P30 | 47 min | 3 tasks | 7 files |
 | Phase 10 P31 | 28min | 3 tasks | 10 files |
+| Phase 10 P32 | 90min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -717,6 +718,7 @@ Recent decisions affecting current work:
 - [Phase 10]: SendInvoiceEmailAction takes the host document as a Closure with entry points for the header, the list row and the log row
 - [Phase 10]: In the Odeslani tab a sending row older than the System page stale threshold reads as failed; the list column keeps Ve fronte for every sending row
 - [Phase 10]: A document that cannot be credited any more (cancelled elsewhere) is shown as a persistent danger notification plus a redirect, not a field error
+- [Phase 10]: 10-32: the old hand-over test of the Phase 10 bullet was rewritten to assert the R-09-2 wording, not relaxed; no .gitignore entry added
 
 ### Pending Todos
 
@@ -772,6 +774,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T21:11:35.909Z
-Stopped at: Completed 10-31-PLAN.md
+Last session: 2026-10-17T21:32:00.309Z
+Stopped at: Completed 10-32-PLAN.md
 Resume file: None
