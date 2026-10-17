@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-30-PLAN.md
-last_updated: "2026-10-17T20:40:36.000Z"
+stopped_at: Completed 10-31-PLAN.md
+last_updated: "2026-10-17T21:11:37.498Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 96d528a2d4e0a16d53d6fd7864edf7252ba7f715
+state_head: 048d97680ce78778ef88d02039a5daea1ed0fde9
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 223
+  completed_plans: 224
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 40 of 41
+Plan: 41 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -286,6 +286,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P40 | 35 min | 2 tasks | 6 files |
 | Phase 10 P41 | 75 min | 3 tasks | 5 files |
 | Phase 10 P30 | 47 min | 3 tasks | 7 files |
+| Phase 10 P31 | 28min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -711,6 +712,11 @@ Recent decisions affecting current work:
 - [Phase 10]: 10-40: the reserved marker is a separate gray column and infolist entry, not a BillingBadge case, so Nevyfakturovano and the billing filter keep their meaning; the report reserved seconds are part of the unbilled value, never subtracted
 - [Phase 10]: 10-41: DeletePayment sets and clears kokpit.payment_deletion inside its own transaction after the refusals; the mutation twin does its unlocked carried-copy check before the barrier so the 23503 outcome is deterministic
 - [Phase 10]: 10-30: RecordPaymentAction takes the host's invoice and refresh hook as closures; no payment action is offered on a converted proforma; the page header action shows only while something is owed
+- [Phase 10]: IssueCreditNote gets read-only creditable() and preview() so the credit dialog shows the exact remaining quantities and amounts the issue will compute
+- [Phase 10]: The e-mail dialog of the issue is opened through wire:init on the detail subheading and a public openSendDialog(), because header actions are cached after mount()
+- [Phase 10]: SendInvoiceEmailAction takes the host document as a Closure with entry points for the header, the list row and the log row
+- [Phase 10]: In the Odeslani tab a sending row older than the System page stale threshold reads as failed; the list column keeps Ve fronte for every sending row
+- [Phase 10]: A document that cannot be credited any more (cancelled elsewhere) is shown as a persistent danger notification plus a redirect, not a field error
 
 ### Pending Todos
 
@@ -766,6 +772,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T20:40:34.503Z
-Stopped at: Completed 10-30-PLAN.md
+Last session: 2026-10-17T21:11:35.909Z
+Stopped at: Completed 10-31-PLAN.md
 Resume file: None
