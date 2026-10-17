@@ -43,6 +43,9 @@ return [
         'entries_changed' => 'Některé připojené záznamy času se mezitím změnily. Zkontrolujte koncept a vystavte ho znovu.',
 
         // Time added to a draft.
+        'period_order' => 'Datum Od nesmí být později než Do.',
+        'projects_unknown' => 'Vyberte projekty tohoto klienta.',
+        'grouping' => 'Zvolte seskupení podle projektu nebo podle úkolu.',
         'fixed_project' => 'Zvolený projekt nemá pevnou cenu.',
         'entries_foreign' => 'Vybrané záznamy už nejsou k dispozici.',
 

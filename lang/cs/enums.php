@@ -220,6 +220,11 @@ return [
         'manual' => 'Ruční položka',
     ],
 
+    'item_grouping' => [
+        'project' => 'Podle projektu',
+        'task' => 'Podle úkolu',
+    ],
+
     'payment_method' => [
         'transfer' => 'Převodem',
         'cash' => 'Hotově',
