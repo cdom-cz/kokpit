@@ -8,6 +8,7 @@ use App\Domain\Operations\Health\HealthSlot;
 use App\Domain\Operations\Health\HealthStatus;
 use App\Domain\Operations\Health\Indicators\LastRateDateIndicator;
 use App\Domain\Operations\Health\Indicators\PlaceholderIndicator;
+use App\Domain\Operations\Health\Indicators\UnsentInvoiceEmailsIndicator;
 use Tests\Support\Probes\HealthProbeIndicator;
 
 /*
@@ -49,8 +50,9 @@ it('keeps the placeholder, not available yet, for the slots no plan measures yet
 
     expect($results)->toHaveCount(count(HealthSlot::cases()));
 
-    // The last rate date slot is measured for real since Phase 8 (plan 08-10).
-    foreach ([HealthSlot::UnprocessedWebhooks, HealthSlot::UnsentInvoiceEmails] as $slot) {
+    // The last rate date slot is measured for real since Phase 8 (plan 08-10), the unsent invoice e-mails slot since
+    // Phase 10 (plan 10-37); only the webhooks slot waits for Phase 11.
+    foreach ([HealthSlot::UnprocessedWebhooks] as $slot) {
         expect($results[$slot->value]->status)->toBe(HealthStatus::NotAvailable)
             ->and($results[$slot->value]->detail)->toBe(__('kokpit.system.not_available_yet'));
     }
@@ -61,6 +63,14 @@ it('measures the last rate date for real, so no placeholder holds the slot', fun
 
     expect($indicator)->toBeInstanceOf(LastRateDateIndicator::class)
         ->and($indicator)->not->toBeInstanceOf(PlaceholderIndicator::class);
+});
+
+it('measures the unsent invoice e-mails for real, so no placeholder holds the slot', function (): void {
+    $indicator = app(HealthIndicatorRegistry::class)->indicators()[HealthSlot::UnsentInvoiceEmails->value];
+
+    expect($indicator)->toBeInstanceOf(UnsentInvoiceEmailsIndicator::class)
+        ->and($indicator)->not->toBeInstanceOf(PlaceholderIndicator::class)
+        ->and(app(HealthIndicatorRegistry::class)->results()[HealthSlot::UnsentInvoiceEmails->value]->status)->toBe(HealthStatus::Ok);
 });
 
 it('finds the one slot left out of a hand-built indicator list', function (): void {

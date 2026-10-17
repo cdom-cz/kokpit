@@ -80,6 +80,12 @@ return [
     |   oldest job may wait in the queue before the slot turns Warning, then Error.
     | scheduler_heartbeat_error_after: seconds without a scheduler heartbeat
     |   before the slot turns Error; the scheduler writes one every minute.
+    | unsent_invoice_email_warning_after / unsent_invoice_email_stale_after
+    |   (R-37-1, D-22): seconds a document e-mail may wait, queued or sending,
+    |   before the unsent invoice e-mails slot turns Warning, and seconds a
+    |   row may stay in sending (a worker that died mid-send) before it counts
+    |   as failed and turns the slot Error. The state of a document is the
+    |   state of its latest e-mail row (R-24-1).
     |
     | Caveat, delayed jobs: the age of a pending job runs from the creation of
     |   the job, not from the moment it became ready. A job dispatched with a
@@ -97,6 +103,8 @@ return [
         'oldest_pending_warning_after' => 600,
         'oldest_pending_error_after' => 1800,
         'scheduler_heartbeat_error_after' => 180,
+        'unsent_invoice_email_warning_after' => 900,
+        'unsent_invoice_email_stale_after' => 3600,
     ],
 
     /*

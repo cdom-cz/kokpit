@@ -37,8 +37,9 @@ it('shows the Admin the six Czech slot labels, a status label for each and the p
         ->assertSee(__('kokpit.system.navigation_label'))
         ->assertSee('wire:poll', false);
 
+    // Only the webhooks slot is still a placeholder; the unsent invoice e-mails slot is measured since plan 10-37.
     expect(substr_count((string) $response->getContent(), __('enums.health_status.not_available')))
-        ->toBeGreaterThanOrEqual(3);
+        ->toBeGreaterThanOrEqual(1);
 });
 
 it('shows the Admin the date of the newest rate list with an Ok badge in the last rate date row', function (): void {
@@ -153,6 +154,7 @@ it('renders each status with its colour badge and its Czech label', function ():
         HealthSlot::OldestPendingJob->value => HealthStatus::Warning,
         HealthSlot::SchedulerHeartbeat->value => HealthStatus::Error,
         HealthSlot::LastRateDate->value => HealthStatus::NotAvailable,
+        HealthSlot::UnsentInvoiceEmails->value => HealthStatus::NotAvailable,
     ];
 
     foreach ($statuses as $slot => $status) {
