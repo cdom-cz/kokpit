@@ -16,8 +16,6 @@ use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelat
 use Carbon\CarbonImmutable;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
-use Filament\Notifications\Livewire\Notifications;
-use Filament\Notifications\NotificationMailbox;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -54,28 +52,6 @@ function paymentPage(Invoice $invoice): Testable
 function paymentTab(Invoice $invoice): Testable
 {
     return Livewire::test(InvoicePaymentsRelationManager::class, ['ownerRecord' => $invoice, 'pageClass' => ViewInvoice::class]);
-}
-
-/**
- * The notifications sent so far, flushed from the mailbox.
- *
- * @return list<array{title: string, body: string, status: string}>
- */
-function paymentNotifications(): array
-{
-    app(NotificationMailbox::class)->flush();
-
-    $panel = new Notifications;
-    $panel->mount();
-    $panel->pullNotificationsFromSession();
-
-    $sent = [];
-
-    foreach ($panel->notifications as $notification) {
-        $sent[] = ['title' => (string) $notification->getTitle(), 'body' => (string) $notification->getBody(), 'status' => (string) $notification->getStatus()];
-    }
-
-    return $sent;
 }
 
 describe('the tracer: the full payment of an issued invoice from the detail', function (): void {
