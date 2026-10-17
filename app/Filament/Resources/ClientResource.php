@@ -33,6 +33,7 @@ use App\Filament\Resources\ClientResource\Pages\ViewClient;
 use App\Filament\Resources\ClientResource\RelationManagers\ContactsRelationManager;
 use App\Filament\Resources\ClientResource\RelationManagers\InvitationsRelationManager;
 use App\Filament\Resources\ClientResource\RelationManagers\PartnerAccountsRelationManager;
+use App\Filament\Resources\ClientResource\Widgets\ClientOverviewStats;
 use BackedEnum;
 use Closure;
 use Filament\Actions\Action;
@@ -444,6 +445,19 @@ final class ClientResource extends Resource
             PartnerAccountsRelationManager::class,
             ClientDocumentsRelationManager::class,
             ClientHistoryRelationManager::class,
+        ];
+    }
+
+    /**
+     * The widgets of the client page. Registered here and not discovered at panel level, so the panel's own widget
+     * list stays empty (a discovered widget would also be offered to a dashboard without a record).
+     *
+     * @return array<class-string>
+     */
+    public static function getWidgets(): array
+    {
+        return [
+            ClientOverviewStats::class,
         ];
     }
 

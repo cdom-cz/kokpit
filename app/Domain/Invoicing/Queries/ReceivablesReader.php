@@ -239,6 +239,65 @@ final class ReceivablesReader
     }
 
     /**
+     * What is still owed, one amount per document currency and never summed across currencies, optionally for one
+     * client: the open documents (issued, unpaid or partially paid, overdue ones included), or only the documents under
+     * one tab. The client panels of the client page and the list share it with {@see ReceivablesReader::owedByCurrencyFrom()}.
+     *
+     * @return array<string, Money> keyed by currency code, sorted by it; a currency with nothing owed is absent
+     *
+     * @throws AuthorizationException when neither the Admin nor a system run asks
+     * @throws InvalidArgumentException when `$today` is not a calendar day
+     */
+    public function owedByCurrency(string $today, ?string $clientId = null, ?InvoiceListTab $tab = null): array
+    {
+        $this->authorise();
+        $day = $this->day($today);
+
+        $query = $tab === null
+            ? Invoice::query()->whereRaw(self::OPEN_SQL)
+            : $this->constrain(Invoice::query(), $tab, $day);
+
+        return $this->owedByCurrencyFrom(
+            $query->when($clientId !== null, static fn (Builder $query): Builder => $query->where('invoices.client_id', $clientId))->toBase(),
+        );
+    }
+
+    /**
+     * The remaining amount of the documents a query of the table `invoices` selects, one sum per document currency.
+     * The query may carry any filters, orders and selected columns of a list; only its conditions are kept. A document
+     * that owes nothing (a draft, a credit note, a paid or a cancelled one) adds zero, so it never needs to be excluded.
+     *
+     * @return array<string, Money> keyed by currency code, sorted by it; a currency with nothing owed is absent
+     *
+     * @throws AuthorizationException when neither the Admin nor a system run asks
+     */
+    public function owedByCurrencyFrom(QueryBuilder $query): array
+    {
+        $this->authorise();
+
+        $rows = $query
+            ->cloneWithout(['columns', 'orders', 'limit', 'offset'])
+            ->cloneWithoutBindings(['select', 'order'])
+            ->selectRaw('invoices.currency AS currency, SUM('.InvoiceBalances::REMAINING_SQL.') AS remaining')
+            ->groupBy('invoices.currency')
+            ->get();
+
+        $amounts = [];
+
+        foreach ($rows as $row) {
+            $remaining = Money::ofMinor((int) $row->remaining, (string) $row->currency);
+
+            if (! $remaining->isZero()) {
+                $amounts[$remaining->currency] = $remaining;
+            }
+        }
+
+        ksort($amounts);
+
+        return $amounts;
+    }
+
+    /**
      * Whether each document is cancelled and whether an issued invoice was made from it, from one query.
      *
      * @param  list<string>  $ids
