@@ -131,7 +131,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **IN-05**: Manual payment (transfer, cash) recorded in a payments table; warning if already paid; overdue status derived; overdue overview
 - [ ] **IN-06**: Proforma converts to invoice with a link after payment
 - [ ] **IN-07**: Invoicing in client currency with CNB rate snapshot and CZK total
-- [ ] **IN-08**: Non-VAT-payer mode is the default and fully tested; data model prepared for VAT payer
+- [x] **IN-08**: Non-VAT-payer mode is the default and fully tested; data model prepared for VAT payer
 - [x] **IN-09**: Partner sees own issued invoices and proformas (list, detail, PDF, pay button) read-only, never drafts, internal notes, linked time or rates
 - [x] **IN-10**: Cancelling or deleting a draft, or storno, returns linked entries to unbilled
 
@@ -281,7 +281,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | IN-05 | Phase 10 | Complete |
 | IN-06 | Phase 10 | Pending |
 | IN-07 | Phase 10 | Pending |
-| IN-08 | Phase 10 | Pending |
+| IN-08 | Phase 10 | Complete |
 | IN-09 | Phase 10 | Complete |
 | IN-10 | Phase 10 | Complete |
 | PA-01 | Phase 11 | Pending |
