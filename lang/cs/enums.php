@@ -178,4 +178,40 @@ return [
         'custom' => 'Vlastní kurz',
     ],
 
+    // Invoicing (plan 10-33): the document kinds, the stored state and the derived display status.
+    'invoice_kind' => [
+        'invoice' => 'Faktura',
+        'proforma' => 'Zálohová faktura',
+        'credit_note' => 'Dobropis',
+    ],
+
+    'invoice_state' => [
+        'draft' => 'Koncept',
+        'issued' => 'Vystaveno',
+    ],
+
+    'invoice_status' => [
+        'draft' => 'Koncept',
+        'unpaid' => 'Nezaplaceno',
+        'partially_paid' => 'Částečně zaplaceno',
+        'overdue' => 'Po splatnosti',
+        'paid' => 'Zaplaceno',
+        'cancelled' => 'Stornováno',
+        'converted' => 'Převedeno na fakturu',
+        'awaiting_invoice' => 'Zaplacená záloha bez faktury',
+        'credit_note' => 'Dobropis',
+    ],
+
+    // The Partner has no draft; a paid proforma reads as paid whether or not its invoice exists.
+    'invoice_status_partner' => [
+        'unpaid' => 'Čeká na úhradu',
+        'partially_paid' => 'Částečně zaplaceno',
+        'overdue' => 'Po splatnosti',
+        'paid' => 'Zaplaceno',
+        'cancelled' => 'Stornováno',
+        'converted' => 'Zaplaceno',
+        'awaiting_invoice' => 'Zaplaceno',
+        'credit_note' => 'Dobropis',
+    ],
+
 ];
