@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\Invoicing\Queries;
 
 use App\Domain\ExchangeRates\ExchangeRateMissing;
+use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
+use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Enums\ItemGrouping;
+use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Support\TimeItemGrouping;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Reports\Queries\EffectiveBillingSql;
@@ -72,8 +76,136 @@ final class InvoiceableEntries
             return [];
         }
 
-        $rows = $query
+        return $this->rows($query->whereNull('time_entries.invoice_id'), $now);
+    }
+
+    /**
+     * The eligible entries among the given ids, in the shape of {@see InvoiceableEntries::candidates()}: finished,
+     * billable, unbilled, held by no draft, of the client and of an hourly effective billing type. Anything else in
+     * the list (a running, billed, reserved, fixed-price or foreign entry, an unknown id) is left out; the caller
+     * decides what that means. Used to add time that was tracked after a draft was made (D-06).
+     *
+     * @param  list<string>  $entryIds
+     * @return list<array{id: string, seconds: int, project_id: ?string, project_name: ?string, task_id: ?string, task_reference: ?string, task_title: ?string, billing_type: string, rate_minor: ?int, rate_currency: ?string}>
+     *
+     * @throws AuthorizationException when neither the Admin nor a system run asks
+     */
+    public function eligibleAmong(string $clientId, array $entryIds, CarbonInterface $now): array
+    {
+        $this->authorise();
+
+        $entryIds = array_values(array_filter($entryIds, static fn (string $id): bool => Str::isUuid($id)));
+
+        if ($entryIds === [] || ! Str::isUuid($clientId)) {
+            return [];
+        }
+
+        return $this->rows(
+            EffectiveBillingSql::joins(TimeEntry::query())
+                ->where('time_entries.client_id', $clientId)
+                ->whereIn('time_entries.id', $entryIds)
+                ->whereNotNull('time_entries.ended_at')
+                ->where('time_entries.billable', true)
+                ->where('time_entries.billing_state', 'unbilled')
+                ->whereNull('time_entries.invoice_id')
+                ->whereRaw(EffectiveBillingSql::BILLING_TYPE." = 'hourly'"),
+            $now,
+        );
+    }
+
+    /**
+     * The ids of the time that a fixed amount closes together with it: every finished, billable, unbilled entry of
+     * the fixed-price project that no draft holds, up to now (ruling R-14-1). The draft stores no creation period, so
+     * the whole unbilled past of the project is what "the time of the project" means. An entry of an hourly task
+     * inside the project is not part of the fixed price and stays out.
+     *
+     * @return list<string> ids in the order the entries started
+     *
+     * @throws AuthorizationException when neither the Admin nor a system run asks
+     */
+    public function fixedPriceProjectEntries(string $projectId, CarbonInterface $now): array
+    {
+        $this->authorise();
+
+        if (! Str::isUuid($projectId)) {
+            return [];
+        }
+
+        $ids = EffectiveBillingSql::joins(TimeEntry::query())
+            ->where('time_entries.project_id', $projectId)
+            ->whereNotNull('time_entries.ended_at')
+            ->where('time_entries.ended_at', '<=', $now->utc()->format('Y-m-d H:i:sP'))
+            ->where('time_entries.billable', true)
+            ->where('time_entries.billing_state', 'unbilled')
             ->whereNull('time_entries.invoice_id')
+            ->whereRaw(EffectiveBillingSql::BILLING_TYPE." = 'fixed_price'")
+            ->orderBy('time_entries.started_at')
+            ->orderBy('time_entries.id')
+            ->toBase()
+            ->pluck('time_entries.id');
+
+        return array_values($ids->map(static fn (mixed $id): string => (string) $id)->all());
+    }
+
+    /**
+     * What issued invoices have already billed for the fixed price of the project: the sum of the fixed-amount lines
+     * of issued invoices of the project, less what issued credit notes returned of those very lines (ruling R-14-2). A
+     * proforma is left out because the invoice created from it carries the same lines; a draft does not count. One
+     * amount per currency, never summed across currencies.
+     *
+     * @return list<Money> ordered by currency code
+     *
+     * @throws AuthorizationException when neither the Admin nor a system run asks
+     */
+    public function fixedAmountBilled(string $projectId): array
+    {
+        $this->authorise();
+
+        if (! Str::isUuid($projectId)) {
+            return [];
+        }
+
+        $credited = '(SELECT COALESCE(SUM(c.line_total_minor), 0) FROM invoice_items c JOIN invoices ci ON ci.id = c.invoice_id'
+            ." WHERE c.credited_item_id = invoice_items.id AND ci.state = 'issued')";
+
+        $rows = InvoiceItem::query()
+            ->join('invoice_item_sources AS s', 's.invoice_item_id', '=', 'invoice_items.id')
+            ->join('invoices AS i', 'i.id', '=', 'invoice_items.invoice_id')
+            ->where('s.origin', InvoiceItemOrigin::FixedAmount->value)
+            ->where('s.project_id', $projectId)
+            ->where('i.state', InvoiceState::Issued->value)
+            ->where('i.kind', InvoiceKind::Invoice->value)
+            ->selectRaw('i.currency AS currency, invoice_items.line_total_minor + '.$credited.' AS net_minor')
+            ->toBase()
+            ->get();
+
+        $totals = [];
+
+        foreach ($rows as $row) {
+            $currency = (string) $row->currency;
+            $totals[$currency] = ($totals[$currency] ?? 0) + (int) $row->net_minor;
+        }
+
+        ksort($totals);
+
+        $amounts = [];
+
+        foreach ($totals as $currency => $minor) {
+            $amounts[] = Money::ofMinor($minor, (string) $currency);
+        }
+
+        return $amounts;
+    }
+
+    /**
+     * Reads the shaped rows of a prepared query: the entry, its exact seconds up to `$now` and the effective billing.
+     *
+     * @param  Builder<TimeEntry>  $query
+     * @return list<array{id: string, seconds: int, project_id: ?string, project_name: ?string, task_id: ?string, task_reference: ?string, task_title: ?string, billing_type: string, rate_minor: ?int, rate_currency: ?string}>
+     */
+    private function rows(Builder $query, CarbonInterface $now): array
+    {
+        $rows = $query
             ->selectRaw(
                 'time_entries.id AS id, '.TimeEntry::elapsedSecondsSql('time_entries').' AS seconds, '
                 .'p.id AS project_id, p.name AS project_name, '

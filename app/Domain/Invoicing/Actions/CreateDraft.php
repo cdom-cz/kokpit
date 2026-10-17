@@ -7,15 +7,12 @@ namespace App\Domain\Invoicing\Actions;
 use App\Domain\Clients\Models\Client;
 use App\Domain\ExchangeRates\ExchangeRateMissing;
 use App\Domain\Identity\Models\User;
-use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\ItemGrouping;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
-use App\Domain\Invoicing\Models\InvoiceItem;
-use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Queries\InvoiceableEntries;
-use App\Domain\Invoicing\Support\DraftTotals;
+use App\Domain\Invoicing\Support\DraftLines;
 use App\Domain\Invoicing\Support\EntryReservation;
 use App\Domain\Invoicing\Support\IssueChecks;
 use App\Domain\Invoicing\Support\TimeItemGrouping;
@@ -63,6 +60,7 @@ final readonly class CreateDraft
         private InvoiceableEntries $entries,
         private EntryReservation $reservation,
         private TimeItemGrouping $grouping,
+        private DraftLines $lines,
     ) {}
 
     /**
@@ -224,52 +222,8 @@ final readonly class CreateDraft
             throw ValidationException::withMessages(['items' => [__('invoices.errors.item_price')]]);
         }
 
-        $max = (int) config('kokpit.invoicing.max_items');
-
-        if (count($lines) > $max) {
-            throw ValidationException::withMessages(['items' => [__('invoices.errors.items_cap', ['max' => $max])]]);
-        }
-
-        foreach ($lines as $index => $line) {
-            $item = new InvoiceItem;
-            $item->fill(['description' => $line['description'], 'unit' => $line['unit']]);
-            $item->forceFill([
-                'invoice_id' => $draft->id,
-                'position' => $index + 1,
-                'quantity' => $line['quantity']->toDecimal(),
-                'unit_price_minor' => $line['unit_price']->minor,
-                'line_total_minor' => $line['line_total']->minor,
-                'price_converted' => $line['price_converted'],
-                'vat_rate' => null,
-                'vat_minor' => 0,
-            ]);
-            $item->save();
-
-            $source = new InvoiceItemSource;
-            $source->forceFill([
-                'invoice_item_id' => $item->id,
-                'invoice_id' => $draft->id,
-                'origin' => InvoiceItemOrigin::Time,
-                'project_id' => $line['source']['project_id'],
-                'task_id' => $line['source']['task_id'],
-                'source_rate_minor' => $line['source']['source_rate_minor'],
-                'source_rate_currency' => $line['source']['source_rate_currency'],
-                'source_seconds' => $line['source']['source_seconds'],
-                'price_manual' => false,
-            ])->save();
-        }
-
-        try {
-            $totals = DraftTotals::for(array_map(static fn (array $line): Money => $line['line_total'], $lines), $draft->currency);
-        } catch (OverflowException) {
-            throw ValidationException::withMessages(['items' => [__('invoices.errors.item_price')]]);
-        }
-
-        $draft->forceFill([
-            'subtotal_minor' => $totals['subtotal']->minor,
-            'vat_minor' => $totals['vat']->minor,
-            'total_minor' => $totals['total']->minor,
-        ])->save();
+        $this->lines->appendTime($draft, $lines);
+        $this->lines->refreshTotals($draft);
     }
 
     /**
