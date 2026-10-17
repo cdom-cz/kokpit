@@ -129,6 +129,8 @@ final class TransactionPayload
      * The rate and the bank figure follow the "null clears" rule of the API (owner decision A1 on D-06): a null
      * `exchange_rate` drops an own rate, a null `czk_amount_minor` drops a bank figure, and both null always
      * return the transaction to the CNB rule. A null of a field the stored figure does not use changes nothing.
+     * A null `exchange_rate` sent together with a `czk_amount_minor` value only drops the own rate: the sent figure
+     * becomes the bank figure (manual) and is never replaced by the CNB figure.
      *
      * @param  array<string, mixed>  $validated
      * @return array<string, mixed>
@@ -210,7 +212,8 @@ final class TransactionPayload
     }
 
     /**
-     * The keys that return a transaction to the CNB rule, from the nulls of an update.
+     * The keys that return a transaction to the CNB rule, from the nulls of an update. A null rate on an own-rate
+     * row that comes with a CZK figure drops only the rate, so the figure of this request makes the row manual.
      *
      * @param  array<string, mixed>  $validated
      * @return array<string, mixed>
@@ -227,6 +230,11 @@ final class TransactionPayload
         }
 
         if ($rateNull && $stored->czk_source === CzkSource::Custom) {
+            // A figure sent in the same request becomes the bank figure (manual): only the own rate is dropped.
+            if (($validated['czk_amount_minor'] ?? null) !== null) {
+                return ['exchange_rate' => null];
+            }
+
             return $toCnb;
         }
 

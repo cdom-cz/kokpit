@@ -56,7 +56,7 @@ final class UpdateTransactionRequest extends FormRequest
                 'example' => 'EUR',
             ],
             'exchange_rate' => [
-                'description' => 'A new own exchange rate, sent as a string. `null` drops an own rate: a transaction booked at an own rate returns to the Czech National Bank rate, a bank figure is kept unless `czk_amount_minor` is also `null`. A transaction in CZK takes no rate.',
+                'description' => 'A new own exchange rate, sent as a string. `null` drops an own rate: a transaction booked at an own rate returns to the Czech National Bank rate, or takes the `czk_amount_minor` sent in the same request as its bank figure; a bank figure is kept unless `czk_amount_minor` is also `null`. A transaction in CZK takes no rate.',
                 'type' => 'string',
                 'example' => '25.125',
             ],
