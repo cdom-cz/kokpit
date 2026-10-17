@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 8
-current_phase_name: Exchange Rates and Reports
-status: verifying
-stopped_at: Phase 09.1 complete, ready to verify Phase 8
-last_updated: "2026-10-17T05:31:31.801Z"
+current_phase: 10
+current_phase_name: Invoicing
+status: executing
+stopped_at: Completed 10-01-PLAN.md
+last_updated: "2026-10-17T05:46:46.852Z"
 last_activity: 2026-10-17
-last_activity_desc: Phase 09.1 complete, transitioned to Phase 8
-state_head: dd528965c81ec34e5bd07d7ab4bd620ed52f016d
+last_activity_desc: Phase 10 execution started
+state_head: 65f8bf8564bfd1f01c17f367c4229b3fdd135fcd
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 184
-  percent: 58
+  completed_plans: 185
+  percent: 54
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 09.1 — Transactions API (INSERTED)
+**Current focus:** Phase 10 — Invoicing
 
 ## Current Position
 
-Phase: 8 — Exchange Rates and Reports
-Plan: 27
-Status: Phase complete — ready for verification
-Last activity: 2026-10-17 — Phase 09.1 complete, transitioned to Phase 8
+Phase: 10 (Invoicing) — EXECUTING
+Plan: 2 of 41
+Status: Ready to execute
+Last activity: 2026-10-17 — Phase 10 execution started
 
-Progress: [██████░░░░] 58%
+Progress: [█████░░░░░] 54%
 
 ## Performance Metrics
 
@@ -247,6 +247,7 @@ Progress: [██████░░░░] 58%
 | Phase 09.1 P07 | 6 min | 3 tasks | 12 files |
 | Phase 09.1 P08 | 21 min | 2 tasks | 3 files |
 | Phase 09.1 P09 | 26 min | 3 tasks | 6 files |
+| Phase 10 P01 | 14 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -602,6 +603,8 @@ Recent decisions affecting current work:
 - [Phase 09.1]: Plan 09.1-08: Phase 10 plan 10-19 adds one API test per transaction endpoint for its payment-income refusal and adds PATCH to TransactionController::CONFLICT_METHODS only if that refusal becomes a 409 (CONTRIBUTING hand-over 7)
 - [Phase 09.1]: 09.1-09: CR-01 fixed in the API mapping only; cleared() drops just the own rate when czk_amount_minor carries a value (app/Domain/Finance untouched)
 - [Phase 09.1]: 09.1-09: WR-01 refuses JSON booleans via noBoolean() with bail before integer; integer strings keep passing
+- [Phase 10]: R-01-1: a converted invoice line amount is rounded HALF_UP once from the exact conversion of the source price; the printed converted unit price is a separately rounded display figure (Money::timesThroughCzk)
+- [Phase 10]: R-01-2/R-01-3: InvoiceQuantity rounds seconds with integer arithmetic (intdiv(50*s+9,18)) outside Money; Money::times takes the canonical decimal text of a quantity
 
 ### Pending Todos
 
@@ -657,6 +660,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T05:26:27.012Z
-Stopped at: Phase 09.1 complete, ready to verify Phase 8
+Last session: 2026-10-17T05:46:41.990Z
+Stopped at: Completed 10-01-PLAN.md
 Resume file: None

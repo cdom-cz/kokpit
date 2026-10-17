@@ -669,12 +669,12 @@ Plans:
   4. Admin records a manual payment (transfer or cash) with a warning if already paid, which creates an income transaction with editable date and category; overdue status is derived and listed in an overdue overview and as a dashboard tile; a paid proforma converts to a linked invoice
   5. The client detail shows projects, unbilled time and amount, invoices, documents and client accounts, and a Partner sees only their own issued invoices and proformas (list, detail, PDF) read-only, never drafts, internal notes, linked time or rates
 
-**Plans:** 41 plans in 13 waves
+**Plans:** 1/41 plans executed in 13 waves
 **UI hint**: yes
 
 Plans:
 **Wave 1**
-- [ ] 10-01-PLAN.md — Money arithmetic for invoice lines: quantity from exact seconds, quantity times price rounded once, signs, exact conversion between two CNB currencies, converted line amount rounded exactly once
+- [x] 10-01-PLAN.md — Money arithmetic for invoice lines: quantity from exact seconds, quantity times price rounded once, signs, exact conversion between two CNB currencies, converted line amount rounded exactly once
 - [ ] 10-02-PLAN.md — SPAYD payload and local QR PNG with decode round trip; fictional IBAN helper; chillerlan/php-qrcode pinned as a direct dependency
 - [ ] 10-03-PLAN.md — Document appearance: accent colour, footer, logo and signature as typed settings (content-addressed, retained images) with the palette derived by the reference rules, on the Settings page
 - [ ] 10-04-PLAN.md — Guard functions and the invoices and invoice_items tables: issued documents frozen against raw SQL with recorded D-13 carve-outs, every CHECK, series uniqueness, same-client links, pinned Partner-safe columns
@@ -793,6 +793,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
 | 8. Exchange Rates and Reports | 27/27 | In Progress | - |
 | 9. Documents and Finance | 28/28 | In Progress | - |
-| 10. Invoicing | 0/32 | Planned | - |
+| 10. Invoicing | 1/41 | In Progress | - |
 | 11. Stripe Payments | 0/0 | Not started | - |
 | 12. Partner Audit | 0/0 | Not started | - |
