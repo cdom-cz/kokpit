@@ -874,10 +874,10 @@ it('tells the operator what the Phase 9 documents need from the bucket', functio
         ->and($readme)->toContain('7 days');
 });
 
-it('hands over to Phases 7 and 10, carries no Phase 8 or Phase 9 note and no longer carries the Phase 6 note or the stale labels', function () {
+it('hands over to Phases 7, 10 and 11, carries no Phase 8 or Phase 9 note and no longer carries the Phase 6 note or the stale labels', function () {
     $contributing = repoFile('CONTRIBUTING.md');
 
-    foreach (['Phase 7 (', 'Phase 10 ('] as $note) {
+    foreach (['Phase 7 (', 'Phase 10 (', 'Phase 11 ('] as $note) {
         expect($contributing)->toContain("**{$note}");
     }
 
@@ -890,32 +890,127 @@ it('hands over to Phases 7 and 10, carries no Phase 8 or Phase 9 note and no lon
         ->and($contributing)->not->toContain('**Phase 8 (exports)')
         ->and($contributing)->not->toContain('**Phase 12 (')
         ->and($contributing)->toContain('**Phase 7 (REST API).**')
-        ->and($contributing)->toContain('**Phase 10 (invoicing).**');
+        ->and($contributing)->toContain('**Phase 10 (invoicing).**')
+        ->and($contributing)->toContain('**Phase 11 (Stripe).**');
 
-    // Phase 10 must re-create the guard of time_entries with the extended list (research Open Question 5, Pattern 8).
     $phaseTen = substr($contributing, (int) strpos($contributing, '**Phase 10 (invoicing).**'));
-    $phaseTen = substr($phaseTen, 0, (int) strpos($phaseTen, '- **Search.**'));
+    $phaseTen = substr($phaseTen, 0, (int) strpos($phaseTen, '**Phase 11 (Stripe).**'));
 
-    expect($phaseTen)->toContain('time_entries_frozen_guard')
-        ->and($phaseTen)->toContain('Immutability::guardTriggerSql()')
-        ->and($phaseTen)->toContain('mutable list')
-        ->and($phaseTen)->toContain('TimeEntryRateResolver')
-        ->and($phaseTen)->toContain('MarkEntriesBilled')
-        ->and($phaseTen)->toContain('ExchangeRateConverter')
-        ->and($phaseTen)->toContain('WorkReportSource::fromEntryIds')
-        ->and($phaseTen)->toContain('Dashboard');
+    // What Phase 10 built and the rules later phases inherit (plan 10-32): the single writer of the billing columns
+    // (R-09-2 replaces the Phase 6 wording), the issue pipeline and its order, the guards and their limits, the payment
+    // and income rules, the single rounding, the frozen appearance and the licence notes.
+    foreach ([
+        'EntryBilling', 'R-09-2', 'DocumentIssuer', 'last write on the `invoices` row', 'accept no write at all', 'R-04-4', 'R-04-5', 'R-04-6',
+        'R-06-1', 'R-06-6', 'amending D-13', 'DocumentOwnerType::Invoice', 'DocumentOwnerResolver', 'StoreGeneratedDocument', 'AttachDocuments',
+        'archived-owner scopes', 'InvoicePdfController', 'files.invoice', 'DeletePayment', 'kokpit.payment_deletion', 'R-19-1', 'R-41-1 to R-41-5',
+        'D-19 as amended on 2026-10-17', 'TransactionCategory::invoicePayments()', 'TransactionCzk', 'RecordPayment', 'only in its date and category',
+        'Transactions API', 'Money::timesThroughCzk()', 'R-01-1', 'R-17-1', 'ExchangeRateConverter', 'R-03-1', 'DocumentImage', 'OFL-1.1',
+        'dompdf/dompdf', 'TimeEntryRateResolver', 'TaskBillingResolver', 'WorkReportSource::fromEntryIds()', 'WorkReportPdf', 'Dashboard',
+        'time_entries_frozen_guard', 'MarkEntriesBilled', 'InvoiceLeakTest',
+    ] as $phrase) {
+        expect($phaseTen)->toContain($phrase);
+    }
 
-    // What Phase 9 hands to Phase 10: the invoice owner kind and its archived-owner behaviour, the invoice PDF through
-    // AttachDocuments, the system income category for FI-03 and the payment transaction.
-    expect($phaseTen)->toContain('DocumentOwnerType')
-        ->and($phaseTen)->toContain('DocumentOwnerResolver')
-        ->and($phaseTen)->toContain('archived-owner scopes')
-        ->and($phaseTen)->toContain('AttachDocuments')
-        ->and($phaseTen)->toContain('TransactionCategory::invoicePayments()')
-        ->and($phaseTen)->toContain('FI-03')
-        ->and($phaseTen)->toContain('invoice_id')
-        ->and($phaseTen)->toContain('TransactionCzk')
-        ->and($phaseTen)->toContain('WorkReportPdf');
+    // The Phase 11 hand-over: the pay button, payment matching, the kind-scoped variable symbol and the only write paths.
+    $phaseEleven = substr($contributing, (int) strpos($contributing, '**Phase 11 (Stripe).**'));
+    $phaseEleven = substr($phaseEleven, 0, (int) strpos($phaseEleven, '- **Search.**'));
+
+    foreach (['ViewPartnerInvoice', 'R-07-4', 'VariableSymbol', 'invoice_payments', 'RecordPayment', 'DeletePayment', 'R-41-4', 'UnpaidInvoices', 'Dashboard::getWidgets()'] as $phrase) {
+        expect($phaseEleven)->toContain($phrase);
+    }
+
+    // The superseded Phase 6 wording is gone from the time entry rule as well.
+    expect($contributing)->not->toContain('Only `MarkEntriesBilled` and `CancelEntriesBilling` change the billed state');
+});
+
+it('only names Phase 10 classes, methods and tests in CONTRIBUTING.md that exist', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    // The documentation must not name a Phase 10 mechanism that is gone.
+    $names = [
+        'EntryBilling' => 'App\Domain\TimeTracking\Billing\EntryBilling',
+        'TimeEntryRateResolver' => 'App\Domain\TimeTracking\Billing\TimeEntryRateResolver',
+        'TaskBillingResolver' => 'App\Domain\Tasks\Billing\TaskBillingResolver',
+        'EntryAmounts' => 'App\Domain\Reports\EntryAmounts',
+        'CreateDraft' => 'App\Domain\Invoicing\Actions\CreateDraft',
+        'UpdateDraft' => 'App\Domain\Invoicing\Actions\UpdateDraft',
+        'AddEntriesToDraft' => 'App\Domain\Invoicing\Actions\AddEntriesToDraft',
+        'AddFixedAmount' => 'App\Domain\Invoicing\Actions\AddFixedAmount',
+        'ReleaseEntries' => 'App\Domain\Invoicing\Actions\ReleaseEntries',
+        'DeleteDraft' => 'App\Domain\Invoicing\Actions\DeleteDraft',
+        'IssueDocument' => 'App\Domain\Invoicing\Actions\IssueDocument',
+        'ConvertProforma' => 'App\Domain\Invoicing\Actions\ConvertProforma',
+        'IssueCreditNote' => 'App\Domain\Invoicing\Actions\IssueCreditNote',
+        'DocumentIssuer' => 'App\Domain\Invoicing\Issuing\DocumentIssuer',
+        'IssueContext' => 'App\Domain\Invoicing\Issuing\IssueContext',
+        'RecordPayment' => 'App\Domain\Invoicing\Actions\RecordPayment',
+        'DeletePayment' => 'App\Domain\Invoicing\Actions\DeletePayment',
+        'RegeneratePdf' => 'App\Domain\Invoicing\Actions\RegeneratePdf',
+        'QueueInvoiceEmail' => 'App\Domain\Invoicing\Actions\QueueInvoiceEmail',
+        'SendInvoiceEmail' => 'App\Domain\Invoicing\Jobs\SendInvoiceEmail',
+        'InvoicePdf' => 'App\Domain\Invoicing\Pdf\InvoicePdf',
+        'InvoicePdfUrl' => 'App\Domain\Invoicing\Support\InvoicePdfUrl',
+        'InvoicePdfController' => 'App\Http\Controllers\InvoicePdfController',
+        'InvoiceAdmin' => 'App\Domain\Invoicing\Models\InvoiceAdmin',
+        'InvoicePayment' => 'App\Domain\Invoicing\Models\InvoicePayment',
+        'InvoiceBalances' => 'App\Domain\Invoicing\Queries\InvoiceBalances',
+        'ReceivablesReader' => 'App\Domain\Invoicing\Queries\ReceivablesReader',
+        'VariableSymbol' => 'App\Domain\Invoicing\Support\VariableSymbol',
+        'StoreGeneratedDocument' => 'App\Domain\Documents\Actions\StoreGeneratedDocument',
+        'DocumentImage' => 'App\Domain\Settings\DocumentImage',
+        'PartnerInvoiceResource' => 'App\Filament\Partner\Resources\PartnerInvoiceResource',
+        'ViewPartnerInvoice' => 'App\Filament\Partner\Resources\PartnerInvoiceResource\Pages\ViewPartnerInvoice',
+        'InvoiceResource' => 'App\Filament\Resources\InvoiceResource',
+        'UnpaidInvoices' => 'App\Filament\Widgets\UnpaidInvoices',
+        'WorkReportSource' => 'App\Domain\Reports\WorkReport\WorkReportSource',
+        'WorkReportPdf' => 'App\Domain\Reports\WorkReport\WorkReportPdf',
+        'TransactionCzk' => 'App\Domain\Finance\TransactionCzk',
+        'ExchangeRateConverter' => 'App\Domain\ExchangeRates\ExchangeRateConverter',
+    ];
+
+    foreach ($names as $short => $class) {
+        expect($contributing)->toContain($short);
+        expect(class_exists($class) || trait_exists($class) || interface_exists($class) || enum_exists($class))
+            ->toBeTrue("CONTRIBUTING.md names {$short} but {$class} does not exist");
+    }
+
+    // Methods, enum cases and constants the text spells out.
+    expect(method_exists('App\Domain\Shared\Money\Money', 'timesThroughCzk'))->toBeTrue()
+        ->and(method_exists('App\Domain\Invoicing\Support\InvoicePdfUrl', 'download'))->toBeTrue()
+        ->and(method_exists('App\Domain\Reports\WorkReport\WorkReportSource', 'fromEntryIds'))->toBeTrue()
+        ->and(method_exists('App\Domain\Finance\Models\TransactionCategory', 'invoicePayments'))->toBeTrue()
+        ->and(method_exists('App\Filament\Pages\Dashboard', 'getWidgets'))->toBeTrue()
+        ->and(constant('App\Domain\Documents\Enums\DocumentOwnerType::Invoice'))->not->toBeNull();
+
+    // The signed route the text names exists, and the deletion flag is set by DeletePayment alone.
+    expect(repoFile('app/Providers/Filament/AdminPanelProvider.php'))->toContain("->name('files.invoice')")
+        ->and(repoFile('app/Domain/Invoicing/Actions/DeletePayment.php'))->toContain('kokpit.payment_deletion');
+
+    // The enforcing tests the text names.
+    foreach ([
+        'tests/Isolation/InvoiceLeakTest.php', 'tests/Arch/PaymentDeletionPathTest.php',
+    ] as $path) {
+        expect($contributing)->toContain(basename($path, '.php'));
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$path} but the file does not exist");
+    }
+});
+
+it('names the bundled Roboto fonts with their OFL-1.1 licence in the README, and the fonts and licence text are there', function () {
+    $readme = repoFile('README.md');
+
+    expect($readme)->toContain('Roboto')
+        ->and($readme)->toContain('OFL-1.1')
+        ->and($readme)->toContain('resources/fonts/OFL.txt');
+
+    foreach (['resources/fonts/OFL.txt', 'resources/fonts/Roboto-Regular.ttf', 'resources/fonts/Roboto-Bold.ttf'] as $path) {
+        expect(is_file(base_path($path)))->toBeTrue("{$path} is named in the documentation but does not exist");
+    }
+
+    // The Dompdf font cache is generated at the first render and stays out of git, and so do the test PDFs.
+    $ignore = repoFile('.gitignore');
+
+    expect($ignore)->toContain('/storage/framework/dompdf/')
+        ->and($ignore)->toContain('/storage/framework/testing/*');
 });
 
 it('documents the Czech ICU collation requirement and its check for the operator', function () {

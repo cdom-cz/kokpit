@@ -12,6 +12,8 @@ Stack: PHP 8.5, Laravel 13, Filament 5 (single panel in SPA mode), PostgreSQL 18
 
 Kokpit is released under the GNU Affero General Public License version 3 only, SPDX identifier `AGPL-3.0-only`. The full text is in [LICENSE](LICENSE). If you run a modified version for users over a network, section 13 of the licence asks you to offer them the source of your version.
 
+The PDF documents are set in the bundled Roboto fonts (`resources/fonts/Roboto-Regular.ttf` and `Roboto-Bold.ttf`), which are licensed under the SIL Open Font License 1.1 (OFL-1.1); the licence text is in `resources/fonts/OFL.txt`.
+
 ## Requirements
 
 - Docker and [DDEV](https://ddev.readthedocs.io/) 1.25 or newer. DDEV supplies PHP 8.5, PostgreSQL 18, Redis, RustFS, Mailpit, the queue worker and the scheduler, so nothing else has to be installed on your machine.
