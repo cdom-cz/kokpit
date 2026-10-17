@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace App\Domain\Settings\Settings;
 
+use App\Domain\Settings\Rules\HexColorRule;
 use App\Domain\Settings\VatMode;
 use Illuminate\Validation\ValidationException;
 
 /**
- * How invoices are issued (group `invoicing`): the VAT mode and the default
- * number of days until an invoice is due.
+ * How invoices are issued (group `invoicing`): the VAT mode, the default
+ * number of days until an invoice is due and the appearance of the documents
+ * (accent colour and footer text, D-24).
  *
- * The numbering section of plan 03-09 joins this group later.
+ * The values of the appearance are frozen into the issue snapshot, so a later
+ * change here never alters an issued document.
  */
 class InvoicingSettings extends ValidatedSettings
 {
@@ -20,30 +23,39 @@ class InvoicingSettings extends ValidatedSettings
 
     public int $payment_due_days;
 
+    /** Lower-case #rrggbb; every other colour of the PDF is derived from it. */
+    public string $document_accent_color;
+
+    public ?string $document_footer;
+
     public static function group(): string
     {
         return 'invoicing';
     }
 
     /**
-     * @return array<string, list<string>>
+     * @return array<string, list<mixed>>
      */
     public static function rules(): array
     {
         return [
             'vat_mode' => ['required', 'in:non_payer'],
             'payment_due_days' => ['required', 'integer', 'between:0,365'],
+            'document_accent_color' => [new HexColorRule],
+            'document_footer' => ['nullable', 'string', 'max:300'],
         ];
     }
 
     /**
-     * @return array{vat_mode: string, payment_due_days: int}
+     * @return array{vat_mode: string, payment_due_days: int, document_accent_color: string, document_footer: string|null}
      */
     public function toFormState(): array
     {
         return [
             'vat_mode' => $this->vat_mode->value,
             'payment_due_days' => $this->payment_due_days,
+            'document_accent_color' => $this->document_accent_color,
+            'document_footer' => $this->document_footer,
         ];
     }
 
@@ -84,6 +96,18 @@ class InvoicingSettings extends ValidatedSettings
             }
 
             $this->payment_due_days = $days;
+        }
+
+        if (array_key_exists('document_accent_color', $state)) {
+            // A colour picker may hand back upper case; the stored form is lower case. Anything else stays
+            // as typed and is refused by the rule.
+            $color = $state['document_accent_color'];
+            $this->document_accent_color = is_string($color) ? strtolower(trim($color)) : '';
+        }
+
+        if (array_key_exists('document_footer', $state)) {
+            $footer = $state['document_footer'];
+            $this->document_footer = is_string($footer) && trim($footer) !== '' ? $footer : null;
         }
 
         return $this;

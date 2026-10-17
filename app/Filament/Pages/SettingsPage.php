@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Pages;
 
 use App\Domain\Clients\Enums\InvoiceLanguage;
+use App\Domain\Invoicing\Pdf\DocumentPalette;
 use App\Domain\Settings\Banking\BankAccountFormat;
 use App\Domain\Settings\Numbering\DocumentKind;
 use App\Domain\Settings\Numbering\DocumentNumbering;
@@ -25,8 +26,10 @@ use App\Domain\Shared\Money\Money;
 use App\Filament\Concerns\EnforcesPageAccessRule;
 use Closure;
 use Filament\Actions\Action;
+use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
@@ -42,8 +45,10 @@ use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use OverflowException;
@@ -319,7 +324,73 @@ class SettingsPage extends Page
                     ->rules($rules['payment_due_days']),
             ])->statePath(InvoicingSettings::group()),
             $this->numberingSection(),
+            $this->appearanceSection(),
         ]);
+    }
+
+    /**
+     * The appearance of the documents (D-24): the accent colour with a sample of
+     * the colours derived from it, and the footer text. The sample is a static
+     * strip in inline styles (no Tailwind class that the build could miss) and the
+     * contrast line is the measured contrast of the text on the total bar.
+     */
+    private function appearanceSection(): Group
+    {
+        $rules = InvoicingSettings::rules();
+
+        return Group::make([
+            Section::make(__('kokpit.settings.invoicing.appearance.title'))
+                ->schema([
+                    ColorPicker::make('document_accent_color')
+                        ->label(__('kokpit.settings.invoicing.appearance.accent'))
+                        ->helperText(__('kokpit.settings.invoicing.appearance.accent_hint'))
+                        ->live(debounce: 500)
+                        ->afterStateUpdated(static function (mixed $state, Set $set): void {
+                            // Typed upper case is stored lower case; the rule itself stays strict.
+                            if (is_string($state) && $state !== strtolower(trim($state))) {
+                                $set('document_accent_color', strtolower(trim($state)));
+                            }
+                        })
+                        ->markAsRequired()
+                        // Filament would evaluate a bare rule object list too; the closure keeps the
+                        // data-layer list as the one source.
+                        ->rules(fn (): array => $rules['document_accent_color']),
+                    Text::make(static fn (Get $get): HtmlString => self::appearanceSample($get('document_accent_color'))),
+                    Textarea::make('document_footer')
+                        ->label(__('kokpit.settings.invoicing.appearance.footer'))
+                        ->helperText(__('kokpit.settings.invoicing.appearance.footer_hint'))
+                        ->rows(3)
+                        ->maxLength(300)
+                        ->rules($rules['document_footer']),
+                ]),
+        ])->statePath(InvoicingSettings::group());
+    }
+
+    /**
+     * The sample strip: the accent, the darkened accent text, the text on the
+     * total bar and the tint, each in its own colours, and the contrast line.
+     * The colours come out of DocumentPalette, which falls back to the default
+     * for a value that is not #rrggbb, so nothing typed reaches the style.
+     */
+    private static function appearanceSample(mixed $accent): HtmlString
+    {
+        $palette = DocumentPalette::fromAccent(is_string($accent) ? $accent : null);
+
+        $swatch = static fn (string $label, string $style): string => '<span style="display:inline-block;padding:0.5rem 1rem;margin-right:0.5rem;border:1px solid '
+            .e($palette->hairline).';'.$style.'">'.e($label).'</span>';
+
+        $ratio = number_format($palette->onAccentContrast(), 1, ',', '');
+
+        return new HtmlString(
+            '<span style="display:block">'
+            .$swatch(__('kokpit.settings.invoicing.appearance.sample_accent'), 'background:'.e($palette->accent).';color:'.e($palette->onAccent))
+            .$swatch(__('kokpit.settings.invoicing.appearance.sample_accent_text'), 'background:#ffffff;color:'.e($palette->accentText))
+            .$swatch(__('kokpit.settings.invoicing.appearance.sample_on_accent'), 'background:'.e($palette->accent).';color:'.e($palette->onAccent).';font-weight:600')
+            .$swatch(__('kokpit.settings.invoicing.appearance.sample_tint'), 'background:'.e($palette->tint).';color:'.e($palette->ink))
+            .'</span><span style="display:block;margin-top:0.5rem">'
+            .e((string) __('kokpit.settings.invoicing.appearance.contrast', ['ratio' => $ratio]))
+            .'</span>'
+        );
     }
 
     /**

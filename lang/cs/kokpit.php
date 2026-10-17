@@ -317,6 +317,21 @@ return [
             'payment_due_days_hint' => 'Počet dnů od vystavení do splatnosti, 0 až 365.',
             'payment_due_days_invalid' => 'Zadejte celé číslo dnů od 0 do 365.',
             'days' => 'dnů',
+            'appearance' => [
+                'title' => 'Vzhled dokladů',
+                'accent' => 'Barva dokladů',
+                'accent_hint' => 'Barva proužků, nadpisu a součtu na PDF. Ostatní barvy se odvodí automaticky.',
+                'footer' => 'Patička dokladů',
+                'footer_hint' => 'Zobrazí se pod platebními údaji, například údaj o zápisu v rejstříku.',
+                'sample_accent' => 'Barva',
+                'sample_accent_text' => 'Nadpis',
+                'sample_on_accent' => 'Součet',
+                'sample_tint' => 'Podbarvení',
+                'contrast' => 'Kontrast textu na součtu: :ratio:1',
+            ],
+            'errors' => [
+                'accent' => 'Zadejte barvu ve tvaru #rrggbb.',
+            ],
         ],
         'defaults' => [
             'default_currency' => 'Výchozí měna',
