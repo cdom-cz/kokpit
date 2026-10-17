@@ -118,3 +118,107 @@ it('shows the slot to the Admin on the System page with the count and the link',
         ->assertDontSee('jane@')
         ->assertDontSee('transport');
 });
+
+it('answers Warning once a queued e-mail has waited past the warning threshold, and Ok before it', function (): void {
+    $waiting = unsentInvoice();
+    unsentLogged($waiting, InvoiceEmailState::Queued, 5);
+
+    expect((new UnsentInvoiceEmailsIndicator)->check()->status)->toBe(HealthStatus::Ok);
+
+    $late = unsentInvoice();
+    unsentLogged($late, InvoiceEmailState::Queued, 20);
+
+    $result = (new UnsentInvoiceEmailsIndicator)->check();
+
+    expect($result->status)->toBe(HealthStatus::Warning)
+        ->and($result->value)->toBe('1')
+        ->and($result->detail)->toBe('Čekající e-maily s fakturou: 1.')
+        ->and($result->urlLabel)->toBe('Zobrazit neodeslané')
+        ->and(urldecode((string) $result->url))->toContain('tableFilters[email][value]=queued');
+});
+
+it('grades a sending row by the time since the claim: fresh is Ok, slow is Warning, older than the stale threshold counts as failed', function (): void {
+    $invoice = unsentInvoice();
+    unsentLogged($invoice, InvoiceEmailState::Sending, 10);
+
+    expect((new UnsentInvoiceEmailsIndicator)->check()->status)->toBe(HealthStatus::Ok);
+
+    $slow = unsentInvoice();
+    unsentLogged($slow, InvoiceEmailState::Sending, 20);
+
+    $result = (new UnsentInvoiceEmailsIndicator)->check();
+
+    expect($result->status)->toBe(HealthStatus::Warning)
+        ->and($result->value)->toBe('1');
+
+    $dead = unsentInvoice();
+    unsentLogged($dead, InvoiceEmailState::Sending, 90);
+
+    $result = (new UnsentInvoiceEmailsIndicator)->check();
+
+    expect($result->status)->toBe(HealthStatus::Error)
+        ->and($result->value)->toBe('1')
+        ->and($result->detail)->toBe('Neodesláno: 1. Odešlete je znovu z přehledu faktur.')
+        ->and(urldecode((string) $result->url))->toContain('tableFilters[email][value]=failed');
+});
+
+it('lets a failure outrank a wait and counts only the rows of the winning grade', function (): void {
+    unsentLogged(unsentInvoice(), InvoiceEmailState::Queued, 30);
+    unsentLogged(unsentInvoice(), InvoiceEmailState::Queued, 40);
+    unsentLogged(unsentInvoice(), InvoiceEmailState::Failed, 50);
+
+    $result = (new UnsentInvoiceEmailsIndicator)->check();
+
+    expect($result->status)->toBe(HealthStatus::Error)
+        ->and($result->value)->toBe('1');
+
+    unsentLogged(unsentInvoice(), InvoiceEmailState::Sending, 120);
+
+    expect((new UnsentInvoiceEmailsIndicator)->check()->value)->toBe('2');
+});
+
+it('ignores an old waiting row once a newer row of the same document was sent', function (): void {
+    $invoice = unsentInvoice();
+    unsentLogged($invoice, InvoiceEmailState::Queued, 120);
+    unsentLogged($invoice, InvoiceEmailState::Sent, 100);
+
+    expect((new UnsentInvoiceEmailsIndicator)->check()->status)->toBe(HealthStatus::Ok);
+});
+
+it('takes both thresholds from the configuration', function (): void {
+    unsentLogged(unsentInvoice(), InvoiceEmailState::Queued, 20);
+    config(['kokpit.health.unsent_invoice_email_warning_after' => 1800]);
+
+    expect((new UnsentInvoiceEmailsIndicator)->check()->status)->toBe(HealthStatus::Ok);
+
+    unsentLogged(unsentInvoice(), InvoiceEmailState::Sending, 20);
+    config(['kokpit.health.unsent_invoice_email_warning_after' => 300, 'kokpit.health.unsent_invoice_email_stale_after' => 600]);
+
+    expect((new UnsentInvoiceEmailsIndicator)->check()->status)->toBe(HealthStatus::Error);
+});
+
+it('never lets the stale threshold sit below the warning one', function (): void {
+    unsentLogged(unsentInvoice(), InvoiceEmailState::Sending, 20);
+    config(['kokpit.health.unsent_invoice_email_warning_after' => 1800, 'kokpit.health.unsent_invoice_email_stale_after' => 60]);
+
+    expect((new UnsentInvoiceEmailsIndicator)->check()->status)->toBe(HealthStatus::Ok);
+});
+
+it('never shows a recipient, a subject, an amount or a failure code in any grade', function (): void {
+    $recipient = 'jane@'.implode('.', ['example', 'com']);
+    unsentLogged(unsentInvoice(), InvoiceEmailState::Queued, 30);
+    $warning = (new UnsentInvoiceEmailsIndicator)->check();
+
+    unsentLogged(unsentInvoice(), InvoiceEmailState::Failed, 30);
+    $error = (new UnsentInvoiceEmailsIndicator)->check();
+
+    foreach ([$warning, $error] as $result) {
+        $text = (string) $result->value.' '.$result->detail.' '.$result->urlLabel.' '.urldecode((string) $result->url);
+
+        expect($text)->not->toContain($recipient)
+            ->and($text)->not->toContain('jane')
+            ->and($text)->not->toContain('Example subject')
+            ->and($text)->not->toContain('transport')
+            ->and($text)->not->toContain('1000');
+    }
+});
