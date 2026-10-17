@@ -28,6 +28,21 @@ use Illuminate\Support\Facades\Schema;
  * invoice is cancelled exactly when an issued credit note with `cancels_invoice` names it: nothing is written on
  * the cancelled invoice, so the storno can be neither reverted nor repeated, not even by raw SQL.
  *
+ * What else the database guarantees, whatever code writes the row:
+ * - a draft has no number and an issued row has one, unique per kind, so invoice, proforma and credit note keep
+ *   separate series (D-10); only a document that is issued carries a variable symbol, and only an invoice or a
+ *   proforma (a credit note has none, no due date and no bank snapshot);
+ * - an issued document prints everything it must: issue date, supplier, customer and appearance snapshots, and for
+ *   an invoice or proforma the due date and the bank snapshot (D-12); a draft leaves them open;
+ * - the total is the subtotal plus the VAT; an issued credit note is negative, an issued invoice or proforma
+ *   positive (D-14, D-15); the VAT is zero while `vat_mode` is `non_payer`, a line without a rate has no VAT (D-08);
+ * - an ordinary line is exactly round(quantity x unit price), the one rounding rule of Money::times(); a line with
+ *   `price_converted` carries the amount rounded once from the exact conversion and may differ from the printed
+ *   unit price by at most half a minor unit per unit of quantity plus half a minor unit (D-09). Only the conversion
+ *   code sets the flag;
+ * - a source proforma and a credited invoice are of the same client (composite keys on (id, client_id)); one invoice
+ *   per proforma; a credit note always names its invoice and no other kind does.
+ *
  * No generated column on a guarded table: PostgreSQL computes it after the BEFORE trigger, so NEW would hold NULL
  * and the guard would see a change.
  *
@@ -87,6 +102,21 @@ return new class extends Migration
         DB::statement("ALTER TABLE invoices ADD CONSTRAINT invoices_kind_check CHECK (kind IN ('invoice', 'proforma', 'credit_note'))");
         DB::statement("ALTER TABLE invoices ADD CONSTRAINT invoices_state_check CHECK (state IN ('draft', 'issued'))");
         DB::statement("ALTER TABLE invoices ADD CONSTRAINT invoices_number_state_check CHECK ((state = 'draft') = (number IS NULL))");
+        DB::statement("ALTER TABLE invoices ADD CONSTRAINT invoices_language_check CHECK (language IN ('cs', 'en'))");
+        DB::statement("ALTER TABLE invoices ADD CONSTRAINT invoices_vat_mode_check CHECK (vat_mode IN ('non_payer', 'payer'))");
+        DB::statement("ALTER TABLE invoices ADD CONSTRAINT invoices_currency_check CHECK (currency ~ '^[A-Z]{3}\$')");
+        // An issued invoice or proforma carries a variable symbol of one to ten digits; a draft and a credit note carry none.
+        DB::statement("ALTER TABLE invoices ADD CONSTRAINT invoices_variable_symbol_check CHECK ((variable_symbol IS NOT NULL) = (state = 'issued' AND kind <> 'credit_note') AND (variable_symbol IS NULL OR variable_symbol ~ '^[0-9]{1,10}\$'))");
+        // Everything an issued document prints is present. A credit note has no due date, no bank and no variable symbol.
+        DB::statement("ALTER TABLE invoices ADD CONSTRAINT invoices_issued_fields_check CHECK (state = 'draft' OR (issue_date IS NOT NULL AND supplier_snapshot IS NOT NULL AND customer_snapshot IS NOT NULL AND appearance_snapshot IS NOT NULL AND (kind = 'credit_note' OR (due_date IS NOT NULL AND bank_snapshot IS NOT NULL))))");
+        // A credit note is negative, an invoice and a proforma positive once issued; a draft may hold anything while it is built.
+        DB::statement("ALTER TABLE invoices ADD CONSTRAINT invoices_total_sign_check CHECK (state = 'draft' OR (CASE WHEN kind = 'credit_note' THEN total_minor < 0 ELSE total_minor > 0 END))");
+        DB::statement('ALTER TABLE invoices ADD CONSTRAINT invoices_totals_check CHECK (total_minor = subtotal_minor + vat_minor)');
+        DB::statement("ALTER TABLE invoices ADD CONSTRAINT invoices_vat_check CHECK (vat_mode <> 'non_payer' OR vat_minor = 0)");
+        DB::statement("ALTER TABLE invoices ADD CONSTRAINT invoices_cancels_invoice_check CHECK (NOT cancels_invoice OR kind = 'credit_note')");
+        DB::statement("ALTER TABLE invoices ADD CONSTRAINT invoices_proforma_kind_check CHECK (proforma_id IS NULL OR kind = 'invoice')");
+        DB::statement("ALTER TABLE invoices ADD CONSTRAINT invoices_credited_kind_check CHECK ((kind = 'credit_note') = (credited_invoice_id IS NOT NULL))");
+        DB::statement('ALTER TABLE invoices ADD CONSTRAINT invoices_note_check CHECK (note IS NULL OR length(note) <= 500)');
 
         DB::statement('CREATE UNIQUE INDEX invoices_kind_number_unique ON invoices (kind, number) WHERE number IS NOT NULL');
         DB::statement('CREATE UNIQUE INDEX invoices_one_invoice_per_proforma ON invoices (proforma_id) WHERE proforma_id IS NOT NULL');
@@ -122,6 +152,17 @@ return new class extends Migration
         });
 
         DB::statement('ALTER TABLE invoice_items ADD CONSTRAINT invoice_items_id_invoice_unique UNIQUE (id, invoice_id)');
+
+        DB::statement('ALTER TABLE invoice_items ADD CONSTRAINT invoice_items_position_check CHECK (position >= 1)');
+        DB::statement("ALTER TABLE invoice_items ADD CONSTRAINT invoice_items_description_check CHECK (btrim(description) <> '')");
+        DB::statement("ALTER TABLE invoice_items ADD CONSTRAINT invoice_items_unit_check CHECK (btrim(unit) <> '')");
+        DB::statement('ALTER TABLE invoice_items ADD CONSTRAINT invoice_items_quantity_check CHECK (quantity <> 0)');
+        DB::statement('ALTER TABLE invoice_items ADD CONSTRAINT invoice_items_unit_price_check CHECK (unit_price_minor >= 0)');
+        // An ordinary line is exactly the rounded product, the same rule as Money::times() (half away from zero). A line
+        // converted from another currency carries the amount computed once from the exact conversion, so it may differ
+        // from quantity x printed unit price by at most half a minor unit per unit of quantity plus half a minor unit.
+        DB::statement('ALTER TABLE invoice_items ADD CONSTRAINT invoice_items_line_total_check CHECK (CASE WHEN price_converted THEN abs(line_total_minor - quantity * unit_price_minor) <= abs(quantity) / 2 + 0.5 ELSE line_total_minor = round(quantity * unit_price_minor) END)');
+        DB::statement('ALTER TABLE invoice_items ADD CONSTRAINT invoice_items_vat_check CHECK ((vat_rate IS NOT NULL OR vat_minor = 0) AND (vat_rate IS NULL OR (vat_rate >= 0 AND vat_rate <= 100)))');
         DB::statement('ALTER TABLE invoice_items ADD CONSTRAINT invoice_items_credited_item_id_foreign FOREIGN KEY (credited_item_id) REFERENCES invoice_items (id)');
         DB::statement('CREATE INDEX invoice_items_credited_item_id_index ON invoice_items (credited_item_id) WHERE credited_item_id IS NOT NULL');
 
