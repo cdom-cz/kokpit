@@ -826,7 +826,7 @@ return [
         ],
 
         'notes' => [
-            'computed' => 'Částky jsou vypočtené z aktuálních sazeb a z kurzu ČNB ke dni záznamu.',
+            'computed' => 'Vyfakturované záznamy jsou oceněny sazbou platnou při fakturaci; u záznamů vyfakturovaných před zavedením fakturace se používá aktuální sazba.',
             'fixed_price' => '* Hodiny projektů a úkolů s pevnou cenou jsou bez částky.',
             'missing_rate' => 'Součet v Kč nezahrnuje :count záznamů bez kurzu ČNB.',
         ],
