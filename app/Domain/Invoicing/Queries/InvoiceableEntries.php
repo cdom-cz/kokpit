@@ -7,6 +7,7 @@ namespace App\Domain\Invoicing\Queries;
 use App\Domain\ExchangeRates\ExchangeRateMissing;
 use App\Domain\Invoicing\Enums\ItemGrouping;
 use App\Domain\Invoicing\Support\TimeItemGrouping;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Reports\Queries\EffectiveBillingSql;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
@@ -16,7 +17,6 @@ use Carbon\CarbonInterface;
 use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use OverflowException;
@@ -161,14 +161,14 @@ final class InvoiceableEntries
             return [];
         }
 
-        $names = DB::table('projects')
-            ->join('project_billing', 'project_billing.project_id', '=', 'projects.id')
-            ->where('projects.client_id', $clientId)
-            ->whereIn('projects.id', $projectIds)
-            ->where('project_billing.billing_type', 'fixed_price')
-            ->orderBy('projects.name')
-            ->orderBy('projects.id')
-            ->pluck('projects.name')
+        $names = Project::query()
+            ->withTrashed()
+            ->where('client_id', $clientId)
+            ->whereIn('id', $projectIds)
+            ->whereHas('billing', static fn (Builder $billing): Builder => $billing->where('billing_type', 'fixed_price'))
+            ->orderBy('name')
+            ->orderBy('id')
+            ->pluck('name')
             ->map(static fn (mixed $name): string => (string) $name);
 
         return array_values($names->all());
