@@ -1,6 +1,8 @@
 @php
     /** @var \App\Domain\Invoicing\Pdf\InvoicePdfData $data */
     $palette = $data->palette;
+    // The key column of the company and VAT id rows: 36 pt for "IČO" and "DIČ", wider for "Company ID".
+    $idKeyWidth = $data->language === \App\Domain\Clients\Enums\InvoiceLanguage::Czech ? 36 : 58;
 @endphp
 <!DOCTYPE html>
 <html lang="{{ $data->language->value }}">
@@ -29,7 +31,7 @@
         .label { font-size: 7pt; letter-spacing: 1.2pt; color: {{ $palette->muted }}; line-height: 1.4; }
         .party-name { font-size: 12pt; font-weight: bold; line-height: 1.3; margin-bottom: 2pt; }
         table.ids td { padding: 0; font-size: 9pt; }
-        table.ids td.key { width: 36pt; color: {{ $palette->muted }}; }
+        table.ids td.key { padding-right: 6pt; color: {{ $palette->muted }}; }
         .note { font-size: 8pt; line-height: 1.4; color: {{ $palette->muted }}; }
         .vat-note { font-size: 7pt; line-height: 1.4; color: {{ $palette->muted }}; margin-top: 4pt; }
         .proforma-note { margin-top: 16pt; font-weight: bold; }
@@ -66,6 +68,9 @@
         table.facts td.key { width: 64pt; font-size: 8pt; }
         .sentence { margin-bottom: 8pt; }
         .credit-notice { margin-top: 24pt; }
+        table.closing { width: 100%; }
+        table.closing tr { page-break-inside: avoid; }
+        table.closing td { padding: 0; }
         .footer { margin-top: 16pt; font-size: 8pt; line-height: 1.4; color: {{ $palette->muted }}; }
         .signature { margin-top: 16pt; text-align: right; }
     </style>
@@ -101,7 +106,7 @@
                         <table class="ids">
                             @foreach ($party['ids'] as $id)
                                 <tr>
-                                    <td class="key">{{ $id['key'] }}</td>
+                                    <td class="key" style="width: {{ $idKeyWidth }}pt;">{{ $id['key'] }}</td>
                                     <td>{{ $id['value'] }}</td>
                                 </tr>
                             @endforeach
@@ -215,18 +220,26 @@
         <div class="credit-notice">{{ $data->creditNoteNotice }}</div>
     @endif
 
-    @if ($data->footer !== [])
-        <div class="footer">
-            @foreach ($data->footer as $line)
-                <div>{{ $line }}</div>
-            @endforeach
-        </div>
-    @endif
+    @if ($data->footer !== [] || $data->signature !== null)
+        <table class="closing">
+            <tr>
+                <td>
+                    @if ($data->footer !== [])
+                        <div class="footer">
+                            @foreach ($data->footer as $line)
+                                <div>{{ $line }}</div>
+                            @endforeach
+                        </div>
+                    @endif
 
-    @if ($data->signature !== null)
-        <div class="signature">
-            <img src="{{ $data->signature['uri'] }}" alt="" style="width: {{ $data->signature['width'] }}pt; height: {{ $data->signature['height'] }}pt;">
-        </div>
+                    @if ($data->signature !== null)
+                        <div class="signature">
+                            <img src="{{ $data->signature['uri'] }}" alt="" style="width: {{ $data->signature['width'] }}pt; height: {{ $data->signature['height'] }}pt;">
+                        </div>
+                    @endif
+                </td>
+            </tr>
+        </table>
     @endif
 </body>
 </html>

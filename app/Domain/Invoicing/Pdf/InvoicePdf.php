@@ -153,7 +153,14 @@ final class InvoicePdf
         foreach (array_keys(self::FONTS) as $style) {
             $file = $roboto[$style] ?? null;
 
-            if (! is_string($file) || ! is_file($file.'.ttf') || ! is_file($file.'.ufm')) {
+            if (! is_string($file)) {
+                return false;
+            }
+
+            // Dompdf writes an entry either as an absolute path or relative to the font directory.
+            $base = str_starts_with($file, '/') ? $file : $this->fontDir().'/'.$file;
+
+            if (! is_file($base.'.ttf') || ! is_file($base.'.ufm')) {
                 return false;
             }
         }
