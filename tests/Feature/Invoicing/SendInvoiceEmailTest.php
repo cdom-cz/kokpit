@@ -432,7 +432,7 @@ describe('a send that keeps failing', function (): void {
         // The sanctioned way to lose the link: the file of the PDF is deleted (DO-03).
         $document = $invoice->admin?->pdfDocument;
         assert($document instanceof Document);
-        app(DeleteDocument::class)->handle($this->admin, $document);
+        app(DeleteDocument::class)->handle($this->admin, $document, true);
 
         expect(app(PartnerContext::class)->runAsSystem(static fn (): ?string => InvoiceAdmin::query()->where('invoice_id', $invoice->id)->value('pdf_document_id')))->toBeNull();
 

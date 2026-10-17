@@ -15,12 +15,14 @@ use App\Domain\Documents\Support\DocumentDisposition;
 use App\Domain\Documents\Support\DocumentFileName;
 use App\Domain\Documents\Support\DocumentUrl;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskComment;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -60,6 +62,9 @@ use Throwable;
  */
 final class DocumentActions
 {
+    /** The key of the tick that confirms deleting the PDF of an issued document. */
+    private const string CONFIRM_ISSUED_PDF = 'confirmIssuedPdf';
+
     public static function upload(): Action
     {
         return Action::make('upload')
@@ -179,6 +184,11 @@ final class DocumentActions
             });
     }
 
+    /**
+     * Deletes one file after a confirmation that names it. For the PDF of an issued document the confirmation is
+     * extended (DO-03, D-21, ruling R-36-1): another heading and body, an explicit tick, and a "Smazat PDF" submit that
+     * stays disabled until the tick is set. The refusal without the tick is also in the domain Action, not only here.
+     */
     public static function delete(): Action
     {
         return Action::make('delete')
@@ -186,12 +196,39 @@ final class DocumentActions
             ->icon(Heroicon::OutlinedTrash)
             ->color('danger')
             ->requiresConfirmation()
-            ->modalHeading(__('documents.actions.delete_heading'))
-            ->modalDescription(static fn (Document $record): string => __('documents.actions.delete_description', ['name' => $record->name]))
-            ->modalSubmitActionLabel(__('documents.actions.delete'))
-            ->action(static function (Document $record): void {
-                if (self::deleteOne($record)) {
-                    Notification::make()->success()->title(__('documents.notifications.deleted'))->send();
+            ->modalHeading(static fn (Document $record): string => DeleteDocument::isIssuedPdf($record)
+                ? __('documents.actions.delete_issued_pdf.heading')
+                : __('documents.actions.delete_heading'))
+            ->modalDescription(static fn (Document $record): string => DeleteDocument::isIssuedPdf($record)
+                ? __('documents.actions.delete_issued_pdf.description', ['name' => $record->name, 'number' => self::invoiceNumber($record)])
+                : __('documents.actions.delete_description', ['name' => $record->name]))
+            ->modalSubmitActionLabel(static fn (Document $record): string => DeleteDocument::isIssuedPdf($record)
+                ? __('documents.actions.delete_issued_pdf.submit')
+                : __('documents.actions.delete'))
+            ->modalCancelActionLabel(static fn (Document $record): ?string => DeleteDocument::isIssuedPdf($record)
+                ? (string) __('documents.actions.delete_issued_pdf.cancel')
+                : null)
+            ->schema(static fn (Document $record): array => DeleteDocument::isIssuedPdf($record)
+                ? [
+                    Checkbox::make(self::CONFIRM_ISSUED_PDF)
+                        ->label(__('documents.actions.delete_issued_pdf.confirm'))
+                        ->live()
+                        ->accepted()
+                        ->validationMessages(['accepted' => __('documents.actions.delete_issued_pdf.unconfirmed')]),
+                ]
+                : [])
+            ->modalSubmitAction(static fn (Action $action, Document $record, Component $livewire): Action => DeleteDocument::isIssuedPdf($record)
+                ? $action->disabled(! self::issuedPdfTicked($livewire))
+                : $action)
+            ->action(static function (array $data, Document $record): void {
+                $confirmed = ($data[self::CONFIRM_ISSUED_PDF] ?? false) === true;
+                $issuedPdf = DeleteDocument::isIssuedPdf($record);
+
+                if (self::deleteOne($record, $issuedPdf && $confirmed)) {
+                    Notification::make()
+                        ->success()
+                        ->title($issuedPdf ? __('documents.actions.delete_issued_pdf.deleted') : __('documents.notifications.deleted'))
+                        ->send();
 
                     return;
                 }
@@ -283,9 +320,13 @@ final class DocumentActions
                 $selected = self::selectedCount($livewire);
                 $deleted = 0;
                 $failed = 0;
+                $skipped = 0;
 
                 foreach ($records as $record) {
-                    if ($record instanceof Document && self::deleteOne($record)) {
+                    if ($record instanceof Document && DeleteDocument::isIssuedPdf($record)) {
+                        // The PDF of an issued document needs its own explicit confirmation (D-21): never in bulk.
+                        $skipped++;
+                    } elseif ($record instanceof Document && self::deleteOne($record)) {
                         $deleted++;
                     } else {
                         $failed++;
@@ -293,14 +334,18 @@ final class DocumentActions
                 }
 
                 // A selected file that was gone before it was read is a file that did not go.
-                $failed += max(0, $selected - $deleted - $failed);
+                $failed += max(0, $selected - $deleted - $failed - $skipped);
 
                 $notification = Notification::make()
                     ->title(__('documents.notifications.bulk_deleted', ['deleted' => $deleted, 'failed' => $failed]));
 
+                if ($skipped > 0) {
+                    $notification->body(__('documents.actions.delete_issued_pdf.bulk_skipped', ['skipped' => $skipped]));
+                }
+
                 match (true) {
-                    $failed === 0 => $notification->success(),
-                    $deleted === 0 => $notification->danger(),
+                    $failed === 0 && $skipped === 0 => $notification->success(),
+                    $deleted === 0 && $skipped === 0 => $notification->danger(),
                     default => $notification->warning(),
                 };
 
@@ -327,15 +372,16 @@ final class DocumentActions
     }
 
     /**
-     * Deletes one file for the signed-in Admin. A refusal by the policy is not swallowed; any other failure
+     * Deletes one file for the signed-in Admin. `$confirmedIssuedPdf` is the Admin's explicit tick for the PDF of an
+     * issued document (D-21). A refusal by the policy is not swallowed; any other failure
      * (the file was deleted in the meantime, the database failed) is reported without the file name and
      * answered with false, and nothing is deleted then. An object the disk refuses after the commit is no
      * failure here: the rows are gone and the stored object is removed after the commit or by the queued job.
      */
-    private static function deleteOne(Document $document): bool
+    private static function deleteOne(Document $document, bool $confirmedIssuedPdf = false): bool
     {
         try {
-            app(DeleteDocument::class)->handle(self::user(), $document);
+            app(DeleteDocument::class)->handle(self::user(), $document, $confirmedIssuedPdf);
         } catch (AuthorizationException $e) {
             throw $e;
         } catch (Throwable $e) {
@@ -429,6 +475,31 @@ final class DocumentActions
         };
 
         return $type?->isShareable() ?? false;
+    }
+
+    /**
+     * The number of the invoice that owns the PDF, for the body of the extended confirmation.
+     */
+    private static function invoiceNumber(Document $document): string
+    {
+        $number = Invoice::query()->whereKey($document->owner_id)->value('number');
+
+        return is_string($number) ? $number : '';
+    }
+
+    /**
+     * Whether the Admin ticked the confirmation in the mounted modal. Read from the modal state of the page, so the
+     * submit button follows the tick as soon as the live field syncs.
+     */
+    private static function issuedPdfTicked(Component $livewire): bool
+    {
+        $mounted = data_get($livewire, 'mountedActions');
+
+        if (! is_array($mounted) || $mounted === []) {
+            return false;
+        }
+
+        return data_get($mounted[array_key_last($mounted)], 'data.'.self::CONFIRM_ISSUED_PDF) === true;
     }
 
     private static function user(): User

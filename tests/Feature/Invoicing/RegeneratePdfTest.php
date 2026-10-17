@@ -6,14 +6,19 @@ use App\Domain\Documents\Actions\AttachDocuments;
 use App\Domain\Documents\Actions\DeleteDocument;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Invoicing\Actions\RegeneratePdf;
+use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Pdf\InvoicePdf;
+use App\Domain\Settings\DocumentImage;
+use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Media;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\View;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\InvoiceFixtures;
@@ -172,5 +177,76 @@ describe('creating the PDF again', function (): void {
             ->and(Storage::disk('local')->get($objects[0]))->toStartWith('%PDF-')
             ->and(app(InvoicePdf::class)->html($fresh))->toBe($original)
             ->and(regenerateInvoiceRow($issued))->toBe($before);
+    });
+});
+
+describe('refusals and failures', function (): void {
+    it('refuses a regeneration while the invoice still has its PDF', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $document = regenerateStoredPdf($issued);
+
+        expect(fn () => app(RegeneratePdf::class)->handle(Canary::admin(), $issued))->toThrow(DomainException::class);
+
+        expect(regenerateStoredPdf($issued)?->id)->toBe($document->id)
+            ->and(regenerateStoredObjects())->toHaveCount(1);
+    });
+
+    it('refuses a draft', function (): void {
+        $admin = Canary::admin();
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '100.00')], InvoiceKind::Invoice, $admin);
+
+        expect(fn () => app(RegeneratePdf::class)->handle($admin, $draft))->toThrow(DomainException::class)
+            ->and(regenerateSystem(static fn (): int => Document::query()->count()))->toBe(0);
+    });
+
+    it('refuses a Partner', function (): void {
+        $client = InvoiceFixtures::client();
+        $issued = InvoiceFixtures::issued($client);
+        app(DeleteDocument::class)->handle(Canary::admin(), regenerateStoredPdf($issued), true);
+
+        expect(fn () => app(RegeneratePdf::class)->handle(Canary::partnerFor((string) $client->id), $issued))
+            ->toThrow(AuthorizationException::class)
+            ->and(regenerateStoredPdf($issued))->toBeNull();
+    });
+
+    it('keeps the state and reports a failure when the render fails', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client());
+        app(DeleteDocument::class)->handle(Canary::admin(), regenerateStoredPdf($issued), true);
+
+        View::composer('pdf.invoice', static function (): void {
+            throw new RuntimeException('Injected render failure.');
+        });
+
+        expect(fn () => app(RegeneratePdf::class)->handle(Canary::admin(), $issued))
+            ->toThrow(RuntimeException::class, 'PDF se nepodařilo vytvořit')
+            ->and(regenerateStoredPdf($issued))->toBeNull()
+            ->and(regenerateStoredObjects())->toBe([])
+            ->and(regenerateSystem(static fn (): int => Document::query()->count()))->toBe(0);
+    });
+
+    it('never prints another logo: a changed logo object fails the regeneration cleanly', function (): void {
+        $logo = app(DocumentImage::class)->store(regenerateUpload(40), 'logo');
+        regenerateSystem(static function () use ($logo): void {
+            $supplier = app(SupplierSettings::class);
+            $supplier->logo_path = $logo;
+            $supplier->save();
+        });
+        app()->forgetScopedInstances();
+
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client());
+        app(DeleteDocument::class)->handle(Canary::admin(), regenerateStoredPdf($issued), true);
+
+        Storage::disk('local')->put($logo, 'other bytes');
+
+        expect(fn () => app(RegeneratePdf::class)->handle(Canary::admin(), $issued))
+            ->toThrow(RuntimeException::class, 'PDF se nepodařilo vytvořit')
+            ->and(regenerateStoredPdf($issued))->toBeNull()
+            ->and(regenerateSystem(static fn (): int => Document::query()->count()))->toBe(0);
+
+        Storage::disk('local')->delete($logo);
+
+        expect(fn () => app(RegeneratePdf::class)->handle(Canary::admin(), $issued))
+            ->toThrow(RuntimeException::class, 'PDF se nepodařilo vytvořit')
+            ->and(regenerateStoredPdf($issued))->toBeNull();
     });
 });
