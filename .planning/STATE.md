@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-21-PLAN.md
-last_updated: "2026-10-17T14:53:27.217Z"
+stopped_at: Completed 10-22-PLAN.md
+last_updated: "2026-10-17T15:10:11.277Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 14d7ac2ec3655aa42c9536af4ef012b2ff281a8f
+state_head: 5cb2b4450e3dd4cabaabe90ba34b6955667dcb5f
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 208
+  completed_plans: 209
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 25 of 41
+Plan: 26 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -271,6 +271,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P19 | 25 min | 3 tasks | 9 files |
 | Phase 10 P20 | 55 min | 2 tasks | 14 files |
 | Phase 10 P21 | 40 min | 3 tasks | 11 files |
+| Phase 10 P22 | about 40 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -672,6 +673,7 @@ Recent decisions affecting current work:
 - [Phase 10]: 10-21: a draft row opens the view page until plan 10-25 adds the editor; the Admin PDF row action uses the signed document route of the stored PDF until plan 10-38 (R-21-1, R-21-2)
 - [Phase 10]: 10-21: ViewInvoice aborts 403 for a Partner before the record is read, because the invoice policy lets a Partner view an own issued invoice
 - [Phase 10]: 10-21: ReceivablesReader::statuses() also returns the paid amount and the CZK sum is the public owedFrom(), shared by the list summarizer and the dashboard rule
+- [Phase 10]: R-22-1..3 applied; proforma checks run in the order not-an-issued-proforma, converted, not-paid under the key proforma; a carried payment without a CNB list for its date fails the whole conversion (cnb_missing)
 
 ### Pending Todos
 
@@ -727,6 +729,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T14:53:25.917Z
-Stopped at: Completed 10-21-PLAN.md
+Last session: 2026-10-17T15:10:09.941Z
+Stopped at: Completed 10-22-PLAN.md
 Resume file: None
