@@ -669,7 +669,7 @@ Plans:
   4. Admin records a manual payment (transfer or cash) with a warning if already paid, which creates an income transaction with editable date and category; overdue status is derived and listed in an overdue overview and as a dashboard tile; a paid proforma converts to a linked invoice
   5. The client detail shows projects, unbilled time and amount, invoices, documents and client accounts, and a Partner sees only their own issued invoices and proformas (list, detail, PDF) read-only, never drafts, internal notes, linked time or rates
 
-**Plans:** 19/41 plans executed in 13 waves
+**Plans:** 20/41 plans executed in 13 waves
 **UI hint**: yes
 
 Plans:
@@ -705,7 +705,7 @@ Plans:
 - [x] 10-35-PLAN.md — Concurrency proofs with mutation twins: gap-free issue under parallel processes and race-free reservation of time
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 10-17-PLAN.md — Foreign-currency lines converted at the issue date with frozen rates and one rounding per line, draft preview, non-VAT-payer proof
+- [x] 10-17-PLAN.md — Foreign-currency lines converted at the issue date with frozen rates and one rounding per line, draft preview, non-VAT-payer proof
 - [ ] 10-18-PLAN.md — PDF variants (proforma, credit note, non-CZK, optional blocks) and regeneration equivalence
 - [ ] 10-19-PLAN.md — Receivables: derived statuses and overdue, tab filters and counts, CZK summaries, payment income locked on the finance side and in the Transactions API
 
@@ -793,6 +793,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
 | 8. Exchange Rates and Reports | 27/27 | In Progress | - |
 | 9. Documents and Finance | 28/28 | In Progress | - |
-| 10. Invoicing | 19/41 | In Progress | - |
+| 10. Invoicing | 20/41 | In Progress | - |
 | 11. Stripe Payments | 0/0 | Not started | - |
 | 12. Partner Audit | 0/0 | Not started | - |
