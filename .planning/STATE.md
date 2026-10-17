@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-39-PLAN.md
-last_updated: "2026-10-17T18:06:11.998Z"
+stopped_at: Completed 10-26-PLAN.md
+last_updated: "2026-10-17T18:30:00.599Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 1f13e7674763cd805d8a14898e14eb587852bbb0
+state_head: f570fa321e12a2b80ecbd52b24e03afda1eefed5
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 218
+  completed_plans: 219
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 35 of 41
+Plan: 36 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -281,6 +281,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P37 | 35 min | 2 tasks | 8 files |
 | Phase 10 P38 | 13 min | 2 tasks | 5 files |
 | Phase 10 P39 | 35 min | 2 tasks | 3 files |
+| Phase 10 P26 | 21 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -700,6 +701,8 @@ Recent decisions affecting current work:
 - [Phase 10]: HealthResult carries an optional url and urlLabel so an indicator can link the screen that fixes the problem
 - [Phase 10]: R-38-1 applied: the issued-document PDF has its own signed, user-bound route files.invoice; the Document scope is not widened and the controller re-checks that the linked document is owned by the invoice
 - [Phase 10]: 10-39: locked payment-income fields stay dehydrated so UpdateTransaction is the single authority; the delete refusal is a danger notification with the action to the invoice
+- [Phase 10]: R-26-2: the Partner reads derived invoice states only; ReceivablesReader runs as system over the ids of the Partner-scoped page, never a payment row
+- [Phase 10]: R-26-3: Partner related documents name only issued documents (storno credit note, invoice from a proforma) through Partner-scoped relations
 
 ### Pending Todos
 
@@ -755,6 +758,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T18:06:10.445Z
-Stopped at: Completed 10-39-PLAN.md
+Last session: 2026-10-17T18:29:59.153Z
+Stopped at: Completed 10-26-PLAN.md
 Resume file: None
