@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-38-PLAN.md
-last_updated: "2026-10-17T17:52:29.502Z"
+stopped_at: Completed 10-39-PLAN.md
+last_updated: "2026-10-17T18:06:11.998Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 4f51cfe0f81926f2a1c6c9a2f23f610da44263d9
+state_head: 1f13e7674763cd805d8a14898e14eb587852bbb0
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 217
+  completed_plans: 218
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 34 of 41
+Plan: 35 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -280,6 +280,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P36 | 45 min | 2 tasks | 7 files |
 | Phase 10 P37 | 35 min | 2 tasks | 8 files |
 | Phase 10 P38 | 13 min | 2 tasks | 5 files |
+| Phase 10 P39 | 35 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -698,6 +699,7 @@ Recent decisions affecting current work:
 - [Phase 10]: R-37-1: unsent invoice e-mail slot warns after 900 s of waiting and counts a sending row as failed after 3600 s; the age runs from updated_at and a failure outranks a wait
 - [Phase 10]: HealthResult carries an optional url and urlLabel so an indicator can link the screen that fixes the problem
 - [Phase 10]: R-38-1 applied: the issued-document PDF has its own signed, user-bound route files.invoice; the Document scope is not widened and the controller re-checks that the linked document is owned by the invoice
+- [Phase 10]: 10-39: locked payment-income fields stay dehydrated so UpdateTransaction is the single authority; the delete refusal is a danger notification with the action to the invoice
 
 ### Pending Todos
 
@@ -753,6 +755,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T17:52:28.069Z
-Stopped at: Completed 10-38-PLAN.md
+Last session: 2026-10-17T18:06:10.445Z
+Stopped at: Completed 10-39-PLAN.md
 Resume file: None
