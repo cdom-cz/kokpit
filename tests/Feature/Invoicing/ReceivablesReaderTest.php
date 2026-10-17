@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceListTab;
@@ -70,6 +72,64 @@ function recvIds(array $documents): array
     sort($ids);
 
     return $ids;
+}
+
+/**
+ * An invoice issued from a paid proforma: a draft of the same client with the link set as system, then issued.
+ */
+function recvInvoiceFromProforma(Invoice $proforma, User $admin): Invoice
+{
+    $client = Client::query()->whereKey($proforma->client_id)->firstOrFail();
+    $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '10000.00')], InvoiceKind::Invoice, $admin);
+
+    app(PartnerContext::class)->runAsSystem(static function () use ($draft, $proforma): void {
+        $draft->forceFill(['proforma_id' => $proforma->id])->save();
+    });
+
+    return app(IssueDocument::class)->handle($admin, $draft->refresh());
+}
+
+/**
+ * A mixed portfolio issued on 2026-10-01 and paid on 2026-10-10, to be read on 2026-10-20: every status once.
+ *
+ * @return array<string, Invoice>
+ */
+function recvPortfolio(): array
+{
+    $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '1000.00')]);
+    $unpaid = recvIssued(terms: 30);
+    $partial = recvIssued(terms: 30);
+    $overdue = recvIssued();
+    $paid = recvIssued();
+    $cancelledInvoice = recvIssued();
+    $creditNote = InvoiceFixtures::stornoed($cancelledInvoice);
+    $awaiting = recvIssued(kind: InvoiceKind::Proforma);
+    $converted = recvIssued(kind: InvoiceKind::Proforma, clientOverrides: ['payment_terms_days' => 30]);
+    $overdueProforma = recvIssued(kind: InvoiceKind::Proforma);
+
+    test()->travelTo(CarbonImmutable::parse('2026-10-20 09:00:00', 'Europe/Prague'));
+
+    recvPay($partial, '3000');
+    recvPay($paid, '10000');
+    recvPay($awaiting, '10000');
+    recvPay($converted, '10000');
+
+    $fromProforma = recvInvoiceFromProforma($converted, Canary::admin());
+    test()->actingAs(Canary::admin());
+
+    return [
+        'draft' => $draft,
+        'unpaid' => $unpaid,
+        'partial' => $partial,
+        'overdue' => $overdue,
+        'paid' => $paid,
+        'cancelled' => $cancelledInvoice,
+        'creditNote' => $creditNote,
+        'awaiting' => $awaiting,
+        'converted' => $converted,
+        'fromProforma' => $fromProforma,
+        'overdueProforma' => $overdueProforma,
+    ];
 }
 
 beforeEach(function (): void {
@@ -190,6 +250,159 @@ describe('the portfolio', function (): void {
 
         expect($queries)->toHaveCount(1)
             ->and(array_keys($counts))->toBe(array_map(static fn (InvoiceListTab $tab): string => $tab->value, InvoiceListTab::cases()));
+    });
+});
+
+describe('every status and every tab for a mixed portfolio', function (): void {
+    it('gives each document its status, remaining amount and days late', function (): void {
+        $documents = recvPortfolio();
+        $statuses = app(ReceivablesReader::class)->statuses(array_values($documents), '2026-10-20');
+        $of = static fn (string $name): array => $statuses[$documents[$name]->id];
+
+        expect($statuses)->toHaveCount(count($documents))
+            ->and($of('draft')['status'])->toBe(InvoiceStatus::Draft)
+            ->and($of('draft')['remaining'])->toBeNull()
+            ->and($of('unpaid')['status'])->toBe(InvoiceStatus::Unpaid)
+            ->and($of('unpaid')['remaining']?->minor)->toBe(1000000)
+            ->and($of('partial')['status'])->toBe(InvoiceStatus::PartiallyPaid)
+            ->and($of('partial')['remaining']?->minor)->toBe(700000)
+            ->and($of('overdue')['status'])->toBe(InvoiceStatus::Overdue)
+            ->and($of('overdue')['overdue_days'])->toBe(5)
+            ->and($of('paid')['status'])->toBe(InvoiceStatus::Paid)
+            ->and($of('paid')['remaining']?->minor)->toBe(0)
+            ->and($of('cancelled')['status'])->toBe(InvoiceStatus::Cancelled)
+            ->and($of('cancelled')['remaining']?->minor)->toBe(0)
+            ->and($of('cancelled')['overdue_days'])->toBeNull()
+            ->and($of('creditNote')['status'])->toBe(InvoiceStatus::CreditNote)
+            ->and($of('creditNote')['remaining'])->toBeNull()
+            ->and($of('awaiting')['status'])->toBe(InvoiceStatus::AwaitingInvoice)
+            ->and($of('awaiting')['remaining']?->minor)->toBe(0)
+            ->and($of('converted')['status'])->toBe(InvoiceStatus::Converted)
+            ->and($of('fromProforma')['status'])->toBe(InvoiceStatus::Unpaid)
+            ->and($of('overdueProforma')['status'])->toBe(InvoiceStatus::Overdue)
+            ->and($of('overdueProforma')['overdue_days'])->toBe(5);
+    });
+
+    it('returns exactly its documents under each tab and counts them with the same conditions', function (): void {
+        $documents = recvPortfolio();
+        $today = '2026-10-20';
+        $pick = static fn (string ...$names): array => recvIds(array_map(static fn (string $name): Invoice => $documents[$name], $names));
+
+        $expected = [
+            'all' => $pick(...array_keys($documents)),
+            'drafts' => $pick('draft'),
+            'unpaid' => $pick('unpaid', 'partial', 'fromProforma'),
+            'overdue' => $pick('overdue', 'overdueProforma'),
+            'paid' => $pick('paid', 'awaiting', 'converted'),
+            'cancelled' => $pick('cancelled'),
+            'awaiting_invoice' => $pick('awaiting'),
+        ];
+
+        $counts = app(ReceivablesReader::class)->tabCounts($today);
+
+        foreach (InvoiceListTab::cases() as $tab) {
+            expect(recvTabIds($tab, $today))->toBe($expected[$tab->value], $tab->value)
+                ->and($counts[$tab->value])->toBe(count($expected[$tab->value]), $tab->value);
+        }
+
+        $creditNote = $documents['creditNote']->id;
+        $elsewhere = array_filter(InvoiceListTab::cases(), static fn (InvoiceListTab $tab): bool => $tab !== InvoiceListTab::All && in_array($creditNote, recvTabIds($tab, $today), true));
+
+        expect($elsewhere)->toBe([]);
+    });
+
+    it('summarises the owed money, the late money and the paid proformas waiting for an invoice', function (): void {
+        recvPortfolio();
+        $summary = app(ReceivablesReader::class)->summary('2026-10-20');
+
+        // overdue: the invoice and the proforma, 10 000,00 Kč each; unpaid: 10 000,00 + 7 000,00 + 10 000,00 Kč.
+        expect($summary['overdue']['count'])->toBe(2)
+            ->and($summary['overdue']['czk']->minor)->toBe(2000000)
+            ->and($summary['unpaid']['count'])->toBe(3)
+            ->and($summary['unpaid']['czk']->minor)->toBe(2700000)
+            ->and($summary['awaiting_invoice'])->toBe(1);
+    });
+
+    it('does not count a cancelled invoice as late or owed whatever its due date', function (): void {
+        $documents = recvPortfolio();
+
+        expect($documents['cancelled']->due_date?->format('Y-m-d'))->toBe('2026-10-15')
+            ->and(recvTabIds(InvoiceListTab::Overdue, '2026-10-20'))->not->toContain($documents['cancelled']->id)
+            ->and(recvTabIds(InvoiceListTab::Unpaid, '2026-10-20'))->not->toContain($documents['cancelled']->id);
+    });
+});
+
+describe('the CZK figures', function (): void {
+    it('converts the remaining amount of a foreign document once with its frozen issue-time rate, and takes a CZK one as it is', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-01', '25.125');
+        InvoiceFixtures::cnbRate('EUR', '2026-10-10', '24.5');
+
+        $euro = recvIssued('500.00', clientOverrides: ['currency' => 'EUR']);
+        $crown = recvIssued('600.00');
+
+        $this->travelTo(CarbonImmutable::parse('2026-10-20 09:00:00', 'Europe/Prague'));
+        recvPay($euro, '100,00');
+
+        $reader = app(ReceivablesReader::class);
+        $summary = $reader->summary('2026-10-20');
+
+        // 400,00 EUR at 25,125 is 10 050,00 Kč, not 9 800,00 Kč at the rate of the payment day; plus 600,00 Kč.
+        expect($summary['overdue']['count'])->toBe(2)
+            ->and($summary['overdue']['czk']->minor)->toBe(1005000 + 60000)
+            ->and($summary['overdue']['czk']->currency)->toBe('CZK')
+            ->and($reader->summary('2026-10-20', $euro->client_id)['overdue']['czk']->minor)->toBe(1005000)
+            ->and($reader->summary('2026-10-20', $crown->client_id)['overdue']['czk']->minor)->toBe(60000)
+            ->and($reader->statuses([$euro], '2026-10-20')[$euro->id]['remaining']?->format('cs'))->toContain('400,00');
+    });
+
+    it('sums the converted documents in CZK without mixing the currencies of the documents', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-01', '25.125');
+
+        $first = recvIssued('100.00', clientOverrides: ['currency' => 'EUR']);
+        recvIssued('200.00', clientOverrides: ['currency' => 'EUR']);
+        $this->actingAs(Canary::admin());
+
+        // Each remaining amount is converted and rounded once: 100,00 EUR is 2 512,50 Kč and 200,00 EUR 5 025,00 Kč.
+        $summary = app(ReceivablesReader::class)->summary('2026-10-20');
+
+        expect($summary['overdue']['czk']->minor)->toBe(251250 + 502500)
+            ->and($first->currency)->toBe('EUR');
+    });
+});
+
+describe('the due date and the Prague day', function (): void {
+    it('treats a due date of today as not late and the day after as late', function (): void {
+        $invoice = recvIssued();
+        $this->actingAs(Canary::admin());
+        $reader = app(ReceivablesReader::class);
+
+        $onDueDay = $reader->statuses([$invoice], '2026-10-15')[$invoice->id];
+        $dayAfter = $reader->statuses([$invoice], '2026-10-16')[$invoice->id];
+
+        expect($onDueDay['status'])->toBe(InvoiceStatus::Unpaid)
+            ->and($onDueDay['overdue_days'])->toBeNull()
+            ->and(recvTabIds(InvoiceListTab::Overdue, '2026-10-15'))->toBe([])
+            ->and($dayAfter['status'])->toBe(InvoiceStatus::Overdue)
+            ->and($dayAfter['overdue_days'])->toBe(1)
+            ->and(recvTabIds(InvoiceListTab::Overdue, '2026-10-16'))->toBe([$invoice->id]);
+    });
+
+    it('turns overdue at the Prague midnight, not at the UTC one', function (): void {
+        $invoice = recvIssued();
+        $this->actingAs(Canary::admin());
+        $reader = app(ReceivablesReader::class);
+
+        // 22:30 UTC on 14 October is 00:30 on 15 October in Prague: the due day itself, not late yet.
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 22:30:00', 'UTC'));
+        $dueDay = $reader->statuses([$invoice], ReceivablesReader::today())[$invoice->id];
+
+        // 22:30 UTC on 15 October is 00:30 on 16 October in Prague, while the UTC date is still the 15th: late.
+        $this->travelTo(CarbonImmutable::parse('2026-10-15 22:30:00', 'UTC'));
+        $dayAfter = $reader->statuses([$invoice], ReceivablesReader::today())[$invoice->id];
+
+        expect($dueDay['status'])->toBe(InvoiceStatus::Unpaid)
+            ->and($dayAfter['status'])->toBe(InvoiceStatus::Overdue)
+            ->and($dayAfter['overdue_days'])->toBe(1);
     });
 });
 
