@@ -2,14 +2,22 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
+use App\Domain\Invoicing\Actions\CreateDraft;
+use App\Domain\Invoicing\Actions\UpdateDraft;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Projects\Actions\CreateProject;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
+use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Filament\Pages\SettingsPage;
 use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use Carbon\CarbonImmutable;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -248,5 +256,459 @@ describe('the tracer: open a draft, change a line, save, and see the server figu
         Livewire::test(ListInvoices::class)
             ->callAction('createDraft', ['client_id' => $client->id, 'kind' => 'invoice', 'source' => 'empty'])
             ->assertRedirectContains('/edit');
+    });
+});
+
+/**
+ * A project of the client written through the domain Action.
+ *
+ * @param  array<string, mixed>  $data
+ */
+function editorProject(Client $client, string $name, array $data = []): Project
+{
+    return app(CreateProject::class)->handle($client, [
+        'name' => $name,
+        'key' => Canary::projectKey(),
+        'billing_type' => 'hourly',
+        'hourly_rate' => '1000',
+        ...$data,
+    ]);
+}
+
+/**
+ * A finished entry of the project from UTC instants.
+ */
+function editorEntry(Project $project, string $start, string $end): TimeEntry
+{
+    $factory = TimeEntry::factory()->forProject($project);
+
+    return app(PartnerContext::class)->runAsSystem(static fn (): TimeEntry => TimeEntry::query()->findOrFail($factory->create([
+        'user_id' => test()->admin->id,
+        'started_at' => CarbonImmutable::parse($start, 'UTC'),
+        'ended_at' => CarbonImmutable::parse($end, 'UTC'),
+    ])->id));
+}
+
+/**
+ * A draft of the September time of the projects, in the currency.
+ *
+ * @param  list<Project>  $projects
+ */
+function editorTimeDraft(Client $client, array $projects, string $currency = 'CZK'): Invoice
+{
+    return app(CreateDraft::class)->handle(test()->admin, [
+        'client_id' => $client->id,
+        'kind' => 'invoice',
+        'source' => 'time',
+        'period_from' => '2026-09-01',
+        'period_to' => '2026-09-30',
+        'project_ids' => array_map(static fn (Project $project): string => $project->id, $projects),
+        'without_project' => false,
+        'grouping' => 'project',
+        'currency' => $currency,
+    ]);
+}
+
+function editorFreshEntry(TimeEntry $entry): TimeEntry
+{
+    return app(PartnerContext::class)->runAsSystem(static fn (): TimeEntry => TimeEntry::query()->findOrFail($entry->id));
+}
+
+describe('line origins and previews', function (): void {
+    it('shows the origin badge and the exact H:MM of a time line, and none on a manual line', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = editorProject($client, 'Alpha project');
+        editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 10:30:00');
+        $draft = editorTimeDraft($client, [$project]);
+        app(UpdateDraft::class)->handle($this->admin, $draft, ['items' => [
+            ...array_map(static fn (InvoiceItem $item): array => ['id' => $item->id, 'description' => $item->description, 'quantity' => $item->quantity, 'unit' => $item->unit, 'unit_price' => Money::ofMinor($item->unit_price_minor, 'CZK')->toMajor()], storedLines($draft)),
+            InvoiceFixtures::item('Example manual', '1', '100.00'),
+        ]]);
+
+        $editor = editor($draft);
+
+        expect(substr_count($editor->html(), 'Z času'))->toBe(1);
+
+        $editor->assertSee('2:30')
+            ->assertSee('Vygenerováno ze záznamů času')
+            ->assertDontSee('Přepočet při vystavení');
+    });
+
+    it('shows the preview rate and the conversion badge of a EUR draft of CZK-rated time, and the CZK preview', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.000');
+        $client = InvoiceFixtures::client();
+        $project = editorProject($client, 'Alpha project', ['hourly_rate' => '1500']);
+        editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 10:00:00');
+        $draft = editorTimeDraft($client, [$project], 'EUR');
+
+        $editor = editor($draft);
+
+        $editor->assertSee('Přepočet kurzem ČNB (náhled): 25,000')
+            ->assertSee('Přepočet při vystavení')
+            ->assertSee('Náhled v Kč: '.Money::ofMinor(300000, 'CZK')->format('cs').', kurz ČNB 25,000 ke dni 14. 10. 2026')
+            ->assertSee('Konečný kurz a částka v Kč se zmrazí při vystavení.');
+
+        expect(storedLines($draft)[0]->line_total_minor)->toBe(12000);
+    });
+
+    it('shows no CZK preview and no VAT row for a CZK draft', function (): void {
+        $client = InvoiceFixtures::client();
+        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '2', '500.00')]);
+
+        editor($draft)
+            ->assertDontSee('Náhled v Kč')
+            ->assertDontSee('Konečný kurz')
+            ->assertDontSee('DPH')
+            ->assertDontSee('Mezisoučet')
+            ->assertSee('Celkem k úhradě');
+    });
+
+    it('drops the conversion badge when a price is typed, and keeps it removed after the save', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.000');
+        $client = InvoiceFixtures::client();
+        $project = editorProject($client, 'Alpha project', ['hourly_rate' => '1500']);
+        editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 10:00:00');
+        $draft = editorTimeDraft($client, [$project], 'EUR');
+
+        $editor = editor($draft);
+        [$key] = rowKeys($editor);
+
+        $editor->assertSee('Přepočet při vystavení')
+            ->set("data.items.{$key}.unit_price", '70')
+            ->assertDontSee('Přepočet při vystavení')
+            ->assertSee(Money::ofMinor(14000, 'EUR')->format('cs'))
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertDontSee('Přepočet při vystavení')
+            ->assertSee('Z času');
+
+        $line = storedLines($draft)[0];
+
+        expect($line->unit_price_minor)->toBe(7000)
+            ->and($line->line_total_minor)->toBe(14000)
+            ->and($line->source->price_manual)->toBeTrue();
+    });
+
+    it('shows the danger message with a link to the settings when the currency has no bank account', function (): void {
+        $client = InvoiceFixtures::client(['currency' => 'USD']);
+        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        $editor = editor($draft);
+
+        $editor->assertSee('Pro měnu USD není nastaven bankovní účet. Přidejte ho v')
+            ->assertSee(SettingsPage::getUrl());
+
+        expect($editor->html())->toContain('fi-color-danger');
+    });
+
+    it('shows the account of the currency when it exists', function (): void {
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        editor($draft)->assertSee('Example CZK account')->assertDontSee('není nastaven bankovní účet');
+    });
+
+    it('asks for the zero price to be confirmed on the line', function (): void {
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        $editor = editor($draft);
+        [$key] = rowKeys($editor);
+
+        $editor->set("data.items.{$key}.unit_price", '0')
+            ->call('save')
+            ->assertHasFormErrors(["items.{$key}.unit_price"])
+            ->assertSee('Jednotkovou cenu nula potvrďte u položky.')
+            ->set("data.items.{$key}.confirm_zero_price", true)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(storedLines($draft)[0]->unit_price_minor)->toBe(0);
+    });
+});
+
+describe('the currency of a draft', function (): void {
+    it('asks first when a price was typed by hand, and changes the currency only after the confirmation', function (): void {
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        $editor = editor($draft)
+            ->set('data.currency', 'EUR')
+            ->assertActionMounted('changeCurrency')
+            ->assertSee('Změnit měnu konceptu?')
+            ->assertSee('Ručně zadané jednotkové ceny se nepřepočítají. Zkontrolujte je po změně.');
+
+        expect($editor->get('data.currency'))->toBe('CZK');
+
+        $editor->callMountedAction()->assertHasNoActionErrors();
+
+        expect($editor->get('data.currency'))->toBe('EUR');
+
+        $editor->call('save')->assertHasNoFormErrors();
+
+        expect(storedDraft($draft)->currency)->toBe('EUR');
+    });
+
+    it('keeps the currency when the confirmation is not given', function (): void {
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        $editor = editor($draft)->set('data.currency', 'EUR')->assertActionMounted('changeCurrency')->unmountAction();
+
+        expect($editor->get('data.currency'))->toBe('CZK');
+    });
+
+    it('changes the currency at once when no price was typed by hand, and shows the converted price', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.000');
+        $client = InvoiceFixtures::client();
+        $project = editorProject($client, 'Alpha project', ['hourly_rate' => '1500']);
+        editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 10:00:00');
+        $draft = editorTimeDraft($client, [$project]);
+
+        $editor = editor($draft)->set('data.currency', 'EUR')->assertActionNotMounted();
+        [$key] = rowKeys($editor);
+
+        expect($editor->get('data.currency'))->toBe('EUR')
+            ->and($editor->get("data.items.{$key}.unit_price"))->toBe('60,00');
+
+        $editor->assertSee('Přepočet při vystavení')->call('save')->assertHasNoFormErrors();
+
+        expect(storedDraft($draft)->currency)->toBe('EUR')
+            ->and(storedLines($draft)[0]->line_total_minor)->toBe(12000);
+    });
+});
+
+describe('fixed amounts', function (): void {
+    /**
+     * A client with a fixed-price project holding 1:30 of unbilled time in two entries.
+     *
+     * @return array{0: Client, 1: Project, 2: list<TimeEntry>}
+     */
+    function editorFixedPrice(): array
+    {
+        $client = InvoiceFixtures::client();
+        $project = editorProject($client, 'Fixed project', ['billing_type' => 'fixed_price', 'fixed_price' => '50000']);
+        $entries = [
+            editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 09:00:00'),
+            editorEntry($project, '2026-09-11 08:00:00', '2026-09-11 08:30:00'),
+        ];
+
+        return [$client, $project, $entries];
+    }
+
+    it('shows the price and what is billed so far, and the count and H:MM of the project time', function (): void {
+        [$client, $project] = editorFixedPrice();
+        $draft = InvoiceFixtures::draft($client);
+
+        editor($draft)
+            ->mountAction(TestAction::make('addFixedAmount')->schemaComponent('form.itemActions'))
+            ->setActionData(['project_id' => $project->id, 'link_time' => true])
+            ->assertMountedActionModalSee('Pevná cena projektu: '.Money::ofMinor(5000000, 'CZK')->format('cs').'. Dosud vyfakturováno: '.Money::ofMinor(0, 'CZK')->format('cs').'.')
+            ->assertMountedActionModalSee('2 záznamy, 1:30.');
+    });
+
+    it('adds a paušál line and keeps the unsaved edits of the form', function (): void {
+        [$client, $project] = editorFixedPrice();
+        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '2', '500.00')]);
+
+        $editor = editor($draft);
+        [$key] = rowKeys($editor);
+        $editor->set("data.items.{$key}.description", 'Edited but not saved');
+
+        $editor->callAction(TestAction::make('addFixedAmount')->schemaComponent('form.itemActions'), [
+            'project_id' => $project->id,
+            'amount' => '20 000,00',
+        ])->assertHasNoActionErrors();
+
+        $lines = storedLines($draft);
+
+        expect($lines)->toHaveCount(2)
+            ->and($lines[1]->description)->toBe('Fixed project')
+            ->and($lines[1]->unit)->toBe('paušál')
+            ->and($lines[1]->quantity)->toBe('1.0000')
+            ->and($lines[1]->unit_price_minor)->toBe(2000000)
+            ->and($lines[1]->source->origin->value)->toBe('fixed_amount')
+            ->and(storedDraft($draft)->total_minor)->toBe(3000000);
+
+        // The form shows the new line next to the edit that was not saved yet.
+        expect(array_column($editor->get('data.items'), 'description'))->toBe(['Edited but not saved', 'Fixed project']);
+    });
+
+    it('takes the time of the project along when asked', function (): void {
+        [$client, $project, $entries] = editorFixedPrice();
+        $draft = InvoiceFixtures::draft($client);
+
+        editor($draft)->callAction(TestAction::make('addFixedAmount')->schemaComponent('form.itemActions'), [
+            'project_id' => $project->id,
+            'amount' => '10000',
+            'link_time' => true,
+        ])->assertHasNoActionErrors();
+
+        expect(editorFreshEntry($entries[0])->invoice_id)->toBe($draft->id)
+            ->and(editorFreshEntry($entries[1])->invoice_id)->toBe($draft->id);
+    });
+
+    it('leaves the time alone without the option', function (): void {
+        [$client, $project, $entries] = editorFixedPrice();
+        $draft = InvoiceFixtures::draft($client);
+
+        editor($draft)->callAction(TestAction::make('addFixedAmount')->schemaComponent('form.itemActions'), [
+            'project_id' => $project->id,
+            'amount' => '10000',
+        ])->assertHasNoActionErrors();
+
+        expect(editorFreshEntry($entries[0])->invoice_id)->toBeNull();
+    });
+
+    it('shows the field error of the Action under the modal field', function (): void {
+        [$client, $project] = editorFixedPrice();
+        $draft = InvoiceFixtures::draft($client);
+
+        editor($draft)->callAction(TestAction::make('addFixedAmount')->schemaComponent('form.itemActions'), [
+            'project_id' => $project->id,
+            'amount' => '0',
+        ])->assertHasActionErrors(['amount']);
+
+        expect(storedLines($draft))->toBe([]);
+    });
+
+    it('refuses a project of another client', function (): void {
+        [, $project] = editorFixedPrice();
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client());
+
+        editor($draft)->callAction(TestAction::make('addFixedAmount')->schemaComponent('form.itemActions'), [
+            'project_id' => $project->id,
+            'amount' => '1000',
+        ])->assertHasActionErrors(['project_id']);
+
+        expect(storedLines($draft))->toBe([]);
+    });
+});
+
+describe('the table of items', function (): void {
+    it('shows the empty row text for a draft without items', function (): void {
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client());
+
+        editor($draft)->assertSee('Zatím žádné položky. Přidejte položku nebo připojte čas.');
+    });
+
+    it('hides the add buttons and names the cap at the most lines', function (): void {
+        config(['kokpit.invoicing.max_items' => 3]);
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [
+            InvoiceFixtures::item('Example one', '1', '10.00'),
+            InvoiceFixtures::item('Example two', '1', '10.00'),
+            InvoiceFixtures::item('Example three', '1', '10.00'),
+        ]);
+
+        editor($draft)
+            ->assertSee('Doklad může mít nejvýše 3 položek.')
+            ->assertDontSee('Přidat položku')
+            ->assertDontSee('Přidat pevnou částku')
+            ->assertDontSee('Přidat nový čas')
+            ->assertActionHidden(TestAction::make('addFixedAmount')->schemaComponent('form.itemActions'));
+    });
+
+    it('offers the add buttons below the cap, and no cap note', function (): void {
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example one', '1', '10.00')]);
+
+        editor($draft)
+            ->assertSee('Přidat položku')
+            ->assertSee('Přidat pevnou částku')
+            ->assertSee('Přidat nový čas')
+            ->assertDontSee('Doklad může mít nejvýše');
+    });
+
+    it('moves a line down for keyboard users and stores the positions in the visible order', function (): void {
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [
+            InvoiceFixtures::item('Example first', '1', '10.00'),
+            InvoiceFixtures::item('Example second', '1', '20.00'),
+        ]);
+        $before = storedLines($draft);
+
+        $editor = editor($draft);
+        [$first] = rowKeys($editor);
+
+        $editor->assertSee('Posunout dolů')
+            ->assertSee('Posunout nahoru')
+            ->callAction(TestAction::make('moveDown')->schemaComponent('form.items')->arguments(['item' => $first]))
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $lines = storedLines($draft);
+
+        expect(array_map(static fn (InvoiceItem $line): string => $line->id, $lines))->toBe([$before[1]->id, $before[0]->id])
+            ->and(array_map(static fn (InvoiceItem $line): int => $line->position, $lines))->toBe([1, 2]);
+    });
+
+    it('gives each delete button the name of its row', function (): void {
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [
+            InvoiceFixtures::item('Example first', '1', '10.00'),
+            InvoiceFixtures::item('Example second', '1', '20.00'),
+        ]);
+
+        $html = editor($draft)->html();
+
+        expect($html)->toContain('aria-label="Smazat položku 1"')
+            ->and($html)->toContain('aria-label="Smazat položku 2"');
+    });
+
+    it('deletes a line on save and keeps the linked time as it is', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = editorProject($client, 'Alpha project');
+        $entry = editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 10:00:00');
+        $draft = editorTimeDraft($client, [$project]);
+
+        $editor = editor($draft);
+        [$key] = rowKeys($editor);
+
+        $editor->callAction(TestAction::make('delete')->schemaComponent('form.items')->arguments(['item' => $key]))
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(storedLines($draft))->toBe([])
+            ->and(editorFreshEntry($entry)->invoice_id)->toBe($draft->id)
+            ->and(storedDraft($draft)->total_minor)->toBe(0);
+    });
+
+    it('keeps a manual, a time and a fixed-amount line together', function (): void {
+        [$client, $project] = editorFixedPrice();
+        $time = editorProject($client, 'Alpha project');
+        editorEntry($time, '2026-09-10 08:00:00', '2026-09-10 10:00:00');
+        $draft = editorTimeDraft($client, [$time]);
+        app(UpdateDraft::class)->handle($this->admin, $draft, ['items' => [
+            ...array_map(static fn (InvoiceItem $item): array => ['id' => $item->id, 'description' => $item->description, 'quantity' => $item->quantity, 'unit' => $item->unit, 'unit_price' => Money::ofMinor($item->unit_price_minor, 'CZK')->toMajor()], storedLines($draft)),
+            InvoiceFixtures::item('Example manual', '1', '100.00'),
+        ]]);
+
+        $editor = editor($draft);
+        $editor->callAction(TestAction::make('addFixedAmount')->schemaComponent('form.itemActions'), ['project_id' => $project->id, 'amount' => '500']);
+        $editor->call('save')->assertHasNoFormErrors();
+
+        $origins = array_map(static fn (InvoiceItem $line): string => $line->source->origin->value, storedLines($draft));
+
+        expect($origins)->toBe(['time', 'manual', 'fixed_amount']);
+    });
+});
+
+describe('deleting a draft', function (): void {
+    it('asks with the destructive copy', function (): void {
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '10.00')]);
+
+        editor($draft)
+            ->mountAction('deleteDraft')
+            ->assertSee('Smazat koncept?')
+            ->assertSee('Koncept se trvale smaže a všechny připojené záznamy času se vrátí mezi nevyfakturované.')
+            ->assertSee('Ponechat koncept');
+    });
+
+    it('deletes the draft through DeleteDraft, frees its time and returns to the list with the toast', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = editorProject($client, 'Alpha project');
+        $entry = editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 10:00:00');
+        $draft = editorTimeDraft($client, [$project]);
+
+        editor($draft)
+            ->callAction('deleteDraft')
+            ->assertNotified('Koncept byl smazán, záznamy času jsou znovu nevyfakturované')
+            ->assertRedirect(InvoiceResource::getUrl('index'));
+
+        expect(app(PartnerContext::class)->runAsSystem(static fn (): bool => Invoice::query()->whereKey($draft->id)->exists()))->toBeFalse()
+            ->and(editorFreshEntry($entry)->invoice_id)->toBeNull();
     });
 });
