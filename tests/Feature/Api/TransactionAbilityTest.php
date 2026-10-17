@@ -108,7 +108,8 @@ it('answers 403 on every finance write route to a token that holds only finance:
     $routes = financeAbilityRoutes('finance:write');
     $statuses = [];
 
-    // The write routes arrive with later plans of the phase; with none yet there is nothing to refuse.
+    expect($routes)->not->toBeEmpty();
+
     foreach ($routes as $route) {
         Auth::forgetGuards();
 
