@@ -103,7 +103,7 @@ final class TransactionResource extends Resource
      */
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with(['category.parent', 'client', 'project']);
+        return parent::getEloquentQuery()->with(['category.parent', 'client', 'project', 'invoice:id,number']);
     }
 
     public static function getRelations(): array
@@ -280,6 +280,13 @@ final class TransactionResource extends Resource
                 TextColumn::make('project.name')
                     ->label(__('finance.transactions.columns.project'))
                     ->placeholder(__('finance.transactions.placeholders.empty_value')),
+                // The invoice a payment income books (FI-03, Surface M): its number linking to the invoice view.
+                TextColumn::make('invoice.number')
+                    ->label(__('invoices.transactions.column'))
+                    ->placeholder(__('finance.transactions.placeholders.empty_value'))
+                    ->url(static fn (Transaction $record): ?string => $record->invoice_id === null
+                        ? null
+                        : InvoiceResource::getUrl('view', ['record' => $record->invoice_id])),
                 TextColumn::make('documents_count')
                     ->label(__('finance.transactions.receipts.column'))
                     ->numeric()
@@ -342,6 +349,16 @@ final class TransactionResource extends Resource
                 ->label(__('finance.transactions.filters.project'))
                 ->options(static fn (): array => self::projectFilterOptions())
                 ->searchable(),
+            TernaryFilter::make('with_invoice')
+                ->label(__('invoices.transactions.filter'))
+                ->placeholder(__('finance.transactions.receipts.filter_all'))
+                ->trueLabel(__('invoices.transactions.filter_with'))
+                ->falseLabel(__('invoices.transactions.filter_without'))
+                ->queries(
+                    true: static fn (Builder $query): Builder => $query->whereNotNull('transactions.invoice_id'),
+                    false: static fn (Builder $query): Builder => $query->whereNull('transactions.invoice_id'),
+                    blank: static fn (Builder $query): Builder => $query,
+                ),
             TernaryFilter::make('without_receipt')
                 ->label(__('finance.transactions.receipts.column'))
                 ->placeholder(__('finance.transactions.receipts.filter_all'))

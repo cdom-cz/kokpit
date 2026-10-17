@@ -10,10 +10,13 @@ use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Actions\RecordPayment;
+use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Money\Money;
 use App\Filament\RelationManagers\TransactionHistoryRelationManager;
+use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\TransactionResource;
 use App\Filament\Resources\TransactionResource\Pages\CreateTransaction;
 use App\Filament\Resources\TransactionResource\Pages\EditTransaction;
@@ -22,6 +25,8 @@ use Filament\Actions\DeleteAction;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 use Tests\Support\Canary;
+use Tests\Support\DocumentFixtures;
+use Tests\Support\InvoiceFixtures;
 
 /*
  * The Admin-only "Transakce" screen (FI-01, D-12, D-13, D-14): create with a live CNB preview, edit with the
@@ -670,5 +675,53 @@ describe('the activity trail', function (): void {
         $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
 
         expect(TransactionHistoryRelationManager::canViewForRecord($transaction, EditTransaction::class))->toBeFalse();
+    });
+});
+
+/**
+ * An issued CZK invoice of a new client paid in full through RecordPayment, which books the income (FI-03).
+ *
+ * @return array{0: Invoice, 1: Transaction}
+ */
+function txScreenPaymentIncome(): array
+{
+    DocumentFixtures::fakeDisk();
+    InvoiceFixtures::configureSupplier();
+
+    $admin = auth()->user();
+    assert($admin instanceof User);
+
+    $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '12500.00')]);
+    $payment = app(RecordPayment::class)->handle($admin, $invoice, ['amount' => '12 500,00', 'paid_on' => '2026-10-10']);
+
+    return [$invoice, Transaction::query()->where('invoice_payment_id', $payment->id)->sole()];
+}
+
+describe('the invoice reference on the list (FI-03, Surface M)', function (): void {
+    it('shows the invoice number as a link to the invoice view for a payment income and a dash for the others', function (): void {
+        [$invoice, $income] = txScreenPaymentIncome();
+        $ordinary = txScreenRecord(['currency' => 'CZK', 'amount' => '250,00']);
+
+        Livewire::test(ListTransactions::class)
+            ->assertCanSeeTableRecords([$income, $ordinary])
+            ->assertTableColumnExists('invoice.number')
+            ->assertTableColumnStateSet('invoice.number', (string) $invoice->number, $income)
+            ->assertTableColumnStateSet('invoice.number', null, $ordinary)
+            ->assertSee(InvoiceResource::getUrl('view', ['record' => $invoice->getKey()]));
+
+        expect($income->description)->toBe('Platba faktury '.$invoice->number);
+    });
+
+    it('narrows the rows with the Faktura filter in both directions', function (): void {
+        [, $income] = txScreenPaymentIncome();
+        $ordinary = txScreenRecord(['currency' => 'CZK', 'amount' => '250,00']);
+
+        Livewire::test(ListTransactions::class)
+            ->filterTable('with_invoice', true)
+            ->assertCanSeeTableRecords([$income])
+            ->assertCanNotSeeTableRecords([$ordinary])
+            ->filterTable('with_invoice', false)
+            ->assertCanSeeTableRecords([$ordinary])
+            ->assertCanNotSeeTableRecords([$income]);
     });
 });
