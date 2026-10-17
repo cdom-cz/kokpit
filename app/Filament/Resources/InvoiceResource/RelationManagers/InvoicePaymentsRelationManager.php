@@ -24,7 +24,6 @@ use Filament\Tables\Table;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\On;
 
@@ -189,15 +188,14 @@ final class InvoicePaymentsRelationManager extends RelationManager
      */
     private function carriedTo(InvoicePayment $payment): ?string
     {
-        $this->carried ??= array_map(
-            static fn (mixed $number): string => (string) $number,
-            DB::table('invoice_payments as copy')
-                ->join('invoices', 'invoices.id', '=', 'copy.invoice_id')
-                ->join('invoice_payments as source', 'source.id', '=', 'copy.carried_from_payment_id')
-                ->where('source.invoice_id', $this->invoice()->getKey())
-                ->pluck('invoices.number', 'copy.carried_from_payment_id')
-                ->all(),
-        );
+        if ($this->carried === null) {
+            $this->carried = [];
+            $ids = $this->invoice()->payments()->pluck('id')->all();
+
+            foreach (InvoicePayment::query()->whereIn('carried_from_payment_id', $ids)->with('invoice')->get() as $copy) {
+                $this->carried[(string) $copy->carried_from_payment_id] = (string) $copy->invoice?->number;
+            }
+        }
 
         return $this->carried[$payment->id] ?? null;
     }
