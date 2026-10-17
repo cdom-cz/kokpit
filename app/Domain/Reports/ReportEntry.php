@@ -23,6 +23,9 @@ final readonly class ReportEntry
      * @param  bool  $billed  the entry is billed (its state), as opposed to unbilled
      * @param  string  $billingType  `hourly`, `fixed_price` or `non_billable`
      * @param  string|null  $projectBillingType  the billing type of the entry's own project (`hourly` or `fixed_price`), null without a project; it marks fixed-price project rows, whereas `billingType` is what prices the entry
+     * @param  Money|null  $billedRate  the hourly rate the entry was billed at (snapshot, TI-08); null while unbilled, for a fixed-price or rate-less entry and for an entry billed before invoicing existed
+     * @param  Money|null  $billedAmount  the amount of the exact seconds at `billedRate`, rounded once; set together with `billedRate`
+     * @param  bool  $reserved  a draft document holds the entry; it is still unbilled and counts as such (D-04, R-06-3)
      */
     public function __construct(
         public string $id,
@@ -44,5 +47,8 @@ final readonly class ReportEntry
         public string $billingType,
         public ?Money $rate,
         public ?string $projectBillingType = null,
+        public ?Money $billedRate = null,
+        public ?Money $billedAmount = null,
+        public bool $reserved = false,
     ) {}
 }

@@ -21,7 +21,10 @@ use App\Domain\Shared\Money\Money;
  * prices show hours only) and a rate exists. Anything else has no amount and counts hours only. A day without
  * a CNB list before it has no CZK amount and is reported as `czk_missing`: it is a visible marker and never a zero.
  *
- * Amounts are computed from the current rates until Phase 10 snapshots them on billing (research Pitfall 7).
+ * A billed entry that holds a billing snapshot (the rate and the amount it was billed at, TI-08) is priced with it:
+ * the amount is the stored `billedAmount` and the CZK amount converts the same seconds at the snapshot rate, so a
+ * later rate change never moves billed work (research Pitfall 7). An entry billed before invoicing existed has no
+ * snapshot and an unbilled one never has: both are priced at the current effective rate.
  */
 final class EntryAmounts
 {
@@ -30,14 +33,26 @@ final class EntryAmounts
      */
     public static function of(ReportEntry $entry, RateBook $rates): array
     {
+        if ($entry->billed && $entry->billedRate !== null && $entry->billedAmount !== null) {
+            return self::converted($entry, $entry->billedRate, $entry->billedAmount, $rates);
+        }
+
         $rate = $entry->rate;
 
         if (! $entry->billable || $entry->billingType === 'fixed_price' || $rate === null) {
             return ['amount' => null, 'czk' => null, 'czk_missing' => false];
         }
 
-        $amount = Money::forDuration($rate, $entry->seconds);
+        return self::converted($entry, $rate, Money::forDuration($rate, $entry->seconds), $rates);
+    }
 
+    /**
+     * The amount of the entry at the rate and its CZK counterpart at the CNB rate of the entry's day.
+     *
+     * @return array{amount: Money, czk: Money|null, czk_missing: bool}
+     */
+    private static function converted(ReportEntry $entry, Money $rate, Money $amount, RateBook $rates): array
+    {
         if ($rate->currency === 'CZK') {
             return ['amount' => $amount, 'czk' => $amount, 'czk_missing' => false];
         }
