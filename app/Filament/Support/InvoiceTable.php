@@ -124,8 +124,9 @@ final class InvoiceTable
             ->paginated([25, 50, 100])
             ->defaultPaginationPageOption(25)
             ->filters(self::filters($withClientColumn))
-            ->recordUrl(static fn (Invoice $record): string => InvoiceResource::getUrl('view', ['record' => $record]))
+            ->recordUrl(static fn (Invoice $record): string => InvoiceResource::getUrl($record->isDraft() ? 'edit' : 'view', ['record' => $record]))
             ->recordActions([
+                self::editDraftAction(),
                 self::downloadAction(),
                 self::deleteDraftAction(),
             ])
@@ -481,6 +482,19 @@ final class InvoiceTable
 
                 $livewire->redirect(DocumentUrl::download($document, $user));
             });
+    }
+
+    /**
+     * "Upravit" (plan 10-25): a draft row opens the editor; an issued document has no editor.
+     */
+    private static function editDraftAction(): Action
+    {
+        return Action::make('editDraft')
+            ->label(__('invoices.list.actions.edit'))
+            ->icon(Heroicon::OutlinedPencilSquare)
+            ->color('gray')
+            ->visible(static fn (Invoice $record): bool => $record->isDraft())
+            ->url(static fn (Invoice $record): string => InvoiceResource::getUrl('edit', ['record' => $record]));
     }
 
     /**

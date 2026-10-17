@@ -147,6 +147,7 @@ return [
             'create' => 'Nová faktura',
             'download' => 'Stáhnout PDF',
             'delete_draft' => 'Smazat koncept',
+            'edit' => 'Upravit',
         ],
         'delete' => [
             'heading' => 'Smazat koncept?',
@@ -205,6 +206,8 @@ return [
 
     // Surface C: the draft editor, its items and its linked time. The kind labels and the grouping come from enums.php.
     'draft' => [
+        'badge' => 'Koncept',
+        'settings_link' => 'Nastavení',
         'sections' => [
             'document' => 'Doklad',
             'items' => 'Položky',

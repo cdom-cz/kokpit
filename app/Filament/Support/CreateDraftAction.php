@@ -89,7 +89,7 @@ final class CreateDraftAction
 
                 Notification::make()->success()->title(__('invoices.create.toast'))->send();
 
-                $action->redirect(InvoiceResource::getUrl('view', ['record' => $draft]));
+                $action->redirect(InvoiceResource::getUrl('edit', ['record' => $draft]));
             });
     }
 

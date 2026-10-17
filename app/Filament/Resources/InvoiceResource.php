@@ -10,6 +10,7 @@ use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
+use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
 use App\Filament\Support\InvoiceTable;
@@ -85,6 +86,7 @@ final class InvoiceResource extends Resource
     {
         return [
             'index' => ListInvoices::route('/'),
+            'edit' => EditInvoice::route('/{record}/edit'),
             'view' => ViewInvoice::route('/{record}'),
         ];
     }
@@ -96,7 +98,7 @@ final class InvoiceResource extends Resource
 
     /**
      * The first document page (ruling R-21-1): the number, kind, state and client and the frozen lines, read only.
-     * Plan 10-25 adds the draft editor and the later plans the rest of Surface E.
+     * The draft editor is the `edit` page (plan 10-25); the later plans add the rest of Surface E.
      */
     public static function infolist(Schema $schema): Schema
     {

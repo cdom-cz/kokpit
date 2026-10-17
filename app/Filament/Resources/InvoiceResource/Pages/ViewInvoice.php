@@ -10,8 +10,8 @@ use App\Filament\Resources\InvoiceResource;
 use Filament\Resources\Pages\ViewRecord;
 
 /**
- * The first document page (ruling R-21-1): number, kind, state, client and the frozen lines, read only. A draft opens
- * here until plan 10-25 adds the editor and switches drafts to it. Later plans add the actions, the payments and the
+ * The first document page (ruling R-21-1): number, kind, state, client and the frozen lines, read only. A draft row of
+ * the list opens the editor ({@see EditInvoice}) since plan 10-25. Later plans add the actions, the payments and the
  * related documents of UI-SPEC Surface E.
  */
 final class ViewInvoice extends ViewRecord
