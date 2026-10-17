@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-34-PLAN.md
-last_updated: "2026-10-17T08:24:06.887Z"
+stopped_at: Completed 10-12-PLAN.md
+last_updated: "2026-10-17T08:42:23.011Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: d4feb954274fb5079a381fd3ff66d2509cd3407a
+state_head: ae59dba722e91d38dce9143d6c18aed4e1b9f88e
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 197
+  completed_plans: 198
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 14 of 41
+Plan: 15 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -260,6 +260,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P10 | 25 min | 2 tasks | 8 files |
 | Phase 10 P11 | 12 min | 3 tasks | 10 files |
 | Phase 10 P34 | 25 min | 2 tasks | 6 files |
+| Phase 10 P12 | 26 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -641,6 +642,7 @@ Recent decisions affecting current work:
 - [Phase 10]: 10-11: UpdateDraft with an items key replaces the whole list (ids matched, missing deleted); an absent key leaves lines untouched
 - [Phase 10]: 10-11: UpdateInternalNote writes nothing when the trimmed note is unchanged, so the marker keeps the last real change time
 - [Phase 10]: 10-34: reports price a billed entry with its billing snapshot (rate and amount), unbilled and legacy billed entries at the current rate; ReportEntry exposes a reserved flag while reserved time still counts as unbilled; rateCurrencies includes snapshot currencies
+- [Phase 10]: 10-12: IssueChecks/assertIssuable take an optional CNB trio to copy, so a credit note copying its invoice's rate needs no list on its own issue date; a typed due date before the derived issue date is the due_before_issue blocker; blocker dates are written j. n. Y
 
 ### Pending Todos
 
@@ -696,6 +698,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T08:24:05.833Z
-Stopped at: Completed 10-34-PLAN.md
+Last session: 2026-10-17T08:42:21.987Z
+Stopped at: Completed 10-12-PLAN.md
 Resume file: None
