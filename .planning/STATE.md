@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-10-PLAN.md
-last_updated: "2026-10-17T07:57:54.822Z"
+stopped_at: Completed 10-11-PLAN.md
+last_updated: "2026-10-17T08:19:45.778Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: e29b81c94a03aa7bdf17119a4d0d3b6ae74b8e15
+state_head: 83d51470921663e939f602e71fa2313fc7ebf4bb
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 195
+  completed_plans: 196
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 12 of 41
+Plan: 13 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -258,6 +258,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P08 | 30 min | 3 tasks | 13 files |
 | Phase 10 P09 | 55 min | 2 tasks | 7 files |
 | Phase 10 P10 | 25 min | 2 tasks | 8 files |
+| Phase 10 P11 | 12 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -635,6 +636,9 @@ Recent decisions affecting current work:
 - [Phase 10]: R-09-1 applied: every billing takes the rate/amount snapshot through EntryBilling::snapshot(); only hourly entries with a rate snapshot
 - [Phase 10]: R-09-3 applied: bulk unlock is all or nothing when an invoice-billed entry is selected; the message names the invoice with the lowest id
 - [Phase 10]: R-10-1: a time entry reserved by an invoice draft is locked (start, end, billable, client, project, task, delete) in the panel and the API; the description and the API external object stay writable
+- [Phase 10]: 10-11: a manual draft line gets a source row with origin manual and price_manual true; a time or fixed-amount line becomes price_manual only when its unit price changes
+- [Phase 10]: 10-11: UpdateDraft with an items key replaces the whole list (ids matched, missing deleted); an absent key leaves lines untouched
+- [Phase 10]: 10-11: UpdateInternalNote writes nothing when the trimmed note is unchanged, so the marker keeps the last real change time
 
 ### Pending Todos
 
@@ -690,6 +694,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T07:57:53.836Z
-Stopped at: Completed 10-10-PLAN.md
+Last session: 2026-10-17T08:19:44.693Z
+Stopped at: Completed 10-11-PLAN.md
 Resume file: None
