@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-23-PLAN.md
-last_updated: "2026-10-17T15:27:50.627Z"
+stopped_at: Completed 10-24-PLAN.md
+last_updated: "2026-10-17T15:48:03.506Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: e8ceb4858560c1d09cc35c419d3e0fe81e467fa0
+state_head: d224c1b8b4605e8313938f2998f57527452dfc0b
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 210
+  completed_plans: 211
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 27 of 41
+Plan: 28 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -273,6 +273,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P21 | 40 min | 3 tasks | 11 files |
 | Phase 10 P22 | about 40 min | 2 tasks | 4 files |
 | Phase 10 P23 | 45 min | 2 tasks | 3 files |
+| Phase 10 P24 | 19 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -677,6 +678,8 @@ Recent decisions affecting current work:
 - [Phase 10]: R-22-1..3 applied; proforma checks run in the order not-an-issued-proforma, converted, not-paid under the key proforma; a carried payment without a CNB list for its date fails the whole conversion (cnb_missing)
 - [Phase 10]: 10-23: a partial credit note is refused with credit_total when earlier credits plus the new one exceed the invoice total; the storno is not checked on its total (it credits only the remaining quantities), so line rounding can never block a cancellation
 - [Phase 10]: 10-23: credit lines carry manual sources with price_manual true; a converted line copies its frozen conversion snapshot and source rate and is credited with Money::timesThroughCzk rounded once
+- [Phase 10]: R-24-1 applied: every document e-mail send, a resend included, is a new invoice_emails row; SendInvoiceEmail is idempotent per row by a conditional claim, reverts the row to queued on an exception so the queue can retry, and failed() marks it failed once with a fixed class
+- [Phase 10]: A refused mail transport leaves SendInvoiceEmail as a fixed-message RuntimeException so the generic failed-job alert cannot print the provider text or the recipient into the bell (T-10-65)
 
 ### Pending Todos
 
@@ -732,6 +735,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T15:27:49.263Z
-Stopped at: Completed 10-23-PLAN.md
+Last session: 2026-10-17T15:48:02.190Z
+Stopped at: Completed 10-24-PLAN.md
 Resume file: None
