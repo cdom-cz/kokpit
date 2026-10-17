@@ -9,11 +9,17 @@ use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
+use App\Domain\Settings\Numbering\DocumentKind;
+use App\Domain\Settings\Numbering\DocumentNumbering;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use Carbon\CarbonImmutable;
+use Filament\Support\Facades\FilamentTimezone;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
@@ -61,6 +67,46 @@ function payErrors(Closure $callback): ?array
 function payBalance(Invoice $invoice): array
 {
     return app(InvoiceBalances::class)->for([$invoice->id])[$invoice->id];
+}
+
+/**
+ * A credit note of the invoice for the given negative amount, written as system with `forceFill` (the real
+ * Action comes with plan 10-23). Issued, or left a draft; `$cancels` marks it a storno credit note.
+ */
+function payCreditNote(Invoice $invoice, int $minor, bool $issued = true, bool $cancels = false): Invoice
+{
+    return app(PartnerContext::class)->runAsSystem(static function () use ($invoice, $minor, $issued, $cancels): Invoice {
+        $source = Invoice::query()->whereKey($invoice->id)->firstOrFail();
+
+        $credit = new Invoice;
+        $credit->forceFill([
+            'client_id' => $source->client_id,
+            'kind' => InvoiceKind::CreditNote,
+            'currency' => $source->currency,
+            'language' => $source->language,
+            'vat_mode' => $source->vat_mode,
+            'credited_invoice_id' => $source->id,
+            'cancels_invoice' => $cancels,
+            'subtotal_minor' => $minor,
+            'vat_minor' => 0,
+            'total_minor' => $minor,
+        ])->save();
+
+        if ($issued) {
+            $day = CarbonImmutable::now(FilamentTimezone::get());
+            $credit->forceFill([
+                'state' => InvoiceState::Issued,
+                'number' => app(DocumentNumbering::class)->next(DocumentKind::CreditNote, $day),
+                'issue_date' => $day->format('Y-m-d'),
+                'supplier_snapshot' => $source->supplier_snapshot,
+                'customer_snapshot' => $source->customer_snapshot,
+                'appearance_snapshot' => $source->appearance_snapshot,
+                'issued_at' => now(),
+            ])->save();
+        }
+
+        return $credit->refresh();
+    });
 }
 
 beforeEach(function (): void {
@@ -250,5 +296,109 @@ describe('a foreign currency', function (): void {
             ->and($onPaymentDate['paid_on'][0])->toContain('kurz ČNB')
             ->and(InvoicePayment::query()->count())->toBe(0)
             ->and(Transaction::query()->count())->toBe(0);
+    });
+});
+
+describe('the balance of a document', function (): void {
+    it('lets an issued credit note reduce what is owed and ignores a draft one', function (): void {
+        [$admin, $invoice] = payIssued();
+        payCreditNote($invoice, -250000, issued: false);
+
+        expect(payBalance($invoice))->toBe(['paid' => 0, 'credited' => 0, 'remaining' => 1250000]);
+
+        payCreditNote($invoice, -250000);
+
+        expect(payBalance($invoice))->toBe(['paid' => 0, 'credited' => 250000, 'remaining' => 1000000]);
+
+        app(RecordPayment::class)->handle($admin, $invoice, ['amount' => '4000', 'paid_on' => '2026-10-13']);
+
+        expect(payBalance($invoice))->toBe(['paid' => 400000, 'credited' => 250000, 'remaining' => 600000]);
+    });
+
+    it('owes nothing on a cancelled invoice whatever was paid, and a draft storno does not cancel', function (): void {
+        [$admin, $invoice, $client] = payIssued();
+        app(RecordPayment::class)->handle($admin, $invoice, ['amount' => '5000', 'paid_on' => '2026-10-13']);
+        $other = InvoiceFixtures::issued($client, [InvoiceFixtures::item('Example work', '1', '12500.00')]);
+        payCreditNote($other, -1250000, issued: false, cancels: true);
+
+        expect($other->isCancelled())->toBeFalse()
+            ->and(payBalance($other))->toBe(['paid' => 0, 'credited' => 0, 'remaining' => 1250000]);
+
+        InvoiceFixtures::stornoed($invoice);
+
+        expect($invoice->isCancelled())->toBeTrue()
+            ->and(payBalance($invoice))->toBe(['paid' => 500000, 'credited' => 1250000, 'remaining' => 0]);
+    });
+
+    it('never goes below zero and has no remaining figure for a credit note or a draft', function (): void {
+        [$admin, $invoice, $client] = payIssued();
+        app(RecordPayment::class)->handle($admin, $invoice, ['amount' => '20000', 'paid_on' => '2026-10-13']);
+        $credit = payCreditNote($invoice, -100000);
+        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')], actor: $admin);
+        $balances = app(InvoiceBalances::class)->for([$invoice->id, $credit->id, $draft->id]);
+
+        expect($balances[$invoice->id])->toBe(['paid' => 2000000, 'credited' => 100000, 'remaining' => 0])
+            ->and($balances[$credit->id])->toBe(['paid' => 0, 'credited' => 0, 'remaining' => null])
+            ->and($balances[$draft->id])->toBe(['paid' => 0, 'credited' => 0, 'remaining' => null])
+            ->and(app(InvoiceBalances::class)->for([]))->toBe([])
+            ->and(app(InvoiceBalances::class)->for(['018f0000-0000-7000-8000-000000000000']))->toBe([]);
+    });
+
+    it('refuses a Partner and answers a system run', function (): void {
+        [, $invoice, $client] = payIssued();
+        $this->actingAs(Canary::partnerFor($client->id));
+
+        expect(fn () => app(InvoiceBalances::class)->for([$invoice->id]))->toThrow(AuthorizationException::class);
+
+        $balances = app(PartnerContext::class)->runAsSystem(static fn (): array => app(InvoiceBalances::class)->for([$invoice->id]));
+
+        expect($balances[$invoice->id]['remaining'])->toBe(1250000);
+    });
+
+    it('selects with the SQL fragments the same documents as the figures computed in PHP', function (): void {
+        [$admin, $unpaid, $client] = payIssued();
+        $record = app(RecordPayment::class);
+        $issue = static fn (InvoiceKind $kind = InvoiceKind::Invoice): Invoice => InvoiceFixtures::issued($client, [InvoiceFixtures::item('Example work', '1', '1000.00')], $kind);
+
+        $partial = $issue();
+        $record->handle($admin, $partial, ['amount' => '400', 'paid_on' => '2026-10-13']);
+        $paid = $issue();
+        $record->handle($admin, $paid, ['amount' => '1000', 'paid_on' => '2026-10-13']);
+        $over = $issue();
+        $record->handle($admin, $over, ['amount' => '1500', 'paid_on' => '2026-10-13']);
+        $credited = $issue();
+        payCreditNote($credited, -30000);
+        $cancelled = $issue();
+        $record->handle($admin, $cancelled, ['amount' => '100', 'paid_on' => '2026-10-13']);
+        InvoiceFixtures::stornoed($cancelled);
+        $proforma = $issue(InvoiceKind::Proforma);
+        $record->handle($admin, $proforma, ['amount' => '1000', 'paid_on' => '2026-10-13']);
+        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '1000.00')], actor: $admin);
+        $note = payCreditNote($unpaid, -100000);
+
+        $documents = collect([$unpaid, $partial, $paid, $over, $credited, $cancelled, $proforma, $draft, $note]);
+        $ids = $documents->pluck('id')->all();
+
+        $expected = static function (Invoice $document): array {
+            $paid = (int) InvoicePayment::query()->where('invoice_id', $document->id)->sum('amount_minor');
+            $credited = -(int) Invoice::query()->where('credited_invoice_id', $document->id)->where('kind', 'credit_note')->where('state', 'issued')->sum('total_minor');
+            $owes = $document->state === InvoiceState::Issued && $document->kind !== InvoiceKind::CreditNote && ! $document->isCancelled();
+
+            return [$paid, $credited, $owes ? max($document->total_minor - $paid - $credited, 0) : 0];
+        };
+
+        $selected = static fn (string $fragment): array => Invoice::query()->whereIn('id', $ids)->whereRaw($fragment.' > 0')->pluck('id')->sort()->values()->all();
+        $computed = static fn (int $position): array => $documents->filter(static fn (Invoice $document): bool => $expected($document)[$position] > 0)->pluck('id')->sort()->values()->all();
+
+        expect($selected(InvoiceBalances::PAID_SQL))->toBe($computed(0))
+            ->and($selected(InvoiceBalances::CREDITED_SQL))->toBe($computed(1))
+            ->and($selected(InvoiceBalances::REMAINING_SQL))->toBe($computed(2))
+            ->and($computed(2))->toHaveCount(3)
+            ->and(Invoice::query()->whereIn('id', $ids)->whereRaw(InvoiceBalances::REMAINING_SQL.' = 0')->count())->toBe(6);
+
+        foreach (app(InvoiceBalances::class)->for($ids) as $id => $balance) {
+            $document = $documents->firstWhere('id', $id);
+            expect([$balance['paid'], $balance['credited'], $balance['remaining'] ?? 0])->toBe($expected($document));
+        }
     });
 });
