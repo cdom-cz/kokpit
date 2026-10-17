@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-03-PLAN.md
-last_updated: "2026-10-17T06:02:10.381Z"
+stopped_at: Completed 10-04-PLAN.md
+last_updated: "2026-10-17T06:15:40.114Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: ccfdd9b60806271f786cdf3cf740922ddac00dc7
+state_head: d2df4ce7d5a9a105cd5f062016f7ef3ad6bde621
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 187
+  completed_plans: 188
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 4 of 41
+Plan: 5 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -250,6 +250,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P01 | 14 min | 2 tasks | 4 files |
 | Phase 10 P02 | 8 min | 2 tasks | 8 files |
 | Phase 10 P03 | 31 min | 3 tasks | 10 files |
+| Phase 10 P04 | 12 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -612,6 +613,9 @@ Recent decisions affecting current work:
 - [Phase 10]: R-03-1: accent, footer, logo and signature are frozen into the issue snapshot (images as path plus SHA-256); stored image objects are never deleted by Settings and DocumentImage::dataUri() throws on a missing or altered object
 - [Phase 10]: R-03-3: logo and signature are re-encoded to PNG and stored content-addressed as settings/document-<kind>-<sha256>.png on the media disk, 1 MB and 4000 px caps
 - [Phase 10]: DocumentPalette is derived at render time from the snapshotted accent and falls back to #ff6f00 for an invalid value (R-03-2)
+- [Phase 10]: R-04-6 enforced in the database: invoices frozen guard has an empty mutable list and no implied updated_at, so an issued row accepts no write at all; the state flip is the last write of the issue pipeline
+- [Phase 10]: Child-of-frozen-parent guard takes FOR SHARE on the parent row and treats a missing parent as open; invoice_items follow invoices.state with no always-mutable column
+- [Phase 10]: issued_at on invoices is stored but not CHECK-required; the credited invoice of a credit note is same-client by composite FK, its kind must be checked by the Action
 
 ### Pending Todos
 
@@ -667,6 +671,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T06:02:09.255Z
-Stopped at: Completed 10-03-PLAN.md
+Last session: 2026-10-17T06:15:39.142Z
+Stopped at: Completed 10-04-PLAN.md
 Resume file: None
