@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-01-PLAN.md
-last_updated: "2026-10-17T05:46:46.852Z"
+stopped_at: Completed 10-02-PLAN.md
+last_updated: "2026-10-17T05:50:03.597Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 65f8bf8564bfd1f01c17f367c4229b3fdd135fcd
+state_head: 1bd5715cb308959038fde83355d8d62dd17f1e4c
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 185
+  completed_plans: 186
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 2 of 41
+Plan: 3 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -248,6 +248,7 @@ Progress: [█████░░░░░] 54%
 | Phase 09.1 P08 | 21 min | 2 tasks | 3 files |
 | Phase 09.1 P09 | 26 min | 3 tasks | 6 files |
 | Phase 10 P01 | 14 min | 2 tasks | 4 files |
+| Phase 10 P02 | 8 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -605,6 +606,8 @@ Recent decisions affecting current work:
 - [Phase 09.1]: 09.1-09: WR-01 refuses JSON booleans via noBoolean() with bail before integer; integer strings keep passing
 - [Phase 10]: R-01-1: a converted invoice line amount is rounded HALF_UP once from the exact conversion of the source price; the printed converted unit price is a separately rounded display figure (Money::timesThroughCzk)
 - [Phase 10]: R-01-2/R-01-3: InvoiceQuantity rounds seconds with integer arithmetic (intdiv(50*s+9,18)) outside Money; Money::times takes the canonical decimal text of a quantity
+- [Phase 10]: 10-02: payment QR only for CZK and a Czech IBAN; Spayd::supports() decides printing, forPayment() throws otherwise and also refuses a zero amount
+- [Phase 10]: 10-02: SPAYD message strips combining marks via Normalizer NFKD before iconv, because glibc ASCII//TRANSLIT answers a question mark for diacritics under the C locale
 
 ### Pending Todos
 
@@ -660,6 +663,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T05:46:41.990Z
-Stopped at: Completed 10-01-PLAN.md
+Last session: 2026-10-17T05:50:02.686Z
+Stopped at: Completed 10-02-PLAN.md
 Resume file: None
