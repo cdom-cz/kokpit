@@ -20,7 +20,9 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Policies\UserPolicy;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Policies\InvoiceItemPolicy;
 use App\Domain\Invoicing\Policies\InvoicePolicy;
@@ -144,6 +146,10 @@ final class AccessServiceProvider extends ServiceProvider
         // closed to Partners, even for an issued invoice of the own client (IN-09, R-08-1).
         Gate::policy(InvoiceAdmin::class, AdminOnlyPolicy::class);
         Gate::policy(InvoicePayment::class, AdminOnlyPolicy::class);
+
+        // The generation source of a line (rates, seconds) and the e-mail log are Admin-only too (IN-09, R-08-1).
+        Gate::policy(InvoiceItemSource::class, AdminOnlyPolicy::class);
+        Gate::policy(InvoiceEmail::class, AdminOnlyPolicy::class);
 
         // The personal planner "Signal" belongs to one Admin and is closed to Partners; the owner scope
         // of the models keeps every Admin to the own rows.

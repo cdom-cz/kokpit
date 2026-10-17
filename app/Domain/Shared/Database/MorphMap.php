@@ -20,7 +20,9 @@ use App\Domain\Identity\Models\Role;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
@@ -77,7 +79,9 @@ final class MorphMap
         'invoice' => Invoice::class,
         'invoice_item' => InvoiceItem::class,
         'invoice_admin' => InvoiceAdmin::class,
+        'invoice_item_source' => InvoiceItemSource::class,
         'invoice_payment' => InvoicePayment::class,
+        'invoice_email' => InvoiceEmail::class,
         'dashboard_widget_preference' => DashboardWidgetPreference::class,
         'document' => Document::class,
         'document_archive' => DocumentArchive::class,

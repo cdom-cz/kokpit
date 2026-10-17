@@ -3,12 +3,21 @@
 declare(strict_types=1);
 
 use App\Domain\Documents\Models\Document;
+use App\Domain\Invoicing\Enums\InvoiceEmailState;
+use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
 use App\Domain\Invoicing\Enums\PaymentMethod;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Database\MorphMap;
 use App\Domain\Shared\Models\Activity;
+use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Tests\Support\Canary;
@@ -120,6 +129,109 @@ function adminDataPayment(Invoice $invoice, string $userId, string $noteCanary, 
         ])->save();
 
         return $payment->refresh();
+    });
+}
+
+/**
+ * Writes one issued invoice of the client that carries a billed line: the line, its source row (project, task,
+ * source rate, exact seconds, conversion snapshot), two e-mails of the log and one time entry reserved for the
+ * document. The source and the e-mails go in while the document is a draft: an issued document accepts no new
+ * child row.
+ *
+ * @return array{invoice: Invoice, item: InvoiceItem, source: InvoiceItemSource, firstEmail: InvoiceEmail, secondEmail: InvoiceEmail, entry: TimeEntry, project: Project, task: Task}
+ */
+function adminDataSourcedInvoice(string $clientId, string $userId, string $canary): array
+{
+    return adminDataSystem(static function () use ($clientId, $userId, $canary): array {
+        $project = Project::factory()->create(['client_id' => $clientId]);
+        $task = Task::factory()->create(['project_id' => $project->id]);
+
+        $invoice = new Invoice;
+        $invoice->forceFill([
+            'client_id' => $clientId,
+            'kind' => 'invoice',
+            'currency' => 'CZK',
+            'language' => 'cs',
+            'vat_mode' => 'non_payer',
+            'subtotal_minor' => 10000,
+            'vat_minor' => 0,
+            'total_minor' => 10000,
+        ])->save();
+
+        $item = (new InvoiceItem(['description' => 'Example consulting', 'unit' => 'h']))->forceFill([
+            'invoice_id' => $invoice->id,
+            'position' => 1,
+            'quantity' => '2.0000',
+            'unit_price_minor' => 5000,
+            'line_total_minor' => 10000,
+        ]);
+        $item->save();
+
+        $source = new InvoiceItemSource;
+        $source->forceFill([
+            'invoice_item_id' => $item->id,
+            'invoice_id' => $invoice->id,
+            'origin' => InvoiceItemOrigin::Time,
+            'project_id' => $project->id,
+            'task_id' => $task->id,
+            'source_rate_minor' => 150000,
+            'source_rate_currency' => 'CZK',
+            'source_seconds' => 7200,
+            'price_manual' => false,
+            'conversion_snapshot' => ['rate_note' => $canary],
+        ])->save();
+
+        $firstEmail = (new InvoiceEmail)->forceFill([
+            'invoice_id' => $invoice->id,
+            'recipient' => 'jane@'.implode('.', ['example', 'com']),
+            'subject' => $canary,
+            'body' => 'Fictional body',
+            'state' => InvoiceEmailState::Queued,
+            'created_by' => $userId,
+            'created_at' => '2026-10-17 10:00:00+00',
+            'updated_at' => '2026-10-17 10:00:00+00',
+        ]);
+        $firstEmail->save();
+
+        $secondEmail = (new InvoiceEmail)->forceFill([
+            'invoice_id' => $invoice->id,
+            'recipient' => 'jane@'.implode('.', ['example', 'com']),
+            'subject' => $canary,
+            'body' => 'Fictional body',
+            'state' => InvoiceEmailState::Queued,
+            'created_by' => $userId,
+            'created_at' => '2026-10-18 10:00:00+00',
+            'updated_at' => '2026-10-18 10:00:00+00',
+        ]);
+        $secondEmail->save();
+
+        $entry = TimeEntry::factory()->forProject($project)->create();
+        $entry->forceFill(['invoice_id' => $invoice->id])->save();
+
+        $invoice->forceFill([
+            'state' => 'issued',
+            'number' => implode('', ['S', (string) random_int(100000, 999999), (string) random_int(1000, 9999)]),
+            'variable_symbol' => (string) random_int(1000000, 9999999),
+            'issue_date' => '2026-10-17',
+            'taxable_supply_date' => '2026-10-17',
+            'due_date' => '2026-10-31',
+            'supplier_snapshot' => ['name' => 'Example supplier'],
+            'customer_snapshot' => ['name' => 'Example customer'],
+            'bank_snapshot' => ['account' => 'Example account'],
+            'appearance_snapshot' => ['accent' => '#000000'],
+            'issued_at' => now(),
+        ])->save();
+
+        return [
+            'invoice' => $invoice->refresh(),
+            'item' => $item->refresh(),
+            'source' => $source->refresh(),
+            'firstEmail' => $firstEmail->refresh(),
+            'secondEmail' => $secondEmail->refresh(),
+            'entry' => $entry->refresh(),
+            'project' => $project,
+            'task' => $task,
+        ];
     });
 }
 
@@ -256,6 +368,99 @@ describe('no touch of the issued invoice', function (): void {
 
     it('declares no $touches toward the invoice on any Admin-only invoicing model', function (): void {
         foreach ([InvoiceAdmin::class, InvoicePayment::class] as $class) {
+            expect((new ReflectionClass($class))->getDefaultProperties()['touches'] ?? [])->toBe([], $class);
+        }
+    });
+});
+
+describe('line sources, linked time and the e-mail log', function (): void {
+    beforeEach(function (): void {
+        $this->sourceCanary = Canary::canary('source_note');
+        $this->sourced = adminDataSourcedInvoice($this->clientA, $this->adminUser->id, $this->sourceCanary);
+    });
+
+    it('lets the Admin read the generation source of a line with its rates, seconds and conversion snapshot', function (): void {
+        $this->actingAs($this->adminUser);
+
+        $item = InvoiceItem::query()->findOrFail($this->sourced['item']->id);
+        $source = $item->source;
+
+        expect($source)->toBeInstanceOf(InvoiceItemSource::class)
+            ->and($source->origin)->toBe(InvoiceItemOrigin::Time)
+            ->and($source->sourceRate()?->minor)->toBe(150000)
+            ->and($source->sourceRate()?->currency)->toBe('CZK')
+            ->and($source->source_seconds)->toBe(7200)
+            ->and($source->price_manual)->toBeFalse()
+            ->and($source->conversion_snapshot)->toBe(['rate_note' => $this->sourceCanary])
+            ->and($source->item->is($item))->toBeTrue()
+            ->and($source->invoice->id)->toBe($this->sourced['invoice']->id)
+            ->and($source->project?->id)->toBe($this->sourced['project']->id)
+            ->and($source->task?->id)->toBe($this->sourced['task']->id);
+    });
+
+    it('reads no source rate from a source without one', function (): void {
+        $source = new InvoiceItemSource;
+        $source->forceFill(['origin' => InvoiceItemOrigin::FixedAmount]);
+
+        expect($source->sourceRate())->toBeNull()
+            ->and($source->origin)->toBe(InvoiceItemOrigin::FixedAmount);
+    });
+
+    it('lets the Admin read the e-mail log of a document, latest first, and the linked time', function (): void {
+        $this->actingAs($this->adminUser);
+
+        $invoice = Invoice::query()->findOrFail($this->sourced['invoice']->id);
+
+        expect($invoice->emails->pluck('id')->all())->toBe([$this->sourced['secondEmail']->id, $this->sourced['firstEmail']->id])
+            ->and($invoice->emails->first()?->state)->toBe(InvoiceEmailState::Queued)
+            ->and($invoice->emails->first()?->subject)->toBe($this->sourceCanary)
+            ->and($invoice->emails->first()?->invoice->is($invoice))->toBeTrue()
+            ->and($invoice->entries->pluck('id')->all())->toBe([$this->sourced['entry']->id]);
+    });
+
+    it('shows a Partner of the same client no source, no e-mail and no linked time through the visible document', function (): void {
+        $this->actingAs(Canary::partnerFor($this->clientA));
+
+        $invoice = Invoice::query()->findOrFail($this->sourced['invoice']->id);
+        $item = $invoice->items->first();
+
+        expect($item)->toBeInstanceOf(InvoiceItem::class)
+            ->and($item->source)->toBeNull()
+            ->and($invoice->emails)->toHaveCount(0)
+            ->and($invoice->entries)->toHaveCount(0)
+            ->and(InvoiceItemSource::query()->count())->toBe(0)
+            ->and(InvoiceEmail::query()->count())->toBe(0)
+            ->and(InvoiceEmail::query()->where('subject', $this->sourceCanary)->exists())->toBeFalse();
+
+        $json = (string) json_encode(Invoice::query()->with(['items.source', 'emails', 'entries'])->get()->toArray());
+
+        expect($json)->not->toContain($this->sourceCanary)->and($json)->not->toContain('150000');
+    });
+
+    it('denies a Partner every ability on a source row and an e-mail row and admits the Admin', function (): void {
+        $partner = Canary::partnerFor($this->clientA);
+
+        foreach ([$this->sourced['source'], $this->sourced['firstEmail']] as $row) {
+            expect(Gate::forUser($partner)->denies('view', $row))->toBeTrue()
+                ->and(Gate::forUser($partner)->denies('viewAny', $row::class))->toBeTrue()
+                ->and(Gate::forUser($partner)->denies('create', $row::class))->toBeTrue()
+                ->and(Gate::forUser($partner)->denies('update', $row))->toBeTrue()
+                ->and(Gate::forUser($partner)->denies('delete', $row))->toBeTrue()
+                ->and(Gate::forUser($this->adminUser)->allows('view', $row))->toBeTrue();
+        }
+    });
+
+    it('registers the four morph aliases of the Admin-only invoicing models', function (): void {
+        expect(MorphMap::MAP)->toMatchArray([
+            'invoice_admin' => InvoiceAdmin::class,
+            'invoice_item_source' => InvoiceItemSource::class,
+            'invoice_payment' => InvoicePayment::class,
+            'invoice_email' => InvoiceEmail::class,
+        ]);
+    });
+
+    it('declares no $touches toward the invoice on the source and e-mail models', function (): void {
+        foreach ([InvoiceItemSource::class, InvoiceEmail::class] as $class) {
             expect((new ReflectionClass($class))->getDefaultProperties()['touches'] ?? [])->toBe([], $class);
         }
     });

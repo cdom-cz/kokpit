@@ -15,6 +15,7 @@ use App\Domain\Shared\Auth\IsolatesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
 use App\Domain\Shared\Money\Money;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -221,6 +222,27 @@ final class Invoice extends KokpitModel implements PartnerIsolated
     public function payments(): HasMany
     {
         return $this->hasMany(InvoicePayment::class)->orderBy('paid_on')->orderBy('id');
+    }
+
+    /**
+     * The e-mails sent for the document, latest first (D-22). Empty for a Partner.
+     *
+     * @return HasMany<InvoiceEmail, $this>
+     */
+    public function emails(): HasMany
+    {
+        return $this->hasMany(InvoiceEmail::class)->orderByDesc('created_at')->orderByDesc('id');
+    }
+
+    /**
+     * The tracked time reserved for or billed on the document (D-03), by `time_entries.invoice_id`. Tracked time is
+     * Admin-only, so the relation is empty for a Partner.
+     *
+     * @return HasMany<TimeEntry, $this>
+     */
+    public function entries(): HasMany
+    {
+        return $this->hasMany(TimeEntry::class, 'invoice_id')->orderBy('started_at')->orderBy('id');
     }
 
     /**

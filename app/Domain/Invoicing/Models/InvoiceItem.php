@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use LogicException;
 
 /**
@@ -91,6 +92,17 @@ final class InvoiceItem extends KokpitModel implements PartnerIsolated
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class);
+    }
+
+    /**
+     * How the line was generated: origin, source rate, seconds and conversion snapshot (D-12). Admin-only, so null
+     * for a Partner.
+     *
+     * @return HasOne<InvoiceItemSource, $this>
+     */
+    public function source(): HasOne
+    {
+        return $this->hasOne(InvoiceItemSource::class);
     }
 
     /**
