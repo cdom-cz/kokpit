@@ -214,6 +214,17 @@ return [
         'credit_note' => 'Dobropis',
     ],
 
+    // The tabs of the invoice list (plan 10-19); the last one is the paid proforma still waiting for its invoice.
+    'invoice_list_tab' => [
+        'all' => 'Všechny',
+        'drafts' => 'Koncepty',
+        'unpaid' => 'Nezaplacené',
+        'overdue' => 'Po splatnosti',
+        'paid' => 'Zaplacené',
+        'cancelled' => 'Stornované',
+        'awaiting_invoice' => 'Zálohy k vyfakturování',
+    ],
+
     'invoice_item_origin' => [
         'time' => 'Z času',
         'fixed_amount' => 'Pevná částka',
