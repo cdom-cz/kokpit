@@ -126,11 +126,20 @@ final class TransactionResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema->components([
+            // The income of an invoice payment changes only in its date and category (FI-03, D-19 as amended, R-19-1).
+            TextEntry::make('payment_income_note')
+                ->hiddenLabel()
+                ->state(static fn (?Transaction $record): string => self::paymentIncomeNote($record))
+                ->color('gray')
+                ->visible(static fn (?Transaction $record): bool => self::isLockedIncome($record))
+                ->columnSpanFull(),
             Section::make(__('finance.transactions.sections.transaction'))
                 ->columns(2)
                 ->schema([
                     ToggleButtons::make('type')
                         ->label(__('finance.transactions.fields.type'))
+                        ->disabled(static fn (?Transaction $record): bool => self::isLockedIncome($record))
+                        ->dehydrated()
                         ->options(TransactionType::class)
                         ->default(TransactionType::Expense->value)
                         ->inline()
@@ -157,12 +166,18 @@ final class TransactionResource extends Resource
                         ->native(false),
                     TextInput::make('counterparty')
                         ->label(__('finance.transactions.fields.counterparty'))
+                        ->disabled(static fn (?Transaction $record): bool => self::isLockedIncome($record))
+                        ->dehydrated()
                         ->maxLength(255),
                     TextInput::make('document_number')
                         ->label(__('finance.transactions.fields.document_number'))
+                        ->disabled(static fn (?Transaction $record): bool => self::isLockedIncome($record))
+                        ->dehydrated()
                         ->maxLength(64),
                     Textarea::make('description')
                         ->label(__('finance.transactions.fields.description'))
+                        ->disabled(static fn (?Transaction $record): bool => self::isLockedIncome($record))
+                        ->dehydrated()
                         ->rows(3)
                         ->maxLength(2000)
                         ->columnSpanFull(),
@@ -172,12 +187,16 @@ final class TransactionResource extends Resource
                 ->schema([
                     TextInput::make('amount')
                         ->label(__('finance.transactions.fields.amount'))
+                        ->disabled(static fn (?Transaction $record): bool => self::isLockedIncome($record))
+                        ->dehydrated()
                         ->inputMode('decimal')
                         ->maxLength(32)
                         ->required()
                         ->live(onBlur: true),
                     Select::make('currency')
                         ->label(__('finance.transactions.fields.currency'))
+                        ->disabled(static fn (?Transaction $record): bool => self::isLockedIncome($record))
+                        ->dehydrated()
                         ->options(static fn (?Transaction $record): array => self::currencyChoices($record))
                         ->default('CZK')
                         ->searchable()
@@ -201,7 +220,7 @@ final class TransactionResource extends Resource
                         ->helperText(static fn (Get $get): ?string => $get('czk_manual') === true
                             ? (string) __('finance.transactions.hints.czk_manual_kept')
                             : null)
-                        ->visible(static fn (Get $get): bool => self::isForeign($get('currency')))
+                        ->visible(static fn (Get $get, ?Transaction $record): bool => ! self::isLockedIncome($record) && self::isForeign($get('currency')))
                         ->columnSpanFull(),
                     TextInput::make('czk_amount')
                         ->label(__('finance.transactions.fields.czk_amount'))
@@ -224,6 +243,8 @@ final class TransactionResource extends Resource
                 ->schema([
                     Select::make('client_id')
                         ->label(__('finance.transactions.fields.client'))
+                        ->disabled(static fn (?Transaction $record): bool => self::isLockedIncome($record))
+                        ->dehydrated()
                         ->options(static fn (?Transaction $record, Get $get): array => self::clientOptions($record, $get('client_id')))
                         ->searchable()
                         ->live()
@@ -233,6 +254,8 @@ final class TransactionResource extends Resource
                         ->native(false),
                     Select::make('project_id')
                         ->label(__('finance.transactions.fields.project'))
+                        ->disabled(static fn (?Transaction $record): bool => self::isLockedIncome($record))
+                        ->dehydrated()
                         ->options(static fn (?Transaction $record, Get $get): array => self::projectOptions(
                             $record,
                             self::id($get('client_id')),
@@ -552,7 +575,7 @@ final class TransactionResource extends Resource
      */
     private static function czkAmountNeeded(Get $get, ?Transaction $record): bool
     {
-        if (! self::isForeign($get('currency'))) {
+        if (self::isLockedIncome($record) || ! self::isForeign($get('currency'))) {
             return false;
         }
 
@@ -617,6 +640,28 @@ final class TransactionResource extends Resource
         }
 
         return self::preview($get);
+    }
+
+    /**
+     * Whether the record is the income of an invoice payment, which the form locks except for its date and category.
+     * The locked fields are only the display of the rule: UpdateTransaction refuses the same changes on the server.
+     */
+    private static function isLockedIncome(?Transaction $record): bool
+    {
+        return $record instanceof Transaction && $record->isPaymentIncome();
+    }
+
+    /**
+     * The gray helper of a payment income: the invoice number and what can still be changed.
+     */
+    private static function paymentIncomeNote(?Transaction $record): string
+    {
+        if (! $record instanceof Transaction) {
+            return '';
+        }
+
+        return __('invoices.transactions.helper', ['number' => (string) $record->invoice?->number])
+            .' '.__('invoices.transactions.helper_editable');
     }
 
     private static function isForeign(mixed $currency): bool
