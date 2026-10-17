@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Invoicing\Issuing;
 
+use App\Domain\ExchangeRates\ExchangeRateConverter;
+use App\Domain\ExchangeRates\ExchangeRateMissing;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Support\InvoiceSnapshot;
+use App\Domain\Invoicing\Support\IssueChecks;
 use App\Domain\Invoicing\Support\VariableSymbol;
 use App\Domain\Settings\Numbering\DocumentNumbering;
 use App\Domain\Settings\Settings\InvoicingSettings;
@@ -17,6 +20,7 @@ use Carbon\CarbonImmutable;
 use DomainException;
 use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use LogicException;
 
 /**
@@ -35,6 +39,8 @@ final readonly class DocumentIssuer
     public function __construct(
         private DocumentNumbering $numbering,
         private InvoiceSnapshot $snapshot,
+        private IssueChecks $checks,
+        private ExchangeRateConverter $rates,
     ) {}
 
     /**
@@ -42,6 +48,7 @@ final readonly class DocumentIssuer
      *
      * @throws LogicException outside a transaction
      * @throws DomainException when the document is not a draft
+     * @throws ValidationException with the blockers, or `issue_date_before_latest` found under the sequence lock
      */
     public function issue(Invoice $lockedDraft, IssueContext $context): Invoice
     {
@@ -53,6 +60,8 @@ final readonly class DocumentIssuer
             throw new DomainException(__('invoices.errors.not_draft'));
         }
 
+        $this->checks->assertIssuable($lockedDraft, $context->today, $context->exchangeSnapshot);
+
         $kind = $lockedDraft->kind;
         $client = $lockedDraft->client ?? throw new LogicException('A document always has its client.');
 
@@ -61,7 +70,7 @@ final readonly class DocumentIssuer
             ? null
             : ($lockedDraft->due_date?->format('Y-m-d') ?? self::addDays($issueDate, $client->payment_terms_days));
 
-        $this->ensureAdminRow($lockedDraft);
+        $this->writeAdminRow($lockedDraft, $issueDate, $context);
 
         $supplier = $this->snapshot->supplier();
         $customer = $this->snapshot->customer($client);
@@ -69,6 +78,16 @@ final readonly class DocumentIssuer
         $appearance = $this->snapshot->appearance();
 
         $number = $this->numbering->next($kind->numberingKind(), self::noonOf($issueDate));
+
+        // The advisory check of the blockers ran before the counter row was locked. From here on no other issuer of
+        // the series can commit, so this answer is the final one; a refusal rolls the number back (ruling R-12-1).
+        $latest = $this->checks->latestIssueDate($kind);
+
+        if ($latest !== null && $issueDate < $latest) {
+            throw ValidationException::withMessages([
+                'issue_date_before_latest' => __('invoices.errors.issue_date_before_latest', ['date' => IssueChecks::czechDate($latest)]),
+            ]);
+        }
 
         $lockedDraft->forceFill([
             'state' => InvoiceState::Issued,
@@ -90,18 +109,49 @@ final readonly class DocumentIssuer
 
     /**
      * The Admin-only row of the document, created while the parent is still a draft because the child guard
-     * refuses an INSERT afterwards. Plan 10-20 later writes the PDF link into it.
+     * refuses an INSERT afterwards (plan 10-20 later writes the PDF link into it). For a document not in CZK it
+     * also stores the CNB rate, unit and list date valid on the issue date, or the trio the context hands over, and
+     * the CZK total computed from them once (D-12, IN-07, EX-03): the rate is never looked up again.
      */
-    private function ensureAdminRow(Invoice $draft): InvoiceAdmin
+    private function writeAdminRow(Invoice $draft, string $issueDate, IssueContext $context): InvoiceAdmin
     {
         $admin = InvoiceAdmin::query()->where('invoice_id', $draft->id)->lockForUpdate()->first();
 
         if (! $admin instanceof InvoiceAdmin) {
             $admin = new InvoiceAdmin;
-            $admin->forceFill(['invoice_id' => $draft->id])->save();
+            $admin->forceFill(['invoice_id' => $draft->id]);
         }
 
+        if ($draft->currency !== 'CZK') {
+            $rate = $context->exchangeSnapshot ?? $this->rateOf($draft->currency, $issueDate);
+
+            $admin->forceFill([
+                'exchange_rate' => $rate['rate'],
+                'exchange_unit_amount' => $rate['unit_amount'],
+                'exchange_rate_date' => $rate['rate_date'],
+                'czk_total_minor' => $draft->total()->convert($rate['rate'], 'CZK', $rate['unit_amount'])->minor,
+            ]);
+        }
+
+        $admin->save();
+
         return $admin;
+    }
+
+    /**
+     * @return array{rate: string, unit_amount: int, rate_date: string}
+     *
+     * @throws ValidationException `cnb_missing` when the list vanished since the blockers ran
+     */
+    private function rateOf(string $currency, string $issueDate): array
+    {
+        try {
+            return $this->rates->rateFor($currency, $issueDate);
+        } catch (ExchangeRateMissing) {
+            throw ValidationException::withMessages([
+                'cnb_missing' => __('invoices.errors.cnb_missing', ['currency' => $currency, 'date' => IssueChecks::czechDate($issueDate)]),
+            ]);
+        }
     }
 
     private static function addDays(string $day, int $days): string
