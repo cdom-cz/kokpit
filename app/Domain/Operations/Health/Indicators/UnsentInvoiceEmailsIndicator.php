@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Operations\Health\Indicators;
 
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
+use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Operations\Health\HealthIndicator;
 use App\Domain\Operations\Health\HealthResult;
 use App\Domain\Operations\Health\HealthSlot;
@@ -12,7 +13,6 @@ use App\Domain\Operations\Health\HealthStatus;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Resources\InvoiceResource;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Document e-mails that did not leave the system (IN-04, D-22, FND-10).
@@ -50,7 +50,7 @@ final readonly class UnsentInvoiceEmailsIndicator implements HealthIndicator
         // The age of a row runs from its last move: a queued row is not touched until a worker claims it, and the claim
         // stamps a sending row, so a sending row older than the threshold belongs to a worker that died.
         $counts = app(PartnerContext::class)->runAsSystem(
-            static fn (): object => (object) DB::table('invoice_emails')
+            static fn (): object => (object) InvoiceEmail::query()
                 ->whereRaw(self::LATEST_ROW_SQL)
                 ->selectRaw(
                     'COUNT(*) FILTER (WHERE state = ? OR (state = ? AND updated_at <= ?)) AS failed, '
@@ -61,6 +61,7 @@ final readonly class UnsentInvoiceEmailsIndicator implements HealthIndicator
                         InvoiceEmailState::Sending->value, $staleBefore,
                     ],
                 )
+                ->toBase()
                 ->first(),
         );
 
