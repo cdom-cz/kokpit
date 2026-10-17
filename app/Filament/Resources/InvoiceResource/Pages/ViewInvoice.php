@@ -7,12 +7,14 @@ namespace App\Filament\Resources\InvoiceResource\Pages;
 use App\Domain\ExchangeRates\RateFormat;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\ConvertProforma;
+use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\RegeneratePdf;
 use App\Domain\Invoicing\Actions\UpdateInternalNote;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceStatus;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Queries\ReceivablesReader;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
@@ -22,8 +24,15 @@ use App\Filament\Resources\InvoiceResource;
 use App\Filament\Support\InvoiceColumns;
 use App\Filament\Support\InvoiceTable;
 use App\Filament\Support\RecordPaymentAction;
+use Closure;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
+use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Repeater\TableColumn as RepeaterColumn;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\RepeatableEntry\TableColumn;
 use Filament\Infolists\Components\TextEntry;
@@ -33,6 +42,8 @@ use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Icon;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Text;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\FontWeight;
 use Filament\Support\Enums\TextSize;
@@ -42,7 +53,9 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Livewire\Attributes\On;
+use OverflowException;
 use Throwable;
 
 /**
@@ -66,6 +79,14 @@ final class ViewInvoice extends ViewRecord
 
     /** @var array{status: InvoiceStatus, remaining: Money|null, overdue_days: int|null, paid: int}|null */
     private ?array $derived = null;
+
+    /**
+     * The lines of the invoice with what each can still be credited, read once per request for the credit dialog. Not
+     * persisted by Livewire.
+     *
+     * @var array<string, array{description: string, original: InvoiceQuantity, unit: string, left: InvoiceQuantity}>|null
+     */
+    private ?array $creditRows = null;
 
     /**
      * The Admin check of every request, before any other code of the page runs. A Partner is refused with 403 before
@@ -135,9 +156,10 @@ final class ViewInvoice extends ViewRecord
 
     /**
      * "Stáhnout PDF" when the stored PDF exists, "Zaznamenat platbu" on a document that still owes something and
-     * "Vystavit fakturu" on a paid proforma without an invoice (UI-SPEC E2); the actions of the later plans follow.
+     * "Vystavit fakturu" on a paid proforma without an invoice, and the group "Další akce" with the partial credit note and the
+     * storno (UI-SPEC E2); the e-mail action follows in the same plan.
      *
-     * @return array<Action>
+     * @return array<Action|ActionGroup>
      */
     protected function getHeaderActions(): array
     {
@@ -145,6 +167,7 @@ final class ViewInvoice extends ViewRecord
             $this->downloadPdfAction(),
             $this->recordPaymentAction(),
             $this->convertProformaAction(),
+            $this->moreActions(),
         ];
     }
 
@@ -228,6 +251,343 @@ final class ViewInvoice extends ViewRecord
 
                 $this->redirect(InvoiceResource::getUrl('view', ['record' => $invoice, 'send' => 1]));
             });
+    }
+
+    /**
+     * "Další akce" (UI-SPEC E2): the partial credit note and the destructive storno, only on an issued invoice that is
+     * not cancelled. A credit note, a cancelled invoice and a proforma (an unconverted proforma is simply left, U-7)
+     * show neither; each action carries the condition itself, so a hidden group never leaves a callable action behind.
+     */
+    private function moreActions(): ActionGroup
+    {
+        return ActionGroup::make([
+            $this->creditItemsAction(),
+            $this->stornoAction(),
+        ])
+            ->label(__('invoices.detail.actions.more'))
+            ->icon(Heroicon::OutlinedEllipsisVertical)
+            ->color('gray')
+            ->button()
+            ->visible(fn (): bool => $this->canCredit());
+    }
+
+    private function canCredit(): bool
+    {
+        $invoice = $this->invoice();
+
+        return $invoice->kind === InvoiceKind::Invoice && $invoice->isIssued() && ! $invoice->isCancelled();
+    }
+
+    /**
+     * "Stornovat" (IN-10; D-14, D-16; UI-SPEC E6): one destructive confirmation, then {@see IssueCreditNote::storno()},
+     * which issues the credit note of everything still creditable, cancels the invoice and returns its time. A payment
+     * and its income stay as they are; the callout says so. Success opens the credit note with the e-mail dialog
+     * requested (ruling R-29-1).
+     */
+    private function stornoAction(): Action
+    {
+        return Action::make('storno')
+            ->label(__('invoices.detail.actions.storno'))
+            ->icon(Heroicon::OutlinedArchiveBoxXMark)
+            ->color('danger')
+            ->visible(fn (): bool => $this->canCredit())
+            ->modalHeading(fn (): string => __('invoices.credit.storno.heading', ['number' => (string) $this->invoice()->number]))
+            ->modalDescription(__('invoices.credit.storno.body'))
+            ->modalIcon(Heroicon::OutlinedExclamationTriangle)
+            ->modalIconColor('danger')
+            ->modalSubmitActionLabel(__('invoices.credit.storno.submit'))
+            ->modalCancelActionLabel(__('invoices.credit.storno.cancel'))
+            ->schema([
+                Callout::make(fn (): string => __('invoices.credit.storno.paid_callout', [
+                    'paid' => Money::ofMinor($this->derived()['paid'], $this->invoice()->currency)->format('cs'),
+                ]))
+                    ->warning()
+                    ->visible(fn (): bool => $this->derived()['paid'] > 0),
+            ])
+            ->action(function (): void {
+                abort_unless(InvoiceResource::canAccess(), 403);
+
+                $actor = auth()->user();
+                assert($actor instanceof User);
+
+                $this->issueCredit(fn (): Invoice => app(IssueCreditNote::class)->storno($actor, $this->invoice()));
+            });
+    }
+
+    /**
+     * "Dobropis na položky" (IN-01; D-14; UI-SPEC E7, N8): the lines of the invoice with a checkbox, the original
+     * quantity, an editable quantity to credit (default what is still creditable), the amount of the row and the live
+     * negative total. The time stays billed. The domain Action reads the lines of the locked invoice only and judges
+     * every quantity again; the page maps its field errors back under the quantity of the row.
+     */
+    private function creditItemsAction(): Action
+    {
+        return Action::make('creditItems')
+            ->label(__('invoices.detail.actions.credit_items'))
+            ->icon(Heroicon::OutlinedReceiptRefund)
+            ->color('gray')
+            ->visible(fn (): bool => $this->canCredit())
+            ->modalHeading(fn (): string => __('invoices.credit.partial.heading', ['number' => (string) $this->invoice()->number]))
+            ->modalWidth('4xl')
+            ->modalSubmitActionLabel(__('invoices.credit.partial.submit'))
+            ->modalCancelActionLabel(__('invoices.credit.partial.cancel'))
+            ->fillForm(function (): array {
+                $lines = [];
+
+                foreach ($this->creditRows() as $itemId => $row) {
+                    $lines[$itemId] = [
+                        'id' => $itemId,
+                        'selected' => $row['left']->isPositive(),
+                        'quantity' => $row['left']->format('en'),
+                    ];
+                }
+
+                return ['lines' => $lines];
+            })
+            ->schema([
+                Callout::make(__('invoices.credit.partial.callout'))->info(),
+                Repeater::make('lines')
+                    ->hiddenLabel()
+                    ->addable(false)
+                    ->deletable(false)
+                    ->reorderable(false)
+                    ->table([
+                        RepeaterColumn::make(__('invoices.credit.partial.columns.select'))->hiddenHeaderLabel()->width('3rem'),
+                        RepeaterColumn::make(__('invoices.credit.partial.columns.item')),
+                        RepeaterColumn::make(__('invoices.credit.partial.columns.original_quantity'))->width('9rem')->alignEnd(),
+                        RepeaterColumn::make(__('invoices.credit.partial.columns.credit_quantity'))->width('10rem')->alignEnd(),
+                        RepeaterColumn::make(__('invoices.credit.partial.columns.total'))->width('10rem')->alignEnd(),
+                    ])
+                    ->schema([
+                        Hidden::make('id'),
+                        Checkbox::make('selected')
+                            ->hiddenLabel()
+                            ->live()
+                            ->disabled(fn (Get $get): bool => ! $this->creditRow($get)['left']->isPositive()),
+                        Text::make(fn (Get $get): string => $this->creditRow($get)['description']),
+                        Text::make(fn (Get $get): string => $this->creditRow($get)['original']->format('cs').' '.$this->creditRow($get)['unit'])
+                            ->color('gray')
+                            ->extraAttributes(['style' => 'text-align: right; font-variant-numeric: tabular-nums;']),
+                        TextInput::make('quantity')
+                            ->hiddenLabel()
+                            ->live(onBlur: true)
+                            ->disabled(fn (Get $get): bool => ! $this->creditRow($get)['left']->isPositive())
+                            ->extraInputAttributes(['inputmode' => 'decimal', 'style' => 'text-align: right; font-variant-numeric: tabular-nums;'])
+                            ->rules([
+                                fn (Get $get): Closure => function (string $attribute, mixed $value, Closure $fail) use ($get): void {
+                                    if ($get('selected') !== true) {
+                                        return;
+                                    }
+
+                                    $message = $this->quantityProblem($this->creditRow($get)['left'], $value);
+
+                                    if ($message !== null) {
+                                        $fail($message);
+                                    }
+                                },
+                            ]),
+                        Text::make(fn (Get $get): string => $this->rowAmountText($get))
+                            ->extraAttributes(['style' => 'text-align: right; font-variant-numeric: tabular-nums;']),
+                    ]),
+                Text::make(fn (Get $get): string => __('invoices.credit.partial.total').': '.$this->creditTotal($get('lines'))->format('cs'))
+                    ->weight(FontWeight::SemiBold)
+                    ->size(TextSize::Large),
+            ])
+            ->action(function (array $data, Action $action): void {
+                abort_unless(InvoiceResource::canAccess(), 403);
+
+                $actor = auth()->user();
+                assert($actor instanceof User);
+
+                $lines = [];
+
+                foreach (is_array($data['lines'] ?? null) ? $data['lines'] : [] as $row) {
+                    if (is_array($row) && is_string($row['id'] ?? null) && ($row['selected'] ?? false) === true) {
+                        $lines[$row['id']] = is_string($row['quantity'] ?? null) ? $row['quantity'] : '';
+                    }
+                }
+
+                // The repeater keys its rows with its own ids; a refused quantity is reported under the key of its row.
+                $rowKeys = [];
+                $raw = $action->getRawData();
+
+                foreach (is_array($raw['lines'] ?? null) ? $raw['lines'] : [] as $key => $row) {
+                    if (is_array($row) && is_string($row['id'] ?? null)) {
+                        $rowKeys[$row['id']] = (string) $key;
+                    }
+                }
+
+                $this->issueCredit(fn (): Invoice => app(IssueCreditNote::class)->partial($actor, $this->invoice(), $lines), $rowKeys);
+            });
+    }
+
+    /**
+     * Runs one of the two credit writes and shows what came of it: the toast and the credit note with the e-mail
+     * dialog requested on success, the field errors under the dialog for a refused quantity, a danger notification
+     * for a document that cannot be credited (anymore) or for a failure, whose cause goes to the log only.
+     *
+     * @param  Closure(): Invoice  $write
+     * @param  array<string, string>  $rowKeys  item id to the key of its row in the dialog
+     */
+    private function issueCredit(Closure $write, array $rowKeys = []): void
+    {
+        try {
+            $credit = $write();
+        } catch (AuthorizationException $exception) {
+            throw $exception;
+        } catch (ValidationException $exception) {
+            if (array_key_exists('invoice', $exception->errors())) {
+                // Cancelled or credited elsewhere in the meantime: say why and show the state as it is now.
+                Notification::make()
+                    ->danger()
+                    ->title(__('invoices.issue.failed_title'))
+                    ->body(implode(' ', array_merge(...array_values($exception->errors()))))
+                    ->persistent()
+                    ->send();
+
+                $this->redirect(InvoiceResource::getUrl('view', ['record' => $this->invoice()]));
+
+                return;
+            }
+
+            throw self::creditErrorsUnderModal($exception, $rowKeys);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            Notification::make()
+                ->danger()
+                ->title(__('invoices.issue.failed_title'))
+                ->body(__('invoices.issue.failed_body'))
+                ->persistent()
+                ->send();
+
+            return;
+        }
+
+        Notification::make()->success()->title(__('invoices.credit.storno.toast', ['number' => (string) $credit->number]))->send();
+
+        $this->redirect(InvoiceResource::getUrl('view', ['record' => $credit, 'send' => 1]));
+    }
+
+    /**
+     * The Action reports `lines.<item id>` for a refused quantity and `lines` for an empty selection or a total above
+     * the invoice; the form of the modal lives under the action state path, the quantity inside its row.
+     *
+     * @param  array<string, string>  $rowKeys  item id to the key of its row in the dialog
+     */
+    private static function creditErrorsUnderModal(ValidationException $exception, array $rowKeys): ValidationException
+    {
+        $mapped = [];
+
+        foreach ($exception->errors() as $key => $messages) {
+            $itemId = str_starts_with((string) $key, 'lines.') ? substr((string) $key, 6) : null;
+            $path = 'mountedActions.0.data.'.($itemId === null ? 'lines' : 'lines.'.($rowKeys[$itemId] ?? $itemId).'.quantity');
+            $mapped[$path] = [...($mapped[$path] ?? []), ...$messages];
+        }
+
+        return ValidationException::withMessages($mapped);
+    }
+
+    /**
+     * The lines of the invoice in order with what each can still be credited, read once per request.
+     *
+     * @return array<string, array{description: string, original: InvoiceQuantity, unit: string, left: InvoiceQuantity}>
+     */
+    private function creditRows(): array
+    {
+        if ($this->creditRows !== null) {
+            return $this->creditRows;
+        }
+
+        $invoice = $this->invoice();
+        $left = app(IssueCreditNote::class)->creditable($invoice);
+        $rows = [];
+
+        foreach (InvoiceItem::query()->where('invoice_id', $invoice->id)->orderBy('position')->get() as $item) {
+            $rows[$item->id] = [
+                'description' => $item->description,
+                'original' => $item->quantity(),
+                'unit' => $item->unit,
+                'left' => $left[$item->id] ?? InvoiceQuantity::fromDecimal('0'),
+            ];
+        }
+
+        return $this->creditRows = $rows;
+    }
+
+    /**
+     * The row a form component sits in, found by the id of the invoice line its repeater item carries. An id that is
+     * no line of this invoice (a forged state) has nothing creditable.
+     *
+     * @return array{description: string, original: InvoiceQuantity, unit: string, left: InvoiceQuantity}
+     */
+    private function creditRow(Get $get): array
+    {
+        $key = $get('id');
+
+        return (is_string($key) ? $this->creditRows()[$key] ?? null : null) ?? [
+            'description' => '',
+            'original' => InvoiceQuantity::fromDecimal('0'),
+            'unit' => '',
+            'left' => InvoiceQuantity::fromDecimal('0'),
+        ];
+    }
+
+    /**
+     * The message under the quantity of a selected row, or null when the quantity is fine: a positive decimal not
+     * above what is left (N8).
+     */
+    private function quantityProblem(InvoiceQuantity $left, mixed $value): ?string
+    {
+        try {
+            $quantity = InvoiceQuantity::fromDecimal(is_string($value) || is_int($value) ? trim((string) $value) : '');
+        } catch (InvalidArgumentException|OverflowException) {
+            return (string) __('invoices.errors.item_quantity');
+        }
+
+        if (! $quantity->isPositive()) {
+            return (string) __('invoices.errors.item_quantity');
+        }
+
+        return $quantity->compareTo($left) > 0 ? (string) __('invoices.errors.credit_quantity') : null;
+    }
+
+    /**
+     * The amount of one row as the issue would compute it, or the dash for a row that is not selected.
+     */
+    private function rowAmountText(Get $get): string
+    {
+        $key = $get('id');
+
+        if ($get('selected') !== true || ! is_string($key)) {
+            return __('invoices.navigation.empty_value');
+        }
+
+        $amount = app(IssueCreditNote::class)->preview($this->invoice(), [$key => $get('quantity')])[$key] ?? null;
+
+        return $amount === null ? __('invoices.navigation.empty_value') : $amount->format('cs');
+    }
+
+    /**
+     * The negative total of the selected rows ("Dobropis celkem"), as the issue would compute the amounts.
+     */
+    private function creditTotal(mixed $lines): Money
+    {
+        $typed = [];
+
+        foreach (is_array($lines) ? $lines : [] as $row) {
+            if (is_array($row) && is_string($row['id'] ?? null) && ($row['selected'] ?? false) === true) {
+                $typed[$row['id']] = $row['quantity'] ?? null;
+            }
+        }
+
+        $total = Money::zero($this->invoice()->currency);
+
+        foreach (app(IssueCreditNote::class)->preview($this->invoice(), $typed) as $amount) {
+            $total = $total->plus($amount);
+        }
+
+        return $total;
     }
 
     public function infolist(Schema $schema): Schema

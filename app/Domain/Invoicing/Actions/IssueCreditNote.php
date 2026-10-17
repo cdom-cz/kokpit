@@ -25,6 +25,7 @@ use App\Domain\TimeTracking\Models\TimeEntry;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use OverflowException;
@@ -119,6 +120,52 @@ final readonly class IssueCreditNote
 
             return $credit;
         });
+    }
+
+    /**
+     * How much of each line can still be credited, for the dialog that offers the quantities. Read without the row
+     * lock, so it only informs: {@see self::partial()} and {@see self::storno()} judge the same figures again on the
+     * locked row.
+     *
+     * @return array<string, InvoiceQuantity> item id to the remaining creditable quantity
+     */
+    public function creditable(Invoice $invoice): array
+    {
+        return DB::transaction(static fn (): array => CreditableQuantities::for($invoice));
+    }
+
+    /**
+     * The amounts a credit note of these quantities would carry, line by line and negative, computed exactly as the
+     * issue computes them (a converted line through its frozen conversion, ruling R-23-4), for the live total of the
+     * dialog. Nothing is written or checked against what is creditable: a quantity that is no positive decimal, or a
+     * key that is no line of this invoice, simply has no amount.
+     *
+     * @param  array<array-key, mixed>  $lines  item id to the quantity typed, a decimal text
+     * @return array<string, Money> item id to the negative amount
+     */
+    public function preview(Invoice $invoice, array $lines): array
+    {
+        $quantities = [];
+
+        foreach ($lines as $itemId => $value) {
+            $quantity = self::quantityOf($value);
+
+            if ($quantity instanceof InvoiceQuantity && Str::isUuid((string) $itemId)) {
+                $quantities[(string) $itemId] = $quantity;
+            }
+        }
+
+        if ($quantities === []) {
+            return [];
+        }
+
+        $amounts = [];
+
+        foreach ($this->creditLines($invoice, $quantities) as $line) {
+            $amounts[$line['item']->id] = $line['amount'];
+        }
+
+        return $amounts;
     }
 
     private function lock(Invoice $invoice): Invoice

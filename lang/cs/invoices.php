@@ -545,6 +545,7 @@ return [
         'partial' => [
             'heading' => 'Dobropis k faktuře :number',
             'columns' => [
+                'select' => 'Vybrat',
                 'item' => 'Položka',
                 'original_quantity' => 'Původní množství',
                 'credit_quantity' => 'Množství k dobropisu',
