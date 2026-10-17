@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-05-PLAN.md
-last_updated: "2026-10-17T06:40:09.288Z"
+stopped_at: Completed 10-06-PLAN.md
+last_updated: "2026-10-17T07:08:34.279Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 126f79527034bd7132fcbbeec81225debd43e73b
+state_head: 444cfea2f319571ceda347e08473e51a1d2bbfe7
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 190
+  completed_plans: 191
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 7 of 41
+Plan: 8 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -253,6 +253,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P04 | 12 min | 3 tasks | 6 files |
 | Phase 10 P33 | 10 min | 2 tasks | 8 files |
 | Phase 10 P05 | 40 min | 3 tasks | 11 files |
+| Phase 10 P06 | 40 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -621,6 +622,9 @@ Recent decisions affecting current work:
 - [Phase 10]: R-33-1: InvoiceKind is its own enum with numberingKind() and carriesPayment(); R-33-2: InvoiceStatus is the display enum of the derived state
 - [Phase 10]: R-33-3: InvoiceEmailState has a Sending claim state labelled 'Odesílá se'; Converted and AwaitingInvoice read 'Zaplaceno' for the Partner (T-10-82)
 - [Phase 10]: 10-05: cancelled has one definition (issued storno credit note); InvoiceItemPolicy reads the document through the Partner-scoped relation
+- [Phase 10]: Phase 10 P06: reservation of time is the single column time_entries.invoice_id, released only by an issued storno credit note (link guard in the database)
+- [Phase 10]: Phase 10 P06: a payment is never updated and is deleted only under the transaction-local flag kokpit.payment_deletion, together with its income (deferred pair check)
+- [Phase 10]: Phase 10 P06: the PDF link lives on invoice_admin.pdf_document_id and changes only from null to an own file or by deleting the file (ON DELETE SET NULL)
 
 ### Pending Todos
 
@@ -676,6 +680,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T06:40:08.289Z
-Stopped at: Completed 10-05-PLAN.md
+Last session: 2026-10-17T07:08:33.339Z
+Stopped at: Completed 10-06-PLAN.md
 Resume file: None
