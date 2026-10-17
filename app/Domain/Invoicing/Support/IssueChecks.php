@@ -6,9 +6,11 @@ namespace App\Domain\Invoicing\Support;
 
 use App\Domain\ExchangeRates\ExchangeRateConverter;
 use App\Domain\ExchangeRates\ExchangeRateMissing;
+use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Settings\Numbering\InvalidNumberPattern;
 use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\NumberingSettings;
@@ -21,6 +23,9 @@ use Illuminate\Validation\ValidationException;
  * allocated, each with its Czech message. The UI asks {@see IssueChecks::blockers()} to show the list without
  * throwing; the issue pipeline asks {@see IssueChecks::assertIssuable()} on the locked row, so a stale page cannot
  * freeze an incomplete document (T-10-32).
+ *
+ * A draft whose lines are priced in other currencies needs the CNB list of each of them on the issue date, a
+ * `cnb_missing` blocker for every currency without one (EX-03, ruling R-17-1).
  *
  * The chronology blocker here is advisory: the authoritative check runs after the allocation, under the sequence
  * lock, in the issuer (ruling R-12-1). A stored number pattern that the pattern rule of plan 10-07 refuses is the
@@ -68,6 +73,12 @@ final readonly class IssueChecks
             $add('cnb_missing', ['currency' => $draft->currency, 'date' => self::czechDate($issueDate)]);
         }
 
+        foreach ($this->lineCurrencies($draft) as $currency) {
+            if ($currency !== $draft->currency && ! $this->hasRate($currency, $issueDate)) {
+                $add('cnb_missing', ['currency' => $currency, 'date' => self::czechDate($issueDate)]);
+            }
+        }
+
         if ($this->addressIncomplete($draft)) {
             $add('client_address_missing');
         }
@@ -98,7 +109,7 @@ final readonly class IssueChecks
     /**
      * @param  array{rate: string, unit_amount: int, rate_date: string}|null  $exchangeSnapshot
      *
-     * @throws ValidationException keyed by the key of every blocker
+     * @throws ValidationException keyed by the key of every blocker, a key with the message of each of its blockers
      */
     public function assertIssuable(Invoice $draft, string $today, ?array $exchangeSnapshot = null): void
     {
@@ -108,7 +119,13 @@ final readonly class IssueChecks
             return;
         }
 
-        throw ValidationException::withMessages(array_column($blockers, 'message', 'key'));
+        $messages = [];
+
+        foreach ($blockers as $blocker) {
+            $messages[$blocker['key']][] = $blocker['message'];
+        }
+
+        throw ValidationException::withMessages($messages);
     }
 
     /**
@@ -162,6 +179,32 @@ final readonly class IssueChecks
         }
 
         return false;
+    }
+
+    /**
+     * The currencies, other than CZK, that the hourly rates of the converted time lines are in: the lines the issue
+     * prices with a CNB list (generated from time, price not typed by hand, rate in another currency than the
+     * document, not yet frozen).
+     *
+     * @return list<string>
+     */
+    private function lineCurrencies(Invoice $draft): array
+    {
+        /** @var list<string> $currencies */
+        $currencies = InvoiceItemSource::query()
+            ->where('invoice_id', $draft->id)
+            ->where('origin', InvoiceItemOrigin::Time->value)
+            ->where('price_manual', false)
+            ->whereNull('conversion_snapshot')
+            ->whereNotNull('source_rate_currency')
+            ->where('source_rate_currency', '<>', $draft->currency)
+            ->where('source_rate_currency', '<>', 'CZK')
+            ->distinct()
+            ->orderBy('source_rate_currency')
+            ->pluck('source_rate_currency')
+            ->all();
+
+        return $currencies;
     }
 
     private function hasRate(string $currency, string $day): bool
