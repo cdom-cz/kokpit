@@ -2,27 +2,54 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
+use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Actions\ConvertProforma;
+use App\Domain\Invoicing\Actions\CreateDraft;
+use App\Domain\Invoicing\Actions\DeletePayment;
+use App\Domain\Invoicing\Actions\IssueCreditNote;
+use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
+use App\Domain\Invoicing\Actions\RecordPayment;
+use App\Domain\Invoicing\Actions\UpdateDraft;
+use App\Domain\Invoicing\Enums\InvoiceEmailState;
+use App\Domain\Invoicing\Enums\InvoiceStatus;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoicePayment;
+use App\Domain\Invoicing\Queries\ReceivablesReader;
+use App\Domain\Invoicing\Support\InvoicePdfUrl;
+use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Money\Money;
+use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Partner\Resources\PartnerInvoiceResource;
 use App\Filament\Partner\Resources\PartnerInvoiceResource\Pages\ListPartnerInvoices;
+use App\Filament\Partner\Resources\PartnerInvoiceResource\Pages\ViewPartnerInvoice;
+use App\Filament\Resources\ClientResource;
+use App\Filament\Resources\ClientResource\Pages\ViewClient;
+use App\Filament\Resources\ClientResource\RelationManagers\ClientInvoicesRelationManager;
+use App\Filament\Resources\ClientResource\Widgets\ClientOverviewStats;
 use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
+use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEmailsRelationManager;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEntriesRelationManager;
+use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelationManager;
+use App\Filament\Resources\TransactionResource;
+use App\Filament\Widgets\UnpaidInvoices;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Filament\Notifications\Livewire\DatabaseNotifications;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use Symfony\Component\Mailer\Exception\TransportException;
+use Symfony\Component\Mailer\SentMessage;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\InvoiceFixtures;
@@ -401,5 +428,309 @@ describe('bell and search', function (): void {
         $this->actingAs($this->partnerA);
 
         $this->get('/admin/activity')->assertForbidden();
+    });
+});
+
+describe('the Admin invoicing surfaces, each refused to a Partner and open to the Admin', function (): void {
+    it('refuses the transactions screen and the income of a payment to a Partner, and shows them to the Admin', function (): void {
+        $income = invoiceLeakSystem(fn (): Transaction => Transaction::query()->where('invoice_id', $this->a['invoice']->id)->firstOrFail());
+
+        $this->actingAs($this->admin);
+        $this->get(TransactionResource::getUrl('index'))->assertOk();
+        $this->get(TransactionResource::getUrl('edit', ['record' => $income]))->assertOk();
+
+        $this->actingAs($this->partnerA);
+
+        foreach ([TransactionResource::getUrl('index'), TransactionResource::getUrl('edit', ['record' => $income]), TransactionResource::getUrl('create')] as $url) {
+            $response = $this->get($url);
+            $response->assertForbidden();
+
+            invoiceLeakAssertClean((string) $response->getContent(), $url, invoiceLeakHidden());
+        }
+    });
+
+    it('refuses every relation manager of an invoice and the client panels, and the dashboard card, to a Partner', function (): void {
+        $invoice = $this->a['invoice'];
+        $client = $this->clientA;
+        $managers = [InvoiceEntriesRelationManager::class, InvoicePaymentsRelationManager::class, InvoiceEmailsRelationManager::class];
+
+        $this->actingAs($this->admin);
+
+        foreach ($managers as $manager) {
+            Livewire::test($manager, ['ownerRecord' => $invoice, 'pageClass' => ViewInvoice::class])->assertSuccessful();
+        }
+
+        Livewire::test(ClientInvoicesRelationManager::class, ['ownerRecord' => $client, 'pageClass' => ViewClient::class])->assertSuccessful();
+        Livewire::test(ClientOverviewStats::class, ['record' => $client])->assertSuccessful();
+        Livewire::test(UnpaidInvoices::class)->assertSuccessful();
+        Livewire::test(ViewInvoice::class, ['record' => $invoice->getRouteKey()])->assertSuccessful();
+
+        $this->actingAs($this->partnerA);
+
+        foreach ($managers as $manager) {
+            Livewire::test($manager, ['ownerRecord' => $invoice, 'pageClass' => ViewInvoice::class])->assertForbidden();
+        }
+
+        Livewire::test(ClientInvoicesRelationManager::class, ['ownerRecord' => $client, 'pageClass' => ViewClient::class])->assertForbidden();
+        Livewire::test(ClientOverviewStats::class, ['record' => $client])->assertForbidden();
+        Livewire::test(UnpaidInvoices::class)->assertForbidden();
+        Livewire::test(ViewInvoice::class, ['record' => $invoice->getRouteKey()])->assertForbidden();
+
+        $this->get(ClientResource::getUrl('view', ['record' => $client->id]))->assertForbidden();
+    });
+
+    it('refuses the Admin creation, edit and activity routes of the invoicing to a Partner, with an Admin positive on each', function (): void {
+        $draft = $this->a['draft'];
+        $urls = [
+            InvoiceResource::getUrl('index'),
+            InvoiceResource::getUrl('view', ['record' => $this->a['invoice']]),
+            InvoiceResource::getUrl('edit', ['record' => $draft]),
+            '/admin/activity',
+        ];
+
+        $this->actingAs($this->admin);
+
+        foreach ($urls as $url) {
+            $this->get($url)->assertOk();
+        }
+
+        $this->actingAs($this->partnerA);
+
+        foreach ($urls as $url) {
+            $this->get($url)->assertForbidden();
+        }
+    });
+
+    it('lets a Partner meet no invoice number, amount or note on the dashboard, and nothing in the bell or the activity views', function (): void {
+        $this->actingAs($this->admin);
+
+        $adminDashboard = (string) $this->get('/admin')->assertOk()->getContent();
+
+        expect($adminDashboard)->toContain('Nezaplacené faktury');
+
+        $this->actingAs($this->partnerA);
+
+        $dashboard = invoiceLeakSurface((string) $this->get('/admin')->assertOk()->getContent());
+
+        foreach (['invoice', 'unpaid', 'proforma', 'cancelled', 'credit_note', 'eur'] as $key) {
+            expect($dashboard)->not->toContain($this->a[$key]->number);
+        }
+
+        foreach ([Money::ofMinor($this->a['unpaid']->total_minor, 'CZK')->format('cs'), $this->a['canaries']['invoice_note'], $this->a['canaries']['payment_note']] as $text) {
+            expect($dashboard)->not->toContain($text);
+        }
+
+        expect($this->partnerA->notifications()->count())->toBe(0)
+            ->and(Livewire::test(DatabaseNotifications::class)->html())->not->toContain($this->a['invoice']->number);
+    });
+});
+
+/**
+ * One finished block of tracked time on a project, as the Admin's own time.
+ */
+function invoiceFlowEntry(object $project, string $day, string $from, string $to, string $description): TimeEntry
+{
+    $factory = TimeEntry::factory()->forProject($project);
+
+    return invoiceLeakSystem(static fn (): TimeEntry => TimeEntry::query()->findOrFail($factory->create([
+        'user_id' => test()->admin->id,
+        'started_at' => CarbonImmutable::parse($day.' '.$from, 'UTC'),
+        'ended_at' => CarbonImmutable::parse($day.' '.$to, 'UTC'),
+        'description' => $description,
+    ])->id));
+}
+
+/**
+ * A time draft of one project and September.
+ */
+function invoiceFlowDraft(User $admin, Client $client, string $projectId, string $kind): Invoice
+{
+    return app(CreateDraft::class)->handle($admin, [
+        'client_id' => $client->id,
+        'kind' => $kind,
+        'source' => 'time',
+        'period_from' => '2026-09-01',
+        'period_to' => '2026-09-30',
+        'project_ids' => [$projectId],
+        'without_project' => false,
+        'grouping' => 'project',
+    ]);
+}
+
+/**
+ * The stored row of a time entry, read as a system run.
+ */
+function invoiceFlowFresh(TimeEntry $entry): TimeEntry
+{
+    return invoiceLeakSystem(static fn (): TimeEntry => TimeEntry::query()->findOrFail($entry->id));
+}
+
+describe('the whole phase, end to end', function (): void {
+    it('turns tracked time into a paid, converted and cancelled set of documents and shows the Partner of the client only the issued result', function (): void {
+        Mail::getSymfonyTransport()->flush();
+        $admin = $this->admin;
+        $this->actingAs($admin);
+
+        $client = InvoiceFixtures::client(['invoice_email' => 'billing@example.com']);
+        $secrets = [Canary::canary('flow_note'), Canary::canary('flow_time'), Canary::canary('flow_payment'), Canary::canary('flow_mistake')];
+
+        $work = app(CreateProject::class)->handle($client, ['name' => 'Flow work project', 'key' => Canary::projectKey(), 'billing_type' => 'hourly', 'hourly_rate' => '1000']);
+        $advance = app(CreateProject::class)->handle($client, ['name' => 'Flow advance project', 'key' => Canary::projectKey(), 'billing_type' => 'hourly', 'hourly_rate' => '1000']);
+
+        $workEntries = [
+            invoiceFlowEntry($work, '2026-09-10', '08:00:00', '10:00:00', $secrets[1]),
+            invoiceFlowEntry($work, '2026-09-11', '08:00:00', '09:30:00', $secrets[1]),
+        ];
+        $advanceEntry = invoiceFlowEntry($advance, '2026-09-15', '08:00:00', '10:00:00', $secrets[1]);
+
+        // 1. A draft from time, a manual line added, issued with its PDF.
+        $draft = invoiceFlowDraft($admin, $client, $work->id, 'invoice');
+        $lines = $draft->items()->orderBy('position')->get()->map(static fn ($line): array => [
+            'id' => $line->id,
+            'description' => $line->description,
+            'quantity' => $line->quantity,
+            'unit' => $line->unit,
+            'unit_price' => Money::ofMinor($line->unit_price_minor, 'CZK')->toMajor(),
+        ])->all();
+        $draft = app(UpdateDraft::class)->handle($admin, $draft, ['internal_note' => $secrets[0], 'items' => [...$lines, InvoiceFixtures::item('Flow consulting', '1', '500.00', 'pcs')]]);
+
+        expect($draft->total_minor)->toBe(400000);
+
+        $invoice = app(IssueDocument::class)->handle($admin, $draft);
+
+        expect($invoice->isIssued())->toBeTrue()
+            ->and($invoice->number)->not->toBeEmpty()
+            ->and(invoiceLeakSystem(static fn (): ?InvoiceAdmin => InvoiceAdmin::query()->where('invoice_id', $invoice->id)->first())?->pdfDocument)->not->toBeNull();
+
+        foreach ($workEntries as $entry) {
+            expect(invoiceFlowFresh($entry)->billing_state)->toBe(BillingState::Billed)
+                ->and(invoiceFlowFresh($entry)->invoice_id)->toBe($invoice->id);
+        }
+
+        // 2. The e-mail is queued and sent once, with the PDF.
+        $defaults = app(QueueInvoiceEmail::class)->defaults($invoice);
+        $mail = app(QueueInvoiceEmail::class)->handle($admin, $invoice, [
+            'recipient' => (string) $defaults['recipient'],
+            'subject' => $defaults['subject'],
+            'body' => $defaults['body'],
+            'attach_work_report' => false,
+        ]);
+
+        expect(iterator_to_array(Mail::getSymfonyTransport()->messages()))->toHaveCount(1)
+            ->and(Mail::getSymfonyTransport()->messages()->first())->toBeInstanceOf(SentMessage::class)
+            ->and(invoiceLeakSystem(static fn (): InvoiceEmailState => InvoiceEmail::query()->findOrFail($mail->id)->state))->toBe(InvoiceEmailState::Sent);
+
+        // 3. A partial payment, then a mistaken second one that is deleted together with its income.
+        $proformaDraft = invoiceFlowDraft($admin, $client, $advance->id, 'proforma');
+        $proforma = app(IssueDocument::class)->handle($admin, $proformaDraft);
+
+        $first = app(RecordPayment::class)->handle($admin, $invoice, ['amount' => '1500.00', 'paid_on' => '2026-10-14', 'note' => $secrets[2]]);
+        $mistake = app(RecordPayment::class)->handle($admin, $invoice, ['amount' => '1000.00', 'paid_on' => '2026-10-14', 'note' => $secrets[3]]);
+
+        expect(Transaction::query()->where('invoice_id', $invoice->id)->count())->toBe(2);
+
+        app(DeletePayment::class)->handle($admin, $mistake);
+
+        expect(Transaction::query()->where('invoice_id', $invoice->id)->count())->toBe(1)
+            ->and(Transaction::query()->where('invoice_payment_id', $mistake->id)->exists())->toBeFalse()
+            ->and(InvoicePayment::query()->where('invoice_id', $invoice->id)->pluck('id')->all())->toBe([$first->id]);
+
+        // 4. The due date passes: the invoice is overdue in the reader and on the dashboard card.
+        $this->travelTo(CarbonImmutable::parse('2026-11-05 09:30:00', 'Europe/Prague'));
+
+        $status = app(ReceivablesReader::class)->statuses([Invoice::query()->findOrFail($invoice->id)], ReceivablesReader::today())[$invoice->id];
+
+        expect($status['status'])->toBe(InvoiceStatus::Overdue)
+            ->and($status['overdue_days'])->toBe(8)
+            ->and($status['remaining']?->minor)->toBe(250000)
+            ->and(app(ReceivablesReader::class)->summary(ReceivablesReader::today())['overdue']['count'])->toBeGreaterThan(0);
+
+        Livewire::test(UnpaidInvoices::class)->assertSee('Po splatnosti');
+
+        // 5. The rest is paid: nothing is owed and the income sits in the system category.
+        $rest = app(RecordPayment::class)->handle($admin, $invoice, ['amount' => '2500.00', 'paid_on' => '2026-11-05']);
+        $status = app(ReceivablesReader::class)->statuses([Invoice::query()->findOrFail($invoice->id)], ReceivablesReader::today())[$invoice->id];
+        $income = Transaction::query()->where('invoice_payment_id', $rest->id)->sole();
+
+        expect($status['status'])->toBe(InvoiceStatus::Paid)
+            ->and($income->amount_minor)->toBe(250000)
+            ->and($income->transaction_date->toDateString())->toBe('2026-11-05')
+            ->and($income->isPaymentIncome())->toBeTrue();
+
+        // 6. The proforma is paid (no income yet) and converted: an invoice, its income at the payment date, time moved.
+        app(RecordPayment::class)->handle($admin, $proforma, ['amount' => '2000.00', 'paid_on' => '2026-11-04']);
+
+        expect(Transaction::query()->where('invoice_id', $proforma->id)->count())->toBe(0);
+
+        $converted = app(ConvertProforma::class)->handle($admin, $proforma);
+        $carried = Transaction::query()->where('invoice_id', $converted->id)->sole();
+
+        expect($converted->isIssued())->toBeTrue()
+            ->and($converted->proforma_id)->toBe($proforma->id)
+            ->and($carried->amount_minor)->toBe(200000)
+            ->and($carried->transaction_date->toDateString())->toBe('2026-11-04')
+            ->and(invoiceFlowFresh($advanceEntry)->invoice_id)->toBe($converted->id)
+            ->and(invoiceFlowFresh($advanceEntry)->billing_state)->toBe(BillingState::Billed);
+
+        // 7. The first invoice is cancelled: its time is unbilled again and a credit note is issued.
+        $credit = app(IssueCreditNote::class)->storno($admin, $invoice);
+
+        expect($credit->isIssued())->toBeTrue()
+            ->and($credit->credited_invoice_id)->toBe($invoice->id)
+            ->and(Invoice::query()->findOrFail($invoice->id)->isCancelled())->toBeTrue();
+
+        foreach ($workEntries as $entry) {
+            expect(invoiceFlowFresh($entry)->billing_state)->toBe(BillingState::Unbilled)
+                ->and(invoiceFlowFresh($entry)->invoice_id)->toBeNull();
+        }
+
+        // A draft that stays a draft, to prove the Partner never meets it.
+        $leftover = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Flow leftover draft', '1', '777.00')]);
+
+        // 8. The Partner of the client sees the issued documents in their Partner states, and nothing else.
+        $partner = Canary::partnerFor($client->id);
+        $this->actingAs($partner);
+
+        $seen = Invoice::query()->where('client_id', $client->id)->pluck('id')->all();
+        sort($seen);
+        $expected = [$invoice->id, $proforma->id, $converted->id, $credit->id];
+        sort($expected);
+
+        expect($seen)->toBe($expected)
+            ->and(Invoice::query()->whereKey($leftover->id)->exists())->toBeFalse()
+            ->and(InvoicePayment::query()->count())->toBe(0)
+            ->and(TimeEntry::query()->count())->toBe(0);
+
+        // The project names are the printed line texts of the issued documents, so they belong on the Partner's page.
+        $hidden = [...$secrets, $leftover->id, 'Flow leftover draft'];
+        $list = (string) $this->get(PartnerInvoiceResource::getUrl())->assertOk()->getContent();
+
+        invoiceLeakAssertClean($list, 'the flow list', $hidden);
+
+        $states = [$invoice->id => 'Stornováno', $proforma->id => 'Zaplaceno', $converted->id => 'Zaplaceno', $credit->id => 'Dobropis'];
+
+        foreach ([$invoice, $proforma, $converted, $credit] as $document) {
+            $html = (string) $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $document]))
+                ->assertOk()
+                ->assertSee($document->number)
+                ->assertSee($states[$document->id])
+                ->getContent();
+
+            invoiceLeakAssertClean($html, 'the flow detail of '.$document->number, $hidden);
+        }
+
+        $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $leftover->id]))->assertNotFound();
+
+        $component = Livewire::test(ViewPartnerInvoice::class, ['record' => $converted->getKey()])->callAction('downloadPdf');
+
+        expect(parse_url((string) ($component->effects['redirect'] ?? ''), PHP_URL_PATH))->toBe(parse_url(InvoicePdfUrl::download($converted, $partner), PHP_URL_PATH));
+
+        $this->get((string) $component->effects['redirect'])->assertOk()->assertHeader('content-type', 'application/pdf');
+
+        // The same flow's secrets are the Admin's: the Admin reads the note and the payment rows.
+        $this->actingAs($admin);
+
+        expect(invoiceLeakSystem(static fn (): ?string => InvoiceAdmin::query()->where('invoice_id', $invoice->id)->value('internal_note')))->toBe($secrets[0])
+            ->and(InvoicePayment::query()->where('invoice_id', $invoice->id)->pluck('note')->all())->toContain($secrets[2])->not->toContain($secrets[3]);
     });
 });
