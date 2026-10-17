@@ -292,6 +292,27 @@ final readonly class Money implements JsonSerializable
     }
 
     /**
+     * The amount of an invoice line: this unit price times a quantity, rounded once at the single rounding point.
+     *
+     * The factor is the canonical decimal text of a quantity (`InvoiceQuantity::toDecimal()`, ruling R-01-3), so
+     * this class does not depend on the Invoicing domain. The product is exact and {@see Money::fromExactMinor()}
+     * rounds it HALF_UP, away from zero for a negative credit-note quantity. This is the number the PostgreSQL
+     * CHECK `round(quantity * unit_price_minor) = amount_minor` on `invoice_items` computes (plan 10-04), so the
+     * editor, the printed document and the database agree.
+     *
+     * @param  string  $decimalFactor  an optional minus sign, up to ten digits and an optional point with at most four fraction digits; no comma, no exponent, no plus sign
+     *
+     * @throws InvalidArgumentException when the factor is malformed
+     * @throws OverflowException when the rounded amount does not fit into an integer
+     */
+    public function times(string $decimalFactor): self
+    {
+        $exact = BigRational::of($this->minor)->multipliedBy(self::validFactor($decimalFactor));
+
+        return self::fromExactMinor($exact->toString(), $this->currency);
+    }
+
+    /**
      * Formats the amount for display in a locale, for example "cs" gives "1 234,50 Kč".
      *
      * @throws InvalidArgumentException when the locale is unknown or the amount cannot be formatted exactly
@@ -324,6 +345,18 @@ final readonly class Money implements JsonSerializable
         } catch (UnknownCurrencyException $e) {
             throw new InvalidArgumentException('The currency is not a known ISO 4217 code.', 0, $e);
         }
+    }
+
+    /**
+     * @throws InvalidArgumentException when the text is not a decimal with at most ten integer and four fraction digits
+     */
+    private static function validFactor(string $decimalFactor): BigDecimal
+    {
+        if (preg_match('/^-?\d{1,10}(\.\d{1,4})?$/D', $decimalFactor) !== 1) {
+            throw new InvalidArgumentException('The factor must be a decimal string with at most four fraction digits.');
+        }
+
+        return BigDecimal::of($decimalFactor);
     }
 
     /**
