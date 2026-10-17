@@ -95,10 +95,11 @@ final readonly class DocumentPalette
      */
     private static function toRgb(string $hex): array
     {
+        // Floats on purpose: hexdec() and an exact division give an int, and the grey test below compares floats.
         return [
-            hexdec(substr($hex, 1, 2)) / 255,
-            hexdec(substr($hex, 3, 2)) / 255,
-            hexdec(substr($hex, 5, 2)) / 255,
+            hexdec(substr($hex, 1, 2)) / 255.0,
+            hexdec(substr($hex, 3, 2)) / 255.0,
+            hexdec(substr($hex, 5, 2)) / 255.0,
         ];
     }
 
@@ -126,7 +127,7 @@ final readonly class DocumentPalette
         $lightness = ($max + $min) / 2;
         $delta = $max - $min;
 
-        if ($delta === 0.0) {
+        if ($delta < 1.0E-9) {
             return [0.0, 0.0, $lightness];
         }
 

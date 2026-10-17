@@ -149,6 +149,31 @@ it('derives the on-accent text of the default accent as the ink colour', functio
     expect($palette->onAccent)->toBe($palette->ink);
 });
 
+it('shows the sample strip with the measured contrast of the total bar and follows the accent', function (): void {
+    $this->actingAs(Canary::admin());
+
+    $line = static fn (string $accent): string => 'Kontrast textu na součtu: '
+        .number_format(DocumentPalette::fromAccent($accent)->onAccentContrast(), 1, ',', '').':1';
+
+    Livewire::test(SettingsPage::class)
+        ->assertSee($line('#ff6f00'))
+        ->set('data.invoicing.document_accent_color', '#1d4ed8')
+        ->assertSee($line('#1d4ed8'))
+        ->assertDontSee($line('#ff6f00'));
+
+    expect($line('#ff6f00'))->not->toBe($line('#1d4ed8'));
+});
+
+it('falls back to the default sample for a value that is not a colour, so nothing typed reaches the style', function (): void {
+    $this->actingAs(Canary::admin());
+
+    $page = Livewire::test(SettingsPage::class)
+        ->set('data.invoicing.document_accent_color', 'red;} body{display:none')
+        ->assertSee('background:#ff6f00');
+
+    expect($page->html())->not->toMatch('/style="[^"]*display:none/');
+});
+
 it('refuses the settings page to a Partner, including the appearance fields', function (): void {
     $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]))
         ->get('/admin/settings')
