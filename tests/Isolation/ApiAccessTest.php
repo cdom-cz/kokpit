@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\ApiAbility;
+use App\Domain\Shared\Auth\PartnerContext;
 use Filament\Facades\Filament;
 use Illuminate\Pagination\Cursor;
 use Illuminate\Routing\Route as LaravelRoute;
@@ -86,7 +88,12 @@ it('finds at least one api/v1 route, so the walk is not vacuous', function (): v
  */
 function apiWalkProblems(array $routes): array
 {
-    $limits = [ApiAbility::TimeRead->value => 'throttle:api-read', ApiAbility::TimeWrite->value => 'throttle:api-write'];
+    $limits = [
+        ApiAbility::TimeRead->value => 'throttle:api-read',
+        ApiAbility::TimeWrite->value => 'throttle:api-write',
+        ApiAbility::FinanceRead->value => 'throttle:api-read',
+        ApiAbility::FinanceWrite->value => 'throttle:api-write',
+    ];
     $problems = [];
 
     foreach ($routes as $route) {
@@ -190,7 +197,9 @@ it('finds the list routes of the walk, so the forged cursor tests are not vacuou
     $paths = array_map(static fn (LaravelRoute $route): string => $route->uri(), apiWalkListRoutes());
 
     expect($paths)->toContain('api/v1/time-entries')
-        ->and($paths)->toContain('api/v1/clients');
+        ->and($paths)->toContain('api/v1/clients')
+        ->and($paths)->toContain('api/v1/transactions')
+        ->and($paths)->toContain('api/v1/transaction-categories');
 });
 
 it('answers 401 to a guest with a forged cursor on every list route, never 422 or 500', function (): void {
@@ -238,6 +247,41 @@ describe('with canaries of two clients seeded', function (): void {
     it('lets an Admin token read the seeded canaries, so the proof below is not vacuous', function (): void {
         $token = ApiFixtures::token(Canary::admin(), ApiAbility::values());
         $body = $this->withToken($token)->getJson('/api/v1/time-entries?per_page=200')->assertOk()->getContent();
+
+        expect($body)->toContain($this->canaryA)
+            ->and($body)->toContain($this->canaryB);
+    });
+
+    it('lets a finance:read token read the transaction canary of a client by UUID', function (): void {
+        $id = app(PartnerContext::class)->runAsSystem(
+            fn (): string => Transaction::query()->where('counterparty', $this->canaryA)->sole()->id,
+        );
+
+        $response = $this->withToken(ApiFixtures::token(Canary::admin(), [ApiAbility::FinanceRead->value]))
+            ->getJson('/api/v1/transactions/'.$id)
+            ->assertOk();
+
+        expect(array_keys($response->json('data')))->toBe([
+            'id', 'type', 'transaction_date', 'category_id', 'amount_minor', 'currency', 'czk_minor', 'czk_source',
+            'exchange_rate', 'exchange_unit_amount', 'exchange_rate_date', 'description', 'counterparty',
+            'document_number', 'client_id', 'project_id', 'created_at', 'updated_at',
+        ])
+            ->and($response->json('data.id'))->toBe($id)
+            ->and($response->getContent())->toContain($this->canaryA)
+            ->and($response->getContent())->not->toContain($this->canaryB);
+    });
+
+    it('lets an Admin token with every ability read the transaction canaries of both clients from the list', function (): void {
+        $token = ApiFixtures::token(Canary::admin(), ApiAbility::values());
+        $body = $this->withToken($token)->getJson('/api/v1/transactions?per_page=200')->assertOk()->getContent();
+
+        expect($body)->toContain($this->canaryA)
+            ->and($body)->toContain($this->canaryB);
+    });
+
+    it('lets an Admin token with every ability read the transaction category canaries of both clients from the list', function (): void {
+        $token = ApiFixtures::token(Canary::admin(), ApiAbility::values());
+        $body = $this->withToken($token)->getJson('/api/v1/transaction-categories?per_page=200')->assertOk()->getContent();
 
         expect($body)->toContain($this->canaryA)
             ->and($body)->toContain($this->canaryB);

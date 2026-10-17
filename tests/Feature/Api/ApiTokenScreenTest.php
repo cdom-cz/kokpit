@@ -10,6 +10,7 @@ use App\Domain\Shared\Models\Activity;
 use App\Filament\Resources\ApiTokenResource\Pages\ListApiTokens;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\CheckboxList;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,7 @@ use Livewire\Livewire;
 use PragmaRX\Google2FAQRCode\Google2FA;
 use Tests\Support\ApiFixtures;
 use Tests\Support\Canary;
+use Tests\Support\FinanceApiFixtures;
 
 /*
  * The Admin-only API token screen (AP-01, AP-05; D-01 to D-04): list, create with
@@ -84,6 +86,63 @@ it('creates a token with password and code, shows it once, and the token reads t
         ->getJson('/api/v1/time-entries/'.$entry->id)
         ->assertOk()
         ->assertJsonPath('data.id', $entry->id);
+});
+
+/*
+ * Finance abilities on the screen (09.1, D-01): the Admin issues a finance token next to the time ones.
+ */
+
+it('creates a finance token through the screen that reads a transaction and is refused on the time API', function (): void {
+    $transaction = FinanceApiFixtures::transaction($this->admin);
+
+    // The fixture forgets the guards, so the Admin signs in again for the screen.
+    $this->actingAs($this->admin);
+
+    $page = Livewire::test(ListApiTokens::class)
+        ->callAction('createToken', screenCreateData($this, [
+            'name' => 'Example finance export',
+            'abilities' => ['finance:read', 'finance:write'],
+            'expiry' => 'none',
+        ]))
+        ->assertHasNoFormErrors()
+        ->assertActionMounted('showToken');
+
+    $plain = (string) $page->get('plainToken');
+    $row = PersonalAccessToken::query()->sole();
+
+    expect($row->abilities)->toBe(['finance:read', 'finance:write'])
+        ->and(str_starts_with($plain, $row->getKey().'|'))->toBeTrue();
+
+    Auth::forgetGuards();
+
+    $this->withToken($plain)
+        ->getJson('/api/v1/transactions/'.$transaction->id)
+        ->assertOk()
+        ->assertJsonPath('data.id', $transaction->id);
+
+    Auth::forgetGuards();
+
+    $this->withToken($plain)->getJson('/api/v1/time-entries')->assertForbidden();
+});
+
+it('offers all four abilities with their Czech labels and descriptions in the create modal', function (): void {
+    $labels = ['Čtení času', 'Zápis času', 'Čtení financí', 'Zápis financí'];
+    $descriptions = [
+        'time:read' => 'Seznam a detail časových záznamů a vyhledávání klientů, projektů a úkolů.',
+        'time:write' => 'Vytváření, úprava a mazání časových záznamů.',
+        'finance:read' => 'Seznam a detail příjmů a výdajů a kategorií transakcí.',
+        'finance:write' => 'Vytváření, úprava a mazání transakcí, také hromadně.',
+    ];
+
+    Livewire::test(ListApiTokens::class)
+        ->mountAction('createToken')
+        ->assertSchemaComponentExists('abilities', 'mountedActionSchema0', static function (CheckboxList $field) use ($labels, $descriptions): bool {
+            $options = $field->getOptions();
+
+            return array_keys($options) === array_keys($descriptions)
+                && array_values(array_map(static fn ($label): string => (string) $label, $options)) === $labels
+                && $field->getDescriptions() === $descriptions;
+        });
 });
 
 /*
@@ -535,7 +594,7 @@ it('renders none of the token strings on any page a Partner can open', function 
         ->unique()
         ->all();
 
-    $forbidden = ['API tokeny', 'API token', 'Nový API token', 'Zneplatnit token', 'Dokumentace API', 'Oprávnění', 'Čtení času', 'Zápis času'];
+    $forbidden = ['API tokeny', 'API token', 'Nový API token', 'Zneplatnit token', 'Dokumentace API', 'Oprávnění', 'Čtení času', 'Zápis času', 'Čtení financí', 'Zápis financí'];
 
     expect($urls)->not->toBe([]);
 

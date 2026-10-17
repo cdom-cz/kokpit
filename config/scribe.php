@@ -16,7 +16,7 @@ return [
     'title' => 'Kokpit API',
 
     // A short description of your API. Will be included in the docs webpage, Postman collection and OpenAPI spec.
-    'description' => 'REST API for reading and recording time entries, and for looking up clients, projects and tasks.',
+    'description' => 'REST API for reading and recording time entries, for reading and recording finance transactions and their categories, and for looking up clients, projects and tasks.',
 
     // Text to place in the "Introduction" section, right after the `description`. Markdown and HTML are supported.
     'intro_text' => <<<'INTRO'
@@ -24,10 +24,14 @@ return [
 
             ## Abilities
 
-            A token carries one or both abilities. A request whose token lacks the ability of the endpoint is refused with `403`.
+            A token carries one or more abilities. A request whose token lacks the ability of the endpoint is refused with `403`.
 
             - `time:read`: read time entries and look up clients, projects and tasks (GET endpoints).
             - `time:write`: create, change and delete time entries (POST, PATCH and DELETE endpoints).
+            - `finance:read`: read transactions and transaction categories (GET endpoints).
+            - `finance:write`: create, change and delete transactions (POST, PATCH and DELETE endpoints).
+
+            The time and the finance abilities are separate: a token with only `time:*` abilities is refused with `403` on every finance endpoint, and a token with only `finance:*` abilities is refused with `403` on every time entry and lookup endpoint.
 
             ## Rate limits
 
@@ -35,18 +39,21 @@ return [
 
             ## Lists and pagination
 
-            List endpoints are cursor paginated and answer `{"data": [...], "links": {...}, "meta": {...}}`. A page holds 50 items; ask for another size with `per_page` (1 to 200). To read the next page send the `meta.next_cursor` of the previous answer as `cursor`; when it is `null` there is no further page. The time entry list is newest first by start and breaks ties by id, so paging never skips or repeats an entry.
+            List endpoints are cursor paginated and answer `{"data": [...], "links": {...}, "meta": {...}}`. A page holds 50 items; ask for another size with `per_page` (1 to 200). To read the next page send the `meta.next_cursor` of the previous answer as `cursor`; when it is `null` there is no further page. The time entry list is newest first by start and breaks ties by id, so paging never skips or repeats an entry. The transaction list is newest first by transaction date and breaks ties by id for the same reason.
 
             ## Formats and errors
 
             - Instants are ISO 8601 with an offset, for example `2026-10-12T08:00:00+00:00`. Responses are in UTC.
             - Every key is always present. A value that does not exist is `null`: for example `ended_at` and `duration_seconds` of a running time entry, or `project_id` of an entry that has only a client.
+            - Amounts of transactions are integers in minor units, for example `amount_minor` in the currency of the transaction and `czk_minor` in Czech crowns, both counted in the smallest unit of the currency (for two-decimal currencies `123450` is 1234.50). The `currency` is an ISO 4217 code such as `CZK` or `EUR`.
+            - `transaction_date` is a day written as `YYYY-MM-DD`, with no time and no offset.
+            - `exchange_rate` is a decimal string, never a JSON number, so no digit is lost. The `czk_source` of a transaction tells where its Czech crown figure comes from and is one of `identity` (the transaction is in CZK), `cnb` (the rate of the Czech National Bank), `manual` (a rate entered by hand) or `custom` (an own rate of the transaction).
             - A validation error answers `422` with `{"message": "...", "errors": {"field": ["..."]}}`.
             - A conflict (for example a locked or running entry) answers `409` with `{"message": "...", "code": "..."}`.
 
             ## Retrying a create safely: the Idempotency-Key
 
-            The two create endpoints, `POST /api/v1/time-entries` and `POST /api/v1/time-entries/batch`, accept an optional `Idempotency-Key` header, so a request that timed out can be sent again without creating a second entry. PATCH, DELETE and GET ignore it.
+            The create endpoints, `POST /api/v1/time-entries`, `POST /api/v1/time-entries/batch`, `POST /api/v1/transactions` and `POST /api/v1/transactions/batch`, accept an optional `Idempotency-Key` header, so a request that timed out can be sent again without creating a second entry or transaction. PATCH, DELETE and GET ignore it.
 
             - Send 1 to 255 visible characters, a fresh value for every new request (a UUID works well). Keys belong to the token that sent them and are kept for 24 hours.
             - The same key with the same body does not create anything a second time: the answer stored for the first request is sent again, byte for byte, with the response header `Idempotent-Replayed: true`.
@@ -64,6 +71,12 @@ return [
             - A batch counts as one write against the rate limit of the token.
             - To retry a batch, send it again with the same `Idempotency-Key`: a stored `201` or `207` is replayed and nothing new is saved, and a `422` stored nothing, so the corrected batch can be sent with the same key. Do not resend only the failed items under the old key; that is a different body.
             - Keys protect only a retry of the same request. If a batch is sent again under a different key, or the server stops in the middle of a batch (for example a restart or a lost connection), items may already be saved: deduplicate on your side: store your own id in `external` (it comes back with every entry), and list the entries of the period before you resend.
+
+            `POST /api/v1/transactions/batch` records up to 500 transactions in one request and works the same way, with the list in `transactions`. Every item takes the fields of a single create and is saved on its own, in its own transaction.
+
+            - The answer has the layout above. An item that is not a JSON object fails under the field `transaction`, and so does an item that could not be saved because of a fault on the server: send such an item again in a new batch, with a new key.
+            - A list with no item, or with more than 500 transactions, answers `422` under `transactions` and saves nothing. A batch counts as one write against the rate limit of the token.
+            - A transaction has no field for an id of your own. Deduplicate on your side: `document_number`, the date and the counterparty are its natural keys, so list the transactions of the period before you send a batch again under a new key.
             INTRO,
 
     // The base URL displayed in the docs.
@@ -174,7 +187,7 @@ return [
         'placeholder' => '{YOUR_API_TOKEN}',
 
         // Any extra authentication-related info for your users. Markdown and HTML are supported.
-        'extra_info' => 'Create a token in the admin panel, on the screen <b>API tokeny</b>. The token is shown once, right after it is created, so store it then. Choose the abilities <code>time:read</code> and <code>time:write</code> the token needs.',
+        'extra_info' => 'Create a token in the admin panel, on the screen <b>API tokeny</b>. The token is shown once, right after it is created, so store it then. Choose the abilities the token needs: <code>time:read</code> and <code>time:write</code> for time entries and lookups, <code>finance:read</code> and <code>finance:write</code> for transactions and their categories. A token without the ability of an endpoint is refused with <code>403</code>.',
     ],
 
     // Example requests for each endpoint will be shown in each of these languages.

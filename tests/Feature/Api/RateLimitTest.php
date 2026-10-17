@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Tests\Support\ApiFixtures;
+use Tests\Support\FinanceApiFixtures;
 
 /*
  * Rate limits of the REST API, per token (AP-05, D-16). Real Sanctum tokens;
@@ -18,6 +19,7 @@ it('limits reads to 120 and writes to 60 a minute by default and carries the oth
         ->and(config('kokpit.api.page_size.default'))->toBe(50)
         ->and(config('kokpit.api.page_size.max'))->toBe(200)
         ->and(config('kokpit.api.batch_max_items'))->toBe(100)
+        ->and(config('kokpit.api.transaction_batch_max_items'))->toBe(500)
         ->and(config('kokpit.api.external_max_bytes'))->toBe(4096)
         ->and(config('kokpit.api.idempotency_ttl_hours'))->toBe(24)
         ->and(config('kokpit.api.idempotency_stale_lock_seconds'))->toBe(120);
@@ -72,6 +74,28 @@ it('keeps the write bucket apart from the read bucket of the same token', functi
     $this->withToken($token)->postJson('/api/v1/probe-write')->assertStatus(429)->assertHeader('Retry-After');
 
     $this->withToken($token)->getJson('/api/v1/time-entries/'.$entry->id)->assertOk();
+});
+
+it('keeps the finance write bucket apart from the finance read bucket of the same token', function (): void {
+    config(['kokpit.api.rate_limit.write' => 2]);
+    $admin = ApiFixtures::admin();
+    $transaction = FinanceApiFixtures::transaction($admin);
+    $token = ApiFixtures::token($admin, ['finance:read', 'finance:write']);
+    $body = [
+        'type' => 'expense',
+        'transaction_date' => '2026-10-14',
+        'category_id' => FinanceApiFixtures::softwareCategory()->id,
+        'amount_minor' => 123450,
+        'currency' => 'CZK',
+    ];
+
+    $this->withToken($token)->postJson('/api/v1/transactions', $body)->assertCreated();
+    $this->withToken($token)->postJson('/api/v1/transactions', $body)->assertCreated();
+    $this->withToken($token)->postJson('/api/v1/transactions', $body)->assertStatus(429)->assertHeader('Retry-After');
+    $this->withToken($token)->postJson('/api/v1/transactions/batch', ['transactions' => [$body]])->assertStatus(429);
+
+    $this->withToken($token)->getJson('/api/v1/transactions/'.$transaction->id)->assertOk();
+    $this->withToken($token)->getJson('/api/v1/transactions')->assertOk();
 });
 
 it('puts the token guard, the ability check and the read limiter on the read route', function (): void {

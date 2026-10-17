@@ -27,14 +27,20 @@ use OverflowException;
  * value. The first problem is thrown as a field error keyed by the data key, with a Czech message from
  * `finance.transactions.errors`.
  *
+ * An own exchange rate (`exchange_rate`, with `exchange_unit_amount`, default 1) is read by `customRate()`; the
+ * data naming `exchange_rate` with null sets `customRateCleared`, which the update Action turns into dropping it.
+ *
  * The category, client and project are read under a share lock, so the caller MUST run inside its transaction
  * or the locks end with the statement. A category, client, project or currency that the stored transaction
  * already carries is accepted as it is (a later archive must not block editing the description), but a changed
  * one has to be usable now: a category of the transaction type that is not archived, a live client, a live
- * project of that client, `CZK` or a currency with at least one stored CNB row.
+ * project of that client, `CZK` or a currency with at least one stored CNB row. A known ISO currency without any
+ * CNB row is usable as well when the data brings its own CZK figure: an own rate or a typed CZK amount.
  */
 final readonly class TransactionInput
 {
+    private const int MAX_UNIT_AMOUNT = 2147483647;
+
     private const int DESCRIPTION_MAX_LENGTH = 2000;
 
     private const int COUNTERPARTY_MAX_LENGTH = 255;
@@ -48,6 +54,8 @@ final readonly class TransactionInput
         public Money $amount,
         public ?Money $czkAmount,
         public ?bool $czkManual,
+        public ?CustomRate $customRate,
+        public bool $customRateCleared,
         public ?string $description,
         public ?string $counterparty,
         public ?string $documentNumber,
@@ -64,7 +72,10 @@ final readonly class TransactionInput
     {
         $type = self::type($data, $current);
         $day = self::day($data, $current);
-        $currency = self::currency($data, $current);
+        $czkAmount = self::czkAmount($data);
+        $customRate = self::customRate($data, $czkAmount);
+        $figureGiven = $customRate instanceof CustomRate || ($czkAmount instanceof Money && self::flag($data['czk_manual'] ?? null) !== false);
+        $currency = self::currency($data, $current, $figureGiven);
         $amount = self::amount($data, $current, $currency);
         $categoryId = self::categoryId($data, $current);
         $clientId = self::optionalId($data, $current, 'client_id', 'client_unavailable');
@@ -78,8 +89,10 @@ final readonly class TransactionInput
             transactionDate: $day,
             categoryId: $categoryId,
             amount: $amount,
-            czkAmount: self::czkAmount($data),
+            czkAmount: $czkAmount,
             czkManual: self::flag($data['czk_manual'] ?? null),
+            customRate: $customRate,
+            customRateCleared: array_key_exists('exchange_rate', $data) && $data['exchange_rate'] === null,
             description: self::text($data, $current, 'description', 'description', self::DESCRIPTION_MAX_LENGTH),
             counterparty: self::text($data, $current, 'counterparty', 'counterparty', self::COUNTERPARTY_MAX_LENGTH),
             documentNumber: self::text($data, $current, 'document_number', 'document_number', self::DOCUMENT_NUMBER_MAX_LENGTH),
@@ -151,7 +164,7 @@ final readonly class TransactionInput
     /**
      * @param  array<string, mixed>  $data
      */
-    private static function currency(array $data, ?Transaction $current): string
+    private static function currency(array $data, ?Transaction $current, bool $figureGiven): string
     {
         if (! array_key_exists('currency', $data) && $current instanceof Transaction) {
             return $current->amount_currency;
@@ -165,7 +178,7 @@ final readonly class TransactionInput
         }
 
         $usable = Money::isKnownCurrency($code)
-            && ($code === 'CZK' || ExchangeRate::query()->where('currency', $code)->exists());
+            && ($code === 'CZK' || $figureGiven || ExchangeRate::query()->where('currency', $code)->exists());
 
         if (! $usable) {
             throw self::error('currency', 'currency_unknown');
@@ -222,6 +235,61 @@ final readonly class TransactionInput
         }
 
         return $czk;
+    }
+
+    /**
+     * The own rate of this transaction, null when `exchange_rate` is absent or null (D-06).
+     *
+     * The rate is a positive decimal with at most ten integer and ten fraction digits (the column holds no
+     * more), the unit amount a whole number from 1 to the largest integer of its column, default 1. A rate
+     * together with a typed CZK figure is a conflict unless `czk_manual` switches the figure off.
+     *
+     * @param  array<string, mixed>  $data
+     *
+     * @throws ValidationException `exchange_rate`, `exchange_unit_amount`
+     */
+    private static function customRate(array $data, ?Money $czkAmount): ?CustomRate
+    {
+        $value = $data['exchange_rate'] ?? null;
+        $unit = $data['exchange_unit_amount'] ?? null;
+
+        if ($value === null) {
+            return $unit === null ? null : throw self::error('exchange_unit_amount', 'unit_without_rate');
+        }
+
+        $rate = str_replace(',', '.', self::decimal($value, 'exchange_rate', 'rate_invalid'));
+
+        if (preg_match('/^\d{1,10}(\.\d{1,10})?$/D', $rate) !== 1 || preg_match('/[1-9]/', $rate) !== 1) {
+            throw self::error('exchange_rate', 'rate_invalid');
+        }
+
+        $unitAmount = self::unitAmount($unit);
+
+        if ($czkAmount instanceof Money && self::flag($data['czk_manual'] ?? null) !== false) {
+            throw self::error('exchange_rate', 'rate_with_czk_amount');
+        }
+
+        return new CustomRate($rate, $unitAmount);
+    }
+
+    /**
+     * @throws ValidationException `exchange_unit_amount`
+     */
+    private static function unitAmount(mixed $unit): int
+    {
+        if ($unit === null) {
+            return 1;
+        }
+
+        if (is_string($unit) && preg_match('/^\d{1,10}$/D', trim($unit)) === 1) {
+            $unit = (int) trim($unit);
+        }
+
+        if (! is_int($unit) || $unit < 1 || $unit > self::MAX_UNIT_AMOUNT) {
+            throw self::error('exchange_unit_amount', 'unit_invalid');
+        }
+
+        return $unit;
     }
 
     /**

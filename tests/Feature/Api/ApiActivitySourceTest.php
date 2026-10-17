@@ -7,6 +7,7 @@ use App\Domain\Audit\ActivitySourceLabel;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\ApiFixtures;
 use Tests\Support\Canary;
+use Tests\Support\FinanceApiFixtures;
 use Tests\Support\Probes\ActivityProbe;
 
 /*
@@ -123,4 +124,45 @@ it('does not let a request choose its own source label', function (): void {
     ], ['X-Activity-Source' => 'webhook'])->assertCreated()->json('data.id');
 
     expect(array_column(apiActivityRows($id, 'created'), 'source'))->toBe(['api']);
+});
+
+it('logs a transaction created through the API with the source api and never logs its description', function (): void {
+    app()->instance(ActivitySource::class, new ActivitySource(fn (): bool => false));
+    $admin = ApiFixtures::admin();
+    $token = ApiFixtures::token($admin, ['finance:write']);
+
+    $id = $this->withToken($token)->postJson('/api/v1/transactions', [
+        'type' => 'expense',
+        'transaction_date' => '2026-10-14',
+        'category_id' => FinanceApiFixtures::softwareCategory()->id,
+        'amount_minor' => 123450,
+        'currency' => 'CZK',
+        'description' => 'Fictional private note',
+    ])->assertCreated()->json('data.id');
+
+    $rows = apiActivityRows($id, 'created');
+
+    expect($rows)->toHaveCount(1)
+        ->and($rows[0]->source)->toBe('api')
+        ->and($rows[0]->causer_id)->toBe($admin->getKey())
+        ->and((string) json_encode($rows[0]))->not->toContain('Fictional private note');
+});
+
+it('logs an update and a delete of a transaction through the API with the source api', function (): void {
+    app()->instance(ActivitySource::class, new ActivitySource(fn (): bool => false));
+    $admin = ApiFixtures::admin();
+    $transaction = FinanceApiFixtures::transaction($admin);
+    $token = ApiFixtures::token($admin, ['finance:write']);
+
+    $this->withToken($token)->patchJson('/api/v1/transactions/'.$transaction->id, ['counterparty' => 'Demo Other Vendor'])->assertOk();
+    $this->withToken($token)->deleteJson('/api/v1/transactions/'.$transaction->id)->assertNoContent();
+
+    $updated = apiActivityRows($transaction->id, 'updated');
+    $deleted = apiActivityRows($transaction->id, 'deleted');
+
+    expect($updated)->not->toBeEmpty()
+        ->and(array_unique(array_column($updated, 'source')))->toBe(['api'])
+        ->and($deleted)->not->toBeEmpty()
+        ->and(array_unique(array_column($deleted, 'source')))->toBe(['api'])
+        ->and((string) json_encode([$updated, $deleted]))->not->toContain('Example licence');
 });

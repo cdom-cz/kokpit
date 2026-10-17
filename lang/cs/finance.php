@@ -115,6 +115,7 @@ return [
             'czk_preview' => 'Kurz ČNB: :amount = :czk (kurz :rate Kč za :unit :currency ze dne :date).',
             'czk_missing_rate' => 'Pro měnu :currency a den :date není uložen kurz ČNB. Zadejte částku v korunách podle banky.',
             'czk_manual_kept' => 'Částka v korunách je zadaná ručně. Změna data, měny nebo částky ji nepřepíše. Vypněte přepínač, aby se znovu přepočítala podle kurzu ČNB.',
+            'czk_custom_kept' => 'Zaúčtováno vlastním kurzem: :amount = :czk (kurz :rate Kč za :unit :currency). Změna data, měny nebo částky vypočítá částku v korunách znovu podle kurzu ČNB.',
         ],
         'placeholders' => [
             'empty_value' => '—',
@@ -123,6 +124,7 @@ return [
         ],
         'badges' => [
             'manual' => 'ručně',
+            'custom' => 'vlastní kurz',
         ],
         'filters' => [
             'type' => 'Typ',
@@ -170,6 +172,10 @@ return [
             'amount_not_positive' => 'Částka musí být větší než nula.',
             'currency_unknown' => 'Tuto měnu nelze použít.',
             'czk_invalid' => 'Zadejte platnou částku v korunách.',
+            'rate_invalid' => 'Zadejte platný kurz: kladné číslo s nejvýše 10 číslicemi před a 10 za desetinnou čárkou.',
+            'unit_invalid' => 'Počet jednotek musí být celé číslo od 1.',
+            'unit_without_rate' => 'Počet jednotek vyžaduje zadaný kurz.',
+            'rate_with_czk_amount' => 'Zadejte buď kurz, nebo částku v korunách, ne obojí.',
             'czk_required_missing_rate' => 'Pro měnu :currency a den :date není uložen kurz ČNB, zadejte částku v korunách ručně.',
             'client_unavailable' => 'Tohoto klienta nelze použít, je archivovaný nebo neexistuje.',
             'project_unavailable' => 'Tento projekt nelze použít, je archivovaný nebo neexistuje.',

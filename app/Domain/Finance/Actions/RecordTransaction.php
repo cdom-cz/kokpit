@@ -21,8 +21,9 @@ use Illuminate\Validation\ValidationException;
  * field error on `czk_amount`; saving never waits for a rate that is not there.
  *
  * Data keys: `type`, `transaction_date`, `category_id`, `amount`, `currency`, `czk_amount`, `czk_manual`,
- * `description`, `counterparty`, `document_number`, `client_id`, `project_id`. A typed `czk_amount` makes the
- * figure manual unless `czk_manual` is false.
+ * `exchange_rate`, `exchange_unit_amount`, `description`, `counterparty`, `document_number`, `client_id`,
+ * `project_id`. A typed `czk_amount` makes the figure manual unless `czk_manual` is false; an `exchange_rate`
+ * (with the unit amount, default 1) makes it custom: the amount converted at that rate, stored as the snapshot.
  */
 final readonly class RecordTransaction
 {
@@ -39,7 +40,7 @@ final readonly class RecordTransaction
 
         return DB::transaction(function () use ($data): Transaction {
             $input = TransactionInput::fromArray($data);
-            $czk = $this->czk->resolve($input->amount, $input->transactionDate, $input->manualCzk());
+            $czk = $this->czk->resolve($input->amount, $input->transactionDate, $input->manualCzk(), $input->customRate);
 
             $transaction = new Transaction([
                 'description' => $input->description,

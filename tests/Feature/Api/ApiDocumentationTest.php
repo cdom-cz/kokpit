@@ -126,6 +126,47 @@ it('requires the query parameters a list controller declares and the Idempotency
     expect(ApiDocs::violations([$route], $spec))->toBe([]);
 });
 
+it('requires a 409 on PATCH and DELETE unless the controller declares which methods can conflict', function (): void {
+    $declared = new class
+    {
+        public const array CONFLICT_METHODS = ['DELETE'];
+
+        public function update(): void {}
+
+        public function destroy(): void {}
+    };
+    $undeclared = new class
+    {
+        public function update(): void {}
+    };
+    $spec = static fn (string $path, string $method, array $statuses): array => [
+        'paths' => [$path => [$method => [
+            'description' => 'Requires ability `finance:write`.',
+            'parameters' => [],
+            'responses' => array_fill_keys($statuses, []),
+        ]]],
+    ];
+
+    $patch = Route::middleware(['abilities:finance:write'])->patch('api/v1/probe-declared/{id}', [$declared::class, 'update']);
+    $delete = Route::middleware(['abilities:finance:write'])->delete('api/v1/probe-declared/{id}', [$declared::class, 'destroy']);
+    $plain = Route::middleware(['abilities:finance:write'])->patch('api/v1/probe-undeclared/{id}', [$undeclared::class, 'update']);
+
+    // A controller that leaves PATCH out of CONFLICT_METHODS needs no 409 there ...
+    expect(ApiDocs::violations([$patch], $spec('/api/v1/probe-declared/{id}', 'patch', [200, 401, 403, 404, 422, 429])))->toBe([])
+        // ... but still owes one on DELETE ...
+        ->and(ApiDocs::violations([$delete], $spec('/api/v1/probe-declared/{id}', 'delete', [204, 401, 403, 404, 429])))->toBe(['DELETE /api/v1/probe-declared/{id} documents no 409 response'])
+        // ... and a controller without the constant is checked exactly as before.
+        ->and(ApiDocs::violations([$plain], $spec('/api/v1/probe-undeclared/{id}', 'patch', [200, 401, 403, 404, 422, 429])))->toBe(['PATCH /api/v1/probe-undeclared/{id} documents no 409 response']);
+});
+
+it('documents the status codes of the transaction PATCH and DELETE', function (): void {
+    $patch = ApiDocs::operation(Route::getRoutes()->getByName('api.v1.transactions.update'));
+    $delete = ApiDocs::operation(Route::getRoutes()->getByName('api.v1.transactions.destroy'));
+
+    expect($patch['responses'])->toHaveKeys([200, 404, 422])->not->toHaveKey(409)
+        ->and($delete['responses'])->toHaveKeys([204, 404, 409]);
+});
+
 it('publishes the page assets and no Try It Out script', function (): void {
     expect(glob(public_path('vendor/scribe/css/*')))->not->toBeEmpty()
         ->and(glob(public_path('vendor/scribe/js/*')))->not->toBeEmpty()
@@ -146,7 +187,7 @@ it('stores the generated spec on a local disk under storage, not on a shared vol
         ->and(config('filesystems.disks.local.root'))->toStartWith(storage_path());
 });
 
-it('pins the twelve routes of the API, no more and no fewer', function (): void {
+it('pins the routes of the API, no more and no fewer', function (): void {
     $actual = array_map(
         fn ($route): string => ApiDocs::method($route).' /'.$route->uri(),
         ApiDocs::apiRoutes(),
@@ -162,8 +203,16 @@ it('pins the twelve routes of the API, no more and no fewer', function (): void 
         'GET /api/v1/tasks/{task}',
         'GET /api/v1/time-entries',
         'GET /api/v1/time-entries/{timeEntry}',
+        'GET /api/v1/transaction-categories',
+        'GET /api/v1/transaction-categories/{category}',
+        'GET /api/v1/transactions',
+        'GET /api/v1/transactions/{transaction}',
         'POST /api/v1/time-entries',
         'POST /api/v1/time-entries/batch',
+        'POST /api/v1/transactions',
+        'POST /api/v1/transactions/batch',
+        'PATCH /api/v1/transactions/{transaction}',
+        'DELETE /api/v1/transactions/{transaction}',
         'PATCH /api/v1/time-entries/{timeEntry}',
         'DELETE /api/v1/time-entries/{timeEntry}',
     ];
@@ -178,7 +227,7 @@ it('describes every pinned route in the published spec with its method', functio
     }
 });
 
-it('documents the Idempotency-Key on exactly the two create operations', function (): void {
+it('documents the Idempotency-Key on exactly the four create operations', function (): void {
     $withKey = [];
 
     foreach (ApiDocs::spec()['paths'] as $path => $operations) {
@@ -192,7 +241,7 @@ it('documents the Idempotency-Key on exactly the two create operations', functio
     }
     sort($withKey);
 
-    expect($withKey)->toBe(['POST /api/v1/time-entries', 'POST /api/v1/time-entries/batch']);
+    expect($withKey)->toBe(['POST /api/v1/time-entries', 'POST /api/v1/time-entries/batch', 'POST /api/v1/transactions', 'POST /api/v1/transactions/batch']);
 });
 
 it('documents 201, 207, 409 and 422 on the batch operation', function (): void {
@@ -263,6 +312,7 @@ function documentedLimitProblems(string $intro, array $perPageDescriptions, arra
         'kokpit.api.page_size.default' => '/A page holds (\d+) items/',
         'kokpit.api.page_size.max' => '/`per_page` \(1 to (\d+)\)/',
         'kokpit.api.batch_max_items' => '/records up to (\d+) entries/',
+        'kokpit.api.transaction_batch_max_items' => '/records up to (\d+) transactions/',
         'kokpit.api.idempotency_ttl_hours' => '/kept for (\d+) hours/',
     ];
     $problems = [];
@@ -282,6 +332,12 @@ function documentedLimitProblems(string $intro, array $perPageDescriptions, arra
         $problems[] = 'the intro has no refusal sentence for kokpit.api.batch_max_items';
     } elseif ((int) $found[1] !== $configured('batch_max_items')) {
         $problems[] = "kokpit.api.batch_max_items is {$configured('batch_max_items')} but the intro refuses at {$found[1]}";
+    }
+
+    if (preg_match('/more than (\d+) transactions, answers `422`/', $intro, $found) !== 1) {
+        $problems[] = 'the intro has no refusal sentence for kokpit.api.transaction_batch_max_items';
+    } elseif ((int) $found[1] !== $configured('transaction_batch_max_items')) {
+        $problems[] = "kokpit.api.transaction_batch_max_items is {$configured('transaction_batch_max_items')} but the intro refuses at {$found[1]}";
     }
 
     foreach ($perPageDescriptions as $description) {
@@ -324,7 +380,7 @@ it('states exactly the limits of config/kokpit.php in the intro and in every per
     $descriptions = documentedPerPageDescriptions();
 
     expect($intro)->toBeString()
-        ->and($descriptions)->toHaveCount(4)
+        ->and($descriptions)->toHaveCount(6)
         ->and(documentedLimitProblems((string) $intro, $descriptions, (array) config('kokpit.api')))->toBe([]);
 });
 
@@ -342,8 +398,12 @@ it('reports a documented limit that differs from the configuration (the limits c
     $batchChanged = $api;
     $batchChanged['batch_max_items'] = 101;
 
+    $transactionBatchChanged = $api;
+    $transactionBatchChanged['transaction_batch_max_items'] = 501;
+
     expect(documentedLimitProblems($intro, $descriptions, $readChanged))->toBe(['kokpit.api.rate_limit.read is 121 but the intro says 120'])
         ->and(implode("\n", documentedLimitProblems($intro, $descriptions, $maxChanged)))->toContain('kokpit.api.page_size.max is 201')
         ->and(implode("\n", documentedLimitProblems($intro, $descriptions, $batchChanged)))->toContain('kokpit.api.batch_max_items is 101')
+        ->and(implode("\n", documentedLimitProblems($intro, $descriptions, $transactionBatchChanged)))->toContain('kokpit.api.transaction_batch_max_items is 501')
         ->and(documentedLimitProblems('A reworded intro.', $descriptions, $api))->toContain('the intro has no sentence for kokpit.api.rate_limit.read');
 });

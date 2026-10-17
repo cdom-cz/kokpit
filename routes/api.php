@@ -8,6 +8,9 @@ use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TimeEntryBatchController;
 use App\Http\Controllers\Api\V1\TimeEntryController;
+use App\Http\Controllers\Api\V1\TransactionBatchController;
+use App\Http\Controllers\Api\V1\TransactionCategoryController;
+use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Middleware\EnsureIdempotency;
 use Illuminate\Support\Facades\Route;
 
@@ -18,7 +21,8 @@ use Illuminate\Support\Facades\Route;
  * ApiServiceProvider and config/sanctum.php) carrying the ability of its group, and
  * is rate limited per token (throttle:api-read or throttle:api-write). A route added
  * to a group inherits all three, so there is no route without a credential check, an
- * ability check and a limit.
+ * ability check and a limit. There is one group per ability and never a finance route
+ * in a time group or the reverse (D-01).
  */
 
 // Reads: GET routes, ability time:read.
@@ -63,4 +67,41 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::TimeWrite->value, 't
     Route::delete('time-entries/{timeEntry}', [TimeEntryController::class, 'destroy'])
         ->whereUuid('timeEntry')
         ->name('api.v1.time-entries.destroy');
+});
+
+// Finance reads: GET routes, ability finance:read (D-01). Transactions and categories are Admin-only data;
+// a Partner token is refused with 401 by the token guard.
+Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::FinanceRead->value, 'throttle:api-read'])->group(function (): void {
+    Route::get('transactions', [TransactionController::class, 'index'])
+        ->name('api.v1.transactions.index');
+    Route::get('transactions/{transaction}', [TransactionController::class, 'show'])
+        ->whereUuid('transaction')
+        ->name('api.v1.transactions.show');
+
+    // Categories are read-only (D-02): the list and the detail are all there is, so an importer finds the UUID to
+    // book into. Creating, renaming, archiving and ordering stay in the Admin panel.
+    Route::get('transaction-categories', [TransactionCategoryController::class, 'index'])
+        ->name('api.v1.transaction-categories.index');
+    Route::get('transaction-categories/{category}', [TransactionCategoryController::class, 'show'])
+        ->whereUuid('category')
+        ->name('api.v1.transaction-categories.show');
+});
+
+// Finance writes: POST, PATCH and DELETE routes, ability finance:write (D-01). The create carries the optional
+// Idempotency-Key like the time entry creates; it runs after the group's credential check, ability check and limit.
+Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::FinanceWrite->value, 'throttle:api-write'])->group(function (): void {
+    Route::post('transactions', [TransactionController::class, 'store'])
+        ->middleware(EnsureIdempotency::class)
+        ->name('api.v1.transactions.store');
+    // The batch counts as one write against the limit and carries the key like the single create (D-04). It is
+    // declared before the PATCH and DELETE routes; the path has no parameter, so it never clashes.
+    Route::post('transactions/batch', TransactionBatchController::class)
+        ->middleware(EnsureIdempotency::class)
+        ->name('api.v1.transactions.batch');
+    Route::patch('transactions/{transaction}', [TransactionController::class, 'update'])
+        ->whereUuid('transaction')
+        ->name('api.v1.transactions.update');
+    Route::delete('transactions/{transaction}', [TransactionController::class, 'destroy'])
+        ->whereUuid('transaction')
+        ->name('api.v1.transactions.destroy');
 });

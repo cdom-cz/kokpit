@@ -573,43 +573,57 @@ Not applicable: Phase 10 is greenfield (no rename, refactor or migration of exis
 | A9 | Roboto 3.011 static TTF is the same design family as the owner's Roboto WOFF files; the owner's WOFF files carry no licence text in the public repository listing | Standard Stack | Cosmetic difference only |
 | A10 | The sum of partial credit notes must never exceed the invoice (stated in the UI-SPEC copy) is enforced under the original invoice row lock, not by a CHECK | Pattern 8 | A race could over-credit if the lock is omitted |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+Every question below was ruled during planning; the ruling ids name the plan where each ruling is recorded. Where a ruling departs from the recommendation, the RESOLVED line says so and why (locked CONTEXT decisions win).
 
 1. **May a reserved (draft-linked) time entry still be edited or deleted?** (UI-SPEC N15 "unresolved")
    - Known: reserved entries stay `unbilled`; UI-SPEC proposes a non-blocking callout; D-04 says nothing about edits; the API documents `entry_locked` 409 for billed entries only.
    - Unclear: the owner's workflow (does he fix a duration after drafting?).
    - Recommendation: lock `started_at`, `ended_at`, `billable`, client/project/task and deletion while reserved (description stays editable), refuse in the Actions under their row lock, map to the existing `entry_locked` 409 in the API and update the API text and its pinned test. This keeps invoice hours, work report and entries from drifting.
+   - RESOLVED: R-10-1 in plan 10-10 (recommendation adopted: billing-relevant fields and deletion of a reserved entry are locked, description stays editable, API answers 409 `entry_locked`).
 
 2. **Fixed-price entries: linked by default or only with the checkbox?**
    - Known: D-07 (locked) says the fixed amount is added manually "optionally marks the project's time as billed with it"; UI-SPEC Surface B says hours of fixed-price projects are added to items without an amount, and C3 says the checkbox links the entries.
    - Recommendation: CONTEXT wins. The time source excludes fixed-price entries unless the checkbox of C3 is ticked; the create-modal callout becomes informational ("hours stay unbilled until you add the fixed amount"). A zero-priced hours line contradicts "unit price zero only for a confirmed line".
+   - RESOLVED: R-13-1 in plan 10-13 (recommendation adopted: D-07 wins; fixed-price entries are linked only with the fixed-amount checkbox, R-14-1 and R-14-3 in plan 10-14).
 
 3. **Is the invoice date allowed to be in the past, and how does it interact with numbering and the CNB date?** (UI-SPEC unresolved)
    - Recommendation: allowed range is `[issue date of the latest issued document of the same kind and number scope, today]`, checked under the sequence lock so numbers stay chronological; the CNB rate is `rateFor(currency, issue date)`.
+   - RESOLVED: R-12-1 in plan 10-12 (recommendation adopted: issue date between the latest issued document of the same kind and today, checked under the sequence lock).
 
 4. **What is frozen for the PDF besides D-12?** Accent colour, footer text, logo, signature.
    - Recommendation: freeze accent and footer text (strings) in the issue snapshot; logo and signature stay current at render. Overrides UI-SPEC assumption U-8 for accent only; the owner can reverse it.
+   - RESOLVED: R-03-1 in plan 10-03, with R-12-3 in plan 10-12 and R-15-4 in plan 10-15 (recommendation not adopted for logo and signature, to conform to D-21 and D-23: accent, footer, logo and signature are all frozen in the issue snapshot, the images as object path plus SHA-256 of retained, content-addressed objects; a missing or altered image fails the render instead of changing the regenerated PDF).
 
 5. **Partner "never sees rates" versus unit prices on the document.** U-3 shows the frozen lines with unit prices to the Partner because they are printed on the PDF the client receives. For time lines the unit price is the hourly rate.
    - Recommendation: confirm with the owner that "rates" in IN-09 means rate configuration, CNB data and source-rate columns, not the printed unit price; and use a dedicated invoice PDF route for the Partner instead of widening the `Document` scope (deviation from "no new route").
+   - RESOLVED: R-05-2 in plan 10-05 (printed unit prices are Partner-readable; "rates" means rate configuration, source rates and CNB data) and R-38-1 in plan 10-38 (dedicated signed, user-bound invoice PDF route; the `Document` scope is not widened).
 
 6. **Cross-currency lines (rate currency differs from invoice currency):** CZK to foreign and foreign to foreign need the new exact `Money` conversion; confirm the recipient's expectation that unit price is converted and rounded to the minor unit, then the line total is `round(quantity x unit price)` (two roundings, one of them a representation of the converted rate).
+   - RESOLVED: R-01-1 in plan 10-01 and R-17-1 in plan 10-17, with R-04-3 in plan 10-04, R-13-5 in plan 10-13 and R-23-4 in plan 10-23 (recommendation not adopted, to conform to D-09 and Phase 2 D-09: a converted line amount is one exact rational rounded HALF_UP exactly once by `Money::timesThroughCzk()`; the printed unit price is a display rounding that never feeds the amount, and `invoice_items.price_converted` lets the database bound the difference).
 
 7. **Correcting a mistaken manual payment.** UI-SPEC makes payments immutable with no delete, "corrected on the transaction side"; but Phase 9 rules would let the Admin delete the income transaction and leave the payment orphaned.
    - Recommendation: add one sanctioned `DeletePayment` (confirmation, activity-logged, deletes payment and its income transaction in one transaction, allowed only on an issued, uncancelled invoice or proforma without a converted invoice) and make `DeleteTransaction`/`UpdateTransaction` refuse payment-derived rows otherwise.
+   - RESOLVED (owner amendment of D-19, 2026-10-17; supersedes the earlier resolution that payments are permanent): recommendation adopted. Plan 10-06 R-06-1, R-06-5 and R-06-7: a payment is never updated; a payment and its income are deleted only together, under the transaction-local `kokpit.payment_deletion` flag that only `DeletePayment` sets, with a deferred pair check; payment income changes only in date and category for every writer. Plan 10-19 R-19-1: `UpdateTransaction`, `DeleteTransaction` and the Transactions API refuse payment income and point to deleting the payment in the invoice detail. Plan 10-41 R-41-1 to R-41-5: `DeletePayment` with the lock order document, payment, income; deviating from the recommendation, it is allowed on a cancelled invoice too, and on a converted proforma it deletes the invoice-side carried copy with its income without touching the proforma payment, while it refuses a proforma payment whose carried copy still exists. Plan 10-30: the "Smazat platbu" action with its confirmation.
 
 8. **Proforma number pattern and variable symbol.** Same defaults produce equal VS for proforma and invoice. Recommendation: change the proforma default pattern to produce a distinct digit string and extend the digits-only/length checks to proforma (F-15); leave a Phase 11 note that matching by VS must scope by kind.
+   - RESOLVED: R-07-1, R-07-3 and R-07-4 in plan 10-07 (recommendation adopted: digits-only, at most 10 characters for proforma patterns with the distinct default `{YYYY}9{NNNN}`; owner acknowledgement point for narrowing Phase 3 D-05 recorded in plan 10-07; Phase 11 matches the variable symbol per kind).
 
 9. **Phase 8 report amounts of billed entries.** CONTRIBUTING says Phase 10 snapshots rate and amount and switches `EntryAmounts` to it. A per-entry amount cannot equal the invoice line (rounded per line).
    - Recommendation: snapshot only the hourly rate (minor, currency, source) per billed entry through the transition trigger, switch `EntryAmounts` to it for billed entries, and say on the report that billed amounts follow the billed rate. If the owner prefers a smaller phase, defer and keep the existing note `kokpit.report.notes.computed`.
+   - RESOLVED: R-06-2 in plan 10-06, R-09-1 in plan 10-09 and plan 10-34 (recommendation adopted and widened: the rate and also the amount are snapshotted on every billing; the report prices billed entries with the snapshot and falls back to the current rate for entries billed before this phase).
 
 10. **PDF text assertions in CI.** Primary: assert the Blade HTML and structural PDF facts (header, font embedded, page count) which need no external tool; secondary: `gs txtwrite` tests that skip when `gs` is absent.
+   - RESOLVED: R-15-5 in plan 10-15, with R-18-2 in plan 10-18 (recommendation adopted: HTML and structural assertions first, Ghostscript text extraction skipped when `gs` is absent).
 
 11. **Resend semantics (UI-SPEC unresolved).** Recommendation: each "send" is a new `invoice_emails` row (new attempt group), the job is idempotent per row, the log tab shows one row per group, and the System slot looks only at the latest row of each invoice.
+   - RESOLVED: R-24-1 in plan 10-24, with R-37-1 in plan 10-37 for the stale threshold (recommendation adopted: one `invoice_emails` row per send attempt group; the latest row decides the document state).
 
 12. **How is the internal note edited after issue?**
    - Known: it is one of the two writable fields (D-13) and sits in the Admin-only `invoice_admin` table (Pattern 1).
    - Recommendation: a single `UpdateInternalNote` Action (Admin only, row lock), activity log allowlist without the note text, because free text is never logged in this codebase (see `Document` and `Transaction` allowlists).
+   - RESOLVED: R-11-5 in plan 10-11 (recommendation adopted: `UpdateInternalNote` only, row lock, the activity log records the marker and never the text).
 
 ## Environment Availability
 

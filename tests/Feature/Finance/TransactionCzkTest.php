@@ -133,7 +133,8 @@ describe('the CZK source labels', function (): void {
     it('shows the Czech label of every source', function (): void {
         expect(CzkSource::Identity->getLabel())->toBe('Kč')
             ->and(CzkSource::Cnb->getLabel())->toBe('Kurz ČNB')
-            ->and(CzkSource::Manual->getLabel())->toBe('Zadáno ručně');
+            ->and(CzkSource::Manual->getLabel())->toBe('Zadáno ručně')
+            ->and(CzkSource::Custom->getLabel())->toBe('Vlastní kurz');
     });
 });
 

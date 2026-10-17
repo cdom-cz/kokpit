@@ -42,9 +42,25 @@ final class ApiCursor
     public const string TEXT = 'text';
 
     /**
+     * A calendar day of a `date` column, written as `Y-m-d` or as the zero-time form `Y-m-d 00:00:00` that the
+     * paginator writes for a date cast.
+     */
+    public const string DATE = 'date';
+
+    /**
+     * A JSON integer, the form of an integer column such as an amount in minor units.
+     */
+    public const string INTEGER = 'integer';
+
+    /**
      * The format the paginator writes a timestamp column in (the application timezone is UTC).
      */
     private const string INSTANT_FORMAT = 'Y-m-d H:i:s';
+
+    /**
+     * The format of a calendar day.
+     */
+    private const string DAY_FORMAT = 'Y-m-d';
 
     /**
      * The key of the direction flag Laravel adds to every cursor.
@@ -54,7 +70,7 @@ final class ApiCursor
     /**
      * A validation rule that accepts only a cursor with exactly the given order columns.
      *
-     * @param  array<string, 'uuid'|'instant'|'text'>  $columns  order column as it appears in the cursor => kind of its value
+     * @param  array<string, 'uuid'|'instant'|'text'|'date'|'integer'>  $columns  order column as it appears in the cursor => kind of its value
      */
     public static function rule(array $columns): Closure
     {
@@ -68,19 +84,21 @@ final class ApiCursor
     /**
      * The kind of cursor value a sort column is written as.
      *
-     * @return 'uuid'|'instant'|'text'
+     * @return 'uuid'|'instant'|'text'|'date'|'integer'
      */
     public static function kindOf(string $sortColumn): string
     {
         return match ($sortColumn) {
             'started_at', 'created_at' => self::INSTANT,
             'name', 'title' => self::TEXT,
+            'transaction_date' => self::DATE,
+            'czk_minor' => self::INTEGER,
             default => throw new LogicException('No cursor kind is declared for the sort column "'.$sortColumn.'".'),
         };
     }
 
     /**
-     * @param  array<string, 'uuid'|'instant'|'text'>  $columns
+     * @param  array<string, 'uuid'|'instant'|'text'|'date'|'integer'>  $columns
      */
     private static function accepts(string $encoded, array $columns): bool
     {
@@ -116,6 +134,12 @@ final class ApiCursor
 
     private static function hasKind(mixed $value, string $kind): bool
     {
+        // A JSON integer is the only form the paginator writes for an integer column; a numeric string would be
+        // bound as text, so it is refused.
+        if ($kind === self::INTEGER) {
+            return is_int($value);
+        }
+
         if (! is_string($value)) {
             return false;
         }
@@ -123,6 +147,7 @@ final class ApiCursor
         return match ($kind) {
             self::UUID => Str::isUuid($value),
             self::INSTANT => self::isInstant($value),
+            self::DATE => self::isDay($value),
             self::TEXT => ! str_contains($value, "\0"),
             default => false,
         };
@@ -139,5 +164,19 @@ final class ApiCursor
             && DateTimeImmutable::getLastErrors() === false
             && $instant->format(self::INSTANT_FORMAT) === $value
             && ! str_starts_with($value, '0000');
+    }
+
+    /**
+     * A real calendar day written exactly as `Y-m-d` or as `Y-m-d 00:00:00`, never in year 0000.
+     */
+    private static function isDay(string $value): bool
+    {
+        $day = str_ends_with($value, ' 00:00:00') ? substr($value, 0, -strlen(' 00:00:00')) : $value;
+        $parsed = DateTimeImmutable::createFromFormat('!'.self::DAY_FORMAT, $day, new DateTimeZone('UTC'));
+
+        return $parsed !== false
+            && DateTimeImmutable::getLastErrors() === false
+            && $parsed->format(self::DAY_FORMAT) === $day
+            && ! str_starts_with($day, '0000');
     }
 }

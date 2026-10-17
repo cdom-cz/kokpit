@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Finance\Actions;
 
+use App\Domain\Finance\CustomRate;
 use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\TransactionCzk;
@@ -29,7 +30,16 @@ use Illuminate\Validation\ValidationException;
  * - a computed transaction (identity or CNB) is recomputed through {@see TransactionCzk} only when the date,
  *   the currency or the amount changed, which also refreshes the snapshot; any other edit leaves the figure and
  *   the snapshot exactly as stored, so a list added or corrected later never moves them;
- * - switching a manual transaction back to computed always recomputes.
+ * - switching a manual transaction back to computed always recomputes;
+ * - an own rate typed in the data (`exchange_rate`) makes any transaction custom, with the transaction date as the
+ *   rate date; a typed `czk_amount` makes it manual (owner decision A1 on D-06);
+ * - a custom transaction (booked at an own rate) keeps that rate while the data says nothing about `czk_manual`: a
+ *   changed amount in the same currency is recomputed at the stored rate and unit amount with the stored rate date,
+ *   a changed currency falls back to the CNB rule of the transaction date, and a changed date or any other edit
+ *   leaves the figure and the snapshot as stored;
+ * - data naming `exchange_rate` with null (the API's way back to CNB, together with `czk_manual` false) recomputes
+ *   a custom transaction through the CNB rule even when nothing else changed; it does not touch a manual
+ *   transaction (unless `czk_manual` is false) and does not recompute a CNB one.
  * A CZK transaction needs no rate: it is identity whatever was typed or kept.
  *
  * A receipt counts for the client and project of its transaction (D-11), so when either changes the receipts
@@ -88,8 +98,14 @@ final readonly class UpdateTransaction
     private function figure(Transaction $stored, TransactionInput $input): array
     {
         $wasManual = $stored->czk_source === CzkSource::Manual;
+        $wasCustom = $stored->czk_source === CzkSource::Custom;
 
         $manual = $input->manualCzk();
+
+        if (! $manual instanceof Money && $input->customRate instanceof CustomRate) {
+            // A new own rate makes the transaction custom, whatever it was; its rate date is the transaction date.
+            return $this->czk->resolve($input->amount, $input->transactionDate, null, $input->customRate);
+        }
 
         if (! $manual instanceof Money && ($input->czkManual ?? $wasManual)) {
             // Manual stays manual: keep the stored figure (freezing it when manual is switched on without one).
@@ -100,13 +116,44 @@ final readonly class UpdateTransaction
             return $this->czk->resolve($input->amount, $input->transactionDate, $manual);
         }
 
+        if ($wasCustom && $input->czkManual === null && ! $input->customRateCleared) {
+            return $this->stickyFigure($stored, $input);
+        }
+
         $changed = $input->transactionDate !== $stored->transaction_date->toDateString()
             || ! $input->amount->equals($stored->amount);
 
-        if ($wasManual || $changed) {
+        // A cleared own rate returns a custom transaction to the CNB rule even when nothing else changed; a CNB
+        // transaction is never recomputed by it alone.
+        if ($wasManual || $changed || ($wasCustom && $input->customRateCleared)) {
             return $this->czk->resolve($input->amount, $input->transactionDate, null);
         }
 
         return [];
+    }
+
+    /**
+     * The figure of a transaction booked at an own rate when the data does not mention `czk_manual` (owner decision
+     * A1 on D-06, the sticky rate): the rate is the one fixed for this transaction.
+     * - a changed currency drops it for the CNB rule of the transaction date (identity for CZK);
+     * - a changed amount in the same currency recomputes the figure at the stored rate and unit amount, and keeps
+     *   the stored rate date, because the transaction date does not move a rate fixed for it;
+     * - anything else, a changed date included, leaves the figure and the snapshot as stored.
+     *
+     * @return array{czk_minor?: int, czk_source?: CzkSource, exchange_rate?: string|null, exchange_unit_amount?: int|null, exchange_rate_date?: string|null}
+     */
+    private function stickyFigure(Transaction $stored, TransactionInput $input): array
+    {
+        if ($input->amount->currency !== $stored->amount_currency) {
+            return $this->czk->resolve($input->amount, $input->transactionDate, null);
+        }
+
+        if ($input->amount->equals($stored->amount)) {
+            return [];
+        }
+
+        $rate = new CustomRate((string) $stored->exchange_rate, (int) $stored->exchange_unit_amount, $stored->exchange_rate_date?->toDateString());
+
+        return $this->czk->resolve($input->amount, $input->transactionDate, null, $rate);
     }
 }

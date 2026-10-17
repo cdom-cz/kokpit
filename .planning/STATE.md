@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 09
-current_phase_name: Documents and Finance
-status: executing
-stopped_at: Phase 10 UI-SPEC approved
-last_updated: "2026-10-16T19:37:55.968Z"
-last_activity: 2026-10-16
-last_activity_desc: Phase 09 execution started
-state_head: e4a58803b4b9da62b8b8dcea2a2feb97e64be295
+current_phase: 8
+current_phase_name: Exchange Rates and Reports
+status: verifying
+stopped_at: Phase 09.1 complete, ready to verify Phase 8
+last_updated: "2026-10-17T05:31:31.801Z"
+last_activity: 2026-10-17
+last_activity_desc: Phase 09.1 complete, transitioned to Phase 8
+state_head: dd528965c81ec34e5bd07d7ab4bd620ed52f016d
 progress:
-  total_phases: 12
+  total_phases: 13
   completed_phases: 7
-  total_plans: 175
-  completed_plans: 175
+  total_plans: 225
+  completed_plans: 184
   percent: 58
 ---
 
@@ -23,21 +23,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 09 — Documents and Finance
+**Current focus:** Phase 09.1 — Transactions API (INSERTED)
 
 ## Current Position
 
-Phase: 09 (Documents and Finance) — EXECUTING
-Plan: 28 of 28 done (gap closure 09-25 to 09-28 complete; phase ready for re-verification, three human checks pending)
-Status: Ready to execute
-Last activity: 2026-10-16 - Completed quick task 261016-tnb: Show the Checklist section on the admin task view page and allow toggling checklist item states there
+Phase: 8 — Exchange Rates and Reports
+Plan: 27
+Status: Phase complete — ready for verification
+Last activity: 2026-10-17 — Phase 09.1 complete, transitioned to Phase 8
 
 Progress: [██████░░░░] 58%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 120
+- Total plans completed: 129
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -52,6 +52,7 @@ Progress: [██████░░░░] 58%
 | 05 | 22 | - | - |
 | 06 | 14 | - | - |
 | 07 | 20 | - | - |
+| 09.1 | 9 | - | - |
 
 **Recent Trend:**
 - Last 5 plans: -
@@ -237,6 +238,15 @@ Progress: [██████░░░░] 58%
 | Phase 09 P27 | 55min | 3 tasks | 9 files |
 | Phase 09 P26 | 15min | 2 tasks | 4 files |
 | Phase 09 P28 | 40min | 3 tasks | 7 files |
+| Phase 09.1 P01 | 30 min | 2 tasks | 11 files |
+| Phase 09.1 P02 | 35 min | 2 tasks | 12 files |
+| Phase 09.1 P03 | 20 min | 2 tasks | 3 files |
+| Phase 09.1 P04 | 10 min | 3 tasks | 5 files |
+| Phase 09.1 P05 | 45 min | 3 tasks | 15 files |
+| Phase 09.1 P06 | 8 min | 3 tasks | 13 files |
+| Phase 09.1 P07 | 6 min | 3 tasks | 12 files |
+| Phase 09.1 P08 | 21 min | 2 tasks | 3 files |
+| Phase 09.1 P09 | 26 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -576,6 +586,22 @@ Recent decisions affecting current work:
 - [Phase 09]: D-23 (owner, amends D-09): stored object removed after the outermost commit via DB::afterCommit; a refused object is retried 3 times by RemoveDocumentObjects, then the failed-job alert reaches the Admin (WR-01)
 - [Phase 09]: 09-26: the archive prune deletes the id-derived storagePath() of every expired record whatever its status; the build job removes the ZIP of a gone or failed record after commit and keeps a ready one (WR-02)
 - [Phase 09]: D-23 (plan 09-28): user-accepted deviation from D-09, DO-03 means objects removed after the commit, retried 3 times by RemoveDocumentObjects, then the failed-job alert reaches the Admin; recorded in 09-CONTEXT.md and the WR-01 closure note
+- [Phase 09.1]: 09.1-01: czk_source custom replaces only the czk_source and snapshot CHECKs; the identity CHECK stays unchanged
+- [Phase 09.1]: 09.1-01: the rate date of an own rate is always the transaction date; TransactionInput exposes customRateCleared for plan 09.1-04
+- [Phase 09.1]: 09.1-02: finance read routes live in their own finance:read group; the Scribe URL parameter of the transaction detail is documented as id
+- [Phase 09.1]: 09.1-03: the create-modal ability labels are asserted through the CheckboxList component (assertSchemaComponentExists), because assertSee cannot see a mounted action modal; no production change was needed for the finance token screen
+- [Phase 09.1]: [09.1-04] Edit rule of a custom transaction: typed CZK figure -> manual; typed own rate -> custom; stored manual keeps; stored custom with czk_manual absent follows the sticky rate (amount: stored rate/unit/rate date, currency: CNB, date-only: keep); a cleared rate recomputes a custom row through CNB only
+- [Phase 09.1]: [09.1-04] The Admin UI keeps sending czk_manual false: amount/date/currency change of a custom row stores cnb, any other edit keeps the own rate; the kept state is decided by TransactionResource::customKept()
+- [Phase 09.1]: Transaction list sort amount orders by czk_minor (SORT_COLUMNS maps public names to ORDER BY columns) so currencies compare
+- [Phase 09.1]: ApiCursor DATE accepts Y-m-d and Y-m-d 00:00:00, INTEGER accepts only a JSON integer; a forged cursor of any list sort answers 422
+- [Phase 09.1]: Category archived flag is true for an archived category or a child of an archived parent; categories stay read-only over the API
+- [Phase 09.1]: Transaction write API: a delete refused with SQLSTATE 23503 or KP001 answers 409 transaction_in_use, any other database fault stays a 500; TransactionController::CONFLICT_METHODS lists DELETE and ApiDocs requires 409 only on listed methods (Phase 10 plan 10-19 adds PATCH).
+- [Phase 09.1]: Transaction PATCH nulls: exchange_rate null drops an own rate, czk_amount_minor null drops a bank figure, both null return any transaction to CNB; a CZK transaction with a rate, unit amount or CZK figure is refused in the API layer under that field.
+- [Phase 09.1]: Transaction batch uses request key transactions, item error key transaction and api.transaction_batch_max_items = 500 (separate from the time entry batch limit of 100)
+- [Phase 09.1]: A 500-item transaction batch was measured at 0.83-0.87 s locally (CZK items), far below the 60 s threshold; limit and stale lock unchanged; production PHP request time limit stays an open item for the owner
+- [Phase 09.1]: Plan 09.1-08: Phase 10 plan 10-19 adds one API test per transaction endpoint for its payment-income refusal and adds PATCH to TransactionController::CONFLICT_METHODS only if that refusal becomes a 409 (CONTRIBUTING hand-over 7)
+- [Phase 09.1]: 09.1-09: CR-01 fixed in the API mapping only; cleared() drops just the own rate when czk_amount_minor carries a value (app/Domain/Finance untouched)
+- [Phase 09.1]: 09.1-09: WR-01 refuses JSON booleans via noBoolean() with bail before integer; integer strings keep passing
 
 ### Pending Todos
 
@@ -617,6 +643,10 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261015-diz | Add overdue highlight to the admin tasks list, reusing the deadlines widget rendering and copy | 2026-10-15 | f9dc2e7 | [261015-diz-add-overdue-highlight-to-the-admin-tasks](./quick/261015-diz-add-overdue-highlight-to-the-admin-tasks/) |
 | 261016-tnb | Show the Checklist section on the admin task view page and allow toggling checklist item states there | 2026-10-16 | e4a5880 | [261016-tnb-task-view-checklist-toggle](./quick/261016-tnb-task-view-checklist-toggle/) |
 
+### Roadmap Evolution
+
+- Phase 09.1 inserted after Phase 9: Transactions API: REST API for the transactions and transaction_categories tables, including bulk creation (URGENT)
+
 ## Deferred Items
 
 Items acknowledged and deferred at milestone close, most recent first:
@@ -627,6 +657,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T19:19:43.868Z
-Stopped at: Phase 10 UI-SPEC approved
-Resume file: .planning/phases/10-invoicing/10-UI-SPEC.md
+Last session: 2026-10-17T05:26:27.012Z
+Stopped at: Phase 09.1 complete, ready to verify Phase 8
+Resume file: None

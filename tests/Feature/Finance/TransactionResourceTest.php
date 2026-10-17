@@ -387,6 +387,172 @@ describe('the edit page follows the recompute-versus-manual rule', function (): 
     });
 });
 
+describe('a transaction booked at an own rate', function (): void {
+    /**
+     * An EUR expense of 100,00 booked at the invented own rate 26.000 (2 600,00 CZK) on 2026-10-14.
+     *
+     * @param  array<string, mixed>  $overrides
+     */
+    $custom = function (array $overrides = []): Transaction {
+        return txScreenRecord(['exchange_rate' => '26.000', ...$overrides]);
+    };
+
+    it('marks the CZK figure in the list with its own badge, different from the manual one', function () use ($custom): void {
+        txScreenRate();
+        $row = $custom();
+
+        Livewire::test(ListTransactions::class)
+            ->assertCanSeeTableRecords([$row])
+            ->assertSee($row->czk()->format('cs'))
+            ->assertSee(__('finance.transactions.badges.custom'))
+            ->assertDontSee(__('finance.transactions.badges.manual'));
+    });
+
+    it('keeps the manual badge for a manual row and shows no badge for a CNB row', function (): void {
+        txScreenRate();
+        $manual = txScreenRecord(['czk_amount' => '2 600,00']);
+
+        Livewire::test(ListTransactions::class)
+            ->assertCanSeeTableRecords([$manual])
+            ->assertSee(__('finance.transactions.badges.manual'))
+            ->assertDontSee(__('finance.transactions.badges.custom'));
+
+        $manual->delete();
+        $cnb = txScreenRecord();
+
+        Livewire::test(ListTransactions::class)
+            ->assertCanSeeTableRecords([$cnb])
+            ->assertDontSee(__('finance.transactions.badges.manual'))
+            ->assertDontSee(__('finance.transactions.badges.custom'));
+    });
+
+    it('shows the stored own rate instead of the CNB preview and no CZK field on the edit page', function () use ($custom): void {
+        txScreenRate();
+        $row = $custom();
+
+        Livewire::test(EditTransaction::class, ['record' => $row->getKey()])
+            ->assertSee(__('finance.transactions.hints.czk_custom_kept', [
+                'amount' => $row->amount->format('cs'),
+                'czk' => $row->czk()->format('cs'),
+                'rate' => '26,000',
+                'unit' => '1',
+                'currency' => 'EUR',
+            ]))
+            ->assertDontSee('Kurz ČNB:')
+            ->assertFormFieldIsHidden('czk_amount');
+    });
+
+    it('keeps the own rate, the figure and the snapshot when only the description changes', function () use ($custom): void {
+        txScreenRate();
+        $row = $custom();
+
+        Livewire::test(EditTransaction::class, ['record' => $row->getKey()])
+            ->fillForm(['description' => 'Fictional note'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $row->refresh();
+
+        expect($row->description)->toBe('Fictional note')
+            ->and($row->czk_source)->toBe(CzkSource::Custom)
+            ->and($row->czk_minor)->toBe(260000)
+            ->and($row->exchange_rate)->toBe('26.0000000000')
+            ->and($row->exchange_rate_date?->toDateString())->toBe('2026-10-14');
+    });
+
+    it('shows the CNB preview again and stores cnb when the amount is changed', function () use ($custom): void {
+        txScreenRate();
+        $row = $custom();
+
+        Livewire::test(EditTransaction::class, ['record' => $row->getKey()])
+            ->fillForm(['amount' => '200,00'])
+            ->assertSee('Kurz ČNB')
+            ->assertDontSee(__('finance.transactions.hints.czk_custom_kept', [
+                'amount' => $row->amount->format('cs'),
+                'czk' => $row->czk()->format('cs'),
+                'rate' => '26,000',
+                'unit' => '1',
+                'currency' => 'EUR',
+            ]))
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $row->refresh();
+
+        expect($row->czk_source)->toBe(CzkSource::Cnb)
+            ->and($row->czk_minor)->toBe(502500)
+            ->and($row->exchange_rate)->toBe('25.1250000000');
+    });
+
+    it('stores cnb when the date is changed to a day with a list', function () use ($custom): void {
+        txScreenRate();
+        $row = $custom();
+
+        Livewire::test(EditTransaction::class, ['record' => $row->getKey()])
+            ->fillForm(['transaction_date' => '2026-10-15'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect($row->refresh()->czk_source)->toBe(CzkSource::Cnb)
+            ->and($row->czk_minor)->toBe(251250);
+    });
+
+    it('opens and saves a description change of a row in a currency without any CNB list, without asking for a CZK amount', function (): void {
+        $row = txScreenRecord(['currency' => 'ISK', 'amount' => '1000,00', 'exchange_rate' => '0.18']);
+
+        expect($row->czk_source)->toBe(CzkSource::Custom);
+
+        Livewire::test(EditTransaction::class, ['record' => $row->getKey()])
+            ->assertSee('ISK')
+            ->assertSee(__('finance.transactions.hints.czk_custom_kept', [
+                'amount' => $row->amount->format('cs'),
+                'czk' => $row->czk()->format('cs'),
+                'rate' => '0,180',
+                'unit' => '1',
+                'currency' => 'ISK',
+            ]))
+            ->assertFormFieldIsHidden('czk_amount')
+            ->fillForm(['description' => 'Fictional note'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $row->refresh();
+
+        expect($row->description)->toBe('Fictional note')
+            ->and($row->czk_source)->toBe(CzkSource::Custom)
+            ->and($row->czk_minor)->toBe($row->czk()->minor)
+            ->and($row->exchange_rate)->toBe('0.1800000000');
+    });
+
+    it('asks for the CZK amount when the amount of a row in a currency without a list is changed', function (): void {
+        $row = txScreenRecord(['currency' => 'ISK', 'amount' => '1000,00', 'exchange_rate' => '0.18']);
+
+        Livewire::test(EditTransaction::class, ['record' => $row->getKey()])
+            ->fillForm(['amount' => '2000,00'])
+            ->call('save')
+            ->assertHasFormErrors(['czk_amount']);
+
+        expect($row->refresh()->czk_source)->toBe(CzkSource::Custom);
+    });
+
+    it('starts the manual figure from the stored one when the manual switch is turned on', function () use ($custom): void {
+        txScreenRate();
+        $row = $custom();
+
+        Livewire::test(EditTransaction::class, ['record' => $row->getKey()])
+            ->fillForm(['czk_manual' => true])
+            ->assertFormSet(['czk_amount' => '2600,00'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $row->refresh();
+
+        expect($row->czk_source)->toBe(CzkSource::Manual)
+            ->and($row->czk_minor)->toBe(260000)
+            ->and($row->exchange_rate)->toBeNull();
+    });
+});
+
 describe('deleting a transaction', function (): void {
     it('asks for a confirmation and deletes through the Action only after it', function (): void {
         txScreenRate();

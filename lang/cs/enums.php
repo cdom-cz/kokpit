@@ -175,6 +175,7 @@ return [
         'identity' => 'Kč',
         'cnb' => 'Kurz ČNB',
         'manual' => 'Zadáno ručně',
+        'custom' => 'Vlastní kurz',
     ],
 
 ];

@@ -85,7 +85,7 @@ final class ListTimeEntriesRequest extends FormRequest
     /**
      * The order columns a cursor of this list carries: the sort column of the effective sort and the id tiebreaker.
      *
-     * @return array<string, 'uuid'|'instant'|'text'>
+     * @return array<string, 'uuid'|'instant'|'text'|'date'|'integer'>
      */
     private function cursorColumns(): array
     {
