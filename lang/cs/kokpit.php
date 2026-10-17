@@ -372,6 +372,8 @@ return [
                 'too_long' => 'Vzor smí mít nejvýše 32 znaků.',
                 'invoice_digits' => 'Číslo faktury smí obsahovat jen číslice, protože slouží jako variabilní symbol.',
                 'invoice_length' => 'Číslo faktury smí mít nejvýše 10 číslic, ale tento vzor dává už nejkratší číslo delší.',
+                'proforma_digits' => 'Číslo zálohové faktury smí obsahovat jen číslice, protože slouží jako variabilní symbol.',
+                'proforma_length' => 'Číslo zálohové faktury smí mít nejvýše 10 číslic, protože slouží jako variabilní symbol.',
                 'task_fixed' => 'Číslo úkolu má pevný tvar {KEY}-{N} a nelze ho měnit.',
                 'duplicate_token' => 'Značka roku a značka měsíce smí být ve vzoru každá nejvýše jednou.',
                 'unclosed_token' => 'Ve vzoru chybí uzavírací složená závorka }.',
