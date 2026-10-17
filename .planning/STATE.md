@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-08-PLAN.md
-last_updated: "2026-10-17T07:32:22.914Z"
+stopped_at: Completed 10-09-PLAN.md
+last_updated: "2026-10-17T07:50:25.937Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 6ca9da31513ee30553bd71d76b2e803e5943060a
+state_head: 94135dcb6761a15b36a5482f5a98fe01c7a0a09b
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 193
+  completed_plans: 194
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 10 of 41
+Plan: 11 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -256,6 +256,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P06 | 40 min | 3 tasks | 9 files |
 | Phase 10 P07 | 30 min | 2 tasks | 10 files |
 | Phase 10 P08 | 30 min | 3 tasks | 13 files |
+| Phase 10 P09 | 55 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -630,6 +631,8 @@ Recent decisions affecting current work:
 - [Phase 10]: R-07-1/R-07-2/R-07-3: invoice and proforma numbers are digits-only and at most 10 characters (variable symbol = the number itself, none for a credit note); proforma default {YYYY}9{NNNN}, moved to by a guarded settings migration (owner acknowledgement of the D-05 narrowing pending)
 - [Phase 10]: R-08-1: InvoiceAdmin, InvoicePayment, InvoiceItemSource and InvoiceEmail are DeniesPartners models under AdminOnlyPolicy; the stored PDF is reached only through InvoiceAdmin::pdfDocument()
 - [Phase 10]: InvoiceAdmin and InvoicePayment log allowlisted columns only (internal_note_updated_at marker, CNB trio, amount, date, method); note text is never logged
+- [Phase 10]: R-09-1 applied: every billing takes the rate/amount snapshot through EntryBilling::snapshot(); only hourly entries with a rate snapshot
+- [Phase 10]: R-09-3 applied: bulk unlock is all or nothing when an invoice-billed entry is selected; the message names the invoice with the lowest id
 
 ### Pending Todos
 
@@ -685,6 +688,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T07:32:21.924Z
-Stopped at: Completed 10-08-PLAN.md
+Last session: 2026-10-17T07:50:24.746Z
+Stopped at: Completed 10-09-PLAN.md
 Resume file: None
