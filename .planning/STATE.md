@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-15-PLAN.md
-last_updated: "2026-10-17T12:26:49.088Z"
+stopped_at: Completed 10-16-PLAN.md
+last_updated: "2026-10-17T12:41:49.141Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 1fa58b4f249ccb5694d6be5131d3e9d8653e6b5b
+state_head: f896ac877cea8e3a230a97d872ef43c098a76d5e
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 201
+  completed_plans: 202
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 18 of 41
+Plan: 19 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -264,6 +264,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P13 | 7 min | 2 tasks | 12 files |
 | Phase 10 P14 | 30 min | 3 tasks | 11 files |
 | Phase 10 P15 | 2 sessions | 3 tasks | 12 files |
+| Phase 10 P16 | 30 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -651,6 +652,8 @@ Recent decisions affecting current work:
 - [Phase 10]: 10-13: needs_conversion of a preview line is derived (source rate currency differs from draft currency, price not manual), not stored; conversion_snapshot stays null until issue (10-17)
 - [Phase 10]: R-14-1/R-14-2 tightened: fixed-amount time link is limited to entries of effective fixed-price type; the billed fixed amount counts issued invoices only (proformas excluded, credit notes netted)
 - [Phase 10]: Draft line appends (time, new time, fixed amount) go through one writer, DraftLines, that only appends after the last position so edited lines are never rewritten
+- [Phase 10]: 10-16: payment refusals (draft, credit note, cancelled invoice) are keyed under 'payment'; a missing CNB list is keyed under paid_on, or income_date when it differs, and is checked before anything is written
+- [Phase 10]: 10-16: InvoiceBalances is the one definition of paid, credited and remaining (shared SQL fragments); remaining is null for a credit note or draft and 0 for a cancelled invoice
 
 ### Pending Todos
 
@@ -706,6 +709,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T12:26:47.954Z
-Stopped at: Completed 10-15-PLAN.md
+Last session: 2026-10-17T12:41:47.917Z
+Stopped at: Completed 10-16-PLAN.md
 Resume file: None
