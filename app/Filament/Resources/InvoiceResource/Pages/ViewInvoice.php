@@ -24,6 +24,7 @@ use App\Filament\Resources\InvoiceResource;
 use App\Filament\Support\InvoiceColumns;
 use App\Filament\Support\InvoiceTable;
 use App\Filament\Support\RecordPaymentAction;
+use App\Filament\Support\SendInvoiceEmailAction;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -89,6 +90,12 @@ final class ViewInvoice extends ViewRecord
     private ?array $creditRows = null;
 
     /**
+     * Whether this load came from the issue (`send=1`) and the e-mail dialog is still to be opened. Set in `mount()`
+     * only; not persisted by Livewire.
+     */
+    private bool $sendDialogPending = false;
+
+    /**
      * The Admin check of every request, before any other code of the page runs. A Partner is refused with 403 before
      * the record is looked up.
      */
@@ -109,6 +116,15 @@ final class ViewInvoice extends ViewRecord
 
         if ($invoice->isDraft()) {
             $this->redirect(InvoiceResource::getUrl('edit', ['record' => $invoice]));
+
+            return;
+        }
+
+        // The issue, the storno, a partial credit note and the conversion send the Admin here with `send=1`; the e-mail
+        // dialog opens at once (ruling R-29-1) through `wire:init` of the subheading. Closing it leaves the document
+        // unsent and the header action available.
+        if (request()->boolean('send') && $invoice->isIssued()) {
+            $this->sendDialogPending = true;
         }
     }
 
@@ -151,13 +167,30 @@ final class ViewInvoice extends ViewRecord
         $invoice = $this->invoice();
         $client = $invoice->client;
 
-        return new HtmlString('<a href="'.e(ClientResource::getUrl('view', ['record' => $invoice->client_id])).'" style="text-decoration: underline;">'.e((string) $client?->name).'</a>');
+        // The header actions are cached after `mount()`, so the dialog of the issue cannot be mounted there: this empty
+        // node asks the page for it as soon as the page is loaded.
+        $opener = $this->sendDialogPending ? '<span wire:init="openSendDialog"></span>' : '';
+
+        return new HtmlString('<a href="'.e(ClientResource::getUrl('view', ['record' => $invoice->client_id])).'" style="text-decoration: underline;">'.e((string) $client?->name).'</a>'.$opener);
+    }
+
+    /**
+     * Opens the e-mail dialog of an issued document (see {@see self::getSubheading()}). Anyone who can open the page is
+     * an Admin, and a document that cannot be sent has no such action.
+     */
+    public function openSendDialog(): void
+    {
+        abort_unless(InvoiceResource::canAccess(), 403);
+
+        if ($this->invoice()->isIssued()) {
+            $this->mountAction('sendEmail');
+        }
     }
 
     /**
      * "Stáhnout PDF" when the stored PDF exists, "Zaznamenat platbu" on a document that still owes something and
      * "Vystavit fakturu" on a paid proforma without an invoice, and the group "Další akce" with the partial credit note and the
-     * storno (UI-SPEC E2); the e-mail action follows in the same plan.
+     * storno, and "Odeslat e-mailem" (UI-SPEC E2).
      *
      * @return array<Action|ActionGroup>
      */
@@ -165,6 +198,7 @@ final class ViewInvoice extends ViewRecord
     {
         return [
             $this->downloadPdfAction(),
+            SendInvoiceEmailAction::make(fn (): Invoice => $this->invoice()),
             $this->recordPaymentAction(),
             $this->convertProformaAction(),
             $this->moreActions(),

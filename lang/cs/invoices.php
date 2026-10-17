@@ -502,6 +502,7 @@ return [
             ],
             'report_helper' => 'Výkaz obsahuje odpracované hodiny bez cen.',
             'attachments' => 'Přílohy: :files',
+            'report_file' => 'pracovní výkaz.pdf',
             'missing_address' => 'Klient nemá vyplněný fakturační e-mail.',
             'submit' => 'Odeslat',
             'cancel' => 'Neodesílat teď',
