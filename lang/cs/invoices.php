@@ -55,6 +55,8 @@ return [
         'payment_date_future' => 'Datum platby nesmí být v budoucnosti.',
         'payment_not_allowed' => 'Platbu nelze zaznamenat u dobropisu ani u stornovaného dokladu.',
         'payment_category' => 'Zvolte kategorii příjmů.',
+        'payment_method' => 'Zvolte platbu převodem nebo hotově.',
+        'payment_note' => 'Poznámka k platbě může mít nejvýše 500 znaků.',
         'payment_transaction_locked' => 'Transakce vznikla z platby faktury :number. Změnit lze jen datum a kategorii; chybnou platbu smažte v detailu faktury.',
         'payment_transaction_delete' => 'Transakce vznikla z platby faktury :number. Smazat ji lze jen smazáním platby v detailu faktury.',
         'payment_delete_carried' => 'Platba je přenesená na fakturu :number. Nejdřív smažte platbu na faktuře.',
@@ -79,5 +81,10 @@ return [
         // The stored PDF.
         'pdf_unconfirmed' => 'PDF vystaveného dokladu lze smazat jen s výslovným potvrzením.',
         'pdf_missing' => 'PDF dokladu chybí.',
+    ],
+
+    // The fixed text of the income transaction a payment books (R-16-2).
+    'payment_income' => [
+        'description' => 'Platba faktury :number',
     ],
 ];
