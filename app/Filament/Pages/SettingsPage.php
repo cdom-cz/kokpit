@@ -7,6 +7,7 @@ namespace App\Filament\Pages;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Invoicing\Pdf\DocumentPalette;
 use App\Domain\Settings\Banking\BankAccountFormat;
+use App\Domain\Settings\DocumentImage;
 use App\Domain\Settings\Numbering\DocumentKind;
 use App\Domain\Settings\Numbering\DocumentNumbering;
 use App\Domain\Settings\Numbering\InvalidNumberPattern;
@@ -27,6 +28,7 @@ use App\Filament\Concerns\EnforcesPageAccessRule;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\ColorPicker;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -48,6 +50,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -182,7 +185,13 @@ class SettingsPage extends Page
                 $group = $class::group();
 
                 try {
-                    app($class)->fillFromFormState($state[$group] ?? [])->save();
+                    $groupState = $state[$group] ?? [];
+
+                    if ($class === SupplierSettings::class) {
+                        $groupState = $this->applyImageChanges($groupState);
+                    }
+
+                    app($class)->fillFromFormState($groupState)->save();
                 } catch (ValidationException $exception) {
                     throw ValidationException::withMessages($this->prefixErrors($group, $exception->errors()));
                 }
@@ -194,6 +203,8 @@ class SettingsPage extends Page
         }
 
         $this->commitDatabaseTransaction();
+
+        $this->resetImageFields();
 
         $this->rememberData();
 
@@ -221,8 +232,104 @@ class SettingsPage extends Page
                 $this->supplierInput('phone')->tel(),
                 $this->supplierInput('website')->url(),
                 $this->supplierInput('registration_note'),
+                ...$this->imageInputs('logo'),
+                ...$this->imageInputs('signature'),
             ])->statePath(SupplierSettings::group()),
         ]);
+    }
+
+    /**
+     * The upload, the preview of the stored image and the remove switch of one
+     * image kind. The upload field only carries the file: it is never stored by
+     * Filament, SettingsPage::save() hands it to DocumentImage, and the stored path
+     * is not a form field at all, so a crafted form state cannot set it.
+     *
+     * @return list<FileUpload|Text|Toggle>
+     */
+    private function imageInputs(string $kind): array
+    {
+        return [
+            FileUpload::make("{$kind}_upload")
+                ->label(__("kokpit.settings.supplier.{$kind}_upload"))
+                ->helperText(__('kokpit.settings.supplier.image_hint'))
+                ->acceptedFileTypes(['image/png', 'image/jpeg'])
+                ->maxSize(DocumentImage::MAX_BYTES / 1024)
+                ->storeFiles(false)
+                ->multiple(false)
+                ->openable(false)
+                ->downloadable(false),
+            Text::make(static fn (Get $get): HtmlString => self::imagePreview($get("{$kind}_path"))),
+            Toggle::make("{$kind}_remove")
+                ->label(__("kokpit.settings.supplier.{$kind}_remove"))
+                ->helperText(__('kokpit.settings.supplier.image_kept_note'))
+                ->visible(static fn (Get $get): bool => filled($get("{$kind}_path"))),
+        ];
+    }
+
+    /**
+     * The stored image at 160 x 40 pt as a data URI (no public URL exists). Empty
+     * when nothing is stored; a stored object that can no longer be read shows the
+     * warning instead of failing the page.
+     */
+    private static function imagePreview(mixed $path): HtmlString
+    {
+        if (! is_string($path) || $path === '') {
+            return new HtmlString('');
+        }
+
+        try {
+            $images = app(DocumentImage::class);
+            $reference = $images->reference($path);
+            $uri = $reference === null ? null : $images->dataUri($reference['path'], $reference['sha256']);
+        } catch (Throwable) {
+            return new HtmlString('<span>'.e((string) __('kokpit.settings.supplier.image_missing')).'</span>');
+        }
+
+        return new HtmlString('<img src="'.e((string) $uri).'" alt="" style="max-width:160pt;max-height:40pt">');
+    }
+
+    /**
+     * After a successful save the upload and remove fields start empty again and the
+     * form carries the stored paths, so the preview shows what was saved and a
+     * second Save does not store the same file once more over a later removal.
+     */
+    private function resetImageFields(): void
+    {
+        $supplier = app(SupplierSettings::class);
+
+        foreach (['logo', 'signature'] as $kind) {
+            $this->data['supplier']["{$kind}_path"] = $supplier->{"{$kind}_path"};
+            $this->data['supplier']["{$kind}_upload"] = [];
+            $this->data['supplier']["{$kind}_remove"] = false;
+        }
+    }
+
+    /**
+     * Turns the upload and remove fields of the supplier tab into the stored paths:
+     * a new file is checked and stored by DocumentImage, a remove switch clears the
+     * path (the stored object stays, an issued document may reference it, D-23).
+     * Only uploaded file objects count; a string in the field is client-controlled
+     * and ignored.
+     *
+     * @param  array<string, mixed>  $supplier
+     * @return array<string, mixed>
+     */
+    private function applyImageChanges(array $supplier): array
+    {
+        foreach (['logo', 'signature'] as $kind) {
+            $upload = $supplier["{$kind}_upload"] ?? null;
+            $upload = is_array($upload) ? (array_values($upload)[0] ?? null) : $upload;
+
+            if ($upload instanceof UploadedFile) {
+                $supplier["{$kind}_path"] = app(DocumentImage::class)->store($upload, $kind);
+            } elseif (($supplier["{$kind}_remove"] ?? false) === true) {
+                $supplier["{$kind}_path"] = null;
+            }
+
+            unset($supplier["{$kind}_upload"], $supplier["{$kind}_remove"]);
+        }
+
+        return $supplier;
     }
 
     private function bankTab(): Tab
