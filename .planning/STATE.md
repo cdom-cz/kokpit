@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-02-PLAN.md
-last_updated: "2026-10-17T05:50:03.597Z"
+stopped_at: Completed 10-03-PLAN.md
+last_updated: "2026-10-17T06:02:10.381Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 1bd5715cb308959038fde83355d8d62dd17f1e4c
+state_head: ccfdd9b60806271f786cdf3cf740922ddac00dc7
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 186
+  completed_plans: 187
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 3 of 41
+Plan: 4 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -249,6 +249,7 @@ Progress: [█████░░░░░] 54%
 | Phase 09.1 P09 | 26 min | 3 tasks | 6 files |
 | Phase 10 P01 | 14 min | 2 tasks | 4 files |
 | Phase 10 P02 | 8 min | 2 tasks | 8 files |
+| Phase 10 P03 | 31 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -608,6 +609,9 @@ Recent decisions affecting current work:
 - [Phase 10]: R-01-2/R-01-3: InvoiceQuantity rounds seconds with integer arithmetic (intdiv(50*s+9,18)) outside Money; Money::times takes the canonical decimal text of a quantity
 - [Phase 10]: 10-02: payment QR only for CZK and a Czech IBAN; Spayd::supports() decides printing, forPayment() throws otherwise and also refuses a zero amount
 - [Phase 10]: 10-02: SPAYD message strips combining marks via Normalizer NFKD before iconv, because glibc ASCII//TRANSLIT answers a question mark for diacritics under the C locale
+- [Phase 10]: R-03-1: accent, footer, logo and signature are frozen into the issue snapshot (images as path plus SHA-256); stored image objects are never deleted by Settings and DocumentImage::dataUri() throws on a missing or altered object
+- [Phase 10]: R-03-3: logo and signature are re-encoded to PNG and stored content-addressed as settings/document-<kind>-<sha256>.png on the media disk, 1 MB and 4000 px caps
+- [Phase 10]: DocumentPalette is derived at render time from the snapshotted accent and falls back to #ff6f00 for an invalid value (R-03-2)
 
 ### Pending Todos
 
@@ -663,6 +667,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T05:50:02.686Z
-Stopped at: Completed 10-02-PLAN.md
+Last session: 2026-10-17T06:02:09.255Z
+Stopped at: Completed 10-03-PLAN.md
 Resume file: None
