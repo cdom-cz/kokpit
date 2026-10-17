@@ -188,7 +188,7 @@ describe('an issued invoice', function (): void {
         invoiceTablesIssue($invoiceId);
 
         RawSql::expectSqlState('KP001', fn () => DB::unprepared('TRUNCATE invoices CASCADE'));
-        RawSql::expectSqlState('KP001', fn () => DB::unprepared('TRUNCATE invoice_items'));
+        RawSql::expectSqlState('KP001', fn () => DB::unprepared('TRUNCATE invoice_items CASCADE'));
 
         expect((int) DB::selectOne('select count(*) as n from invoices where id = ?', [$invoiceId])->n)->toBe(1);
     });

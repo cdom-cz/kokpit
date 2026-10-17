@@ -34,6 +34,7 @@ final class PgSchema
         'transactions.type' => 'income or expense, a member of the composite category key (category_id, type) of the transaction, not an identifier',
         'transaction_categories.type' => 'income or expense, a member of the composite parent key and of the key a transaction points at, not an identifier',
         'transaction_categories.parent_depth' => 'generated depth discriminator (0 for a child) in the composite parent key, not an identifier',
+        'invoice_payments.currency' => 'currency code of the payment, a member of the composite key (invoice_id, currency) that ties it to the currency of its document, not an identifier',
     ];
 
     /**
