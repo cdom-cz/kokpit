@@ -399,7 +399,7 @@ describe('invoice_payments', function (): void {
             DB::select("select set_config('kokpit.payment_deletion', ?, true)", [$payment]);
             DB::update('update invoice_payments set amount_minor = 1 where id = ?', [$payment]);
         });
-        RawSql::expectSqlState('KP001', fn () => DB::unprepared('TRUNCATE invoice_payments'));
+        RawSql::expectSqlState('KP001', fn () => DB::unprepared('TRUNCATE invoice_payments CASCADE'));
 
         expect((int) DB::selectOne('select amount_minor from invoice_payments where id = ?', [$payment])->amount_minor)->toBe(40000);
     });

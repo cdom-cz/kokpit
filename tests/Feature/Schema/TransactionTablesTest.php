@@ -7,12 +7,14 @@ use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
+use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\AssertionFailedError;
 use Tests\Support\Canary;
 use Tests\Support\RawSql;
 use Tests\Support\Uuids;
@@ -412,5 +414,279 @@ describe('deleting what a transaction references', function (): void {
         transactionTablesInsert(['client_id' => $clientId, 'project_id' => $projectId]);
 
         RawSql::expectSqlState('23503', fn () => DB::delete('delete from projects where id = ?', [$projectId]));
+    });
+});
+
+/**
+ * An issued invoice of the client, inserted complete by raw SQL, and its id.
+ */
+function transactionTablesIssuedInvoice(string $clientId, string $currency = 'CZK'): string
+{
+    static $sequence = 0;
+    $sequence++;
+    $number = '2026'.str_pad((string) $sequence, 4, '0', STR_PAD_LEFT);
+
+    /** @var object{id: string} $inserted */
+    $inserted = DB::selectOne(
+        "insert into invoices (client_id, kind, state, number, variable_symbol, currency, language, issue_date, due_date, subtotal_minor, total_minor, supplier_snapshot, customer_snapshot, bank_snapshot, appearance_snapshot, issued_at, created_at, updated_at) values (?, 'invoice', 'issued', ?, ?, ?, 'cs', '2026-10-17', '2026-10-31', 100000, 100000, '{}', '{}', '{}', '{}', '2026-10-17 10:30:00+00', now(), now()) returning id",
+        [$clientId, $number, $number, $currency],
+    );
+
+    return $inserted->id;
+}
+
+/**
+ * A payment of the invoice, inserted by raw SQL, and its id.
+ */
+function transactionTablesPayment(string $invoiceId, string $currency = 'CZK'): string
+{
+    /** @var object{id: string} $inserted */
+    $inserted = DB::selectOne(
+        "insert into invoice_payments (invoice_id, currency, amount_minor, paid_on, method, created_by, created_at, updated_at) values (?, ?, 40000, '2026-10-20', 'transfer', ?, now(), now()) returning id",
+        [$invoiceId, $currency, app(PartnerContext::class)->runAsSystem(static fn (): string => User::factory()->create()->id)],
+    );
+
+    return $inserted->id;
+}
+
+/**
+ * A client, an issued invoice of it, one payment and the income that books it.
+ *
+ * @return array{client: string, invoice: string, payment: string, income: string}
+ */
+function transactionTablesBooked(): array
+{
+    $client = app(PartnerContext::class)->runAsSystem(static fn (): string => Client::factory()->create()->id);
+    $invoice = transactionTablesIssuedInvoice($client);
+    $payment = transactionTablesPayment($invoice);
+    $income = transactionTablesInsert([
+        'type' => 'income',
+        'category_id' => transactionTablesCategory('income'),
+        'amount_minor' => 40000,
+        'czk_minor' => 40000,
+        'client_id' => $client,
+        'invoice_id' => $invoice,
+        'invoice_payment_id' => $payment,
+    ]);
+
+    return ['client' => $client, 'invoice' => $invoice, 'payment' => $payment, 'income' => $income];
+}
+
+/**
+ * Deletes in the sanctioned order under the flag, as DeletePayment does, and forces the pair check.
+ */
+function transactionTablesSanctionedDelete(string $paymentId, string $incomeId): void
+{
+    DB::select("select set_config('kokpit.payment_deletion', ?, true)", [$paymentId]);
+    DB::delete('delete from transactions where id = ?', [$incomeId]);
+    DB::delete('delete from invoice_payments where id = ?', [$paymentId]);
+    DB::unprepared('SET CONSTRAINTS transactions_payment_income_pair_check IMMEDIATE');
+    DB::select("select set_config('kokpit.payment_deletion', '', true)");
+}
+
+describe('the link to an invoice and to its payment', function (): void {
+    it('lets an income of a client book an invoice and a payment of that invoice, once', function (): void {
+        $booked = transactionTablesBooked();
+
+        expect(DB::selectOne('select invoice_id, invoice_payment_id from transactions where id = ?', [$booked['income']]))
+            ->invoice_id->toBe($booked['invoice'])
+            ->invoice_payment_id->toBe($booked['payment']);
+
+        RawSql::expectSqlState('23505', fn () => transactionTablesInsert([
+            'type' => 'income',
+            'category_id' => transactionTablesCategory('income'),
+            'client_id' => $booked['client'],
+            'invoice_id' => $booked['invoice'],
+            'invoice_payment_id' => $booked['payment'],
+        ]));
+    });
+
+    it('lets an income name an invoice of its client without a payment', function (): void {
+        $client = app(PartnerContext::class)->runAsSystem(static fn (): string => Client::factory()->create()->id);
+        $invoice = transactionTablesIssuedInvoice($client);
+
+        RawSql::expectAllowed(fn () => transactionTablesInsert([
+            'type' => 'income',
+            'category_id' => transactionTablesCategory('income'),
+            'client_id' => $client,
+            'invoice_id' => $invoice,
+        ]));
+    });
+
+    it('refuses an invoice on an expense, without a client, or of another client', function (): void {
+        [$client, $other] = app(PartnerContext::class)->runAsSystem(static fn (): array => [Client::factory()->create()->id, Client::factory()->create()->id]);
+        $invoice = transactionTablesIssuedInvoice($client);
+        $income = ['type' => 'income', 'category_id' => transactionTablesCategory('income')];
+
+        RawSql::expectSqlState('23514', fn () => transactionTablesInsert(['client_id' => $client, 'invoice_id' => $invoice]));
+        RawSql::expectSqlState('23514', fn () => transactionTablesInsert([...$income, 'invoice_id' => $invoice]));
+        RawSql::expectSqlState('23503', fn () => transactionTablesInsert([...$income, 'client_id' => $other, 'invoice_id' => $invoice]));
+    });
+
+    it('refuses a payment without its invoice and a payment of another invoice', function (): void {
+        $booked = transactionTablesBooked();
+        $otherInvoice = transactionTablesIssuedInvoice($booked['client']);
+        $otherPayment = transactionTablesPayment($otherInvoice);
+        $income = ['type' => 'income', 'category_id' => transactionTablesCategory('income'), 'client_id' => $booked['client']];
+
+        RawSql::expectSqlState('23514', fn () => transactionTablesInsert([...$income, 'invoice_payment_id' => $otherPayment]));
+        RawSql::expectSqlState('23503', fn () => transactionTablesInsert([...$income, 'invoice_id' => $booked['invoice'], 'invoice_payment_id' => $otherPayment]));
+    });
+});
+
+describe('the income of a payment (ruling R-06-5)', function (): void {
+    it('changes only in its date, its CZK figure and its category', function (): void {
+        $booked = transactionTablesBooked();
+        $update = fn (string $assignments, array $bindings = []) => fn () => DB::update("update transactions set $assignments where id = ?", [...$bindings, $booked['income']]);
+
+        RawSql::expectAllowed($update("transaction_date = '2026-10-21'"));
+        RawSql::expectAllowed($update('category_id = ?', [transactionTablesCategory('income')]));
+        RawSql::expectAllowed($update("transaction_date = '2026-10-22', updated_at = '2030-01-01 00:00:00+00'"));
+
+        $other = app(PartnerContext::class)->runAsSystem(static fn (): string => Client::factory()->create()->id);
+        $anotherInvoice = transactionTablesIssuedInvoice($booked['client']);
+        $anotherPayment = transactionTablesPayment($anotherInvoice);
+
+        foreach ([
+            ['amount_minor = 1, czk_minor = 1', []],
+            ["amount_currency = 'EUR', czk_source = 'manual'", []],
+            ["type = 'expense'", []],
+            ['client_id = ?', [$other]],
+            ['project_id = null, client_id = null', []],
+            ["description = 'Changed'", []],
+            ["counterparty = 'Changed'", []],
+            ["document_number = 'Changed'", []],
+            ['invoice_id = ?, invoice_payment_id = ?', [$anotherInvoice, $anotherPayment]],
+            ['invoice_payment_id = null', []],
+            ['invoice_id = null, invoice_payment_id = null', []],
+        ] as [$assignments, $bindings]) {
+            RawSql::expectSqlState('KP001', $update($assignments, $bindings));
+        }
+
+        RawSql::expectSqlState('KP001', function () use ($booked): void {
+            DB::select("select set_config('kokpit.payment_deletion', ?, true)", [$booked['payment']]);
+            DB::update('update transactions set amount_minor = 1, czk_minor = 1 where id = ?', [$booked['income']]);
+        });
+    });
+
+    it('follows the date with the CZK figure of a foreign payment', function (): void {
+        $client = app(PartnerContext::class)->runAsSystem(static fn (): string => Client::factory()->create()->id);
+        $invoice = transactionTablesIssuedInvoice($client, 'EUR');
+        $payment = transactionTablesPayment($invoice, 'EUR');
+        $income = transactionTablesInsert([
+            'type' => 'income',
+            'category_id' => transactionTablesCategory('income'),
+            'amount_minor' => 40000,
+            'amount_currency' => 'EUR',
+            'czk_minor' => 1000000,
+            'czk_source' => 'cnb',
+            'exchange_rate' => '25.0000000000',
+            'exchange_unit_amount' => 1,
+            'exchange_rate_date' => '2026-10-20',
+            'client_id' => $client,
+            'invoice_id' => $invoice,
+            'invoice_payment_id' => $payment,
+        ]);
+
+        RawSql::expectAllowed(fn () => DB::update(
+            "update transactions set transaction_date = '2026-10-21', czk_minor = 1004000, exchange_rate = 25.1, exchange_rate_date = '2026-10-21' where id = ?",
+            [$income],
+        ));
+        RawSql::expectSqlState('KP001', fn () => DB::update('update transactions set amount_minor = 40001 where id = ?', [$income]));
+    });
+
+    it('refuses an existing transaction becoming the income of a payment, and leaves an ordinary income editable and deletable', function (): void {
+        $booked = transactionTablesBooked();
+        $secondPayment = transactionTablesPayment($booked['invoice']);
+        $ordinary = transactionTablesInsert([
+            'type' => 'income',
+            'category_id' => transactionTablesCategory('income'),
+            'client_id' => $booked['client'],
+            'invoice_id' => $booked['invoice'],
+        ]);
+
+        RawSql::expectSqlState('KP001', fn () => DB::update('update transactions set invoice_payment_id = ? where id = ?', [$secondPayment, $ordinary]));
+        RawSql::expectAllowed(fn () => DB::update("update transactions set amount_minor = 5, czk_minor = 5, description = 'Edited' where id = ?", [$ordinary]));
+        RawSql::expectAllowed(fn () => DB::delete('delete from transactions where id = ?', [$ordinary]));
+        RawSql::expectAllowed(fn () => DB::delete('delete from transactions where id = ?', [transactionTablesInsert()]));
+    });
+
+    it('is deleted only under the flag that names its payment', function (): void {
+        $booked = transactionTablesBooked();
+        $anotherPayment = transactionTablesPayment($booked['invoice']);
+
+        RawSql::expectSqlState('KP001', fn () => DB::delete('delete from transactions where id = ?', [$booked['income']]));
+        RawSql::expectSqlState('KP001', function () use ($booked): void {
+            DB::unprepared("SET LOCAL kokpit.unrelated_setting = 'on'");
+            DB::delete('delete from transactions where id = ?', [$booked['income']]);
+        });
+        RawSql::expectSqlState('KP001', function () use ($booked, $anotherPayment): void {
+            DB::select("select set_config('kokpit.payment_deletion', ?, true)", [$anotherPayment]);
+            DB::delete('delete from transactions where id = ?', [$booked['income']]);
+        });
+        RawSql::expectSqlState('KP001', function () use ($booked): void {
+            DB::select("select set_config('kokpit.payment_deletion', '', true)");
+            DB::delete('delete from transactions where invoice_id = ?', [$booked['invoice']]);
+        });
+
+        expect((int) DB::selectOne('select count(*) as n from transactions where id = ?', [$booked['income']])->n)->toBe(1);
+    });
+});
+
+describe('a payment and its income go together (ruling R-06-7)', function (): void {
+    it('deletes both in the sanctioned order', function (): void {
+        $booked = transactionTablesBooked();
+
+        RawSql::expectAllowed(fn () => transactionTablesSanctionedDelete($booked['payment'], $booked['income']));
+
+        expect((int) DB::selectOne('select count(*) as n from transactions where id = ?', [$booked['income']])->n)->toBe(0)
+            ->and((int) DB::selectOne('select count(*) as n from invoice_payments where id = ?', [$booked['payment']])->n)->toBe(0);
+    });
+
+    it('refuses to delete the payment while its income exists', function (): void {
+        $booked = transactionTablesBooked();
+
+        RawSql::expectSqlState('23503', function () use ($booked): void {
+            DB::select("select set_config('kokpit.payment_deletion', ?, true)", [$booked['payment']]);
+            DB::delete('delete from invoice_payments where id = ?', [$booked['payment']]);
+        });
+    });
+
+    it('refuses at commit an income deleted while its payment still exists', function (): void {
+        $booked = transactionTablesBooked();
+
+        RawSql::expectSqlState('KP001', function () use ($booked): void {
+            DB::select("select set_config('kokpit.payment_deletion', ?, true)", [$booked['payment']]);
+            DB::delete('delete from transactions where id = ?', [$booked['income']]);
+            DB::unprepared('SET CONSTRAINTS transactions_payment_income_pair_check IMMEDIATE');
+        });
+
+        expect((int) DB::selectOne('select count(*) as n from transactions where id = ?', [$booked['income']])->n)->toBe(1);
+    });
+
+    it('proves the income guard by a mutation: without it a bare DELETE is accepted', function (): void {
+        $booked = transactionTablesBooked();
+        $bareDelete = fn () => RawSql::expectSqlState('KP001', fn () => DB::delete('delete from transactions where id = ?', [$booked['income']]));
+
+        $bareDelete();
+
+        DB::unprepared('DROP TRIGGER transactions_payment_income_guard ON transactions');
+
+        expect($bareDelete)->toThrow(AssertionFailedError::class, 'was accepted');
+    });
+
+    it('proves the pair check by a mutation: without it an income deleted alone is accepted', function (): void {
+        $booked = transactionTablesBooked();
+        $incomeAlone = fn () => RawSql::expectSqlState('KP001', function () use ($booked): void {
+            DB::select("select set_config('kokpit.payment_deletion', ?, true)", [$booked['payment']]);
+            DB::delete('delete from transactions where id = ?', [$booked['income']]);
+            DB::unprepared('SET CONSTRAINTS ALL IMMEDIATE');
+        });
+
+        $incomeAlone();
+
+        DB::unprepared('DROP TRIGGER transactions_payment_income_pair_check ON transactions');
+
+        expect($incomeAlone)->toThrow(AssertionFailedError::class, 'was accepted');
     });
 });
