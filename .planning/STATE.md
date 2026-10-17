@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-12-PLAN.md
-last_updated: "2026-10-17T08:42:23.011Z"
+stopped_at: Completed 10-13-PLAN.md
+last_updated: "2026-10-17T08:52:32.124Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: ae59dba722e91d38dce9143d6c18aed4e1b9f88e
+state_head: 789102023490cb12d3467e16180fb967dc335894
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 198
+  completed_plans: 199
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 15 of 41
+Plan: 16 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -261,6 +261,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P11 | 12 min | 3 tasks | 10 files |
 | Phase 10 P34 | 25 min | 2 tasks | 6 files |
 | Phase 10 P12 | 26 min | 2 tasks | 7 files |
+| Phase 10 P13 | 7 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -643,6 +644,9 @@ Recent decisions affecting current work:
 - [Phase 10]: 10-11: UpdateInternalNote writes nothing when the trimmed note is unchanged, so the marker keeps the last real change time
 - [Phase 10]: 10-34: reports price a billed entry with its billing snapshot (rate and amount), unbilled and legacy billed entries at the current rate; ReportEntry exposes a reserved flag while reserved time still counts as unbilled; rateCurrencies includes snapshot currencies
 - [Phase 10]: 10-12: IssueChecks/assertIssuable take an optional CNB trio to copy, so a credit note copying its invoice's rate needs no list on its own issue date; a typed due date before the derived issue date is the due_before_issue blocker; blocker dates are written j. n. Y
+- [Phase 10]: 10-13: draft candidates require an hourly effective billing type (allow-list), so fixed-price and non-billable-task time is never claimed
+- [Phase 10]: 10-13: reservation is lock-then-claim on locked rows (EntryReservation::claim); lines are built from claimed rows with seconds read under the lock
+- [Phase 10]: 10-13: needs_conversion of a preview line is derived (source rate currency differs from draft currency, price not manual), not stored; conversion_snapshot stays null until issue (10-17)
 
 ### Pending Todos
 
@@ -698,6 +702,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T08:42:21.987Z
-Stopped at: Completed 10-12-PLAN.md
+Last session: 2026-10-17T08:52:31.099Z
+Stopped at: Completed 10-13-PLAN.md
 Resume file: None
