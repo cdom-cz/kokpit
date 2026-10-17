@@ -11,6 +11,7 @@ use App\Filament\Pages\Auth\RequestPasswordReset;
 use App\Filament\Pages\Dashboard;
 use App\Http\Controllers\DocumentArchiveFileController;
 use App\Http\Controllers\DocumentFileController;
+use App\Http\Controllers\InvoicePdfController;
 use App\Http\Middleware\EnsureAdminHasTwoFactor;
 use App\Http\Middleware\SetNoReferrerPolicy;
 use App\Support\InitialsAvatarProvider;
@@ -93,6 +94,12 @@ class AdminPanelProvider extends PanelProvider
                 Route::get('/files/archives/{archive}', DocumentArchiveFileController::class)
                     ->middleware([SetNoReferrerPolicy::class, 'signed', 'throttle:document-files'])
                     ->name('files.archive');
+
+                // The PDF of an issued document (IN-09, D-21; ruling R-38-1) has a route of its own: the path names the
+                // invoice, the controller authorises through the scoped invoice and reads the stored PDF as system.
+                Route::get('/files/invoices/{invoice}', InvoicePdfController::class)
+                    ->middleware([SetNoReferrerPolicy::class, 'signed', 'throttle:document-files'])
+                    ->name('files.invoice');
             })
             ->spa()
             // A SPA navigation fetches the link and swaps it into the page, which would swallow a file
