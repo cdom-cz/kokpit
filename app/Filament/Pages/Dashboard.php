@@ -13,6 +13,7 @@ use App\Filament\Widgets\PartnerProjects;
 use App\Filament\Widgets\PartnerTasks;
 use App\Filament\Widgets\TodayPlan;
 use App\Filament\Widgets\UnbilledPerClient;
+use App\Filament\Widgets\UnpaidInvoices;
 use App\Filament\Widgets\UpcomingDeadlines;
 use Filament\Pages\Dashboard as BaseDashboard;
 use Filament\Schemas\Components\EmptyState;
@@ -27,9 +28,10 @@ use Filament\Widgets\Widget;
  * The widgets depend on the role. A Partner with a client gets the open tasks of the own visible
  * projects, the ones waiting for their review first, and the visible projects (D-12); a Partner
  * with neither gets the neutral empty state. The Admin gets the time dashboard (RE-04; D-11): the
- * hours worked, right under them the Signal plan for today (full width), then the unbilled time per client and the
- * nearest task deadlines side by side. The band of Phases 10 and 11 (unpaid invoices, unresolved payments) is a
- * reserved sort position and renders nothing until those widgets exist.
+ * hours worked, right under them the Signal plan for today (full width), then the receivables card of the issued
+ * documents (full width, sort 20, shown from the first issued invoice or proforma; IN-05), then the unbilled time per
+ * client and the nearest task deadlines side by side. The unresolved payments of Phase 11 are a reserved sort
+ * position and render nothing until that widget exists.
  */
 #[AccessRule(Audience::PartnerAllowed, reason: 'Landing page for both roles; the Partner widgets read through the Partner scope and the pinned Partner fields and name no time, rate, price or finance.')]
 class Dashboard extends BaseDashboard
@@ -44,7 +46,7 @@ class Dashboard extends BaseDashboard
         $context = app(PartnerContext::class);
 
         if ($context->isAdmin()) {
-            return [HoursStats::class, TodayPlan::class, UnbilledPerClient::class, UpcomingDeadlines::class];
+            return [HoursStats::class, TodayPlan::class, UnpaidInvoices::class, UnbilledPerClient::class, UpcomingDeadlines::class];
         }
 
         if ($context->partnerClientId() === null) {

@@ -596,6 +596,7 @@ return [
     // Surface J: the dashboard card, collapsible with its own widget key (ruling R-28-1).
     'dashboard' => [
         'heading' => 'Nezaplacené faktury',
+        'summary' => 'Po splatnosti: :count',
         'stats' => [
             'overdue' => 'Po splatnosti',
             'to_pay' => 'K úhradě',
