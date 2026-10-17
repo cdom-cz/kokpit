@@ -383,6 +383,11 @@ it('leaves the balance equal to the remaining payments when a payment is recorde
         $incomes = DB::table('transactions')->where('invoice_id', $ids['invoice']->id)->pluck('amount_minor', 'invoice_payment_id')->all();
         $paid = app(PartnerContext::class)->runAsSystem(static fn (): int => app(InvoiceBalances::class)->for([$ids['invoice']->id])[$ids['invoice']->id]['paid']);
 
+        // The queries have no ORDER BY, so the physical row order may differ between the two tables; the amounts per
+        // payment are what is compared.
+        ksort($payments);
+        ksort($incomes);
+
         expect($payments)->toHaveCount(2)
             ->and($payments)->not->toHaveKey($ids['first'])
             ->and($payments)->toHaveKey($ids['second'])
