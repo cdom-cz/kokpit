@@ -313,6 +313,97 @@ final readonly class Money implements JsonSerializable
     }
 
     /**
+     * The amount with the opposite sign, for credit notes.
+     *
+     * @throws OverflowException when the negated amount does not fit into an integer
+     */
+    public function negated(): self
+    {
+        return new self(self::toInt(BigInteger::of($this->minor)->negated()), $this->currency);
+    }
+
+    public function isNegative(): bool
+    {
+        return $this->minor < 0;
+    }
+
+    public function isPositive(): bool
+    {
+        return $this->minor > 0;
+    }
+
+    /**
+     * -1, 0 or 1 when this amount is less than, equal to or greater than the other.
+     *
+     * @throws InvalidArgumentException when the currencies differ
+     */
+    public function compareTo(self $other): int
+    {
+        $this->assertSameCurrency($other);
+
+        return $this->minor <=> $other->minor;
+    }
+
+    /**
+     * Converts this amount between any two currencies with both CNB quotes, rounded once.
+     *
+     * Each quote is the central bank's rate of its currency in CZK for `$unit` units (CZK itself is rate "1",
+     * unit 1). The exact value is `amount * sourceRate / sourceUnit * targetUnit / targetRate` as one rational,
+     * scaled by the fraction digits of both currencies, and {@see Money::fromExactMinor()} rounds it a single
+     * time. Unlike {@see Money::convert()} it needs no inverted rate, which is not exactly representable in ten
+     * fraction digits. For a CZK target it equals `convert()` exactly. It prices document totals in CZK and the
+     * converted unit price printed on a converted line (a display figure, never an input of the line amount,
+     * see {@see Money::timesThroughCzk()}).
+     *
+     * @param  string  $sourceRate  a positive number: digits with an optional point and at most ten fraction digits
+     * @param  string  $targetRate  same shape as the source rate
+     *
+     * @throws InvalidArgumentException when a rate is malformed, zero or negative, a unit is below one or a currency is invalid
+     * @throws OverflowException when the converted amount does not fit into an integer
+     */
+    public function convertThroughCzk(string $sourceRate, int $sourceUnit, string $targetCurrency, string $targetRate, int $targetUnit): self
+    {
+        $target = self::validCrossConversion($this->currency, $sourceRate, $sourceUnit, $targetCurrency, $targetRate, $targetUnit);
+
+        return self::fromExactMinor(
+            self::convertedThroughCzkExact(BigRational::of($this->minor), $this->currency, $sourceRate, $sourceUnit, $target, $targetRate, $targetUnit)->toString(),
+            $target,
+        );
+    }
+
+    /**
+     * The converted amount of an invoice line, rounded exactly once (D-09, ruling R-01-1).
+     *
+     * `minor * quantity * sourceRate / sourceUnit * targetUnit / targetRate`, with the fraction-digit scales of both
+     * currencies, is built as one exact rational and handed to {@see Money::fromExactMinor()} a single time. This
+     * is the only way a converted line amount is computed: the converted unit price printed on the line
+     * ({@see Money::convertThroughCzk()}) is a display figure rounded on its own and never feeds this amount, so
+     * quantity times the printed price can differ from the printed amount by rounding. A line in the document
+     * currency is priced with {@see Money::times()} instead.
+     *
+     * @param  string  $decimalQuantity  same shape as the factor of {@see Money::times()}
+     * @param  string  $sourceRate  a positive number: digits with an optional point and at most ten fraction digits
+     * @param  string  $targetRate  same shape as the source rate
+     *
+     * @throws InvalidArgumentException when the quantity or a rate is malformed, a rate is zero, a unit is below one, a currency is invalid or both currencies are equal
+     * @throws OverflowException when the converted amount does not fit into an integer
+     */
+    public function timesThroughCzk(string $decimalQuantity, string $sourceRate, int $sourceUnit, string $targetCurrency, string $targetRate, int $targetUnit): self
+    {
+        $quantity = self::validFactor($decimalQuantity);
+        $target = self::validCrossConversion($this->currency, $sourceRate, $sourceUnit, $targetCurrency, $targetRate, $targetUnit);
+
+        if ($target === $this->currency) {
+            throw new InvalidArgumentException('A line in the document currency is priced with times(), not converted.');
+        }
+
+        return self::fromExactMinor(
+            self::convertedThroughCzkExact(BigRational::of($this->minor)->multipliedBy($quantity), $this->currency, $sourceRate, $sourceUnit, $target, $targetRate, $targetUnit)->toString(),
+            $target,
+        );
+    }
+
+    /**
      * Formats the amount for display in a locale, for example "cs" gives "1 234,50 Kč".
      *
      * @throws InvalidArgumentException when the locale is unknown or the amount cannot be formatted exactly
@@ -393,6 +484,36 @@ final readonly class Money implements JsonSerializable
             ->dividedBy(BigInteger::ten()->power($sourceDigits))
             ->multipliedBy(BigDecimal::of($decimalRate))
             ->dividedBy($unitAmount)
+            ->multipliedBy(BigInteger::ten()->power($targetDigits));
+    }
+
+    /**
+     * Validates both quotes of a conversion through CZK and returns the target currency code.
+     *
+     * @throws InvalidArgumentException
+     */
+    private static function validCrossConversion(string $sourceCurrency, string $sourceRate, int $sourceUnit, string $targetCurrency, string $targetRate, int $targetUnit): string
+    {
+        self::validConversion($sourceRate, $sourceCurrency, $sourceUnit);
+
+        return self::validConversion($targetRate, $targetCurrency, $targetUnit);
+    }
+
+    /**
+     * An exact amount in the minor units of `$sourceCurrency`, converted through CZK into the minor units of the
+     * target with both CNB quotes. Nothing is rounded here.
+     */
+    private static function convertedThroughCzkExact(BigRational $exactSourceMinor, string $sourceCurrency, string $sourceRate, int $sourceUnit, string $target, string $targetRate, int $targetUnit): BigRational
+    {
+        $sourceDigits = Currency::of($sourceCurrency)->getDefaultFractionDigits();
+        $targetDigits = Currency::of($target)->getDefaultFractionDigits();
+
+        return $exactSourceMinor
+            ->dividedBy(BigInteger::ten()->power($sourceDigits))
+            ->multipliedBy(BigDecimal::of($sourceRate))
+            ->dividedBy($sourceUnit)
+            ->multipliedBy($targetUnit)
+            ->dividedBy(BigDecimal::of($targetRate))
             ->multipliedBy(BigInteger::ten()->power($targetDigits));
     }
 
