@@ -637,3 +637,87 @@ describe('smuggled keys', function (): void {
             ->and($data['created_at'])->not->toStartWith('2000');
     });
 });
+
+describe('JSON booleans in the integer fields (WR-01)', function (): void {
+    beforeEach(function (): void {
+        $this->admin = ApiFixtures::admin();
+        $this->token = ApiFixtures::token($this->admin, ['finance:write']);
+        $this->post = fn (array $overrides) => $this->withToken($this->token)->postJson('/api/v1/transactions', txWriteBody($overrides));
+        $this->patch = fn (Transaction $transaction, array $body) => $this->withToken($this->token)
+            ->patchJson('/api/v1/transactions/'.$transaction->id, $body);
+    });
+
+    it('refuses a boolean amount on create with the panel message and still accepts an integer string (WR-01)', function (): void {
+        foreach ([true, false] as $amount) {
+            $errors = txWriteRefused(($this->post)(['amount_minor' => $amount]));
+
+            expect($errors['amount_minor'])->toBe([__('finance.transactions.errors.amount_invalid')]);
+        }
+
+        expect(Transaction::query()->count())->toBe(0);
+
+        $data = ($this->post)(['amount_minor' => '10000'])->assertCreated()->json('data');
+
+        expect($data['amount_minor'])->toBe(10000)
+            ->and($data['currency'])->toBe('CZK');
+    });
+
+    it('refuses a boolean CZK figure and a boolean unit amount on create (WR-01)', function (): void {
+        FinanceApiFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+
+        foreach ([true, false] as $flag) {
+            $figure = txWriteRefused(($this->post)(['amount_minor' => 10000, 'currency' => 'EUR', 'czk_amount_minor' => $flag]));
+            $unit = txWriteRefused(($this->post)(['amount_minor' => 10000, 'currency' => 'EUR', 'exchange_rate' => '25.125', 'exchange_unit_amount' => $flag]));
+
+            expect($figure['czk_amount_minor'])->toBe([__('finance.transactions.errors.czk_invalid')])
+                ->and($unit['exchange_unit_amount'])->toBe([__('finance.transactions.errors.unit_invalid')]);
+        }
+
+        expect(Transaction::query()->count())->toBe(0);
+    });
+
+    it('refuses booleans on update and leaves the stored row as it was (WR-01)', function (): void {
+        FinanceApiFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $czk = FinanceApiFixtures::transaction($this->admin);
+        $eur = FinanceApiFixtures::transaction($this->admin, ['amount' => '100,00', 'currency' => 'EUR']);
+
+        foreach ([true, false] as $flag) {
+            $amount = txWriteRefused(($this->patch)($czk, ['currency' => 'EUR', 'amount_minor' => $flag]));
+            $figure = txWriteRefused(($this->patch)($eur, ['czk_amount_minor' => $flag]));
+            $unit = txWriteRefused(($this->patch)($eur, ['exchange_rate' => '26', 'exchange_unit_amount' => $flag]));
+
+            expect($amount['amount_minor'])->toBe([__('finance.transactions.errors.amount_invalid')])
+                ->and($figure['czk_amount_minor'])->toBe([__('finance.transactions.errors.czk_invalid')])
+                ->and($unit['exchange_unit_amount'])->toBe([__('finance.transactions.errors.unit_invalid')]);
+        }
+
+        $czk = $czk->fresh();
+        $eur = $eur->fresh();
+
+        expect($czk->amount_currency)->toBe('CZK')
+            ->and($czk->amount_minor)->toBe(123450)
+            ->and($czk->czk_minor)->toBe(123450)
+            ->and($eur->czk_source)->toBe(CzkSource::Cnb)
+            ->and($eur->czk_minor)->toBe(251250);
+    });
+
+    it('reports a batch item with a boolean as failed with the same panel message as a single create (WR-01)', function (): void {
+        FinanceApiFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+
+        $response = $this->withToken($this->token)->postJson('/api/v1/transactions/batch', [
+            'transactions' => [
+                txWriteBody(['amount_minor' => true]),
+                txWriteBody(['amount_minor' => 10000, 'currency' => 'EUR', 'czk_amount_minor' => true]),
+                txWriteBody(['description' => 'good']),
+            ],
+        ])->assertStatus(207);
+
+        expect($response->json('saved'))->toBe(1)
+            ->and($response->json('failed'))->toBe(2)
+            ->and(array_column($response->json('errors'), 'index'))->toBe([0, 1])
+            ->and($response->json('errors.0.errors.amount_minor'))->toBe([__('finance.transactions.errors.amount_invalid')])
+            ->and($response->json('errors.1.errors.czk_amount_minor'))->toBe([__('finance.transactions.errors.czk_invalid')])
+            ->and(Transaction::query()->count())->toBe(1)
+            ->and(Transaction::query()->sole()->description)->toBe('good');
+    });
+});
