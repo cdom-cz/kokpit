@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\TimeTracking\Actions;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\TimeTracking\Billing\EntryBilling;
 use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\TimerClock;
@@ -43,6 +44,8 @@ use Illuminate\Support\Facades\Gate;
  */
 final class MarkEntriesBilled
 {
+    public function __construct(private readonly EntryBilling $billing) {}
+
     /**
      * @param  array<array-key, mixed>  $ids
      * @return array{billed: int, billed_seconds: int, skipped_non_billable: int, skipped_billed: int, skipped_running: int}
@@ -71,9 +74,9 @@ final class MarkEntriesBilled
             $now = TimerClock::now();
             $seconds = 0;
 
-            foreach ($buckets['eligible'] as $row) {
-                $row->forceFill(['billing_state' => BillingState::Billed, 'billed_at' => $now])->save();
+            $this->billing->bill($buckets['eligible'], $now);
 
+            foreach ($buckets['eligible'] as $row) {
                 $seconds += (int) $row->duration_seconds;
             }
 

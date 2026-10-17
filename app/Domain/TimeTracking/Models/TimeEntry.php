@@ -8,10 +8,12 @@ use App\Domain\Audit\LoggedAttributes;
 use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
+use App\Domain\Shared\Money\Money;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Enums\BillingBadge;
 use App\Domain\TimeTracking\Enums\BillingState;
@@ -46,6 +48,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Actions, never fillable, never logged and never shown in the panel.
  * Billing and unbilling save the model one entry at a time so each writes a row.
  *
+ * `invoice_id` is the whole reservation by an invoicing document (a draft holds it while the entry is unbilled,
+ * the issued document while it is billed) and the three `billed_*` columns are the rate and the amount the entry
+ * was billed at (TI-08). They are never fillable and written only by EntryBilling; the snapshot is not logged.
+ *
  * The relations to client, project and task include archived rows: archiving
  * never stops a running timer and never hides the time already tracked.
  *
@@ -61,6 +67,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property bool $billable
  * @property BillingState $billing_state
  * @property CarbonImmutable|null $billed_at
+ * @property string|null $invoice_id
+ * @property int|null $billed_rate_minor
+ * @property string|null $billed_rate_currency
+ * @property int|null $billed_amount_minor
  * @property \stdClass|null $external
  * @property CarbonImmutable|null $long_running_notified_at
  * @property CarbonImmutable|null $created_at
@@ -70,7 +80,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property-read string|null $overlap_label only on rows read through the withOverlapFlag scope
  */
 #[Fillable(['description', 'billable'])]
-#[LoggedAttributes(['client_id', 'project_id', 'task_id', 'started_at', 'ended_at', 'billable', 'billing_state', 'billed_at'])]
+#[LoggedAttributes(['client_id', 'project_id', 'task_id', 'started_at', 'ended_at', 'billable', 'billing_state', 'billed_at', 'invoice_id'])]
 final class TimeEntry extends KokpitModel implements PartnerIsolated
 {
     /** @use HasFactory<TimeEntryFactory> */
@@ -84,6 +94,39 @@ final class TimeEntry extends KokpitModel implements PartnerIsolated
     public function isBilled(): bool
     {
         return $this->billing_state === BillingState::Billed;
+    }
+
+    /**
+     * Held by a draft document: linked and not yet billed. Reserved time still counts as unbilled everywhere.
+     */
+    public function isReserved(): bool
+    {
+        return $this->invoice_id !== null && $this->billing_state === BillingState::Unbilled;
+    }
+
+    /**
+     * The hourly rate the entry was billed at, null while unbilled and for a fixed-price or rate-less entry.
+     * Admin and system contexts only, like every rate.
+     */
+    public function billedRate(): ?Money
+    {
+        if ($this->billed_rate_minor === null || $this->billed_rate_currency === null) {
+            return null;
+        }
+
+        return Money::ofMinor($this->billed_rate_minor, $this->billed_rate_currency);
+    }
+
+    /**
+     * The amount of the exact seconds at the billed rate, rounded once; null whenever there is no billed rate.
+     */
+    public function billedAmount(): ?Money
+    {
+        if ($this->billed_amount_minor === null || $this->billed_rate_currency === null) {
+            return null;
+        }
+
+        return Money::ofMinor($this->billed_amount_minor, $this->billed_rate_currency);
     }
 
     /**
@@ -187,6 +230,16 @@ final class TimeEntry extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * The invoicing document that reserves or bills the entry.
+     *
+     * @return BelongsTo<Invoice, $this>
+     */
+    public function invoice(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class);
+    }
+
+    /**
      * @return BelongsTo<Project, $this>
      */
     public function project(): BelongsTo
@@ -211,6 +264,8 @@ final class TimeEntry extends KokpitModel implements PartnerIsolated
             'started_at' => 'immutable_datetime',
             'ended_at' => 'immutable_datetime',
             'billed_at' => 'immutable_datetime',
+            'billed_rate_minor' => 'integer',
+            'billed_amount_minor' => 'integer',
             'long_running_notified_at' => 'immutable_datetime',
             'billable' => 'boolean',
             'billing_state' => BillingState::class,

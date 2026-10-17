@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\TimeTracking\Actions;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\TimeTracking\Billing\EntryBilling;
 use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\TimeEntryInput;
@@ -31,6 +32,8 @@ use Illuminate\Support\Facades\Gate;
  */
 final class CancelEntriesBilling
 {
+    public function __construct(private readonly EntryBilling $billing) {}
+
     /**
      * @param  array<array-key, mixed>  $ids
      * @return int the number of entries unlocked
@@ -54,9 +57,7 @@ final class CancelEntriesBilling
                 throw new DomainException(__('kokpit.time.errors.nothing_to_unbill'));
             }
 
-            foreach ($billed as $row) {
-                $row->forceFill(['billing_state' => BillingState::Unbilled, 'billed_at' => null])->save();
-            }
+            $this->billing->unbill($billed);
 
             return count($billed);
         });
