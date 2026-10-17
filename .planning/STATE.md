@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-04-PLAN.md
-last_updated: "2026-10-17T06:15:40.114Z"
+stopped_at: Completed 10-33-PLAN.md
+last_updated: "2026-10-17T06:18:19.521Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: d2df4ce7d5a9a105cd5f062016f7ef3ad6bde621
+state_head: 6a595c12a83621b8aa9294d779b4bff3ed776b66
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 188
+  completed_plans: 189
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 5 of 41
+Plan: 6 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -251,6 +251,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P02 | 8 min | 2 tasks | 8 files |
 | Phase 10 P03 | 31 min | 3 tasks | 10 files |
 | Phase 10 P04 | 12 min | 3 tasks | 6 files |
+| Phase 10 P33 | 10 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -616,6 +617,8 @@ Recent decisions affecting current work:
 - [Phase 10]: R-04-6 enforced in the database: invoices frozen guard has an empty mutable list and no implied updated_at, so an issued row accepts no write at all; the state flip is the last write of the issue pipeline
 - [Phase 10]: Child-of-frozen-parent guard takes FOR SHARE on the parent row and treats a missing parent as open; invoice_items follow invoices.state with no always-mutable column
 - [Phase 10]: issued_at on invoices is stored but not CHECK-required; the credited invoice of a credit note is same-client by composite FK, its kind must be checked by the Action
+- [Phase 10]: R-33-1: InvoiceKind is its own enum with numberingKind() and carriesPayment(); R-33-2: InvoiceStatus is the display enum of the derived state
+- [Phase 10]: R-33-3: InvoiceEmailState has a Sending claim state labelled 'Odesílá se'; Converted and AwaitingInvoice read 'Zaplaceno' for the Partner (T-10-82)
 
 ### Pending Todos
 
@@ -671,6 +674,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T06:15:39.142Z
-Stopped at: Completed 10-04-PLAN.md
+Last session: 2026-10-17T06:18:18.520Z
+Stopped at: Completed 10-33-PLAN.md
 Resume file: None
