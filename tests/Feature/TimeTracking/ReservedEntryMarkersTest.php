@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Reports\ReportFilters;
+use App\Domain\Reports\TimeReport;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Actions\MarkEntriesBilled;
@@ -150,4 +152,59 @@ it('bills the free entry of a bulk selection and names the skipped reserved one 
     expect($free->refresh()->isBilled())->toBeTrue()
         ->and($reserved->refresh()->isBilled())->toBeFalse()
         ->and($reserved->isReserved())->toBeTrue();
+});
+
+/**
+ * The report of October 2026 as the page builds it.
+ */
+function markerReport(): TimeReport
+{
+    return TimeReport::build(ReportFilters::period('2026-10-01', '2026-10-31'), CarbonImmutable::now());
+}
+
+it('names the 2 h reserved part of 5 h unbilled time in the report summary and in the tile', function (): void {
+    ['client' => $client, 'entry' => $reserved] = markerReservedWorld(7200);
+    markerEntry($client, 10800, 6);
+
+    $summary = markerReport()->summary;
+
+    expect($reserved->isReserved())->toBeTrue()
+        ->and($summary['unbilled'])->toBe(18000)
+        ->and($summary['reserved'])->toBe(7200);
+
+    $html = (string) $this->get('/admin/time-report?client='.$client->id.'&period=this_month')->assertOk()->getContent();
+    $text = (string) preg_replace('/\s+/u', ' ', strip_tags(str_replace('>', '> ', $html)));
+
+    expect($text)
+        ->toContain('Nevyfakturováno')
+        ->toContain('5:00')
+        ->toContain('z toho v konceptech: 2:00');
+});
+
+it('omits the reserved line of the tile when no reserved time exists in the period', function (): void {
+    $client = InvoiceFixtures::client();
+    markerEntry($client, 3600, 5);
+
+    expect(markerReport()->summary['reserved'])->toBe(0);
+
+    $html = (string) $this->get('/admin/time-report?client='.$client->id.'&period=this_month')->assertOk()->getContent();
+
+    expect($html)->not->toContain('z toho v konceptech');
+});
+
+it('counts the reserved seconds as exactly the seconds of the entries flagged reserved, billed and free ones apart', function (): void {
+    ['client' => $client] = markerReservedWorld(3600);
+    $second = markerEntry($client, 900, 7);
+    $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example more work', '1', '375.00')]);
+    markerReserve($second, $draft);
+    markerEntry($client, 600, 8);
+    $billed = markerEntry($client, 1200, 9);
+    app(MarkEntriesBilled::class)->handle($this->admin, [$billed->id]);
+
+    $summary = markerReport()->summary;
+
+    // 1:00 + 0:15 reserved, 0:10 free; the billed 0:20 is never part of the reserved or the unbilled sum.
+    expect($summary['reserved'])->toBe(4500)
+        ->and($summary['unbilled'])->toBe(5100)
+        ->and($summary['billed'])->toBe(1200);
 });

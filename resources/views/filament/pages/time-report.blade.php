@@ -197,6 +197,11 @@
 
                 <p style="margin: 0; font-size: 1.875rem; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums;">{{ $hours($summary[$state]) }}</p>
 
+                {{-- "z toho v konceptech": the part of the unbilled time held by a draft; it stays inside the figure above (D-04, R-06-3). --}}
+                @if ($state === 'unbilled' && $summary['reserved'] > 0)
+                    <p style="{{ $mutedStyle }}">{{ __('invoices.time.report_in_drafts', ['duration' => $hours($summary['reserved'])]) }}</p>
+                @endif
+
                 @forelse ($summary['amounts'][$state] as $amount)
                     <p style="{{ $mutedStyle }} font-variant-numeric: tabular-nums;">{{ $amount->format('cs') }}{{ $fixedMarker }}</p>
                 @empty
