@@ -106,7 +106,7 @@ final class EditTransaction extends EditRecord
             ->danger()
             ->title(is_string($message) ? $message : (string) __('finance.transactions.notifications.delete_failed'));
 
-        if ($transaction->invoice_id !== null) {
+        if ($transaction->isPaymentIncome() && $transaction->invoice_id !== null) {
             $notification->actions([
                 Action::make('open_invoice')
                     ->label(__('invoices.transactions.open_invoice'))
