@@ -22,8 +22,11 @@ use Illuminate\Database\Eloquent\Collection;
  * link guard of the database backs the rule for every other writer.
  *
  * Must run inside the transaction that holds the lock on the draft.
+ *
+ * Not final on purpose, like the sequence allocator: the concurrency harness substitutes a twin that reads without the
+ * lock, to show that the harness can fail. No application code extends it.
  */
-final readonly class EntryReservation
+readonly class EntryReservation
 {
     public function __construct(private EntryBilling $billing) {}
 
