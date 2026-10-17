@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Invoicing\Queries;
 
+use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceListTab;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Enums\InvoiceStatus;
@@ -84,13 +85,18 @@ final class ReceivablesReader
         }
 
         $balances = app(InvoiceBalances::class)->for(array_keys($documents));
+        $flags = $this->flags(array_keys($documents));
         $statuses = [];
 
         foreach ($documents as $id => $invoice) {
-            $remaining = ($balances[$id] ?? null)['remaining'] ?? null;
-            $paid = ($balances[$id] ?? null)['paid'] ?? 0;
-
-            $statuses[$id] = $this->derive($invoice, $paid, $remaining, $day);
+            $statuses[$id] = $this->derive(
+                $invoice,
+                $balances[$id]['paid'] ?? 0,
+                $balances[$id]['remaining'] ?? null,
+                $flags[$id]['cancelled'] ?? false,
+                $flags[$id]['converted'] ?? false,
+                $day,
+            );
         }
 
         return $statuses;
@@ -183,15 +189,26 @@ final class ReceivablesReader
     {
         $rows = $this->constrain(Invoice::query(), $tab, $today)
             ->when($clientId !== null, static fn (Builder $query): Builder => $query->where('invoices.client_id', $clientId))
-            ->selectRaw('invoices.currency AS currency, '.InvoiceBalances::REMAINING_SQL.' AS remaining')
+            ->leftJoin('invoice_admin', 'invoice_admin.invoice_id', '=', 'invoices.id')
+            ->selectRaw('invoices.currency AS currency, '.InvoiceBalances::REMAINING_SQL.' AS remaining, invoice_admin.exchange_rate AS rate, invoice_admin.exchange_unit_amount AS unit_amount')
             ->toBase()
             ->get();
 
         $czk = Money::zero('CZK');
 
         foreach ($rows as $row) {
-            if ($row->currency === 'CZK') {
-                $czk = $czk->plus(Money::ofMinor((int) $row->remaining, 'CZK'));
+            $remaining = Money::ofMinor((int) $row->remaining, (string) $row->currency);
+
+            if ($remaining->currency === 'CZK') {
+                $czk = $czk->plus($remaining);
+
+                continue;
+            }
+
+            // Each document converts once with its own frozen issue-time rate (ruling R-19-4: a document without the
+            // trio can only be a CZK one, which needs none; a foreign one without it cannot be priced and adds nothing).
+            if (is_string($row->rate) && $row->unit_amount !== null) {
+                $czk = $czk->plus($remaining->convert($row->rate, 'CZK', (int) $row->unit_amount));
             }
         }
 
@@ -199,20 +216,63 @@ final class ReceivablesReader
     }
 
     /**
-     * The status of one document from its balances.
+     * Whether each document is cancelled and whether an issued invoice was made from it, from one query.
+     *
+     * @param  list<string>  $ids
+     * @return array<string, array{cancelled: bool, converted: bool}>
+     */
+    private function flags(array $ids): array
+    {
+        $rows = Invoice::query()
+            ->whereIn('invoices.id', $ids)
+            ->selectRaw('invoices.id AS id, '.Invoice::CANCELLED_SQL.' AS cancelled, '.self::CONVERTED_SQL.' AS converted')
+            ->toBase()
+            ->get();
+
+        $flags = [];
+
+        foreach ($rows as $row) {
+            $flags[(string) $row->id] = [
+                'cancelled' => in_array($row->cancelled, [true, 1, '1', 't', 'true'], true),
+                'converted' => in_array($row->converted, [true, 1, '1', 't', 'true'], true),
+            ];
+        }
+
+        return $flags;
+    }
+
+    /**
+     * The status of one document from its balances and links (ruling R-19-3): a draft and a credit note have a status
+     * and no remaining amount; a cancelled invoice owes nothing; a proforma with nothing left is converted when an
+     * issued invoice was made from it and otherwise waits for its invoice (D-18); the rest is unpaid, partly paid,
+     * overdue or paid by the remaining amount.
      *
      * @return array{status: InvoiceStatus, remaining: Money|null, overdue_days: int|null}
      */
-    private function derive(Invoice $invoice, int $paid, ?int $remaining, string $today): array
+    private function derive(Invoice $invoice, int $paid, ?int $remaining, bool $cancelled, bool $converted, string $today): array
     {
         if ($invoice->state === InvoiceState::Draft) {
             return ['status' => InvoiceStatus::Draft, 'remaining' => null, 'overdue_days' => null];
         }
 
-        $left = Money::ofMinor($remaining ?? 0, $invoice->currency);
+        if ($invoice->kind === InvoiceKind::CreditNote) {
+            return ['status' => InvoiceStatus::CreditNote, 'remaining' => null, 'overdue_days' => null];
+        }
 
-        if (($remaining ?? 0) === 0) {
-            return ['status' => InvoiceStatus::Paid, 'remaining' => $left, 'overdue_days' => null];
+        $left = Money::ofMinor($cancelled ? 0 : ($remaining ?? 0), $invoice->currency);
+
+        if ($cancelled) {
+            return ['status' => InvoiceStatus::Cancelled, 'remaining' => $left, 'overdue_days' => null];
+        }
+
+        if ($left->isZero()) {
+            $status = match (true) {
+                $invoice->kind !== InvoiceKind::Proforma => InvoiceStatus::Paid,
+                $converted => InvoiceStatus::Converted,
+                default => InvoiceStatus::AwaitingInvoice,
+            };
+
+            return ['status' => $status, 'remaining' => $left, 'overdue_days' => null];
         }
 
         $late = $this->daysLate($invoice, $today);
