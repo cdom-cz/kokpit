@@ -224,3 +224,24 @@ it('shows a Partner without a client nothing in any registered model', function 
         expect(visibleRows($model)['count'])->toBe(0, $model);
     }
 });
+
+it('writes the canary into the printed note and the line text of an issued document and of a draft twin, and shows a Partner only the issued ones', function (): void {
+    [$clientA, $clientB] = Canary::twoClients();
+    $canaryA = Canary::canary('invoice_a');
+    $canaryB = Canary::canary('invoice_b');
+    CanaryRegistry::seedAll($clientA, $canaryA);
+    CanaryRegistry::seedAll($clientB, $canaryB);
+
+    $this->actingAs(Canary::admin());
+
+    expect(Invoice::query()->where('client_id', $clientA)->where('note', $canaryA)->count())->toBe(2)
+        ->and(Invoice::query()->where('client_id', $clientA)->where('state', 'issued')->count())->toBe(1)
+        ->and(InvoiceItem::query()->where('description', $canaryA)->count())->toBe(2);
+
+    $this->actingAs(Canary::partnerFor($clientA));
+
+    expect(Invoice::query()->where('note', $canaryA)->count())->toBe(1)
+        ->and(Invoice::query()->where('note', $canaryB)->count())->toBe(0)
+        ->and(InvoiceItem::query()->where('description', $canaryA)->count())->toBe(1)
+        ->and(InvoiceItem::query()->where('description', $canaryB)->count())->toBe(0);
+});
