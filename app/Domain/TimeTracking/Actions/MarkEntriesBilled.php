@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Gate;
  * An entry is eligible when it is finished, billable and not yet billed. A
  * running, a non-billable and an already billed entry are skipped, never an
  * error, and counted by reason (UI-SPEC U-10); a skipped entry is counted once,
- * under the first reason that applies (billed, running, non-billable). A
+ * under the first reason that applies (billed, running, non-billable, reserved). A
  * zero-length finished billable entry is eligible. The ids come from the
  * browser and may be stale or forged: a malformed id is dropped, an unknown id
  * matches nothing, and an id billed by another request after the page loaded
@@ -48,7 +48,7 @@ final class MarkEntriesBilled
 
     /**
      * @param  array<array-key, mixed>  $ids
-     * @return array{billed: int, billed_seconds: int, skipped_non_billable: int, skipped_billed: int, skipped_running: int}
+     * @return array{billed: int, billed_seconds: int, skipped_non_billable: int, skipped_billed: int, skipped_running: int, skipped_reserved: int}
      *
      * @throws DomainException nothing in the selection is eligible
      */
@@ -68,7 +68,7 @@ final class MarkEntriesBilled
             $buckets = $this->buckets($rows);
 
             if ($buckets['eligible'] === []) {
-                throw new DomainException(__('kokpit.time.errors.nothing_to_bill'));
+                throw new DomainException(__($buckets['reserved'] > 0 ? 'kokpit.time.errors.reserved' : 'kokpit.time.errors.nothing_to_bill'));
             }
 
             $now = TimerClock::now();
@@ -86,6 +86,7 @@ final class MarkEntriesBilled
                 'skipped_non_billable' => $buckets['non_billable'],
                 'skipped_billed' => $buckets['billed'],
                 'skipped_running' => $buckets['running'],
+                'skipped_reserved' => $buckets['reserved'],
             ];
         });
     }
@@ -103,7 +104,7 @@ final class MarkEntriesBilled
         return [
             'eligible' => count($buckets['eligible']),
             'eligible_seconds' => $this->seconds($buckets['eligible']),
-            'skipped' => $buckets['non_billable'] + $buckets['billed'] + $buckets['running'],
+            'skipped' => $buckets['non_billable'] + $buckets['billed'] + $buckets['running'] + $buckets['reserved'],
         ];
     }
 
@@ -124,17 +125,18 @@ final class MarkEntriesBilled
      * The single eligibility rule: eligible rows and the skipped counts by reason.
      *
      * @param  Collection<int, TimeEntry>  $rows
-     * @return array{eligible: list<TimeEntry>, non_billable: int, billed: int, running: int}
+     * @return array{eligible: list<TimeEntry>, non_billable: int, billed: int, running: int, reserved: int}
      */
     private function buckets(Collection $rows): array
     {
-        $buckets = ['eligible' => [], 'non_billable' => 0, 'billed' => 0, 'running' => 0];
+        $buckets = ['eligible' => [], 'non_billable' => 0, 'billed' => 0, 'running' => 0, 'reserved' => 0];
 
         foreach ($rows as $row) {
             match (true) {
                 $row->billing_state === BillingState::Billed => $buckets['billed']++,
                 $row->isRunning() => $buckets['running']++,
                 ! $row->billable => $buckets['non_billable']++,
+                $row->isReserved() => $buckets['reserved']++,
                 default => $buckets['eligible'][] = $row,
             };
         }

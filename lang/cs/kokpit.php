@@ -1559,6 +1559,8 @@ return [
             'start_race' => 'Časovač se nepodařilo spustit, protože se současně změnil jiný. Zkuste to znovu.',
             'nothing_to_bill' => 'V označených záznamech není nic k vyfakturování.',
             'nothing_to_unbill' => 'V označených záznamech není nic, co by šlo odemknout.',
+            'reserved' => 'Záznam je připojen ke konceptu faktury. Odpojte ho v konceptu.',
+            'invoice_locked' => 'Záznam patří k vystavené faktuře :number a nelze ho odemknout. Vystavte dobropis.',
         ],
         'rate_source' => [
             'task' => 'úkol',
