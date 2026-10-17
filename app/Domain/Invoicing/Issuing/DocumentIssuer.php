@@ -15,10 +15,14 @@ use App\Domain\Invoicing\Support\IssueChecks;
 use App\Domain\Invoicing\Support\VariableSymbol;
 use App\Domain\Settings\Numbering\DocumentNumbering;
 use App\Domain\Settings\Settings\InvoicingSettings;
+use App\Domain\TimeTracking\Billing\EntryBilling;
+use App\Domain\TimeTracking\Enums\BillingState;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\TimerClock;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Filament\Support\Facades\FilamentTimezone;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use LogicException;
@@ -32,7 +36,12 @@ use LogicException;
  * The order is deliberate. The reads and the Admin-only rows come first, the number is allocated late so that the
  * counter row stays locked for as short a part of the transaction as possible, and the flip of the state is the
  * last write on the `invoices` row, because an issued row accepts no write at all (plan 10-04 R-04-6): the steps
- * that follow in later plans write only time entries, `invoice_admin` and documents.
+ * that follow write only time entries, `invoice_admin` and documents.
+ *
+ * The billing of the time comes right after the flip, because the link guard of `time_entries` bills an entry only
+ * when its document is already issued (plan 10-06). Every entry the draft holds is locked in id order and must still
+ * be exactly what the draft reserved it as; one that is not fails the whole issue with `entries_changed`, and the
+ * rollback takes the number, the state and every billed entry back (D-04, D-10, D-15).
  */
 final readonly class DocumentIssuer
 {
@@ -41,6 +50,7 @@ final readonly class DocumentIssuer
         private InvoiceSnapshot $snapshot,
         private IssueChecks $checks,
         private ExchangeRateConverter $rates,
+        private EntryBilling $billing,
     ) {}
 
     /**
@@ -48,7 +58,8 @@ final readonly class DocumentIssuer
      *
      * @throws LogicException outside a transaction
      * @throws DomainException when the document is not a draft
-     * @throws ValidationException with the blockers, or `issue_date_before_latest` found under the sequence lock
+     * @throws ValidationException with the blockers, `issue_date_before_latest` found under the sequence lock, or
+     *                             `entries_changed` when a time entry of the draft is no longer billable as reserved
      */
     public function issue(Invoice $lockedDraft, IssueContext $context): Invoice
     {
@@ -104,7 +115,37 @@ final readonly class DocumentIssuer
             'issued_at' => TimerClock::now(),
         ])->save();
 
+        $this->billLinkedTime($lockedDraft);
+
         return $lockedDraft->refresh();
+    }
+
+    /**
+     * Bills the time entries the document holds, in the transaction of the issue. They are locked in id order, the
+     * same order every claim uses, and judged on the locked rows: still finished, billable, unbilled and linked to
+     * this document. The billing snapshots the rate and the amount of each (D-04); the link stays (D-15).
+     *
+     * @throws ValidationException `entries_changed` when any linked entry no longer fits
+     */
+    private function billLinkedTime(Invoice $issued): void
+    {
+        /** @var Collection<int, TimeEntry> $entries */
+        $entries = TimeEntry::query()->where('invoice_id', $issued->id)->orderBy('id')->lockForUpdate()->get();
+
+        if ($entries->isEmpty()) {
+            return;
+        }
+
+        $changed = $entries->contains(static fn (TimeEntry $entry): bool => $entry->ended_at === null
+            || ! $entry->billable
+            || $entry->billing_state !== BillingState::Unbilled
+            || $entry->invoice_id !== $issued->id);
+
+        if ($changed) {
+            throw ValidationException::withMessages(['entries_changed' => __('invoices.errors.entries_changed')]);
+        }
+
+        $this->billing->bill($entries, TimerClock::now());
     }
 
     /**
