@@ -21,6 +21,7 @@ use App\Domain\Shared\Money\Money;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
+use LogicException;
 
 /**
  * Records a manual payment of an issued invoice or proforma (IN-05, FI-03; D-17, D-18, D-19): one transaction that
@@ -71,7 +72,7 @@ final readonly class RecordPayment
             $books = $locked->kind === InvoiceKind::Invoice;
 
             if ($books) {
-                $this->assertRateExists($locked->currency, $input);
+                $this->assertRateExists($locked->currency, $input->incomeDate, $input->incomeDate === $input->paidOn ? 'paid_on' : 'income_date');
             }
 
             $payment = new InvoicePayment(['note' => $input->note]);
@@ -86,11 +87,60 @@ final readonly class RecordPayment
             $payment->save();
 
             if ($books) {
-                $this->bookIncome($actor, $locked, $payment, $input);
+                $this->bookIncome($actor, $locked, $payment, $input->amount, $input->incomeDate, $input->categoryId, $input->incomeDate === $input->paidOn ? 'paid_on' : 'income_date');
             }
 
             return $payment->refresh();
         });
+    }
+
+    /**
+     * Carries a payment of a proforma over to the invoice made from it (D-15, D-18), inside the transaction of the
+     * conversion: a new payment row of the invoice with the same amount, currency, date, method and note and the
+     * link `carried_from_payment_id`, and the income of it, booked now with the real payment date in the system
+     * income category, because a proforma books no income. The source payment is neither moved nor edited, it stays
+     * the history of the proforma (D-19). The caller holds the lock of the proforma and has checked that it is paid.
+     *
+     * A foreign-currency payment needs the CNB list of its payment date for the CZK figure of the income; without
+     * one the carry fails under `cnb_missing` and the caller's transaction takes everything back.
+     *
+     * @throws LogicException outside a transaction, or when the payment is not one of the invoice's proforma
+     * @throws ValidationException `cnb_missing` when the list of the payment date is missing
+     */
+    public function carry(User $actor, InvoicePayment $proformaPayment, Invoice $invoice): InvoicePayment
+    {
+        if (DB::transactionLevel() === 0) {
+            throw new LogicException('A payment is carried over inside the caller\'s transaction.');
+        }
+
+        Gate::forUser($actor)->authorize('update', $invoice);
+
+        if ($invoice->kind !== InvoiceKind::Invoice || $invoice->state !== InvoiceState::Issued
+            || $invoice->proforma_id === null || $invoice->proforma_id !== $proformaPayment->invoice_id
+            || $invoice->currency !== $proformaPayment->currency) {
+            throw new LogicException('Only a payment of the proforma of an issued invoice is carried over to it.');
+        }
+
+        $paidOn = $proformaPayment->paid_on->format('Y-m-d');
+        $amount = $proformaPayment->amount();
+
+        $this->assertRateExists($invoice->currency, $paidOn, 'cnb_missing');
+
+        $payment = new InvoicePayment(['note' => $proformaPayment->note]);
+        $payment->forceFill([
+            'invoice_id' => $invoice->id,
+            'currency' => $invoice->currency,
+            'amount_minor' => $proformaPayment->amount_minor,
+            'paid_on' => $paidOn,
+            'method' => $proformaPayment->method,
+            'carried_from_payment_id' => $proformaPayment->id,
+            'created_by' => $actor->getKey(),
+        ]);
+        $payment->save();
+
+        $this->bookIncome($actor, $invoice, $payment, $amount, $paidOn, null, 'cnb_missing');
+
+        return $payment->refresh();
     }
 
     /**
@@ -120,16 +170,16 @@ final readonly class RecordPayment
      *
      * @throws ValidationException
      */
-    private function bookIncome(User $actor, Invoice $invoice, InvoicePayment $payment, PaymentInput $input): void
+    private function bookIncome(User $actor, Invoice $invoice, InvoicePayment $payment, Money $amount, string $incomeDate, ?string $categoryId, string $dateKey): void
     {
         $customer = $invoice->customer_snapshot['name'] ?? null;
 
         try {
             $this->transactions->handle($actor, [
                 'type' => 'income',
-                'transaction_date' => $input->incomeDate,
-                'category_id' => $input->categoryId ?? TransactionCategory::invoicePayments()->getKey(),
-                'amount' => $input->amount->toMajor(),
+                'transaction_date' => $incomeDate,
+                'category_id' => $categoryId ?? TransactionCategory::invoicePayments()->getKey(),
+                'amount' => $amount->toMajor(),
                 'currency' => $invoice->currency,
                 'description' => __('invoices.payment_income.description', ['number' => (string) $invoice->number]),
                 'counterparty' => is_string($customer) ? mb_substr($customer, 0, 255) : null,
@@ -139,7 +189,7 @@ final readonly class RecordPayment
         } catch (ValidationException $e) {
             // The list may disappear between the check and the booking; the answer is the same as for the check.
             if (array_key_exists('czk_amount', $e->errors())) {
-                throw $this->cnbMissing($invoice->currency, $input);
+                throw $this->cnbMissing($invoice->currency, $incomeDate, $dateKey);
             }
 
             throw $e;
@@ -151,16 +201,16 @@ final readonly class RecordPayment
      *
      * @throws ValidationException
      */
-    private function assertRateExists(string $currency, PaymentInput $input): void
+    private function assertRateExists(string $currency, string $day, string $key): void
     {
         if ($currency === 'CZK') {
             return;
         }
 
         try {
-            $this->rates->rateFor($currency, $input->incomeDate);
+            $this->rates->rateFor($currency, $day);
         } catch (ExchangeRateMissing) {
-            throw $this->cnbMissing($currency, $input);
+            throw $this->cnbMissing($currency, $day, $key);
         }
     }
 
@@ -168,12 +218,10 @@ final readonly class RecordPayment
      * The missing-list error under the field that chose the day of the list: the income date when it differs from
      * the payment date, otherwise the payment date.
      */
-    private function cnbMissing(string $currency, PaymentInput $input): ValidationException
+    private function cnbMissing(string $currency, string $day, string $key): ValidationException
     {
-        $key = $input->incomeDate === $input->paidOn ? 'paid_on' : 'income_date';
-
         return ValidationException::withMessages([
-            $key => __('invoices.errors.cnb_missing', ['currency' => $currency, 'date' => IssueChecks::czechDate($input->incomeDate)]),
+            $key => __('invoices.errors.cnb_missing', ['currency' => $currency, 'date' => IssueChecks::czechDate($day)]),
         ]);
     }
 }
