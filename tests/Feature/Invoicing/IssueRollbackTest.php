@@ -4,15 +4,23 @@ declare(strict_types=1);
 
 use App\Domain\Clients\Actions\ArchiveClient;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Media;
+use App\Domain\TimeTracking\Enums\BillingState;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\View;
+use Spatie\MediaLibrary\MediaCollections\Events\MediaHasBeenAddedEvent;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\InvoiceFixtures;
@@ -149,5 +157,150 @@ describe('who sees the invoice file', function (): void {
 
         expect(fn () => app(IssueDocument::class)->handle($partner, $draft))->toThrow(AuthorizationException::class)
             ->and(Document::query()->count())->toBe(0);
+    });
+});
+
+/**
+ * A draft of three finished September entries of a fresh client and project, so the issue also bills time.
+ *
+ * @return array{draft: Invoice, entries: list<TimeEntry>}
+ */
+function rollbackTimeDraft(): array
+{
+    $admin = Canary::admin();
+    test()->actingAs($admin);
+
+    $client = InvoiceFixtures::client();
+    $project = app(CreateProject::class)->handle($client, [
+        'name' => 'Rollback project',
+        'key' => Canary::projectKey(),
+        'billing_type' => 'hourly',
+        'hourly_rate' => '1200',
+    ]);
+
+    $entries = [];
+
+    foreach ([['2026-09-10 08:00:00', '2026-09-10 09:00:00'], ['2026-09-11 08:00:00', '2026-09-11 09:30:00']] as [$start, $end]) {
+        $factory = TimeEntry::factory()->forProject($project);
+        $entries[] = rollbackSystem(static fn (): TimeEntry => TimeEntry::query()->findOrFail($factory->create([
+            'user_id' => $admin->id,
+            'started_at' => CarbonImmutable::parse($start, 'UTC'),
+            'ended_at' => CarbonImmutable::parse($end, 'UTC'),
+        ])->id));
+    }
+
+    $draft = app(CreateDraft::class)->handle($admin, [
+        'client_id' => $client->id,
+        'kind' => 'invoice',
+        'source' => 'time',
+        'period_from' => '2026-09-01',
+        'period_to' => '2026-09-30',
+        'project_ids' => [$project->id],
+        'without_project' => false,
+        'grouping' => 'project',
+    ]);
+
+    return ['draft' => $draft, 'entries' => $entries];
+}
+
+/**
+ * The counter rows, in a stable order.
+ *
+ * @return list<array<string, mixed>>
+ */
+function rollbackSequences(): array
+{
+    return DB::table('number_sequences')->orderBy('scope_key')->get()->map(static fn (object $row): array => (array) $row)->all();
+}
+
+/**
+ * Asserts that a refused issue left nothing: the draft is a draft without a number, its entries are reserved for it,
+ * the counters are unchanged, and there is no document row, no media row and no stored object.
+ *
+ * @param  list<array<string, mixed>>  $sequences  the counters before the issue
+ * @param  list<TimeEntry>  $entries
+ */
+function rollbackAssertNothingLeft(Invoice $draft, array $entries, array $sequences): void
+{
+    $fresh = rollbackSystem(static fn (): Invoice => Invoice::query()->whereKey($draft->id)->firstOrFail());
+
+    expect($fresh->isDraft())->toBeTrue()
+        ->and($fresh->number)->toBeNull()
+        ->and(rollbackSequences())->toBe($sequences)
+        ->and(Document::query()->count())->toBe(0)
+        ->and(rollbackSystem(static fn (): int => Media::query()->count()))->toBe(0)
+        ->and(rollbackSystem(static fn (): ?string => InvoiceAdmin::query()->where('invoice_id', $draft->id)->value('pdf_document_id')))->toBeNull()
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+
+    foreach ($entries as $entry) {
+        $stored = rollbackSystem(static fn (): TimeEntry => TimeEntry::query()->findOrFail($entry->id));
+
+        expect($stored->billing_state)->toBe(BillingState::Unbilled)
+            ->and($stored->invoice_id)->toBe($draft->id);
+    }
+}
+
+describe('a failure rolls the whole issue back', function (): void {
+    it('leaves nothing when the PDF cannot be rendered', function (): void {
+        ['draft' => $draft, 'entries' => $entries] = rollbackTimeDraft();
+        $sequences = rollbackSequences();
+
+        View::composer('pdf.invoice', static function (): void {
+            throw new RuntimeException('The rendering failed.');
+        });
+
+        expect(fn () => app(IssueDocument::class)->handle(Canary::admin(), $draft))->toThrow(RuntimeException::class, 'The rendering failed.');
+
+        rollbackAssertNothingLeft($draft, $entries, $sequences);
+    });
+
+    it('leaves no row and no object when the storage fails after the object was written', function (): void {
+        ['draft' => $draft, 'entries' => $entries] = rollbackTimeDraft();
+        $sequences = rollbackSequences();
+
+        Event::listen(MediaHasBeenAddedEvent::class, static function (): void {
+            throw new RuntimeException('The storage failed after the write.');
+        });
+
+        expect(fn () => app(IssueDocument::class)->handle(Canary::admin(), $draft))->toThrow(RuntimeException::class, 'The storage failed after the write.');
+
+        rollbackAssertNothingLeft($draft, $entries, $sequences);
+    });
+
+    it('removes the stored object when a step after the upload fails', function (): void {
+        ['draft' => $draft, 'entries' => $entries] = rollbackTimeDraft();
+        $sequences = rollbackSequences();
+
+        InvoiceAdmin::saving(static function (InvoiceAdmin $admin): void {
+            if ($admin->pdf_document_id !== null) {
+                // The object is on the disk and the document row exists at this point.
+                expect(Storage::disk('local')->allFiles())->toHaveCount(1);
+
+                throw new RuntimeException('The link failed.');
+            }
+        });
+
+        expect(fn () => app(IssueDocument::class)->handle(Canary::admin(), $draft))->toThrow(RuntimeException::class, 'The link failed.');
+
+        rollbackAssertNothingLeft($draft, $entries, $sequences);
+    });
+
+    it('removes the temporary file of the upload whether the issue succeeds or fails', function (): void {
+        $before = glob(sys_get_temp_dir().'/kokpit-generated-*') ?: [];
+
+        InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        expect(glob(sys_get_temp_dir().'/kokpit-generated-*') ?: [])->toBe($before);
+
+        ['draft' => $draft] = rollbackTimeDraft();
+
+        InvoiceAdmin::saving(static function (InvoiceAdmin $admin): void {
+            if ($admin->pdf_document_id !== null) {
+                throw new RuntimeException('The link failed.');
+            }
+        });
+
+        expect(fn () => app(IssueDocument::class)->handle(Canary::admin(), $draft))->toThrow(RuntimeException::class);
+        expect(glob(sys_get_temp_dir().'/kokpit-generated-*') ?: [])->toBe($before);
     });
 });

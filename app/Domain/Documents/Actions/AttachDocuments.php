@@ -172,11 +172,21 @@ final class AttachDocuments
 
             $objectName = $document->getKey().($extension === null ? '' : '.'.$extension);
 
-            /** @var Media $media */
-            $media = $this->context->runAsSystem(static fn (): Media => $document->addMedia($local)
-                ->usingName($document->name)
-                ->usingFileName($objectName)
-                ->toMediaCollection(Document::MEDIA_COLLECTION));
+            try {
+                /** @var Media $media */
+                $media = $this->context->runAsSystem(static fn (): Media => $document->addMedia($local)
+                    ->usingName($document->name)
+                    ->usingFileName($objectName)
+                    ->toMediaCollection(Document::MEDIA_COLLECTION));
+            } catch (Throwable $e) {
+                // A listener of the media library can fail after the object was written: the media row of this
+                // document is still readable inside the transaction, so its object is recorded for the cleanup.
+                foreach ($this->context->runAsSystem(static fn () => $document->media()->get()) as $partial) {
+                    $written[] = $partial;
+                }
+
+                throw $e;
+            }
 
             $written[] = $media;
         } finally {

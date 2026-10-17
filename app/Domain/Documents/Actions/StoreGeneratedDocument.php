@@ -6,10 +6,14 @@ namespace App\Domain\Documents\Actions;
 
 use App\Domain\Documents\Models\Document;
 use App\Domain\Identity\Models\User;
+use App\Domain\Shared\Auth\PartnerContext;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
+use Throwable;
 
 /**
  * Stores bytes the server generated itself, such as the PDF of an issued invoice, as a document through the one
@@ -26,7 +30,10 @@ use RuntimeException;
  */
 final readonly class StoreGeneratedDocument
 {
-    public function __construct(private AttachDocuments $attach) {}
+    public function __construct(
+        private AttachDocuments $attach,
+        private PartnerContext $context,
+    ) {}
 
     /**
      * @throws ValidationException when the generated file is refused by the upload limits
@@ -34,6 +41,13 @@ final readonly class StoreGeneratedDocument
      */
     public function handle(User $actor, Model $owner, string $bytes, string $fileName, string $mimeType = 'application/pdf'): Document
     {
+        /** @var list<array{disk: string, path: string}> $written */
+        $written = [];
+
+        DB::afterRollBack(static function () use (&$written): void {
+            self::deleteObjects($written);
+        });
+
         $temporary = tempnam(sys_get_temp_dir(), 'kokpit-generated-');
 
         if ($temporary === false) {
@@ -50,10 +64,37 @@ final readonly class StoreGeneratedDocument
             $document = $this->attach->handle($actor, $owner, [$upload], false)->first()
                 ?? throw new RuntimeException('The generated document was not stored.');
 
+            foreach ($this->context->runAsSystem(static fn () => $document->getMedia(Document::MEDIA_COLLECTION)) as $media) {
+                $written[] = ['disk' => $media->disk, 'path' => $media->getPathRelativeToRoot()];
+            }
+
             return $document;
         } finally {
             if (is_file($temporary)) {
                 @unlink($temporary);
+            }
+        }
+    }
+
+    /**
+     * Removes the objects of a rolled-back call, best effort: a failure is reported and never masks the rollback.
+     *
+     * @param  list<array{disk: string, path: string}>  $written
+     */
+    private static function deleteObjects(array $written): void
+    {
+        foreach ($written as $object) {
+            try {
+                $disk = Storage::disk($object['disk']);
+                $disk->delete($object['path']);
+
+                $directory = dirname($object['path']);
+
+                if ($directory !== '.' && $directory !== '' && $directory !== '/') {
+                    $disk->deleteDirectory($directory);
+                }
+            } catch (Throwable $e) {
+                report($e);
             }
         }
     }
