@@ -196,7 +196,8 @@ describe('deleting a payment income', function (): void {
         [$admin, $invoice, $payment, $income] = lockIncome();
         app(AttachDocuments::class)->handle($admin, $income, [DocumentFixtures::upload('receipt-example-1.txt')]);
         $files = Storage::disk('local')->allFiles();
-        $receipts = DB::table('documents')->count();
+        // The invoice itself owns its PDF (plan 10-20); only the receipts of transactions are counted.
+        $receipts = DB::table('documents')->where('owner_type', 'transaction')->count();
 
         $errors = lockErrors(fn () => app(DeleteTransaction::class)->handle($admin, $income));
 
@@ -204,7 +205,7 @@ describe('deleting a payment income', function (): void {
             ->and($errors['transaction'][0] ?? '')->toContain((string) $invoice->number)
             ->and(Transaction::query()->whereKey($income->id)->exists())->toBeTrue()
             ->and(InvoicePayment::query()->whereKey($payment->id)->exists())->toBeTrue()
-            ->and(DB::table('documents')->count())->toBe($receipts)
+            ->and(DB::table('documents')->where('owner_type', 'transaction')->count())->toBe($receipts)
             ->and($receipts)->toBe(1)
             ->and(Document::query()->where('owner_id', $income->id)->count())->toBe(1)
             ->and(Storage::disk('local')->allFiles())->toBe($files);

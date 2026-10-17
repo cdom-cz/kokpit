@@ -13,6 +13,7 @@ use App\Domain\Shared\Auth\PartnerContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\Process\Process;
 use Tests\Support\InvoiceFixtures;
@@ -150,6 +151,17 @@ function invoiceIssueCleanup(): int
             DB::table('invoice_items')->whereIn('invoice_id', $invoiceIds)->update(['credited_item_id' => null]);
             DB::table('invoice_items')->whereIn('invoice_id', $invoiceIds)->delete();
             DB::table('invoice_admin')->whereIn('invoice_id', $invoiceIds)->delete();
+
+            // The PDF of each issued document: the document row, its media row and the stored object (plan 10-20).
+            $documentIds = DB::table('documents')->where('client_id', $client)->pluck('id')->all();
+
+            foreach (DB::table('media')->where('model_type', 'document')->whereIn('model_id', $documentIds)->get(['id', 'disk']) as $media) {
+                Storage::disk($media->disk)->deleteDirectory((string) $media->id);
+            }
+
+            DB::table('media')->where('model_type', 'document')->whereIn('model_id', $documentIds)->delete();
+            DB::table('activity_log')->whereIn('subject_id', $documentIds)->delete();
+            DB::table('documents')->whereIn('id', $documentIds)->delete();
             DB::table('activity_log')->whereIn('subject_id', [...$invoiceIds, ...$itemIds])->delete();
             DB::table('invoices')->where('client_id', $client)->delete();
 
