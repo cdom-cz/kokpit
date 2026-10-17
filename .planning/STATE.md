@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-16-PLAN.md
-last_updated: "2026-10-17T12:41:49.141Z"
+stopped_at: Completed 10-35-PLAN.md
+last_updated: "2026-10-17T13:02:11.583Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: f896ac877cea8e3a230a97d872ef43c098a76d5e
+state_head: 8c52c8d8fcea8847287a0facba488f0c7e1bb51c
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 202
+  completed_plans: 203
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 19 of 41
+Plan: 20 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -265,6 +265,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P14 | 30 min | 3 tasks | 11 files |
 | Phase 10 P15 | 2 sessions | 3 tasks | 12 files |
 | Phase 10 P16 | 30 min | 3 tasks | 8 files |
+| Phase 10 P35 | 40 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -654,6 +655,8 @@ Recent decisions affecting current work:
 - [Phase 10]: Draft line appends (time, new time, fixed amount) go through one writer, DraftLines, that only appends after the last position so edited lines are never rewritten
 - [Phase 10]: 10-16: payment refusals (draft, credit note, cancelled invoice) are keyed under 'payment'; a missing CNB list is keyed under paid_on, or income_date when it differs, and is checked before anything is written
 - [Phase 10]: 10-16: InvoiceBalances is the one definition of paid, credited and remaining (shared SQL fragments); remaining is null for a credit note or draft and 0 for a cancelled invoice
+- [Phase 10]: 10-35: EntryReservation is no longer final (still readonly) so the concurrency harness can bind the unlocked twin; no application code extends it
+- [Phase 10]: 10-35: the invoice counter key is global per year, so the concurrency test reads the counter before, expects numbers from that start and restores the counter row and the supplier and bank settings afterwards
 
 ### Pending Todos
 
@@ -709,6 +712,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T12:41:47.917Z
-Stopped at: Completed 10-16-PLAN.md
+Last session: 2026-10-17T13:02:10.346Z
+Stopped at: Completed 10-35-PLAN.md
 Resume file: None
