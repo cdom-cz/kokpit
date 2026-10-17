@@ -242,6 +242,7 @@ function walkedResourceMap(string $canaryRecordA, string $canaryRecordB, string 
         'time-entries' => ['partner' => false, 'a' => $entryId($canaryA), 'b' => $entryId($canaryB)],
         'transactions' => ['partner' => false, 'a' => $transactionId($canaryA), 'b' => $transactionId($canaryB)],
         'invoices' => ['partner' => false, 'a' => $invoiceId($canaryA), 'b' => $invoiceId($canaryB)],
+        'my-invoices' => ['partner' => true, 'a' => $invoiceId($canaryA), 'b' => $invoiceId($canaryB)],
         'my-tasks' => ['partner' => true, 'a' => $taskReference($canaryA), 'b' => $taskReference($canaryB)],
     ];
 }

@@ -69,7 +69,8 @@ final class InvoiceScenario
      * The documents of one client. The keys are `draft`, `invoice` (from time, partly paid, with an internal note),
      * `unpaid`, `proforma` (fully paid), `cancelled`, `credit_note` (the storno of `cancelled`), `eur`, and
      * `canaries` with `draft_note`, `draft_time`, `draft_project`, `invoice_note`, `invoice_time`, `payment_note`,
-     * `cnb` (the rate and the CZK total of the EUR invoice as texts) and `durations`.
+     * `cnb` (the rate and the CZK total of the EUR invoice as texts), `durations` and `lines` (the printed line texts of
+     * the issued documents, which belong to this client alone).
      *
      * @return array<string, mixed>
      */
@@ -85,6 +86,8 @@ final class InvoiceScenario
             'invoice_time' => Canary::canary('invoice_time_'.$label),
             'payment_note' => Canary::canary('payment_note_'.$label),
             'durations' => [self::INVOICE_DURATION, self::DRAFT_DURATION],
+            // The printed lines of the issued documents: texts that belong to this client alone.
+            'lines' => ['Scenario project '.$label, 'Unpaid work '.$label, 'Advance '.$label, 'Cancelled work '.$label, 'Euro work '.$label],
         ];
 
         $invoiceProject = self::project($client, 'Scenario project '.$label);
