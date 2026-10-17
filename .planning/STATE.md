@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-06-PLAN.md
-last_updated: "2026-10-17T07:08:34.279Z"
+stopped_at: Completed 10-07-PLAN.md
+last_updated: "2026-10-17T07:19:04.121Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 444cfea2f319571ceda347e08473e51a1d2bbfe7
+state_head: 38b1377357dd50deb2b182c0c1510d72d428bddc
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 191
+  completed_plans: 192
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 8 of 41
+Plan: 9 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -254,6 +254,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P33 | 10 min | 2 tasks | 8 files |
 | Phase 10 P05 | 40 min | 3 tasks | 11 files |
 | Phase 10 P06 | 40 min | 3 tasks | 9 files |
+| Phase 10 P07 | 30 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -625,6 +626,7 @@ Recent decisions affecting current work:
 - [Phase 10]: Phase 10 P06: reservation of time is the single column time_entries.invoice_id, released only by an issued storno credit note (link guard in the database)
 - [Phase 10]: Phase 10 P06: a payment is never updated and is deleted only under the transaction-local flag kokpit.payment_deletion, together with its income (deferred pair check)
 - [Phase 10]: Phase 10 P06: the PDF link lives on invoice_admin.pdf_document_id and changes only from null to an own file or by deleting the file (ON DELETE SET NULL)
+- [Phase 10]: R-07-1/R-07-2/R-07-3: invoice and proforma numbers are digits-only and at most 10 characters (variable symbol = the number itself, none for a credit note); proforma default {YYYY}9{NNNN}, moved to by a guarded settings migration (owner acknowledgement of the D-05 narrowing pending)
 
 ### Pending Todos
 
@@ -680,6 +682,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T07:08:33.339Z
-Stopped at: Completed 10-06-PLAN.md
+Last session: 2026-10-17T07:19:03.144Z
+Stopped at: Completed 10-07-PLAN.md
 Resume file: None
