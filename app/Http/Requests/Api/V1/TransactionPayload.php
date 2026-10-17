@@ -29,7 +29,8 @@ use Illuminate\Validation\ValidationException;
  * The three ways to fix the CZK figure (D-06) are `exchange_rate` (with `exchange_unit_amount`, default 1) for a
  * custom rate, `czk_amount_minor` for a manual figure, or neither for the CNB rule. A CZK transaction takes none
  * of the three: the API refuses them instead of ignoring them silently (a rule about ignored input of the wire
- * contract, not a second business rule; the domain keeps ignoring them).
+ * contract, not a second business rule; the domain keeps ignoring them). Booleans are refused in the integer fields
+ * (`amount_minor`, `czk_amount_minor`, `exchange_unit_amount`); integers and integer strings pass as before.
  */
 final class TransactionPayload
 {
@@ -54,11 +55,11 @@ final class TransactionPayload
             'type' => [$required, 'string'],
             'transaction_date' => [$required, 'string'],
             'category_id' => [$required, self::uuid('category_unavailable')],
-            'amount_minor' => $create ? ['required', 'integer'] : ['required_with:currency', 'integer'],
+            'amount_minor' => [$create ? 'required' : 'required_with:currency', 'bail', self::noBoolean('amount_invalid'), 'integer'],
             'currency' => [$required, 'string', 'regex:/^[A-Z]{3}$/D'],
-            'czk_amount_minor' => ['nullable', 'integer'],
+            'czk_amount_minor' => ['nullable', 'bail', self::noBoolean('czk_invalid'), 'integer'],
             'exchange_rate' => ['nullable', self::rate()],
-            'exchange_unit_amount' => ['nullable', 'integer'],
+            'exchange_unit_amount' => ['nullable', 'bail', self::noBoolean('unit_invalid'), 'integer'],
             'description' => ['nullable', 'string'],
             'counterparty' => ['nullable', 'string'],
             'document_number' => ['nullable', 'string'],
@@ -308,6 +309,19 @@ final class TransactionPayload
         return static function (string $attribute, mixed $value, Closure $fail): void {
             if (! is_string($value) && ! is_int($value) && ! is_float($value)) {
                 $fail(__('finance.transactions.errors.rate_invalid'));
+            }
+        };
+    }
+
+    /**
+     * A rule that refuses a JSON boolean with the given message of the panel: Laravel's `integer` rule lets `true`
+     * through as 1, which would re-denominate or drop an amount.
+     */
+    private static function noBoolean(string $message): Closure
+    {
+        return static function (string $attribute, mixed $value, Closure $fail) use ($message): void {
+            if (is_bool($value)) {
+                $fail(__('finance.transactions.errors.'.$message));
             }
         };
     }
