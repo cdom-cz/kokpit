@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Throwable;
 
@@ -61,6 +62,9 @@ final class SendInvoiceEmail extends KokpitJob
     public const string FAILURE_ATTACHMENT_MISSING = 'attachment_missing';
 
     public const string FAILURE_UNEXPECTED = 'unexpected';
+
+    /** The message the queue and the failed-job alert see for a refused transport. */
+    private const string TRANSPORT_FAILED = 'The mail transport refused the message.';
 
     public function __construct(public readonly string $emailId) {}
 
@@ -112,7 +116,10 @@ final class SendInvoiceEmail extends KokpitJob
                 ->where('state', InvoiceEmailState::Sending->value)
                 ->update(['state' => InvoiceEmailState::Queued->value, 'updated_at' => now()]);
 
-            throw $e;
+            // The provider's answer can name the recipient, and the failed-job alert prints the first line of a
+            // message into the bell (T-10-65): a transport failure leaves as a fixed message. The original stays
+            // as the previous exception, which only the failed_jobs record and the log hold.
+            throw $e instanceof TransportExceptionInterface ? new RuntimeException(self::TRANSPORT_FAILED, 0, $e) : $e;
         }
     }
 
@@ -124,7 +131,9 @@ final class SendInvoiceEmail extends KokpitJob
     public function failed(Throwable $exception): void
     {
         app(PartnerContext::class)->runAsSystem(function () use ($exception): void {
-            $this->giveUp($exception instanceof TransportExceptionInterface ? self::FAILURE_TRANSPORT : self::FAILURE_UNEXPECTED);
+            $transport = $exception instanceof TransportExceptionInterface || $exception->getPrevious() instanceof TransportExceptionInterface;
+
+            $this->giveUp($transport ? self::FAILURE_TRANSPORT : self::FAILURE_UNEXPECTED);
         });
     }
 

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Documents\Actions\DeleteDocument;
+use App\Domain\Documents\Models\Document;
 use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
@@ -10,15 +12,25 @@ use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Defer\DeferredCallbackCollection;
+use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Pipeline\Pipeline;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mime\Email;
 use Tests\Support\Canary;
@@ -138,6 +150,43 @@ function invMailRun(string $emailId): void
 function invMailRow(string $emailId): InvoiceEmail
 {
     return app(PartnerContext::class)->runAsSystem(static fn (): InvoiceEmail => InvoiceEmail::query()->findOrFail($emailId));
+}
+
+/**
+ * Makes the mail transport refuse every message, with a text that names the recipient the way a provider answer would.
+ */
+function invMailBreakTransport(string $recipient): void
+{
+    Event::listen(MessageSending::class, static function () use ($recipient): void {
+        throw new TransportException('550 mailbox <'.$recipient.'> rejected by relay');
+    });
+}
+
+/**
+ * Runs the job through its own middleware and without the queue's failure handling, like one try of a worker.
+ */
+function invMailTry(string $emailId): void
+{
+    $job = new SendInvoiceEmail($emailId);
+
+    (new Pipeline(app()))
+        ->send($job)
+        ->through($job->middleware())
+        ->then(static fn (SendInvoiceEmail $job): mixed => app()->call($job->handle(...)));
+}
+
+/**
+ * The failed-send notices of a user, as stored.
+ *
+ * @return list<array<string, mixed>>
+ */
+function invMailBell(User $user): array
+{
+    return $user->notifications()->get()
+        ->map(static fn ($notification): array => (array) $notification->data)
+        ->filter(static fn (array $data): bool => ($data['title'] ?? null) === __('invoices.email.notice.title'))
+        ->values()
+        ->all();
 }
 
 describe('the tracer: queue the e-mail of an issued invoice and send it', function (): void {
@@ -279,6 +328,275 @@ describe('the tracer: queue the e-mail of an issued invoice and send it', functi
         app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
 
         expect(invMailAttachmentNames(invMailSent()[0]))->toBe(['invoice-'.$invoice->number.'.pdf', 'work-report-'.$invoice->number.'.pdf']);
+    });
+});
+
+describe('a send that keeps failing', function (): void {
+    it('marks the row failed with the transport class and sends one clean bell notice to every Admin', function (): void {
+        $second = Canary::admin();
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => 'recipient@example.com']));
+        $data = invMailData($invoice);
+
+        invMailBreakTransport('recipient@example.com');
+
+        // No Queue::fake(): the sync connection runs the job like a worker, with its middleware and failed().
+        expect(fn () => app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, $data))->toThrow(RuntimeException::class);
+
+        // The generic failed-job alert (Phase 3) is deferred to the end of the request; deliver it now so that it is
+        // part of what the Admins can read in the bell.
+        app(DeferredCallbackCollection::class)->invoke();
+
+        /** @var InvoiceEmail $stored */
+        $stored = app(PartnerContext::class)->runAsSystem(static fn (): ?InvoiceEmail => InvoiceEmail::query()->where('invoice_id', $invoice->id)->first());
+
+        expect($stored->state)->toBe(InvoiceEmailState::Failed)
+            ->and($stored->failure_code)->toBe('transport')
+            ->and($stored->sent_at)->toBeNull()
+            ->and(invMailSent())->toBe([]);
+
+        foreach ([$this->admin, $second] as $admin) {
+            $bell = invMailBell($admin);
+
+            expect($bell)->toHaveCount(1)
+                ->and($bell[0]['body'])->toBe(__('invoices.email.notice.body', ['number' => $invoice->number]));
+
+            // Everything in the bell: the notice of this plan and the technical alert next to it.
+            $encoded = (string) json_encode($admin->notifications()->get()->pluck('data'));
+
+            expect($encoded)->not->toContain('recipient@example.com')
+                ->and($encoded)->not->toContain('rejected by relay')
+                ->and($encoded)->not->toContain(Money::ofMinor($invoice->total_minor, $invoice->currency)->format('cs'))
+                ->and($encoded)->not->toContain('1000');
+        }
+    });
+
+    it('puts the row back to queued between tries and fails it once the queue gives up', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        invMailBreakTransport('recipient@example.com');
+
+        expect(fn () => invMailTry($row->id))->toThrow(RuntimeException::class);
+        expect(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Queued)
+            ->and(invMailRow($row->id)->attempts)->toBe(1)
+            ->and(invMailBell($this->admin))->toBe([]);
+
+        expect(fn () => invMailTry($row->id))->toThrow(RuntimeException::class);
+        expect(invMailRow($row->id)->attempts)->toBe(2);
+
+        // The worker calls failed() once the attempts are used up; a second call changes and tells nothing.
+        $failure = new TransportException('relay refused');
+        (new SendInvoiceEmail($row->id))->failed($failure);
+        (new SendInvoiceEmail($row->id))->failed($failure);
+
+        expect(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Failed)
+            ->and(invMailRow($row->id)->failure_code)->toBe('transport')
+            ->and(invMailBell($this->admin))->toHaveCount(1);
+    });
+
+    it('classes any other failure as unexpected', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        (new SendInvoiceEmail($row->id))->failed(new LogicException('something broke'));
+
+        expect(invMailRow($row->id)->failure_code)->toBe('unexpected');
+    });
+
+    it('fails a row at once, with attachment_missing, when the stored PDF object is gone', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        foreach (Storage::disk('local')->allFiles() as $file) {
+            Storage::disk('local')->delete($file);
+        }
+
+        invMailTry($row->id);
+
+        $stored = invMailRow($row->id);
+
+        expect($stored->state)->toBe(InvoiceEmailState::Failed)
+            ->and($stored->failure_code)->toBe('attachment_missing')
+            ->and(invMailSent())->toBe([])
+            ->and(invMailBell($this->admin))->toHaveCount(1);
+    });
+
+    it('fails a row with attachment_missing when the document has no PDF link', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        // The sanctioned way to lose the link: the file of the PDF is deleted (DO-03).
+        $document = $invoice->admin?->pdfDocument;
+        assert($document instanceof Document);
+        app(DeleteDocument::class)->handle($this->admin, $document);
+
+        expect(app(PartnerContext::class)->runAsSystem(static fn (): ?string => InvoiceAdmin::query()->where('invoice_id', $invoice->id)->value('pdf_document_id')))->toBeNull();
+
+        invMailTry($row->id);
+
+        expect(invMailRow($row->id)->failure_code)->toBe('attachment_missing')
+            ->and(invMailSent())->toBe([]);
+    });
+
+    it('gives a partner of the client no notice and no row', function (): void {
+        $client = InvoiceFixtures::client();
+        $partner = Canary::partnerFor($client->id);
+        $invoice = InvoiceFixtures::issued($client);
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        (new SendInvoiceEmail($row->id))->failed(new TransportException('relay refused'));
+
+        $this->actingAs($partner);
+
+        expect($partner->notifications()->count())->toBe(0)
+            ->and(InvoiceEmail::query()->count())->toBe(0);
+    });
+});
+
+describe('a resend', function (): void {
+    it('is a new row; the first stays failed and the latest row decides', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => 'recipient@example.com']));
+        Queue::fake();
+        $first = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        (new SendInvoiceEmail($first->id))->failed(new TransportException('relay refused'));
+
+        $this->travel(5)->seconds();
+        $second = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        invMailTry($second->id);
+
+        expect($second->id)->not->toBe($first->id)
+            ->and(invMailRow($first->id)->state)->toBe(InvoiceEmailState::Failed)
+            ->and(invMailRow($second->id)->state)->toBe(InvoiceEmailState::Sent)
+            ->and($invoice->emails()->count())->toBe(2)
+            ->and($invoice->emails()->first()?->id)->toBe($second->id)
+            ->and(invMailSent())->toHaveCount(1);
+    });
+});
+
+describe('what the dialog may submit', function (): void {
+    it('refuses a recipient that is no address or carries a line break', function (string $recipient): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+
+        try {
+            app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, ['recipient' => $recipient]));
+            $this->fail('The recipient should have been refused.');
+        } catch (ValidationException $e) {
+            expect($e->errors())->toHaveKey('recipient')
+                ->and($e->errors()['recipient'][0])->toBe(__('invoices.errors.email_recipient'));
+        }
+
+        expect(InvoiceEmail::query()->count())->toBe(0);
+        Queue::assertNothingPushed();
+    })->with([
+        'not an address' => ['not-an-email'],
+        'empty' => [''],
+        'blank' => ['   '],
+        'line break' => ["invoice@example.com\r\nBcc: other@example.com"],
+        'two addresses' => ['one@example.com, two@example.com'],
+        'display name' => ['Someone <someone@example.com>'],
+    ]);
+
+    it('strips line breaks from the subject before storing it', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, ['subject' => "Invoice\r\nBcc: other@example.com\nnext"]));
+
+        expect(invMailRow($row->id)->subject)->toBe('Invoice Bcc: other@example.com next');
+    });
+
+    it('refuses a subject over 200 and a body over 5000 characters, and accepts the limits', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+
+        foreach ([['subject', 201], ['body', 5001]] as [$field, $length]) {
+            try {
+                app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, [$field => str_repeat('a', $length)]));
+                $this->fail('The '.$field.' should have been refused.');
+            } catch (ValidationException $e) {
+                expect($e->errors())->toHaveKey($field);
+            }
+        }
+
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, ['subject' => str_repeat('s', 200), 'body' => str_repeat('b', 5000)]));
+
+        expect(mb_strlen(invMailRow($row->id)->subject))->toBe(200)
+            ->and(mb_strlen(invMailRow($row->id)->body))->toBe(5000)
+            ->and(InvoiceEmail::query()->count())->toBe(1);
+    });
+
+    it('refuses an empty subject and an empty body', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        foreach (['subject', 'body'] as $field) {
+            expect(fn () => app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, [$field => " \n "])))
+                ->toThrow(ValidationException::class);
+        }
+    });
+
+    it('sends the body as plain text, markup and all', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, ['body' => "Hello <b>there</b> & \"friends\"\0"]));
+
+        $email = invMailSent()[0];
+
+        expect($email->getHtmlBody())->toBeNull()
+            ->and(trim((string) $email->getTextBody()))->toBe('Hello <b>there</b> & "friends"');
+    });
+
+    it('refuses a draft', function (): void {
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '1000.00')]);
+
+        try {
+            app(QueueInvoiceEmail::class)->handle($this->admin, $draft, [
+                'recipient' => 'invoice@example.com',
+                'subject' => 'Subject',
+                'body' => 'Body',
+                'attach_work_report' => false,
+            ]);
+            $this->fail('A draft should have been refused.');
+        } catch (ValidationException $e) {
+            expect($e->errors()['invoice'][0])->toBe(__('invoices.errors.email_not_issued'));
+        }
+
+        expect(InvoiceEmail::query()->count())->toBe(0);
+    });
+
+    it('refuses a partner', function (): void {
+        $client = InvoiceFixtures::client();
+        $invoice = InvoiceFixtures::issued($client);
+        $data = invMailData($invoice);
+        $partner = Canary::partnerFor($client->id);
+
+        expect(fn () => app(QueueInvoiceEmail::class)->handle($partner, $invoice, $data))->toThrow(AuthorizationException::class);
+        expect(app(PartnerContext::class)->runAsSystem(static fn (): int => InvoiceEmail::query()->count()))->toBe(0);
+    });
+
+    it('ignores the work report flag on a document without linked time', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, ['attach_work_report' => true]));
+
+        expect(invMailRow($row->id)->attach_work_report)->toBeFalse()
+            ->and(invMailAttachmentNames(invMailSent()[0]))->toBe(['faktura-'.$invoice->number.'.pdf']);
+    });
+
+    it('sends no work report for a row that asks for one when the entries are gone', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        app(PartnerContext::class)->runAsSystem(static fn (): int => InvoiceEmail::query()->whereKey($row->id)->update(['attach_work_report' => true]));
+
+        invMailTry($row->id);
+
+        expect(invMailAttachmentNames(invMailSent()[0]))->toBe(['faktura-'.$invoice->number.'.pdf']);
     });
 });
 
