@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-19-PLAN.md
-last_updated: "2026-10-17T13:50:40.172Z"
+stopped_at: Completed 10-20-PLAN.md
+last_updated: "2026-10-17T14:24:04.541Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 10b1d189f1ac33a79ce35749445d0381e4b4be72
+state_head: 341df4069e7d195be8003e8ba2dff057fa3fc298
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 206
+  completed_plans: 207
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 23 of 41
+Plan: 24 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -269,6 +269,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P17 | 80 min | 3 tasks | 7 files |
 | Phase 10 P18 | 35 min | 3 tasks | 1 files |
 | Phase 10 P19 | 25 min | 3 tasks | 9 files |
+| Phase 10 P20 | 55 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -665,6 +666,8 @@ Recent decisions affecting current work:
 - [Phase 10]: 10-18: the PDF variants (proforma, credit note, EUR, optional blocks) were already delivered by 10-15; 10-18 proves them and the regeneration equivalence (HTML, page count, text) in InvoicePdfVariantsTest
 - [Phase 10]: 10-19: the summary unpaid figure follows the Unpaid tab (not yet late) so overdue and unpaid never overlap; a foreign document without its CNB trio adds nothing to a CZK sum
 - [Phase 10]: 10-19: payment income lock checks the type as sent and every other field after reading the input without type, date, category and CZK keys; resent unchanged values are not a change
+- [Phase 10]: R-20-1/R-20-4: invoice documents are not archivable with their client and never shareable; IssueContext carries the acting Admin and IssueContext::today() serves day-only callers
+- [Phase 10]: Rollback of the issue transaction removes the stored PDF object through DB::afterRollBack registered by StoreGeneratedDocument; AttachDocuments records the object of a media row whose listener failed after the write
 
 ### Pending Todos
 
@@ -720,6 +723,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T13:50:38.865Z
-Stopped at: Completed 10-19-PLAN.md
+Last session: 2026-10-17T14:24:03.284Z
+Stopped at: Completed 10-20-PLAN.md
 Resume file: None
