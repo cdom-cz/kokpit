@@ -19,7 +19,9 @@ use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Reports\Models\ReportExport;
@@ -74,6 +76,8 @@ final class MorphMap
         'transaction_category' => TransactionCategory::class,
         'invoice' => Invoice::class,
         'invoice_item' => InvoiceItem::class,
+        'invoice_admin' => InvoiceAdmin::class,
+        'invoice_payment' => InvoicePayment::class,
         'dashboard_widget_preference' => DashboardWidgetPreference::class,
         'document' => Document::class,
         'document_archive' => DocumentArchive::class,

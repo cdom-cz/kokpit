@@ -203,6 +203,27 @@ final class Invoice extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * The Admin-only half of the document: internal note, CNB snapshot, CZK total and the stored PDF link. Null for
+     * a Partner, whose query of the Admin-only model returns nothing (IN-09).
+     *
+     * @return HasOne<InvoiceAdmin, $this>
+     */
+    public function admin(): HasOne
+    {
+        return $this->hasOne(InvoiceAdmin::class);
+    }
+
+    /**
+     * The payments of the document, oldest payment date first (IN-05). Empty for a Partner.
+     *
+     * @return HasMany<InvoicePayment, $this>
+     */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(InvoicePayment::class)->orderBy('paid_on')->orderBy('id');
+    }
+
+    /**
      * The proforma this invoice was made from, if any.
      *
      * @return BelongsTo<Invoice, $this>
