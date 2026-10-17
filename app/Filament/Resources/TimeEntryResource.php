@@ -6,6 +6,7 @@ namespace App\Filament\Resources;
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
@@ -326,6 +327,23 @@ final class TimeEntryResource extends Resource
                         ->label(__('kokpit.time.fields.billing_state'))
                         ->state(static fn (TimeEntry $record): BillingBadge => $record->billingBadge())
                         ->badge(),
+                    // A reserved entry stays unbilled and is additionally marked as held by a draft (D-04, Surface M).
+                    TextEntry::make('reserved_badge')
+                        ->label(__('invoices.time.draft_field'))
+                        ->state(static fn (TimeEntry $record): string => (string) __('invoices.time.badge'))
+                        ->badge()
+                        ->color('gray')
+                        ->icon(Heroicon::OutlinedLink)
+                        ->tooltip(__('invoices.time.badge_tooltip'))
+                        ->visible(static fn (TimeEntry $record): bool => $record->isReserved()),
+                    // An entry billed by an invoice links to it; a manually billed entry has no invoice and no link.
+                    TextEntry::make('invoice_link')
+                        ->label(__('invoices.time.invoice_field'))
+                        ->state(static fn (TimeEntry $record): string => (string) __('invoices.time.invoice_link', ['number' => $record->invoice instanceof Invoice ? (string) $record->invoice->number : '']))
+                        ->url(static fn (TimeEntry $record): ?string => $record->invoice instanceof Invoice
+                            ? InvoiceResource::getUrl('view', ['record' => $record->invoice])
+                            : null)
+                        ->visible(static fn (TimeEntry $record): bool => $record->isBilled() && $record->invoice?->number !== null),
                     // The hourly rate that would apply and where it comes from, never an amount: the
                     // amount is written when the entry is billed (Phase 10). The resolver refuses non-Admins.
                     TextEntry::make('effective_rate')
@@ -396,6 +414,14 @@ final class TimeEntryResource extends Resource
                 ->label(__('kokpit.time.fields.billing_state'))
                 ->state(static fn (TimeEntry $record): BillingBadge => $record->billingBadge())
                 ->badge(),
+            // A reserved entry stays "Nevyfakturováno" and is also held by a draft (D-04, ruling R-06-3).
+            TextColumn::make('reserved')
+                ->label(__('invoices.time.draft_field'))
+                ->state(static fn (TimeEntry $record): ?string => $record->isReserved() ? (string) __('invoices.time.badge') : null)
+                ->badge()
+                ->color('gray')
+                ->icon(Heroicon::OutlinedLink)
+                ->tooltip(static fn (TimeEntry $record): ?string => $record->isReserved() ? (string) __('invoices.time.badge_tooltip') : null),
             // Overlaps are allowed (D-04); the badge only tells the Admin, and the tooltip names the other entry.
             TextColumn::make('overlap')
                 ->label(__('kokpit.time.fields.overlap'))
@@ -683,7 +709,14 @@ final class TimeEntryResource extends Resource
                         return;
                     }
 
-                    Notification::make()->success()->title(__('kokpit.time.billing.mark.done', ['count' => $result['billed']]))->send();
+                    // A reserved entry is skipped, never billed by hand: the toast names how many (F-13, Surface M).
+                    Notification::make()
+                        ->success()
+                        ->title(__('kokpit.time.billing.mark.done', ['count' => $result['billed']]))
+                        ->body($result['skipped_reserved'] > 0
+                            ? trans_choice('invoices.time.skipped_reserved', $result['skipped_reserved'], ['count' => $result['skipped_reserved']])
+                            : null)
+                        ->send();
                     $livewire->dispatch('time-entry-saved');
                 })
                 ->deselectRecordsAfterCompletion(),

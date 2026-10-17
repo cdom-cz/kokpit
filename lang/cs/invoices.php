@@ -669,6 +669,10 @@ return [
         'refusal' => 'Záznam je připojen ke konceptu faktury. Odpojte ho v konceptu.',
         'report_in_drafts' => 'z toho v konceptech: :duration',
         'invoice_link' => 'Faktura :number',
+        'invoice_field' => 'Doklad',
+        'draft_field' => 'Koncept faktury',
+        'open_draft' => 'Otevřít koncept',
+        'skipped_reserved' => '{1} Přeskočen :count záznam připojený ke konceptu faktury. Odpojte ho v konceptu.|[2,4] Přeskočeny :count záznamy připojené ke konceptu faktury. Odpojte je v konceptu.|[5,*] Přeskočeno :count záznamů připojených ke konceptu faktury. Odpojte je v konceptu.',
         'unlock_refusal' => 'Záznam patří k vystavené faktuře :number a nelze ho odemknout. Vystavte dobropis.',
     ],
 

@@ -8,6 +8,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\TimeTracking\Actions\UpdateTimeEntry;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Concerns\RethrowsDomainValidation;
+use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\TimeEntryResource;
 use DomainException;
 use Filament\Actions\Action;
@@ -105,6 +106,15 @@ final class EditTimeEntry extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            // The way out of the lock of a reserved entry: the draft that holds it (R-10-1, Surface M).
+            Action::make('openDraft')
+                ->label(__('invoices.time.open_draft'))
+                ->icon(Heroicon::OutlinedLink)
+                ->color('gray')
+                ->url(fn (): ?string => ($entry = $this->getRecord()) instanceof TimeEntry && $entry->isReserved()
+                    ? InvoiceResource::getUrl('edit', ['record' => $entry->invoice_id])
+                    : null)
+                ->visible(fn (): bool => ($entry = $this->getRecord()) instanceof TimeEntry && $entry->isReserved()),
             ViewAction::make(),
         ];
     }
