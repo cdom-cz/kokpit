@@ -10,10 +10,16 @@ use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 /**
  * Deletes a transaction (FI-01, D-09, D-14, D-21, D-23): the Admin only, and for real, together with its receipts.
+ *
+ * The income that books a payment of an invoice is never deleted here (FI-03, D-19 as amended on 2026-10-17, ruling
+ * R-19-1): it goes only together with its payment, through `DeletePayment` of the invoice detail. The refusal is raised
+ * on the locked row, before any receipt is touched, and the database guard of plan 10-06 refuses the same for every
+ * other writer.
  *
  * Transactions are the only document owner that is hard-deleted; there is no archive state for them. The row is
  * read again under a row lock, so a stale page cannot delete a row another request is changing, and an upload
@@ -32,6 +38,7 @@ final readonly class DeleteTransaction
     public function __construct(private DeleteDocument $deleteDocument) {}
 
     /**
+     * @throws ValidationException `payment_transaction_delete` under `transaction` for the income of an invoice payment
      * @throws RuntimeException when the database refuses the delete; nothing at all is deleted then
      */
     public function handle(User $actor, Transaction $transaction): void
@@ -40,6 +47,12 @@ final readonly class DeleteTransaction
 
         DB::transaction(function () use ($actor, $transaction): void {
             $locked = Transaction::query()->whereKey($transaction->getKey())->lockForUpdate()->firstOrFail();
+
+            if ($locked->isPaymentIncome()) {
+                throw ValidationException::withMessages([
+                    'transaction' => __('invoices.errors.payment_transaction_delete', ['number' => (string) $locked->invoice()->value('number')]),
+                ]);
+            }
 
             foreach ($locked->documents()->orderBy('id')->get() as $receipt) {
                 $this->deleteDocument->handle($actor, $receipt);
