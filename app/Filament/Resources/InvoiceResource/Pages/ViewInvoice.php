@@ -6,6 +6,7 @@ namespace App\Filament\Resources\InvoiceResource\Pages;
 
 use App\Domain\ExchangeRates\RateFormat;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Actions\ConvertProforma;
 use App\Domain\Invoicing\Actions\RegeneratePdf;
 use App\Domain\Invoicing\Actions\UpdateInternalNote;
 use App\Domain\Invoicing\Enums\InvoiceKind;
@@ -20,6 +21,7 @@ use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\InvoiceResource;
 use App\Filament\Support\InvoiceColumns;
 use App\Filament\Support\InvoiceTable;
+use App\Filament\Support\RecordPaymentAction;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\RepeatableEntry;
@@ -40,6 +42,7 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\On;
 use Throwable;
 
 /**
@@ -131,13 +134,100 @@ final class ViewInvoice extends ViewRecord
     }
 
     /**
-     * "Stáhnout PDF" when the stored PDF exists; the actions of the later plans follow it.
+     * "Stáhnout PDF" when the stored PDF exists, "Zaznamenat platbu" on a document that still owes something and
+     * "Vystavit fakturu" on a paid proforma without an invoice (UI-SPEC E2); the actions of the later plans follow.
      *
      * @return array<Action>
      */
     protected function getHeaderActions(): array
     {
-        return [$this->downloadPdfAction()];
+        return [
+            $this->downloadPdfAction(),
+            $this->recordPaymentAction(),
+            $this->convertProformaAction(),
+        ];
+    }
+
+    /**
+     * A payment saved or deleted in the Platby tab moves the badge, the remaining amount and the banners of this
+     * page; the listener only makes the page render again from the database.
+     */
+    #[On('invoice-payment-saved')]
+    public function refreshAfterPaymentChange(): void
+    {
+        $this->reloadAdminHalf();
+    }
+
+    /**
+     * "Zaznamenat platbu", primary while something is still owed (an unpaid, partly paid or overdue invoice or
+     * proforma). A paid document records an extra payment from the tab (D-17); a credit note, a cancelled invoice and
+     * a paid proforma do not offer it here.
+     */
+    private function recordPaymentAction(): Action
+    {
+        return RecordPaymentAction::make(fn (): Invoice => $this->invoice(), fn () => $this->reloadAdminHalf(), 'primary')
+            ->visible(fn (): bool => RecordPaymentAction::available($this->invoice())
+                && in_array($this->derived()['status'], [InvoiceStatus::Unpaid, InvoiceStatus::PartiallyPaid, InvoiceStatus::Overdue], true));
+    }
+
+    /**
+     * "Vystavit fakturu" on a paid proforma that has no invoice (IN-06; D-15, D-18; UI-SPEC E5): one confirmation, then
+     * {@see ConvertProforma} and the success path of the issue (toast, the new invoice, the e-mail dialog flag of
+     * ruling R-29-1). A failure leaves the proforma as it was.
+     */
+    private function convertProformaAction(): Action
+    {
+        return Action::make('convertProforma')
+            ->label(__('invoices.detail.actions.issue_invoice'))
+            ->icon(Heroicon::OutlinedDocumentCheck)
+            ->color('primary')
+            ->visible(fn (): bool => $this->invoice()->isIssued() && $this->derived()['status'] === InvoiceStatus::AwaitingInvoice)
+            ->requiresConfirmation()
+            ->modalHeading(fn (): string => __('invoices.conversion.heading', ['number' => (string) $this->invoice()->number]))
+            ->modalDescription(__('invoices.conversion.body'))
+            ->modalSubmitActionLabel(__('invoices.conversion.submit'))
+            ->modalCancelActionLabel(__('invoices.conversion.cancel'))
+            ->action(function (): void {
+                abort_unless(InvoiceResource::canAccess(), 403);
+
+                $actor = auth()->user();
+                assert($actor instanceof User);
+
+                try {
+                    $invoice = app(ConvertProforma::class)->handle($actor, $this->invoice());
+                } catch (AuthorizationException $exception) {
+                    throw $exception;
+                } catch (ValidationException $exception) {
+                    // The proforma changed in the meantime (converted elsewhere, a payment deleted): say why and show
+                    // the state as it is now.
+                    $this->invoice()->refresh();
+                    $this->reloadAdminHalf();
+
+                    Notification::make()
+                        ->danger()
+                        ->title(__('invoices.issue.failed_title'))
+                        ->body(implode(' ', array_merge(...array_values($exception->errors()))))
+                        ->persistent()
+                        ->send();
+
+                    return;
+                } catch (Throwable $exception) {
+                    report($exception);
+
+                    Notification::make()
+                        ->danger()
+                        ->title(__('invoices.issue.failed_title'))
+                        ->body(__('invoices.issue.failed_body'))
+                        ->persistent()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()->success()->title(__('invoices.issue.toast.invoice'))->send();
+
+                $this->redirect(InvoiceResource::getUrl('view', ['record' => $invoice, 'send' => 1]));
+            });
     }
 
     public function infolist(Schema $schema): Schema
