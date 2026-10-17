@@ -85,6 +85,11 @@ final class EditInvoice extends EditRecord
 
     protected static string $resource = InvoiceResource::class;
 
+    /**
+     * Autosave is not used, so leaving the page with unsaved edits raises Filament's stock alert (UI-SPEC Surface C).
+     */
+    protected ?bool $hasUnsavedDataChangesAlert = true;
+
     protected ?DraftEditorPreview $preview = null;
 
     /**

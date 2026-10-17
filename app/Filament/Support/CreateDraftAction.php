@@ -241,7 +241,7 @@ final class CreateDraftAction
      *
      * @return array{from: string, to: string}|null
      */
-    private static function period(mixed $preset, mixed $from, mixed $to): ?array
+    public static function period(mixed $preset, mixed $from, mixed $to): ?array
     {
         if ($preset === 'custom') {
             $from = PragueDay::day($from);
@@ -398,7 +398,7 @@ final class CreateDraftAction
      *
      * @return array<string, string>
      */
-    private static function projectOptions(?string $clientId): array
+    public static function projectOptions(?string $clientId): array
     {
         if ($clientId === null) {
             return [];

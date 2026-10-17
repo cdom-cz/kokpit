@@ -25,7 +25,6 @@ use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
-use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\Canary;
 use Tests\Support\InvoiceFixtures;
 
@@ -805,7 +804,7 @@ describe('the tab of linked time', function (): void {
 
         entriesTab($draft)
             ->callAction(TestAction::make('addTime')->table(), ['period' => 'custom', 'period_from' => '2026-09-01', 'period_to' => '2026-09-30', 'without_project' => true, 'entry_ids' => [$foreign->id]])
-            ->assertHasActionErrors(['entry_ids']);
+            ->assertHasActionErrors(['entry_ids.0']);
 
         expect(storedLines($draft))->toBe([])
             ->and(editorFreshEntry($foreign)->invoice_id)->toBeNull();
@@ -855,7 +854,7 @@ describe('the tab of linked time', function (): void {
 
         $this->actingAs(Canary::partnerFor($client->id));
 
-        expect(fn () => entriesTab($draft))->toThrow(HttpException::class);
+        entriesTab($draft)->assertForbidden();
     });
 
     it('opens the add dialog from the button under the table of lines', function (): void {

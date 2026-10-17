@@ -13,6 +13,7 @@ use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
+use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEntriesRelationManager;
 use App\Filament\Support\InvoiceTable;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\RepeatableEntry\TableColumn;
@@ -80,6 +81,17 @@ final class InvoiceResource extends Resource
                 'emails' => static fn ($emails) => $emails->select(['invoice_emails.id', 'invoice_emails.invoice_id', 'invoice_emails.state', 'invoice_emails.sent_at', 'invoice_emails.created_at']),
             ])
             ->withExists('stornoCreditNote');
+    }
+
+    /**
+     * The linked time: "Záznamy času" with the add and unlink actions on a draft, "Navázaný čas" read only on an
+     * issued document (ruling R-25-2). The later plans add the payments, the files, the e-mail log and the history.
+     */
+    public static function getRelations(): array
+    {
+        return [
+            InvoiceEntriesRelationManager::class,
+        ];
     }
 
     public static function getPages(): array
