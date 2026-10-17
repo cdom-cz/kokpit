@@ -582,10 +582,12 @@ return [
                 'unbilled' => 'Nevyfakturováno',
                 'fixed_price' => 'Pevná cena',
             ],
+            'archived' => 'Archivovaný',
             'empty_heading' => 'Klient zatím nemá žádný projekt',
             'empty_body' => 'Projekt vytvoříte v nabídce Projekty.',
         ],
         'invoices' => [
+            'to_pay_total' => 'K úhradě',
             'empty_heading' => 'Klient zatím nemá žádný doklad',
             'empty_body' => 'Fakturu vytvoříte tlačítkem Nová faktura. Můžete ji sestavit z nevyfakturovaného času.',
         ],

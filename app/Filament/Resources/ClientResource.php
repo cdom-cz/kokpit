@@ -30,6 +30,8 @@ use App\Filament\Resources\ClientResource\Pages\CreateClient;
 use App\Filament\Resources\ClientResource\Pages\EditClient;
 use App\Filament\Resources\ClientResource\Pages\ListClients;
 use App\Filament\Resources\ClientResource\Pages\ViewClient;
+use App\Filament\Resources\ClientResource\RelationManagers\ClientInvoicesRelationManager;
+use App\Filament\Resources\ClientResource\RelationManagers\ClientProjectsRelationManager;
 use App\Filament\Resources\ClientResource\RelationManagers\ContactsRelationManager;
 use App\Filament\Resources\ClientResource\RelationManagers\InvitationsRelationManager;
 use App\Filament\Resources\ClientResource\RelationManagers\PartnerAccountsRelationManager;
@@ -439,11 +441,14 @@ final class ClientResource extends Resource
 
     public static function getRelations(): array
     {
+        // Projekty, Faktury, Soubory, Kontakty, Pozvánky, Účty, Historie změn (UI-SPEC Surface I).
         return [
+            ClientProjectsRelationManager::class,
+            ClientInvoicesRelationManager::class,
+            ClientDocumentsRelationManager::class,
             ContactsRelationManager::class,
             InvitationsRelationManager::class,
             PartnerAccountsRelationManager::class,
-            ClientDocumentsRelationManager::class,
             ClientHistoryRelationManager::class,
         ];
     }

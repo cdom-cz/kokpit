@@ -74,7 +74,20 @@ final class InvoiceResource extends Resource
      */
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        return self::withListRelations(parent::getEloquentQuery());
+    }
+
+    /**
+     * The eager loads and the cancelled marker every document list needs, shared by the Admin list and the client tab.
+     *
+     * @template TModel of \Illuminate\Database\Eloquent\Model
+     *
+     * @param  Builder<TModel>  $query
+     * @return Builder<TModel>
+     */
+    public static function withListRelations(Builder $query): Builder
+    {
+        return $query
             ->with([
                 'client',
                 'admin.pdfDocument',

@@ -100,7 +100,7 @@ final class InvoiceTable
                 ->label(__('invoices.list.columns.total'))
                 ->state(static fn (Invoice $record): string => $record->total()->format('cs'))
                 ->alignEnd(),
-            self::remainingColumn(),
+            self::remainingColumn(perCurrencyTotal: ! $withClientColumn),
             self::statusColumn(),
             self::emailColumn(),
             TextColumn::make('currency')
@@ -192,7 +192,10 @@ final class InvoiceTable
             ->sortable();
     }
 
-    private static function remainingColumn(): TextColumn
+    /**
+     * @param  bool  $perCurrencyTotal  the footer "K úhradě": what the rows shown still owe, one amount per currency
+     */
+    private static function remainingColumn(bool $perCurrencyTotal = false): TextColumn
     {
         return TextColumn::make('remaining')
             ->label(__('invoices.list.columns.remaining'))
@@ -217,12 +220,24 @@ final class InvoiceTable
                 return (string) __('invoices.list.czk', ['czk' => $remaining->convert($admin->exchange_rate, 'CZK', $admin->exchange_unit_amount)->format('cs')]);
             })
             ->alignEnd()
-            ->summarize(
+            ->summarize([
                 Summarizer::make()
                     ->label(__('invoices.list.czk_total'))
                     ->visible(static fn (Component $livewire): bool => self::activeTab($livewire) === InvoiceListTab::Overdue->value)
                     ->using(static fn (QueryBuilder $query): string => app(ReceivablesReader::class)->owedFrom($query)['czk']->format('cs')),
-            );
+                // Amounts of different currencies are never added: one figure per currency, the CZK ones first only
+                // by alphabet (the client tab has no tabs, so the figure covers every row the filters leave).
+                Summarizer::make('to_pay')
+                    ->label(__('invoices.client_panel.invoices.to_pay_total'))
+                    ->visible($perCurrencyTotal)
+                    ->using(static function (QueryBuilder $query): string {
+                        $amounts = app(ReceivablesReader::class)->owedByCurrencyFrom($query);
+
+                        return $amounts === []
+                            ? (string) __('invoices.navigation.empty_value')
+                            : implode(', ', array_map(static fn (Money $amount): string => $amount->format('cs'), array_values($amounts)));
+                    }),
+            ]);
     }
 
     private static function statusColumn(): TextColumn
@@ -367,12 +382,15 @@ final class InvoiceTable
                 ->options(InvoiceKind::class),
         ];
 
-        if ($withClientFilter) {
-            $filters[] = SelectFilter::make('client_id')
-                ->label(__('invoices.list.filters.client'))
-                ->options(static fn (): array => self::clientOptions())
-                ->searchable();
+        // On the tab of one client there are no list tabs, so the state is a filter beside the kind.
+        if (! $withClientFilter) {
+            return [...$filters, self::statusFilter()];
         }
+
+        $filters[] = SelectFilter::make('client_id')
+            ->label(__('invoices.list.filters.client'))
+            ->options(static fn (): array => self::clientOptions())
+            ->searchable();
 
         return [
             ...$filters,
@@ -424,6 +442,34 @@ final class InvoiceTable
                     };
                 }),
         ];
+    }
+
+    /**
+     * "Stav": the derived state as a filter, the very conditions of the list tabs, so a filter and a tab cannot
+     * disagree. "Všechny" is no choice (it is the absence of a filter).
+     */
+    private static function statusFilter(): SelectFilter
+    {
+        return SelectFilter::make('status')
+            ->label(__('invoices.list.columns.status'))
+            ->options(static function (): array {
+                $options = [];
+
+                foreach (InvoiceListTab::cases() as $tab) {
+                    if ($tab !== InvoiceListTab::All) {
+                        $options[$tab->value] = $tab->getLabel();
+                    }
+                }
+
+                return $options;
+            })
+            ->query(static function (Builder $query, array $data): Builder {
+                $tab = is_string($data['value'] ?? null) ? InvoiceListTab::tryFrom($data['value']) : null;
+
+                return $tab === null || $tab === InvoiceListTab::All
+                    ? $query
+                    : app(ReceivablesReader::class)->constrain($query, $tab, ReceivablesReader::today());
+            });
     }
 
     /**

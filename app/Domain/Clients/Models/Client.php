@@ -10,6 +10,7 @@ use App\Domain\Clients\Enums\ClientStage;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
@@ -146,6 +147,17 @@ final class Client extends KokpitModel implements PartnerIsolated
     public function projects(): HasMany
     {
         return $this->hasMany(Project::class);
+    }
+
+    /**
+     * The billing documents of the client: invoices, proformas and credit notes, drafts included. Admin use only (the
+     * "Faktury" tab of the client page); the Partner scope of the invoice still applies to any Partner query.
+     *
+     * @return HasMany<Invoice, $this>
+     */
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
     }
 
     /**
