@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-29-PLAN.md
-last_updated: "2026-10-17T19:03:06.669Z"
+stopped_at: Completed 10-40-PLAN.md
+last_updated: "2026-10-17T19:18:01.302Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 2238cca87af1c7cdfc6b71d0f45509b2eef9eeb6
+state_head: 74faa0cb264c3d2d62240cf5641b6cc5b81fb12f
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 220
+  completed_plans: 221
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 37 of 41
+Plan: 38 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -283,6 +283,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P39 | 35 min | 2 tasks | 3 files |
 | Phase 10 P26 | 21 min | 3 tasks | 9 files |
 | Phase 10 P29 | 55 min | 3 tasks | 13 files |
+| Phase 10 P40 | 35 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -705,6 +706,7 @@ Recent decisions affecting current work:
 - [Phase 10]: R-26-2: the Partner reads derived invoice states only; ReceivablesReader runs as system over the ids of the Partner-scoped page, never a payment row
 - [Phase 10]: R-26-3: Partner related documents name only issued documents (storno credit note, invoice from a proforma) through Partner-scoped relations
 - [Phase 10]: R-29-1 applied: a successful issue redirects to the detail with send=1; R-29-2 applied: the entries tab is reused read only as Navazany cas; the view address of a draft redirects to the editor
+- [Phase 10]: 10-40: the reserved marker is a separate gray column and infolist entry, not a BillingBadge case, so Nevyfakturovano and the billing filter keep their meaning; the report reserved seconds are part of the unbilled value, never subtracted
 
 ### Pending Todos
 
@@ -760,6 +762,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T19:03:05.231Z
-Stopped at: Completed 10-29-PLAN.md
+Last session: 2026-10-17T19:17:59.842Z
+Stopped at: Completed 10-40-PLAN.md
 Resume file: None
