@@ -64,6 +64,7 @@ return [
         'payment_missing' => 'Platba už neexistuje. Obnovte stránku.',
 
         // Conversion of a proforma.
+        'proforma_not_issued' => 'Fakturu lze vystavit jen ze zálohy, která je vystavená a není stornovaná.',
         'proforma_not_paid' => 'Zálohu lze převést na fakturu až po úplném zaplacení.',
         'proforma_converted' => 'K záloze už byla faktura vystavena.',
 

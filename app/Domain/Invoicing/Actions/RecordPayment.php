@@ -39,8 +39,9 @@ use LogicException;
  * default, dated with the payment date by default, both editable when the payment is entered; the transaction
  * carries the invoice and the payment, and its amount, currency, client and texts come from the payment and the
  * document. A proforma payment is stored as a payment only (D-18): the income is booked when the proforma is
- * converted into an invoice. The CZK figure of the income follows the finance rule, the CNB list of the income date;
- * without one the payment fails under the date and nothing is stored.
+ * converted into an invoice, by {@see RecordPayment::carry()}, with the real payment date. The CZK figure of the
+ * income follows the finance rule, the CNB list of the income date; without one the payment fails under the date and
+ * nothing is stored.
  *
  * Data keys: see {@see PaymentInput}.
  */

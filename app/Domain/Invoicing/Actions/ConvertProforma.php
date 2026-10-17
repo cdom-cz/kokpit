@@ -6,6 +6,7 @@ namespace App\Domain\Invoicing\Actions;
 
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Issuing\DocumentIssuer;
 use App\Domain\Invoicing\Issuing\IssueContext;
 use App\Domain\Invoicing\Models\Invoice;
@@ -13,6 +14,7 @@ use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
+use App\Domain\Invoicing\Queries\InvoiceBalances;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\TimeTracking\Billing\EntryBilling;
 use App\Domain\TimeTracking\Models\TimeEntry;
@@ -45,6 +47,7 @@ final readonly class ConvertProforma
         private DocumentIssuer $issuer,
         private EntryBilling $billing,
         private RecordPayment $payments,
+        private InvoiceBalances $balances,
     ) {}
 
     /**
@@ -56,6 +59,8 @@ final readonly class ConvertProforma
 
         return DB::transaction(function () use ($actor, $proforma): Invoice {
             $locked = Invoice::query()->whereKey($proforma->getKey())->lockForUpdate()->firstOrFail();
+
+            $this->assertConvertible($locked);
 
             $draft = $this->createDraft($locked);
             $this->copyLines($locked, $draft);
@@ -73,6 +78,30 @@ final readonly class ConvertProforma
 
             return $issued->refresh();
         });
+    }
+
+    /**
+     * Only an issued, not cancelled proforma that is paid in full and has no invoice yet can be converted. Judged on
+     * the locked row: a second conversion waiting on the lock finds the first one's invoice here (T-10-59), and the
+     * unique `proforma_id` of the database stays the backstop.
+     *
+     * @throws ValidationException keyed `proforma`: `proforma_not_issued`, `proforma_converted` or `proforma_not_paid`
+     */
+    private function assertConvertible(Invoice $proforma): void
+    {
+        if ($proforma->kind !== InvoiceKind::Proforma || $proforma->state !== InvoiceState::Issued || $proforma->isCancelled()) {
+            throw ValidationException::withMessages(['proforma' => __('invoices.errors.proforma_not_issued')]);
+        }
+
+        if (Invoice::query()->where('proforma_id', $proforma->id)->exists()) {
+            throw ValidationException::withMessages(['proforma' => __('invoices.errors.proforma_converted')]);
+        }
+
+        $paid = $this->balances->for([$proforma->id])[$proforma->id]['paid'] ?? 0;
+
+        if ($paid < $proforma->total_minor) {
+            throw ValidationException::withMessages(['proforma' => __('invoices.errors.proforma_not_paid')]);
+        }
     }
 
     /**
