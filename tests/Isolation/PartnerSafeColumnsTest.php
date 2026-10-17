@@ -147,3 +147,72 @@ it('has no documents column whose name looks like money, a rate, a price, an est
 
     expect($suspicious)->toBe([], 'Admin-only attributes do not belong in the Partner-readable documents table.');
 });
+
+/*
+ * The invoices table is readable by every Partner of the client for the issued documents of the client (IN-09,
+ * D-13), and so is invoice_items: both hold only what the document prints and its links to other issued documents.
+ * The lists are pinned in migration order as well. A new column fails this test until a reviewer has decided that
+ * every Partner may read it; the rate, the CNB and CZK figures, the internal note, the payments, the PDF link and
+ * the billing sources belong in Admin-only tables.
+ */
+
+it('pins the Partner-safe column list of the invoices table', function (): void {
+    expect(Schema::getColumnListing('invoices'))->toBe([
+        'id',
+        'client_id',
+        'kind',
+        'state',
+        'number',
+        'variable_symbol',
+        'currency',
+        'language',
+        'vat_mode',
+        'issue_date',
+        'taxable_supply_date',
+        'due_date',
+        'subtotal_minor',
+        'vat_minor',
+        'total_minor',
+        'note',
+        'supplier_snapshot',
+        'customer_snapshot',
+        'bank_snapshot',
+        'appearance_snapshot',
+        'proforma_id',
+        'credited_invoice_id',
+        'cancels_invoice',
+        'issued_at',
+        'created_at',
+        'updated_at',
+    ], 'The invoices table is readable by Partners for issued documents. Put Admin-only attributes (an internal note, a CNB rate, a CZK total, a payment, the PDF link) into invoice_admin, invoice_item_sources or another Admin-only table; extend this list only after reviewing that every Partner may read the new column.');
+});
+
+it('pins the Partner-safe column list of the invoice_items table', function (): void {
+    expect(Schema::getColumnListing('invoice_items'))->toBe([
+        'id',
+        'invoice_id',
+        'position',
+        'description',
+        'quantity',
+        'unit',
+        'unit_price_minor',
+        'line_total_minor',
+        'price_converted',
+        'vat_rate',
+        'vat_minor',
+        'credited_item_id',
+        'created_at',
+        'updated_at',
+    ], 'The invoice_items table is readable by Partners for the lines of issued documents. Put Admin-only attributes (the source hourly rate, the from-time flag, the linked time) into invoice_item_sources or another Admin-only table; extend this list only after reviewing that every Partner may read the new column.');
+});
+
+it('has no invoices or invoice_items column whose name looks like a rate, an internal note, a CNB or CZK figure, a payment, a source or a billing attribute', function (): void {
+    foreach (['invoices', 'invoice_items'] as $table) {
+        $suspicious = array_values(array_filter(
+            Schema::getColumnListing($table),
+            static fn (string $column): bool => preg_match('/hourly|internal|cnb|czk|exchange|payment|source|cost|budget|estimate|billing/i', $column) === 1,
+        ));
+
+        expect($suspicious)->toBe([], "Admin-only attributes belong in invoice_admin, invoice_item_sources or another Admin-only table, not in the Partner-readable {$table} table.");
+    }
+});

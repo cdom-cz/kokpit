@@ -566,3 +566,60 @@ describe('what an issued document must carry', function (): void {
         RawSql::expectAllowed(fn () => invoiceTablesInsert(['issue_date' => '2026-10-17', 'due_date' => '2026-10-31', 'taxable_supply_date' => '2026-10-17']));
     });
 });
+
+/**
+ * The arguments a trigger was created with, read from pg_trigger.tgargs (NUL-separated, each one terminated).
+ *
+ * @return list<string>
+ */
+function invoiceTablesTriggerArguments(string $table, string $trigger): array
+{
+    /** @var object{hex: string}|null $row */
+    $row = DB::selectOne(
+        'select encode(t.tgargs, \'hex\') as hex from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relname = ? and t.tgname = ? and not t.tgisinternal',
+        [$table, $trigger],
+    );
+
+    expect($row)->not->toBeNull("The trigger {$trigger} is missing on {$table}.");
+
+    $arguments = explode("\0", (string) hex2bin($row->hex));
+    array_pop($arguments);
+
+    return $arguments;
+}
+
+describe('the guards of the invoice tables', function (): void {
+    it('keeps the guard function and the four triggers in place', function (): void {
+        expect((int) DB::selectOne("select count(*) as n from pg_proc where proname = 'kokpit_guard_child_of_frozen_parent'")->n)->toBe(1);
+
+        foreach ([
+            ['invoices', 'invoices_frozen_guard'],
+            ['invoices', 'invoices_truncate_guard'],
+            ['invoice_items', 'invoice_items_parent_guard'],
+            ['invoice_items', 'invoice_items_truncate_guard'],
+        ] as [$table, $trigger]) {
+            expect((int) DB::selectOne(
+                'select count(*) as n from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relname = ? and t.tgname = ? and not t.tgisinternal',
+                [$table, $trigger],
+            )->n)->toBe(1, "The trigger {$trigger} must exist on {$table}.");
+        }
+    });
+
+    it('lists no writable column on an issued invoice or an item of one', function (): void {
+        $reason = 'Any post-issue write on the invoices or invoice_items tables needs an owner decision amending D-13 and roadmap criterion 2; the payment state and the internal note live in Admin-only tables.';
+
+        expect(invoiceTablesTriggerArguments('invoices', 'invoices_frozen_guard'))->toBe(['state', 'draft', ''], $reason)
+            ->and(invoiceTablesTriggerArguments('invoice_items', 'invoice_items_parent_guard'))->toBe(['invoices', 'invoice_id', 'state', 'draft', ''], $reason);
+    });
+
+    it('catches a guard that gained a writable column', function (): void {
+        DB::unprepared(Immutability::dropGuardTriggerSql('invoices'));
+        DB::unprepared(Immutability::guardTriggerSql('invoices', 'state', 'draft', ['note'], withUpdatedAt: false));
+
+        expect(invoiceTablesTriggerArguments('invoices', 'invoices_frozen_guard'))->not->toBe(['state', 'draft', '']);
+    });
+
+    it('has no generated column on a guarded table', function (): void {
+        expect(DB::select("select attname from pg_attribute a join pg_class c on c.oid = a.attrelid where c.relname in ('invoices', 'invoice_items') and a.attgenerated <> '' and not a.attisdropped"))->toBe([]);
+    });
+});
