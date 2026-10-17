@@ -190,6 +190,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Invoicing
+    |--------------------------------------------------------------------------
+    |
+    | Fixed settings of the billing documents (IN-02). Literal starting point,
+    | not editable in the UI.
+    |
+    | max_items: the most lines one draft may carry. UpdateDraft refuses a
+    |   longer list with a field error on `items`, so a runaway form or a
+    |   forged request cannot build a document the PDF and the screens can no
+    |   longer hold.
+    |
+    */
+
+    'invoicing' => [
+        'max_items' => 200,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | CNB exchange rates
     |--------------------------------------------------------------------------
     |
