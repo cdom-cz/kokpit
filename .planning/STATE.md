@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-18-PLAN.md
-last_updated: "2026-10-17T13:30:17.813Z"
+stopped_at: Completed 10-19-PLAN.md
+last_updated: "2026-10-17T13:50:40.172Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: a84727b0be58d9810f51ad2c0ea8a87bcc31fc4a
+state_head: 10b1d189f1ac33a79ce35749445d0381e4b4be72
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 205
+  completed_plans: 206
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 22 of 41
+Plan: 23 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -268,6 +268,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P35 | 40 min | 2 tasks | 7 files |
 | Phase 10 P17 | 80 min | 3 tasks | 7 files |
 | Phase 10 P18 | 35 min | 3 tasks | 1 files |
+| Phase 10 P19 | 25 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -662,6 +663,8 @@ Recent decisions affecting current work:
 - [Phase 10]: R-17-1 applied: one rounding per converted line (amount via timesThroughCzk, printed unit price a display figure); owner confirmation of the visible quantity x price difference is still pending with plan 10-01 R-01-1
 - [Phase 10]: R-17-3 applied: VAT payer mode blocks issuing with vat_payer_unsupported for every document kind; a source with a conversion_snapshot is not converted again at issue
 - [Phase 10]: 10-18: the PDF variants (proforma, credit note, EUR, optional blocks) were already delivered by 10-15; 10-18 proves them and the regeneration equivalence (HTML, page count, text) in InvoicePdfVariantsTest
+- [Phase 10]: 10-19: the summary unpaid figure follows the Unpaid tab (not yet late) so overdue and unpaid never overlap; a foreign document without its CNB trio adds nothing to a CZK sum
+- [Phase 10]: 10-19: payment income lock checks the type as sent and every other field after reading the input without type, date, category and CZK keys; resent unchanged values are not a change
 
 ### Pending Todos
 
@@ -717,6 +720,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T13:30:16.561Z
-Stopped at: Completed 10-18-PLAN.md
+Last session: 2026-10-17T13:50:38.865Z
+Stopped at: Completed 10-19-PLAN.md
 Resume file: None
