@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Documents\Actions\AttachDocuments;
+use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\Models\User;
 use Illuminate\Support\Facades\Auth;
@@ -268,6 +269,49 @@ describe('editing a transaction', function (): void {
         $custom = FinanceApiFixtures::transaction($this->admin, ['amount' => '100,00', 'currency' => 'EUR', 'exchange_rate' => '26']);
         expect(($this->patch)($custom, ['czk_amount_minor' => null])->assertOk()->json('data.czk_source'))->toBe('custom');
         expect(($this->patch)($manual, ['czk_amount_minor' => null])->assertOk()->json('data.czk_source'))->toBe('cnb');
+    });
+
+    it('takes a CZK figure sent with exchange_rate null as the bank figure of a custom transaction (CR-01)', function (): void {
+        FinanceApiFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $withList = FinanceApiFixtures::transaction($this->admin, ['amount' => '100,00', 'currency' => 'EUR', 'exchange_rate' => '26']);
+        $withoutList = FinanceApiFixtures::transaction($this->admin, ['amount' => '100,00', 'currency' => 'GBP', 'exchange_rate' => '29']);
+
+        foreach ([[$withList, 'EUR'], [$withoutList, 'GBP']] as [$transaction, $currency]) {
+            $data = ($this->patch)($transaction, ['exchange_rate' => null, 'czk_amount_minor' => 252000])->assertOk()->json('data');
+
+            expect($data['czk_source'])->toBe('manual')
+                ->and($data['czk_minor'])->toBe(252000)
+                ->and($data['exchange_rate'])->toBeNull()
+                ->and($data['exchange_unit_amount'])->toBeNull()
+                ->and($data['exchange_rate_date'])->toBeNull()
+                ->and($data['amount_minor'])->toBe(10000)
+                ->and($data['currency'])->toBe($currency);
+
+            $stored = $transaction->fresh();
+
+            expect($stored->czk_source)->toBe(CzkSource::Manual)
+                ->and($stored->czk_minor)->toBe(252000);
+        }
+    });
+
+    it('takes the CZK figure with a changed currency that has no CNB list instead of answering currency_unknown (CR-01)', function (): void {
+        FinanceApiFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $transaction = FinanceApiFixtures::transaction($this->admin, ['amount' => '100,00', 'currency' => 'EUR', 'exchange_rate' => '26']);
+
+        $response = ($this->patch)($transaction, [
+            'currency' => 'ISK',
+            'amount_minor' => 10000,
+            'exchange_rate' => null,
+            'czk_amount_minor' => 1800,
+        ])->assertOk();
+        $data = $response->json('data');
+
+        expect($response->json('errors'))->toBeNull()
+            ->and($data['currency'])->toBe('ISK')
+            ->and($data['amount_minor'])->toBe(10000)
+            ->and($data['czk_source'])->toBe('manual')
+            ->and($data['czk_minor'])->toBe(1800)
+            ->and($data['exchange_rate'])->toBeNull();
     });
 
     it('answers 404 with the Czech message for an unknown transaction', function (): void {
