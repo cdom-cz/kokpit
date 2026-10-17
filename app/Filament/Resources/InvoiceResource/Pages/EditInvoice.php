@@ -8,16 +8,23 @@ use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
 use App\Domain\ExchangeRates\RateFormat;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Actions\AddFixedAmount;
+use App\Domain\Invoicing\Actions\DeleteDraft;
 use App\Domain\Invoicing\Actions\UpdateDraft;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Support\DraftPreview;
+use App\Domain\Invoicing\Support\InvoiceQuantity;
 use App\Domain\Invoicing\Support\IssueChecks;
+use App\Domain\Projects\Enums\BillingType;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Settings\Banking\BankAccount;
 use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\VatMode;
+use App\Domain\Shared\Database\CzechCollation;
 use App\Domain\Shared\Money\Money;
+use App\Domain\TimeTracking\Support\DurationFormat;
 use App\Filament\Concerns\RethrowsDomainValidation;
 use App\Filament\Pages\SettingsPage;
 use App\Filament\Resources\ClientResource;
@@ -26,6 +33,7 @@ use App\Filament\Support\DraftEditorPreview;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
@@ -36,6 +44,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
@@ -53,6 +62,7 @@ use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\On;
 
 /**
  * The draft editor (IN-02, IN-07, IN-08, IN-10; UI-SPEC Surface C): the header fields, the items table and the
@@ -125,6 +135,61 @@ final class EditInvoice extends EditRecord
                 $this->itemsSection(),
                 $this->summarySection(),
             ]);
+    }
+
+    /**
+     * "Smazat koncept" (IN-10): the destructive confirmation, DeleteDraft, and back to the list. "Vystavit" is added
+     * by plan 10-29.
+     *
+     * @return array<Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [$this->deleteDraftAction()];
+    }
+
+    /**
+     * Throws the draft away through {@see DeleteDraft}, which frees every reserved time entry in the same transaction
+     * and refuses an issued document on the locked row. A draft has no number, so nothing is consumed.
+     */
+    private function deleteDraftAction(): Action
+    {
+        return Action::make('deleteDraft')
+            ->label(__('invoices.list.actions.delete_draft'))
+            ->icon(Heroicon::OutlinedTrash)
+            ->color('danger')
+            ->requiresConfirmation()
+            ->modalHeading(__('invoices.list.delete.heading'))
+            ->modalDescription(__('invoices.list.delete.body'))
+            ->modalSubmitActionLabel(__('invoices.list.delete.submit'))
+            ->modalCancelActionLabel(__('invoices.list.delete.cancel'))
+            ->action(function (): void {
+                $actor = auth()->user();
+                assert($actor instanceof User);
+
+                try {
+                    app(DeleteDraft::class)->handle($actor, $this->invoice());
+                } catch (DomainException $exception) {
+                    Notification::make()->danger()->title($exception->getMessage())->send();
+
+                    return;
+                }
+
+                Notification::make()->success()->title(__('invoices.list.delete.toast'))->send();
+
+                $this->redirect(InvoiceResource::getUrl('index'));
+            });
+    }
+
+    /**
+     * Lines that were stored outside the form (a fixed amount, time added in the tab) join the rows of the form,
+     * without touching the rows being edited.
+     */
+    #[On('draft-lines-changed')]
+    public function mergeStoredLines(): void
+    {
+        $this->preview = null;
+        $this->appendStoredLines();
     }
 
     /**
@@ -270,8 +335,8 @@ final class EditInvoice extends EditRecord
                     ->native(false)
                     ->required()
                     ->live()
-                    ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
-                        $this->repriceGeneratedLines($get, $set, is_string($state) ? $state : $this->invoice()->currency);
+                    ->afterStateUpdated(function (Get $get, Set $set, mixed $state, mixed $old): void {
+                        $this->currencyChosen($get, $set, $state, $old);
                     }),
                 TextEntry::make('bank_account')
                     ->label(__('invoices.draft.fields.bank_account'))
@@ -327,9 +392,14 @@ final class EditInvoice extends EditRecord
 
     private function itemsSection(): Section
     {
+        $max = $this->maxItems();
+
         return Section::make(__('invoices.draft.sections.items'))
             ->schema([
                 Text::make(__('invoices.draft.helpers.items'))->color('gray'),
+                Text::make(__('invoices.draft.empty_items'))
+                    ->color('gray')
+                    ->visible(fn (): bool => $this->lineStates() === []),
                 Repeater::make('items')
                     ->hiddenLabel()
                     ->table([
@@ -343,30 +413,67 @@ final class EditInvoice extends EditRecord
                     ->schema([
                         Hidden::make('id'),
                         Text::make(fn (Component $component): string => $this->rowNumber($component))->color('gray'),
-                        TextInput::make('description')
-                            ->label(__('invoices.draft.columns.description'))
-                            ->hiddenLabel()
-                            ->maxLength(500),
-                        TextInput::make('quantity')
-                            ->label(__('invoices.draft.columns.quantity'))
-                            ->hiddenLabel()
-                            ->live(debounce: 500)
-                            ->extraInputAttributes(['inputmode' => 'decimal', 'style' => 'text-align: right; font-variant-numeric: tabular-nums;']),
+                        Group::make([
+                            TextInput::make('description')
+                                ->label(__('invoices.draft.columns.description'))
+                                ->hiddenLabel()
+                                ->maxLength(500)
+                                ->extraInputAttributes(['data-draft-description' => 'true']),
+                            Text::make(__('invoices.draft.badges.from_time'))
+                                ->badge()
+                                ->color('gray')
+                                ->icon(Heroicon::OutlinedLink)
+                                ->tooltip(__('invoices.draft.badges.from_time_tooltip'))
+                                ->visible(fn (Get $get): bool => $this->lineOf($get)['from_time']),
+                        ]),
+                        Group::make([
+                            TextInput::make('quantity')
+                                ->label(__('invoices.draft.columns.quantity'))
+                                ->hiddenLabel()
+                                ->default('1')
+                                ->live(debounce: 500)
+                                ->extraInputAttributes(['inputmode' => 'decimal', 'style' => 'text-align: right; font-variant-numeric: tabular-nums;']),
+                            Text::make(fn (Get $get): string => DurationFormat::hoursMinutes($this->lineOf($get)['seconds'] ?? 0))
+                                ->color('gray')
+                                ->extraAttributes(['style' => 'text-align: right; font-variant-numeric: tabular-nums;'])
+                                ->visible(fn (Get $get): bool => $this->lineOf($get)['seconds'] !== null),
+                        ]),
                         TextInput::make('unit')
                             ->label(__('invoices.draft.columns.unit'))
                             ->hiddenLabel()
+                            ->default('ks')
                             ->datalist(['h', 'ks', 'den', 'měs.', 'paušál'])
                             ->maxLength(16),
-                        TextInput::make('unit_price')
-                            ->label(__('invoices.draft.columns.unit_price'))
-                            ->hiddenLabel()
-                            ->live(debounce: 500)
-                            ->extraInputAttributes(['inputmode' => 'decimal', 'style' => 'text-align: right; font-variant-numeric: tabular-nums;']),
+                        Group::make([
+                            TextInput::make('unit_price')
+                                ->label(__('invoices.draft.columns.unit_price'))
+                                ->hiddenLabel()
+                                ->live(debounce: 500)
+                                ->extraInputAttributes(['inputmode' => 'decimal', 'style' => 'text-align: right; font-variant-numeric: tabular-nums;']),
+                            Checkbox::make('confirm_zero_price')
+                                ->label(__('invoices.draft.fields.confirm_zero_price'))
+                                ->visible(fn (Get $get): bool => $this->lineOf($get)['unit_price']?->isZero() === true),
+                            Text::make(fn (Get $get): string => (string) __('invoices.draft.badges.preview_rate', ['rate' => $this->lineOf($get)['rate'] ?? '']))
+                                ->color('gray')
+                                ->extraAttributes(['style' => 'text-align: right;'])
+                                ->visible(fn (Get $get): bool => $this->lineOf($get)['converted'] && $this->lineOf($get)['rate'] !== null),
+                            Text::make(__('invoices.draft.badges.convert_at_issue'))
+                                ->badge()
+                                ->color('info')
+                                ->visible(fn (Get $get): bool => $this->lineOf($get)['converted']),
+                        ]),
                         Text::make(fn (Get $get): string => $this->lineTotalText($get))
                             ->weight(FontWeight::Medium)
                             ->extraAttributes(['style' => 'text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;']),
                     ])
+                    ->maxItems($max)
                     ->addActionLabel(__('invoices.draft.item_actions.add'))
+                    ->addAction(fn (Action $action): Action => $action
+                        ->icon(Heroicon::OutlinedPlus)
+                        ->after(function (): void {
+                            // The new row takes the focus in its description.
+                            $this->js("setTimeout(() => { const fields = document.querySelectorAll('[data-draft-description]'); fields[fields.length - 1]?.focus() }, 50)");
+                        }))
                     ->defaultItems(0)
                     ->reorderable()
                     ->reorderableWithButtons(false)
@@ -375,7 +482,119 @@ final class EditInvoice extends EditRecord
                         ->icon(Heroicon::OutlinedTrash))
                     ->moveUpAction(fn (Action $action): Action => $action->label(__('invoices.draft.item_actions.move_up')))
                     ->moveDownAction(fn (Action $action): Action => $action->label(__('invoices.draft.item_actions.move_down'))),
+                Text::make(__('invoices.errors.items_cap', ['max' => $max]))
+                    ->color('gray')
+                    ->visible(fn (): bool => count($this->lineStates()) >= $max),
+                Actions::make([
+                    $this->addFixedAmountAction(),
+                    $this->addTimeAction(),
+                ])->key('itemActions'),
             ]);
+    }
+
+    /**
+     * "Přidat pevnou částku" (UI-SPEC C3, D-07): the modal hands its data to {@see AddFixedAmount}, which re-checks the
+     * project, the amount and the cap. The line is stored at once and joins the rows of the form; what the Admin
+     * edited in the form and did not save yet stays as it is.
+     */
+    private function addFixedAmountAction(): Action
+    {
+        return Action::make('addFixedAmount')
+            ->label(__('invoices.draft.item_actions.add_fixed'))
+            ->icon(Heroicon::OutlinedPlus)
+            ->color('gray')
+            ->visible(fn (): bool => count($this->lineStates()) < $this->maxItems())
+            ->modalHeading(__('invoices.draft.fixed_amount.heading'))
+            ->modalSubmitActionLabel(__('invoices.draft.fixed_amount.submit'))
+            ->modalCancelActionLabel(__('invoices.draft.fixed_amount.cancel'))
+            ->schema([
+                Select::make('project_id')
+                    ->label(__('invoices.draft.fixed_amount.fields.project'))
+                    ->options(fn (): array => $this->fixedProjectOptions())
+                    ->native(false)
+                    ->required()
+                    ->live(),
+                TextInput::make('description')
+                    ->label(__('invoices.draft.fixed_amount.fields.description'))
+                    ->placeholder(fn (Get $get): ?string => $this->fixedProject($get('project_id'))?->name)
+                    ->maxLength(500),
+                TextInput::make('amount')
+                    ->label(__('invoices.draft.fixed_amount.fields.amount'))
+                    ->suffix($this->currentCurrency())
+                    ->required()
+                    ->extraInputAttributes(['inputmode' => 'decimal'])
+                    ->helperText(fn (Get $get): ?string => $this->fixedAmountHelper($get('project_id'))),
+                Checkbox::make('link_time')
+                    ->label(__('invoices.draft.fixed_amount.fields.mark_time'))
+                    ->default(false)
+                    ->helperText(fn (Get $get): ?string => $this->linkTimeHelper($get('project_id'))),
+            ])
+            ->action(function (array $data): void {
+                $actor = auth()->user();
+                assert($actor instanceof User);
+
+                try {
+                    app(AddFixedAmount::class)->handle($actor, $this->invoice(), [
+                        'project_id' => $data['project_id'] ?? null,
+                        'description' => $data['description'] ?? null,
+                        'amount' => $data['amount'] ?? null,
+                        'link_time' => (bool) ($data['link_time'] ?? false),
+                    ]);
+                } catch (ValidationException $exception) {
+                    throw self::underModal($exception);
+                } catch (DomainException $exception) {
+                    Notification::make()->danger()->title($exception->getMessage())->send();
+
+                    return;
+                }
+
+                $this->preview = null;
+                $this->appendStoredLines();
+
+                Notification::make()->success()->title(__('invoices.draft.fixed_amount.toast'))->send();
+            });
+    }
+
+    /**
+     * "Přidat nový čas" in the row of the add buttons: it opens the same dialog as the header action of the tab
+     * "Záznamy času" (UI-SPEC C2, C4).
+     */
+    private function addTimeAction(): Action
+    {
+        return Action::make('addTime')
+            ->label(__('invoices.draft.item_actions.add_time'))
+            ->icon(Heroicon::OutlinedPlus)
+            ->color('gray')
+            ->visible(fn (): bool => count($this->lineStates()) < $this->maxItems())
+            ->action(function (): void {
+                $this->dispatch('draft-add-time');
+            });
+    }
+
+    /**
+     * Asks before the currency of a draft with prices typed by hand changes (UI-SPEC C1): those prices are not
+     * converted and the Admin checks them afterwards. The change itself is applied here, on confirmation only.
+     */
+    protected function changeCurrencyAction(): Action
+    {
+        return Action::make('changeCurrency')
+            ->requiresConfirmation()
+            ->modalHeading(__('invoices.draft.currency_change.heading'))
+            ->modalDescription(__('invoices.draft.currency_change.body'))
+            ->modalSubmitActionLabel(__('invoices.draft.currency_change.submit'))
+            ->modalCancelActionLabel(__('invoices.draft.currency_change.cancel'))
+            ->action(function (array $arguments): void {
+                $currency = strtoupper(is_string($arguments['currency'] ?? null) ? $arguments['currency'] : '');
+
+                if (! array_key_exists($currency, $this->currencyOptions())) {
+                    return;
+                }
+
+                $data = $this->data ?? [];
+                $data['currency'] = $currency;
+                $data['items'] = $this->repricedItems(is_array($data['items'] ?? null) ? $data['items'] : [], $currency);
+                $this->data = $data;
+            });
     }
 
     private function summarySection(): View
@@ -452,17 +671,62 @@ final class EditInvoice extends EditRecord
     }
 
     /**
-     * A change of currency shows the price of a generated line in the new currency (the Action stores the same
-     * figure); the prices typed by hand are never changed.
+     * The Admin picked a currency. With prices typed by hand in the lines the change waits for the confirmation (the
+     * field keeps the old value meanwhile); without them it applies at once.
      */
-    private function repriceGeneratedLines(Get $get, Set $set, string $currency): void
+    private function currencyChosen(Get $get, Set $set, mixed $state, mixed $old): void
     {
-        $items = $get('items');
+        $currency = is_string($state) ? strtoupper($state) : '';
 
-        if (! is_array($items)) {
+        if ($currency === '' || ! array_key_exists($currency, $this->currencyOptions())) {
+            $set('currency', is_string($old) ? $old : $this->invoice()->currency);
+
             return;
         }
 
+        $items = is_array($get('items')) ? $get('items') : [];
+
+        if ($this->hasTypedPrices($items, is_string($old) ? $old : $this->invoice()->currency)) {
+            $set('currency', is_string($old) ? $old : $this->invoice()->currency);
+            $this->mountAction('changeCurrency', ['currency' => $currency]);
+
+            return;
+        }
+
+        $set('items', $this->repricedItems($items, $currency));
+    }
+
+    /**
+     * Whether any line carries a price that was typed by hand: a line that does not follow an hourly rate.
+     *
+     * @param  array<array-key, mixed>  $items
+     */
+    private function hasTypedPrices(array $items, string $currency): bool
+    {
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $line = $this->preview()->line(self::text($item['id'] ?? null), $item['quantity'] ?? null, $item['unit_price'] ?? null, $currency);
+
+            if (! $line['generated'] && DraftEditorPreview::price($item['unit_price'] ?? null, $currency) instanceof Money) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The rows with the price of every generated line shown in the new currency (the Action stores the same figure);
+     * the prices typed by hand are never changed.
+     *
+     * @param  array<array-key, mixed>  $items
+     * @return array<array-key, mixed>
+     */
+    private function repricedItems(array $items, string $currency): array
+    {
         foreach ($items as $key => $item) {
             if (! is_array($item)) {
                 continue;
@@ -475,7 +739,137 @@ final class EditInvoice extends EditRecord
             }
         }
 
-        $set('items', $items);
+        return $items;
+    }
+
+    /**
+     * The stored lines that are not rows of the form yet join it at the end, in their stored order.
+     */
+    private function appendStoredLines(): void
+    {
+        $data = $this->data ?? [];
+        $items = is_array($data['items'] ?? null) ? $data['items'] : [];
+        $known = array_filter(array_column($items, 'id'), 'is_string');
+
+        foreach (InvoiceItem::query()->where('invoice_id', $this->invoice()->id)->orderBy('position')->get() as $item) {
+            if (! in_array($item->id, $known, true)) {
+                $items[(string) Str::uuid()] = $this->itemState($item, $this->invoice()->currency);
+            }
+        }
+
+        $data['items'] = $items;
+        $this->data = $data;
+    }
+
+    /**
+     * The fixed-price projects of the client, archived ones included (UI-SPEC C3).
+     *
+     * @return array<string, string>
+     */
+    private function fixedProjectOptions(): array
+    {
+        $query = Project::query()
+            ->withTrashed()
+            ->where('projects.client_id', $this->invoice()->client_id)
+            ->whereHas('billing', static fn ($billing) => $billing->where('billing_type', BillingType::FixedPrice->value));
+
+        $options = [];
+
+        foreach (CzechCollation::orderBy($query, 'projects.name')->orderBy('projects.id')->get() as $project) {
+            $options[$project->id] = $project->trashed() ? (string) __('invoices.create.archived_project', ['name' => $project->name]) : $project->name;
+        }
+
+        return $options;
+    }
+
+    /**
+     * A fixed-price project of this client by id, or null; a forged id finds nothing.
+     */
+    private function fixedProject(mixed $id): ?Project
+    {
+        if (! is_string($id) || ! Str::isUuid($id)) {
+            return null;
+        }
+
+        return Project::query()
+            ->withTrashed()
+            ->with('billing')
+            ->where('projects.client_id', $this->invoice()->client_id)
+            ->whereKey($id)
+            ->first();
+    }
+
+    /**
+     * "Pevná cena projektu: :price. Dosud vyfakturováno: :billed." under the amount.
+     */
+    private function fixedAmountHelper(mixed $projectId): ?string
+    {
+        $project = $this->fixedProject($projectId);
+
+        if (! $project instanceof Project) {
+            return null;
+        }
+
+        $context = app(AddFixedAmount::class)->context($this->invoice(), $project);
+        $empty = (string) __('invoices.navigation.empty_value');
+        $billed = $context['billed'] === []
+            ? Money::zero($this->invoice()->currency)->format('cs')
+            : implode(', ', array_map(static fn (Money $money): string => $money->format('cs'), $context['billed']));
+
+        return (string) __('invoices.draft.fixed_amount.helper', [
+            'price' => $context['price']?->format('cs') ?? $empty,
+            'billed' => $billed,
+        ]);
+    }
+
+    /**
+     * The count and the H:MM of the time the option would take along.
+     */
+    private function linkTimeHelper(mixed $projectId): ?string
+    {
+        $project = $this->fixedProject($projectId);
+
+        if (! $project instanceof Project) {
+            return null;
+        }
+
+        $context = app(AddFixedAmount::class)->context($this->invoice(), $project);
+
+        return trans_choice('invoices.draft.fixed_amount.mark_time_helper', $context['unbilled_count'], [
+            'count' => $context['unbilled_count'],
+            'duration' => DurationFormat::hoursMinutes($context['unbilled_seconds']),
+        ]);
+    }
+
+    private function maxItems(): int
+    {
+        return (int) config('kokpit.invoicing.max_items');
+    }
+
+    /**
+     * The figures of the row the closure runs in.
+     *
+     * @return array{quantity: InvoiceQuantity|null, unit_price: Money|null, total: Money|null, from_time: bool, seconds: int|null, generated: bool, converted: bool, rate: string|null, stored: bool}
+     */
+    private function lineOf(Get $get): array
+    {
+        return $this->preview()->line(self::text($get('id')), $get('quantity'), $get('unit_price'), $this->currentCurrency());
+    }
+
+    /**
+     * The Action reports plain data keys; the modal form lives under the action state path.
+     */
+    private static function underModal(ValidationException $exception): ValidationException
+    {
+        $mapped = [];
+
+        foreach ($exception->errors() as $key => $messages) {
+            $field = in_array($key, ['project_id', 'description', 'amount'], true) ? $key : 'amount';
+            $path = 'mountedActions.0.data.'.$field;
+            $mapped[$path] = [...($mapped[$path] ?? []), ...$messages];
+        }
+
+        return ValidationException::withMessages($mapped);
     }
 
     /**

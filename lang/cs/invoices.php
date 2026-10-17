@@ -227,6 +227,7 @@ return [
             'variable_symbol' => 'Variabilní symbol',
             'note' => 'Poznámka na dokladu',
             'internal_note' => 'Interní poznámka',
+            'confirm_zero_price' => 'Potvrzuji nulovou cenu',
         ],
         'payment_method_value' => 'Převodem',
         'helpers' => [
@@ -265,6 +266,8 @@ return [
         'currency_change' => [
             'heading' => 'Změnit měnu konceptu?',
             'body' => 'Ručně zadané jednotkové ceny se nepřepočítají. Zkontrolujte je po změně.',
+            'submit' => 'Změnit měnu',
+            'cancel' => 'Ponechat měnu',
         ],
         // Ruling R-14-3: a fixed amount is one line of quantity 1 and the unit "paušál".
         'fixed_amount' => [
@@ -276,7 +279,9 @@ return [
                 'mark_time' => 'Označit čas projektu jako vyfakturovaný',
             ],
             'helper' => 'Pevná cena projektu: :price. Dosud vyfakturováno: :billed.',
-            'mark_time_helper' => ':count záznamů, :duration.',
+            // Czech plural of "záznam": 1, 2 to 4, 0 and 5 or more.
+            'mark_time_helper' => ':count záznam, :duration.|:count záznamy, :duration.|:count záznamů, :duration.',
+            'toast' => 'Pevná částka byla přidána',
             'submit' => 'Přidat položku',
             'cancel' => 'Nepřidávat',
             'unit' => 'paušál',
