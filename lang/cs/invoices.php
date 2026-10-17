@@ -409,7 +409,7 @@ return [
             'history' => 'Historie změn',
         ],
         'banners' => [
-            'overdue' => 'Faktura je po splatnosti o :count dní. Zbývá uhradit :amount.',
+            'overdue' => 'Faktura je po splatnosti o :count den. Zbývá uhradit :amount.|Faktura je po splatnosti o :count dny. Zbývá uhradit :amount.|Faktura je po splatnosti o :count dní. Zbývá uhradit :amount.',
             'awaiting_invoice' => 'Záloha je zaplacená, ale faktura k ní zatím nebyla vystavena. Příjem se zaúčtuje až při vystavení faktury.',
             'cancelled_paid' => 'Faktura byla stornována, ale platba zůstává zaevidovaná. Vrácení peněz a výdaj zaznamenejte ručně.',
             'credit_exists' => 'K dokladu existuje dobropis :number.',
@@ -436,6 +436,12 @@ return [
         'pdf_regenerate' => 'Vytvořit PDF znovu',
         'pdf_failed_title' => 'PDF se nepodařilo vytvořit',
         'pdf_failed_body' => 'Zkuste to znovu. Pokud chyba přetrvá, zkontrolujte úložiště souborů.',
+        'pdf_created' => 'PDF bylo vytvořeno',
+        'related_columns' => [
+            'kind' => 'Druh',
+            'number' => 'Číslo',
+            'status' => 'Stav',
+        ],
     ],
 
     // Surface F: payments. A stored payment is never edited, only deleted together with its income (D-19 as amended

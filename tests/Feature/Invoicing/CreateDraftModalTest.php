@@ -201,15 +201,13 @@ describe('the tracer: create a draft from last month and find it in the list', f
         Livewire::test(ListInvoices::class)->assertCanSeeTableRecords([$draft]);
     });
 
-    it('opens the view page of a draft', function (): void {
+    it('sends the view address of a draft to the editor, the detail being the page of an issued document (plan 10-29)', function (): void {
         $client = InvoiceFixtures::client();
         $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '2', '500.00')]);
 
-        $this->get(InvoiceResource::getUrl('view', ['record' => $draft]))
-            ->assertOk()
-            ->assertSee('Example work');
+        $this->get(InvoiceResource::getUrl('view', ['record' => $draft]))->assertRedirect(InvoiceResource::getUrl('edit', ['record' => $draft]));
 
-        Livewire::test(ViewInvoice::class, ['record' => $draft->getRouteKey()])->assertSee('Koncept');
+        Livewire::test(ViewInvoice::class, ['record' => $draft->getRouteKey()])->assertRedirect(InvoiceResource::getUrl('edit', ['record' => $draft]));
     });
 });
 

@@ -395,7 +395,7 @@ final class InvoiceColumns
      * @param  array<string, mixed>|null  $snapshot
      * @return list<string>
      */
-    private static function partyLines(?array $snapshot): array
+    public static function partyLines(?array $snapshot): array
     {
         if ($snapshot === null) {
             return [];
@@ -420,7 +420,7 @@ final class InvoiceColumns
      *
      * @return list<string>
      */
-    private static function bankLines(Invoice $record): array
+    public static function bankLines(Invoice $record): array
     {
         $bank = $record->bank_snapshot;
 

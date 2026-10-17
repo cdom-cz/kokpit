@@ -5,22 +5,15 @@ declare(strict_types=1);
 namespace App\Filament\Resources;
 
 use App\Domain\Invoicing\Models\Invoice;
-use App\Domain\Invoicing\Support\InvoiceQuantity;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
-use App\Domain\Shared\Money\Money;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEntriesRelationManager;
 use App\Filament\Support\InvoiceTable;
-use Filament\Infolists\Components\RepeatableEntry;
-use Filament\Infolists\Components\RepeatableEntry\TableColumn;
-use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
-use Filament\Schemas\Components\Section;
-use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -119,81 +112,5 @@ final class InvoiceResource extends Resource
     public static function table(Table $table): Table
     {
         return InvoiceTable::configure($table);
-    }
-
-    /**
-     * The first document page (ruling R-21-1): the number, kind, state and client and the frozen lines, read only.
-     * The draft editor is the `edit` page (plan 10-25); the later plans add the rest of Surface E.
-     */
-    public static function infolist(Schema $schema): Schema
-    {
-        $empty = __('invoices.navigation.empty_value');
-
-        return $schema->components([
-            Section::make(__('invoices.detail.sections.document'))
-                ->columns(2)
-                ->schema([
-                    TextEntry::make('number')
-                        ->label(__('invoices.list.columns.number'))
-                        ->placeholder($empty),
-                    TextEntry::make('kind')
-                        ->label(__('invoices.list.columns.kind'))
-                        ->badge()
-                        ->color('gray'),
-                    TextEntry::make('status')
-                        ->label(__('invoices.list.columns.status'))
-                        ->state(static fn (Invoice $record) => InvoiceTable::statusOf($record)['status'])
-                        ->badge(),
-                    TextEntry::make('client.name')
-                        ->label(__('invoices.list.columns.client'))
-                        ->url(static fn (Invoice $record): string => ClientResource::getUrl('view', ['record' => $record->client_id])),
-                    TextEntry::make('currency')
-                        ->label(__('invoices.list.columns.currency')),
-                    TextEntry::make('total')
-                        ->label(__('invoices.list.columns.total'))
-                        ->state(static fn (Invoice $record): string => $record->total()->format('cs')),
-                ]),
-            Section::make(__('invoices.detail.sections.items'))
-                ->schema([
-                    RepeatableEntry::make('lines')
-                        ->hiddenLabel()
-                        ->placeholder(__('invoices.detail.no_items'))
-                        ->state(static fn (Invoice $record): array => self::lines($record))
-                        ->table([
-                            TableColumn::make(__('invoices.detail.columns.description')),
-                            TableColumn::make(__('invoices.detail.columns.quantity'))->alignEnd(),
-                            TableColumn::make(__('invoices.detail.columns.unit_price'))->alignEnd(),
-                            TableColumn::make(__('invoices.detail.columns.total'))->alignEnd(),
-                        ])
-                        ->schema([
-                            TextEntry::make('description'),
-                            TextEntry::make('quantity'),
-                            TextEntry::make('unit_price'),
-                            TextEntry::make('line_total'),
-                        ]),
-                ]),
-        ]);
-    }
-
-    /**
-     * The frozen lines of the document as plain text rows, in order. The text is formatted here once, with the
-     * currency of the document, so the entry renders no query per line.
-     *
-     * @return list<array{description: string, quantity: string, unit_price: string, line_total: string}>
-     */
-    private static function lines(Invoice $invoice): array
-    {
-        $lines = [];
-
-        foreach ($invoice->items as $item) {
-            $lines[] = [
-                'description' => $item->description,
-                'quantity' => InvoiceQuantity::fromDecimal($item->quantity)->format('cs').' '.$item->unit,
-                'unit_price' => Money::ofMinor($item->unit_price_minor, $invoice->currency)->format('cs'),
-                'line_total' => Money::ofMinor($item->line_total_minor, $invoice->currency)->format('cs'),
-            ];
-        }
-
-        return $lines;
     }
 }
