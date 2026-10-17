@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Invoicing\Actions\AddEntriesToDraft;
+use App\Domain\Invoicing\Actions\AddFixedAmount;
 use App\Domain\Invoicing\Actions\CreateDraft;
+use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\UpdateDraft;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
@@ -16,11 +19,13 @@ use App\Filament\Pages\SettingsPage;
 use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
+use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEntriesRelationManager;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\Canary;
 use Tests\Support\InvoiceFixtures;
 
@@ -277,8 +282,10 @@ function editorProject(Client $client, string $name, array $data = []): Project
 
 /**
  * A finished entry of the project from UTC instants.
+ *
+ * @param  array<string, mixed>  $state
  */
-function editorEntry(Project $project, string $start, string $end): TimeEntry
+function editorEntry(Project $project, string $start, string $end, array $state = []): TimeEntry
 {
     $factory = TimeEntry::factory()->forProject($project);
 
@@ -286,6 +293,7 @@ function editorEntry(Project $project, string $start, string $end): TimeEntry
         'user_id' => test()->admin->id,
         'started_at' => CarbonImmutable::parse($start, 'UTC'),
         'ended_at' => CarbonImmutable::parse($end, 'UTC'),
+        ...$state,
     ])->id));
 }
 
@@ -706,5 +714,172 @@ describe('deleting a draft', function (): void {
 
         expect(app(PartnerContext::class)->runAsSystem(static fn (): bool => Invoice::query()->whereKey($draft->id)->exists()))->toBeFalse()
             ->and(editorFreshEntry($entry)->invoice_id)->toBeNull();
+    });
+});
+
+/**
+ * The tab "Záznamy času" of a draft.
+ */
+function entriesTab(Invoice $document): Testable
+{
+    return Livewire::test(InvoiceEntriesRelationManager::class, ['ownerRecord' => $document, 'pageClass' => EditInvoice::class]);
+}
+
+describe('the tab of linked time', function (): void {
+    it('lists the linked entries with the duration, the rate, the amount and the total', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = editorProject($client, 'Alpha project');
+        $fixed = editorProject($client, 'Fixed project', ['billing_type' => 'fixed_price', 'fixed_price' => '50000']);
+        $one = editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 09:00:00', ['description' => 'Example one']);
+        $two = editorEntry($project, '2026-09-11 08:00:00', '2026-09-11 10:30:00', ['description' => 'Example two']);
+        $three = editorEntry($fixed, '2026-09-12 08:00:00', '2026-09-12 08:30:00', ['description' => 'Example fixed']);
+        $draft = editorTimeDraft($client, [$project]);
+        app(AddFixedAmount::class)->handle($this->admin, $draft, ['project_id' => $fixed->id, 'amount' => '1000', 'link_time' => true]);
+
+        $tab = entriesTab($draft)
+            ->assertCanSeeTableRecords([$one, $two, $three], inOrder: true)
+            ->assertSee('Záznamy času')
+            ->assertSee('1:00')
+            ->assertSee('2:30')
+            ->assertSee(Money::ofMinor(100000, 'CZK')->format('cs'))
+            ->assertSee(Money::ofMinor(250000, 'CZK')->format('cs'))
+            ->assertTableColumnStateSet('amount', '—', $three)
+            ->assertTableColumnStateSet('rate', '—', $three);
+
+        // The footer holds the total of all three entries: 1:00 + 2:30 + 0:30.
+        expect($tab->html())->toContain('4:00')
+            ->and($tab->instance()->getTable()->getDefaultPaginationPageOption())->toBe(25);
+    });
+
+    it('shows the empty state of a draft without linked time', function (): void {
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '10.00')]);
+
+        entriesTab($draft)
+            ->assertSee('K faktuře není připojen žádný čas')
+            ->assertSee('Čas připojíte tlačítkem Přidat nový čas. Faktura může obsahovat i jen ruční položky.');
+    });
+
+    it('offers only unbilled, unreserved, billable entries of the client and links the chosen ones as new lines', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = editorProject($client, 'Alpha project');
+        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example kept line', '1', '10.00')]);
+        $keptBefore = storedLines($draft);
+
+        $a = editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 09:00:00', ['description' => 'Eligible one']);
+        $b = editorEntry($project, '2026-09-11 08:00:00', '2026-09-11 08:30:00', ['description' => 'Eligible two']);
+        $other = InvoiceFixtures::draft($client);
+        $reserved = editorEntry($project, '2026-09-12 08:00:00', '2026-09-12 09:00:00', ['description' => 'Reserved elsewhere']);
+        app(AddEntriesToDraft::class)->handle($this->admin, $other, [$reserved->id]);
+        $foreign = editorEntry(editorProject(InvoiceFixtures::client(), 'Foreign project'), '2026-09-13 08:00:00', '2026-09-13 09:00:00', ['description' => 'Another client']);
+        $notBillable = editorEntry($project, '2026-09-14 08:00:00', '2026-09-14 09:00:00', ['description' => 'Not billable', 'billable' => false]);
+
+        $data = ['period' => 'custom', 'period_from' => '2026-09-01', 'period_to' => '2026-09-30', 'project_ids' => [$project->id], 'without_project' => false];
+
+        entriesTab($draft)
+            ->mountAction(TestAction::make('addTime')->table())
+            ->setActionData($data)
+            ->assertMountedActionModalSee(['Eligible one', 'Eligible two'])
+            ->assertMountedActionModalDontSee(['Reserved elsewhere', 'Another client', 'Not billable']);
+
+        entriesTab($draft)
+            ->callAction(TestAction::make('addTime')->table(), [...$data, 'entry_ids' => [$a->id, $b->id]])
+            ->assertHasNoActionErrors()
+            ->assertNotified('Připojeno 2 záznamů, přidáno 1 položek');
+
+        $lines = storedLines($draft);
+
+        expect($lines)->toHaveCount(2)
+            ->and($lines[0]->id)->toBe($keptBefore[0]->id)
+            ->and($lines[0]->description)->toBe('Example kept line')
+            ->and($lines[1]->quantity)->toBe('1.5000')
+            ->and(editorFreshEntry($a)->invoice_id)->toBe($draft->id)
+            ->and(editorFreshEntry($b)->invoice_id)->toBe($draft->id)
+            ->and(editorFreshEntry($foreign)->invoice_id)->toBeNull()
+            ->and(editorFreshEntry($notBillable)->invoice_id)->toBeNull();
+    });
+
+    it('refuses the id of an entry of another client and changes nothing', function (): void {
+        $client = InvoiceFixtures::client();
+        $draft = InvoiceFixtures::draft($client);
+        $foreign = editorEntry(editorProject(InvoiceFixtures::client(), 'Foreign project'), '2026-09-13 08:00:00', '2026-09-13 09:00:00');
+
+        entriesTab($draft)
+            ->callAction(TestAction::make('addTime')->table(), ['period' => 'custom', 'period_from' => '2026-09-01', 'period_to' => '2026-09-30', 'without_project' => true, 'entry_ids' => [$foreign->id]])
+            ->assertHasActionErrors(['entry_ids']);
+
+        expect(storedLines($draft))->toBe([])
+            ->and(editorFreshEntry($foreign)->invoice_id)->toBeNull();
+    });
+
+    it('unlinks the selected entries after the warning and leaves the lines as they are', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = editorProject($client, 'Alpha project');
+        $one = editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 09:00:00');
+        $two = editorEntry($project, '2026-09-11 08:00:00', '2026-09-11 09:00:00');
+        $keep = editorEntry($project, '2026-09-12 08:00:00', '2026-09-12 09:00:00');
+        $draft = editorTimeDraft($client, [$project]);
+        $linesBefore = array_map(static fn (InvoiceItem $line): array => [$line->id, $line->quantity, $line->line_total_minor], storedLines($draft));
+
+        entriesTab($draft)
+            ->selectTableRecords([$one->id, $two->id])
+            ->mountAction(TestAction::make('unlink')->table()->bulk())
+            ->assertMountedActionModalSee(['Odpojit záznamy od faktury?', '2 záznamů se vrátí mezi nevyfakturované. Položky faktury se nezmění, upravte nebo smažte je ručně.']);
+
+        entriesTab($draft)
+            ->selectTableRecords([$one->id, $two->id])
+            ->callAction(TestAction::make('unlink')->table()->bulk())
+            ->assertNotified('Záznamy byly odpojeny');
+
+        expect(editorFreshEntry($one)->invoice_id)->toBeNull()
+            ->and(editorFreshEntry($two)->invoice_id)->toBeNull()
+            ->and(editorFreshEntry($keep)->invoice_id)->toBe($draft->id)
+            ->and(array_map(static fn (InvoiceItem $line): array => [$line->id, $line->quantity, $line->line_total_minor], storedLines($draft)))->toBe($linesBefore);
+    });
+
+    it('is read only on an issued document: no add, no unlink', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = editorProject($client, 'Alpha project');
+        editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 09:00:00');
+        $issued = app(IssueDocument::class)->handle($this->admin, editorTimeDraft($client, [$project]));
+
+        entriesTab($issued)
+            ->assertSee('Navázaný čas')
+            ->assertDontSee('Přidat nový čas')
+            ->assertDontSee('Odpojit od faktury')
+            ->assertCountTableRecords(1);
+    });
+
+    it('answers a Partner with 403', function (): void {
+        $client = InvoiceFixtures::client();
+        $draft = InvoiceFixtures::draft($client);
+
+        $this->actingAs(Canary::partnerFor($client->id));
+
+        expect(fn () => entriesTab($draft))->toThrow(HttpException::class);
+    });
+
+    it('opens the add dialog from the button under the table of lines', function (): void {
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client());
+
+        editor($draft)
+            ->callAction(TestAction::make('addTime')->schemaComponent('itemActions', schema: 'form'))
+            ->assertDispatched('draft-add-time');
+    });
+
+    it('lets the editor pick up the lines that the tab appended', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = editorProject($client, 'Alpha project');
+        $entry = editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 09:00:00');
+        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example kept line', '1', '10.00')]);
+
+        $editor = editor($draft);
+        [$key] = rowKeys($editor);
+        $editor->set("data.items.{$key}.description", 'Edited but not saved');
+
+        app(AddEntriesToDraft::class)->handle($this->admin, $draft, [$entry->id]);
+
+        $editor->dispatch('draft-lines-changed');
+
+        expect(array_column($editor->get('data.items'), 'description'))->toBe(['Edited but not saved', 'Alpha project']);
     });
 });
