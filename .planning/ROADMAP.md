@@ -669,7 +669,7 @@ Plans:
   4. Admin records a manual payment (transfer or cash) with a warning if already paid, which creates an income transaction with editable date and category; overdue status is derived and listed in an overdue overview and as a dashboard tile; a paid proforma converts to a linked invoice
   5. The client detail shows projects, unbilled time and amount, invoices, documents and client accounts, and a Partner sees only their own issued invoices and proformas (list, detail, PDF) read-only, never drafts, internal notes, linked time or rates
 
-**Plans:** 40 plans in 13 waves
+**Plans:** 41 plans in 13 waves
 **UI hint**: yes
 
 Plans:
@@ -682,7 +682,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 10-05-PLAN.md — Invoice and InvoiceItem models with the fail-closed Partner scope, policies, morph aliases, registries and canaries
-- [ ] 10-06-PLAN.md — Admin-only side tables, permanent payments, e-mail log, transactions link with the payment-income lock, and the time_entries invoice link with its lifecycle guard
+- [ ] 10-06-PLAN.md — Admin-only side tables, payments never edited and deleted only together with their income through the sanctioned path, e-mail log, transactions link with the payment-income lock, and the time_entries invoice link with its lifecycle guard
 - [ ] 10-07-PLAN.md — Number series as variable symbols: digits-only proforma rule (owner acknowledgement point), distinct proforma default, VariableSymbol helper
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -707,7 +707,7 @@ Plans:
 **Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 10-17-PLAN.md — Foreign-currency lines converted at the issue date with frozen rates and one rounding per line, draft preview, non-VAT-payer proof
 - [ ] 10-18-PLAN.md — PDF variants (proforma, credit note, non-CZK, optional blocks) and regeneration equivalence
-- [ ] 10-19-PLAN.md — Receivables: derived statuses and overdue, tab filters and counts, CZK summaries, payment income locked on the finance side
+- [ ] 10-19-PLAN.md — Receivables: derived statuses and overdue, tab filters and counts, CZK summaries, payment income locked on the finance side and in the Transactions API
 
 **Wave 8** *(blocked on Wave 7 completion)*
 - [ ] 10-20-PLAN.md — PDF stored at issue with full rollback and the invoice owner kind
@@ -729,9 +729,10 @@ Plans:
 - [ ] 10-26-PLAN.md — Partner read-only documents and the canary leak proof
 - [ ] 10-29-PLAN.md — Issue flow from the draft and the issued detail with its tabs
 - [ ] 10-40-PLAN.md — Draft and invoice markers on time entries and the reserved line in the report
+- [ ] 10-41-PLAN.md — DeletePayment: a mistaken payment deleted together with its income, carried-payment rule, lock order and concurrency proof
 
 **Wave 11** *(blocked on Wave 10 completion)*
-- [ ] 10-30-PLAN.md — Payment modal with the permanence note and proforma conversion in the panel
+- [ ] 10-30-PLAN.md — Payment modal, payment deletion with confirmation, and proforma conversion in the panel
 
 **Wave 12** *(blocked on Wave 11 completion)*
 - [ ] 10-31-PLAN.md — Storno and partial credit notes, e-mail dialog, send log and resend in the panel

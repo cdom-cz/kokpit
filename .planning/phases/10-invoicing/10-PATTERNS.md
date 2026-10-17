@@ -219,6 +219,8 @@ final readonly class RecordTransaction
 ```
 `RecordPayment` inserts the payment, then (kind `invoice` only) calls `RecordTransaction->handle()` inside the same transaction with `TransactionCategory::invoicePayments()` and sets `invoice_id` / `invoice_payment_id` via `forceFill`. Keep `Gate` check first, validation errors as `ValidationException` with field keys.
 
+`DeletePayment` (D-19 as amended 2026-10-17; plan 10-41) takes its deletion shape from `app/Domain/Finance/Actions/DeleteTransaction.php` (Gate first, one transaction, row re-read under `lockForUpdate`, each receipt through `DeleteDocument`, whose `DB::afterCommit()` object removal is dropped on rollback), but never calls `DeleteTransaction`, which refuses payment income: it locks the document, the payment and the income in that order, sets the transaction-local `kokpit.payment_deletion` that the guards of plan 10-06 read, deletes the income's receipts, the income and the payment through the models, and clears the flag.
+
 ### `app/Domain/Invoicing/Jobs/SendInvoiceEmail.php` (job, event-driven)
 
 **Analog:** `app/Domain/Documents/Jobs/BuildDocumentArchive.php` (lines 1-75) and base `app/Domain/Operations/Jobs/KokpitJob.php`.
@@ -322,7 +324,7 @@ final class ContactsRelationManager extends RelationManager
     public static function getTitle(Model $ownerRecord, string $pageClass): string { return __('kokpit.contacts.relation_title'); }
 }
 ```
-Documents tab: `use ManagesDocuments;` with `showsOwnerColumn(): bool { return false; }`. Payments tab: no edit/delete row actions. Writes only through domain Actions; ids from the browser re-read through scoped queries.
+Documents tab: `use ManagesDocuments;` with `showsOwnerColumn(): bool { return false; }`. Payments tab: no edit row action; the one row action is "Smazat platbu" through `DeletePayment` (D-19 as amended 2026-10-17, plan 10-41). Writes only through domain Actions; ids from the browser re-read through scoped queries.
 
 ### `app/Filament/Partner/Resources/PartnerInvoiceResource.php` (resource, read-only)
 
