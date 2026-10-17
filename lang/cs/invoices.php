@@ -702,8 +702,11 @@ return [
                 'total' => 'Celkem',
                 'paid' => 'Uhrazeno',
                 'remaining' => 'Zbývá uhradit',
+                'company_id' => 'IČO',
+                'vat_id' => 'DIČ',
+                'iban' => 'IBAN',
             ],
-            'overdue' => 'Faktura je po splatnosti o :count dní. Zbývá uhradit :amount.',
+            'overdue' => 'Faktura je po splatnosti o :count den. Zbývá uhradit :amount.|Faktura je po splatnosti o :count dny. Zbývá uhradit :amount.|Faktura je po splatnosti o :count dní. Zbývá uhradit :amount.',
         ],
     ],
 ];
