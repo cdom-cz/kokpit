@@ -5,14 +5,21 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\AddEntriesToDraft;
+use App\Domain\Invoicing\Actions\CreateDraft;
+use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\RecordPayment;
+use App\Domain\Invoicing\Actions\UpdateDraft;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Queries\ReceivablesReader;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Reports\ReportFilters;
+use App\Domain\Reports\TimeReport;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Domain\TimeTracking\Support\DurationFormat;
 use App\Filament\RelationManagers\ClientDocumentsRelationManager;
 use App\Filament\RelationManagers\ClientHistoryRelationManager;
 use App\Filament\Resources\ClientResource;
@@ -23,6 +30,7 @@ use App\Filament\Resources\ClientResource\RelationManagers\ContactsRelationManag
 use App\Filament\Resources\ClientResource\RelationManagers\InvitationsRelationManager;
 use App\Filament\Resources\ClientResource\RelationManagers\PartnerAccountsRelationManager;
 use App\Filament\Resources\ClientResource\Widgets\ClientOverviewStats;
+use App\Filament\Widgets\UnbilledPerClient;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
@@ -63,6 +71,14 @@ function clientPanelText(string $html): string
 function clientPanelMoney(string $major, string $currency = 'CZK'): string
 {
     return trim((string) preg_replace('/[\s\x{00A0}\x{202F}]+/u', ' ', Money::fromMajor($major, $currency)->format('cs')));
+}
+
+/**
+ * An amount as the screens print it, with the white space collapsed the way {@see clientPanelText()} collapses it.
+ */
+function clientPanelFormat(Money $amount): string
+{
+    return trim((string) preg_replace('/[\s\x{00A0}\x{202F}]+/u', ' ', $amount->format('cs')));
 }
 
 /**
@@ -417,5 +433,139 @@ describe('the Faktury tab', function (): void {
 
         expect(Invoice::query()->where('client_id', $other->id)->count())->toBe(0)
             ->and(Invoice::query()->where('client_id', $client->id)->count())->toBe(1);
+    });
+});
+
+/**
+ * An issued document of the client in the given currency (which may differ from the client currency), built through
+ * the real pipeline as the Admin.
+ */
+function clientPanelIssuedIn(Client $client, string $currency, string $amount): Invoice
+{
+    $admin = Canary::admin();
+    test()->actingAs($admin);
+
+    $draft = app(CreateDraft::class)->handle($admin, [
+        'client_id' => $client->id,
+        'kind' => 'invoice',
+        'source' => 'empty',
+        'currency' => $currency,
+    ]);
+
+    $draft = app(UpdateDraft::class)->handle($admin, $draft, ['items' => [InvoiceFixtures::item('Example work', '1', $amount)]]);
+
+    return app(IssueDocument::class)->handle($admin, $draft);
+}
+
+describe('the figures agree with the report and the dashboard', function (): void {
+    it('shows the unbilled seconds and amounts of the time report for the client over all time', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-07-01', '25.00');
+        $client = clientPanelClient(['currency' => 'EUR']);
+        $fixed = clientPanelProject($client, 'Example fixed project', 'fixed_price');
+
+        // Several months, a billed entry, a non-billable one and fixed-price time: only the unbilled billable hours count.
+        clientPanelEntry($client, '2026-08-03', 5);
+        clientPanelEntry($client, '2026-09-10', 3);
+        clientPanelEntry($client, '2026-09-11', 2, ['billing_state' => 'billed', 'billed_at' => CarbonImmutable::parse('2026-09-30 10:00:00', 'Europe/Prague')]);
+        clientPanelEntry($client, '2026-09-12', 4, ['billable' => false]);
+        app(PartnerContext::class)->runAsSystem(static fn (): TimeEntry => TimeEntry::factory()->forProject($fixed)->create([
+            'user_id' => test()->admin->id,
+            'started_at' => CarbonImmutable::parse('2026-09-15 08:00:00', 'Europe/Prague'),
+            'ended_at' => CarbonImmutable::parse('2026-09-15 09:00:00', 'Europe/Prague'),
+        ]));
+
+        $summary = TimeReport::build(ReportFilters::period('2000-01-01', '2100-12-31', $client->id), now())->summary;
+        $text = clientPanelText(clientPanelStats($client)->html());
+
+        expect($summary['unbilled'])->toBe(9 * 3600)
+            ->and($text)->toContain(DurationFormat::hoursMinutes($summary['unbilled']))
+            ->and($text)->toContain(clientPanelFormat($summary['amounts']['unbilled']['EUR']))
+            ->and($text)->toContain(clientPanelFormat($summary['czk']['unbilled']))
+            ->and($text)->toContain('Hodiny s pevnou cenou jsou bez částky.');
+    });
+
+    it('shows the client row of the dashboard card for the month', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-09-01', '25.00');
+        $client = clientPanelClient(['currency' => 'EUR']);
+
+        clientPanelEntry($client, '2026-10-01', 3);
+        clientPanelReserve($client, [clientPanelEntry($client, '2026-10-01', 2)]);
+
+        $row = collect(Livewire::test(UnbilledPerClient::class)->instance()->rows())->firstWhere('client_id', $client->id);
+        $text = clientPanelText(clientPanelStats($client)->html());
+
+        expect($row)->not->toBeNull()
+            ->and($row['seconds'])->toBe(5 * 3600)
+            ->and($text)->toContain(DurationFormat::hoursMinutes($row['seconds']))
+            ->and($text)->toContain(clientPanelFormat($row['amounts']['EUR']))
+            ->and($text)->toContain(clientPanelFormat($row['czk']));
+    });
+
+    it('shows the overdue count and the CZK figure of the receivables reader', function (): void {
+        $client = clientPanelWorld();
+
+        $summary = app(ReceivablesReader::class)->summary(ReceivablesReader::today(), $client->id);
+        $text = clientPanelText(clientPanelStats($client)->html());
+
+        expect($summary['overdue']['count'])->toBe(1)
+            ->and($text)->toContain(clientPanelFormat($summary['overdue']['czk']))
+            ->and($text)->toContain('z toho po splatnosti: '.$summary['overdue']['count'])
+            ->and($text)->toContain(clientPanelFormat($summary['unpaid']['czk']->plus($summary['overdue']['czk'])));
+    });
+
+    it('lists the amounts of a EUR client with a CZK document per currency and never as one sum', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-01', '25.00');
+        $client = clientPanelClient(['currency' => 'EUR', 'payment_terms_days' => 30]);
+
+        clientPanelIssuedIn($client, 'EUR', '100.00');
+        clientPanelIssuedIn($client, 'CZK', '1000.00');
+
+        $summary = app(ReceivablesReader::class)->summary(ReceivablesReader::today(), $client->id);
+        $stats = clientPanelText(clientPanelStats($client)->html());
+        $tab = clientPanelText(clientPanelInvoicesTab($client)->html());
+
+        $eur = clientPanelMoney('100', 'EUR');
+        $czk = clientPanelMoney('1000');
+
+        expect($summary['unpaid']['czk']->toMajor())->toBe('3500.00')
+            ->and($stats)->toContain($eur)->toContain($czk)
+            ->and($stats)->toContain('v Kč: '.clientPanelMoney('3500'))
+            ->and($tab)->toContain($czk.', '.$eur);
+    });
+});
+
+describe('the closed doors', function (): void {
+    it('refuses a Partner of the client on the widget and on both relation managers', function (): void {
+        $client = clientPanelClient();
+        $this->actingAs(Canary::partnerFor($client->id));
+
+        Livewire::test(ClientOverviewStats::class, ['record' => $client])->assertForbidden();
+
+        foreach ([ClientProjectsRelationManager::class, ClientInvoicesRelationManager::class] as $manager) {
+            Livewire::test($manager, ['ownerRecord' => $client, 'pageClass' => ViewClient::class])->assertForbidden();
+        }
+    });
+
+    it('refuses a Partner of another client the same way', function (): void {
+        $client = clientPanelClient();
+        $other = clientPanelClient();
+        $this->actingAs(Canary::partnerFor($other->id));
+
+        Livewire::test(ClientOverviewStats::class, ['record' => $client])->assertForbidden();
+
+        foreach ([ClientProjectsRelationManager::class, ClientInvoicesRelationManager::class] as $manager) {
+            Livewire::test($manager, ['ownerRecord' => $client, 'pageClass' => ViewClient::class])->assertForbidden();
+        }
+
+        $this->get(ClientResource::getUrl('view', ['record' => $client->id]))->assertForbidden();
+    });
+
+    it('declares the widget and the managers unavailable to a Partner', function (): void {
+        $client = clientPanelClient();
+        $this->actingAs(Canary::partnerFor($client->id));
+
+        expect(ClientOverviewStats::canView())->toBeFalse()
+            ->and(app(PartnerContext::class)->runAsSystem(static fn (): bool => ClientProjectsRelationManager::canViewForRecord($client, ViewClient::class)))->toBeFalse()
+            ->and(app(PartnerContext::class)->runAsSystem(static fn (): bool => ClientInvoicesRelationManager::canViewForRecord($client, ViewClient::class)))->toBeFalse();
     });
 });
