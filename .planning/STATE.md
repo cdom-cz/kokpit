@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-17-PLAN.md
-last_updated: "2026-10-17T13:19:50.383Z"
+stopped_at: Completed 10-18-PLAN.md
+last_updated: "2026-10-17T13:30:17.813Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 794582e892e3ecb0709ec0805d187fefc3c957e6
+state_head: a84727b0be58d9810f51ad2c0ea8a87bcc31fc4a
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 204
+  completed_plans: 205
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 21 of 41
+Plan: 22 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -267,6 +267,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P16 | 30 min | 3 tasks | 8 files |
 | Phase 10 P35 | 40 min | 2 tasks | 7 files |
 | Phase 10 P17 | 80 min | 3 tasks | 7 files |
+| Phase 10 P18 | 35 min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -660,6 +661,7 @@ Recent decisions affecting current work:
 - [Phase 10]: 10-35: the invoice counter key is global per year, so the concurrency test reads the counter before, expects numbers from that start and restores the counter row and the supplier and bank settings afterwards
 - [Phase 10]: R-17-1 applied: one rounding per converted line (amount via timesThroughCzk, printed unit price a display figure); owner confirmation of the visible quantity x price difference is still pending with plan 10-01 R-01-1
 - [Phase 10]: R-17-3 applied: VAT payer mode blocks issuing with vat_payer_unsupported for every document kind; a source with a conversion_snapshot is not converted again at issue
+- [Phase 10]: 10-18: the PDF variants (proforma, credit note, EUR, optional blocks) were already delivered by 10-15; 10-18 proves them and the regeneration equivalence (HTML, page count, text) in InvoicePdfVariantsTest
 
 ### Pending Todos
 
@@ -715,6 +717,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T13:19:49.155Z
-Stopped at: Completed 10-17-PLAN.md
+Last session: 2026-10-17T13:30:16.561Z
+Stopped at: Completed 10-18-PLAN.md
 Resume file: None
