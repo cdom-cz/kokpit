@@ -6,12 +6,15 @@ namespace App\Filament\Resources\InvoiceResource\Pages;
 
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
+use App\Domain\ExchangeRates\ExchangeRateMissing;
 use App\Domain\ExchangeRates\RateFormat;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\AddFixedAmount;
 use App\Domain\Invoicing\Actions\DeleteDraft;
+use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\UpdateDraft;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Issuing\IssueContext;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Support\DraftPreview;
@@ -28,6 +31,7 @@ use App\Domain\TimeTracking\Support\DurationFormat;
 use App\Filament\Concerns\RethrowsDomainValidation;
 use App\Filament\Pages\SettingsPage;
 use App\Filament\Resources\ClientResource;
+use App\Filament\Resources\ExchangeRateResource;
 use App\Filament\Resources\InvoiceResource;
 use App\Filament\Support\DraftEditorPreview;
 use Carbon\CarbonImmutable;
@@ -45,6 +49,7 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
@@ -54,8 +59,10 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\FontWeight;
+use Filament\Support\Enums\Width;
 use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Blade;
@@ -63,6 +70,7 @@ use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\On;
+use Throwable;
 
 /**
  * The draft editor (IN-02, IN-07, IN-08, IN-10; UI-SPEC Surface C): the header fields, the items table and the
@@ -143,14 +151,232 @@ final class EditInvoice extends EditRecord
     }
 
     /**
-     * "Smazat koncept" (IN-10): the destructive confirmation, DeleteDraft, and back to the list. "Vystavit" is added
-     * by plan 10-29.
+     * "Smazat koncept" (IN-10): the destructive confirmation, DeleteDraft, and back to the list; "Vystavit" (IN-01,
+     * UI-SPEC Surface D): the pre-issue check and the confirmation of the issue.
      *
      * @return array<Action>
      */
     protected function getHeaderActions(): array
     {
-        return [$this->deleteDraftAction()];
+        return [$this->deleteDraftAction(), $this->issueAction()];
+    }
+
+    /**
+     * "Vystavit" (UI-SPEC Surface D): saves the form, runs the pre-issue check and opens the confirmation only when
+     * nothing blocks. The number shown in the confirmation is the preview of the counter and may change (F-14); the
+     * allocation happens in {@see IssueDocument}, in one transaction, and a failure there leaves the draft and the
+     * counter as they were.
+     */
+    private function issueAction(): Action
+    {
+        return Action::make('issue')
+            ->label(__('invoices.draft.actions.issue'))
+            ->icon(Heroicon::OutlinedPaperAirplane)
+            ->color('primary')
+            ->modalWidth(Width::Large)
+            ->modalHeading(fn (): string => (string) __('invoices.issue.heading', ['kind' => $this->kindAccusative()]))
+            ->modalSubmitActionLabel(fn (): string => (string) __($this->invoice()->kind === InvoiceKind::Proforma ? 'invoices.issue.submit.proforma' : 'invoices.issue.submit.invoice'))
+            ->modalCancelActionLabel(__('invoices.issue.cancel'))
+            ->mountUsing(function (Action $action, ?Schema $schema): void {
+                $this->precheckIssue($action);
+                $schema?->fill();
+            })
+            ->schema(fn (): array => $this->issueConfirmation())
+            ->action(function (): void {
+                $this->issue();
+            });
+    }
+
+    /**
+     * Saves the form, then lists every blocker without opening the modal. A form that does not validate stays on its
+     * fields; a document that was issued in the meantime goes to its page.
+     */
+    private function precheckIssue(Action $action): void
+    {
+        $this->save(shouldRedirect: false, shouldSendSavedNotification: false);
+
+        $invoice = $this->invoice()->refresh();
+
+        if (! $invoice->isDraft()) {
+            $this->redirect(InvoiceResource::getUrl('view', ['record' => $invoice]));
+
+            $action->halt();
+        }
+
+        if ($this->getErrorBag()->isNotEmpty()) {
+            $action->halt();
+        }
+
+        $blockers = app(IssueChecks::class)->blockers($invoice, IssueContext::today());
+
+        if ($blockers !== []) {
+            $this->notifyBlockers($blockers);
+
+            $action->halt();
+        }
+    }
+
+    /**
+     * The danger notification of the blockers: one line each, with the links where a screen can fix the cause.
+     *
+     * @param  list<array{key: string, message: string}>  $blockers
+     */
+    private function notifyBlockers(array $blockers): void
+    {
+        $items = '';
+        $links = [];
+
+        foreach ($blockers as $blocker) {
+            $items .= '<li>'.e($blocker['message']).'</li>';
+
+            match ($blocker['key']) {
+                'supplier_missing', 'bank_missing', 'vat_payer_unsupported', 'pattern_invalid' => $links['settings'] = Action::make('openSettings')
+                    ->label(__('invoices.issue.links.settings'))
+                    ->url(SettingsPage::getUrl())
+                    ->link(),
+                'cnb_missing' => $links['rates'] = Action::make('openRates')
+                    ->label(__('invoices.issue.links.rates'))
+                    ->url(ExchangeRateResource::getUrl('index'))
+                    ->link(),
+                default => null,
+            };
+        }
+
+        Notification::make()
+            ->danger()
+            ->title(__('invoices.issue.blockers_title'))
+            ->body('<ul>'.$items.'</ul>')
+            ->actions(array_values($links))
+            ->persistent()
+            ->send();
+    }
+
+    /**
+     * The content of the confirmation: the figures the issue will freeze, the CNB preview of a foreign currency and
+     * the callout with the expected number.
+     *
+     * @return array<Component>
+     */
+    private function issueConfirmation(): array
+    {
+        $invoice = $this->invoice();
+        $day = $this->issueDay();
+
+        $rows = [
+            TextEntry::make('issue_client')
+                ->label(__('invoices.issue.summary.client'))
+                ->state(fn (): string => $this->client()->name),
+            TextEntry::make('issue_total')
+                ->label(__('invoices.issue.summary.total'))
+                ->state(fn (): string => $this->invoice()->total()->format('cs')),
+            TextEntry::make('issue_date')
+                ->label(__('invoices.issue.summary.issue_date'))
+                ->state(fn (): string => IssueChecks::czechDate($this->issueDay())),
+            TextEntry::make('issue_due')
+                ->label(__('invoices.issue.summary.due_date'))
+                ->state(fn (): string => IssueChecks::czechDate($this->invoice()->due_date?->format('Y-m-d') ?? $this->defaultDueDate($this->issueDay()))),
+            TextEntry::make('issue_currency')
+                ->label(__('invoices.issue.summary.currency'))
+                ->state(fn (): string => $this->invoice()->currency),
+        ];
+
+        $quote = $invoice->currency === 'CZK' ? null : $this->czkQuote($day);
+
+        if ($quote !== null) {
+            $rows[] = TextEntry::make('issue_rate')
+                ->hiddenLabel()
+                ->state(fn (): string => (string) __('invoices.issue.summary.rate', [
+                    'rate' => RateFormat::display($quote['rate']).($quote['unit'] === 1 ? '' : ' / '.$quote['unit']),
+                    'czk' => $quote['czk']->format('cs'),
+                ]));
+        }
+
+        return [
+            ...$rows,
+            Callout::make(fn (): string => (string) __('invoices.issue.callout', ['number' => app(IssueDocument::class)->expectedNumber($this->invoice())]))
+                ->warning(),
+        ];
+    }
+
+    /**
+     * The CNB preview of a foreign-currency draft for the issue day, or null when the list is missing (the blockers
+     * have named that already).
+     *
+     * @return array{czk: Money, rate: string, unit: int, rate_date: string}|null
+     */
+    private function czkQuote(string $day): ?array
+    {
+        try {
+            return app(DraftPreview::class)->czkPreview($this->invoice(), $day);
+        } catch (ExchangeRateMissing) {
+            return null;
+        }
+    }
+
+    /**
+     * Issues the draft through {@see IssueDocument}. A refusal that comes from the blockers is listed like the
+     * pre-check; any other failure shows the fixed copy and nothing of the exception: the cause goes to the log.
+     */
+    private function issue(): void
+    {
+        $actor = auth()->user();
+        assert($actor instanceof User);
+
+        try {
+            $issued = app(IssueDocument::class)->handle($actor, $this->invoice());
+        } catch (AuthorizationException $exception) {
+            throw $exception;
+        } catch (ValidationException $exception) {
+            $blockers = [];
+
+            foreach ($exception->errors() as $key => $messages) {
+                foreach ($messages as $message) {
+                    $blockers[] = ['key' => (string) $key, 'message' => $message];
+                }
+            }
+
+            $this->notifyBlockers($blockers);
+
+            return;
+        } catch (DomainException) {
+            Notification::make()->danger()->title(__('invoices.errors.not_draft'))->send();
+
+            $this->redirect(InvoiceResource::getUrl('view', ['record' => $this->invoice()]));
+
+            return;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            Notification::make()
+                ->danger()
+                ->title(__('invoices.issue.failed_title'))
+                ->body(__('invoices.issue.failed_body'))
+                ->persistent()
+                ->send();
+
+            return;
+        }
+
+        Notification::make()
+            ->success()
+            ->title(__($issued->kind === InvoiceKind::Proforma ? 'invoices.issue.toast.proforma' : 'invoices.issue.toast.invoice'))
+            ->send();
+
+        // Plan 10-31 opens the e-mail dialog from this flag (ruling R-29-1).
+        $this->redirect(InvoiceResource::getUrl('view', ['record' => $issued, 'send' => 1]));
+    }
+
+    /**
+     * The day the issue will use: the typed issue date or today.
+     */
+    private function issueDay(): string
+    {
+        return $this->invoice()->issue_date?->format('Y-m-d') ?? IssueContext::today();
+    }
+
+    private function kindAccusative(): string
+    {
+        return (string) __('invoices.issue.kind_accusative.'.$this->invoice()->kind->value);
     }
 
     /**

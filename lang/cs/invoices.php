@@ -353,6 +353,10 @@ return [
         'failed_title' => 'Doklad se nepodařilo vystavit',
         'failed_body' => 'Nebylo přiděleno žádné číslo a nic se nezměnilo. Zkuste to znovu. Pokud chyba přetrvá, zkontrolujte, že je dostupné úložiště souborů.',
         'blockers_title' => 'Doklad nelze vystavit',
+        'links' => [
+            'settings' => 'Otevřít Nastavení',
+            'rates' => 'Otevřít Kurzy ČNB',
+        ],
     ],
 
     // Surface E: the issued document page.
