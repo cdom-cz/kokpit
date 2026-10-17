@@ -47,6 +47,7 @@ return [
         'projects_unknown' => 'Vyberte projekty tohoto klienta.',
         'grouping' => 'Zvolte seskupení podle projektu nebo podle úkolu.',
         'fixed_project' => 'Zvolený projekt nemá pevnou cenu.',
+        'fixed_amount' => 'Zadejte částku větší než nula v měně dokladu.',
         'entries_foreign' => 'Vybrané záznamy už nejsou k dispozici.',
 
         // Payments.
