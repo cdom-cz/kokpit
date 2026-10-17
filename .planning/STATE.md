@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 10
-current_phase_name: Invoicing
+current_phase: "09.1"
+current_phase_name: Transactions API (INSERTED)
 status: executing
-stopped_at: Completed 09.1-08-PLAN.md
-last_updated: "2026-10-17T05:05:15.702Z"
-last_activity: 2026-10-16
+stopped_at: Completed 09.1-09-PLAN.md
+last_updated: "2026-10-17T05:26:28.155Z"
+last_activity: 2026-10-17
 last_activity_desc: Phase 09.1 execution started
-state_head: 9f70035040308f0a084f277136fd27ab81dd98b6
+state_head: 496119f47a8fbefb34efd3bc061c71a0734abc11
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 183
+  completed_plans: 184
   percent: 54
 ---
 
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 ## Current Position
 
-Phase: 10 (Invoicing) — READY TO EXECUTE
-Plan: 8 of 8
+Phase: 09.1 (Transactions API (INSERTED)) — EXECUTING
+Plan: 2 of 9
 Status: Ready to execute
-Last activity: 2026-10-16 — Phase 09.1 execution started
+Last activity: 2026-10-17 — Phase 09.1 execution started
 
 Progress: [█████░░░░░] 54%
 
@@ -245,6 +245,7 @@ Progress: [█████░░░░░] 54%
 | Phase 09.1 P06 | 8 min | 3 tasks | 13 files |
 | Phase 09.1 P07 | 6 min | 3 tasks | 12 files |
 | Phase 09.1 P08 | 21 min | 2 tasks | 3 files |
+| Phase 09.1 P09 | 26 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -598,6 +599,8 @@ Recent decisions affecting current work:
 - [Phase 09.1]: Transaction batch uses request key transactions, item error key transaction and api.transaction_batch_max_items = 500 (separate from the time entry batch limit of 100)
 - [Phase 09.1]: A 500-item transaction batch was measured at 0.83-0.87 s locally (CZK items), far below the 60 s threshold; limit and stale lock unchanged; production PHP request time limit stays an open item for the owner
 - [Phase 09.1]: Plan 09.1-08: Phase 10 plan 10-19 adds one API test per transaction endpoint for its payment-income refusal and adds PATCH to TransactionController::CONFLICT_METHODS only if that refusal becomes a 409 (CONTRIBUTING hand-over 7)
+- [Phase 09.1]: 09.1-09: CR-01 fixed in the API mapping only; cleared() drops just the own rate when czk_amount_minor carries a value (app/Domain/Finance untouched)
+- [Phase 09.1]: 09.1-09: WR-01 refuses JSON booleans via noBoolean() with bail before integer; integer strings keep passing
 
 ### Pending Todos
 
@@ -653,6 +656,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T23:07:46.279Z
-Stopped at: Completed 09.1-08-PLAN.md
+Last session: 2026-10-17T05:26:27.012Z
+Stopped at: Completed 09.1-09-PLAN.md
 Resume file: None

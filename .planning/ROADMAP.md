@@ -633,7 +633,7 @@ Plans:
 **Goal:** REST API for the transactions and transaction_categories tables, including bulk creation of transactions
 **Requirements**: TBD
 **Depends on:** Phase 9
-**Plans:** 8/9 plans executed in 5 waves (gap-closure plan 09.1-09 from 09.1-VERIFICATION.md and 09.1-REVIEW.md planned in gap wave 1)
+**Plans:** 9/9 plans executed in 5 waves (gap-closure plan 09.1-09 from 09.1-VERIFICATION.md and 09.1-REVIEW.md planned in gap wave 1)
 
 Plans:
 **Wave 1**
@@ -655,7 +655,7 @@ Plans:
 - [x] 09.1-08-PLAN.md — Importer journey end to end, Phase 10 hand-over in CONTRIBUTING, full gate and validation sign-off
 
 **Gap wave 1**
-- [ ] 09.1-09-PLAN.md — CR-01: a CZK figure sent with `exchange_rate: null` on an own-rate transaction becomes its bank figure; WR-01: JSON booleans refused in the integer fields; WR-04 guard on the finance:write refusal walk; disposition and validation rows, phase gate
+- [x] 09.1-09-PLAN.md — CR-01: a CZK figure sent with `exchange_rate: null` on an own-rate transaction becomes its bank figure; WR-01: JSON booleans refused in the integer fields; WR-04 guard on the finance:write refusal walk; disposition and validation rows, phase gate
 
 ### Phase 10: Invoicing
 
