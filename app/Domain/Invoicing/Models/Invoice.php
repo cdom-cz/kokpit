@@ -193,6 +193,16 @@ final class Invoice extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * The printed lines, in order.
+     *
+     * @return HasMany<InvoiceItem, $this>
+     */
+    public function items(): HasMany
+    {
+        return $this->hasMany(InvoiceItem::class)->orderBy('position');
+    }
+
+    /**
      * The proforma this invoice was made from, if any.
      *
      * @return BelongsTo<Invoice, $this>

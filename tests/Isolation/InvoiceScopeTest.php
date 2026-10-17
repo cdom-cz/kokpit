@@ -6,6 +6,8 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Support\InvoiceQuantity;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Money\Money;
@@ -47,10 +49,11 @@ function invoiceScopeNumber(string $prefix): string
  * issued document must print (the database refuses less). A credit note is negative once issued.
  *
  * @param  array<string, mixed>  $attributes  forced over the defaults
+ * @param  list<string>  $items  descriptions of the lines written while the document is still a draft
  */
-function invoiceScopeDocument(string $clientId, InvoiceKind $kind = InvoiceKind::Invoice, bool $issued = false, array $attributes = []): Invoice
+function invoiceScopeDocument(string $clientId, InvoiceKind $kind = InvoiceKind::Invoice, bool $issued = false, array $attributes = [], array $items = []): Invoice
 {
-    return invoiceScopeSystem(static function () use ($clientId, $kind, $issued, $attributes): Invoice {
+    return invoiceScopeSystem(static function () use ($clientId, $kind, $issued, $attributes, $items): Invoice {
         $isCredit = $kind === InvoiceKind::CreditNote;
         $amount = $isCredit ? -10000 : 10000;
 
@@ -66,6 +69,17 @@ function invoiceScopeDocument(string $clientId, InvoiceKind $kind = InvoiceKind:
             'total_minor' => $amount,
             ...$attributes,
         ])->save();
+
+        // The lines go in while the document is a draft: an issued document accepts no new line.
+        foreach (array_values($items) as $index => $description) {
+            (new InvoiceItem(['description' => $description, 'unit' => 'h']))->forceFill([
+                'invoice_id' => $invoice->id,
+                'position' => $index + 1,
+                'quantity' => '2.0000',
+                'unit_price_minor' => $amount < 0 ? 0 : 5000,
+                'line_total_minor' => $amount < 0 ? 0 : 10000,
+            ])->save();
+        }
 
         if ($issued) {
             $invoice->forceFill([
@@ -125,11 +139,15 @@ function invoiceScopeIdsOf(array $documents): array
 beforeEach(function (): void {
     [$this->clientA, $this->clientB] = Canary::twoClients();
 
-    $this->invoiceA = invoiceScopeDocument($this->clientA, InvoiceKind::Invoice, issued: true);
+    $this->itemTextA = Canary::canary('item_a');
+    $this->itemTextDraftA = Canary::canary('item_draft_a');
+    $this->itemTextB = Canary::canary('item_b');
+
+    $this->invoiceA = invoiceScopeDocument($this->clientA, InvoiceKind::Invoice, issued: true, items: [$this->itemTextA]);
     $this->proformaA = invoiceScopeDocument($this->clientA, InvoiceKind::Proforma, issued: true);
     $this->creditNoteA = invoiceScopeDocument($this->clientA, InvoiceKind::CreditNote, issued: true, attributes: ['credited_invoice_id' => $this->invoiceA->id]);
-    $this->draftA = invoiceScopeDocument($this->clientA);
-    $this->invoiceB = invoiceScopeDocument($this->clientB, InvoiceKind::Invoice, issued: true);
+    $this->draftA = invoiceScopeDocument($this->clientA, items: [$this->itemTextDraftA]);
+    $this->invoiceB = invoiceScopeDocument($this->clientB, InvoiceKind::Invoice, issued: true, items: [$this->itemTextB]);
     $this->draftB = invoiceScopeDocument($this->clientB);
 });
 
@@ -405,5 +423,117 @@ describe('totals', function (): void {
             ->and($invoice->isIssued())->toBeTrue()
             ->and($invoice->isDraft())->toBeFalse()
             ->and(Invoice::query()->findOrFail($this->draftA->id)->isDraft())->toBeTrue();
+    });
+});
+
+describe('InvoiceItem', function (): void {
+    it('shows Partner A the lines of the own issued document and none of the own draft or of client B', function (): void {
+        $this->actingAs(Canary::partnerFor($this->clientA));
+
+        $descriptions = InvoiceItem::query()->pluck('description')->all();
+
+        expect($descriptions)->toBe([$this->itemTextA])
+            ->and(InvoiceItem::query()->count())->toBe(1)
+            ->and(InvoiceItem::query()->where('description', $this->itemTextDraftA)->exists())->toBeFalse()
+            ->and(InvoiceItem::query()->where('description', $this->itemTextB)->exists())->toBeFalse();
+    });
+
+    it('hides the lines of an archived client and shows the Admin every line', function (): void {
+        $partner = Canary::partnerFor($this->clientA);
+
+        invoiceScopeSystem(fn () => Client::query()->whereKey($this->clientA)->firstOrFail()->delete());
+        $this->actingAs($partner);
+
+        expect(InvoiceItem::query()->count())->toBe(0);
+
+        $this->actingAs(Canary::admin());
+
+        expect(InvoiceItem::query()->count())->toBe(3);
+    });
+
+    it('keeps the constraint when the Partner adds an or-condition', function (): void {
+        $this->actingAs(Canary::partnerFor($this->clientA));
+
+        $descriptions = InvoiceItem::query()
+            ->where('description', $this->itemTextA)
+            ->orWhere('description', $this->itemTextB)
+            ->orWhere('description', $this->itemTextDraftA)
+            ->pluck('description')
+            ->all();
+
+        expect($descriptions)->toBe([$this->itemTextA]);
+    });
+
+    it('shows a guest, a Partner without a client and a role-less user no line', function (): void {
+        expect(InvoiceItem::query()->count())->toBe(0);
+
+        $this->actingAs(Canary::partnerFor(null));
+        expect(InvoiceItem::query()->count())->toBe(0);
+
+        $this->actingAs(Canary::userWithoutRole($this->clientA));
+        expect(InvoiceItem::query()->count())->toBe(0);
+    });
+
+    it('grants a Partner view of a line of an own issued document only, and every write ability on no line', function (): void {
+        $partner = Canary::partnerFor($this->clientA);
+        $this->actingAs($partner);
+
+        $own = invoiceScopeSystem(fn () => InvoiceItem::query()->where('description', $this->itemTextA)->sole());
+        $draft = invoiceScopeSystem(fn () => InvoiceItem::query()->where('description', $this->itemTextDraftA)->sole());
+        $other = invoiceScopeSystem(fn () => InvoiceItem::query()->where('description', $this->itemTextB)->sole());
+
+        expect($partner->can('viewAny', InvoiceItem::class))->toBeTrue()
+            ->and($partner->can('view', $own))->toBeTrue()
+            ->and($partner->can('view', $draft))->toBeFalse()
+            ->and($partner->can('view', $other))->toBeFalse()
+            ->and($partner->can('create', InvoiceItem::class))->toBeFalse();
+
+        foreach ([$own, $draft, $other] as $item) {
+            foreach (['update', 'delete', 'restore', 'forceDelete', 'replicate'] as $ability) {
+                expect($partner->can($ability, $item))->toBeFalse("{$ability} must be denied for a Partner");
+            }
+        }
+    });
+
+    it('denies a Partner without a client and a role-less user every ability and lets the Admin do everything', function (): void {
+        $item = invoiceScopeSystem(fn () => InvoiceItem::query()->where('description', $this->itemTextA)->sole());
+
+        foreach ([Canary::partnerFor(null), Canary::userWithoutRole($this->clientA)] as $user) {
+            expect($user->can('viewAny', InvoiceItem::class))->toBeFalse()
+                ->and($user->can('view', $item))->toBeFalse();
+        }
+
+        $admin = Canary::admin();
+
+        expect($admin->can('viewAny', InvoiceItem::class))->toBeTrue()
+            ->and($admin->can('view', $item))->toBeTrue()
+            ->and($admin->can('update', $item))->toBeTrue();
+    });
+
+    it('computes the money of a line in the currency of the document', function (): void {
+        $this->actingAs(Canary::admin());
+
+        $item = InvoiceItem::query()->where('description', $this->itemTextA)->sole();
+
+        expect($item->unitPrice())->toEqual(Money::ofMinor(5000, 'CZK'))
+            ->and($item->lineTotal())->toEqual(Money::ofMinor(10000, 'CZK'))
+            ->and($item->quantity())->toEqual(InvoiceQuantity::fromDecimal('2'))
+            ->and($item->price_converted)->toBeFalse()
+            ->and($item->invoice->id)->toBe($this->invoiceA->id);
+    });
+
+    it('lists the lines of a document by position through the relation', function (): void {
+        $document = invoiceScopeDocument($this->clientA, InvoiceKind::Invoice, issued: true, items: ['Second text', 'First text']);
+
+        $this->actingAs(Canary::admin());
+
+        expect(Invoice::query()->findOrFail($document->id)->items->pluck('position')->all())->toBe([1, 2]);
+    });
+
+    it('makes neither the document, the amounts nor the origin fillable', function (): void {
+        expect((new InvoiceItem)->getFillable())->toBe(['description', 'unit'])
+            ->and(fn () => new InvoiceItem(['invoice_id' => $this->invoiceA->id]))->toThrow(MassAssignmentException::class)
+            ->and(fn () => new InvoiceItem(['line_total_minor' => 1]))->toThrow(MassAssignmentException::class)
+            ->and(fn () => new InvoiceItem(['price_converted' => true]))->toThrow(MassAssignmentException::class);
     });
 });

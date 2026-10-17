@@ -19,6 +19,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
@@ -319,6 +320,13 @@ final class CanaryRegistry
                 self::invoiceDocuments($clientId, $canary);
             },
 
+            // The lines follow their document: the same two documents carry one line each with the canary in
+            // the description (the lines go in while the document is a draft, an issued one accepts none). A
+            // Partner must read exactly the line of the issued document, never the one of the draft twin.
+            InvoiceItem::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
             // A CNB rate row has no text and no client: the canary is the published day (the Monday of the
             // canary), under a fictional currency code, so two canaries never collide on the unique key of a
             // currency and day. A Partner reading any rate would be caught by that day.
@@ -552,10 +560,21 @@ final class CanaryRegistry
                 'total_minor' => 10000,
             ]);
 
-            $draft()->save();
+            $line = static fn (Invoice $invoice): InvoiceItem => (new InvoiceItem(['description' => $canary, 'unit' => 'h']))->forceFill([
+                'invoice_id' => $invoice->getKey(),
+                'position' => 1,
+                'quantity' => '2.0000',
+                'unit_price_minor' => 5000,
+                'line_total_minor' => 10000,
+            ]);
+
+            $twin = $draft();
+            $twin->save();
+            $line($twin)->save();
 
             $issued = $draft();
             $issued->save();
+            $line($issued)->save();
             $issued->forceFill([
                 'state' => InvoiceState::Issued,
                 'number' => implode('', ['C', (string) random_int(100000, 999999), (string) random_int(1000, 9999)]),

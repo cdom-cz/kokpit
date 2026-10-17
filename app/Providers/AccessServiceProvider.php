@@ -19,6 +19,8 @@ use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Policies\UserPolicy;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Policies\InvoiceItemPolicy;
 use App\Domain\Invoicing\Policies\InvoicePolicy;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
@@ -134,6 +136,7 @@ final class AccessServiceProvider extends ServiceProvider
 
         // Billing documents: a Partner views an issued document of the own client, nothing else (IN-09).
         Gate::policy(Invoice::class, InvoicePolicy::class);
+        Gate::policy(InvoiceItem::class, InvoiceItemPolicy::class);
 
         // The personal planner "Signal" belongs to one Admin and is closed to Partners; the owner scope
         // of the models keeps every Admin to the own rows.
