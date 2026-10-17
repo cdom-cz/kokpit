@@ -669,7 +669,7 @@ Plans:
   4. Admin records a manual payment (transfer or cash) with a warning if already paid, which creates an income transaction with editable date and category; overdue status is derived and listed in an overdue overview and as a dashboard tile; a paid proforma converts to a linked invoice
   5. The client detail shows projects, unbilled time and amount, invoices, documents and client accounts, and a Partner sees only their own issued invoices and proformas (list, detail, PDF) read-only, never drafts, internal notes, linked time or rates
 
-**Plans:** 31/41 plans executed in 13 waves
+**Plans:** 32/41 plans executed in 13 waves
 **UI hint**: yes
 
 Plans:
@@ -721,7 +721,7 @@ Plans:
 - [x] 10-27-PLAN.md — Client detail panels: stats, Projekty and Faktury tabs
 - [x] 10-28-PLAN.md — Dashboard card Nezaplacené faktury
 - [x] 10-36-PLAN.md — Stored PDF lifecycle: confirmed deletion of issued PDFs and regeneration from the snapshot
-- [ ] 10-37-PLAN.md — System page slot for unsent invoice e-mails
+- [x] 10-37-PLAN.md — System page slot for unsent invoice e-mails
 - [ ] 10-38-PLAN.md — Signed, user-bound invoice PDF route for Admin and Partner
 - [ ] 10-39-PLAN.md — Invoice link and payment-income lock on the transactions screen
 
@@ -793,6 +793,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
 | 8. Exchange Rates and Reports | 27/27 | In Progress | - |
 | 9. Documents and Finance | 28/28 | In Progress | - |
-| 10. Invoicing | 31/41 | In Progress | - |
+| 10. Invoicing | 32/41 | In Progress | - |
 | 11. Stripe Payments | 0/0 | Not started | - |
 | 12. Partner Audit | 0/0 | Not started | - |

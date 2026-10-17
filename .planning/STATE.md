@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 10
 current_phase_name: Invoicing
 status: executing
-stopped_at: Completed 10-36-PLAN.md
-last_updated: "2026-10-17T17:15:21.491Z"
+stopped_at: Completed 10-37-PLAN.md
+last_updated: "2026-10-17T17:36:39.570Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 10 execution started
-state_head: 75218a10df3f33b17e9420d63749e1d6d08a9eca
+state_head: fac530dcffed8df4181656b028768ffaf8aee392
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 215
+  completed_plans: 216
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10 (Invoicing) — EXECUTING
-Plan: 32 of 41
+Plan: 33 of 41
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 10 execution started
 
@@ -278,6 +278,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P27 | 55 min | 3 tasks | 12 files |
 | Phase 10 P28 | 25 min | 2 tasks | 9 files |
 | Phase 10 P36 | 45 min | 2 tasks | 7 files |
+| Phase 10 P37 | 35 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -693,6 +694,8 @@ Recent decisions affecting current work:
 - [Phase 10]: R-28-2: the collapsed receivables card shows the overdue count in its header; the card is hidden until an issued invoice or proforma exists
 - [Phase 10]: R-36-1: the explicit-confirmation rule covers only the file named by invoice_admin.pdf_document_id; the check runs under the invoice_admin row lock inside the delete transaction
 - [Phase 10]: R-36-2: RegeneratePdf works only when pdf_document_id is null; an existing PDF is never replaced; every failure maps to the fixed message 'PDF se nepodařilo vytvořit'
+- [Phase 10]: R-37-1: unsent invoice e-mail slot warns after 900 s of waiting and counts a sending row as failed after 3600 s; the age runs from updated_at and a failure outranks a wait
+- [Phase 10]: HealthResult carries an optional url and urlLabel so an indicator can link the screen that fixes the problem
 
 ### Pending Todos
 
@@ -748,6 +751,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T17:15:20.127Z
-Stopped at: Completed 10-36-PLAN.md
+Last session: 2026-10-17T17:36:38.182Z
+Stopped at: Completed 10-37-PLAN.md
 Resume file: None
