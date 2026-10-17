@@ -16,6 +16,9 @@ use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\InvoiceState;
+use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
@@ -308,6 +311,14 @@ final class CanaryRegistry
                 });
             },
 
+            // A billing document is Partner-readable once issued, so the fixture writes one issued invoice that
+            // carries the canary in the printed note and a draft twin with the same canary. A Partner must read
+            // exactly the issued one: the exact-one-row check fails if the draft is ever returned. Both rows are
+            // written in the system context with forceFill, the way the Actions write them.
+            Invoice::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
             // A CNB rate row has no text and no client: the canary is the published day (the Monday of the
             // canary), under a fictional currency code, so two canaries never collide on the unique key of a
             // currency and day. A Partner reading any rate would be caught by that day.
@@ -517,6 +528,48 @@ final class CanaryRegistry
         foreach (self::fixtures() as $fixture) {
             $fixture($clientId, $canary);
         }
+    }
+
+    /**
+     * An issued invoice and a draft twin of the client, both carrying the canary in the printed note. Idempotent
+     * per client and canary, so every fixture that needs the documents can call it.
+     */
+    private static function invoiceDocuments(string $clientId, string $canary): void
+    {
+        app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+            if (Invoice::query()->where('client_id', $clientId)->where('note', $canary)->exists()) {
+                return;
+            }
+
+            $draft = static fn (): Invoice => (new Invoice(['note' => $canary]))->forceFill([
+                'client_id' => $clientId,
+                'kind' => InvoiceKind::Invoice,
+                'currency' => 'CZK',
+                'language' => 'cs',
+                'vat_mode' => 'non_payer',
+                'subtotal_minor' => 10000,
+                'vat_minor' => 0,
+                'total_minor' => 10000,
+            ]);
+
+            $draft()->save();
+
+            $issued = $draft();
+            $issued->save();
+            $issued->forceFill([
+                'state' => InvoiceState::Issued,
+                'number' => implode('', ['C', (string) random_int(100000, 999999), (string) random_int(1000, 9999)]),
+                'variable_symbol' => (string) random_int(1000000, 9999999),
+                'issue_date' => '2026-10-01',
+                'taxable_supply_date' => '2026-10-01',
+                'due_date' => '2026-10-15',
+                'supplier_snapshot' => ['name' => 'Example supplier'],
+                'customer_snapshot' => ['name' => 'Example customer'],
+                'bank_snapshot' => ['account' => 'Example account'],
+                'appearance_snapshot' => ['accent' => '#000000'],
+                'issued_at' => TimerClock::now(),
+            ])->save();
+        });
     }
 
     private static function host(): PackageProbe

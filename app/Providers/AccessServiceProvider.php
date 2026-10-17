@@ -18,6 +18,8 @@ use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Policies\UserPolicy;
+use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Policies\InvoicePolicy;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Projects\Policies\ProjectPolicy;
@@ -129,6 +131,9 @@ final class AccessServiceProvider extends ServiceProvider
         // The collapsed state of a dashboard card: the Admin holds any card, a Partner only the cards a Partner can see
         // (explicit grant in the policy, everything else denied); the owner scope keeps everybody to the own rows.
         Gate::policy(DashboardWidgetPreference::class, DashboardWidgetPreferencePolicy::class);
+
+        // Billing documents: a Partner views an issued document of the own client, nothing else (IN-09).
+        Gate::policy(Invoice::class, InvoicePolicy::class);
 
         // The personal planner "Signal" belongs to one Admin and is closed to Partners; the owner scope
         // of the models keeps every Admin to the own rows.

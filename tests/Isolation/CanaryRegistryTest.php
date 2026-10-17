@@ -10,6 +10,7 @@ use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
+use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Reports\Models\ReportExport;
@@ -112,6 +113,7 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         Document::class,
         DocumentArchive::class,
         ExchangeRate::class,
+        Invoice::class,
         Media::class,
         Project::class,
         ProjectBilling::class,
