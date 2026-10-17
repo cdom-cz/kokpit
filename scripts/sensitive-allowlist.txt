@@ -34,3 +34,10 @@ email ;; ^composer\.lock$ ;; ^[^@ ]+@[^@ ]+$
 # composer.lock holds dotted dependency version strings that look like an address; approved in plan 02-01
 # (checkpoint decision "path-scoped"), same scope as the entry above.
 public-ip ;; ^composer\.lock$ ;; ^[0-9.]+$
+
+# Roboto 3.011 static TTF files bundled for the invoice PDF (plan 10-15, ruling R-15-2; OFL-1.1, SHA-256 of both
+# files checked at download). The binary glyph and table data contains digit runs that the company-id rule reads
+# as numbers. One entry per font file, anchored on the exact path and on the exact values found in that file; a
+# replaced font file with other digit runs fails again and must be reviewed.
+company-id ;; ^resources/fonts/Roboto-Regular\.ttf$ ;; ^(11033011|11044011|20044002|21033012|21044012|21222212|31233213|34676654|52655466|53266554|53546632|73266554|76599567|85688658|86699668|97899879)$
+company-id ;; ^resources/fonts/Roboto-Bold\.ttf$ ;; ^(34676654|52655466|53266554|53546632|73266554)$
