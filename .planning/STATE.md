@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 11
 current_phase_name: Stripe Payments
 status: executing
-stopped_at: Completed 11-03-PLAN.md
-last_updated: "2026-10-18T13:16:19.721Z"
+stopped_at: Completed 11-04-PLAN.md
+last_updated: "2026-10-18T13:36:04.821Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 11 execution started
-state_head: 5c914a97dc4310b7f103cad8840db779b926a780
+state_head: 1bd3bbf9e5d8db4ac737f6b0205474b65fb42844
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 245
-  completed_plans: 228
+  completed_plans: 229
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 11 (Stripe Payments) — EXECUTING
-Plan: 4 of 20
+Plan: 5 of 20
 Status: Ready to execute
 Last activity: 2026-10-18 — Phase 11 execution started
 
@@ -291,6 +291,7 @@ Progress: [█████░░░░░] 54%
 | Phase 11 P01 | 40min | 3 tasks | 15 files |
 | Phase 11 P02 | 55min | 3 tasks | 12 files |
 | Phase 11 P03 | 55min | 3 tasks | 15 files |
+| Phase 11 P04 | 45min | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -730,6 +731,7 @@ Recent decisions affecting current work:
 - [Phase 11]: R11-03-1: card switch effective value is kind AND draft switch AND global setting AND configured Stripe; client flag only defaults the draft switch (assumption A8, owner to confirm)
 - [Phase 11]: R11-03-2: invoice_admin.pay_token varchar(32) unique with format CHECK, frozen with the document, no expiry
 - [Phase 11]: R11-03-3: pay URL is app.url + /pay/ + token, never the request host
+- [Phase 11]: 11-04: webhook intake stores each handled Stripe event once via INSERT ON CONFLICT DO NOTHING on a partial unique (name, event_id); an unprocessed stored event is dispatched again on redelivery; failures are recorded as a fixed failure_class, never exception text
 
 ### Pending Todos
 
@@ -785,6 +787,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-18T13:16:18.117Z
-Stopped at: Completed 11-03-PLAN.md
+Last session: 2026-10-18T13:36:03.220Z
+Stopped at: Completed 11-04-PLAN.md
 Resume file: None

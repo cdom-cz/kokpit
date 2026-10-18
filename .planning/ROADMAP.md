@@ -752,7 +752,7 @@ Plans:
   4. A matching payment (invoice id, with link id as fallback, correct amount and currency) creates the payment, marks the invoice paid, creates the income transaction, deactivates the link and notifies Admin; a second payment of the same invoice is stored as a duplicate with no income or invoice change and alerts Admin
   5. Unmatched payments and refund events are recorded and alerted, Admin works through a payments overview with duplicate and unmatched filters and manual resolution, unresolved payments show as a dashboard tile and unprocessed webhooks on the System page, and old webhook events are pruned
 
-**Plans:** 3/20 plans executed in 8 waves
+**Plans:** 4/20 plans executed in 8 waves
 **UI hint**: yes
 
 Plans:
@@ -762,7 +762,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [x] 11-03-PLAN.md — Per-document card switch and stable pay token frozen at issue; draft editor, issue confirmation, settings and client hints
-- [ ] 11-04-PLAN.md — Webhook endpoint: signature check, unique event stored once, immediate answer, processing job with the job contract
+- [x] 11-04-PLAN.md — Webhook endpoint: signature check, unique event stored once, immediate answer, processing job with the job contract
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 11-05-PLAN.md — "Zaplatit kartou" in the invoice PDF and the pay-link block in the e-mail
@@ -831,5 +831,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 8. Exchange Rates and Reports | 27/27 | In Progress | - |
 | 9. Documents and Finance | 28/28 | In Progress | - |
 | 10. Invoicing | 41/41 | In Progress | - |
-| 11. Stripe Payments | 3/20 | In Progress | - |
+| 11. Stripe Payments | 4/20 | In Progress | - |
 | 12. Partner Audit | 0/0 | Not started | - |
