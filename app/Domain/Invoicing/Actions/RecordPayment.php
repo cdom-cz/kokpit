@@ -19,6 +19,7 @@ use App\Domain\Invoicing\Queries\InvoiceBalances;
 use App\Domain\Invoicing\Support\IssueChecks;
 use App\Domain\Invoicing\Support\PaymentFacts;
 use App\Domain\Invoicing\Support\PaymentInput;
+use App\Domain\Payments\Support\PaymentLinks;
 use App\Domain\Shared\Money\Money;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -57,6 +58,7 @@ final readonly class RecordPayment
         private RecordTransaction $transactions,
         private InvoiceBalances $balances,
         private ExchangeRateConverter $rates,
+        private PaymentLinks $paymentLinks,
     ) {}
 
     /**
@@ -135,6 +137,9 @@ final readonly class RecordPayment
         if ($books) {
             $this->bookIncome($locked, $payment, $facts->amount, $facts->incomeDate, $facts->categoryId, $dateKey);
         }
+
+        // D-08: what is owed changed, so a live payment link that offers the old amount is deactivated in this transaction.
+        $this->paymentLinks->reconcile($locked);
 
         return $payment->refresh();
     }

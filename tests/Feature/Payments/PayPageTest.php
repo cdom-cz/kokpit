@@ -188,15 +188,13 @@ describe('paid, cancelled and preparing answers (D-02, D-03)', function (): void
 
     it('answers the preparing state after a partial payment, whatever link row is left', function (): void {
         $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
-        payPagePay($invoice, '100.00');
         $path = payPagePath($invoice);
 
-        // The link still offers the full amount, which is no longer what is owed: it is never followed (D-08).
+        payPagePay($invoice, '100.00');
+
+        // The payment deactivated the link in its own transaction (plan 11-10, D-08): it is never followed.
+        expect(app(PartnerContext::class)->runAsSystem(static fn () => DB::table('payment_links')->where('invoice_id', $invoice->id)->value('deactivation_reason')))->toBe('amount_changed');
         payPageVisit($path)->assertOk()->assertSee('Odkaz na platbu se připravuje')->assertSee('Zkusit znovu');
-
-        payPageDeactivateLink($invoice);
-
-        payPageVisit($path)->assertOk()->assertSee('Odkaz na platbu se připravuje');
     });
 
     it('answers the preparing state for a failed link', function (): void {

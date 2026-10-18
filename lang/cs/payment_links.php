@@ -8,6 +8,11 @@ declare(strict_types=1);
  * lang/en/payment_links.php. The keys of the detail page of a document are added by the plan of that surface.
  */
 return [
+    'errors' => [
+        'not_regenerable' => 'Pro tento doklad nelze vytvořit nový odkaz na platbu. Odkaz jde vytvořit jen pro vystavenou nezaplacenou fakturu nebo zálohovou fakturu s platbou kartou.',
+        'preparing' => 'Odkaz na platbu se právě připravuje. Zkuste to za chvíli.',
+        'no_active_link' => 'Doklad nemá aktivní odkaz na platbu, který by šlo vypnout.',
+    ],
     'stripe' => [
         'product' => [
             'invoice' => 'Faktura :number',
