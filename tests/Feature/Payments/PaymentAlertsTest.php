@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\RoleName;
+use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Payments\Actions\RecordCardPayment;
+use App\Domain\Payments\Enums\CardPaymentReason;
+use App\Domain\Payments\Enums\CardPaymentType;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Models\PaymentLink;
+use App\Domain\Payments\Stripe\StripeEvent;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Resources\CardPaymentResource;
@@ -30,7 +35,7 @@ beforeEach(function (): void {
     DocumentFixtures::fakeDisk();
     InvoiceFixtures::configureSupplier();
     CardPaymentSetup::enable();
-    Canary::admin();
+    $this->admin = Canary::admin();
     Canary::admin();
 });
 
@@ -170,4 +175,120 @@ it('alerts every Admin in the bell and by mail about a second payment of a paid 
         ->not->toContain((string) $invoice->client->name)
         ->and(paBell($partner))->toBe([])
         ->and(DB::table('notifications')->where('notifiable_id', $partner->getKey())->count())->toBe(0);
+});
+
+// --- Task 2: unmatched payments, one notice per record, matches and rollbacks ---------------------------------------
+
+/**
+ * The event of each unmatched case, built after the invoice exists. The document is cancelled for `cancelled`.
+ *
+ * @return array{0: array<string, mixed>, 1: string, 2: CardPaymentReason}
+ */
+function paUnmatchedEvent(string $case, Invoice $invoice, PaymentLink $link, User $admin): array
+{
+    return match ($case) {
+        'amount' => [StripeEvents::checkoutFor($link, ['amount_total' => 1_200_000]), Money::ofMinor(1_200_000, 'CZK')->format('cs'), CardPaymentReason::Amount],
+        'currency' => [StripeEvents::checkoutFor($link, ['currency' => 'eur']), Money::ofMinor(1_250_000, 'EUR')->format('cs'), CardPaymentReason::Currency],
+        'cancelled' => (function () use ($invoice, $link, $admin): array {
+            test()->actingAs($admin);
+            app(IssueCreditNote::class)->storno($admin, $invoice);
+
+            return [StripeEvents::checkoutFor($link), Money::ofMinor(1_250_000, 'CZK')->format('cs'), CardPaymentReason::Cancelled];
+        })(),
+        'undetermined' => [StripeEvents::checkoutCompleted(['amount_total' => 121_000, 'currency' => 'czk']), Money::ofMinor(121_000, 'CZK')->format('cs'), CardPaymentReason::Undetermined],
+    };
+}
+
+it('alerts every Admin about an unmatched payment with its amount in its currency and the label of its reason', function (string $case): void {
+    [$invoice, $link] = paInvoice();
+    [$event, $amount, $reason] = paUnmatchedEvent($case, $invoice, $link, $this->admin);
+
+    StripeWebhookSigner::post($this, $event)->assertOk();
+
+    $records = paRecords();
+    $url = CardPaymentResource::getUrl('view', ['record' => $records[0]]);
+    $body = 'Přišla platba '.$amount.', kterou nelze automaticky zapsat ('.$reason->getLabel().'). Příjem nevznikl. Vyřešte ji v přehledu plateb.';
+
+    expect($records)->toHaveCount(1)
+        ->and($records[0]->type)->toBe(CardPaymentType::Unmatched)
+        ->and($records[0]->reason)->toBe($reason);
+
+    foreach (paAdmins() as $admin) {
+        $rows = paBellTitled($admin, 'Nespárovaná platba kartou');
+
+        expect($rows)->toHaveCount(1)
+            ->and($rows[0]['body'])->toBe($body)
+            ->and($rows[0]['actions'][0]['label'])->toBe('Otevřít platbu')
+            ->and($rows[0]['actions'][0]['url'])->toBe($url);
+    }
+
+    $mails = paMailsTitled('Kokpit: Nespárovaná platba kartou');
+
+    expect($mails)->toHaveCount(count(paAdmins()))
+        ->and($mails[0]['text'])->toContain($body)
+        ->and($mails[0]['text'])->toContain($url)
+        ->and(json_encode([paBell(paAdmins()[0]), $mails], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES))
+        ->not->toContain($event['data']['object']['id'])
+        ->not->toContain($event['data']['object']['payment_intent'])
+        ->not->toContain('jane@example.com')
+        ->not->toContain('Jane Example');
+})->with(['amount', 'currency', 'cancelled', 'undetermined']);
+
+it('sends one notice per record, so two duplicates within a minute are two notices and nothing is merged', function (): void {
+    [$invoice, $link] = paInvoice();
+
+    StripeWebhookSigner::post($this, StripeEvents::checkoutFor($link))->assertOk();
+    StripeWebhookSigner::post($this, StripeEvents::checkoutFor($link))->assertOk();
+    StripeWebhookSigner::post($this, StripeEvents::checkoutFor($link))->assertOk();
+
+    $urls = array_map(static fn (CardPayment $record): string => CardPaymentResource::getUrl('view', ['record' => $record]), array_slice(paRecords(), 1));
+
+    foreach (paAdmins() as $admin) {
+        $rows = paBellTitled($admin, 'Duplicitní platba kartou');
+
+        expect($rows)->toHaveCount(2)
+            ->and(array_map(static fn (array $row): string => $row['actions'][0]['url'], $rows))->toEqualCanonicalizing($urls)
+            ->and($rows[0]['body'])->not->toContain('zadrženo')
+            ->and($rows[1]['body'])->not->toContain('zadrženo');
+    }
+
+    expect(paMailsTitled('Kokpit: Duplicitní platba kartou'))->toHaveCount(2 * count(paAdmins()));
+});
+
+it('gives a matched payment its bell notice only and no problem notice or mail', function (): void {
+    [$invoice, $link] = paInvoice();
+
+    StripeWebhookSigner::post($this, StripeEvents::checkoutFor($link))->assertOk();
+
+    foreach (paAdmins() as $admin) {
+        expect(array_column(paBell($admin), 'title'))->toBe(['Přišla platba kartou']);
+    }
+
+    expect(paMails())->toBe([]);
+});
+
+it('notifies nobody when the transaction of a classified duplicate or unmatched payment is rolled back', function (): void {
+    [$invoice, $link] = paInvoice();
+
+    StripeWebhookSigner::post($this, StripeEvents::checkoutFor($link))->assertOk();
+
+    foreach ([StripeEvents::checkoutFor($link), StripeEvents::checkoutFor($link, ['amount_total' => 1_200_000]), StripeEvents::checkoutCompleted()] as $event) {
+        try {
+            app(PartnerContext::class)->runAsSystem(static fn () => DB::transaction(static function () use ($event): void {
+                expect(app(RecordCardPayment::class)->handle(StripeEvent::fromPayload($event)))->toBeInstanceOf(CardPayment::class);
+
+                throw new RuntimeException('forced after the record was claimed');
+            }));
+        } catch (RuntimeException) {
+            // The failure after the claim is the point of the test.
+        }
+    }
+
+    expect(paRecords())->toHaveCount(1);
+
+    foreach (paAdmins() as $admin) {
+        expect(array_column(paBell($admin), 'title'))->toBe(['Přišla platba kartou']);
+    }
+
+    expect(paMails())->toBe([]);
 });
