@@ -67,11 +67,19 @@ final class UnresolvedPayments extends StatsOverviewWidget
     }
 
     /**
-     * Only the declaration is enforced at boot. The trait would also ask {@see canView()}, which turns false when the
-     * last record is resolved while the card is open; the poll that follows must not end in a 403 but in the empty
-     * root of the view.
+     * Only the declaration is enforced at boot. Both the trait and Filament's own boot check also ask {@see canView()},
+     * which turns false when the last record is resolved while the card is open; the poll that follows must not end in
+     * a 403 but in the empty root of the view. The user the declaration refuses is still stopped before any code runs.
      */
     public function bootEnforcesWidgetAccessRule(): void
+    {
+        abort_unless(AccessRules::allows(self::class), 403);
+    }
+
+    /**
+     * Filament's boot check, narrowed to the declaration for the same reason as {@see bootEnforcesWidgetAccessRule()}.
+     */
+    public function bootCanAuthorizeAccess(): void
     {
         abort_unless(AccessRules::allows(self::class), 403);
     }
