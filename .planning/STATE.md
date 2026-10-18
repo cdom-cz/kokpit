@@ -4,10 +4,10 @@ current_phase: 11
 current_phase_name: Stripe Payments
 status: executing
 stopped_at: Completed 11-08-PLAN.md
-last_updated: "2026-10-18T14:38:22.124Z"
+last_updated: "2026-10-18T14:57:26.051Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 11 execution started
-state_head: 1759a48d6a812ac14f6717607930c3e18b150d50
+state_head: 8dc3ebb181c35ebd8b66c862a6a4199b494429fe
 progress:
   total_phases: 13
   completed_phases: 7
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 Phase: 11 (Stripe Payments) — EXECUTING
 Plan: 9 of 20
 Status: Ready to execute
-Last activity: 2026-10-18 — Phase 11 execution started
+Last activity: 2026-10-18 - Completed quick task 261018-mic: Add an external identifier column to transactions (exposed via the API)
 
 Progress: [█████░░░░░] 54%
 
@@ -781,6 +781,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261015-cv5 | Make dashboard widgets collapsible with the state saved per user in the database | 2026-10-15 | 75a5c2e | [261015-cv5-make-dashboard-widgets-collapsible-with-](./quick/261015-cv5-make-dashboard-widgets-collapsible-with-/) |
 | 261015-diz | Add overdue highlight to the admin tasks list, reusing the deadlines widget rendering and copy | 2026-10-15 | f9dc2e7 | [261015-diz-add-overdue-highlight-to-the-admin-tasks](./quick/261015-diz-add-overdue-highlight-to-the-admin-tasks/) |
 | 261016-tnb | Show the Checklist section on the admin task view page and allow toggling checklist item states there | 2026-10-16 | e4a5880 | [261016-tnb-task-view-checklist-toggle](./quick/261016-tnb-task-view-checklist-toggle/) |
+| 261018-mic | Add an external identifier column to transactions for passing advanced identifiers (like time_entries.external), exposed via the API | 2026-10-18 | 8dc3ebb | [261018-mic-add-an-external-identifier-column-to-tra](./quick/261018-mic-add-an-external-identifier-column-to-tra/) |
 
 ### Roadmap Evolution
 
