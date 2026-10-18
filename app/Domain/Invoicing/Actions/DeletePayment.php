@@ -12,6 +12,7 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
 use App\Domain\Invoicing\Queries\ReceivablesReader;
+use App\Domain\Payments\Support\PaymentLinks;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -46,7 +47,10 @@ use Illuminate\Validation\ValidationException;
  */
 final readonly class DeletePayment
 {
-    public function __construct(private DeleteDocument $deleteDocument) {}
+    public function __construct(
+        private DeleteDocument $deleteDocument,
+        private PaymentLinks $paymentLinks,
+    ) {}
 
     /**
      * @throws ValidationException `payment_missing` or `payment_delete_carried`, both under `payment`
@@ -56,7 +60,7 @@ final readonly class DeletePayment
         Gate::forUser($actor)->authorize('delete', $payment);
 
         DB::transaction(function () use ($actor, $payment): void {
-            Invoice::query()->whereKey($payment->invoice_id)->lockForUpdate()->firstOrFail();
+            $document = Invoice::query()->whereKey($payment->invoice_id)->lockForUpdate()->firstOrFail();
 
             $locked = InvoicePayment::query()->whereKey($payment->getKey())->lockForUpdate()->first();
 
@@ -87,6 +91,9 @@ final readonly class DeletePayment
             $locked->delete();
 
             DB::select("select set_config('kokpit.payment_deletion', '', true)");
+
+            // D-08: the deleted payment raises what is owed, so the live payment link that offered less is deactivated here.
+            $this->paymentLinks->reconcile($document);
         });
     }
 }
