@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 11
 current_phase_name: Stripe Payments
 status: executing
-stopped_at: Completed 11-12-PLAN.md
-last_updated: "2026-10-18T15:56:59.927Z"
+stopped_at: Completed 11-13-PLAN.md
+last_updated: "2026-10-18T16:12:50.437Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 11 execution started
-state_head: b0784315914b503fad106298d93817409f14d3d7
+state_head: 92aa39b7d8d0dcfc54d1988a044e21d38fc24c32
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 245
-  completed_plans: 237
+  completed_plans: 238
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 11 (Stripe Payments) — EXECUTING
-Plan: 13 of 20
+Plan: 14 of 20
 Status: Ready to execute
 Last activity: 2026-10-18 - Completed quick task 261018-mic: Add an external identifier column to transactions (exposed via the API)
 
@@ -300,6 +300,7 @@ Progress: [█████░░░░░] 54%
 | Phase 11 P10 | 40min | 3 tasks | 13 files |
 | Phase 11 P11 | 55min | 3 tasks | 10 files |
 | Phase 11 P12 | 55min | 3 tasks | 8 files |
+| Phase 11 P13 | 40min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -750,6 +751,8 @@ Recent decisions affecting current work:
 - [Phase 11]: 11-11: the type tabs Duplicitní, Nespárované and Vrácení list unresolved records of their type only; every resolved record sits under Vyřešené, so the tabs partition the table
 - [Phase 11]: 11-11: a list that never had a record shows the no-record empty state on every tab; the Livewire update of the record view answers 404 for a Partner (record hidden by the model scope), GET answers 403
 - [Phase 11]: R11-12: link section reads one memoised PaymentLinkStatus per request; regenerable predicate shared by button and banners; list filter and column Admin-only
+- [Phase 11]: 11-13: handler map accepts StripeEventAction (parsed event) beside StripeEventHandler (stored row); RecordCardPayment::handle(StripeEvent) is mapped directly
+- [Phase 11]: 11-13: a session must agree with its link on the Stripe link id as well as on the document, else unmatched undetermined (T-11-47)
 
 ### Pending Todos
 
@@ -806,6 +809,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-18T15:56:58.213Z
-Stopped at: Completed 11-12-PLAN.md
+Last session: 2026-10-18T16:12:48.746Z
+Stopped at: Completed 11-13-PLAN.md
 Resume file: None

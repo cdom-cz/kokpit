@@ -142,7 +142,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [ ] **PA-03**: Online payment can be disabled per client and per document
 - [ ] **PA-04**: Link deactivated on payment by any route or on storno; link can be regenerated (old one deactivated first)
 - [ ] **PA-05**: Webhook endpoint verifies Stripe signature, stores event with unique event id and answers immediately; processing runs in a job
-- [ ] **PA-06**: Matching by invoice id (fallback link id) with amount and currency check creates payment, marks invoice paid, creates income, deactivates link, notifies Admin
+- [x] **PA-06**: Matching by invoice id (fallback link id) with amount and currency check creates payment, marks invoice paid, creates income, deactivates link, notifies Admin
 - [ ] **PA-07**: Second payment of the same invoice is stored as duplicate without income or invoice change and alerts Admin; repeated events are ignored; idempotence enforced by DB unique constraints
 - [ ] **PA-08**: Unmatched payments and refund events are recorded and alerted; Admin payments overview with duplicate/unmatched filters and manual resolution; old webhook events are pruned
 
@@ -289,7 +289,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PA-03 | Phase 11 | Pending |
 | PA-04 | Phase 11 | Pending |
 | PA-05 | Phase 11 | Pending |
-| PA-06 | Phase 11 | Pending |
+| PA-06 | Phase 11 | Complete |
 | PA-07 | Phase 11 | Pending |
 | PA-08 | Phase 11 | Pending |
 | AUD-01 | Phase 12 | Pending |
