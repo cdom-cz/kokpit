@@ -9,9 +9,12 @@ use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
+use App\Domain\Invoicing\Issuing\IssueContext;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
 use App\Domain\Payments\Actions\AssignCardPayment;
+use App\Domain\Payments\Actions\RecordPaymentReturn;
+use App\Domain\Payments\Actions\ResolveCardPayment;
 use App\Domain\Payments\Enums\CardPaymentReason;
 use App\Domain\Payments\Enums\CardPaymentResolution;
 use App\Domain\Payments\Enums\CardPaymentStatus;
@@ -27,6 +30,7 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
@@ -127,6 +131,8 @@ final class ViewCardPayment extends ViewRecord
     {
         return [
             $this->assignAction(),
+            $this->markResolvedAction(),
+            $this->recordReturnAction(),
         ];
     }
 
@@ -167,6 +173,105 @@ final class ViewCardPayment extends ViewRecord
                     'invoice_id',
                 );
             });
+    }
+
+    /**
+     * "Označit jako vyřešené" (D-13): the record is closed with a required note; no money moves. Accent on a duplicate
+     * and a refund event, gray on an unmatched payment.
+     */
+    private function markResolvedAction(): Action
+    {
+        return Action::make('resolveCardPayment')
+            ->label(__('card_payments.actions.resolve'))
+            ->icon(Heroicon::OutlinedCheckCircle)
+            ->color(fn (): string => in_array($this->payment()->type, [CardPaymentType::Duplicate, CardPaymentType::Refund], true) ? 'primary' : 'gray')
+            ->visible(fn (): bool => $this->offers([CardPaymentType::Duplicate, CardPaymentType::Unmatched, CardPaymentType::Refund]))
+            ->modalHeading(__('card_payments.resolve.heading'))
+            ->modalWidth('lg')
+            ->modalSubmitActionLabel(__('card_payments.resolve.submit'))
+            ->modalCancelActionLabel(__('card_payments.resolve.cancel'))
+            ->fillForm(['note' => null])
+            ->schema([
+                $this->noteField('note', __('card_payments.resolve.fields.note'))
+                    ->required()
+                    ->helperText(__('card_payments.resolve.helper')),
+                Text::make(__('card_payments.resolve.final'))->color('gray'),
+            ])
+            ->action(function (array $data): void {
+                $this->resolveWith(
+                    static fn (User $actor, CardPayment $record): CardPayment => app(ResolveCardPayment::class)->handle($actor, $record, is_string($data['note'] ?? null) ? $data['note'] : ''),
+                    static fn (): string => (string) __('card_payments.resolve.toast'),
+                    ['note'],
+                    'note',
+                );
+            });
+    }
+
+    /**
+     * "Zaznamenat vrácení peněz" (D-13, U-12, Phase 10 D-16): the return is entered as an expense linked to the
+     * record. Kokpit returns nothing and calls no Stripe API; the callout says so. Gray, on a duplicate and an
+     * unmatched payment only.
+     */
+    private function recordReturnAction(): Action
+    {
+        return Action::make('recordPaymentReturn')
+            ->label(__('card_payments.actions.return'))
+            ->icon(Heroicon::OutlinedReceiptRefund)
+            ->color('gray')
+            ->visible(fn (): bool => $this->offers([CardPaymentType::Duplicate, CardPaymentType::Unmatched]))
+            ->modalHeading(__('card_payments.return.heading'))
+            ->modalWidth('lg')
+            ->modalSubmitActionLabel(__('card_payments.return.submit'))
+            ->modalCancelActionLabel(__('card_payments.return.cancel'))
+            ->fillForm(fn (): array => [
+                'amount' => $this->payment()->amount()->toMajor(),
+                'returned_on' => IssueContext::today(),
+                'category_id' => null,
+                'note' => null,
+            ])
+            ->schema(fn (): array => [
+                Callout::make(__('card_payments.return.callout'))->info(),
+                TextInput::make('amount')
+                    ->label(__('card_payments.return.fields.amount'))
+                    ->required()
+                    ->inputMode('decimal')
+                    ->suffix(fn (): string => $this->payment()->currency),
+                DatePicker::make('returned_on')
+                    ->label(__('card_payments.return.fields.returned_on'))
+                    ->required()
+                    ->native(false)
+                    ->displayFormat('j. n. Y'),
+                Select::make('category_id')
+                    ->label(__('card_payments.return.fields.category'))
+                    ->required()
+                    ->options(fn (): array => $this->categoryOptions(TransactionType::Expense))
+                    ->searchable(),
+                $this->noteField('note', __('card_payments.return.fields.note')),
+                Text::make(__('card_payments.return.final'))->color('gray'),
+            ])
+            ->action(function (array $data): void {
+                $this->resolveWith(
+                    static fn (User $actor, CardPayment $record): CardPayment => app(RecordPaymentReturn::class)->handle($actor, $record, $data),
+                    static fn (): string => (string) __('card_payments.return.toast'),
+                    ['amount', 'returned_on', 'category_id', 'note'],
+                    'amount',
+                    ['transaction_date' => 'returned_on', 'czk_amount' => 'returned_on'],
+                );
+            });
+    }
+
+    /**
+     * A note of at most 500 characters with a live counter. The limit is a validation rule, not an input attribute,
+     * so a longer paste is a field error and never cut silently.
+     */
+    private function noteField(string $name, string $label): Textarea
+    {
+        return Textarea::make($name)
+            ->label($label)
+            ->rows(3)
+            ->rule('max:500')
+            ->live(debounce: 400)
+            ->hint(fn (Get $get): string => mb_strlen((string) $get($name)).' / 500');
     }
 
     /**
@@ -212,12 +317,7 @@ final class ViewCardPayment extends ViewRecord
                 ->options(fn (): array => $this->categoryOptions(TransactionType::Income))
                 ->searchable()
                 ->hidden($proforma),
-            Textarea::make('note')
-                ->label(__('card_payments.assign.fields.note'))
-                ->rows(2)
-                ->rule('max:500')
-                ->live(debounce: 400)
-                ->hint(fn (Get $get): string => mb_strlen((string) $get('note')).' / 500'),
+            $this->noteField('note', __('card_payments.assign.fields.note')),
             Text::make(__('card_payments.assign.final'))->color('gray'),
         ];
     }
@@ -354,8 +454,9 @@ final class ViewCardPayment extends ViewRecord
      * @param  Closure(User, CardPayment): CardPayment  $write
      * @param  Closure(CardPayment): string  $toast
      * @param  list<string>  $fields  the modal fields; any other error key lands on `$fallback`
+     * @param  array<string, string>  $aliases  an error key of the Action mapped to the modal field it belongs to
      */
-    private function resolveWith(Closure $write, Closure $toast, array $fields, string $fallback): void
+    private function resolveWith(Closure $write, Closure $toast, array $fields, string $fallback, array $aliases = []): void
     {
         abort_unless(CardPaymentResource::canAccess(), 403);
 
@@ -368,7 +469,7 @@ final class ViewCardPayment extends ViewRecord
             $refusal = $exception->errors()['card_payment'][0] ?? null;
 
             if ($refusal === null) {
-                throw $this->underModal($exception, $fields, $fallback);
+                throw $this->underModal($exception, $fields, $fallback, $aliases);
             }
 
             Notification::make()->danger()->title($refusal)->send();
@@ -387,13 +488,15 @@ final class ViewCardPayment extends ViewRecord
      * The Action reports plain data keys; the modal form lives under the action state path.
      *
      * @param  list<string>  $fields
+     * @param  array<string, string>  $aliases
      */
-    private function underModal(ValidationException $exception, array $fields, string $fallback): ValidationException
+    private function underModal(ValidationException $exception, array $fields, string $fallback, array $aliases): ValidationException
     {
         $mapped = [];
 
         foreach ($exception->errors() as $key => $messages) {
-            $path = 'mountedActions.0.data.'.(in_array($key, $fields, true) ? $key : $fallback);
+            $field = $aliases[$key] ?? $key;
+            $path = 'mountedActions.0.data.'.(in_array($field, $fields, true) ? $field : $fallback);
             $mapped[$path] = [...($mapped[$path] ?? []), ...$messages];
         }
 

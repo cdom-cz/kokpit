@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Invoicing\Enums\PaymentMethod;
@@ -19,6 +20,7 @@ use Tests\Support\Canary;
 use Tests\Support\CardPaymentFixtures;
 use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
+use Tests\Support\FakeStripeGateway;
 use Tests\Support\InvoiceFixtures;
 
 /*
@@ -47,6 +49,14 @@ function resolutionPage(CardPayment $record): Testable
     test()->actingAs(test()->admin);
 
     return Livewire::test(ViewCardPayment::class, ['record' => $record->getRouteKey()]);
+}
+
+/**
+ * The text of the mounted modal's form (the page html does not carry the modal of an action).
+ */
+function modalHtml(Testable $page): string
+{
+    return html_entity_decode(strip_tags((string) $page->instance()->getSchema('mountedActionSchema0')->toHtml()), ENT_QUOTES | ENT_HTML5);
 }
 
 /**
@@ -89,5 +99,155 @@ describe('the tracer: assign an unmatched payment to its invoice', function (): 
             ->and($stored->resolved_by)->toBe($this->admin->id)
             ->and($stored->resolved_at)->not->toBeNull()
             ->and(app(UnresolvedPayments::class)->counts()['total'])->toBe($before - 1);
+    });
+});
+
+describe('mark as resolved with a note', function (): void {
+    it('closes a duplicate, an unmatched payment and a refund event with the note and moves no money', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $paid = $invoice->payments()->count();
+        $incomes = Transaction::query()->count();
+
+        foreach ([CardPaymentFixtures::duplicate($invoice), CardPaymentFixtures::unmatched(), CardPaymentFixtures::refund($invoice)] as $record) {
+            resolutionPage($record)
+                ->assertActionVisible('resolveCardPayment')
+                ->mountAction('resolveCardPayment')
+                ->fillForm(['note' => '  Vráceno ve Stripe dashboardu.  '])
+                ->callMountedAction()
+                ->assertHasNoFormErrors()
+                ->assertDispatched('card-payment-resolved')
+                ->assertNotified('Platba byla označena jako vyřešená')
+                ->assertActionHidden('resolveCardPayment');
+
+            $stored = storedRecord($record);
+
+            expect($stored->resolution)->toBe(CardPaymentResolution::Noted)
+                ->and($stored->resolution_note)->toBe('Vráceno ve Stripe dashboardu.')
+                ->and($stored->resolved_by)->toBe($this->admin->id)
+                ->and($stored->invoice_payment_id)->toBeNull()
+                ->and($stored->return_transaction_id)->toBeNull();
+        }
+
+        expect($invoice->payments()->count())->toBe($paid)
+            ->and(Transaction::query()->count())->toBe($incomes);
+    });
+
+    it('refuses a blank note as a field error and leaves the record open', function (): void {
+        $record = CardPaymentFixtures::unmatched();
+
+        resolutionPage($record)
+            ->mountAction('resolveCardPayment')
+            ->fillForm(['note' => '   '])
+            ->callMountedAction()
+            ->assertHasFormErrors(['note']);
+
+        expect(storedRecord($record)->resolution)->toBe(CardPaymentResolution::None);
+    });
+
+    it('paints the buttons by type: resolve in the accent on a duplicate and a refund, gray on an unmatched payment', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+
+        resolutionPage(CardPaymentFixtures::duplicate($invoice))
+            ->assertActionHasColor('resolveCardPayment', 'primary')
+            ->assertActionHasColor('assignCardPayment', 'gray')
+            ->assertActionHasColor('recordPaymentReturn', 'gray');
+        resolutionPage(CardPaymentFixtures::refund($invoice))->assertActionHasColor('resolveCardPayment', 'primary');
+        resolutionPage(CardPaymentFixtures::unmatched())
+            ->assertActionHasColor('resolveCardPayment', 'gray')
+            ->assertActionHasColor('assignCardPayment', 'primary');
+    });
+});
+
+describe('record the money return', function (): void {
+    it('books one expense linked from the duplicate, shows the info callout and calls no Stripe API', function (): void {
+        $stripe = FakeStripeGateway::install();
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $record = CardPaymentFixtures::duplicate($invoice);
+        $category = TransactionCategory::query()->selectable(TransactionType::Expense)->firstOrFail();
+        $created = $stripe->createCalls();
+
+        $page = resolutionPage($record)
+            ->assertActionVisible('recordPaymentReturn')
+            ->mountAction('recordPaymentReturn');
+
+        expect(modalHtml($page))->toContain('Peníze vraťte ve Stripe, Kokpit žádné vrácení neprovádí.');
+
+        $page
+            ->assertSchemaStateSet(['amount' => '12500.00', 'returned_on' => '2026-10-14'], 'mountedActionSchema0')
+            ->fillForm(['category_id' => $category->id, 'note' => 'Vráceno bankovním převodem.'])
+            ->callMountedAction()
+            ->assertHasNoFormErrors()
+            ->assertDispatched('card-payment-resolved')
+            ->assertNotified('Vrácení bylo zaevidováno')
+            ->assertActionHidden('recordPaymentReturn');
+
+        $stored = storedRecord($record);
+        $expense = Transaction::query()->where('type', TransactionType::Expense->value)->sole();
+
+        expect($stored->resolution)->toBe(CardPaymentResolution::Returned)
+            ->and($stored->return_transaction_id)->toBe($expense->id)
+            ->and($stored->resolution_note)->toBe('Vráceno bankovním převodem.')
+            ->and($expense->description)->toBe('Vrácení platby kartou')
+            ->and($expense->amount->minor)->toBe(1250000)
+            ->and($expense->amount->currency)->toBe('CZK')
+            ->and($expense->category_id)->toBe($category->id)
+            ->and($expense->client_id)->toBe($invoice->client_id)
+            ->and($expense->transaction_date->toDateString())->toBe('2026-10-14')
+            ->and($stripe->createCalls())->toBe($created)
+            ->and($stripe->deactivated())->toBe([]);
+    });
+
+    it('refuses a return above the payment amount by one minor unit and writes nothing', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $record = CardPaymentFixtures::duplicate($invoice);
+        $category = TransactionCategory::query()->selectable(TransactionType::Expense)->firstOrFail();
+
+        resolutionPage($record)
+            ->mountAction('recordPaymentReturn')
+            ->fillForm(['amount' => '12500,01', 'category_id' => $category->id])
+            ->callMountedAction()
+            ->assertHasFormErrors(['amount']);
+
+        expect(storedRecord($record)->resolution)->toBe(CardPaymentResolution::None)
+            ->and(Transaction::query()->where('type', TransactionType::Expense->value)->exists())->toBeFalse();
+    });
+
+    it('accepts a part of the amount', function (): void {
+        $record = CardPaymentFixtures::unmatched();
+        $category = TransactionCategory::query()->selectable(TransactionType::Expense)->firstOrFail();
+
+        resolutionPage($record)
+            ->mountAction('recordPaymentReturn')
+            ->fillForm(['amount' => '20,50', 'category_id' => $category->id])
+            ->callMountedAction()
+            ->assertHasNoFormErrors();
+
+        $expense = Transaction::query()->where('type', TransactionType::Expense->value)->sole();
+
+        expect($expense->amount->minor)->toBe(2050)
+            ->and($expense->client_id)->toBeNull();
+    });
+});
+
+describe('what is offered', function (): void {
+    it('offers a refund event only the note, a matched record nothing and a resolved record nothing', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+
+        resolutionPage(CardPaymentFixtures::refund($invoice))
+            ->assertActionHidden('assignCardPayment')
+            ->assertActionHidden('recordPaymentReturn')
+            ->assertActionVisible('resolveCardPayment');
+
+        $matched = CardPaymentSetup::issued(CardPaymentSetup::client());
+
+        resolutionPage(CardPaymentFixtures::matched($matched))
+            ->assertActionHidden('assignCardPayment')
+            ->assertActionHidden('resolveCardPayment')
+            ->assertActionHidden('recordPaymentReturn');
+
+        resolutionPage(CardPaymentFixtures::resolved())
+            ->assertActionHidden('assignCardPayment')
+            ->assertActionHidden('resolveCardPayment')
+            ->assertActionHidden('recordPaymentReturn');
     });
 });
