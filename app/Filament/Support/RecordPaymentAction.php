@@ -168,7 +168,8 @@ final class RecordPaymentAction
                 }),
             ToggleButtons::make('method')
                 ->label(__('invoices.payments.record.fields.method'))
-                ->options(PaymentMethod::class)
+                ->enum(PaymentMethod::class)
+                ->options(collect(PaymentMethod::manual())->mapWithKeys(static fn (PaymentMethod $method): array => [$method->value => $method->getLabel()])->all())
                 ->default(PaymentMethod::Transfer->value)
                 ->inline()
                 ->required(),

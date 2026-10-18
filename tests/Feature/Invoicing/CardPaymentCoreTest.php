@@ -17,11 +17,17 @@ use App\Domain\Invoicing\Support\PaymentFacts;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Money\Money;
+use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
+use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelationManager;
 use Carbon\CarbonImmutable;
+use Filament\Actions\Testing\TestAction;
+use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportTesting\Testable;
+use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\InvoiceFixtures;
@@ -36,6 +42,7 @@ use Tests\Support\RawSql;
 beforeEach(function (): void {
     DocumentFixtures::fakeDisk();
     InvoiceFixtures::configureSupplier();
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
     $this->travelTo(CarbonImmutable::parse('2026-10-14 09:30:00', 'Europe/Prague'));
 });
 
@@ -256,4 +263,80 @@ it('books exactly one income per payment on an invoice and none on a proforma, f
             }
         }
     }
+});
+
+/**
+ * The Platby tab of an issued document.
+ */
+function cardPaymentTab(Invoice $invoice): Testable
+{
+    return Livewire::test(InvoicePaymentsRelationManager::class, ['ownerRecord' => $invoice, 'pageClass' => ViewInvoice::class]);
+}
+
+describe('the Platby tab and the payment modal', function (): void {
+    it('offers exactly Převodem and Hotově in the payment modal', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $this->actingAs(Canary::admin());
+
+        Livewire::test(ViewInvoice::class, ['record' => $invoice->getRouteKey()])
+            ->mountAction('recordPayment')
+            ->assertSchemaComponentExists('method', 'mountedActionSchema0', fn ($component): bool => $component->getOptions() === [
+                'transfer' => 'Převodem',
+                'cash' => 'Hotově',
+            ]);
+    });
+
+    it('lists a card payment with the method Kartou and the system income category', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $payment = recordAsJob($invoice, cardFacts('1000.00'));
+        $this->actingAs(Canary::admin());
+
+        cardPaymentTab($invoice)
+            ->assertCanSeeTableRecords([$payment])
+            ->assertSee('Kartou')
+            ->assertSee(TransactionCategory::invoicePayments()->name);
+    });
+
+    it('warns on deleting a card payment that the money is not returned, and keeps the Phase 10 body for a transfer', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $card = recordAsJob($invoice, cardFacts('400.00'));
+        $admin = Canary::admin();
+        $this->actingAs($admin);
+        $transfer = app(RecordPayment::class)->handle($admin, $invoice, ['amount' => '100.00', 'paid_on' => '2026-10-14']);
+        $amount = static fn (int $minor): string => Money::ofMinor($minor, 'CZK')->format('cs');
+
+        $tab = cardPaymentTab($invoice)
+            ->mountAction(TestAction::make('deletePayment')->table($card))
+            ->assertMountedActionModalSee([
+                'Smazat platbu?',
+                'Platba '.$amount(40000).' ze dne 14. 10. 2026 přišla kartou přes Stripe.',
+                'Smaže se z dokladu spolu s příjmem, ale peníze se tím nevrací; vrácení proveďte ve Stripe.',
+                'Opakované doručení stejné události platbu nevytvoří znovu.',
+                'Tento krok nelze vrátit zpět.',
+                'Ponechat platbu',
+            ]);
+
+        $tab->unmountAction();
+        cardPaymentTab($invoice)
+            ->mountAction(TestAction::make('deletePayment')->table($transfer))
+            ->assertMountedActionModalSee(['se trvale smaže spolu s příjmem, který z ní vznikl ve financích.'])
+            ->assertMountedActionModalDontSee('přišla kartou přes Stripe');
+    });
+
+    it('deletes the card payment and its income through DeletePayment on confirmation', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $card = recordAsJob($invoice, cardFacts('1000.00'));
+        $this->actingAs(Canary::admin());
+
+        expect(Transaction::query()->where('invoice_payment_id', $card->id)->exists())->toBeTrue();
+
+        cardPaymentTab($invoice)
+            ->mountAction(TestAction::make('deletePayment')->table($card))
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertNotified('Platba byla smazána');
+
+        expect(InvoicePayment::query()->count())->toBe(0)
+            ->and(Transaction::query()->count())->toBe(0);
+    });
 });

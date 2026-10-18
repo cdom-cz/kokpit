@@ -7,6 +7,7 @@ namespace App\Filament\Resources\InvoiceResource\RelationManagers;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\DeletePayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\PaymentMethod;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Shared\Auth\AccessRule;
@@ -122,6 +123,19 @@ final class InvoicePaymentsRelationManager extends RelationManager
     }
 
     /**
+     * The confirmation body of the deletion: a card payment says that the money is not returned (UI-SPEC Surface G),
+     * a proforma payment that no income goes with it, anything else is the Phase 10 text.
+     */
+    private function deleteBodyKey(InvoicePayment $record): string
+    {
+        if ($record->method === PaymentMethod::Card) {
+            return 'invoices.payments.delete.body_card';
+        }
+
+        return $this->invoice()->kind === InvoiceKind::Proforma ? 'invoices.payments.delete.body_proforma' : 'invoices.payments.delete.body_invoice';
+    }
+
+    /**
      * "Smazat platbu" (D-19 as amended, R-41-1, R-41-2): the destructive confirmation names the amount and the date and
      * says what goes with the payment; the write is {@see DeletePayment}, which deletes the income too in one
      * transaction. The payment is read again through the invoice of this tab, so an id of another invoice reaches
@@ -140,7 +154,7 @@ final class InvoicePaymentsRelationManager extends RelationManager
             ->requiresConfirmation()
             ->modalHeading(__('invoices.payments.delete.heading'))
             ->modalDescription(fn (InvoicePayment $record): string => __(
-                $this->invoice()->kind === InvoiceKind::Proforma ? 'invoices.payments.delete.body_proforma' : 'invoices.payments.delete.body_invoice',
+                $this->deleteBodyKey($record),
                 ['amount' => $record->amount()->format('cs'), 'date' => $record->paid_on->format('j. n. Y')],
             ))
             ->modalSubmitActionLabel(__('invoices.payments.delete.submit'))

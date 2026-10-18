@@ -483,6 +483,7 @@ return [
             'trigger' => 'Smazat platbu',
             'heading' => 'Smazat platbu?',
             'body_invoice' => 'Platba :amount ze dne :date se trvale smaže spolu s příjmem, který z ní vznikl ve financích. Stav úhrady dokladu se přepočítá ze zbývajících plateb. Tento krok nelze vrátit zpět.',
+            'body_card' => 'Platba :amount ze dne :date přišla kartou přes Stripe. Smaže se z dokladu spolu s příjmem, ale peníze se tím nevrací; vrácení proveďte ve Stripe. Opakované doručení stejné události platbu nevytvoří znovu. Tento krok nelze vrátit zpět.',
             'body_proforma' => 'Platba :amount ze dne :date se trvale smaže. U zálohy z ní žádný příjem nevznikl. Tento krok nelze vrátit zpět.',
             'submit' => 'Smazat platbu',
             'cancel' => 'Ponechat platbu',
