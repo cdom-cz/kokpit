@@ -240,6 +240,7 @@ return [
     'payment_method' => [
         'transfer' => 'Převodem',
         'cash' => 'Hotově',
+        'card' => 'Kartou',
     ],
 
     'invoice_email_state' => [

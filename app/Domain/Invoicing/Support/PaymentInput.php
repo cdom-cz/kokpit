@@ -21,7 +21,7 @@ use OverflowException;
  * bad value, whatever the screen offered. Every key is re-validated.
  *
  * Keys of the data: `amount` (a decimal in the currency of the document, greater than zero, a comma or a dot, spaces
- * of any kind ignored), `paid_on` (a Prague day, not after today), `method` (`transfer` by default, or `cash`),
+ * of any kind ignored), `paid_on` (a Prague day, not after today), `method` (`transfer` by default, or `cash`; never `card`, which only the system path writes),
  * `note` (at most 500 characters), and, for an invoice only, `income_date` (the day of the income transaction, by
  * default the payment date) and `category_id` (a selectable income category, absent for the system one). A proforma
  * books no income, so for it both income keys are ignored. The first problem is thrown as a field error keyed by the
@@ -62,6 +62,21 @@ final readonly class PaymentInput
             note: self::note($data),
             incomeDate: $books ? self::incomeDate($data, $paidOn) : $paidOn,
             categoryId: $books ? self::categoryId($data) : null,
+        );
+    }
+
+    /**
+     * The checked input as the facts the write core takes, the same for a manual payment and for a system one.
+     */
+    public function toFacts(): PaymentFacts
+    {
+        return new PaymentFacts(
+            amount: $this->amount,
+            paidOn: $this->paidOn,
+            method: $this->method,
+            incomeDate: $this->incomeDate,
+            categoryId: $this->categoryId,
+            note: $this->note,
         );
     }
 
@@ -118,12 +133,14 @@ final readonly class PaymentInput
             return PaymentMethod::Transfer;
         }
 
-        if ($value instanceof PaymentMethod) {
-            return $value;
+        $method = $value instanceof PaymentMethod ? $value : (is_string($value) ? PaymentMethod::tryFrom($value) : null);
+
+        // The card method is written only by the system path of a matched Stripe payment, never chosen by hand (R11-02-5).
+        if ($method === null || ! $method->isManual()) {
+            throw self::error('method', 'payment_method');
         }
 
-        return (is_string($value) ? PaymentMethod::tryFrom($value) : null)
-            ?? throw self::error('method', 'payment_method');
+        return $method;
     }
 
     /**

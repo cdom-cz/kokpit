@@ -88,6 +88,7 @@ return [
     // The fixed text of the income transaction a payment books (R-16-2).
     'payment_income' => [
         'description' => 'Platba faktury :number',
+        'card_description' => 'Platba kartou faktury :number',
     ],
 
     // Navigation and titles (UI-SPEC Copywriting Contract, "Navigation, titles, enum labels").
