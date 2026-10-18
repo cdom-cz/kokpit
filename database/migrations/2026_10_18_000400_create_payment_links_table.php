@@ -93,6 +93,38 @@ return new class extends Migration
                 RETURN NEW;
               END IF;
 
+              IF TG_OP = 'DELETE' THEN
+                RAISE EXCEPTION 'a payment link record is never deleted' USING ERRCODE = 'KP001';
+              END IF;
+
+              IF NEW.invoice_id IS DISTINCT FROM OLD.invoice_id
+                 OR NEW.currency IS DISTINCT FROM OLD.currency
+                 OR NEW.amount_minor IS DISTINCT FROM OLD.amount_minor
+                 OR NEW.created_by IS DISTINCT FROM OLD.created_by
+                 OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+                RAISE EXCEPTION 'the document, currency, amount and creator of a payment link never change' USING ERRCODE = 'KP001';
+              END IF;
+
+              IF (OLD.stripe_link_id IS NOT NULL AND NEW.stripe_link_id IS DISTINCT FROM OLD.stripe_link_id)
+                 OR (OLD.stripe_url IS NOT NULL AND NEW.stripe_url IS DISTINCT FROM OLD.stripe_url)
+                 OR (OLD.remote_deactivated_at IS NOT NULL AND NEW.remote_deactivated_at IS DISTINCT FROM OLD.remote_deactivated_at) THEN
+                RAISE EXCEPTION 'the Stripe references and the remote deactivation of a payment link are set once' USING ERRCODE = 'KP001';
+              END IF;
+
+              IF NEW.state IS DISTINCT FROM OLD.state THEN
+                IF NOT ((OLD.state = 'pending' AND NEW.state IN ('active', 'failed', 'deactivated'))
+                        OR (OLD.state = 'active' AND NEW.state = 'deactivated')) THEN
+                  RAISE EXCEPTION 'a payment link cannot move from % to %', OLD.state, NEW.state USING ERRCODE = 'KP001';
+                END IF;
+              ELSIF OLD.state IN ('failed', 'deactivated') THEN
+                IF NEW.deactivation_reason IS DISTINCT FROM OLD.deactivation_reason
+                   OR NEW.failure_class IS DISTINCT FROM OLD.failure_class
+                   OR NEW.activated_at IS DISTINCT FROM OLD.activated_at
+                   OR NEW.deactivated_at IS DISTINCT FROM OLD.deactivated_at THEN
+                  RAISE EXCEPTION 'a failed or deactivated payment link is final' USING ERRCODE = 'KP001';
+                END IF;
+              END IF;
+
               RETURN NEW;
             END $$
             SQL);
