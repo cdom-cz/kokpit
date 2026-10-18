@@ -14,6 +14,7 @@ enum DashboardWidget: string
     case HoursStats = 'hours_stats';
     case TodayPlan = 'today_plan';
     case UnpaidInvoices = 'unpaid_invoices';
+    case UnresolvedPayments = 'unresolved_payments';
     case UnbilledPerClient = 'unbilled_per_client';
     case UpcomingDeadlines = 'upcoming_deadlines';
     case PartnerTasks = 'partner_tasks';
@@ -26,7 +27,7 @@ enum DashboardWidget: string
     {
         return match ($this) {
             self::PartnerTasks, self::PartnerProjects => true,
-            self::HoursStats, self::TodayPlan, self::UnpaidInvoices, self::UnbilledPerClient, self::UpcomingDeadlines => false,
+            self::HoursStats, self::TodayPlan, self::UnpaidInvoices, self::UnresolvedPayments, self::UnbilledPerClient, self::UpcomingDeadlines => false,
         };
     }
 }

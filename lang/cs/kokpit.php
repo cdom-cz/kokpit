@@ -257,6 +257,17 @@ return [
             'empty_heading' => 'Zatím žádné projekty',
             'empty_description' => 'Projekty, které pro vás Kokpit zpřístupní, se objeví tady.',
         ],
+        // Surface J of Phase 11: the card of the card payments that wait for the Admin; it exists only above zero.
+        'unresolved_payments' => [
+            'heading' => 'Nevyřešené platby',
+            'stat' => 'Nevyřešené platby',
+            'summary' => 'Nevyřešené platby: :count',
+            'parts' => [
+                'duplicate' => '{1} duplicitní :count|[2,4] duplicitní :count|[5,*] duplicitních :count',
+                'unmatched' => '{1} nespárovaná :count|[2,4] nespárované :count|[5,*] nespárovaných :count',
+                'refund' => '{1} vrácení :count|[2,4] vrácení :count|[5,*] vrácení :count',
+            ],
+        ],
     ],
 
     'settings' => [

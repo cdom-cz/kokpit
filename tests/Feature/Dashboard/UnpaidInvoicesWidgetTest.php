@@ -15,6 +15,7 @@ use App\Filament\Widgets\HoursStats;
 use App\Filament\Widgets\TodayPlan;
 use App\Filament\Widgets\UnbilledPerClient;
 use App\Filament\Widgets\UnpaidInvoices;
+use App\Filament\Widgets\UnresolvedPayments;
 use App\Filament\Widgets\UpcomingDeadlines;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
@@ -135,7 +136,7 @@ describe('the receivables card on the Admin dashboard', function (): void {
 
         $text = unpaidCardText((string) $this->get('/admin')->assertOk()->getContent());
 
-        expect((new Dashboard)->getWidgets())->toBe([HoursStats::class, TodayPlan::class, UnpaidInvoices::class, UnbilledPerClient::class, UpcomingDeadlines::class])
+        expect((new Dashboard)->getWidgets())->toBe([HoursStats::class, TodayPlan::class, UnpaidInvoices::class, UnresolvedPayments::class, UnbilledPerClient::class, UpcomingDeadlines::class])
             ->and((new UnpaidInvoices)->getColumnSpan())->toBe('full')
             ->and($text)->toContain('Nezaplacené faktury')
             ->toContain('Nevyfakturováno tento měsíc')
