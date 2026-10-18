@@ -593,6 +593,16 @@ return [
             'waiting' => 'Čekající události ze Stripe: :count. Nejstarší čeká :age.',
             'error' => 'Nezpracováno: :count. Nejstarší čeká :age. Zkontrolujte neúspěšné úlohy.',
         ],
+        // The Stripe slot (D-16, UI-SPEC Surface K, U-14): only whether the two secrets are set, never a value.
+        'stripe' => [
+            'value_set' => 'Nastaveno',
+            'value_unset' => 'Nenastaveno',
+            'configured' => 'Tajný klíč a podpisový klíč webhooku jsou nastavené.',
+            'disabled' => 'Online platby jsou vypnuté.',
+            'missing_enabled' => 'Online platby jsou zapnuté, ale v prostředí chybí klíče Stripe.',
+            'missing_webhook_secret' => 'Chybí podpisový klíč webhooku.',
+            'missing_secret_key' => 'Chybí tajný klíč Stripe.',
+        ],
         // The detail of the last rate date slot; :count is the number of working days the newest list is behind.
         'last_rate_date' => [
             'ok' => 'Kurzy jsou aktuální.',

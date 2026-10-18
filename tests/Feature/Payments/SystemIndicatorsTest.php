@@ -6,6 +6,7 @@ use App\Domain\Operations\Health\HealthIndicatorRegistry;
 use App\Domain\Operations\Health\HealthSlot;
 use App\Domain\Operations\Health\HealthStatus;
 use App\Domain\Operations\Health\Indicators\PlaceholderIndicator;
+use App\Domain\Operations\Health\Indicators\StripeConfigIndicator;
 use App\Domain\Operations\Health\Indicators\UnprocessedWebhooksIndicator;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\WebhookCall;
@@ -13,6 +14,8 @@ use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Support\Str;
 use Tests\Support\Canary;
+use Tests\Support\CardPaymentSetup;
+use Tests\Support\StripeTestConfig;
 
 /*
  * The two Stripe slots of the System page (PA-05, PA-08; D-16, D-17; UI-SPEC Surface K). The indicators read counts,
@@ -131,4 +134,85 @@ it('is a real indicator, so no placeholder holds the slot', function (): void {
 
     expect($indicator)->toBeInstanceOf(UnprocessedWebhooksIndicator::class)
         ->and($indicator)->not->toBeInstanceOf(PlaceholderIndicator::class);
+});
+
+// --- Task 2: the Stripe configured slot -----------------------------------------------------------------------
+
+it('answers Ok, Nastaveno, when both secrets are set', function (): void {
+    StripeTestConfig::configure();
+
+    $result = (new StripeConfigIndicator)->check();
+
+    expect($result->status)->toBe(HealthStatus::Ok)
+        ->and($result->value)->toBe('Nastaveno')
+        ->and($result->detail)->toBe('Tajný klíč a podpisový klíč webhooku jsou nastavené.')
+        ->and((new StripeConfigIndicator)->slot())->toBe(HealthSlot::Stripe);
+});
+
+it('answers Ok, Nenastaveno, when no secret is set and online payments are off', function (): void {
+    StripeTestConfig::clear();
+    CardPaymentSetup::onlinePayments(false);
+
+    $result = (new StripeConfigIndicator)->check();
+
+    expect($result->status)->toBe(HealthStatus::Ok)
+        ->and($result->value)->toBe('Nenastaveno')
+        ->and($result->detail)->toBe('Online platby jsou vypnuté.');
+});
+
+it('answers Error when no secret is set but online payments are on', function (): void {
+    StripeTestConfig::clear();
+    CardPaymentSetup::onlinePayments(true);
+
+    $result = (new StripeConfigIndicator)->check();
+
+    expect($result->status)->toBe(HealthStatus::Error)
+        ->and($result->value)->toBe('Nenastaveno')
+        ->and($result->detail)->toBe('Online platby jsou zapnuté, ale v prostředí chybí klíče Stripe.');
+});
+
+it('answers Error naming the missing webhook secret when only the secret key is set', function (): void {
+    StripeTestConfig::configure();
+    config(['services.stripe.webhook_secret' => null]);
+    CardPaymentSetup::onlinePayments(false);
+
+    $result = (new StripeConfigIndicator)->check();
+
+    expect($result->status)->toBe(HealthStatus::Error)
+        ->and($result->value)->toBe('Nenastaveno')
+        ->and($result->detail)->toBe('Chybí podpisový klíč webhooku.');
+});
+
+it('answers Error naming the missing secret key when only the webhook secret is set', function (): void {
+    StripeTestConfig::configure();
+    config(['services.stripe.secret' => null]);
+    CardPaymentSetup::onlinePayments(false);
+
+    $result = (new StripeConfigIndicator)->check();
+
+    expect($result->status)->toBe(HealthStatus::Error)
+        ->and($result->value)->toBe('Nenastaveno')
+        ->and($result->detail)->toBe('Chybí tajný klíč Stripe.');
+});
+
+it('shows the Admin the Stripe slot without any configured value or its first characters', function (): void {
+    StripeTestConfig::configure();
+    $secret = (string) config('services.stripe.secret');
+    $webhookSecret = (string) config('services.stripe.webhook_secret');
+
+    $html = (string) $this->actingAs(Canary::admin())->get('/admin/system')->assertOk()
+        ->assertSee(__('enums.health_slot.stripe'))
+        ->assertSee('Nastaveno')
+        ->assertSee('Tajný klíč a podpisový klíč webhooku jsou nastavené.')
+        ->getContent();
+
+    expect($html)->not->toContain($secret)
+        ->and($html)->not->toContain(substr($secret, 0, 6))
+        ->and($html)->not->toContain($webhookSecret)
+        ->and($html)->not->toContain(substr($webhookSecret, 0, 6));
+});
+
+it('measures the Stripe configuration for real, so no placeholder holds the slot', function (): void {
+    expect(app(HealthIndicatorRegistry::class)->indicators()[HealthSlot::Stripe->value])
+        ->toBeInstanceOf(StripeConfigIndicator::class);
 });

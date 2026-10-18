@@ -128,6 +128,7 @@ return [
         'scheduler_heartbeat' => 'Tep plánovače',
         'last_rate_date' => 'Datum posledního kurzu',
         'unprocessed_webhooks' => 'Nezpracované webhooky',
+        'stripe' => 'Stripe',
         'unsent_invoice_emails' => 'Neodeslané e-maily s fakturou',
     ],
 

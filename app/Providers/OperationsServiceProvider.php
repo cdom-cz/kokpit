@@ -12,6 +12,7 @@ use App\Domain\Operations\Health\Indicators\LastRateDateIndicator;
 use App\Domain\Operations\Health\Indicators\OldestPendingJobIndicator;
 use App\Domain\Operations\Health\Indicators\PlaceholderIndicator;
 use App\Domain\Operations\Health\Indicators\SchedulerHeartbeatIndicator;
+use App\Domain\Operations\Health\Indicators\StripeConfigIndicator;
 use App\Domain\Operations\Health\Indicators\UnprocessedWebhooksIndicator;
 use App\Domain\Operations\Health\Indicators\UnsentInvoiceEmailsIndicator;
 use Illuminate\Queue\Events\JobExceptionOccurred;
@@ -50,6 +51,7 @@ final class OperationsServiceProvider extends ServiceProvider
                 new SchedulerHeartbeatIndicator,
                 new LastRateDateIndicator,
                 new UnprocessedWebhooksIndicator,
+                new StripeConfigIndicator,
                 new UnsentInvoiceEmailsIndicator,
             ];
 

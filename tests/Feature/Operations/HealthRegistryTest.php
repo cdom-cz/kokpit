@@ -8,6 +8,7 @@ use App\Domain\Operations\Health\HealthSlot;
 use App\Domain\Operations\Health\HealthStatus;
 use App\Domain\Operations\Health\Indicators\LastRateDateIndicator;
 use App\Domain\Operations\Health\Indicators\PlaceholderIndicator;
+use App\Domain\Operations\Health\Indicators\StripeConfigIndicator;
 use App\Domain\Operations\Health\Indicators\UnprocessedWebhooksIndicator;
 use App\Domain\Operations\Health\Indicators\UnsentInvoiceEmailsIndicator;
 use Tests\Support\Probes\HealthProbeIndicator;
@@ -35,13 +36,14 @@ it('is one registry for the whole application', function (): void {
     expect(app(HealthIndicatorRegistry::class))->toBe(app(HealthIndicatorRegistry::class));
 });
 
-it('has the six slots of the System page', function (): void {
+it('has the seven slots of the System page', function (): void {
     expect(array_map(static fn (HealthSlot $slot): string => $slot->value, HealthSlot::cases()))->toBe([
         'failed_jobs',
         'oldest_pending_job',
         'scheduler_heartbeat',
         'last_rate_date',
         'unprocessed_webhooks',
+        'stripe',
         'unsent_invoice_emails',
     ]);
 });
@@ -62,6 +64,14 @@ it('keeps the placeholder answer, not available yet, for a slot nobody measures'
 it('measures the unprocessed webhooks for real, so no placeholder holds the slot', function (): void {
     expect(app(HealthIndicatorRegistry::class)->indicators()[HealthSlot::UnprocessedWebhooks->value])
         ->toBeInstanceOf(UnprocessedWebhooksIndicator::class);
+});
+
+it('measures the Stripe configuration for real, right after the unprocessed webhooks', function (): void {
+    $indicators = app(HealthIndicatorRegistry::class)->indicators();
+
+    expect($indicators[HealthSlot::Stripe->value])->toBeInstanceOf(StripeConfigIndicator::class)
+        ->and(array_search(HealthSlot::Stripe->value, array_keys($indicators), true))
+        ->toBe(array_search(HealthSlot::UnprocessedWebhooks->value, array_keys($indicators), true) + 1);
 });
 
 it('measures the last rate date for real, so no placeholder holds the slot', function (): void {

@@ -25,7 +25,7 @@ beforeEach(function (): void {
     Filament::setCurrentPanel(Filament::getPanel('admin'));
 });
 
-it('shows the Admin the six Czech slot labels, a status label for each and the polling attribute', function (): void {
+it('shows the Admin the seven Czech slot labels, a status label for each and the polling attribute', function (): void {
     $response = $this->actingAs(Canary::admin())->get('/admin/system')->assertOk();
 
     foreach (HealthSlot::cases() as $slot) {
@@ -155,6 +155,7 @@ it('renders each status with its colour badge and its Czech label', function ():
         HealthSlot::SchedulerHeartbeat->value => HealthStatus::Error,
         HealthSlot::LastRateDate->value => HealthStatus::NotAvailable,
         HealthSlot::UnprocessedWebhooks->value => HealthStatus::NotAvailable,
+        HealthSlot::Stripe->value => HealthStatus::NotAvailable,
         HealthSlot::UnsentInvoiceEmails->value => HealthStatus::NotAvailable,
     ];
 
