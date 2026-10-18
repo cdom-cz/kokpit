@@ -83,7 +83,8 @@ it('runs the public route without a session, cookie or CSRF middleware', functio
     expect($route)->not->toBeNull()
         ->and($route?->uri())->toBe('webhooks/stripe')
         ->and($route?->methods())->toBe(['POST'])
-        ->and($middleware)->toBe([]);
+        // The only middleware is the limiter of the route (R11-08-5); no session, cookie or CSRF middleware.
+        ->and($middleware)->toBe(['throttle:stripe-webhook']);
 
     Queue::fake();
     $response = StripeWebhookSigner::post($this, StripeEvents::checkoutCompleted());

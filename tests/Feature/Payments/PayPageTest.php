@@ -11,9 +11,17 @@ use App\Domain\Payments\Stripe\StripeGatewayFailure;
 use App\Domain\Payments\Support\PayUrl;
 use App\Domain\Payments\Support\StripeUrl;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Http\Middleware\SetNoReferrerPolicy;
+use Filament\Facades\Filament;
+use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
+use Illuminate\Cookie\Middleware\EncryptCookies;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Tests\Support\Canary;
 use Tests\Support\CardPaymentSetup;
 use Tests\Support\FakeStripeGateway;
@@ -351,5 +359,64 @@ describe('a redirect goes to Stripe only (D-02, T-11-28)', function (): void {
         foreach ($refused as $url) {
             expect(StripeUrl::isAllowed($url))->toBeFalse((string) $url);
         }
+    });
+});
+
+describe('the public routes are limited per visitor and hold no session (R11-08-5, R11-08-6)', function (): void {
+    it('answers the 31st request of a minute from one address with 429, still without a cookie and with the no-referrer header', function (): void {
+        for ($i = 0; $i < 30; $i++) {
+            payPageVisit('/pay/'.Str::random(32))->assertOk();
+        }
+
+        $response = payPageVisit('/pay/'.Str::random(32));
+
+        $response->assertStatus(429)
+            ->assertHeader('Referrer-Policy', 'no-referrer')
+            ->assertHeaderMissing('Set-Cookie');
+    });
+
+    it('counts the visitors separately by address', function (): void {
+        for ($i = 0; $i < 30; $i++) {
+            payPageVisit('/pay/'.Str::random(32))->assertOk();
+        }
+
+        payPageVisit('/pay/'.Str::random(32))->assertStatus(429);
+
+        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.7'])->get('/pay/'.Str::random(32))->assertOk();
+    });
+
+    it('gathers the limiter on both public routes and no session, cookie or CSRF middleware on either', function (): void {
+        $pay = Route::getRoutes()->getByName('pay.show');
+        $webhook = Route::getRoutes()->getByName('webhooks.stripe');
+
+        expect($pay)->not->toBeNull()
+            ->and($webhook)->not->toBeNull();
+
+        $payMiddleware = $pay->gatherMiddleware();
+        $webhookMiddleware = $webhook->gatherMiddleware();
+
+        expect($payMiddleware)->toContain('throttle:pay-page')
+            ->and($payMiddleware)->toContain(SetNoReferrerPolicy::class)
+            ->and($payMiddleware)->toContain('Filament\\Http\\Middleware\\SetUpPanel:admin')
+            ->and($webhookMiddleware)->toContain('throttle:stripe-webhook');
+
+        $forbidden = [
+            StartSession::class,
+            EncryptCookies::class,
+            AddQueuedCookiesToResponse::class,
+            ShareErrorsFromSession::class,
+            ValidateCsrfToken::class,
+            'web',
+        ];
+
+        foreach ([$payMiddleware, $webhookMiddleware] as $middleware) {
+            foreach ($forbidden as $name) {
+                expect($middleware)->not->toContain($name);
+            }
+        }
+    });
+
+    it('lists the pay path among the SPA URL exceptions of the admin panel', function (): void {
+        expect(Filament::getPanel('admin')->getSpaUrlExceptions())->toContain('*/pay/*')->toContain('*/admin/files/*');
     });
 });
