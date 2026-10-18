@@ -99,5 +99,69 @@ return [
 
     'actions' => [
         'open' => 'Otevřít',
+        'assign' => 'Přiřadit k dokladu',
+        'resolve' => 'Označit jako vyřešené',
+        'return' => 'Zaznamenat vrácení peněz',
+    ],
+
+    // The three resolutions of an open payment (D-13), final once saved (U-11).
+    'assign' => [
+        'heading' => 'Přiřadit platbu k dokladu',
+        'fields' => [
+            'invoice' => 'Doklad',
+            'paid_on' => 'Datum platby',
+            'income_date' => 'Datum příjmu',
+            'category' => 'Kategorie příjmu',
+            'note' => 'Poznámka',
+        ],
+        'option' => ':number, :client, zbývá :remaining',
+        'empty' => 'Žádný nezaplacený doklad ve stejné měně',
+        'differs' => 'Částka platby (:paid) se liší od zbývající částky dokladu (:remaining). Platba se zapíše v plné výši.',
+        'already_paid' => 'Doklad je již zaplacený. Platba se zapíše jako další.',
+        'final' => 'Přiřazení je konečné. Chybně přiřazenou platbu lze opravit jen smazáním platby na dokladu.',
+        'submit' => 'Přiřadit platbu',
+        'cancel' => 'Nepřiřazovat',
+        'toast' => 'Platba byla přiřazena k dokladu :number',
+    ],
+
+    'resolve' => [
+        'heading' => 'Označit jako vyřešené',
+        'fields' => [
+            'note' => 'Poznámka',
+        ],
+        'helper' => 'Napište, jak byla platba vyřešena, například že peníze byly vráceny ve Stripe.',
+        'final' => 'Vyřešení je konečné a nic se jím neplatí ani nevrací.',
+        'submit' => 'Označit jako vyřešené',
+        'cancel' => 'Neoznačovat',
+        'toast' => 'Platba byla označena jako vyřešená',
+    ],
+
+    'return' => [
+        'heading' => 'Zaznamenat vrácení peněz',
+        'fields' => [
+            'amount' => 'Částka',
+            'returned_on' => 'Datum vrácení',
+            'category' => 'Kategorie výdaje',
+            'note' => 'Poznámka',
+        ],
+        'callout' => 'Vrácení se jen eviduje ve financích jako výdaj navázaný na tuto platbu. Peníze vraťte ve Stripe, Kokpit žádné vrácení neprovádí.',
+        'final' => 'Zaevidování je konečné. Chybně zadaný výdaj lze opravit ve Financích.',
+        'description' => 'Vrácení platby kartou',
+        'submit' => 'Zaznamenat vrácení',
+        'cancel' => 'Nezaznamenávat',
+        'toast' => 'Vrácení bylo zaevidováno',
+    ],
+
+    'errors' => [
+        'already_resolved' => 'Platba už byla vyřešena',
+        'not_assignable' => 'Tuto platbu nelze přiřadit k dokladu.',
+        'not_resolvable' => 'Tuto platbu není potřeba řešit.',
+        'not_returnable' => 'Pro tuto platbu nelze zaznamenat vrácení peněz.',
+        'document_required' => 'Vyberte doklad.',
+        'currency_mismatch' => 'Měna platby (:currency) nesouhlasí s měnou dokladu.',
+        'note_required' => 'Napište poznámku.',
+        'note_length' => 'Poznámka může mít nejvýše 500 znaků.',
+        'return_amount_invalid' => 'Zadejte částku větší než nula.',
+        'return_above_payment' => 'Částka vrácení nesmí být vyšší než částka platby.',
     ],
 ];
