@@ -16,6 +16,8 @@ use App\Domain\Invoicing\Enums\InvoiceStatus;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Queries\ReceivablesReader;
+use App\Domain\Payments\Queries\PaymentLinkStatus;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Database\CzechCollation;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Support\PragueDay;
@@ -65,6 +67,13 @@ final class InvoiceTable
     private static ?WeakMap $pages = null;
 
     /**
+     * The card-payment keys of the records of the page being rendered, per record collection (one query per page).
+     *
+     * @var WeakMap<object, array<string, string>>|null
+     */
+    private static ?WeakMap $cardKeys = null;
+
+    /**
      * @param  bool  $withClientColumn  false on the tab of one client, where every row has the same client
      */
     public static function configure(Table $table, bool $withClientColumn = true): Table
@@ -103,6 +112,7 @@ final class InvoiceTable
             self::remainingColumn(perCurrencyTotal: ! $withClientColumn),
             self::statusColumn(),
             self::emailColumn(),
+            ...self::cardPaymentColumns(),
             TextColumn::make('currency')
                 ->label(__('invoices.list.columns.currency'))
                 ->toggleable(isToggledHiddenByDefault: true),
@@ -285,6 +295,118 @@ final class InvoiceTable
     }
 
     /**
+     * The icon column "Platba kartou", toggleable and hidden by default (UI-SPEC Surface E, list): the state of the
+     * card link of the row. Admin only; the state of the whole page is read in one query.
+     *
+     * @return list<IconColumn>
+     */
+    private static function cardPaymentColumns(): array
+    {
+        if (! app(PartnerContext::class)->isAdmin()) {
+            return [];
+        }
+
+        return [
+            IconColumn::make('card_payment')
+                ->label(__('payment_links.list.column'))
+                ->state(static fn (Invoice $record, Table $table): ?string => self::cardKey($record, $table))
+                ->icon(static fn (?string $state): ?Heroicon => match ($state) {
+                    'active' => Heroicon::OutlinedLink,
+                    'pending' => Heroicon::OutlinedClock,
+                    'failed' => Heroicon::OutlinedExclamationCircle,
+                    'deactivated' => Heroicon::OutlinedLinkSlash,
+                    'off' => Heroicon::OutlinedCreditCard,
+                    'none' => Heroicon::OutlinedMinus,
+                    default => null,
+                })
+                ->color(static fn (?string $state): string => match ($state) {
+                    'active' => 'success',
+                    'pending' => 'info',
+                    'failed' => 'danger',
+                    default => 'gray',
+                })
+                ->tooltip(static fn (?string $state): ?string => $state === null ? null : (string) __('payment_links.list.states.'.$state))
+                ->toggleable(isToggledHiddenByDefault: true),
+        ];
+    }
+
+    /**
+     * The card-payment key of a record of the table being rendered: the whole page is read on the first call.
+     */
+    private static function cardKey(Invoice $record, Table $table): ?string
+    {
+        $records = $table->getRecords();
+
+        self::$cardKeys ??= new WeakMap;
+
+        if (! isset(self::$cardKeys[$records])) {
+            $items = match (true) {
+                $records instanceof Collection => $records->all(),
+                $records instanceof Paginator, $records instanceof CursorPaginator => $records->items(),
+            };
+
+            $ids = [];
+
+            foreach ($items as $item) {
+                if ($item instanceof Invoice) {
+                    $ids[] = $item->id;
+                }
+            }
+
+            self::$cardKeys[$records] = PaymentLinkStatus::listKeys($ids);
+        }
+
+        return self::$cardKeys[$records][$record->id] ?? null;
+    }
+
+    /**
+     * "Platební odkaz": the state of the card link as a filter, built on the newest link of the document and the
+     * frozen switch. The SQL fragments ignore the Partner scope, so the filter exists for the Admin only and refuses
+     * to narrow anything else (T-11-44).
+     *
+     * @return list<SelectFilter>
+     */
+    private static function cardPaymentFilters(): array
+    {
+        if (! app(PartnerContext::class)->isAdmin()) {
+            return [];
+        }
+
+        return [
+            SelectFilter::make('payment_link')
+                ->label(__('payment_links.list.filter'))
+                ->options([
+                    'active' => __('payment_links.list.options.active'),
+                    'pending' => __('payment_links.list.options.pending'),
+                    'failed' => __('payment_links.list.options.failed'),
+                    'deactivated' => __('payment_links.list.options.deactivated'),
+                    'off' => __('payment_links.list.options.off'),
+                ])
+                ->query(static function (Builder $query, array $data): Builder {
+                    $value = $data['value'] ?? null;
+
+                    if (! is_string($value) || $value === '') {
+                        return $query;
+                    }
+
+                    if (! app(PartnerContext::class)->isAdmin()) {
+                        return $query->whereRaw('FALSE');
+                    }
+
+                    $carriesPayment = $query
+                        ->where('invoices.state', InvoiceState::Issued->value)
+                        ->whereIn('invoices.kind', [InvoiceKind::Invoice->value, InvoiceKind::Proforma->value]);
+
+                    return match ($value) {
+                        'off' => $carriesPayment->whereRaw('COALESCE('.PaymentLinkStatus::SWITCH_SQL.', FALSE) = FALSE'),
+                        'active', 'pending', 'failed', 'deactivated' => $carriesPayment->whereRaw(PaymentLinkStatus::LATEST_STATE_SQL.' = ?', [$value]),
+                        default => $query->whereRaw('FALSE'),
+                    };
+                }),
+        ];
+    }
+
+    /**
      * "Odeslat znovu" (IN-04; D-22; UI-SPEC Surface G): the e-mail dialog for an issued document whose latest send
      * failed or that was never sent. A document that is queued or sent is not offered it, a draft cannot be sent.
      */
@@ -391,6 +513,7 @@ final class InvoiceTable
             SelectFilter::make('kind')
                 ->label(__('invoices.list.filters.kind'))
                 ->options(InvoiceKind::class),
+            ...self::cardPaymentFilters(),
         ];
 
         // On the tab of one client there are no list tabs, so the state is a filter beside the kind.

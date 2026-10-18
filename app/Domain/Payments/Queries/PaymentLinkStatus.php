@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Payments\Queries;
 
+use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
@@ -86,5 +87,44 @@ final class PaymentLinkStatus
             'regenerable' => $switch && $owes && $invoice->state === InvoiceState::Issued && $state !== PaymentLinkState::Pending,
             'url' => $switch ? PayUrl::forInvoice($invoice) : null,
         ];
+    }
+
+    /**
+     * The card-payment key of each given document for the list, in one query: the state value of the newest link
+     * (`pending`, `active`, `failed`, `deactivated`), `off` for an issued invoice or proforma whose switch was off,
+     * `none` for one with the switch on and no link row; a draft and a credit note are absent.
+     *
+     * @param  list<string>  $invoiceIds
+     * @return array<string, string>
+     *
+     * @throws AuthorizationException when neither the Admin nor a system run asks
+     */
+    public static function listKeys(array $invoiceIds): array
+    {
+        $context = app(PartnerContext::class);
+
+        if (! $context->isAdmin() && ! $context->isSystem()) {
+            throw new AuthorizationException('The payment link status is available to the Admin only.');
+        }
+
+        if ($invoiceIds === []) {
+            return [];
+        }
+
+        $rows = Invoice::query()
+            ->whereIn('invoices.id', $invoiceIds)
+            ->where('invoices.state', InvoiceState::Issued->value)
+            ->whereIn('invoices.kind', [InvoiceKind::Invoice->value, InvoiceKind::Proforma->value])
+            ->selectRaw('invoices.id AS id, '.self::LATEST_STATE_SQL.' AS link_state, COALESCE('.self::SWITCH_SQL.', FALSE) AS card_switch')
+            ->toBase()
+            ->get();
+
+        $keys = [];
+
+        foreach ($rows as $row) {
+            $keys[(string) $row->id] = ! filter_var($row->card_switch, FILTER_VALIDATE_BOOLEAN) ? 'off' : (is_string($row->link_state) ? $row->link_state : 'none');
+        }
+
+        return $keys;
     }
 }

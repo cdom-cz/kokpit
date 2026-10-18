@@ -49,6 +49,25 @@ return [
         'failed' => 'Odkaz na platbu kartou se nepodařilo vytvořit. Klient vidí informační stránku „Odkaz na platbu se připravuje“.',
         'inactive' => 'Doklad nemá aktivní odkaz na platbu kartou. Klient vidí informační stránku. Chcete-li nabídnout platbu kartou, vytvořte odkaz znovu na zbývající částku :amount.',
     ],
+    'list' => [
+        'filter' => 'Platební odkaz',
+        'column' => 'Platba kartou',
+        'options' => [
+            'active' => 'Aktivní',
+            'pending' => 'Připravuje se',
+            'failed' => 'Selhalo',
+            'deactivated' => 'Deaktivovaný',
+            'off' => 'Vypnuto',
+        ],
+        'states' => [
+            'active' => 'Odkaz na platbu kartou je aktivní',
+            'pending' => 'Odkaz na platbu kartou se připravuje',
+            'failed' => 'Odkaz na platbu kartou se nepodařilo vytvořit',
+            'deactivated' => 'Odkaz na platbu kartou je deaktivovaný',
+            'off' => 'Platba kartou je vypnutá',
+            'none' => 'Doklad nemá odkaz na platbu kartou',
+        ],
+    ],
     'frozen' => [
         'label' => 'Platba kartou',
         'yes' => 'Ano',
