@@ -52,7 +52,8 @@ use OverflowException;
  * is a blocker of issuing, not an error of the draft (R-11-2).
  *
  * The Partner-readable `invoices` row and its Admin-only `invoice_admin` row are written together, while the document
- * is a draft: after issue the database accepts no new child row.
+ * is a draft: after issue the database accepts no new child row. The card switch of the Admin-only row starts as the
+ * client's online-payment flag (D-06).
  */
 final readonly class CreateDraft
 {
@@ -96,7 +97,8 @@ final readonly class CreateDraft
             ])->save();
 
             $admin = new InvoiceAdmin;
-            $admin->forceFill(['invoice_id' => $draft->id])->save();
+            // D-06: the draft takes the client's online-payment value; the Admin can change it on the draft.
+            $admin->forceFill(['invoice_id' => $draft->id, 'card_payment_enabled' => $kind->carriesPayment() && $client->online_payment_enabled])->save();
 
             if ($time !== null) {
                 $this->addTime($draft, $client, $time, $projectIds);
