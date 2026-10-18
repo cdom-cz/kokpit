@@ -29,8 +29,9 @@ use stdClass;
  *
  * `external` (D-15) is taken from the raw request body: a PHP array cannot tell the JSON object `{}` from
  * the list `[]`, and Laravel decodes the body to arrays. The body is decoded once more as objects
- * (`rawBody()`), and the `external` member is handed to the Action as it is. The key reaches the Action
- * exactly when the body names it, so on update an absent key keeps the stored value and `null` clears it.
+ * (`rawBody()`, which delegates to `RawJsonBody::of()`), and the `external` member is handed to the Action
+ * as it is. The key reaches the Action exactly when the body names it, so on update an absent key keeps
+ * the stored value and `null` clears it.
  */
 final class TimeEntryPayload
 {
@@ -40,23 +41,13 @@ final class TimeEntryPayload
      */
     public const string INSTANT = '/^(?!0000)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/';
 
-    private const string RAW_BODY = 'kokpit.api.raw_body';
-
     /**
      * The JSON body of the request decoded as objects, once per request; null when the body is not a JSON
      * object (a form post, an empty or a malformed body).
      */
     public static function rawBody(Request $request): ?stdClass
     {
-        if (! $request->attributes->has(self::RAW_BODY)) {
-            $raw = json_decode($request->getContent(), false);
-
-            $request->attributes->set(self::RAW_BODY, $raw instanceof stdClass ? $raw : null);
-        }
-
-        $raw = $request->attributes->get(self::RAW_BODY);
-
-        return $raw instanceof stdClass ? $raw : null;
+        return RawJsonBody::of($request);
     }
 
     /**

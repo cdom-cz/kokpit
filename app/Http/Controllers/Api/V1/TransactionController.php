@@ -13,6 +13,7 @@ use App\Domain\Finance\Support\SqlState;
 use App\Domain\Identity\ApiAbility;
 use App\Domain\Identity\Models\User;
 use App\Http\Requests\Api\V1\ListTransactionsRequest;
+use App\Http\Requests\Api\V1\RawJsonBody;
 use App\Http\Requests\Api\V1\StoreTransactionRequest;
 use App\Http\Requests\Api\V1\TransactionPayload;
 use App\Http\Requests\Api\V1\UpdateTransactionRequest;
@@ -162,6 +163,7 @@ final class TransactionController
     #[ResponseField('data.document_number', 'string', 'Number of the receipt or invoice, or null.', nullable: true)]
     #[ResponseField('data.client_id', 'string', 'UUID of the client the transaction belongs to, or null.', nullable: true)]
     #[ResponseField('data.project_id', 'string', 'UUID of the project the transaction belongs to, or null.', nullable: true)]
+    #[ResponseField('data.external', 'object', 'The free-form JSON object your import tool stored with the transaction, or null.', nullable: true)]
     #[ResponseField('data.created_at', 'string', 'Creation instant, ISO 8601 in UTC.')]
     #[ResponseField('data.updated_at', 'string', 'Last change instant, ISO 8601 in UTC.')]
     #[Response(ApiExamples::NOT_FOUND, 404, 'No transaction has this UUID.')]
@@ -192,6 +194,7 @@ final class TransactionController
     #[ResponseField('data.document_number', 'string', 'Number of the receipt or invoice, or null.', nullable: true)]
     #[ResponseField('data.client_id', 'string', 'UUID of the client the transaction belongs to, or null.', nullable: true)]
     #[ResponseField('data.project_id', 'string', 'UUID of the project the transaction belongs to, or null.', nullable: true)]
+    #[ResponseField('data.external', 'object', 'The free-form JSON object your import tool stored with the transaction, or null.', nullable: true)]
     #[ResponseField('data.created_at', 'string', 'Creation instant, ISO 8601 in UTC.')]
     #[ResponseField('data.updated_at', 'string', 'Last change instant, ISO 8601 in UTC.')]
     #[Response(ApiExamples::IDEMPOTENCY_IN_PROGRESS, 409, 'A request with the same Idempotency-Key is still running (code `idempotency_in_progress`).')]
@@ -200,7 +203,7 @@ final class TransactionController
     public function store(StoreTransactionRequest $request, RecordTransaction $record, ReferenceResolver $refs): JsonResponse
     {
         try {
-            $transaction = $record->handle(self::actor($request), TransactionPayload::forCreate($request->validated(), $refs));
+            $transaction = $record->handle(self::actor($request), TransactionPayload::forCreate($request->validated(), $refs, RawJsonBody::of($request)));
         } catch (ValidationException $e) {
             throw TransactionPayload::remap($e);
         }
@@ -233,6 +236,7 @@ final class TransactionController
     #[ResponseField('data.document_number', 'string', 'Number of the receipt or invoice, or null.', nullable: true)]
     #[ResponseField('data.client_id', 'string', 'UUID of the client the transaction belongs to, or null.', nullable: true)]
     #[ResponseField('data.project_id', 'string', 'UUID of the project the transaction belongs to, or null.', nullable: true)]
+    #[ResponseField('data.external', 'object', 'The free-form JSON object your import tool stored with the transaction, or null.', nullable: true)]
     #[ResponseField('data.created_at', 'string', 'Creation instant, ISO 8601 in UTC.')]
     #[ResponseField('data.updated_at', 'string', 'Last change instant, ISO 8601 in UTC.')]
     #[Response(ApiExamples::NOT_FOUND, 404, 'No transaction has this UUID.')]

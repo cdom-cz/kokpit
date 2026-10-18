@@ -12,6 +12,7 @@ use Closure;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use stdClass;
 
 /**
  * The write payload of a transaction: the shape rules and the mapping to the data of the finance Actions.
@@ -31,6 +32,11 @@ use Illuminate\Validation\ValidationException;
  * of the three: the API refuses them instead of ignoring them silently (a rule about ignored input of the wire
  * contract, not a second business rule; the domain keeps ignoring them). Booleans are refused in the integer fields
  * (`amount_minor`, `czk_amount_minor`, `exchange_unit_amount`); integers and integer strings pass as before.
+ *
+ * `external` is the free-form object of an import tool. It is taken from the raw request body ({@see RawJsonBody}),
+ * because a PHP array cannot tell the JSON object `{}` from the list `[]`, and handed to the Action as it is. The key
+ * reaches the Action exactly when the body names it, so on update an absent key keeps the stored value and `null`
+ * clears it.
  */
 final class TransactionPayload
 {
@@ -65,6 +71,8 @@ final class TransactionPayload
             'document_number' => ['nullable', 'string'],
             'client_id' => ['nullable', self::uuid('client_unavailable')],
             'project_id' => ['nullable', self::reference(ReferenceResolver::PROJECT_KEY, 'project_unavailable')],
+            // Shape and size are decided by ExternalObject::parse() on the raw body.
+            'external' => ['nullable'],
         ];
     }
 
@@ -72,11 +80,12 @@ final class TransactionPayload
      * The data of `RecordTransaction::handle()` for a validated request.
      *
      * @param  array<string, mixed>  $validated
+     * @param  stdClass|null  $raw  the request body decoded as objects, where `external` is taken from
      * @return array<string, mixed>
      *
      * @throws ValidationException a rate, a unit amount or a CZK figure on a CZK transaction
      */
-    public static function forCreate(array $validated, ReferenceResolver $refs): array
+    public static function forCreate(array $validated, ReferenceResolver $refs, ?stdClass $raw = null): array
     {
         $currency = self::text($validated['currency'] ?? null);
 
@@ -100,7 +109,7 @@ final class TransactionPayload
             $data['amount'] = $amount;
         }
 
-        return [...$data, ...self::figure($validated)];
+        return [...$data, ...self::figure($validated), ...self::external($validated, $raw)];
     }
 
     /**
@@ -169,6 +178,23 @@ final class TransactionPayload
         }
 
         return [...$data, ...self::figure($validated), ...self::cleared($validated, $stored)];
+    }
+
+    /**
+     * The `external` key of the Action data: present exactly when the request names it. The value is the raw object
+     * (or null, or whatever else was sent, for the Action to refuse). Without a JSON object body, a form post for
+     * example, a named `external` is an array, which the Action refuses too.
+     *
+     * @param  array<string, mixed>  $validated
+     * @return array{external?: mixed}
+     */
+    private static function external(array $validated, ?stdClass $raw): array
+    {
+        if ($raw !== null) {
+            return property_exists($raw, 'external') ? ['external' => $raw->external] : [];
+        }
+
+        return array_key_exists('external', $validated) ? ['external' => $validated['external']] : [];
     }
 
     /**

@@ -12,6 +12,7 @@ use PHPUnit\Framework\Assert;
  *
  * Every key that can be absent in the domain (the rate snapshot, the free text, the client and the project) may be
  * null in a response. The rate is a decimal string, never a float, and the amounts are integers in minor units.
+ * `external` is a decoded JSON object, which is a PHP array.
  */
 final class TransactionContract
 {
@@ -35,6 +36,7 @@ final class TransactionContract
         'document_number' => '?string',
         'client_id' => '?string',
         'project_id' => '?string',
+        'external' => '?array',
         'created_at' => 'string',
         'updated_at' => 'string',
     ];
