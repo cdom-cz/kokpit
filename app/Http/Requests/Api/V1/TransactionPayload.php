@@ -115,12 +115,16 @@ final class TransactionPayload
     /**
      * The data of `RecordTransaction::handle()` for one item of a batch: the single-create rules, then the same
      * mapping. An item that is not a JSON object (a scalar, null or a non-empty list) fails under `transaction`.
+     * `$rawItem` is the same item decoded as objects ({@see RawJsonBody}), which is where `external` is taken from,
+     * exactly as for a single create.
      *
+     * @param  mixed  $item  the item as Laravel decoded it
+     * @param  mixed  $rawItem  the item decoded as objects
      * @return array<string, mixed>
      *
      * @throws ValidationException
      */
-    public static function forBatchItem(mixed $item, ReferenceResolver $refs): array
+    public static function forBatchItem(mixed $item, mixed $rawItem, ReferenceResolver $refs): array
     {
         if (! is_array($item) || ($item !== [] && array_is_list($item))) {
             throw ValidationException::withMessages(['transaction' => __('api.errors.batch_item_not_object')]);
@@ -129,7 +133,7 @@ final class TransactionPayload
         /** @var array<string, mixed> $validated */
         $validated = Validator::make($item, self::rules(true))->validate();
 
-        return self::forCreate($validated, $refs);
+        return self::forCreate($validated, $refs, $rawItem instanceof stdClass ? $rawItem : null);
     }
 
     /**
@@ -143,11 +147,12 @@ final class TransactionPayload
      * becomes the bank figure (manual) and is never replaced by the CNB figure.
      *
      * @param  array<string, mixed>  $validated
+     * @param  stdClass|null  $raw  the request body decoded as objects, where `external` is taken from
      * @return array<string, mixed>
      *
      * @throws ValidationException a rate, a unit amount or a CZK figure on a CZK transaction
      */
-    public static function forUpdate(array $validated, Transaction $stored, ReferenceResolver $refs): array
+    public static function forUpdate(array $validated, Transaction $stored, ReferenceResolver $refs, ?stdClass $raw = null): array
     {
         $currency = array_key_exists('currency', $validated) ? self::text($validated['currency']) : $stored->amount_currency;
 
@@ -177,7 +182,7 @@ final class TransactionPayload
             }
         }
 
-        return [...$data, ...self::figure($validated), ...self::cleared($validated, $stored)];
+        return [...$data, ...self::figure($validated), ...self::cleared($validated, $stored), ...self::external($validated, $raw)];
     }
 
     /**

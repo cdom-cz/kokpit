@@ -161,3 +161,101 @@ it('accepts 8 levels of nesting and refuses 9 under external', function (): void
         ->assertUnprocessable()
         ->assertJsonPath('errors.external.0', __('kokpit.time.errors.external_too_deep'));
 });
+
+it('keeps the stored external when a PATCH does not name it', function (): void {
+    $stored = FinanceApiFixtures::transaction($this->txExternalAdmin, ['external' => (object) ['source' => 'demo-bank']]);
+
+    Auth::forgetGuards();
+
+    $this->withToken(ApiFixtures::token($this->txExternalAdmin, ['finance:write']))
+        ->patchJson('/api/v1/transactions/'.$stored->id, ['description' => 'Changed text'])
+        ->assertOk()
+        ->assertJsonPath('data.description', 'Changed text')
+        ->assertJsonPath('data.external', ['source' => 'demo-bank']);
+});
+
+it('clears the stored external with null on a PATCH', function (): void {
+    $stored = FinanceApiFixtures::transaction($this->txExternalAdmin, ['external' => (object) ['source' => 'demo-bank']]);
+
+    Auth::forgetGuards();
+
+    $response = $this->withToken(ApiFixtures::token($this->txExternalAdmin, ['finance:write']))
+        ->patchJson('/api/v1/transactions/'.$stored->id, ['external' => null])
+        ->assertOk();
+
+    expect($response->json('data.external'))->toBeNull()
+        ->and(DB::selectOne('select external from transactions where id = ?', [$stored->id])->external)->toBeNull();
+});
+
+it('replaces the stored external whole on a PATCH, with no merge', function (): void {
+    $stored = FinanceApiFixtures::transaction($this->txExternalAdmin, ['external' => (object) ['source' => 'demo-bank', 'old' => 'gone']]);
+
+    Auth::forgetGuards();
+
+    $response = $this->withToken(ApiFixtures::token($this->txExternalAdmin, ['finance:write']))
+        ->patchJson('/api/v1/transactions/'.$stored->id, ['external' => (object) ['id' => 'TX-2002']])
+        ->assertOk();
+
+    expect($response->json('data.external'))->toBe(['id' => 'TX-2002']);
+});
+
+it('sets external on a transaction that had none and refuses a non-object on a PATCH', function (): void {
+    $stored = FinanceApiFixtures::transaction($this->txExternalAdmin);
+    $token = ApiFixtures::token($this->txExternalAdmin, ['finance:write']);
+
+    Auth::forgetGuards();
+
+    $this->withToken($token)
+        ->patchJson('/api/v1/transactions/'.$stored->id, ['external' => []])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['external']);
+
+    Auth::forgetGuards();
+
+    $this->withToken($token)
+        ->patchJson('/api/v1/transactions/'.$stored->id, ['external' => (object) ['source' => 'demo-bank']])
+        ->assertOk()
+        ->assertJsonPath('data.external', ['source' => 'demo-bank']);
+});
+
+it('leaves the CZK figure and its rate snapshot as stored when only external changes', function (): void {
+    $stored = FinanceApiFixtures::transaction($this->txExternalAdmin, ['amount' => '100,00', 'currency' => 'EUR', 'exchange_rate' => '25.125']);
+    $before = DB::selectOne('select czk_minor, czk_source, exchange_rate, exchange_unit_amount, exchange_rate_date, amount_minor from transactions where id = ?', [$stored->id]);
+
+    expect($before->czk_source)->toBe('custom');
+
+    Auth::forgetGuards();
+
+    $this->withToken(ApiFixtures::token($this->txExternalAdmin, ['finance:write']))
+        ->patchJson('/api/v1/transactions/'.$stored->id, ['external' => (object) ['id' => 'TX-2003']])
+        ->assertOk()
+        ->assertJsonPath('data.czk_source', 'custom');
+
+    $after = DB::selectOne('select czk_minor, czk_source, exchange_rate, exchange_unit_amount, exchange_rate_date, amount_minor from transactions where id = ?', [$stored->id]);
+
+    expect($after)->toEqual($before);
+});
+
+it('stores the external object of each batch item and fails an item with a non-object alone', function (): void {
+    $token = ApiFixtures::token($this->txExternalAdmin, ['finance:write']);
+
+    $response = $this->withToken($token)->postJson('/api/v1/transactions/batch', [
+        'transactions' => [
+            txExternalBody(['description' => 'row a', 'external' => (object) ['id' => 'TX-3001']]),
+            txExternalBody(['description' => 'row b', 'external' => [1]]),
+            txExternalBody(['description' => 'row c', 'external' => new stdClass]),
+        ],
+    ])->assertStatus(207);
+
+    expect($response->json('saved'))->toBe(2)
+        ->and($response->json('failed'))->toBe(1)
+        ->and($response->json('errors.0.index'))->toBe(1)
+        ->and($response->json('errors.0.errors.external'))->toBe([__('kokpit.time.errors.external_not_object')]);
+
+    $a = DB::selectOne("select external from transactions where description = 'row a'");
+    $c = DB::selectOne("select jsonb_typeof(external) as type from transactions where description = 'row c'");
+
+    expect(json_decode((string) $a->external, true))->toBe(['id' => 'TX-3001'])
+        ->and($c->type)->toBe('object')
+        ->and(DB::table('transactions')->where('description', 'row b')->exists())->toBeFalse();
+});

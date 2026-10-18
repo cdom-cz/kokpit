@@ -9,6 +9,7 @@ use App\Domain\Finance\Actions\RecordTransaction;
 use App\Domain\Identity\ApiAbility;
 use App\Domain\Identity\Models\User;
 use App\Http\Requests\Api\V1\BatchStoreTransactionRequest;
+use App\Http\Requests\Api\V1\RawJsonBody;
 use App\Http\Requests\Api\V1\TransactionPayload;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -79,12 +80,15 @@ final class TransactionBatchController
     {
         $actor = self::actor($request);
         $items = $request->validated('transactions');
+        // The items decoded as objects tell `{}` from `[]` and are where each `external` is taken from.
+        $raw = RawJsonBody::of($request)->transactions ?? [];
+        $raw = is_array($raw) ? array_values($raw) : [];
         $saved = 0;
         $errors = [];
 
         foreach (is_array($items) ? array_values($items) : [] as $index => $item) {
             try {
-                $record->handle($actor, TransactionPayload::forBatchItem($item, $refs));
+                $record->handle($actor, TransactionPayload::forBatchItem($item, $raw[$index] ?? null, $refs));
                 $saved++;
             } catch (ValidationException $e) {
                 $errors[] = ['index' => $index, 'errors' => TransactionPayload::remap($e)->errors()];

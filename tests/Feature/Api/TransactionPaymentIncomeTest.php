@@ -76,6 +76,20 @@ describe('changing the income of a payment over the API', function (): void {
             ->and((array) DB::table('transactions')->where('id', $this->income->id)->first())->toBe($before);
     });
 
+    it('answers 422 for an external object on a payment income, keeps the row, and lets a null through', function (): void {
+        $before = (array) DB::table('transactions')->where('id', $this->income->id)->first();
+        $message = __('invoices.errors.payment_transaction_locked', ['number' => $this->invoice->number]);
+
+        $response = ($this->patch)(['external' => (object) ['id' => 'TX-4001']])->assertUnprocessable();
+
+        expect($response->json('errors.external'))->toBe([$message])
+            ->and((array) DB::table('transactions')->where('id', $this->income->id)->first())->toBe($before);
+
+        $cleared = ($this->patch)(['transaction_date' => '2026-10-12', 'external' => null])->assertOk();
+
+        expect($cleared->json('data.external'))->toBeNull();
+    });
+
     it('answers 200 for a change of the date only, with the CZK figure of the CNB list of the new day', function (): void {
         $response = ($this->patch)(['transaction_date' => '2026-10-12'])->assertOk();
 

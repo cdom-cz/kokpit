@@ -246,7 +246,7 @@ final class TransactionController
         $stored = self::find($transaction);
 
         try {
-            $changed = $update->handle(self::actor($request), $stored, TransactionPayload::forUpdate($request->validated(), $stored, $refs));
+            $changed = $update->handle(self::actor($request), $stored, TransactionPayload::forUpdate($request->validated(), $stored, $refs, RawJsonBody::of($request)));
         } catch (ValidationException $e) {
             throw TransactionPayload::remap($e);
         }

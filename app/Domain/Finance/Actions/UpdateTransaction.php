@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Finance\Actions;
 
+use App\Domain\Api\ExternalObject;
 use App\Domain\Finance\CustomRate;
 use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Enums\TransactionType;
@@ -15,6 +16,7 @@ use App\Domain\Shared\Money\Money;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
+use stdClass;
 
 /**
  * Edits a transaction (FI-01, D-12, D-13, D-14): freely, by the Admin only.
@@ -50,6 +52,10 @@ use Illuminate\Validation\ValidationException;
  * form that sends the unchanged values back is not a change. The database guard of plan 10-06 refuses the same for
  * every other writer; a wrong payment is corrected by deleting it in the invoice detail (`DeletePayment`).
  *
+ * The importer's `external` object (see {@see ExternalObject}) follows the API rule: an absent key keeps the stored
+ * object, `null` clears it and an object replaces the stored one whole, nothing is merged. It never touches the CZK
+ * figure, and it is part of what the income of a payment refuses.
+ *
  * A receipt counts for the client and project of its transaction (D-11), so when either changes the receipts
  * get the new pair in the same database transaction (research Pitfall 5). That is one query update, not a model
  * event: the logged attributes of a document do not include the client or the project.
@@ -72,11 +78,14 @@ final readonly class UpdateTransaction
     {
         Gate::forUser($actor)->authorize('update', $transaction);
 
-        return DB::transaction(function () use ($transaction, $data): Transaction {
+        // A bad value fails before any row is locked.
+        $external = array_key_exists('external', $data) ? ExternalObject::parse($data['external']) : null;
+
+        return DB::transaction(function () use ($transaction, $data, $external): Transaction {
             $locked = Transaction::query()->whereKey($transaction->getKey())->lockForUpdate()->firstOrFail();
 
             if ($locked->isPaymentIncome()) {
-                $this->assertOnlyDateAndCategoryChange($locked, $data);
+                $this->assertOnlyDateAndCategoryChange($locked, $data, $external);
             }
 
             $input = TransactionInput::fromArray($data, $locked);
@@ -95,6 +104,11 @@ final readonly class UpdateTransaction
                 'project_id' => $input->projectId,
                 ...$this->figure($locked, $input),
             ]);
+
+            if (array_key_exists('external', $data)) {
+                $locked->forceFill(['external' => $external]);
+            }
+
             $locked->save();
 
             if ($locked->wasChanged(['client_id', 'project_id'])) {
@@ -114,12 +128,19 @@ final readonly class UpdateTransaction
      * date, category and CZK keys left out, so a type or CZK refusal is not hidden behind another validation error.
      *
      * @param  array<string, mixed>  $data
+     * @param  stdClass|null  $external  the checked `external` object, meaningful when the data names it
      *
      * @throws ValidationException `payment_transaction_locked` under every changed key
      */
-    private function assertOnlyDateAndCategoryChange(Transaction $stored, array $data): void
+    private function assertOnlyDateAndCategoryChange(Transaction $stored, array $data, ?stdClass $external): void
     {
         $changed = [];
+
+        // The stored value of a payment income is always null, so any object is a change and a sent null is not.
+        // A loose comparison of two objects compares their properties whatever their order.
+        if (array_key_exists('external', $data) && $external != $stored->external) {
+            $changed[] = 'external';
+        }
 
         if (array_key_exists('type', $data)) {
             $type = $data['type'] instanceof TransactionType ? $data['type']->value : $data['type'];
