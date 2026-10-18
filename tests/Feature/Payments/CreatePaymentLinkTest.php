@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\RoleName;
+use App\Domain\Invoicing\Actions\IssueCreditNote;
+use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Issuing\DocumentIssuer;
 use App\Domain\Invoicing\Issuing\IssueContext;
@@ -459,5 +461,128 @@ describe('the operational alert subject', function (): void {
             ->and($custom->toMail($user)->subject)->toBe('Kokpit: Fictional title')
             ->and($custom->withLine('More')->toMail($user)->subject)->toBe('Kokpit: Fictional title')
             ->and($custom->withLine('More')->body)->toBe("Fictional body\nMore");
+    });
+});
+
+/**
+ * Records a payment of the given amount on the document as the Admin.
+ */
+function payOn(Invoice $invoice, string $amount): void
+{
+    app(RecordPayment::class)->handle(Canary::admin(), $invoice, ['amount' => $amount, 'paid_on' => '2026-10-14']);
+}
+
+describe('a change of the document around the Stripe call (D-08)', function (): void {
+    it('deactivates the pending row without calling Stripe when a payment, a full payment or a storno landed before the call', function (string $case, string $reason): void {
+        $issued = pendingLinkDocument();
+        $link = linkRowOf($issued);
+
+        match ($case) {
+            'partial' => payOn($issued, '5000.00'),
+            'full' => payOn($issued, '12500.00'),
+            'storno' => app(IssueCreditNote::class)->storno(Canary::admin(), $issued),
+        };
+
+        runLinkJob($link->id);
+
+        $row = linkRowOf($issued);
+
+        expect($row->state)->toBe(PaymentLinkState::Deactivated)
+            ->and($row->deactivation_reason?->value)->toBe($reason)
+            ->and($row->deactivated_at)->not->toBeNull()
+            ->and($row->stripe_link_id)->toBeNull()
+            ->and($row->stripe_url)->toBeNull()
+            ->and($row->remote_deactivated_at)->toBeNull()
+            ->and($this->stripe->createCalls())->toBe(0)
+            ->and($this->stripe->deactivated())->toBe([])
+            ->and(mailsSent())->toBe([]);
+    })->with([
+        'a partial payment' => ['partial', 'amount_changed'],
+        'a full payment' => ['full', 'paid'],
+        'a storno' => ['storno', 'cancelled'],
+    ]);
+
+    it('keeps the new Stripe link on the row, deactivates it locally and then at Stripe when a payment lands during the call', function (string $case, string $reason): void {
+        $issued = pendingLinkDocument();
+        $link = linkRowOf($issued);
+
+        $this->stripe->onCreate(static function () use ($issued, $case): void {
+            match ($case) {
+                'partial' => payOn($issued, '5000.00'),
+                'full' => payOn($issued, '12500.00'),
+                'storno' => app(IssueCreditNote::class)->storno(Canary::admin(), $issued),
+            };
+        });
+
+        runLinkJob($link->id);
+
+        $row = linkRowOf($issued);
+        $created = $this->stripe->created();
+
+        expect($created)->toHaveCount(1)
+            ->and($row->state)->toBe(PaymentLinkState::Deactivated)
+            ->and($row->deactivation_reason?->value)->toBe($reason)
+            ->and($row->stripe_link_id)->not->toBeNull()
+            ->and($row->stripe_url)->toStartWith('https://')
+            ->and($this->stripe->deactivated())->toBe([$row->stripe_link_id])
+            ->and($row->remote_deactivated_at)->not->toBeNull()
+            ->and($row->activated_at)->toBeNull()
+            ->and(mailsSent())->toBe([]);
+    })->with([
+        'a partial payment' => ['partial', 'amount_changed'],
+        'a full payment' => ['full', 'paid'],
+        'a storno' => ['storno', 'cancelled'],
+    ]);
+
+    it('leaves the remote deactivation for the sweep when Stripe refuses it, and does not fail the job', function (): void {
+        $issued = pendingLinkDocument();
+        $link = linkRowOf($issued);
+
+        $this->stripe->onCreate(static function () use ($issued): void {
+            payOn($issued, '5000.00');
+        });
+        $this->stripe->failNextDeactivate(StripeGatewayFailure::CONNECTION);
+
+        runLinkJob($link->id);
+
+        $row = linkRowOf($issued);
+
+        expect($row->state)->toBe(PaymentLinkState::Deactivated)
+            ->and($row->deactivation_reason?->value)->toBe('amount_changed')
+            ->and($row->stripe_link_id)->not->toBeNull()
+            ->and($row->remote_deactivated_at)->toBeNull()
+            ->and($this->stripe->deactivated())->toBe([]);
+    });
+
+    it('keeps the Stripe link on a row that someone deactivated by hand during the call and switches it off at Stripe', function (): void {
+        $issued = pendingLinkDocument();
+        $link = linkRowOf($issued);
+
+        $this->stripe->onCreate(static function () use ($link): void {
+            DB::table('payment_links')->where('id', $link->id)->update(['state' => 'deactivated', 'deactivation_reason' => 'manual', 'deactivated_at' => now()]);
+        });
+
+        runLinkJob($link->id);
+
+        $row = linkRowOf($issued);
+
+        expect($row->deactivation_reason?->value)->toBe('manual')
+            ->and($row->stripe_link_id)->not->toBeNull()
+            ->and($this->stripe->deactivated())->toBe([$row->stripe_link_id])
+            ->and($row->remote_deactivated_at)->not->toBeNull();
+    });
+
+    it('does nothing on a second run for a row that was deactivated before the call', function (): void {
+        $issued = pendingLinkDocument();
+        $link = linkRowOf($issued);
+        payOn($issued, '5000.00');
+
+        runLinkJob($link->id);
+        $first = linkRowOf($issued);
+        runLinkJob($link->id);
+        $second = linkRowOf($issued);
+
+        expect($second->updated_at?->equalTo($first->updated_at))->toBeTrue()
+            ->and($this->stripe->createCalls())->toBe(0);
     });
 });

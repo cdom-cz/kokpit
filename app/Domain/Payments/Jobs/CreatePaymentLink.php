@@ -6,10 +6,12 @@ namespace App\Domain\Payments\Jobs;
 
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Queries\InvoiceBalances;
 use App\Domain\Operations\Alerts\AdminAlerter;
 use App\Domain\Operations\Alerts\OperationalAlert;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
+use App\Domain\Payments\Enums\PaymentLinkDeactivation;
 use App\Domain\Payments\Enums\PaymentLinkState;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Payments\Stripe\PaymentLinkRequest;
@@ -99,7 +101,7 @@ final class CreatePaymentLink extends KokpitJob
             return;
         }
 
-        $this->settle($created->id, $created->url);
+        $this->settle($gateway, $created->id, $created->url);
     }
 
     /**
@@ -136,6 +138,15 @@ final class CreatePaymentLink extends KokpitJob
             $link = PaymentLink::query()->whereKey($this->linkId)->lockForUpdate()->first();
 
             if (! $invoice instanceof Invoice || ! $link instanceof PaymentLink || $link->state !== PaymentLinkState::Pending) {
+                return null;
+            }
+
+            // A payment or a storno that landed since the issue: the link is not wanted, and Stripe is not asked.
+            $stale = $this->staleReason($invoice, $link);
+
+            if ($stale !== null) {
+                $this->deactivate($link, $stale);
+
                 return null;
             }
 
@@ -204,9 +215,13 @@ final class CreatePaymentLink extends KokpitJob
     }
 
     /**
-     * Phase C: under the lock of the document and then of the row, the link becomes active.
+     * Phase C: under the lock of the document and then of the row, the link becomes active, unless the world changed
+     * while Stripe was asked (D-08). A link that is no longer wanted keeps its Stripe references on the row (they are
+     * set once and stay for the audit trail), is deactivated locally with the matching reason, and is then deactivated
+     * at Stripe after the commit. A failure of that last call is left for the sweep of the reconcile plan, which finds
+     * the row by the missing `remote_deactivated_at`.
      */
-    private function settle(string $stripeLinkId, string $stripeUrl): void
+    private function settle(StripeGateway $gateway, string $stripeLinkId, string $stripeUrl): void
     {
         $invoiceId = PaymentLink::query()->whereKey($this->linkId)->value('invoice_id');
 
@@ -214,21 +229,104 @@ final class CreatePaymentLink extends KokpitJob
             return;
         }
 
-        DB::transaction(function () use ($invoiceId, $stripeLinkId, $stripeUrl): void {
-            Invoice::query()->whereKey($invoiceId)->lockForUpdate()->firstOrFail();
+        $remote = DB::transaction(function () use ($invoiceId, $stripeLinkId, $stripeUrl): bool {
+            $invoice = Invoice::query()->whereKey($invoiceId)->lockForUpdate()->firstOrFail();
             $link = PaymentLink::query()->whereKey($this->linkId)->lockForUpdate()->firstOrFail();
 
-            if ($link->state !== PaymentLinkState::Pending) {
-                return;
+            // Another run of the same attempt already settled the row; the key made it the same Stripe link.
+            if ($link->state === PaymentLinkState::Active) {
+                return false;
             }
 
-            $link->forceFill([
-                'state' => PaymentLinkState::Active,
-                'stripe_link_id' => $stripeLinkId,
-                'stripe_url' => $stripeUrl,
-                'activated_at' => CarbonImmutable::now(),
-            ])->save();
+            $stale = $link->state === PaymentLinkState::Pending ? $this->staleReason($invoice, $link) : null;
+
+            if ($link->state === PaymentLinkState::Pending && $stale === null) {
+                $link->forceFill([
+                    'state' => PaymentLinkState::Active,
+                    'stripe_link_id' => $stripeLinkId,
+                    'stripe_url' => $stripeUrl,
+                    'activated_at' => CarbonImmutable::now(),
+                ])->save();
+
+                return false;
+            }
+
+            if ($link->stripe_link_id !== null) {
+                return false;
+            }
+
+            $link->forceFill(['stripe_link_id' => $stripeLinkId, 'stripe_url' => $stripeUrl]);
+
+            if ($stale !== null) {
+                $this->apply($link, $stale);
+            }
+
+            $link->save();
+
+            return true;
         });
+
+        if ($remote) {
+            $this->deactivateRemotely($gateway, $stripeLinkId);
+        }
+    }
+
+    /**
+     * Switches the just created Stripe link off and stamps the row when it is deactivated. A Stripe failure is left
+     * for the sweep: the row stays without the stamp.
+     */
+    private function deactivateRemotely(StripeGateway $gateway, string $stripeLinkId): void
+    {
+        try {
+            $gateway->deactivateLink($stripeLinkId);
+        } catch (StripeGatewayFailure) {
+            return;
+        }
+
+        $link = PaymentLink::query()->whereKey($this->linkId)->where('state', PaymentLinkState::Deactivated->value)->whereNull('remote_deactivated_at')->first();
+
+        $link?->forceFill(['remote_deactivated_at' => CarbonImmutable::now()])->save();
+    }
+
+    /**
+     * Why the pending link no longer offers what is owed, or null when it still does: the document is cancelled by a
+     * storno, nothing is left to pay, or the remaining amount is not the amount the row offers (D-08). Called with
+     * the document locked.
+     */
+    private function staleReason(Invoice $invoice, PaymentLink $link): ?PaymentLinkDeactivation
+    {
+        if ($invoice->isCancelled()) {
+            return PaymentLinkDeactivation::Cancelled;
+        }
+
+        $remaining = app(InvoiceBalances::class)->for([$invoice->id])[$invoice->id]['remaining'] ?? 0;
+
+        if ($remaining <= 0) {
+            return PaymentLinkDeactivation::Paid;
+        }
+
+        return $remaining === $link->amount_minor ? null : PaymentLinkDeactivation::AmountChanged;
+    }
+
+    /**
+     * Deactivates a pending row locally, with its reason.
+     */
+    private function deactivate(PaymentLink $link, PaymentLinkDeactivation $reason): void
+    {
+        $this->apply($link, $reason);
+        $link->save();
+    }
+
+    /**
+     * Sets the deactivation columns together, as the check constraint needs the reason exactly when deactivated.
+     */
+    private function apply(PaymentLink $link, PaymentLinkDeactivation $reason): void
+    {
+        $link->forceFill([
+            'state' => PaymentLinkState::Deactivated,
+            'deactivation_reason' => $reason,
+            'deactivated_at' => CarbonImmutable::now(),
+        ]);
     }
 
     /**

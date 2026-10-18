@@ -8,6 +8,7 @@ use App\Domain\Payments\Stripe\CreatedPaymentLink;
 use App\Domain\Payments\Stripe\PaymentLinkRequest;
 use App\Domain\Payments\Stripe\StripeGateway;
 use App\Domain\Payments\Stripe\StripeGatewayFailure;
+use Closure;
 use Illuminate\Support\Str;
 
 /**
@@ -33,6 +34,8 @@ final class FakeStripeGateway implements StripeGateway
 
     private ?string $nextUrl = null;
 
+    private ?Closure $onCreate = null;
+
     /**
      * Binds a fresh fake as the StripeGateway of the container and returns it.
      */
@@ -47,6 +50,12 @@ final class FakeStripeGateway implements StripeGateway
     public function createLink(PaymentLinkRequest $request): CreatedPaymentLink
     {
         $this->createCalls++;
+
+        if ($this->onCreate !== null) {
+            $callback = $this->onCreate;
+            $this->onCreate = null;
+            $callback($request);
+        }
 
         if ($this->nextCreateFailure !== null) {
             $class = $this->nextCreateFailure;
@@ -87,6 +96,19 @@ final class FakeStripeGateway implements StripeGateway
     public function failNextCreate(string $failureClass): self
     {
         $this->nextCreateFailure = StripeGatewayFailure::forClass($failureClass)->failureClass;
+
+        return $this;
+    }
+
+    /**
+     * Runs the callback inside the next createLink() call, before it answers, once. A test uses it to change the
+     * document at the moment the job is waiting for Stripe.
+     *
+     * @param  Closure(PaymentLinkRequest): void  $callback
+     */
+    public function onCreate(Closure $callback): self
+    {
+        $this->onCreate = $callback;
 
         return $this;
     }
