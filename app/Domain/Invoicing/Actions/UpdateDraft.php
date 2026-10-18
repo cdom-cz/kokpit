@@ -9,7 +9,9 @@ use App\Domain\ExchangeRates\ExchangeRateConverter;
 use App\Domain\ExchangeRates\ExchangeRateMissing;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
+use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Support\DraftPreview;
@@ -44,6 +46,10 @@ use OverflowException;
  *   only a value the Admin typed is stored (R-11-1);
  * - `note` (at most 500 characters), printed on the document;
  * - `internal_note` (at most 2 000 characters), saved through {@see UpdateInternalNote} in the same transaction;
+ * - `card_payment_enabled` (a strict boolean, an invoice or a proforma draft only): the per-document card switch of the
+ *   Admin-only row (D-06, ruling R11-03-5). A new draft starts with the client's value; this key overrides it, and the
+ *   issue freezes the AND of it with the global setting and a configured Stripe. A credit-note draft or a value that is
+ *   not a boolean is refused with `card_payment_invalid` under `card_payment_enabled`;
  * - `items`: the whole list of lines, `id?`, `description`, `quantity`, `unit`, `unit_price`, `confirm_zero_price?`
  *   (see {@see InvoiceItemInput}).
  *
@@ -105,6 +111,7 @@ final readonly class UpdateDraft
             }
 
             $header = $this->header($data, $locked);
+            $cardPayment = $this->cardPayment($data, $locked);
             $currencyChanged = $header['currency'] !== $locked->currency;
             $today = TimerClock::now()->setTimezone(FilamentTimezone::get())->format('Y-m-d');
 
@@ -114,6 +121,10 @@ final readonly class UpdateDraft
 
             if (array_key_exists('internal_note', $data)) {
                 $this->internalNote->handle($actor, $locked, is_string($data['internal_note']) ? $data['internal_note'] : null);
+            }
+
+            if ($cardPayment !== null) {
+                $this->saveCardPayment($locked, $cardPayment);
             }
 
             if (array_key_exists('items', $data)) {
@@ -168,6 +179,48 @@ final readonly class UpdateDraft
             'due_date' => $dueDate,
             'note' => array_key_exists('note', $data) ? $this->note($data['note']) : $draft->note,
         ];
+    }
+
+    /**
+     * The checked card switch of the data, or null when the key is absent (D-06, ruling R11-03-5).
+     *
+     * @param  array<string, mixed>  $data
+     *
+     * @throws ValidationException `card_payment_enabled` for a non-boolean or for a credit note
+     */
+    private function cardPayment(array $data, Invoice $draft): ?bool
+    {
+        if (! array_key_exists('card_payment_enabled', $data)) {
+            return null;
+        }
+
+        $value = $data['card_payment_enabled'];
+
+        if (! is_bool($value) || $draft->kind === InvoiceKind::CreditNote) {
+            throw ValidationException::withMessages(['card_payment_enabled' => __('invoices.errors.card_payment_invalid')]);
+        }
+
+        return $value;
+    }
+
+    /**
+     * Writes the switch on the Admin-only row of the draft, creating the row when it is missing (as the internal note
+     * does). A value equal to the stored one writes nothing.
+     */
+    private function saveCardPayment(Invoice $draft, bool $on): void
+    {
+        $admin = InvoiceAdmin::query()->where('invoice_id', $draft->id)->lockForUpdate()->first();
+
+        if (! $admin instanceof InvoiceAdmin) {
+            $admin = new InvoiceAdmin;
+            $admin->forceFill(['invoice_id' => $draft->id, 'card_payment_enabled' => false]);
+        }
+
+        if ($admin->exists && $admin->card_payment_enabled === $on) {
+            return;
+        }
+
+        $admin->forceFill(['card_payment_enabled' => $on])->save();
     }
 
     /**

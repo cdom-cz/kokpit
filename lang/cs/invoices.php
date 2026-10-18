@@ -20,6 +20,7 @@ return [
         'due_before_issue' => 'Datum splatnosti nesmí být dříve než datum vystavení.',
         'note_length' => 'Poznámka na dokladu může mít nejvýše 500 znaků.',
         'internal_note_length' => 'Interní poznámka může mít nejvýše 2 000 znaků.',
+        'card_payment_invalid' => 'Platbu kartou lze zapnout nebo vypnout jen u faktury a zálohové faktury.',
 
         // The items of a draft.
         'item_unknown' => 'Položka nepatří k tomuto dokladu.',

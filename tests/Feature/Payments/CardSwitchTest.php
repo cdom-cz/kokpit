@@ -2,7 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Domain\Invoicing\Actions\ConvertProforma;
 use App\Domain\Invoicing\Actions\CreateDraft;
+use App\Domain\Invoicing\Actions\IssueCreditNote;
+use App\Domain\Invoicing\Actions\IssueDocument;
+use App\Domain\Invoicing\Actions\RecordPayment;
+use App\Domain\Invoicing\Actions\UpdateDraft;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Payments\Support\PayToken;
@@ -13,11 +18,13 @@ use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
 use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\InvoiceFixtures;
 use Tests\Support\RawSql;
+use Tests\Support\StripeTestConfig;
 
 /*
  * The per-document card switch and the stable pay token (PA-03, PA-02; D-01, D-02, D-05, D-06). Every name and amount
@@ -136,4 +143,176 @@ it('gives a draft created for a client without online payment the switch off', f
     $draft = app(CreateDraft::class)->handle($admin, ['client_id' => $client->id, 'kind' => InvoiceKind::Proforma->value]);
 
     expect(adminRowOf($draft)->card_payment_enabled)->toBeFalse();
+});
+
+/**
+ * The card switch of a freshly created draft after the Admin's override, issued; returns the Admin row.
+ */
+function issueWithOverride(bool $clientOnline, ?bool $override): stdClass
+{
+    $admin = Canary::admin();
+    test()->actingAs($admin);
+
+    $client = InvoiceFixtures::client(['online_payment_enabled' => $clientOnline]);
+    $draft = app(CreateDraft::class)->handle($admin, ['client_id' => $client->id, 'kind' => InvoiceKind::Invoice->value]);
+    $data = ['items' => [InvoiceFixtures::item('Example work', '1', '2400.00')]];
+
+    if ($override !== null) {
+        $data['card_payment_enabled'] = $override;
+    }
+
+    $draft = app(UpdateDraft::class)->handle($admin, $draft, $data);
+
+    return adminRowOf(app(IssueDocument::class)->handle($admin, $draft));
+}
+
+it('takes the Admin override of the draft over the client value, in both directions (D-06, A8)', function (): void {
+    CardPaymentSetup::enable();
+
+    $on = issueWithOverride(clientOnline: false, override: true);
+    expect($on->card_payment_enabled)->toBeTrue()
+        ->and($on->pay_token)->toMatch('/^[A-Za-z0-9]{32}$/');
+
+    $off = issueWithOverride(clientOnline: true, override: false);
+    expect($off->card_payment_enabled)->toBeFalse()
+        ->and($off->pay_token)->toBeNull();
+
+    $kept = issueWithOverride(clientOnline: true, override: null);
+    expect($kept->card_payment_enabled)->toBeTrue();
+});
+
+it('freezes false and no token when Stripe is not configured or only one secret is set (U-4)', function (): void {
+    CardPaymentSetup::enable();
+    $client = CardPaymentSetup::client();
+
+    StripeTestConfig::clear();
+    $none = adminRowOf(CardPaymentSetup::issued($client));
+
+    StripeTestConfig::configure();
+    config(['services.stripe.webhook_secret' => null]);
+    $keyOnly = adminRowOf(CardPaymentSetup::issued($client));
+
+    StripeTestConfig::configure();
+    config(['services.stripe.secret' => null]);
+    $hookOnly = adminRowOf(CardPaymentSetup::issued($client));
+
+    foreach ([$none, $keyOnly, $hookOnly] as $row) {
+        expect($row->card_payment_enabled)->toBeFalse()->and($row->pay_token)->toBeNull();
+    }
+});
+
+it('treats a proforma like an invoice', function (): void {
+    CardPaymentSetup::enable();
+
+    $proforma = CardPaymentSetup::issued(CardPaymentSetup::client(), InvoiceKind::Proforma);
+
+    expect(adminRowOf($proforma)->card_payment_enabled)->toBeTrue()
+        ->and(adminRowOf($proforma)->pay_token)->toMatch('/^[A-Za-z0-9]{32}$/');
+});
+
+it('gives a storno credit note and the invoice converted from a card proforma no switch and no token (D-05)', function (): void {
+    CardPaymentSetup::enable();
+    $admin = Canary::admin();
+    $client = CardPaymentSetup::client();
+
+    $invoice = CardPaymentSetup::issued($client);
+    expect(adminRowOf($invoice)->pay_token)->not->toBeNull();
+
+    $credit = app(IssueCreditNote::class)->storno($admin, $invoice);
+    expect($credit->kind)->toBe(InvoiceKind::CreditNote)
+        ->and(adminRowOf($credit)->card_payment_enabled)->toBeFalse()
+        ->and(adminRowOf($credit)->pay_token)->toBeNull();
+
+    $proforma = CardPaymentSetup::issued($client, InvoiceKind::Proforma, '3900.00');
+    expect(adminRowOf($proforma)->pay_token)->not->toBeNull();
+
+    app(RecordPayment::class)->handle($admin, $proforma, ['amount' => '3900.00', 'paid_on' => '2026-10-14']);
+    $converted = app(ConvertProforma::class)->handle($admin, $proforma);
+
+    expect($converted->kind)->toBe(InvoiceKind::Invoice)
+        ->and(adminRowOf($converted)->card_payment_enabled)->toBeFalse()
+        ->and(adminRowOf($converted)->pay_token)->toBeNull();
+});
+
+it('refuses the switch on a credit-note draft and on a value that is not a boolean', function (): void {
+    CardPaymentSetup::enable();
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $client = CardPaymentSetup::client();
+    $draft = app(CreateDraft::class)->handle($admin, ['client_id' => $client->id, 'kind' => InvoiceKind::Invoice->value]);
+
+    foreach (['1', 1, 'true', null, []] as $value) {
+        try {
+            app(UpdateDraft::class)->handle($admin, $draft, ['card_payment_enabled' => $value]);
+            $this->fail('A non-boolean switch was accepted.');
+        } catch (ValidationException $e) {
+            expect($e->errors())->toHaveKey('card_payment_enabled')
+                ->and($e->errors()['card_payment_enabled'][0])->toBe(__('invoices.errors.card_payment_invalid'));
+        }
+    }
+
+    $credit = app(PartnerContext::class)->runAsSystem(static function () use ($draft, $client): Invoice {
+        $source = InvoiceFixtures::issued($client);
+        $credit = new Invoice;
+        $credit->forceFill([
+            'client_id' => $draft->client_id,
+            'kind' => InvoiceKind::CreditNote,
+            'currency' => $draft->currency,
+            'language' => $draft->language,
+            'vat_mode' => $draft->vat_mode,
+            'credited_invoice_id' => $source->id,
+            'cancels_invoice' => false,
+            'subtotal_minor' => -100,
+            'vat_minor' => 0,
+            'total_minor' => -100,
+        ])->save();
+
+        return $credit;
+    });
+
+    expect(fn () => app(UpdateDraft::class)->handle($admin, $credit, ['card_payment_enabled' => true]))
+        ->toThrow(ValidationException::class);
+    expect(DB::table('invoice_admin')->where('invoice_id', $credit->id)->exists())->toBeFalse();
+});
+
+it('answers the existing not-draft refusal for the switch on an issued document', function (): void {
+    CardPaymentSetup::enable();
+    $admin = Canary::admin();
+    $issued = CardPaymentSetup::issued(CardPaymentSetup::client());
+
+    expect(fn () => app(UpdateDraft::class)->handle($admin, $issued, ['card_payment_enabled' => false]))
+        ->toThrow(DomainException::class, __('invoices.errors.not_draft'));
+});
+
+it('creates the Admin row for a draft that has none when the switch is saved', function (): void {
+    CardPaymentSetup::enable();
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $draft = InvoiceFixtures::draft(CardPaymentSetup::client());
+    DB::table('invoice_admin')->where('invoice_id', $draft->id)->delete();
+
+    app(UpdateDraft::class)->handle($admin, $draft, ['card_payment_enabled' => true]);
+
+    expect(adminRowOf($draft)->card_payment_enabled)->toBeTrue();
+});
+
+it('refuses a duplicate pay token with a unique violation', function (): void {
+    CardPaymentSetup::enable();
+    $client = CardPaymentSetup::client();
+    $first = adminRowOf(CardPaymentSetup::issued($client));
+    $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+    RawSql::expectSqlState('23505', static fn (): int => DB::update(
+        'UPDATE invoice_admin SET card_payment_enabled = true, pay_token = ? WHERE invoice_id = ?',
+        [$first->pay_token, $draft->id],
+    ));
+});
+
+it('refuses a token that is malformed or that sits on a document with the switch off', function (): void {
+    CardPaymentSetup::enable();
+    $draft = InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+    RawSql::expectSqlState('23514', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = true, pay_token = ? WHERE invoice_id = ?', [str_repeat('a', 31), $draft->id]));
+    RawSql::expectSqlState('23514', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = true, pay_token = ? WHERE invoice_id = ?', [str_repeat('a', 31).'-', $draft->id]));
+    RawSql::expectSqlState('23514', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = false, pay_token = ? WHERE invoice_id = ?', [PayToken::generate(), $draft->id]));
 });
