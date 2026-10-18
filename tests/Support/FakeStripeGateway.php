@@ -31,6 +31,8 @@ final class FakeStripeGateway implements StripeGateway
 
     private ?string $nextDeactivateFailure = null;
 
+    private ?string $nextUrl = null;
+
     /**
      * Binds a fresh fake as the StripeGateway of the container and returns it.
      */
@@ -59,8 +61,9 @@ final class FakeStripeGateway implements StripeGateway
 
         $link = new CreatedPaymentLink(
             id: implode('_', ['plink', Str::random(24)]),
-            url: 'https://'.implode('.', ['buy', 'stripe', 'com']).'/'.Str::random(20),
+            url: $this->nextUrl ?? 'https://'.implode('.', ['buy', 'stripe', 'com']).'/'.Str::random(20),
         );
+        $this->nextUrl = null;
         $this->links[$request->idempotencyKey] = ['request' => $request, 'link' => $link];
 
         return $link;
@@ -84,6 +87,16 @@ final class FakeStripeGateway implements StripeGateway
     public function failNextCreate(string $failureClass): self
     {
         $this->nextCreateFailure = StripeGatewayFailure::forClass($failureClass)->failureClass;
+
+        return $this;
+    }
+
+    /**
+     * The next link that is actually created carries this address instead of a Stripe one, once.
+     */
+    public function answerWithUrl(string $url): self
+    {
+        $this->nextUrl = $url;
 
         return $this;
     }

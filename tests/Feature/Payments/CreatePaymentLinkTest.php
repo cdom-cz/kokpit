@@ -2,23 +2,37 @@
 
 declare(strict_types=1);
 
+use App\Domain\Identity\Models\User;
+use App\Domain\Identity\RoleName;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Issuing\DocumentIssuer;
 use App\Domain\Invoicing\Issuing\IssueContext;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Operations\Alerts\OperationalAlert;
 use App\Domain\Payments\Enums\PaymentLinkState;
 use App\Domain\Payments\Jobs\CreatePaymentLink;
 use App\Domain\Payments\Models\PaymentLink;
+use App\Domain\Payments\Stripe\StripeGatewayFailure;
+use App\Domain\Settings\Banking\BankAccount;
+use App\Domain\Settings\Banking\BankAccountFormat;
+use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Filament\Resources\InvoiceResource;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Bus\Dispatcher;
+use Illuminate\Contracts\Queue\Job as QueueJob;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+use Symfony\Component\Mime\Email;
 use Tests\Support\Canary;
 use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\FakeStripeGateway;
+use Tests\Support\FictionalIban;
 use Tests\Support\InvoiceFixtures;
+use Tests\Support\StripeTestConfig;
 
 /*
  * The queued job that creates the single-use Stripe payment link of an issued document (PA-01; D-05 to D-09, research
@@ -39,6 +53,15 @@ beforeEach(function (): void {
 function linkRowOf(Invoice $invoice): PaymentLink
 {
     return app(PartnerContext::class)->runAsSystem(static fn (): PaymentLink => PaymentLink::query()->where('invoice_id', $invoice->id)->latest('id')->firstOrFail());
+}
+
+/**
+ * Runs the job in this process through its middleware, as a worker does for one attempt. The sync queue driver is not
+ * used: it would report a failure to failed() at once, which a real queue does only after the last attempt.
+ */
+function runLinkJob(string $linkId): void
+{
+    app(Dispatcher::class)->dispatchNow(new CreatePaymentLink($linkId));
 }
 
 /**
@@ -147,7 +170,7 @@ it('does not create a second Stripe link when the job runs again for an active r
     $link = linkRowOf($issued);
     $before = $link->updated_at;
 
-    CreatePaymentLink::dispatchSync($link->id);
+    runLinkJob($link->id);
 
     $after = linkRowOf($issued);
 
@@ -158,8 +181,283 @@ it('does not create a second Stripe link when the job runs again for an active r
 });
 
 it('ignores an id that is no UUID and an id of no row', function (): void {
-    CreatePaymentLink::dispatchSync('not-a-uuid');
-    CreatePaymentLink::dispatchSync((string) Str::uuid7());
+    runLinkJob('not-a-uuid');
+    runLinkJob((string) Str::uuid7());
 
     expect($this->stripe->createCalls())->toBe(0);
+});
+
+/**
+ * Every Admin as a system run.
+ *
+ * @return list<User>
+ */
+function everyAdmin(): array
+{
+    /** @var list<User> $admins */
+    $admins = app(PartnerContext::class)->runAsSystem(static fn (): array => User::query()->role(RoleName::Admin->value)->get()->all());
+
+    return $admins;
+}
+
+/**
+ * The bell rows of one user as decoded Filament messages.
+ *
+ * @return list<array<string, mixed>>
+ */
+function bellOf(User $user): array
+{
+    return DB::table('notifications')->where('notifiable_id', $user->getKey())->orderBy('created_at')->get()
+        ->map(static fn (object $row): array => json_decode((string) $row->data, true, 512, JSON_THROW_ON_ERROR))
+        ->all();
+}
+
+/**
+ * Subject, text and HTML of every mail the array transport holds.
+ *
+ * @return list<array{subject: string, text: string}>
+ */
+function mailsSent(): array
+{
+    $mails = [];
+
+    foreach (Mail::getSymfonyTransport()->messages() as $sent) {
+        $original = $sent->getOriginalMessage();
+        assert($original instanceof Email);
+        $mails[] = ['subject' => (string) $original->getSubject(), 'text' => (string) $original->getTextBody().(string) $original->getHtmlBody()];
+    }
+
+    return $mails;
+}
+
+/**
+ * Issues a card-on invoice on a queue that discards every job, so the link row stays pending for the test to drive the
+ * job itself.
+ */
+function pendingLinkDocument(array $clientOverrides = [], InvoiceKind $kind = InvoiceKind::Invoice): Invoice
+{
+    config(['queue.connections.discard' => ['driver' => 'null'], 'queue.default' => 'discard']);
+    $issued = CardPaymentSetup::issued(CardPaymentSetup::client($clientOverrides), $kind);
+    config(['queue.default' => 'sync']);
+
+    return $issued;
+}
+
+describe('a Stripe failure', function (): void {
+    it('leaves the document issued, fails the row with a fixed class and tells every Admin by bell and mail without any provider detail', function (): void {
+        $this->stripe->failNextCreate(StripeGatewayFailure::INVALID_REQUEST);
+        $client = CardPaymentSetup::client();
+        $issued = CardPaymentSetup::issued($client);
+        $link = linkRowOf($issued);
+
+        $fresh = Invoice::query()->with('admin')->findOrFail($issued->id);
+
+        expect($fresh->isIssued())->toBeTrue()
+            ->and($fresh->admin?->pdf_document_id)->not->toBeNull()
+            ->and($link->state)->toBe(PaymentLinkState::Failed)
+            ->and($link->failure_class)->toBe('invalid_request')
+            ->and($link->stripe_link_id)->toBeNull()
+            ->and($link->stripe_url)->toBeNull();
+
+        $admins = everyAdmin();
+        $url = InvoiceResource::getUrl('view', ['record' => $issued->id]);
+
+        expect($admins)->not->toBeEmpty();
+
+        foreach ($admins as $admin) {
+            $rows = bellOf($admin);
+
+            expect($rows)->toHaveCount(1)
+                ->and($rows[0]['title'])->toBe('Odkaz na platbu kartou se nepodařilo vytvořit')
+                ->and($rows[0]['body'])->toBe('Doklad '.$issued->number.' zatím nemá odkaz na platbu. Klient vidí informační stránku. Vytvořte odkaz znovu v detailu dokladu.')
+                ->and($rows[0]['actions'][0]['label'])->toBe('Otevřít doklad')
+                ->and($rows[0]['actions'][0]['url'])->toBe($url);
+        }
+
+        $mails = mailsSent();
+
+        expect($mails)->toHaveCount(count($admins));
+
+        $everything = json_encode([$mails, array_map(bellOf(...), $admins)], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        foreach ($mails as $mail) {
+            expect($mail['subject'])->toBe('Kokpit: Odkaz na platbu kartou se nepodařilo vytvořit')
+                ->and($mail['text'])->toContain($issued->number)
+                ->and($mail['text'])->toContain($url);
+        }
+
+        expect($everything)->not->toContain('Stripe request failed')
+            ->and($everything)->not->toContain('invalid_request')
+            ->and($everything)->not->toContain('plink_')
+            ->and($everything)->not->toContain($client->name);
+    });
+
+    it('is final at the first attempt for a 5xx class, a rejected request and a missing key', function (string $class): void {
+        $this->stripe->failNextCreate($class);
+        $issued = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $link = linkRowOf($issued);
+
+        expect($link->state)->toBe(PaymentLinkState::Failed)
+            ->and($link->failure_class)->toBe($class)
+            ->and($this->stripe->createCalls())->toBe(1);
+    })->with([StripeGatewayFailure::API_ERROR, StripeGatewayFailure::AUTHENTICATION, StripeGatewayFailure::IDEMPOTENCY]);
+
+    it('rethrows a lost connection at the first attempt and creates exactly one Stripe link when the same row runs again', function (): void {
+        $issued = pendingLinkDocument();
+        $link = linkRowOf($issued);
+        $this->stripe->failNextCreate(StripeGatewayFailure::CONNECTION);
+
+        expect(fn () => runLinkJob($link->id))->toThrow(StripeGatewayFailure::class);
+
+        $pending = linkRowOf($issued);
+
+        expect($pending->state)->toBe(PaymentLinkState::Pending)
+            ->and($pending->failure_class)->toBeNull()
+            ->and(mailsSent())->toBe([]);
+
+        runLinkJob($link->id);
+
+        $active = linkRowOf($issued);
+
+        expect($active->state)->toBe(PaymentLinkState::Active)
+            ->and($this->stripe->createCalls())->toBe(2)
+            ->and($this->stripe->created())->toHaveCount(1)
+            ->and($this->stripe->created()[0]->idempotencyKey)->toBe($link->id);
+    });
+
+    it('does not rethrow a rate limit on the last attempt but fails the row and alerts', function (): void {
+        $issued = pendingLinkDocument();
+        $link = linkRowOf($issued);
+        $this->stripe->failNextCreate(StripeGatewayFailure::RATE_LIMITED);
+
+        $queueJob = Mockery::mock(QueueJob::class);
+        $queueJob->shouldReceive('attempts')->andReturn(3);
+        $queueJob->shouldReceive('maxTries')->andReturn(3);
+
+        $job = new CreatePaymentLink($link->id);
+        $job->setJob($queueJob);
+        app(PartnerContext::class)->runAsSystem(static fn () => app()->call([$job, 'handle']));
+
+        $failed = linkRowOf($issued);
+
+        expect($failed->state)->toBe(PaymentLinkState::Failed)
+            ->and($failed->failure_class)->toBe('rate_limited')
+            ->and(mailsSent())->toHaveCount(count(everyAdmin()));
+    });
+
+    it('rethrows a rate limit on an earlier attempt', function (): void {
+        $issued = pendingLinkDocument();
+        $link = linkRowOf($issued);
+        $this->stripe->failNextCreate(StripeGatewayFailure::RATE_LIMITED);
+
+        $queueJob = Mockery::mock(QueueJob::class);
+        $queueJob->shouldReceive('attempts')->andReturn(2);
+        $queueJob->shouldReceive('maxTries')->andReturn(3);
+
+        $job = new CreatePaymentLink($link->id);
+        $job->setJob($queueJob);
+
+        expect(fn () => app(PartnerContext::class)->runAsSystem(static fn () => app()->call([$job, 'handle'])))->toThrow(StripeGatewayFailure::class)
+            ->and(linkRowOf($issued)->state)->toBe(PaymentLinkState::Pending);
+    });
+
+    it('fails the row with the class of the failure, or unexpected, once the queue gives up, and alerts once', function (): void {
+        $issued = pendingLinkDocument();
+        $link = linkRowOf($issued);
+
+        (new CreatePaymentLink($link->id))->failed(new RuntimeException('Database exploded with a secret detail'));
+        (new CreatePaymentLink($link->id))->failed(StripeGatewayFailure::connection());
+
+        $failed = linkRowOf($issued);
+
+        expect($failed->state)->toBe(PaymentLinkState::Failed)
+            ->and($failed->failure_class)->toBe('unexpected')
+            ->and(mailsSent())->toHaveCount(count(everyAdmin()))
+            ->and(json_encode(mailsSent(), JSON_THROW_ON_ERROR))->not->toContain('secret detail');
+
+        $other = pendingLinkDocument();
+        (new CreatePaymentLink(linkRowOf($other)->id))->failed(StripeGatewayFailure::connection());
+
+        expect(linkRowOf($other)->failure_class)->toBe('connection');
+    });
+
+    it('leaves an active row alone when the queue reports a failure', function (): void {
+        $issued = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $link = linkRowOf($issued);
+
+        (new CreatePaymentLink($link->id))->failed(new RuntimeException('Late failure'));
+
+        expect(linkRowOf($issued)->state)->toBe(PaymentLinkState::Active)
+            ->and(mailsSent())->toBe([]);
+    });
+
+    it('fails the row as not configured, with an alert, when the Stripe keys are gone at job time', function (): void {
+        $issued = pendingLinkDocument();
+        $link = linkRowOf($issued);
+        StripeTestConfig::clear();
+
+        runLinkJob($link->id);
+
+        $failed = linkRowOf($issued);
+
+        expect($failed->state)->toBe(PaymentLinkState::Failed)
+            ->and($failed->failure_class)->toBe('not_configured')
+            ->and($this->stripe->createCalls())->toBe(0)
+            ->and(mailsSent())->toHaveCount(count(everyAdmin()));
+    });
+
+    it('treats a returned address outside Stripe as an api_error and stores no URL', function (): void {
+        $issued = pendingLinkDocument();
+        $link = linkRowOf($issued);
+        $this->stripe->answerWithUrl('https://'.implode('.', ['pay', 'example', 'net']).'/'.Str::random(8));
+
+        runLinkJob($link->id);
+
+        $failed = linkRowOf($issued);
+
+        expect($failed->state)->toBe(PaymentLinkState::Failed)
+            ->and($failed->failure_class)->toBe('api_error')
+            ->and($failed->stripe_url)->toBeNull();
+    });
+
+    it('fails the row as unsupported_currency for a currency Stripe counts differently, without calling Stripe', function (): void {
+        app(PartnerContext::class)->runAsSystem(static function (): void {
+            $banks = app(BankAccountSettings::class);
+            $banks->accounts = [...$banks->accounts, new BankAccount(BankAccountFormat::Europe2, 'Example ISK account', 'ISK', iban: FictionalIban::czech('56'))];
+            $banks->save();
+        });
+        app()->forgetScopedInstances();
+        InvoiceFixtures::cnbRate('ISK', '2026-10-14', '17.5000000000', 100);
+
+        $issued = CardPaymentSetup::issued(CardPaymentSetup::client(['currency' => 'ISK']));
+        $link = linkRowOf($issued);
+
+        expect($issued->currency)->toBe('ISK')
+            ->and($link->state)->toBe(PaymentLinkState::Failed)
+            ->and($link->failure_class)->toBe('unsupported_currency')
+            ->and($this->stripe->createCalls())->toBe(0)
+            ->and(mailsSent())->toHaveCount(count(everyAdmin()));
+    });
+
+    it('sends an English document the English product name and messages', function (): void {
+        $issued = CardPaymentSetup::issued(CardPaymentSetup::client(['invoice_language' => 'en']));
+        $request = $this->stripe->created()[0];
+
+        expect($request->productName)->toBe('Invoice '.$issued->number)
+            ->and($request->confirmationMessage)->toBe('Thank you, your payment was received. Document '.$issued->number.' will be marked as paid within a few minutes.')
+            ->and($request->inactiveMessage)->toBe('This payment link is no longer active. Use the link on your document or contact the supplier.');
+    });
+});
+
+describe('the operational alert subject', function (): void {
+    it('mails the title as subject unless a mail subject is given, and keeps it when a line is added', function (): void {
+        $user = new User;
+        $plain = new OperationalAlert('Fictional title', 'Fictional body');
+        $custom = new OperationalAlert('Fictional title', 'Fictional body', null, null, 'Kokpit: Fictional title');
+
+        expect($plain->toMail($user)->subject)->toBe('Fictional title')
+            ->and($custom->toMail($user)->subject)->toBe('Kokpit: Fictional title')
+            ->and($custom->withLine('More')->toMail($user)->subject)->toBe('Kokpit: Fictional title')
+            ->and($custom->withLine('More')->body)->toBe("Fictional body\nMore");
+    });
 });

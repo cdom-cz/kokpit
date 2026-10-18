@@ -20,7 +20,8 @@ use Illuminate\Notifications\Notification;
  *
  * The body is plain text, one line per row, already shortened and stripped of
  * payloads by the code that builds it. The action reads "Otevřít stránku Systém"
- * unless the caller names its own label (the CNB rates alert opens the rates overview).
+ * unless the caller names its own label (the CNB rates alert opens the rates overview). The mail subject is the title
+ * unless the caller names its own (the payment link alert sends "Kokpit: <title>", plan 11-07).
  */
 final class OperationalAlert extends Notification
 {
@@ -29,6 +30,7 @@ final class OperationalAlert extends Notification
         public readonly string $body,
         public readonly ?string $actionUrl = null,
         public readonly ?string $actionLabel = null,
+        public readonly ?string $mailSubject = null,
     ) {}
 
     /**
@@ -36,7 +38,7 @@ final class OperationalAlert extends Notification
      */
     public function withLine(string $line): self
     {
-        return new self($this->title, $this->body."\n".$line, $this->actionUrl, $this->actionLabel);
+        return new self($this->title, $this->body."\n".$line, $this->actionUrl, $this->actionLabel, $this->mailSubject);
     }
 
     /** @return list<string> */
@@ -49,7 +51,7 @@ final class OperationalAlert extends Notification
     {
         $message = (new MailMessage)
             ->error()
-            ->subject($this->title)
+            ->subject($this->mailSubject ?? $this->title)
             ->greeting($this->title);
 
         foreach (explode("\n", $this->body) as $line) {
