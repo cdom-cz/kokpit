@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 11
 current_phase_name: Stripe Payments
 status: executing
-stopped_at: Completed 11-08-PLAN.md
-last_updated: "2026-10-18T14:57:26.051Z"
+stopped_at: Completed 11-09-PLAN.md
+last_updated: "2026-10-18T15:14:55.783Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 11 execution started
-state_head: 8dc3ebb181c35ebd8b66c862a6a4199b494429fe
+state_head: 1b205a972657124b69e5f7cccc6ed50a28a77cc0
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 245
-  completed_plans: 233
+  completed_plans: 234
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 11 (Stripe Payments) — EXECUTING
-Plan: 9 of 20
+Plan: 10 of 20
 Status: Ready to execute
 Last activity: 2026-10-18 - Completed quick task 261018-mic: Add an external identifier column to transactions (exposed via the API)
 
@@ -296,6 +296,7 @@ Progress: [█████░░░░░] 54%
 | Phase 11 P06 | 30min | 2 tasks | 14 files |
 | Phase 11 P07 | 45min | 3 tasks | 11 files |
 | Phase 11 P08 | 70min | 3 tasks | 12 files |
+| Phase 11 P09 | 45min | 2 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -741,6 +742,7 @@ Recent decisions affecting current work:
 - [Phase 11]: [11-07] A returned Stripe URL outside stripe.com fails the row as api_error and keeps the Stripe id; ISK/UGX requests fail in phase A before any call
 - [Phase 11]: [11-07] The link job retries only connection and rate_limited before the last attempt, read from the queue job's maxTries (default 3)
 - [Phase 11]: 11-08: the pay page redirects only when the active link offers exactly what is still owed; a stale link after a partial payment shows the preparing state
+- [Phase 11]: 11-09: card payment record keeps the Stripe references after a payment is deleted (payment key ON DELETE SET NULL, unique event, session, payment intent and refund references); a resolution is final in the guard trigger
 
 ### Pending Todos
 
@@ -797,6 +799,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-18T14:38:20.449Z
-Stopped at: Completed 11-08-PLAN.md
+Last session: 2026-10-18T15:14:54.081Z
+Stopped at: Completed 11-09-PLAN.md
 Resume file: None

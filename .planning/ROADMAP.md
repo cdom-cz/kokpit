@@ -752,7 +752,7 @@ Plans:
   4. A matching payment (invoice id, with link id as fallback, correct amount and currency) creates the payment, marks the invoice paid, creates the income transaction, deactivates the link and notifies Admin; a second payment of the same invoice is stored as a duplicate with no income or invoice change and alerts Admin
   5. Unmatched payments and refund events are recorded and alerted, Admin works through a payments overview with duplicate and unmatched filters and manual resolution, unresolved payments show as a dashboard tile and unprocessed webhooks on the System page, and old webhook events are pruned
 
-**Plans:** 8/20 plans executed in 8 waves
+**Plans:** 9/20 plans executed in 8 waves
 **UI hint**: yes
 
 Plans:
@@ -771,7 +771,7 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 11-07-PLAN.md — Link created by an idempotent queued job at issue; failure alerts Admin and never blocks issuing
 - [x] 11-08-PLAN.md — Public pay page /pay/{token}: redirect to Stripe or a neutral paid, cancelled or preparing page
-- [ ] 11-09-PLAN.md — Card payment records: unique Stripe references kept reserved, final resolutions
+- [x] 11-09-PLAN.md — Card payment records: unique Stripe references kept reserved, final resolutions
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 11-10-PLAN.md — Link follows what is owed: reconcile on payment, storno, credit note and deletion; regenerate, deactivate, sweep
@@ -831,5 +831,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 8. Exchange Rates and Reports | 27/27 | In Progress | - |
 | 9. Documents and Finance | 28/28 | In Progress | - |
 | 10. Invoicing | 41/41 | In Progress | - |
-| 11. Stripe Payments | 8/20 | In Progress | - |
+| 11. Stripe Payments | 9/20 | In Progress | - |
 | 12. Partner Audit | 0/0 | Not started | - |
