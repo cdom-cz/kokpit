@@ -18,10 +18,14 @@ use App\Domain\Settings\Banking\BankAccountFormat;
 use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
+use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
 use Carbon\CarbonImmutable;
+use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Livewire\Features\SupportTesting\Testable;
+use Livewire\Livewire;
 use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mime\Email;
 use Tests\Support\Canary;
@@ -44,6 +48,7 @@ beforeEach(function (): void {
     $this->actingAs($this->admin);
     $this->travelTo(CarbonImmutable::parse('2026-10-14 09:30:00', 'Europe/Prague'));
     Mail::getSymfonyTransport()->flush();
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
     CardPaymentSetup::enable();
 });
 
@@ -310,5 +315,47 @@ describe('the pay block of a resend', function (): void {
 
         expect(PayLinkBlock::applies($credit))->toBeFalse()
             ->and(payOutSend($credit))->not->toContain('/pay/');
+    });
+});
+
+/**
+ * The detail of a document with the e-mail dialog open.
+ */
+function payOutDialog(Invoice $invoice): Testable
+{
+    return Livewire::withQueryParams([])
+        ->test(ViewInvoice::class, ['record' => $invoice->getRouteKey()])
+        ->mountAction('sendEmail');
+}
+
+describe('the e-mail dialog announces the pay link', function (): void {
+    it('shows the gray line on an unpaid card-on invoice and keeps the link out of the text', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+
+        $page = payOutDialog($invoice)->assertMountedActionModalSee('Do e-mailu se automaticky přidá odkaz Zaplatit kartou.');
+
+        expect((string) $page->get('mountedActions.0.data.body'))->not->toContain('/pay/')
+            ->and((string) $page->get('mountedActions.0.data.body'))->not->toContain(PayUrl::forInvoice($invoice));
+    });
+
+    it('shows no line on a paid document', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        payOutPay($invoice, '12500.00');
+
+        payOutDialog($invoice)->assertMountedActionModalDontSee('Do e-mailu se automaticky přidá odkaz');
+    });
+
+    it('shows no line on a cancelled document', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        app(IssueCreditNote::class)->storno($this->admin, $invoice);
+
+        payOutDialog($invoice)->assertMountedActionModalDontSee('Do e-mailu se automaticky přidá odkaz');
+    });
+
+    it('shows no line on a document issued with card payment off', function (): void {
+        CardPaymentSetup::onlinePayments(false);
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+
+        payOutDialog($invoice)->assertMountedActionModalDontSee('Do e-mailu se automaticky přidá odkaz');
     });
 });

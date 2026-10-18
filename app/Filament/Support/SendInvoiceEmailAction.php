@@ -8,6 +8,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Payments\Support\PayLinkBlock;
 use App\Filament\Resources\InvoiceResource;
 use Closure;
 use Filament\Actions\Action;
@@ -28,7 +29,8 @@ use Livewire\Component;
  * The dialog asks for the recipient (pre-filled with the invoice e-mail of the client, empty with a helper when the
  * client has none), the subject and the plain text body (both pre-filled in the language of the document), and, only
  * for a document with linked time, whether the work report is attached (default on). A gray line names the
- * attachments. The pre-filled values come from {@see QueueInvoiceEmail::defaults()}, or from the earlier row when the
+ * attachments, and a second gray line announces the pay-link block that the mailer adds by itself when it applies (D-03,
+ * {@see PayLinkBlock::applies()}); the block is never put into the text area. The pre-filled values come from {@see QueueInvoiceEmail::defaults()}, or from the earlier row when the
  * dialog is opened to send again.
  *
  * The write is {@see QueueInvoiceEmail::handle()}, which validates every value again and stores one new log row; this
@@ -181,6 +183,10 @@ final class SendInvoiceEmailAction
             Text::make(static fn (Get $get): string => __('invoices.email.dialog.attachments', [
                 'files' => self::attachments($resolve()[0], $hasReport() && $get('attach_work_report') === true),
             ]))->color('gray'),
+            // D-03: the pay link is appended at send time, never part of the editable text; the line only announces it.
+            Text::make(static fn (): string => (string) __('invoices.email.dialog.pay_link'))
+                ->color('gray')
+                ->visible(static fn (): bool => PayLinkBlock::applies($resolve()[0])),
         ];
     }
 
