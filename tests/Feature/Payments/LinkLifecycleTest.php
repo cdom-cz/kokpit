@@ -13,13 +13,17 @@ use App\Domain\Payments\Actions\DeactivatePaymentLink;
 use App\Domain\Payments\Actions\RegeneratePaymentLink;
 use App\Domain\Payments\Enums\PaymentLinkDeactivation;
 use App\Domain\Payments\Enums\PaymentLinkState;
+use App\Domain\Payments\Jobs\DeactivatePaymentLinks;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Payments\Support\PaymentLinks;
 use App\Domain\Shared\Auth\PartnerContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
@@ -389,5 +393,109 @@ describe('a Partner', function (): void {
         expect($links)->toHaveCount(1)
             ->and(lifecycleLive($invoice)?->id)->toBe($before?->id)
             ->and($this->stripe->deactivated())->toBe([]);
+    });
+});
+
+/**
+ * Runs the sweep (or the targeted job) in this process through its middleware, as a worker does.
+ */
+function lifecycleSweep(?string $linkId = null): void
+{
+    app(Dispatcher::class)->dispatchNow(new DeactivatePaymentLinks($linkId));
+}
+
+describe('the sweep', function (): void {
+    it('repairs a remote deactivation lost to a Stripe outage, once', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $this->stripe->failNextDeactivate('connection');
+
+        lifecyclePay($invoice, '12500.00');
+
+        $link = lifecycleLinks($invoice)->firstOrFail();
+
+        expect($link->state)->toBe(PaymentLinkState::Deactivated)
+            ->and($link->deactivation_reason)->toBe(PaymentLinkDeactivation::Paid)
+            ->and($link->remote_deactivated_at)->toBeNull()
+            ->and($this->stripe->deactivated())->toBe([]);
+
+        lifecycleSweep();
+
+        $link = lifecycleLinks($invoice)->firstOrFail();
+
+        expect($link->remote_deactivated_at)->not->toBeNull()
+            ->and($this->stripe->deactivated())->toBe([$link->stripe_link_id]);
+
+        lifecycleSweep();
+
+        expect($this->stripe->deactivated())->toBe([$link->stripe_link_id]);
+    });
+
+    it('logs the failure class and the row id only and leaves the row for the next sweep', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $this->stripe->failNextDeactivate('rate_limited');
+        lifecyclePay($invoice, '12500.00');
+        $this->stripe->failNextDeactivate('connection');
+
+        Log::spy();
+
+        lifecycleSweep();
+
+        $link = lifecycleLinks($invoice)->firstOrFail();
+
+        expect($link->remote_deactivated_at)->toBeNull();
+
+        Log::shouldHaveReceived('warning')->once()->withArgs(static fn (string $message, array $context): bool => array_keys($context) === ['payment_link_id', 'failure_class']
+            && $context['payment_link_id'] === $link->id
+            && $context['failure_class'] === 'connection'
+            && ! str_contains($message, (string) $link->stripe_link_id));
+    });
+
+    it('ignores a pending row, an active row and a deactivated row without a Stripe id', function (): void {
+        $active = CardPaymentSetup::issued(CardPaymentSetup::client());
+
+        Queue::fake();
+        $pending = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $withoutId = CardPaymentSetup::issued(CardPaymentSetup::client());
+        lifecyclePay($withoutId, '100.00');
+
+        expect(lifecycleLinks($pending)->firstOrFail()->state)->toBe(PaymentLinkState::Pending)
+            ->and(lifecycleLinks($withoutId)->firstOrFail()->state)->toBe(PaymentLinkState::Deactivated)
+            ->and(lifecycleLinks($withoutId)->firstOrFail()->stripe_link_id)->toBeNull();
+
+        lifecycleSweep();
+
+        expect($this->stripe->deactivated())->toBe([])
+            ->and(lifecycleLinks($active)->firstOrFail()->state)->toBe(PaymentLinkState::Active)
+            ->and(lifecycleLinks($pending)->firstOrFail()->state)->toBe(PaymentLinkState::Pending)
+            ->and(lifecycleLinks($withoutId)->firstOrFail()->remote_deactivated_at)->toBeNull();
+    });
+
+    it('takes only the named row when the job is queued for one link, and ignores a value that is no UUID', function (): void {
+        $first = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $second = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $this->stripe->failNextDeactivate('connection');
+        lifecyclePay($first, '12500.00');
+        $this->stripe->failNextDeactivate('connection');
+        lifecyclePay($second, '12500.00');
+
+        lifecycleSweep('not-a-uuid');
+
+        expect($this->stripe->deactivated())->toBe([]);
+
+        lifecycleSweep(lifecycleLinks($second)->firstOrFail()->id);
+
+        expect($this->stripe->deactivated())->toBe([lifecycleLinks($second)->firstOrFail()->stripe_link_id])
+            ->and(lifecycleLinks($first)->firstOrFail()->remote_deactivated_at)->toBeNull();
+    });
+
+    it('is scheduled every five minutes on one server', function (): void {
+        $events = array_values(array_filter(
+            app(Schedule::class)->events(),
+            static fn ($event): bool => $event->description === 'kokpit-payment-link-sweep',
+        ));
+
+        expect($events)->toHaveCount(1)
+            ->and($events[0]->onOneServer)->toBeTrue()
+            ->and($events[0]->expression)->toBe('*/5 * * * *');
     });
 });

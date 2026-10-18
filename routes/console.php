@@ -6,6 +6,7 @@ use App\Domain\Api\Jobs\PurgeExpiredIdempotencyKeys;
 use App\Domain\Documents\Jobs\PruneExpiredDocumentArchives;
 use App\Domain\Operations\Health\Heartbeats;
 use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
+use App\Domain\Payments\Jobs\DeactivatePaymentLinks;
 use App\Domain\Reports\Jobs\PruneExpiredReportExports;
 use App\Domain\TimeTracking\Jobs\NotifyLongRunningTimers;
 use Illuminate\Foundation\Inspiring;
@@ -95,4 +96,12 @@ Schedule::job(new PruneExpiredReportExports)
 Schedule::job(new PruneExpiredDocumentArchives)
     ->daily()
     ->name('kokpit-document-archive-prune')
+    ->onOneServer();
+
+// Switches off at Stripe every payment link that was deactivated here but whose remote call was lost to an outage, so a
+// stale link cannot stay payable for long (D-08, research Pattern 3). The after-commit job handles the normal case;
+// this sweep is the repair. Runs as system.
+Schedule::job(new DeactivatePaymentLinks)
+    ->everyFiveMinutes()
+    ->name('kokpit-payment-link-sweep')
     ->onOneServer();
