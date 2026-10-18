@@ -752,8 +752,45 @@ Plans:
   4. A matching payment (invoice id, with link id as fallback, correct amount and currency) creates the payment, marks the invoice paid, creates the income transaction, deactivates the link and notifies Admin; a second payment of the same invoice is stored as a duplicate with no income or invoice change and alerts Admin
   5. Unmatched payments and refund events are recorded and alerted, Admin works through a payments overview with duplicate and unmatched filters and manual resolution, unresolved payments show as a dashboard tile and unprocessed webhooks on the System page, and old webhook events are pruned
 
-**Plans**: TBD
+**Plans:** 20 plans in 8 waves
 **UI hint**: yes
+
+Plans:
+**Wave 1**
+- [ ] 11-01-PLAN.md — Stripe SDK behind a two-method gateway with a fake, fixed failure classes, secrets from the environment only (blocking-human package check)
+- [ ] 11-02-PLAN.md — Card payment write core: RecordPayment::recordLocked() for a job without a user, method card, link-only payment income
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 11-03-PLAN.md — Per-document card switch and stable pay token frozen at issue; draft editor, issue confirmation, settings and client hints
+- [ ] 11-04-PLAN.md — Webhook endpoint: signature check, unique event stored once, immediate answer, processing job with the job contract
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 11-05-PLAN.md — "Zaplatit kartou" in the invoice PDF and the pay-link block in the e-mail
+- [ ] 11-06-PLAN.md — Payment link records: Admin-only table, one live link per document, guarded lifecycle
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 11-07-PLAN.md — Link created by an idempotent queued job at issue; failure alerts Admin and never blocks issuing
+- [ ] 11-08-PLAN.md — Public pay page /pay/{token}: redirect to Stripe or a neutral paid, cancelled or preparing page
+- [ ] 11-09-PLAN.md — Card payment records: unique Stripe references kept reserved, final resolutions
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 11-10-PLAN.md — Link follows what is owed: reconcile on payment, storno, credit note and deletion; regenerate, deactivate, sweep
+- [ ] 11-11-PLAN.md — Payments overview "Platby kartou": queue tabs, filters, record view with banners
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 11-12-PLAN.md — Admin document detail: card link section, banners, header action, invoice list link filter
+- [ ] 11-13-PLAN.md — Automatic matching of paid checkout sessions; duplicates, unmatched reasons, repeats ignored
+- [ ] 11-14-PLAN.md — System page: unprocessed webhooks and Stripe configured slots; 90-day pruning of processed events
+- [ ] 11-19-PLAN.md — Resolutions: assign to a document, mark resolved with a note, record a money return
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 11-15-PLAN.md — Partner "Zaplatit kartou" in the free header slot, with the rendered-HTML leak proof
+- [ ] 11-16-PLAN.md — Duplicate, unmatched and refund alerts in the bell and by e-mail; refund events recorded
+- [ ] 11-17-PLAN.md — Dashboard card "Nevyřešené platby"
+- [ ] 11-18-PLAN.md — Concurrency proof of matching with a mutation twin
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 11-20-PLAN.md — End-to-end journey, Partner sweep, Phase 12 hand-over, owner's Stripe setup, full gate
 
 ### Phase 12: Partner Audit
 
