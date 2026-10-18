@@ -265,4 +265,33 @@ return [
         'replaced' => 'Nahrazen novým odkazem.',
     ],
 
+    'card_payment_type' => [
+        'matched' => 'Spárovaná',
+        'duplicate' => 'Duplicitní',
+        'unmatched' => 'Nespárovaná',
+        'refund' => 'Vrácení',
+    ],
+
+    'card_payment_reason' => [
+        'amount' => 'Jiná částka než nabízel odkaz',
+        'currency' => 'Jiná měna než nabízel odkaz',
+        'already_paid' => 'Doklad už je zaplacený',
+        'cancelled' => 'Doklad je stornovaný',
+        'undetermined' => 'Doklad nelze určit',
+    ],
+
+    'card_payment_resolution' => [
+        'none' => 'Nevyřešeno',
+        'assigned' => 'Přiřazeno k dokladu',
+        'noted' => 'Vyřešeno poznámkou',
+        'returned' => 'Vrácení peněz zaevidováno',
+    ],
+
+    'card_payment_status' => [
+        'booked' => 'Zapsáno k dokladu',
+        'payment_deleted' => 'Smazaná platba',
+        'unresolved' => 'Nevyřešeno',
+        'resolved' => 'Vyřešeno',
+    ],
+
 ];

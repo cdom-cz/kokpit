@@ -26,6 +26,7 @@ use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Policies\InvoiceItemPolicy;
 use App\Domain\Invoicing\Policies\InvoicePolicy;
+use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
@@ -154,6 +155,9 @@ final class AccessServiceProvider extends ServiceProvider
 
         // The Stripe payment link of a document (state, amount, Stripe references) is Admin-only (Phase 11).
         Gate::policy(PaymentLink::class, AdminOnlyPolicy::class);
+
+        // The record of a Stripe payment or refund event (Stripe references, resolution note) is Admin-only (Phase 11).
+        Gate::policy(CardPayment::class, AdminOnlyPolicy::class);
 
         // The personal planner "Signal" belongs to one Admin and is closed to Partners; the owner scope
         // of the models keeps every Admin to the own rows.

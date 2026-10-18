@@ -355,6 +355,7 @@ describe('the guard on a stored row (D-07, D-08)', function (): void {
     });
 
     it('refuses TRUNCATE', function (): void {
-        RawSql::expectSqlState('KP001', fn () => DB::unprepared('TRUNCATE payment_links'));
+        // card_payments points at payment_links, so PostgreSQL wants both tables named; the guard of either refuses.
+        RawSql::expectSqlState('KP001', fn () => DB::unprepared('TRUNCATE payment_links, card_payments'));
     });
 });
