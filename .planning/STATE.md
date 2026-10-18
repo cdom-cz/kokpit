@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 11
 current_phase_name: Stripe Payments
 status: executing
-stopped_at: Completed 11-10-PLAN.md
-last_updated: "2026-10-18T15:27:17.079Z"
+stopped_at: Completed 11-11-PLAN.md
+last_updated: "2026-10-18T15:42:16.942Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 11 execution started
-state_head: cb74ac61936e2dac143bc48b860d3b79dd7ccc2e
+state_head: 8d179ad69ffa6bb551d12a86b5413fd991f9c531
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 245
-  completed_plans: 235
+  completed_plans: 236
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 11 (Stripe Payments) — EXECUTING
-Plan: 11 of 20
+Plan: 12 of 20
 Status: Ready to execute
 Last activity: 2026-10-18 - Completed quick task 261018-mic: Add an external identifier column to transactions (exposed via the API)
 
@@ -298,6 +298,7 @@ Progress: [█████░░░░░] 54%
 | Phase 11 P08 | 70min | 3 tasks | 12 files |
 | Phase 11 P09 | 45min | 2 tasks | 17 files |
 | Phase 11 P10 | 40min | 3 tasks | 13 files |
+| Phase 11 P11 | 55min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -745,6 +746,8 @@ Recent decisions affecting current work:
 - [Phase 11]: 11-08: the pay page redirects only when the active link offers exactly what is still owed; a stale link after a partial payment shows the preparing state
 - [Phase 11]: 11-09: card payment record keeps the Stripe references after a payment is deleted (payment key ON DELETE SET NULL, unique event, session, payment intent and refund references); a resolution is final in the guard trigger
 - [Phase 11]: R11-10: PaymentLinks::deactivate() is the one local deactivation shared by reconcile, regenerate and manual deactivation; the remote stamp is set under a row lock only while empty
+- [Phase 11]: 11-11: the type tabs Duplicitní, Nespárované and Vrácení list unresolved records of their type only; every resolved record sits under Vyřešené, so the tabs partition the table
+- [Phase 11]: 11-11: a list that never had a record shows the no-record empty state on every tab; the Livewire update of the record view answers 404 for a Partner (record hidden by the model scope), GET answers 403
 
 ### Pending Todos
 
@@ -801,6 +804,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-18T15:27:15.422Z
-Stopped at: Completed 11-10-PLAN.md
+Last session: 2026-10-18T15:42:15.272Z
+Stopped at: Completed 11-11-PLAN.md
 Resume file: None
