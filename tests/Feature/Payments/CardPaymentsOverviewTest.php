@@ -3,7 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Finance\Actions\RecordTransaction;
+use App\Domain\Finance\Enums\TransactionType;
+use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Payments\Enums\CardPaymentReason;
 use App\Domain\Payments\Enums\CardPaymentResolution;
 use App\Domain\Payments\Enums\CardPaymentStatus;
 use App\Domain\Payments\Enums\CardPaymentTab;
@@ -11,16 +15,20 @@ use App\Domain\Payments\Enums\CardPaymentType;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Queries\UnresolvedPayments;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Money\Money;
+use App\Filament\RelationManagers\CardPaymentHistoryRelationManager;
 use App\Filament\Resources\CardPaymentResource;
 use App\Filament\Resources\CardPaymentResource\Pages\ListCardPayments;
 use App\Filament\Resources\CardPaymentResource\Pages\ViewCardPayment;
 use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\InvoiceResource;
+use App\Filament\Resources\TransactionResource;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\CardPaymentFixtures;
@@ -391,5 +399,190 @@ describe('empty states and paging', function (): void {
         }
 
         expect($count())->toBe($few);
+    });
+});
+
+/**
+ * The record view of a record as the Admin opens it.
+ */
+function overviewRecord(CardPayment $record): Testable
+{
+    return Livewire::test(ViewCardPayment::class, ['record' => $record->getRouteKey()]);
+}
+
+describe('record banners', function (): void {
+    it('explains each kind of record in one banner', function (): void {
+        $client = CardPaymentSetup::client();
+        $invoice = CardPaymentSetup::issued($client);
+        $number = (string) $invoice->number;
+        $total = Money::ofMinor($invoice->total_minor, $invoice->currency);
+        $paid = Money::ofMinor($invoice->total_minor + 100000, $invoice->currency);
+
+        $duplicate = CardPaymentFixtures::duplicate($invoice);
+        $amount = CardPaymentFixtures::unmatched($invoice);
+        $currency = CardPaymentFixtures::unmatched($invoice, ['reason' => CardPaymentReason::Currency, 'currency' => 'EUR', 'offered_currency' => 'CZK']);
+        $undetermined = CardPaymentFixtures::unmatched();
+        $cancelled = CardPaymentFixtures::unmatched($invoice, ['reason' => CardPaymentReason::Cancelled]);
+        $refund = CardPaymentFixtures::refund($invoice);
+        $matched = CardPaymentFixtures::matched($invoice);
+        $deleted = CardPaymentFixtures::matchedThenDeleted(CardPaymentSetup::issued($client));
+        $resolved = CardPaymentFixtures::resolved();
+
+        overviewRecord($duplicate)->assertSee("Doklad {$number} už byl zaplacený. Tato platba nevytvořila příjem a nezměnila doklad.");
+
+        overviewRecord($amount)->assertSee('Platba '.$paid->format('cs').' neodpovídá částce, kterou odkaz nabízel ('.$total->format('cs').'). Nevznikl příjem a doklad se nezměnil.');
+
+        overviewRecord($currency)->assertSee('Platba je v měně EUR, odkaz nabízel CZK. Nevznikl příjem a doklad se nezměnil.');
+
+        overviewRecord($undetermined)->assertSee('Platbu se nepodařilo přiřadit k žádnému dokladu. Nevznikl příjem.');
+
+        overviewRecord($cancelled)->assertSee("Doklad {$number} je stornovaný. Nevznikl příjem.");
+
+        overviewRecord($refund)->assertSee('Stripe oznámil vrácení platby '.$refund->amount()->format('cs').'. Doklad ani příjem se nezměnily. Upravte je ručně, pokud je to potřeba.');
+
+        overviewRecord($matched)->assertSee("Platba je zapsaná u dokladu {$number}. Opravit ji lze smazáním platby v detailu dokladu.");
+
+        overviewRecord($deleted)->assertSee('Platba byla z dokladu smazána. Událost zůstává rezervovaná, takže její opakované doručení platbu nevytvoří znovu.');
+
+        overviewRecord($resolved)->assertSee('Vyřešeno '.$resolved->resolved_at?->setTimezone('Europe/Prague')->format('j. n. Y').': Vyřešeno poznámkou.');
+    });
+
+    it('shows one banner only and the resolved banner wins over the reason', function (): void {
+        $resolved = CardPaymentFixtures::resolved();
+
+        overviewRecord($resolved)
+            ->assertSee('Vyřešeno ')
+            ->assertDontSee('Platbu se nepodařilo přiřadit k žádnému dokladu.');
+
+        $refund = CardPaymentFixtures::refund();
+
+        overviewRecord($refund)->assertDontSee('Platba je zapsaná u dokladu');
+    });
+
+    it('gives each banner its colour: danger for what was not booked, warning for a refund, info for the rest', function (): void {
+        $client = CardPaymentSetup::client();
+        $invoice = CardPaymentSetup::issued($client);
+
+        $color = static function (CardPayment $record): string {
+            preg_match('/class="fi-color fi-color-(\w+) fi-sc-callout/', overviewRecord($record)->html(), $match);
+
+            return $match[1] ?? 'none';
+        };
+
+        expect($color(CardPaymentFixtures::duplicate($invoice)))->toBe('danger')
+            ->and($color(CardPaymentFixtures::unmatched($invoice)))->toBe('danger')
+            ->and($color(CardPaymentFixtures::unmatched()))->toBe('danger')
+            ->and($color(CardPaymentFixtures::refund($invoice)))->toBe('warning')
+            ->and($color(CardPaymentFixtures::matched($invoice)))->toBe('info')
+            ->and($color(CardPaymentFixtures::matchedThenDeleted(CardPaymentSetup::issued($client))))->toBe('info')
+            ->and($color(CardPaymentFixtures::resolved()))->toBe('info');
+    });
+});
+
+describe('record sections', function (): void {
+    it('shows the facts of the payment, the matching and no resolution section', function (): void {
+        $client = CardPaymentSetup::client();
+        $invoice = CardPaymentSetup::issued($client);
+        $record = CardPaymentFixtures::unmatched($invoice);
+
+        $page = overviewRecord($record);
+
+        foreach (['Částka', 'Měna', 'Přijato', 'Platba', 'Událost', 'Odkaz', 'Doklad', 'Klient', 'Nabízená částka', 'Zbývá na dokladu', 'Důvod'] as $label) {
+            $page->assertSee($label);
+        }
+
+        $page->assertSee($record->stripe_event_id)
+            ->assertSee($record->stripe_payment_intent_id)
+            ->assertSee((string) $invoice->number)
+            ->assertSee($client->name)
+            ->assertSee('Jiná částka než nabízel odkaz')
+            ->assertDontSee('Řešení')
+            ->assertDontSee('Navázaný výdaj');
+    });
+
+    it('shows what is left on the document and a dash for a payment without a document or a link', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        CardPaymentFixtures::matched($invoice);
+        $duplicate = CardPaymentFixtures::duplicate($invoice);
+
+        overviewRecord($duplicate)->assertSee(Money::zero($invoice->currency)->format('cs'));
+
+        $undetermined = CardPaymentFixtures::unmatched(null, ['stripe_link_id' => null]);
+
+        overviewRecord($undetermined)->assertSee('—');
+    });
+
+    it('shows the resolution of a resolved record with its note', function (): void {
+        $record = CardPaymentFixtures::resolved(note: 'Returned in the dashboard (fictional).');
+
+        $page = overviewRecord($record);
+
+        foreach (['Řešení', 'Stav', 'Vyřešeno', 'Způsob', 'Poznámka'] as $label) {
+            $page->assertSee($label);
+        }
+
+        $page->assertSee('Vyřešeno poznámkou')->assertSee('Returned in the dashboard (fictional).')->assertDontSee('Navázaný výdaj');
+    });
+
+    it('links the expense of a recorded return', function (): void {
+        $record = CardPaymentFixtures::unmatched();
+        $category = TransactionCategory::query()->selectable(TransactionType::Expense)->firstOrFail();
+        $expense = app(RecordTransaction::class)->handle(Canary::admin(), [
+            'type' => 'expense',
+            'transaction_date' => '2026-10-14',
+            'category_id' => $category->getKey(),
+            'amount' => '50,00',
+            'currency' => 'CZK',
+        ]);
+
+        app(PartnerContext::class)->runAsSystem(static function () use ($record, $expense): void {
+            $record->forceFill([
+                'resolution' => CardPaymentResolution::Returned,
+                'resolved_at' => now(),
+                'resolved_by' => Canary::admin()->getKey(),
+                'return_transaction_id' => $expense->id,
+            ])->save();
+        });
+
+        overviewRecord($record->refresh())
+            ->assertSee('Navázaný výdaj')
+            ->assertSee('Vrácení peněz zaevidováno')
+            ->assertSee(TransactionResource::getUrl('edit', ['record' => $expense]));
+    });
+});
+
+describe('record history and access', function (): void {
+    it('lists the resolution in the history without a Stripe reference or the note', function (): void {
+        $record = CardPaymentFixtures::resolved(note: 'Secret note text (fictional).');
+        $activity = app(PartnerContext::class)->runAsSystem(static fn () => Activity::query()->where('subject_id', $record->id)->get());
+
+        expect($activity)->not->toBeEmpty();
+
+        $table = Livewire::test(CardPaymentHistoryRelationManager::class, ['ownerRecord' => $record, 'pageClass' => ViewCardPayment::class])
+            ->assertCanSeeTableRecords($activity);
+
+        $html = $table->html();
+
+        expect($html)->not->toContain($record->stripe_event_id)
+            ->and($html)->not->toContain((string) $record->stripe_payment_intent_id)
+            ->and($html)->not->toContain('Secret note text');
+    });
+
+    it('refuses a Partner on the record, on a Livewire update of it and on the history', function (): void {
+        $client = CardPaymentSetup::client();
+        $invoice = CardPaymentSetup::issued($client);
+        $record = CardPaymentFixtures::unmatched($invoice);
+
+        $page = overviewRecord($record);
+
+        $this->actingAs(Canary::partnerFor($client->id));
+
+        // The Partner scope hides the record from a Partner, so Livewire cannot rehydrate it and the update ends in
+        // a 404 before boot() can answer 403; the record is refused either way and never served.
+        $page->call('$refresh')->assertNotFound();
+
+        expect(CardPaymentHistoryRelationManager::canViewForRecord($record, ViewCardPayment::class))->toBeFalse();
+
+        Livewire::test(CardPaymentHistoryRelationManager::class, ['ownerRecord' => $record, 'pageClass' => ViewCardPayment::class])->assertForbidden();
     });
 });

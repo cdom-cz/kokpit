@@ -60,6 +60,43 @@ return [
         'resolved_heading' => 'Zatím nic vyřešeného',
     ],
 
+    'sections' => [
+        'payment' => 'Platba',
+        'matching' => 'Spárování',
+        'resolution' => 'Řešení',
+    ],
+
+    'fields' => [
+        'amount' => 'Částka',
+        'currency' => 'Měna',
+        'received' => 'Přijato',
+        'payment' => 'Platba',
+        'event' => 'Událost',
+        'link' => 'Odkaz',
+        'invoice' => 'Doklad',
+        'client' => 'Klient',
+        'offered' => 'Nabízená částka',
+        'remaining' => 'Zbývá na dokladu',
+        'reason' => 'Důvod',
+        'status' => 'Stav',
+        'resolved_at' => 'Vyřešeno',
+        'method' => 'Způsob',
+        'note' => 'Poznámka',
+        'expense' => 'Navázaný výdaj',
+    ],
+
+    'banners' => [
+        'duplicate' => 'Doklad :number už byl zaplacený. Tato platba nevytvořila příjem a nezměnila doklad.',
+        'amount' => 'Platba :paid neodpovídá částce, kterou odkaz nabízel (:offered). Nevznikl příjem a doklad se nezměnil.',
+        'currency' => 'Platba je v měně :currency, odkaz nabízel :offered_currency. Nevznikl příjem a doklad se nezměnil.',
+        'undetermined' => 'Platbu se nepodařilo přiřadit k žádnému dokladu. Nevznikl příjem.',
+        'cancelled' => 'Doklad :number je stornovaný. Nevznikl příjem.',
+        'refund' => 'Stripe oznámil vrácení platby :amount. Doklad ani příjem se nezměnily. Upravte je ručně, pokud je to potřeba.',
+        'matched' => 'Platba je zapsaná u dokladu :number. Opravit ji lze smazáním platby v detailu dokladu.',
+        'matched_deleted' => 'Platba byla z dokladu smazána. Událost zůstává rezervovaná, takže její opakované doručení platbu nevytvoří znovu.',
+        'resolved' => 'Vyřešeno :date: :resolution.',
+    ],
+
     'actions' => [
         'open' => 'Otevřít',
     ],

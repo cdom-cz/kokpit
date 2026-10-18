@@ -263,7 +263,7 @@ final class CardPaymentResource extends Resource
      * How a resolved record was settled, under its state: the document an assignment put the payment on, a note, a
      * recorded return. Null for a record nobody resolved.
      */
-    private static function resolutionLine(CardPayment $record): ?string
+    public static function resolutionLine(CardPayment $record): ?string
     {
         if ($record->resolution === CardPaymentResolution::None) {
             return null;
