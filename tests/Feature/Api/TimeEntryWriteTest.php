@@ -6,16 +6,21 @@ use App\Domain\Api\ReferenceResolver;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Actions\ArchiveTask;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Billing\EntryBilling;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\TimerClock;
 use App\Http\Requests\Api\V1\TimeEntryPayload;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
+use Tests\Support\ApiDocs;
 use Tests\Support\ApiFixtures;
 use Tests\Support\Canary;
 
@@ -183,6 +188,65 @@ it('answers 409 entry_locked for a billed entry on PATCH and DELETE and leaves t
 
     expect($stored->description)->toBe('Fictional work')
         ->and($stored->billing_state->value)->toBe('billed');
+});
+
+/**
+ * Reserves the entry for a draft invoice of its client, written as system with raw SQL (the issuing Actions are
+ * a later plan).
+ */
+function apiReserve(TimeEntry $entry): void
+{
+    app(PartnerContext::class)->runAsSystem(static function () use ($entry): void {
+        /** @var object{id: string} $draft */
+        $draft = DB::selectOne(
+            "insert into invoices (client_id, kind, state, currency, language, created_at, updated_at) values (?, 'invoice', 'draft', 'CZK', 'cs', now(), now()) returning id",
+            [$entry->client_id],
+        );
+
+        DB::transaction(static function () use ($entry, $draft): void {
+            app(EntryBilling::class)->reserve(TimeEntry::query()->whereKey($entry->id)->lockForUpdate()->get(), $draft->id);
+        });
+    });
+}
+
+it('answers 409 entry_locked for a change of a reserved entry, lets its description through and refuses its deletion', function (): void {
+    $admin = ApiFixtures::admin();
+    [$entry] = writableEntry($admin);
+    apiReserve($entry);
+    $token = ApiFixtures::token($admin, ['time:write']);
+    $message = 'Záznam je připojen ke konceptu faktury. Odpojte ho v konceptu.';
+
+    $this->withToken($token)->patchJson('/api/v1/time-entries/'.$entry->id, ['ended_at' => '2026-10-12T10:00:00Z'])
+        ->assertStatus(409)
+        ->assertExactJson(['message' => $message, 'code' => 'entry_locked']);
+
+    $this->withToken($token)->deleteJson('/api/v1/time-entries/'.$entry->id)
+        ->assertStatus(409)
+        ->assertExactJson(['message' => $message, 'code' => 'entry_locked']);
+
+    $stored = app(PartnerContext::class)->runAsSystem(static fn (): TimeEntry => TimeEntry::query()->findOrFail($entry->id));
+
+    expect($stored->ended_at?->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-12 09:30:00')
+        ->and($stored->isReserved())->toBeTrue();
+
+    $this->withToken($token)->patchJson('/api/v1/time-entries/'.$entry->id, ['description' => 'Fictional work, corrected'])
+        ->assertOk()
+        ->assertJsonPath('data.description', 'Fictional work, corrected')
+        ->assertJsonPath('data.ended_at', '2026-10-12T09:30:00+00:00');
+});
+
+it('documents that a reserved entry is locked like a billed one', function (): void {
+    foreach (['api.v1.time-entries.update', 'api.v1.time-entries.destroy'] as $name) {
+        $operation = ApiDocs::operation(Route::getRoutes()->getByName($name));
+
+        expect($operation)->not->toBeNull()
+            ->and((string) json_encode($operation))->toContain('reserved by an invoice draft');
+    }
+
+    $update = ApiDocs::operation(Route::getRoutes()->getByName('api.v1.time-entries.update'));
+
+    expect((string) ($update['description'] ?? ''))->toContain('reserved by an invoice draft, cannot be changed')
+        ->and((string) ($update['description'] ?? ''))->toContain('`entry_locked`');
 });
 
 it('refuses to end a running entry from outside, with 422 under ended_at', function (): void {

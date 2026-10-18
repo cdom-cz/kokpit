@@ -213,7 +213,7 @@ final class TransactionController
 
     #[Endpoint(
         'Update a transaction',
-        'Requires ability `'.ApiAbility::FinanceWrite->value.'`. Edits a transaction through the same rules as the application. Send only the keys to change: an absent key keeps its value, and `null` clears `description`, `counterparty`, `document_number`, `client_id` and `project_id`. A project needs its client, so clearing the client of a transaction that keeps a project answers 422 under `project_id`. `currency` needs `amount_minor` in the same request, because an amount belongs to one currency; without it the answer is 422 under `amount_minor`. A transaction booked at an own rate keeps that rate when its amount changes: the CZK figure is recomputed at the stored rate. A changed currency drops the own rate and uses the Czech National Bank rate. To change how the CZK figure is fixed, send a new `exchange_rate` (a string) for an own rate or a new `czk_amount_minor` for the figure the bank used. `exchange_rate: null` drops an own rate, `czk_amount_minor: null` drops a bank figure, and both `null` return any transaction to the Czech National Bank rate; a `null` of a field the transaction does not use changes nothing. A transaction in CZK takes no rate and no CZK figure. Every 422 is keyed by the field names of this request.',
+        'Requires ability `'.ApiAbility::FinanceWrite->value.'`. Edits a transaction through the same rules as the application. Send only the keys to change: an absent key keeps its value, and `null` clears `description`, `counterparty`, `document_number`, `client_id` and `project_id`. A project needs its client, so clearing the client of a transaction that keeps a project answers 422 under `project_id`. `currency` needs `amount_minor` in the same request, because an amount belongs to one currency; without it the answer is 422 under `amount_minor`. A transaction booked at an own rate keeps that rate when its amount changes: the CZK figure is recomputed at the stored rate. A changed currency drops the own rate and uses the Czech National Bank rate. To change how the CZK figure is fixed, send a new `exchange_rate` (a string) for an own rate or a new `czk_amount_minor` for the figure the bank used. `exchange_rate: null` drops an own rate, `czk_amount_minor: null` drops a bank figure, and both `null` return any transaction to the Czech National Bank rate; a `null` of a field the transaction does not use changes nothing. A transaction in CZK takes no rate and no CZK figure. A transaction that books an invoice payment changes only in its `transaction_date` (the CZK figure follows the date) and its `category_id`; any other field answers 422 under that field. Every 422 is keyed by the field names of this request.',
     )]
     #[UrlParam('id', 'string', 'Transaction UUID.', example: '0199e3b0-1a2b-7c3d-8e4f-a1b2c3d4e5f6')]
     #[Response(TransactionExamples::TRANSACTION, 200, 'The transaction after the change.')]
@@ -252,12 +252,13 @@ final class TransactionController
 
     #[Endpoint(
         'Delete a transaction',
-        'Requires ability `'.ApiAbility::FinanceWrite->value.'`. Deletes a transaction for good, together with its receipts, and answers 204 without a body. The receipt files are not part of the API and cannot be recovered. A transaction that another record still refers to cannot be deleted: the answer is 409 with the code `transaction_in_use` and nothing is deleted.',
+        'Requires ability `'.ApiAbility::FinanceWrite->value.'`. Deletes a transaction for good, together with its receipts, and answers 204 without a body. The receipt files are not part of the API and cannot be recovered. A transaction that another record still refers to cannot be deleted: the answer is 409 with the code `transaction_in_use` and nothing is deleted. A transaction that books an invoice payment is never deleted by this endpoint: the answer is 422 under `transaction`, and it is deleted only by deleting the payment in the invoice detail.',
     )]
     #[UrlParam('id', 'string', 'Transaction UUID.', example: '0199e3b0-1a2b-7c3d-8e4f-a1b2c3d4e5f6')]
     #[Response(null, 204, 'The transaction was deleted.')]
     #[Response(ApiExamples::NOT_FOUND, 404, 'No transaction has this UUID.')]
     #[Response(TransactionExamples::TRANSACTION_IN_USE, 409, 'Another record refers to the transaction, so it cannot be deleted (code `transaction_in_use`).')]
+    #[Response(ApiExamples::VALIDATION_ERROR, 422, 'The transaction books an invoice payment; it is deleted only by deleting the payment in the invoice detail.')]
     public function destroy(string $transaction, Request $request, DeleteTransaction $delete): JsonResponse|HttpResponse
     {
         $stored = self::find($transaction);

@@ -2,11 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Domain\Documents\Actions\StoreGeneratedDocument;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\Documents\Support\DocumentUrl;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Support\InvoicePdfUrl;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Models\Task;
@@ -15,10 +19,12 @@ use Filament\Facades\Filament;
 use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\CanaryRecord;
 use Tests\Support\CanaryRegistry;
+use Tests\Support\DocumentFixtures;
 use Tests\Support\Filament\CanaryRecordResource;
 use Tests\Support\Filament\CanaryRecordResource\Pages\ListCanaryRecords;
 
@@ -82,7 +88,8 @@ function walkedRoutes(): array
  * The URL of a walked route. A route with a {record} parameter gets the given record id; the file route
  * (a {document} parameter) gets the visible canary document of the requested side ('a' or 'b'), and the archive
  * route (an {archive} parameter) gets the canary ZIP archive of that side, both signed for the signed-in user
- * through DocumentUrl so that the walk reaches the controller instead of stopping at the signature check. Any
+ * through DocumentUrl, and the invoice PDF route (an {invoice} parameter) gets the issued canary invoice of that side
+ * signed through InvoicePdfUrl, so that the walk reaches the controller instead of stopping at the signature check. Any
  * other parameter fails the walk so that a new kind of route is looked at on purpose.
  */
 function walkedUrl(LaravelRoute $route, string $recordId, string $side = 'a'): string
@@ -110,6 +117,16 @@ function walkedUrl(LaravelRoute $route, string $recordId, string $side = 'a'): s
             return DocumentUrl::archive(walkedArchive($side), $user);
         }
 
+        if ($parameter === 'invoice' && $route->getName() === InvoicePdfUrl::ROUTE) {
+            $user = auth()->user();
+
+            if (! $user instanceof User) {
+                throw new LogicException('The route walk signs the invoice PDF route for the signed-in user; sign in before walking.');
+            }
+
+            return InvoicePdfUrl::download(walkedInvoice($side), $user);
+        }
+
         if ($parameter !== 'record') {
             throw new LogicException("The route walk does not know the parameter [{$parameter}] of route [{$route->getName()}]; teach it how to fill it.");
         }
@@ -134,6 +151,37 @@ function walkedDocument(string $side): Document
 }
 
 /**
+ * The issued canary invoice of a side: the one with a number, found by its printed note (the draft twin has none).
+ */
+function walkedInvoice(string $side): Invoice
+{
+    $canary = $side === 'a' ? test()->canaryA : test()->canaryB;
+
+    return app(PartnerContext::class)->runAsSystem(
+        static fn (): Invoice => Invoice::query()->where('note', $canary)->whereNotNull('number')->firstOrFail(),
+    );
+}
+
+/**
+ * Stores a fictional PDF for the issued canary invoice of a side and links it from the Admin-only row, the way
+ * issuing does, so that the route can be served; returns the bytes.
+ */
+function walkedInvoicePdf(string $side): string
+{
+    $invoice = walkedInvoice($side);
+    $bytes = implode("\n", ['%PDF-1.4', '%fictional '.Str::random(8), '%%EOF', '']);
+
+    app(PartnerContext::class)->runAsSystem(static function () use ($invoice, $bytes): void {
+        $document = app(StoreGeneratedDocument::class)->handle(Canary::admin(), $invoice, $bytes, 'faktura-fictional.pdf');
+
+        InvoiceAdmin::query()->where('invoice_id', $invoice->getKey())->firstOrFail()
+            ->forceFill(['pdf_document_id' => $document->getKey()])->save();
+    });
+
+    return $bytes;
+}
+
+/**
  * The canary ZIP archive of a side: the fixture row whose summary is the canary. Both rows belong to the one
  * planner owner, so only that Admin can ever be served one.
  */
@@ -150,7 +198,7 @@ function walkedArchive(string $side): DocumentArchive
  * Every resource that has record routes: who may open its record routes and the
  * record id to request for each side (client A is the signed-in Partner, client B
  * the other client). The walk fails on a resource that is not listed, so a new
- * resource is looked at on purpose. Admin-only resources (`projects`, `clients`, `tasks` and `time-entries`) are listed with `partner => false`: a Partner
+ * resource is looked at on purpose. Admin-only resources (`projects`, `clients`, `tasks`, `time-entries`, `transactions` and `invoices`) are listed with `partner => false`: a Partner
  * must get 403 on all their routes, whatever record is requested.
  *
  * @return array<string, array{partner: bool, a: string, b: string}>
@@ -180,6 +228,11 @@ function walkedResourceMap(string $canaryRecordA, string $canaryRecordB, string 
         static fn (): string => Transaction::query()->where('counterparty', $canary)->firstOrFail()->id,
     );
 
+    // The invoice canary is the printed note; the issued twin is the one with a number (the draft twin has none).
+    $invoiceId = static fn (string $canary): string => app(PartnerContext::class)->runAsSystem(
+        static fn (): string => Invoice::query()->where('note', $canary)->whereNotNull('number')->firstOrFail()->id,
+    );
+
     return [
         'canary-records' => ['partner' => true, 'a' => $canaryRecordA, 'b' => $canaryRecordB],
         'my-projects' => ['partner' => true, 'a' => $projectId($canaryA), 'b' => $projectId($canaryB)],
@@ -188,6 +241,8 @@ function walkedResourceMap(string $canaryRecordA, string $canaryRecordB, string 
         'tasks' => ['partner' => false, 'a' => $taskReference($canaryA), 'b' => $taskReference($canaryB)],
         'time-entries' => ['partner' => false, 'a' => $entryId($canaryA), 'b' => $entryId($canaryB)],
         'transactions' => ['partner' => false, 'a' => $transactionId($canaryA), 'b' => $transactionId($canaryB)],
+        'invoices' => ['partner' => false, 'a' => $invoiceId($canaryA), 'b' => $invoiceId($canaryB)],
+        'my-invoices' => ['partner' => true, 'a' => $invoiceId($canaryA), 'b' => $invoiceId($canaryB)],
         'my-tasks' => ['partner' => true, 'a' => $taskReference($canaryA), 'b' => $taskReference($canaryB)],
     ];
 }
@@ -254,7 +309,8 @@ it('walks at least the dashboard, the canary list and the canary record route', 
         ->and($names)->toContain('filament.admin.resources.my-projects.index')
         ->and($names)->toContain('filament.admin.resources.my-projects.view')
         ->and($names)->toContain('filament.admin.files.document')
-        ->and($names)->toContain('filament.admin.files.archive');
+        ->and($names)->toContain('filament.admin.files.archive')
+        ->and($names)->toContain('filament.admin.files.invoice');
 });
 
 it('refuses a record route of a resource it does not know, so a new resource is looked at on purpose', function (): void {
@@ -460,6 +516,57 @@ it('serves the owning Admin the archive route and refuses a second Admin, so the
         $this->actingAs(Canary::admin());
 
         $this->get(walkedUrl(Route::getRoutes()->getByName(DocumentUrl::ARCHIVE_ROUTE), $this->recordA->id, $side))->assertNotFound();
+    }
+});
+
+it('refuses the invoice PDF route for the issued invoice of client B to Partner A with a 404 and no trace of client B', function (): void {
+    DocumentFixtures::fakeDisk();
+    walkedInvoicePdf('b');
+
+    $this->actingAs(Canary::partnerFor($this->clientA));
+
+    $url = walkedUrl(Route::getRoutes()->getByName(InvoicePdfUrl::ROUTE), $this->recordB->id, 'b');
+    $response = $this->get($url)->assertNotFound();
+    $body = (string) $response->getContent();
+
+    expect(str_contains($body, $this->canaryB))->toBeFalse()
+        ->and(str_contains($body, $this->clientB))->toBeFalse();
+});
+
+it('serves Partner A the invoice PDF route for the own issued invoice and the Admin for both clients, so the refusal comes from the scope', function (): void {
+    DocumentFixtures::fakeDisk();
+    $bytes = ['a' => walkedInvoicePdf('a'), 'b' => walkedInvoicePdf('b')];
+
+    $this->actingAs(Canary::partnerFor($this->clientA));
+
+    $own = $this->get(walkedUrl(Route::getRoutes()->getByName(InvoicePdfUrl::ROUTE), $this->recordA->id, 'a'))->assertOk();
+
+    expect($own->streamedContent())->toBe($bytes['a']);
+
+    $this->actingAs(Canary::admin());
+
+    foreach (['a', 'b'] as $side) {
+        $response = $this->get(walkedUrl(Route::getRoutes()->getByName(InvoicePdfUrl::ROUTE), $this->recordA->id, $side))->assertOk();
+
+        expect($response->streamedContent())->toBe($bytes[$side]);
+    }
+});
+
+it('answers a Partner without a client 403 or 404 on the invoice PDF route and shows nothing of either client', function (): void {
+    DocumentFixtures::fakeDisk();
+    walkedInvoicePdf('a');
+    walkedInvoicePdf('b');
+
+    $this->actingAs(Canary::partnerFor(null));
+
+    foreach (['a', 'b'] as $side) {
+        $url = walkedUrl(Route::getRoutes()->getByName(InvoicePdfUrl::ROUTE), $this->recordA->id, $side);
+        $response = $this->get($url);
+        $body = (string) $response->getContent();
+
+        expect($response->getStatusCode())->toBeIn([403, 404])
+            ->and(str_contains($body, $this->canaryA))->toBeFalse()
+            ->and(str_contains($body, $this->canaryB))->toBeFalse();
     }
 });
 

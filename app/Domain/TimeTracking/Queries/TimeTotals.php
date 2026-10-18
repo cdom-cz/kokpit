@@ -128,6 +128,30 @@ final class TimeTotals
     }
 
     /**
+     * Adds `unbilled_seconds` to a query over projects as a correlated sub-select, so the number of queries does not
+     * depend on the number of projects: the billable, not yet billed time of every entry of the project, with or
+     * without a task, a running entry at its elapsed time and time held by a draft included (it is still unbilled,
+     * R-06-3). The client page lists it per project.
+     *
+     * @param  Builder<Project>  $projects
+     * @return Builder<Project>
+     */
+    public function projectColumns(Builder $projects, CarbonInterface $now): Builder
+    {
+        $instant = $now->utc()->format('Y-m-d H:i:sP');
+
+        if ($projects->getQuery()->columns === null) {
+            $projects->addSelect($projects->getModel()->qualifyColumn('*'));
+        }
+
+        return $projects->selectRaw(
+            '(SELECT COALESCE(SUM('.TimeEntry::elapsedSecondsSql('entry').'), 0) FROM time_entries AS entry'
+            ." WHERE entry.project_id = projects.id AND entry.billable AND entry.billing_state = 'unbilled') AS unbilled_seconds",
+            [$instant],
+        );
+    }
+
+    /**
      * The four sums over the entries of the given query, in one statement with FILTER clauses.
      *
      * @param  Builder<TimeEntry>  $entries

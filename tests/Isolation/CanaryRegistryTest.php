@@ -10,6 +10,12 @@ use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
+use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Models\InvoiceItemSource;
+use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Reports\Models\ReportExport;
@@ -112,6 +118,12 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         Document::class,
         DocumentArchive::class,
         ExchangeRate::class,
+        Invoice::class,
+        InvoiceAdmin::class,
+        InvoiceEmail::class,
+        InvoiceItem::class,
+        InvoiceItemSource::class,
+        InvoicePayment::class,
         Media::class,
         Project::class,
         ProjectBilling::class,
@@ -219,4 +231,25 @@ it('shows a Partner without a client nothing in any registered model', function 
     foreach (array_keys(CanaryRegistry::fixtures()) as $model) {
         expect(visibleRows($model)['count'])->toBe(0, $model);
     }
+});
+
+it('writes the canary into the printed note and the line text of an issued document and of a draft twin, and shows a Partner only the issued ones', function (): void {
+    [$clientA, $clientB] = Canary::twoClients();
+    $canaryA = Canary::canary('invoice_a');
+    $canaryB = Canary::canary('invoice_b');
+    CanaryRegistry::seedAll($clientA, $canaryA);
+    CanaryRegistry::seedAll($clientB, $canaryB);
+
+    $this->actingAs(Canary::admin());
+
+    expect(Invoice::query()->where('client_id', $clientA)->where('note', $canaryA)->count())->toBe(2)
+        ->and(Invoice::query()->where('client_id', $clientA)->where('state', 'issued')->count())->toBe(1)
+        ->and(InvoiceItem::query()->where('description', $canaryA)->count())->toBe(2);
+
+    $this->actingAs(Canary::partnerFor($clientA));
+
+    expect(Invoice::query()->where('note', $canaryA)->count())->toBe(1)
+        ->and(Invoice::query()->where('note', $canaryB)->count())->toBe(0)
+        ->and(InvoiceItem::query()->where('description', $canaryA)->count())->toBe(1)
+        ->and(InvoiceItem::query()->where('description', $canaryB)->count())->toBe(0);
 });

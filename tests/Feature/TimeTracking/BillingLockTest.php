@@ -13,6 +13,7 @@ use App\Domain\TimeTracking\Actions\CancelEntriesBilling;
 use App\Domain\TimeTracking\Actions\DeleteTimeEntry;
 use App\Domain\TimeTracking\Actions\MarkEntriesBilled;
 use App\Domain\TimeTracking\Actions\UpdateTimeEntry;
+use App\Domain\TimeTracking\Billing\EntryBilling;
 use App\Domain\TimeTracking\Enums\BillingBadge;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\TimeEntryInput;
@@ -140,6 +141,7 @@ it('bills a selection, locks it against edit, delete and raw SQL, and unlocks it
         'skipped_non_billable' => 0,
         'skipped_billed' => 0,
         'skipped_running' => 0,
+        'skipped_reserved' => 0,
     ]);
 
     foreach ($entries as $entry) {
@@ -280,6 +282,7 @@ it('bills only the eligible entry of a mixed selection and counts each skipped r
         'skipped_non_billable' => 1,
         'skipped_billed' => 1,
         'skipped_running' => 1,
+        'skipped_reserved' => 0,
     ])
         ->and(lockReload($entries['eligible'])->billing_state->value)->toBe('billed')
         ->and(lockReload($entries['non_billable'])->billing_state->value)->toBe('unbilled')
@@ -710,4 +713,293 @@ it('keeps the history tab and the rate from a Partner', function (): void {
 
     Livewire::test(TimeEntryHistoryRelationManager::class, ['ownerRecord' => $entry, 'pageClass' => ViewTimeEntry::class])->assertForbidden();
     $this->get('/admin/time-entries/'.$entry->id)->assertForbidden();
+});
+
+/*
+ * Reservations by invoice drafts and billing by invoices (D-04, D-14, F-13, R-09-3). Documents are prepared as
+ * system by raw SQL, because the issuing Actions arrive in plan 10-12; every value is fictional.
+ */
+
+const RESERVED_MESSAGE = 'Záznam je připojen ke konceptu faktury. Odpojte ho v konceptu.';
+
+/**
+ * Inserts one draft document of the client by raw SQL and returns its id.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function lockDocument(string $clientId, array $overrides = []): string
+{
+    $row = [
+        'client_id' => $clientId,
+        'kind' => 'invoice',
+        'state' => 'draft',
+        'currency' => 'CZK',
+        'language' => 'cs',
+        'created_at' => '2026-10-17 10:00:00+00',
+        'updated_at' => '2026-10-17 10:00:00+00',
+        ...$overrides,
+    ];
+    $columns = array_keys($row);
+
+    /** @var object{id: string} $inserted */
+    $inserted = DB::selectOne(
+        sprintf('insert into invoices (%s) values (%s) returning id', implode(', ', $columns), implode(', ', array_fill(0, count($columns), '?'))),
+        array_values($row),
+    );
+
+    return $inserted->id;
+}
+
+/**
+ * Issues the draft document by raw SQL and returns its number; a credit note gets a negative total.
+ */
+function lockIssue(string $documentId): string
+{
+    static $sequence = 0;
+    $sequence++;
+    $number = '2026'.str_pad((string) $sequence, 4, '0', STR_PAD_LEFT);
+
+    /** @var object{kind: string} $document */
+    $document = DB::selectOne('select kind from invoices where id = ?', [$documentId]);
+    $creditNote = $document->kind === 'credit_note';
+    $total = $creditNote ? -100000 : 100000;
+
+    DB::update(
+        'update invoices set state = \'issued\', number = ?, variable_symbol = ?, issue_date = \'2026-10-17\', due_date = ?, subtotal_minor = ?, total_minor = ?, '
+        .'supplier_snapshot = ?, customer_snapshot = ?, bank_snapshot = ?, appearance_snapshot = ?, issued_at = \'2026-10-17 10:30:00+00\' where id = ?',
+        [
+            $number,
+            $creditNote ? null : $number,
+            $creditNote ? null : '2026-10-31',
+            $total,
+            $total,
+            json_encode(['name' => 'Example Supplier s.r.o.']),
+            json_encode(['name' => 'Example Customer a.s.']),
+            $creditNote ? null : json_encode(['account' => 'fictional']),
+            json_encode(['accent' => '#336699']),
+            $documentId,
+        ],
+    );
+
+    return $number;
+}
+
+/**
+ * A finished billable entry of one hour of the client, written by the factory.
+ */
+function lockClientEntry(User $user, Client $client, string $start = '2026-10-12 08:00:00'): TimeEntry
+{
+    $from = CarbonImmutable::parse($start, 'UTC');
+
+    return lockEntry($user, $start, $from->addHour()->format('Y-m-d H:i:s'), ['client_id' => $client->id]);
+}
+
+/**
+ * A fictional client with a rate, so billing writes a snapshot.
+ */
+function lockRatedClient(): Client
+{
+    return lockSystem(static fn (): Client => Client::factory()->create(['currency' => 'CZK', 'hourly_rate' => Money::fromMajor('1500', 'CZK')]));
+}
+
+/**
+ * Locks the entries as a caller would and runs the callback with the fresh rows.
+ *
+ * @param  list<TimeEntry>  $entries
+ * @param  Closure(list<TimeEntry>): void  $callback
+ */
+function lockRows(array $entries, Closure $callback): void
+{
+    lockSystem(static function () use ($entries, $callback): void {
+        DB::transaction(static function () use ($entries, $callback): void {
+            $rows = TimeEntry::query()->whereKey(lockIds($entries))->orderBy('id')->lockForUpdate()->get();
+
+            $callback(array_values($rows->all()));
+        });
+    });
+}
+
+/**
+ * The SQLSTATE of the refusal a callback raises inside a savepoint, or null when it was accepted.
+ */
+function lockRefusal(Closure $callback): ?string
+{
+    try {
+        DB::transaction($callback);
+    } catch (QueryException $e) {
+        return (string) $e->getCode();
+    }
+
+    return null;
+}
+
+it('bills the free entry of a selection and skips the one reserved by a draft', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $client = lockRatedClient();
+    $reserved = lockClientEntry($admin, $client, '2026-10-12 08:00:00');
+    $free = lockClientEntry($admin, $client, '2026-10-12 10:00:00');
+    $draft = lockSystem(static fn (): string => lockDocument($client->id));
+    lockRows([$reserved], static fn (array $rows) => app(EntryBilling::class)->reserve($rows, $draft));
+    $ids = lockIds([$reserved, $free]);
+
+    expect(app(MarkEntriesBilled::class)->preview($ids))->toBe(['eligible' => 1, 'eligible_seconds' => 3600, 'skipped' => 1]);
+
+    $result = app(MarkEntriesBilled::class)->handle($admin, $ids);
+
+    expect($result['billed'])->toBe(1)
+        ->and($result['skipped_reserved'])->toBe(1)
+        ->and(lockReload($free)->billing_state->value)->toBe('billed')
+        ->and(lockReload($reserved)->billing_state->value)->toBe('unbilled')
+        ->and(lockReload($reserved)->invoice_id)->toBe($draft)
+        ->and(lockReload($reserved)->isReserved())->toBeTrue();
+});
+
+it('refuses a selection of only reserved entries and changes nothing', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $client = lockRatedClient();
+    $reserved = lockClientEntry($admin, $client);
+    $draft = lockSystem(static fn (): string => lockDocument($client->id));
+    lockRows([$reserved], static fn (array $rows) => app(EntryBilling::class)->reserve($rows, $draft));
+    $history = lockHistoryCount([$reserved->id]);
+
+    expect(fn () => app(MarkEntriesBilled::class)->handle($admin, [$reserved->id]))
+        ->toThrow(DomainException::class, RESERVED_MESSAGE)
+        ->and(lockReload($reserved)->billing_state->value)->toBe('unbilled')
+        ->and(lockReload($reserved)->invoice_id)->toBe($draft)
+        ->and(lockHistoryCount([$reserved->id]))->toBe($history);
+});
+
+it('refuses to unlock an entry billed by an issued invoice, naming it, and leaves the whole selection as it was', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $client = lockRatedClient();
+    $byInvoice = lockClientEntry($admin, $client, '2026-10-12 08:00:00');
+    $byHand = lockClientEntry($admin, $client, '2026-10-12 10:00:00');
+    app(MarkEntriesBilled::class)->handle($admin, [$byHand->id]);
+
+    $number = lockSystem(static function () use ($client, $byInvoice): string {
+        $invoice = lockDocument($client->id);
+        lockRows([$byInvoice], static fn (array $rows) => app(EntryBilling::class)->reserve($rows, $invoice));
+        $number = lockIssue($invoice);
+        lockRows([$byInvoice], static fn (array $rows) => app(EntryBilling::class)->bill($rows, CarbonImmutable::parse('2026-10-17 10:30:00', 'UTC')));
+
+        return $number;
+    });
+    $ids = lockIds([$byInvoice, $byHand]);
+    $history = lockHistoryCount($ids);
+
+    expect(app(CancelEntriesBilling::class)->preview($ids))->toBe(['eligible' => 0, 'eligible_seconds' => 0])
+        ->and(fn () => app(CancelEntriesBilling::class)->handle($admin, $ids))
+        ->toThrow(DomainException::class, 'Záznam patří k vystavené faktuře '.$number.' a nelze ho odemknout. Vystavte dobropis.');
+
+    $stored = lockReload($byInvoice);
+
+    expect($stored->billing_state->value)->toBe('billed')
+        ->and($stored->invoice_id)->not->toBeNull()
+        ->and($stored->billed_rate_minor)->toBe(150000)
+        ->and($stored->billed_amount_minor)->toBe(150000)
+        ->and(lockReload($byHand)->billing_state->value)->toBe('billed')
+        ->and(lockHistoryCount($ids))->toBe($history);
+
+    // The entry billed by hand alone still unlocks.
+    expect(app(CancelEntriesBilling::class)->handle($admin, [$byHand->id]))->toBe(1);
+});
+
+it('releases the time of an invoice only after an issued storno credit note, and a partial one is refused by the database', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $client = lockRatedClient();
+    $entry = lockClientEntry($admin, $client);
+
+    $invoice = lockSystem(static function () use ($client, $entry): string {
+        $invoice = lockDocument($client->id);
+        lockRows([$entry], static fn (array $rows) => app(EntryBilling::class)->reserve($rows, $invoice));
+        lockIssue($invoice);
+        lockRows([$entry], static fn (array $rows) => app(EntryBilling::class)->bill($rows, CarbonImmutable::parse('2026-10-17 10:30:00', 'UTC')));
+
+        return $invoice;
+    });
+
+    // No credit note: the link guard refuses the release for any writer.
+    expect(lockSystem(static fn (): ?string => lockRefusal(static fn () => lockRows([$entry], static fn (array $rows) => app(EntryBilling::class)->release($rows)))))->toBe('KP001');
+
+    // A partial credit note does not cancel the invoice.
+    lockSystem(static function () use ($invoice, $client): void {
+        lockIssue(lockDocument($client->id, ['kind' => 'credit_note', 'credited_invoice_id' => $invoice, 'cancels_invoice' => 'false']));
+    });
+
+    expect(lockSystem(static fn (): ?string => lockRefusal(static fn () => lockRows([$entry], static fn (array $rows) => app(EntryBilling::class)->release($rows)))))->toBe('KP001')
+        ->and(lockReload($entry)->billing_state->value)->toBe('billed');
+
+    // The storno credit note releases it, with the link and the snapshot cleared.
+    lockSystem(static function () use ($invoice, $client, $entry): void {
+        lockIssue(lockDocument($client->id, ['kind' => 'credit_note', 'credited_invoice_id' => $invoice, 'cancels_invoice' => 'true']));
+        lockRows([$entry], static fn (array $rows) => app(EntryBilling::class)->release($rows));
+    });
+
+    $released = lockReload($entry);
+
+    expect($released->billing_state->value)->toBe('unbilled')
+        ->and($released->billed_at)->toBeNull()
+        ->and($released->invoice_id)->toBeNull()
+        ->and($released->billed_rate_minor)->toBeNull()
+        ->and($released->billed_rate_currency)->toBeNull()
+        ->and($released->billed_amount_minor)->toBeNull();
+});
+
+it('reserves and unreserves an entry, and repoints the billed entries of a proforma to its invoice', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $client = lockRatedClient();
+    $entry = lockClientEntry($admin, $client);
+    $proforma = lockSystem(static fn (): string => lockDocument($client->id, ['kind' => 'proforma']));
+
+    lockRows([$entry], static fn (array $rows) => app(EntryBilling::class)->reserve($rows, $proforma));
+    expect(lockReload($entry)->invoice_id)->toBe($proforma);
+
+    lockRows([$entry], static fn (array $rows) => app(EntryBilling::class)->unreserve($rows));
+    expect(lockReload($entry)->invoice_id)->toBeNull();
+
+    lockRows([$entry], static fn (array $rows) => app(EntryBilling::class)->reserve($rows, $proforma));
+    lockSystem(static function () use ($proforma, $entry): void {
+        lockIssue($proforma);
+        lockRows([$entry], static fn (array $rows) => app(EntryBilling::class)->bill($rows, CarbonImmutable::parse('2026-10-17 10:30:00', 'UTC')));
+    });
+    $billed = lockReload($entry);
+
+    $invoice = lockSystem(static function () use ($client, $proforma, $entry): string {
+        $invoice = lockDocument($client->id, ['proforma_id' => $proforma]);
+        lockIssue($invoice);
+        lockRows([$entry], static fn (array $rows) => app(EntryBilling::class)->repoint($rows, $invoice));
+
+        return $invoice;
+    });
+    $moved = lockReload($entry);
+
+    expect($moved->invoice_id)->toBe($invoice)
+        ->and($moved->billing_state->value)->toBe('billed')
+        ->and($moved->billed_at?->equalTo($billed->billed_at))->toBeTrue()
+        ->and($moved->billed_rate_minor)->toBe($billed->billed_rate_minor)
+        ->and($moved->billed_amount_minor)->toBe($billed->billed_amount_minor);
+});
+
+it('refuses every writer method outside the Admin and system contexts', function (): void {
+    $admin = Canary::admin();
+    $client = lockRatedClient();
+    $entry = lockClientEntry($admin, $client);
+    $partner = Canary::partnerFor($client->id);
+    $this->actingAs($partner);
+    $billing = app(EntryBilling::class);
+    $at = CarbonImmutable::parse('2026-10-17 10:30:00', 'UTC');
+
+    expect(fn () => $billing->bill([$entry], $at))->toThrow(AuthorizationException::class)
+        ->and(fn () => $billing->unbill([$entry]))->toThrow(AuthorizationException::class)
+        ->and(fn () => $billing->reserve([$entry], $client->id))->toThrow(AuthorizationException::class)
+        ->and(fn () => $billing->unreserve([$entry]))->toThrow(AuthorizationException::class)
+        ->and(fn () => $billing->release([$entry]))->toThrow(AuthorizationException::class)
+        ->and(fn () => $billing->repoint([$entry], $client->id))->toThrow(AuthorizationException::class)
+        ->and(fn () => $billing->snapshot($entry))->toThrow(AuthorizationException::class)
+        ->and(lockReload($entry)->billing_state->value)->toBe('unbilled');
 });

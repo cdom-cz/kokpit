@@ -16,6 +16,17 @@ use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Enums\InvoiceEmailState;
+use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
+use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\InvoiceState;
+use App\Domain\Invoicing\Enums\PaymentMethod;
+use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Models\InvoiceItemSource;
+use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
@@ -308,6 +319,45 @@ final class CanaryRegistry
                 });
             },
 
+            // A billing document is Partner-readable once issued, so the fixture writes one issued invoice that
+            // carries the canary in the printed note and a draft twin with the same canary. A Partner must read
+            // exactly the issued one: the exact-one-row check fails if the draft is ever returned. Both rows are
+            // written in the system context with forceFill, the way the Actions write them.
+            Invoice::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
+            // The lines follow their document: the same two documents carry one line each with the canary in
+            // the description (the lines go in while the document is a draft, an issued one accepts none). A
+            // Partner must read exactly the line of the issued document, never the one of the draft twin.
+            InvoiceItem::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
+            // The Admin-only half of the issued document: the internal note carries the canary, and a Partner must
+            // read no row of it, even though the issued invoice itself is the Partner's own (IN-09). The rows are
+            // written by the same idempotent helper as the documents, because the Admin-only row and the line
+            // source go in while the document is a draft.
+            InvoiceAdmin::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
+            // The generation source of the printed line: the canary sits in the conversion snapshot, and the
+            // project is the canary project of the client when the Project fixture ran before.
+            InvoiceItemSource::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
+            // One payment of the issued document; the canary is its note.
+            InvoicePayment::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
+            // One queued e-mail of the issued document; the canary is its subject.
+            InvoiceEmail::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
             // A CNB rate row has no text and no client: the canary is the published day (the Monday of the
             // canary), under a fictional currency code, so two canaries never collide on the unique key of a
             // currency and day. A Partner reading any rate would be caught by that day.
@@ -517,6 +567,103 @@ final class CanaryRegistry
         foreach (self::fixtures() as $fixture) {
             $fixture($clientId, $canary);
         }
+    }
+
+    /**
+     * An issued invoice and a draft twin of the client, both carrying the canary in the printed note. Idempotent
+     * per client and canary, so every fixture that needs the documents can call it.
+     */
+    private static function invoiceDocuments(string $clientId, string $canary): void
+    {
+        app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+            if (Invoice::query()->where('client_id', $clientId)->where('note', $canary)->exists()) {
+                return;
+            }
+
+            $draft = static fn (): Invoice => (new Invoice(['note' => $canary]))->forceFill([
+                'client_id' => $clientId,
+                'kind' => InvoiceKind::Invoice,
+                'currency' => 'CZK',
+                'language' => 'cs',
+                'vat_mode' => 'non_payer',
+                'subtotal_minor' => 10000,
+                'vat_minor' => 0,
+                'total_minor' => 10000,
+            ]);
+
+            $line = static fn (Invoice $invoice): InvoiceItem => (new InvoiceItem(['description' => $canary, 'unit' => 'h']))->forceFill([
+                'invoice_id' => $invoice->getKey(),
+                'position' => 1,
+                'quantity' => '2.0000',
+                'unit_price_minor' => 5000,
+                'line_total_minor' => 10000,
+            ]);
+
+            $twin = $draft();
+            $twin->save();
+            $line($twin)->save();
+
+            $issued = $draft();
+            $issued->save();
+            $issuedLine = $line($issued);
+            $issuedLine->save();
+
+            // The Admin-only rows go in while the document is a draft: an issued document accepts no new child row.
+            $projectId = Project::query()->where('client_id', $clientId)->where('name', $canary)->value('id');
+            $owner = Canary::admin()->getKey();
+
+            (new InvoiceAdmin(['internal_note' => $canary]))->forceFill([
+                'invoice_id' => $issued->getKey(),
+                'internal_note_updated_at' => TimerClock::now(),
+                'exchange_rate' => '24.5000000000',
+                'exchange_unit_amount' => 1,
+                'exchange_rate_date' => '2026-10-16',
+                'czk_total_minor' => 245000,
+            ])->save();
+
+            (new InvoiceItemSource)->forceFill([
+                'invoice_item_id' => $issuedLine->getKey(),
+                'invoice_id' => $issued->getKey(),
+                'origin' => $projectId === null ? InvoiceItemOrigin::Manual : InvoiceItemOrigin::Time,
+                'project_id' => $projectId,
+                'source_rate_minor' => $projectId === null ? null : 150000,
+                'source_rate_currency' => $projectId === null ? null : 'CZK',
+                'source_seconds' => $projectId === null ? null : 7200,
+                'conversion_snapshot' => ['note' => $canary],
+            ])->save();
+
+            (new InvoiceEmail)->forceFill([
+                'invoice_id' => $issued->getKey(),
+                'recipient' => 'jane@'.implode('.', ['example', 'com']),
+                'subject' => $canary,
+                'body' => 'Fictional body',
+                'state' => InvoiceEmailState::Queued,
+                'created_by' => $owner,
+            ])->save();
+
+            $issued->forceFill([
+                'state' => InvoiceState::Issued,
+                'number' => implode('', ['C', (string) random_int(100000, 999999), (string) random_int(1000, 9999)]),
+                'variable_symbol' => (string) random_int(1000000, 9999999),
+                'issue_date' => '2026-10-01',
+                'taxable_supply_date' => '2026-10-01',
+                'due_date' => '2026-10-15',
+                'supplier_snapshot' => ['name' => 'Example supplier'],
+                'customer_snapshot' => ['name' => 'Example customer'],
+                'bank_snapshot' => ['account' => 'Example account'],
+                'appearance_snapshot' => ['accent' => '#000000'],
+                'issued_at' => TimerClock::now(),
+            ])->save();
+
+            (new InvoicePayment(['note' => $canary]))->forceFill([
+                'invoice_id' => $issued->getKey(),
+                'currency' => 'CZK',
+                'amount_minor' => 4000,
+                'paid_on' => '2026-10-20',
+                'method' => PaymentMethod::Transfer,
+                'created_by' => $owner,
+            ])->save();
+        });
     }
 
     private static function host(): PackageProbe

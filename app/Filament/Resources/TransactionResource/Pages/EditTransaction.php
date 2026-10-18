@@ -9,11 +9,14 @@ use App\Domain\Finance\Actions\UpdateTransaction;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\Models\User;
 use App\Filament\Concerns\RethrowsDomainValidation;
+use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\TransactionResource;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 /**
@@ -65,12 +68,19 @@ final class EditTransaction extends EditRecord
                 ->successNotificationTitle(__('finance.transactions.notifications.deleted'))
                 ->successRedirectUrl(TransactionResource::getUrl('index'))
                 ->failureNotificationTitle(__('finance.transactions.notifications.delete_failed'))
-                ->using(static function (Transaction $record): bool {
+                ->using(static function (Transaction $record, DeleteAction $action): bool {
                     $actor = auth()->user();
                     assert($actor instanceof User);
 
                     try {
                         app(DeleteTransaction::class)->handle($actor, $record);
+                    } catch (ValidationException $e) {
+                        // The income of an invoice payment goes only with its payment (FI-03, R-19-1): the refusal of the
+                        // Action is shown as it is, with the way to the invoice where the payment is deleted.
+                        self::notifyPaymentDeleteRefused($record, $e);
+                        $action->cancel();
+
+                        return false;
                     } catch (RuntimeException $e) {
                         // The database refused the delete: nothing was deleted, the receipts and their objects stay. A refused
                         // object after the commit never gets here (it is queued); the report carries no path.
@@ -82,6 +92,30 @@ final class EditTransaction extends EditRecord
                     return true;
                 }),
         ];
+    }
+
+    /**
+     * The danger notification of a refused deletion of a payment income: the message of DeleteTransaction as the
+     * title and the action "Otevřít fakturu" to the invoice detail. The row stays.
+     */
+    private static function notifyPaymentDeleteRefused(Transaction $transaction, ValidationException $refusal): void
+    {
+        $message = collect($refusal->errors())->flatten()->first();
+
+        $notification = Notification::make()
+            ->danger()
+            ->title(is_string($message) ? $message : (string) __('finance.transactions.notifications.delete_failed'));
+
+        if ($transaction->isPaymentIncome() && $transaction->invoice_id !== null) {
+            $notification->actions([
+                Action::make('open_invoice')
+                    ->label(__('invoices.transactions.open_invoice'))
+                    ->url(InvoiceResource::getUrl('view', ['record' => $transaction->invoice_id]))
+                    ->button(),
+            ]);
+        }
+
+        $notification->send();
     }
 
     /**

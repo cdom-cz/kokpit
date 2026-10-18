@@ -27,6 +27,10 @@
                             @if (filled($result->detail))
                                 <span style="opacity: 0.7;">{{ $result->detail }}</span>
                             @endif
+
+                            @if (filled($result->url) && filled($result->urlLabel))
+                                <a href="{{ $result->url }}" style="text-decoration: underline;">{{ $result->urlLabel }}</a>
+                            @endif
                         </dd>
                     </div>
                 @endforeach

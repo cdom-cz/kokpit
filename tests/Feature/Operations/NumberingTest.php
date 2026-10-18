@@ -191,8 +191,22 @@ it('keeps separate counters per document kind', function (): void {
         $numbering->next(DocumentKind::Invoice, $at),
     ]);
 
-    expect($numbers)->toBe(['2026'.'0001', '2026'.'0001', '2026'.'0001', '2026'.'0002'])
+    expect($numbers)->toBe(['2026'.'0001', '2026'.'9'.'0001', '2026'.'0001', '2026'.'0002'])
         ->and(counterRows())->toBe([['credit_note:2026', 2], ['invoice:2026', 3], ['proforma:2026', 2]]);
+});
+
+it('numbers the first proforma of a fresh install so that its variable symbol differs from the invoice one', function (): void {
+    $at = utcInstant('2026-10-17 10:00:00');
+    $numbering = app(DocumentNumbering::class);
+
+    $numbers = DB::transaction(fn (): array => [
+        $numbering->next(DocumentKind::Invoice, $at),
+        $numbering->next(DocumentKind::Proforma, $at),
+    ]);
+
+    expect(DocumentKind::Proforma->defaultPattern())->toBe('{YYYY}9{NNNN}')
+        ->and($numbers[1])->toBe('2026'.'9'.'0001')
+        ->and($numbers[1])->not->toBe($numbers[0]);
 });
 
 it('writes a saved invoice pattern with five counter digits into the next number', function (): void {
@@ -312,12 +326,15 @@ it('throws instead of truncating when a number no longer fits ten characters, an
 it('previews a candidate pattern without storing it and without touching a counter', function (): void {
     $numbering = app(DocumentNumbering::class);
     $at = utcInstant('2026-06-15 10:00:00');
-    DB::transaction(fn (): string => $numbering->next(DocumentKind::Proforma, $at));
+    DB::transaction(function () use ($numbering, $at): void {
+        $numbering->next(DocumentKind::Proforma, $at);
+        $numbering->next(DocumentKind::CreditNote, $at);
+    });
     $before = counterRows();
     $stored = storedPatterns();
 
-    expect($numbering->preview(DocumentKind::Proforma, 'ZF-{YYYY}/{NNNN}', $at))->toBe('ZF-2026/0002')
-        ->and($numbering->preview(DocumentKind::Proforma, 'ZF-{YYYY}/{NNNN}', $at))->toBe('ZF-2026/0002')
+    expect($numbering->preview(DocumentKind::CreditNote, 'ZF-{YYYY}/{NNNN}', $at))->toBe('ZF-2026/0002')
+        ->and($numbering->preview(DocumentKind::CreditNote, 'ZF-{YYYY}/{NNNN}', $at))->toBe('ZF-2026/0002')
         ->and($numbering->preview(DocumentKind::Proforma, '{YYYY}{MM}{NN}', $at))->toBe('202606'.'01')
         ->and(counterRows())->toBe($before)
         ->and(storedPatterns())->toBe($stored);
@@ -337,7 +354,7 @@ it('has a Czech message for every refusal reason', function (string $reason): vo
         ->and(__($key))->not->toBe('');
 })->with([
     'unknown_token', 'counter_count', 'month_without_year', 'literal', 'too_long',
-    'invoice_digits', 'invoice_length', 'task_fixed', 'duplicate_token', 'unclosed_token',
+    'invoice_digits', 'invoice_length', 'proforma_digits', 'proforma_length', 'task_fixed', 'duplicate_token', 'unclosed_token',
 ]);
 
 it('lets the rule pass a valid pattern and fail an invalid one with the Czech reason', function (): void {
@@ -368,7 +385,10 @@ it('refuses an invalid pattern written outside any form with the Czech reason an
 })->with([
     'invoice without a counter' => ['invoice_pattern', '{YYYY}', 'counter_count'],
     'invoice with letters' => ['invoice_pattern', 'INV{YYYY}{NNNN}', 'invoice_digits'],
-    'proforma with a space' => ['proforma_pattern', 'ZF {N}', 'literal'],
+    'credit note with a space' => ['credit_note_pattern', 'ZF {N}', 'literal'],
+    'proforma with a space' => ['proforma_pattern', '{YYYY} {N}', 'literal'],
+    'proforma with letters' => ['proforma_pattern', 'ZF-{YYYY}/{NNNN}', 'proforma_digits'],
+    'proforma longer than ten characters' => ['proforma_pattern', '{YYYY}{MM}{NNNNNNN}', 'proforma_length'],
     'credit note month without year' => ['credit_note_pattern', '{MM}{N}', 'month_without_year'],
     'task pattern other than KEY-N' => ['task_pattern', '{YYYY}-{N}', 'task_fixed'],
     'oversized invoice pattern' => ['invoice_pattern', '{YYYY}{NNNN}{NNNN}{NNNN}{NNNN}{NNNN}', 'too_long'],
@@ -376,7 +396,7 @@ it('refuses an invalid pattern written outside any form with the Czech reason an
 
 it('stores valid patterns for every kind and reads them back as parsed patterns', function (): void {
     $settings = app(NumberingSettings::class);
-    $settings->proforma_pattern = 'ZF-{YYYY}/{NNNN}';
+    $settings->proforma_pattern = '{YY}{MM}9{NNNN}';
     $settings->credit_note_pattern = 'CN{YY}{MM}{NNN}';
     $settings->save();
     app()->forgetScopedInstances();
@@ -385,9 +405,52 @@ it('stores valid patterns for every kind and reads them back as parsed patterns'
     expect(storedPatterns())->toBe([
         'credit_note_pattern' => 'CN{YY}{MM}{NNN}',
         'invoice_pattern' => '{YYYY}{NNNN}',
-        'proforma_pattern' => 'ZF-{YYYY}/{NNNN}',
+        'proforma_pattern' => '{YY}{MM}9{NNNN}',
         'task_pattern' => '{KEY}-{N}',
     ])
-        ->and($fresh->patternFor(DocumentKind::Proforma)->pattern())->toBe('ZF-{YYYY}/{NNNN}')
+        ->and($fresh->patternFor(DocumentKind::Proforma)->pattern())->toBe('{YY}{MM}9{NNNN}')
         ->and($fresh->patternFor(DocumentKind::Task)->pattern())->toBe('{KEY}-{N}');
+});
+
+/**
+ * Stores a proforma pattern straight in the settings table and runs the
+ * migration that moves the proforma default, returning what is stored after.
+ */
+function runProformaDefaultMigration(string $stored): string
+{
+    DB::table('settings')->where('group', 'numbering')->where('name', 'proforma_pattern')
+        ->update(['payload' => json_encode($stored, JSON_THROW_ON_ERROR)]);
+
+    (require database_path('settings/2026_10_17_000200_distinct_proforma_number_pattern.php'))->up();
+
+    return storedPatterns()['proforma_pattern'];
+}
+
+it('moves the unchanged old proforma default to the distinct one while no proforma number was handed out', function (): void {
+    expect(runProformaDefaultMigration('{YYYY}{NNNN}'))->toBe('{YYYY}9{NNNN}');
+});
+
+it('keeps the old proforma default once a proforma number was handed out', function (): void {
+    DB::transaction(fn (): string => app(DocumentNumbering::class)->next(DocumentKind::Proforma, utcInstant('2026-06-15 10:00:00')));
+
+    expect(runProformaDefaultMigration('{YYYY}{NNNN}'))->toBe('{YYYY}{NNNN}');
+});
+
+it('keeps a custom proforma pattern whatever the counters hold', function (string $custom): void {
+    expect(runProformaDefaultMigration($custom))->toBe($custom);
+})->with([
+    'digits only' => ['{YY}{MM}{NNNNN}'],
+    'with letters, refused by the new rule' => ['ZF-{YYYY}/{NNNN}'],
+    'already the new default' => ['{YYYY}9{NNNN}'],
+]);
+
+it('does not touch the invoice and credit note patterns when it moves the proforma default', function (): void {
+    runProformaDefaultMigration('{YYYY}{NNNN}');
+
+    expect(storedPatterns())->toBe([
+        'credit_note_pattern' => '{YYYY}{NNNN}',
+        'invoice_pattern' => '{YYYY}{NNNN}',
+        'proforma_pattern' => '{YYYY}9{NNNN}',
+        'task_pattern' => '{KEY}-{N}',
+    ]);
 });

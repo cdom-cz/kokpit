@@ -19,9 +19,10 @@ use Illuminate\Support\LazyCollection;
  * (RE-01, RE-02; D-01, D-07; research Pattern 5).
  *
  * One statement joins the client, the user, the project, the task and the billing rows. The effective billing
- * type and the hourly rate follow the order of `TaskBillingResolver` and `TimeEntryRateResolver`, which stay
- * the specification (a parity test pins the SQL to them): the task's own row, the parent task's row (a subtask
- * only, because a root task has no parent), the project's row and for the rate the client. A task row of type
+ * type and the hourly rate, written once in {@see EffectiveBillingSql} and shared with the picker of unbilled time,
+ * follow the order of `TaskBillingResolver` and `TimeEntryRateResolver`, which stay the specification (a parity test
+ * pins the SQL to them): the task's own row, the parent task's row (a subtask only, because a root task has no
+ * parent), the project's row and for the rate the client. A task row of type
  * `inherit` defers its type; only null defers an amount, so a rate of zero is a value and stops the search. The
  * rate and its currency come from the same level (the columns are a pair, both null or both set), and the global
  * default rate never applies here because every client stores a rate.
@@ -32,21 +33,14 @@ use Illuminate\Support\LazyCollection;
  * Archived clients, projects and tasks stay in the report, and the entries of every user are read: the split by
  * user needs them.
  *
+ * The snapshot a billing took (rate, currency and amount of the exact seconds, TI-08) and the reserved flag (a
+ * draft holds the entry, it is still unbilled; D-04) come straight from the time entry: no second rate chain.
+ *
  * The raw joins bypass the Partner scope of the joined tables, so this reader refuses everyone but the Admin
  * and a system run, like `TimeEntryRateResolver` (T-08-31, T-08-33).
  */
 final class TimeReportReader
 {
-    /**
-     * The effective billing type of the entry: the first level that is not `inherit`, hourly for an entry without
-     * a project.
-     */
-    private const string BILLING_TYPE_SQL = "COALESCE(NULLIF(tb.billing_type, 'inherit'), NULLIF(ptb.billing_type, 'inherit'), pb.billing_type, 'hourly')";
-
-    private const string RATE_MINOR_SQL = 'COALESCE(tb.hourly_rate_minor, ptb.hourly_rate_minor, pb.hourly_rate_minor, c.hourly_rate_minor)';
-
-    private const string RATE_CURRENCY_SQL = 'COALESCE(tb.hourly_rate_currency, ptb.hourly_rate_currency, pb.hourly_rate_currency, c.hourly_rate_currency)';
-
     /**
      * The entries of the period in the order they started, one at a time.
      *
@@ -67,9 +61,12 @@ final class TimeReportReader
                 .'u.name AS user_name, c.id AS client_id, c.name AS client_name, c.currency AS client_currency, '
                 .'p.id AS project_id, p.name AS project_name, p.key AS project_key, '
                 .'t.id AS task_id, t.reference AS task_reference, t.title AS task_title, '
-                .self::BILLING_TYPE_SQL.' AS billing_type, pb.billing_type AS project_billing_type, '
-                .self::RATE_MINOR_SQL.' AS rate_minor, '
-                .self::RATE_CURRENCY_SQL.' AS rate_currency',
+                .EffectiveBillingSql::BILLING_TYPE.' AS billing_type, pb.billing_type AS project_billing_type, '
+                .EffectiveBillingSql::RATE_MINOR.' AS rate_minor, '
+                .EffectiveBillingSql::RATE_CURRENCY.' AS rate_currency, '
+                .'time_entries.billed_rate_minor AS billed_rate_minor, time_entries.billed_rate_currency AS billed_rate_currency, '
+                .'time_entries.billed_amount_minor AS billed_amount_minor, '
+                ."(time_entries.invoice_id IS NOT NULL AND time_entries.billing_state = 'unbilled') AS reserved",
                 [$now->utc()->format('Y-m-d H:i:sP')],
             )
             ->orderBy('time_entries.started_at')
@@ -78,6 +75,10 @@ final class TimeReportReader
         return $query->toBase()->cursor()->map(static function (object $row): ReportEntry {
             $rateMinor = $row->rate_minor ?? null;
             $rateCurrency = $row->rate_currency ?? null;
+            $billedRateMinor = $row->billed_rate_minor ?? null;
+            $billedCurrency = $row->billed_rate_currency ?? null;
+            $billedAmountMinor = $row->billed_amount_minor ?? null;
+            $hasSnapshot = $billedRateMinor !== null && $billedAmountMinor !== null && is_string($billedCurrency);
 
             return new ReportEntry(
                 id: (string) $row->id,
@@ -99,12 +100,15 @@ final class TimeReportReader
                 billingType: (string) $row->billing_type,
                 rate: $rateMinor !== null && is_string($rateCurrency) ? Money::ofMinor((int) $rateMinor, $rateCurrency) : null,
                 projectBillingType: is_string($row->project_billing_type ?? null) ? $row->project_billing_type : null,
+                billedRate: $hasSnapshot ? Money::ofMinor((int) $billedRateMinor, $billedCurrency) : null,
+                billedAmount: $hasSnapshot ? Money::ofMinor((int) $billedAmountMinor, $billedCurrency) : null,
+                reserved: (bool) ($row->reserved ?? false),
             );
         });
     }
 
     /**
-     * The currencies of the hourly rates the entries of the period are priced in, sorted: what the CNB lookup of
+     * The currencies of the hourly rates and of the billing snapshots the entries of the period are priced in, sorted: what the CNB lookup of
      * a report has to load, so a report asks the rate tables only for the currencies it can use.
      *
      * @return list<string>
@@ -115,13 +119,22 @@ final class TimeReportReader
     {
         $this->authorise();
 
-        $currencies = $this->base($filters)
+        // A billed entry converts at its snapshot currency, which may differ from today's effective rate currency.
+        $effective = $this->base($filters)
             ->reorder()
             ->toBase()
-            ->selectRaw('DISTINCT '.self::RATE_CURRENCY_SQL.' AS currency')
-            ->pluck('currency')
+            ->selectRaw('DISTINCT '.EffectiveBillingSql::RATE_CURRENCY.' AS currency')
+            ->pluck('currency');
+        $billed = $this->base($filters)
+            ->reorder()
+            ->toBase()
+            ->selectRaw('DISTINCT time_entries.billed_rate_currency AS currency')
+            ->pluck('currency');
+
+        $currencies = $effective->merge($billed)
             ->filter(static fn (mixed $currency): bool => is_string($currency))
             ->map(static fn (mixed $currency): string => (string) $currency)
+            ->unique()
             ->sort()
             ->values();
 
@@ -135,14 +148,8 @@ final class TimeReportReader
      */
     private function base(ReportFilters $filters): Builder
     {
-        return TimeEntry::query()
-            ->join('clients AS c', 'c.id', '=', 'time_entries.client_id')
+        return EffectiveBillingSql::joins(TimeEntry::query())
             ->join('users AS u', 'u.id', '=', 'time_entries.user_id')
-            ->leftJoin('projects AS p', 'p.id', '=', 'time_entries.project_id')
-            ->leftJoin('tasks AS t', 't.id', '=', 'time_entries.task_id')
-            ->leftJoin('task_billing AS tb', 'tb.task_id', '=', 't.id')
-            ->leftJoin('task_billing AS ptb', 'ptb.task_id', '=', 't.parent_id')
-            ->leftJoin('project_billing AS pb', 'pb.project_id', '=', 'time_entries.project_id')
             ->where('time_entries.started_at', '>=', $filters->startUtc())
             ->where('time_entries.started_at', '<', $filters->endUtcExclusive())
             ->when($filters->clientId !== null, static fn (Builder $query): Builder => $query->where('time_entries.client_id', $filters->clientId))

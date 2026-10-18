@@ -22,13 +22,14 @@ use OverflowException;
  * Grammar:
  *  - tokens {YYYY}, {YY}, {MM} and {N} to {NNNNNNNNNN} (pad width 1 to 10; the
  *    counter is padded, never truncated)
- *  - literal characters A-Z a-z 0-9 . _ / - ; an invoice pattern allows digits only
+ *  - literal characters A-Z a-z 0-9 . _ / - ; an invoice or proforma pattern allows digits only
  *  - exactly one counter token; a year token at most once ({YYYY} and {YY}
  *    together count as twice); {MM} at most once and only together with a year
  *  - at most 32 characters, checked before anything else
- *  - an invoice number is at most 10 characters (it is the SPAYD variable
- *    symbol), so a pattern whose shortest number is longer is refused and a
- *    counter value that would outgrow 10 characters throws
+ *  - an invoice or proforma number is at most 10 characters (it is the SPAYD
+ *    variable symbol), so a pattern whose shortest number is longer is refused
+ *    and a counter value that would outgrow 10 characters throws; a credit
+ *    note carries no variable symbol, so its pattern stays free
  *  - the task pattern is exactly {KEY}-{N}: the project key, a dash and the
  *    per-project counter
  *
@@ -131,8 +132,8 @@ final readonly class NumberPattern
                 throw new InvalidNumberPattern('literal');
             }
 
-            if ($kind === DocumentKind::Invoice && ! ctype_digit($char)) {
-                throw new InvalidNumberPattern('invoice_digits');
+            if ($kind->carriesVariableSymbol() && ! ctype_digit($char)) {
+                throw new InvalidNumberPattern($kind === DocumentKind::Proforma ? 'proforma_digits' : 'invoice_digits');
             }
 
             $parts[] = ['type' => 'literal', 'text' => $char, 'width' => 0];
@@ -148,8 +149,8 @@ final readonly class NumberPattern
             throw new InvalidNumberPattern('month_without_year');
         }
 
-        if ($kind === DocumentKind::Invoice && $minimalLength > self::INVOICE_MAX_LENGTH) {
-            throw new InvalidNumberPattern('invoice_length');
+        if ($kind->carriesVariableSymbol() && $minimalLength > self::INVOICE_MAX_LENGTH) {
+            throw new InvalidNumberPattern($kind === DocumentKind::Proforma ? 'proforma_length' : 'invoice_length');
         }
 
         return new self($pattern, $kind, $parts, match (true) {
@@ -193,7 +194,7 @@ final readonly class NumberPattern
     /**
      * Writes the counter value into the pattern, dates taken in Europe/Prague.
      *
-     * @throws OverflowException when an invoice number would exceed 10 characters
+     * @throws OverflowException when an invoice or proforma number would exceed 10 characters
      * @throws InvalidArgumentException for a counter below 1 or a task number without a valid project key
      */
     public function format(int $number, DateTimeInterface $at, ?string $projectKey = null): string
@@ -216,8 +217,8 @@ final readonly class NumberPattern
             };
         }
 
-        if ($this->kind === DocumentKind::Invoice && strlen($result) > self::INVOICE_MAX_LENGTH) {
-            throw new OverflowException('The invoice number would be longer than '.self::INVOICE_MAX_LENGTH.' characters.');
+        if ($this->kind->carriesVariableSymbol() && strlen($result) > self::INVOICE_MAX_LENGTH) {
+            throw new OverflowException('The '.$this->kind->value.' number would be longer than '.self::INVOICE_MAX_LENGTH.' characters.');
         }
 
         return $result;

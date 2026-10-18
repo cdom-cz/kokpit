@@ -7,6 +7,7 @@ namespace App\Domain\Documents\Support;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Enums\DocumentOwnerType;
 use App\Domain\Finance\Models\Transaction;
+use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Models\Task;
@@ -91,6 +92,21 @@ final class DocumentOwnerResolver
                     'client_id' => $transaction->client_id === null ? null : (string) $transaction->client_id,
                     'project_id' => $transaction->project_id === null ? null : (string) $transaction->project_id,
                     'shareable' => DocumentOwnerType::Transaction->isShareable(),
+                    'default_visible' => false,
+                ];
+            }
+
+            if ($owner instanceof Invoice) {
+                // The PDF of an issued billing document counts for the client of the document and no project; an
+                // invoice is finance data and never shared with a Partner (D-03, D-21).
+                $invoice = Invoice::query()->whereKey($owner->getKey())->sharedLock()->firstOrFail();
+
+                return [
+                    'owner_type' => DocumentOwnerType::Invoice->value,
+                    'owner_id' => (string) $invoice->getKey(),
+                    'client_id' => (string) $invoice->client_id,
+                    'project_id' => null,
+                    'shareable' => DocumentOwnerType::Invoice->isShareable(),
                     'default_visible' => false,
                 ];
             }

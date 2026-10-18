@@ -187,7 +187,7 @@ final class TimeEntryController
 
     #[Endpoint(
         'Update a time entry',
-        'Requires ability `'.ApiAbility::TimeWrite->value.'`. Edits an unbilled entry through the same rules as the application. Send only the keys to change: an absent key keeps its value, `null` clears the project or the task (clearing the task keeps the project). `duration_seconds` sets the end to the stored (or the sent) start plus that many seconds. A billed entry cannot be changed and answers 409 with the code `entry_locked`. A running entry (a timer started in the application) keeps its end: sending `ended_at` or `duration_seconds` answers 422 under `ended_at`, while the description, the billable flag, the context and the start can still be changed.',
+        'Requires ability `'.ApiAbility::TimeWrite->value.'`. Edits an unbilled entry through the same rules as the application. Send only the keys to change: an absent key keeps its value, `null` clears the project or the task (clearing the task keeps the project). `duration_seconds` sets the end to the stored (or the sent) start plus that many seconds. A billed entry, or an entry reserved by an invoice draft, cannot be changed (only its description and external object) and answers 409 with the code `entry_locked`. A running entry (a timer started in the application) keeps its end: sending `ended_at` or `duration_seconds` answers 422 under `ended_at`, while the description, the billable flag, the context and the start can still be changed.',
     )]
     #[UrlParam('timeEntry', 'string', 'Time entry UUID.', example: '0199e3a0-5b7c-7d2e-8f41-a1b2c3d4e5f6')]
     #[Response(ApiExamples::TIME_ENTRY, 200, 'The entry after the change.')]
@@ -208,7 +208,7 @@ final class TimeEntryController
     #[ResponseField('data.billed_at', 'string', 'Instant the entry was billed, ISO 8601, or null while unbilled.', nullable: true)]
     #[ResponseField('data.external', 'object', 'The free-form JSON object an import helper stored with the entry, or null.', nullable: true)]
     #[Response(ApiExamples::NOT_FOUND, 404, 'No time entry has this UUID.')]
-    #[Response(ApiExamples::ENTRY_LOCKED, 409, 'The entry is billed and cannot be changed (code `entry_locked`).')]
+    #[Response(ApiExamples::ENTRY_LOCKED, 409, 'The entry is billed or reserved by an invoice draft and cannot be changed (code `entry_locked`).')]
     #[Response(ApiExamples::VALIDATION_ERROR, 422, 'A field is not valid or the application refuses the change; the errors are keyed by field.')]
     public function update(string $timeEntry, UpdateTimeEntryRequest $request, UpdateTimeEntry $update, ReferenceResolver $refs): JsonResponse|TimeEntryResource
     {
@@ -234,12 +234,12 @@ final class TimeEntryController
 
     #[Endpoint(
         'Delete a time entry',
-        'Requires ability `'.ApiAbility::TimeWrite->value.'`. Deletes an unbilled, finished entry and answers 204 without a body. A billed entry answers 409 with the code `entry_locked`; a running entry (a timer started in the application) answers 409 with the code `entry_running`: stop it in the application first.',
+        'Requires ability `'.ApiAbility::TimeWrite->value.'`. Deletes an unbilled, finished entry and answers 204 without a body. A billed entry, or an entry reserved by an invoice draft, answers 409 with the code `entry_locked`; a running entry (a timer started in the application) answers 409 with the code `entry_running`: stop it in the application first.',
     )]
     #[UrlParam('timeEntry', 'string', 'Time entry UUID.', example: '0199e3a0-5b7c-7d2e-8f41-a1b2c3d4e5f6')]
     #[Response(null, 204, 'The entry was deleted.')]
     #[Response(ApiExamples::NOT_FOUND, 404, 'No time entry has this UUID.')]
-    #[Response(ApiExamples::ENTRY_LOCKED, 409, 'The entry is billed (code `entry_locked`).')]
+    #[Response(ApiExamples::ENTRY_LOCKED, 409, 'The entry is billed or reserved by an invoice draft (code `entry_locked`).')]
     #[Response(ApiExamples::ENTRY_RUNNING, 409, 'The entry is running (code `entry_running`).')]
     public function destroy(string $timeEntry, Request $request, DeleteTimeEntry $delete): JsonResponse|HttpResponse
     {

@@ -10,6 +10,8 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Enums\TransactionType;
+use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
@@ -37,6 +39,9 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * Changes are written to the activity log with an explicit allowlist (D-14): the money, the CZK figure with its
  * source and rate, the references and the short text columns. The free-text `description` is never logged.
  *
+ * An income that books a payment of an invoice carries `invoice_id` and `invoice_payment_id` (FI-03, D-19). It is
+ * created only by `RecordPayment` and the database locks it for every writer except its date and category.
+ *
  * Only the free text is fillable. The type, category, amounts, CZK figure, snapshot, client and project are set
  * with `forceFill` by trusted code (the Actions), so a request can never write them by mass assignment.
  *
@@ -57,11 +62,13 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string|null $document_number
  * @property string|null $client_id
  * @property string|null $project_id
+ * @property string|null $invoice_id
+ * @property string|null $invoice_payment_id
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
 #[Fillable(['description', 'counterparty', 'document_number'])]
-#[LoggedAttributes(['type', 'transaction_date', 'category_id', 'amount_minor', 'amount_currency', 'czk_minor', 'czk_source', 'exchange_rate', 'client_id', 'project_id', 'counterparty', 'document_number'])]
+#[LoggedAttributes(['type', 'transaction_date', 'category_id', 'amount_minor', 'amount_currency', 'czk_minor', 'czk_source', 'exchange_rate', 'client_id', 'project_id', 'invoice_id', 'invoice_payment_id', 'counterparty', 'document_number'])]
 final class Transaction extends KokpitModel implements PartnerIsolated
 {
     use DeniesPartners, LogsAllowlistedActivity;
@@ -105,6 +112,34 @@ final class Transaction extends KokpitModel implements PartnerIsolated
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class)->withTrashed();
+    }
+
+    /**
+     * The invoice this income books, if any (D-19).
+     *
+     * @return BelongsTo<Invoice, $this>
+     */
+    public function invoice(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class);
+    }
+
+    /**
+     * The payment this income books, if any (D-19).
+     *
+     * @return BelongsTo<InvoicePayment, $this>
+     */
+    public function invoicePayment(): BelongsTo
+    {
+        return $this->belongsTo(InvoicePayment::class);
+    }
+
+    /**
+     * Whether the income was booked from a payment of an invoice: its amount, currency, texts and links are locked.
+     */
+    public function isPaymentIncome(): bool
+    {
+        return $this->invoice_payment_id !== null;
     }
 
     /**

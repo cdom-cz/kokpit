@@ -49,7 +49,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 - [x] **CL-01**: Admin manages clients with billing data, stage, currency, rate, payment terms, invoice e-mail and language, online-payment flag
 - [x] **CL-02**: Admin manages multiple contacts per client with primary and billing flags
-- [ ] **CL-03**: Client detail shows projects, unbilled time and amount, invoices, documents and client accounts
+- [x] **CL-03**: Client detail shows projects, unbilled time and amount, invoices, documents and client accounts
 - [x] **CL-04**: Admin loads client data from ARES by company ID via a synchronous button in the form; errors show next to the field and leave the form unchanged
 - [x] **CL-05**: Clients are archived (soft delete) rather than hard-deleted; tags are available on clients
 
@@ -120,20 +120,20 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 - [x] **FI-01**: Income and expense transactions with hierarchical categories, currency, CZK amount, optional client/project/invoice, receipts as attachments
 - [ ] **FI-02**: Overview per month/year, per category and per client in CZK
-- [ ] **FI-03**: Payment of an invoice creates an income transaction (automatically for Stripe; editable date and category for manual payment)
+- [x] **FI-03**: Payment of an invoice creates an income transaction (automatically for Stripe; editable date and category for manual payment)
 
 ### Invoicing
 
-- [ ] **IN-01**: Invoices, proformas and credit notes with separate number series, number allocated only on issue
-- [ ] **IN-02**: Draft created from unbilled billable time (client, period, projects; grouping per project or task; fixed sums added) plus manual items; items editable; entries reserved so two drafts cannot bill the same time
-- [ ] **IN-03**: Issue freezes supplier, customer and bank snapshots, rate and amounts; issued invoices are immutable except payment state and internal note, enforced in the database
-- [ ] **IN-04**: PDF generated at issue from snapshots only, stored in documents, with SPAYD QR for CZK bank transfer, in the client's invoice language; sent by queued e-mail with optional work report
-- [ ] **IN-05**: Manual payment (transfer, cash) recorded in a payments table; warning if already paid; overdue status derived; overdue overview
-- [ ] **IN-06**: Proforma converts to invoice with a link after payment
-- [ ] **IN-07**: Invoicing in client currency with CNB rate snapshot and CZK total
-- [ ] **IN-08**: Non-VAT-payer mode is the default and fully tested; data model prepared for VAT payer
-- [ ] **IN-09**: Partner sees own issued invoices and proformas (list, detail, PDF, pay button) read-only, never drafts, internal notes, linked time or rates
-- [ ] **IN-10**: Cancelling or deleting a draft, or storno, returns linked entries to unbilled
+- [x] **IN-01**: Invoices, proformas and credit notes with separate number series, number allocated only on issue
+- [x] **IN-02**: Draft created from unbilled billable time (client, period, projects; grouping per project or task; fixed sums added) plus manual items; items editable; entries reserved so two drafts cannot bill the same time
+- [x] **IN-03**: Issue freezes supplier, customer and bank snapshots, rate and amounts; issued invoices are immutable except payment state and internal note, enforced in the database
+- [x] **IN-04**: PDF generated at issue from snapshots only, stored in documents, with SPAYD QR for CZK bank transfer, in the client's invoice language; sent by queued e-mail with optional work report
+- [x] **IN-05**: Manual payment (transfer, cash) recorded in a payments table; warning if already paid; overdue status derived; overdue overview
+- [x] **IN-06**: Proforma converts to invoice with a link after payment
+- [x] **IN-07**: Invoicing in client currency with CNB rate snapshot and CZK total
+- [x] **IN-08**: Non-VAT-payer mode is the default and fully tested; data model prepared for VAT payer
+- [x] **IN-09**: Partner sees own issued invoices and proformas (list, detail, PDF, pay button) read-only, never drafts, internal notes, linked time or rates
+- [x] **IN-10**: Cancelling or deleting a draft, or storno, returns linked entries to unbilled
 
 ### Payments (Stripe)
 
@@ -228,7 +228,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | US-02 | Phase 4 | Complete |
 | CL-01 | Phase 4 | Complete |
 | CL-02 | Phase 4 | Complete |
-| CL-03 | Phase 10 | Pending |
+| CL-03 | Phase 10 | Complete |
 | CL-04 | Phase 4 | Complete |
 | CL-05 | Phase 4 | Complete |
 | PR-01 | Phase 4 | Complete |
@@ -273,17 +273,17 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DO-03 | Phase 9 | Gaps Found |
 | FI-01 | Phase 9 | Complete |
 | FI-02 | Phase 9 | Gaps Found |
-| FI-03 | Phase 10 | Pending |
-| IN-01 | Phase 10 | Pending |
-| IN-02 | Phase 10 | Pending |
-| IN-03 | Phase 10 | Pending |
-| IN-04 | Phase 10 | Pending |
-| IN-05 | Phase 10 | Pending |
-| IN-06 | Phase 10 | Pending |
-| IN-07 | Phase 10 | Pending |
-| IN-08 | Phase 10 | Pending |
-| IN-09 | Phase 10 | Pending |
-| IN-10 | Phase 10 | Pending |
+| FI-03 | Phase 10 | Complete |
+| IN-01 | Phase 10 | Complete |
+| IN-02 | Phase 10 | Complete |
+| IN-03 | Phase 10 | Complete |
+| IN-04 | Phase 10 | Complete |
+| IN-05 | Phase 10 | Complete |
+| IN-06 | Phase 10 | Complete |
+| IN-07 | Phase 10 | Complete |
+| IN-08 | Phase 10 | Complete |
+| IN-09 | Phase 10 | Complete |
+| IN-10 | Phase 10 | Complete |
 | PA-01 | Phase 11 | Pending |
 | PA-02 | Phase 11 | Pending |
 | PA-03 | Phase 11 | Pending |

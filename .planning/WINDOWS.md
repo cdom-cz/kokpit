@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 6
+open_count: 7
 waived_count: 0
 fixed_count: 1
-total_count: 7
-last_updated: 2026-10-14T23:35:44.136Z
+total_count: 8
+last_updated: 2026-10-17T16:20:59.421Z
 ---
 
 # Broken Windows Ledger
@@ -22,6 +22,7 @@ last_updated: 2026-10-14T23:35:44.136Z
 | 5 | 08 | unrun-verify | app/Domain/Reports/Notifications/ReportExportReadyNotification.php |  | Plan 08-16 human check not run: open the export bell and a CSV export in a Czech spreadsheet in DDEV (stock bell styling with long period text, columns split at semicolon, decimal commas) | open |  | 2026-10-14T21:55:19.520Z |  |
 | 6 | 08 | unrun-verify | resources/views/filament/pages/time-report.blade.php |  | Plan 08-14 task 3 human-check not run: the 375px visual pass of /admin/time-report (horizontal scroll inside the tree, toggles with Tab/Enter/Space and focus ring, long names wrapping) and the Alpine expand/collapse behaviour are untested in a browser | open |  | 2026-10-14T22:36:17.164Z |  |
 | 7 | 08 | unrun-verify | app/Domain/Reports/Jobs/BuildReportExport.php |  | 08-21: the XLSX workbook (frozen header pane, auto filter, CZK-missing comments, number formats) was verified by reading the package, not by opening it in a spreadsheet application | open |  | 2026-10-14T23:35:44.136Z |  |
+| 8 | 10 | unrun-verify | tests/Feature/Invoicing/DraftEditorTest.php |  | Plan 10-25 human check not run: draft with 15 lines at 375 px and desktop width (items table scrolls inside its wrapper, no page overflow, delete buttons at least 24 px) | open |  | 2026-10-17T16:20:59.421Z |  |
 
 ````json
 [
@@ -113,6 +114,19 @@ last_updated: 2026-10-14T23:35:44.136Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-14T23:35:44.136Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 8,
+    "kind": "unrun-verify",
+    "phase": "10",
+    "file": "tests/Feature/Invoicing/DraftEditorTest.php",
+    "line": null,
+    "description": "Plan 10-25 human check not run: draft with 15 lines at 375 px and desktop width (items table scrolls inside its wrapper, no page overflow, delete buttons at least 24 px)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T16:20:59.421Z",
     "resolved_at": null,
     "milestone": null
   }

@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 8
-current_phase_name: Exchange Rates and Reports
+current_phase: 10
+current_phase_name: Invoicing
 status: verifying
-stopped_at: Phase 09.1 complete, ready to verify Phase 8
-last_updated: "2026-10-17T05:31:31.801Z"
+stopped_at: Completed 10-32-PLAN.md
+last_updated: "2026-10-17T21:32:01.814Z"
 last_activity: 2026-10-17
-last_activity_desc: Phase 09.1 complete, transitioned to Phase 8
-state_head: dd528965c81ec34e5bd07d7ab4bd620ed52f016d
+last_activity_desc: Phase 10 execution started
+state_head: 6c6eb0464fe7314008f6142ae406048a25e718dc
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 225
-  completed_plans: 184
-  percent: 58
+  completed_plans: 225
+  percent: 54
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 09.1 — Transactions API (INSERTED)
+**Current focus:** Phase 10 — Invoicing
 
 ## Current Position
 
-Phase: 8 — Exchange Rates and Reports
-Plan: 27
+Phase: 10 (Invoicing) — EXECUTING
+Plan: 41 of 41
 Status: Phase complete — ready for verification
-Last activity: 2026-10-17 — Phase 09.1 complete, transitioned to Phase 8
+Last activity: 2026-10-17 — Phase 10 execution started
 
-Progress: [██████░░░░] 58%
+Progress: [█████░░░░░] 54%
 
 ## Performance Metrics
 
@@ -247,6 +247,47 @@ Progress: [██████░░░░] 58%
 | Phase 09.1 P07 | 6 min | 3 tasks | 12 files |
 | Phase 09.1 P08 | 21 min | 2 tasks | 3 files |
 | Phase 09.1 P09 | 26 min | 3 tasks | 6 files |
+| Phase 10 P01 | 14 min | 2 tasks | 4 files |
+| Phase 10 P02 | 8 min | 2 tasks | 8 files |
+| Phase 10 P03 | 31 min | 3 tasks | 10 files |
+| Phase 10 P04 | 12 min | 3 tasks | 6 files |
+| Phase 10 P33 | 10 min | 2 tasks | 8 files |
+| Phase 10 P05 | 40 min | 3 tasks | 11 files |
+| Phase 10 P06 | 40 min | 3 tasks | 9 files |
+| Phase 10 P07 | 30 min | 2 tasks | 10 files |
+| Phase 10 P08 | 30 min | 3 tasks | 13 files |
+| Phase 10 P09 | 55 min | 2 tasks | 7 files |
+| Phase 10 P10 | 25 min | 2 tasks | 8 files |
+| Phase 10 P11 | 12 min | 3 tasks | 10 files |
+| Phase 10 P34 | 25 min | 2 tasks | 6 files |
+| Phase 10 P12 | 26 min | 2 tasks | 7 files |
+| Phase 10 P13 | 7 min | 2 tasks | 12 files |
+| Phase 10 P14 | 30 min | 3 tasks | 11 files |
+| Phase 10 P15 | 2 sessions | 3 tasks | 12 files |
+| Phase 10 P16 | 30 min | 3 tasks | 8 files |
+| Phase 10 P35 | 40 min | 2 tasks | 7 files |
+| Phase 10 P17 | 80 min | 3 tasks | 7 files |
+| Phase 10 P18 | 35 min | 3 tasks | 1 files |
+| Phase 10 P19 | 25 min | 3 tasks | 9 files |
+| Phase 10 P20 | 55 min | 2 tasks | 14 files |
+| Phase 10 P21 | 40 min | 3 tasks | 11 files |
+| Phase 10 P22 | about 40 min | 2 tasks | 4 files |
+| Phase 10 P23 | 45 min | 2 tasks | 3 files |
+| Phase 10 P24 | 19 min | 2 tasks | 9 files |
+| Phase 10 P25 | 25 min | 3 tasks | 10 files |
+| Phase 10 P27 | 55 min | 3 tasks | 12 files |
+| Phase 10 P28 | 25 min | 2 tasks | 9 files |
+| Phase 10 P36 | 45 min | 2 tasks | 7 files |
+| Phase 10 P37 | 35 min | 2 tasks | 8 files |
+| Phase 10 P38 | 13 min | 2 tasks | 5 files |
+| Phase 10 P39 | 35 min | 2 tasks | 3 files |
+| Phase 10 P26 | 21 min | 3 tasks | 9 files |
+| Phase 10 P29 | 55 min | 3 tasks | 13 files |
+| Phase 10 P40 | 35 min | 2 tasks | 6 files |
+| Phase 10 P41 | 75 min | 3 tasks | 5 files |
+| Phase 10 P30 | 47 min | 3 tasks | 7 files |
+| Phase 10 P31 | 28min | 3 tasks | 10 files |
+| Phase 10 P32 | 90min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -602,6 +643,82 @@ Recent decisions affecting current work:
 - [Phase 09.1]: Plan 09.1-08: Phase 10 plan 10-19 adds one API test per transaction endpoint for its payment-income refusal and adds PATCH to TransactionController::CONFLICT_METHODS only if that refusal becomes a 409 (CONTRIBUTING hand-over 7)
 - [Phase 09.1]: 09.1-09: CR-01 fixed in the API mapping only; cleared() drops just the own rate when czk_amount_minor carries a value (app/Domain/Finance untouched)
 - [Phase 09.1]: 09.1-09: WR-01 refuses JSON booleans via noBoolean() with bail before integer; integer strings keep passing
+- [Phase 10]: R-01-1: a converted invoice line amount is rounded HALF_UP once from the exact conversion of the source price; the printed converted unit price is a separately rounded display figure (Money::timesThroughCzk)
+- [Phase 10]: R-01-2/R-01-3: InvoiceQuantity rounds seconds with integer arithmetic (intdiv(50*s+9,18)) outside Money; Money::times takes the canonical decimal text of a quantity
+- [Phase 10]: 10-02: payment QR only for CZK and a Czech IBAN; Spayd::supports() decides printing, forPayment() throws otherwise and also refuses a zero amount
+- [Phase 10]: 10-02: SPAYD message strips combining marks via Normalizer NFKD before iconv, because glibc ASCII//TRANSLIT answers a question mark for diacritics under the C locale
+- [Phase 10]: R-03-1: accent, footer, logo and signature are frozen into the issue snapshot (images as path plus SHA-256); stored image objects are never deleted by Settings and DocumentImage::dataUri() throws on a missing or altered object
+- [Phase 10]: R-03-3: logo and signature are re-encoded to PNG and stored content-addressed as settings/document-<kind>-<sha256>.png on the media disk, 1 MB and 4000 px caps
+- [Phase 10]: DocumentPalette is derived at render time from the snapshotted accent and falls back to #ff6f00 for an invalid value (R-03-2)
+- [Phase 10]: R-04-6 enforced in the database: invoices frozen guard has an empty mutable list and no implied updated_at, so an issued row accepts no write at all; the state flip is the last write of the issue pipeline
+- [Phase 10]: Child-of-frozen-parent guard takes FOR SHARE on the parent row and treats a missing parent as open; invoice_items follow invoices.state with no always-mutable column
+- [Phase 10]: issued_at on invoices is stored but not CHECK-required; the credited invoice of a credit note is same-client by composite FK, its kind must be checked by the Action
+- [Phase 10]: R-33-1: InvoiceKind is its own enum with numberingKind() and carriesPayment(); R-33-2: InvoiceStatus is the display enum of the derived state
+- [Phase 10]: R-33-3: InvoiceEmailState has a Sending claim state labelled 'Odesílá se'; Converted and AwaitingInvoice read 'Zaplaceno' for the Partner (T-10-82)
+- [Phase 10]: 10-05: cancelled has one definition (issued storno credit note); InvoiceItemPolicy reads the document through the Partner-scoped relation
+- [Phase 10]: Phase 10 P06: reservation of time is the single column time_entries.invoice_id, released only by an issued storno credit note (link guard in the database)
+- [Phase 10]: Phase 10 P06: a payment is never updated and is deleted only under the transaction-local flag kokpit.payment_deletion, together with its income (deferred pair check)
+- [Phase 10]: Phase 10 P06: the PDF link lives on invoice_admin.pdf_document_id and changes only from null to an own file or by deleting the file (ON DELETE SET NULL)
+- [Phase 10]: R-07-1/R-07-2/R-07-3: invoice and proforma numbers are digits-only and at most 10 characters (variable symbol = the number itself, none for a credit note); proforma default {YYYY}9{NNNN}, moved to by a guarded settings migration (owner acknowledgement of the D-05 narrowing pending)
+- [Phase 10]: R-08-1: InvoiceAdmin, InvoicePayment, InvoiceItemSource and InvoiceEmail are DeniesPartners models under AdminOnlyPolicy; the stored PDF is reached only through InvoiceAdmin::pdfDocument()
+- [Phase 10]: InvoiceAdmin and InvoicePayment log allowlisted columns only (internal_note_updated_at marker, CNB trio, amount, date, method); note text is never logged
+- [Phase 10]: R-09-1 applied: every billing takes the rate/amount snapshot through EntryBilling::snapshot(); only hourly entries with a rate snapshot
+- [Phase 10]: R-09-3 applied: bulk unlock is all or nothing when an invoice-billed entry is selected; the message names the invoice with the lowest id
+- [Phase 10]: R-10-1: a time entry reserved by an invoice draft is locked (start, end, billable, client, project, task, delete) in the panel and the API; the description and the API external object stay writable
+- [Phase 10]: 10-11: a manual draft line gets a source row with origin manual and price_manual true; a time or fixed-amount line becomes price_manual only when its unit price changes
+- [Phase 10]: 10-11: UpdateDraft with an items key replaces the whole list (ids matched, missing deleted); an absent key leaves lines untouched
+- [Phase 10]: 10-11: UpdateInternalNote writes nothing when the trimmed note is unchanged, so the marker keeps the last real change time
+- [Phase 10]: 10-34: reports price a billed entry with its billing snapshot (rate and amount), unbilled and legacy billed entries at the current rate; ReportEntry exposes a reserved flag while reserved time still counts as unbilled; rateCurrencies includes snapshot currencies
+- [Phase 10]: 10-12: IssueChecks/assertIssuable take an optional CNB trio to copy, so a credit note copying its invoice's rate needs no list on its own issue date; a typed due date before the derived issue date is the due_before_issue blocker; blocker dates are written j. n. Y
+- [Phase 10]: 10-13: draft candidates require an hourly effective billing type (allow-list), so fixed-price and non-billable-task time is never claimed
+- [Phase 10]: 10-13: reservation is lock-then-claim on locked rows (EntryReservation::claim); lines are built from claimed rows with seconds read under the lock
+- [Phase 10]: 10-13: needs_conversion of a preview line is derived (source rate currency differs from draft currency, price not manual), not stored; conversion_snapshot stays null until issue (10-17)
+- [Phase 10]: R-14-1/R-14-2 tightened: fixed-amount time link is limited to entries of effective fixed-price type; the billed fixed amount counts issued invoices only (proformas excluded, credit notes netted)
+- [Phase 10]: Draft line appends (time, new time, fixed amount) go through one writer, DraftLines, that only appends after the last position so edited lines are never rewritten
+- [Phase 10]: 10-16: payment refusals (draft, credit note, cancelled invoice) are keyed under 'payment'; a missing CNB list is keyed under paid_on, or income_date when it differs, and is checked before anything is written
+- [Phase 10]: 10-16: InvoiceBalances is the one definition of paid, credited and remaining (shared SQL fragments); remaining is null for a credit note or draft and 0 for a cancelled invoice
+- [Phase 10]: 10-35: EntryReservation is no longer final (still readonly) so the concurrency harness can bind the unlocked twin; no application code extends it
+- [Phase 10]: 10-35: the invoice counter key is global per year, so the concurrency test reads the counter before, expects numbers from that start and restores the counter row and the supplier and bank settings afterwards
+- [Phase 10]: R-17-1 applied: one rounding per converted line (amount via timesThroughCzk, printed unit price a display figure); owner confirmation of the visible quantity x price difference is still pending with plan 10-01 R-01-1
+- [Phase 10]: R-17-3 applied: VAT payer mode blocks issuing with vat_payer_unsupported for every document kind; a source with a conversion_snapshot is not converted again at issue
+- [Phase 10]: 10-18: the PDF variants (proforma, credit note, EUR, optional blocks) were already delivered by 10-15; 10-18 proves them and the regeneration equivalence (HTML, page count, text) in InvoicePdfVariantsTest
+- [Phase 10]: 10-19: the summary unpaid figure follows the Unpaid tab (not yet late) so overdue and unpaid never overlap; a foreign document without its CNB trio adds nothing to a CZK sum
+- [Phase 10]: 10-19: payment income lock checks the type as sent and every other field after reading the input without type, date, category and CZK keys; resent unchanged values are not a change
+- [Phase 10]: R-20-1/R-20-4: invoice documents are not archivable with their client and never shareable; IssueContext carries the acting Admin and IssueContext::today() serves day-only callers
+- [Phase 10]: Rollback of the issue transaction removes the stored PDF object through DB::afterRollBack registered by StoreGeneratedDocument; AttachDocuments records the object of a media row whose listener failed after the write
+- [Phase 10]: 10-21: a draft row opens the view page until plan 10-25 adds the editor; the Admin PDF row action uses the signed document route of the stored PDF until plan 10-38 (R-21-1, R-21-2)
+- [Phase 10]: 10-21: ViewInvoice aborts 403 for a Partner before the record is read, because the invoice policy lets a Partner view an own issued invoice
+- [Phase 10]: 10-21: ReceivablesReader::statuses() also returns the paid amount and the CZK sum is the public owedFrom(), shared by the list summarizer and the dashboard rule
+- [Phase 10]: R-22-1..3 applied; proforma checks run in the order not-an-issued-proforma, converted, not-paid under the key proforma; a carried payment without a CNB list for its date fails the whole conversion (cnb_missing)
+- [Phase 10]: 10-23: a partial credit note is refused with credit_total when earlier credits plus the new one exceed the invoice total; the storno is not checked on its total (it credits only the remaining quantities), so line rounding can never block a cancellation
+- [Phase 10]: 10-23: credit lines carry manual sources with price_manual true; a converted line copies its frozen conversion snapshot and source rate and is credited with Money::timesThroughCzk rounded once
+- [Phase 10]: R-24-1 applied: every document e-mail send, a resend included, is a new invoice_emails row; SendInvoiceEmail is idempotent per row by a conditional claim, reverts the row to queued on an exception so the queue can retry, and failed() marks it failed once with a fixed class
+- [Phase 10]: A refused mail transport leaves SendInvoiceEmail as a fixed-message RuntimeException so the generic failed-job alert cannot print the provider text or the recipient into the bell (T-10-65)
+- [Phase 10]: R-25-1: draft line amounts and the summary are computed on the server by DraftEditorPreview, which mirrors UpdateDraft's rule for generated lines and typed prices; the save stays the Action's computation
+- [Phase 10]: R-25-2: one InvoiceEntriesRelationManager serves both states (Záznamy času on a draft, read-only Navázaný čas on an issued document); the draft editor checks the Admin in boot() on every Livewire request
+- [Phase 10]: A date the Admin did not type is stored as null: the editor shows the derived date and a hidden default decides on save whether it was typed
+- [Phase 10]: 10-27: Nevyfakturováno on the client page counts reserved time as unbilled and names its draft share; K úhradě lists one amount per document currency (client currency first) with the CZK total from ReceivablesReader::summary()
+- [Phase 10]: 10-27: the client variant of InvoiceTable filters by Druh and Stav, Stav reusing the list-tab conditions via ReceivablesReader::constrain(); Nová faktura is the only create action on the Faktury tab
+- [Phase 10]: R-28-1: the receivables dashboard card is collapsible with its own widget key unpaid_invoices and a migration widening the preference CHECK
+- [Phase 10]: R-28-2: the collapsed receivables card shows the overdue count in its header; the card is hidden until an issued invoice or proforma exists
+- [Phase 10]: R-36-1: the explicit-confirmation rule covers only the file named by invoice_admin.pdf_document_id; the check runs under the invoice_admin row lock inside the delete transaction
+- [Phase 10]: R-36-2: RegeneratePdf works only when pdf_document_id is null; an existing PDF is never replaced; every failure maps to the fixed message 'PDF se nepodařilo vytvořit'
+- [Phase 10]: R-37-1: unsent invoice e-mail slot warns after 900 s of waiting and counts a sending row as failed after 3600 s; the age runs from updated_at and a failure outranks a wait
+- [Phase 10]: HealthResult carries an optional url and urlLabel so an indicator can link the screen that fixes the problem
+- [Phase 10]: R-38-1 applied: the issued-document PDF has its own signed, user-bound route files.invoice; the Document scope is not widened and the controller re-checks that the linked document is owned by the invoice
+- [Phase 10]: 10-39: locked payment-income fields stay dehydrated so UpdateTransaction is the single authority; the delete refusal is a danger notification with the action to the invoice
+- [Phase 10]: R-26-2: the Partner reads derived invoice states only; ReceivablesReader runs as system over the ids of the Partner-scoped page, never a payment row
+- [Phase 10]: R-26-3: Partner related documents name only issued documents (storno credit note, invoice from a proforma) through Partner-scoped relations
+- [Phase 10]: R-29-1 applied: a successful issue redirects to the detail with send=1; R-29-2 applied: the entries tab is reused read only as Navazany cas; the view address of a draft redirects to the editor
+- [Phase 10]: 10-40: the reserved marker is a separate gray column and infolist entry, not a BillingBadge case, so Nevyfakturovano and the billing filter keep their meaning; the report reserved seconds are part of the unbilled value, never subtracted
+- [Phase 10]: 10-41: DeletePayment sets and clears kokpit.payment_deletion inside its own transaction after the refusals; the mutation twin does its unlocked carried-copy check before the barrier so the 23503 outcome is deterministic
+- [Phase 10]: 10-30: RecordPaymentAction takes the host's invoice and refresh hook as closures; no payment action is offered on a converted proforma; the page header action shows only while something is owed
+- [Phase 10]: IssueCreditNote gets read-only creditable() and preview() so the credit dialog shows the exact remaining quantities and amounts the issue will compute
+- [Phase 10]: The e-mail dialog of the issue is opened through wire:init on the detail subheading and a public openSendDialog(), because header actions are cached after mount()
+- [Phase 10]: SendInvoiceEmailAction takes the host document as a Closure with entry points for the header, the list row and the log row
+- [Phase 10]: In the Odeslani tab a sending row older than the System page stale threshold reads as failed; the list column keeps Ve fronte for every sending row
+- [Phase 10]: A document that cannot be credited any more (cancelled elsewhere) is shown as a persistent danger notification plus a redirect, not a field error
+- [Phase 10]: 10-32: the old hand-over test of the Phase 10 bullet was rewritten to assert the R-09-2 wording, not relaxed; no .gitignore entry added
 
 ### Pending Todos
 
@@ -657,6 +774,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T05:26:27.012Z
-Stopped at: Phase 09.1 complete, ready to verify Phase 8
+Last session: 2026-10-17T21:32:00.309Z
+Stopped at: Completed 10-32-PLAN.md
 Resume file: None

@@ -198,7 +198,7 @@ describe('the report of a client and a month', function (): void {
             ->toContain('Odpracováno 3:15 Fakturovatelné 3:15 Nefakturovatelné 0:00')
             ->toContain('Nevyfakturováno 3:15 '.timeReportMoney(39000, 'EUR').' v Kč: '.timeReportMoney(967500, 'CZK'))
             ->toContain('Nefakturovatelné 0:00 Bez částky')
-            ->toContain('Částky jsou vypočtené z aktuálních sazeb a z kurzu ČNB ke dni záznamu.')
+            ->toContain('Vyfakturované záznamy jsou oceněny sazbou platnou při fakturaci; u záznamů vyfakturovaných před zavedením fakturace se používá aktuální sazba.')
             ->toContain('Celkem 3:15 3:15 0:00 0:00 '.timeReportMoney(39000, 'EUR').' '.timeReportMoney(967500, 'CZK'));
     });
 

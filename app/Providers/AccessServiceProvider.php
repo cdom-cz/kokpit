@@ -18,6 +18,14 @@ use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Policies\UserPolicy;
+use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Models\InvoiceItemSource;
+use App\Domain\Invoicing\Models\InvoicePayment;
+use App\Domain\Invoicing\Policies\InvoiceItemPolicy;
+use App\Domain\Invoicing\Policies\InvoicePolicy;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Projects\Policies\ProjectPolicy;
@@ -129,6 +137,19 @@ final class AccessServiceProvider extends ServiceProvider
         // The collapsed state of a dashboard card: the Admin holds any card, a Partner only the cards a Partner can see
         // (explicit grant in the policy, everything else denied); the owner scope keeps everybody to the own rows.
         Gate::policy(DashboardWidgetPreference::class, DashboardWidgetPreferencePolicy::class);
+
+        // Billing documents: a Partner views an issued document of the own client, nothing else (IN-09).
+        Gate::policy(Invoice::class, InvoicePolicy::class);
+        Gate::policy(InvoiceItem::class, InvoiceItemPolicy::class);
+
+        // The Admin-only half of a billing document (internal note, CNB snapshot, PDF link) and its payments are
+        // closed to Partners, even for an issued invoice of the own client (IN-09, R-08-1).
+        Gate::policy(InvoiceAdmin::class, AdminOnlyPolicy::class);
+        Gate::policy(InvoicePayment::class, AdminOnlyPolicy::class);
+
+        // The generation source of a line (rates, seconds) and the e-mail log are Admin-only too (IN-09, R-08-1).
+        Gate::policy(InvoiceItemSource::class, AdminOnlyPolicy::class);
+        Gate::policy(InvoiceEmail::class, AdminOnlyPolicy::class);
 
         // The personal planner "Signal" belongs to one Admin and is closed to Partners; the owner scope
         // of the models keeps every Admin to the own rows.

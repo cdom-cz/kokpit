@@ -6,6 +6,7 @@ namespace App\Domain\Finance\Actions;
 
 use App\Domain\Finance\CustomRate;
 use App\Domain\Finance\Enums\CzkSource;
+use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\TransactionCzk;
 use App\Domain\Finance\TransactionInput;
@@ -42,12 +43,24 @@ use Illuminate\Validation\ValidationException;
  *   transaction (unless `czk_manual` is false) and does not recompute a CNB one.
  * A CZK transaction needs no rate: it is identity whatever was typed or kept.
  *
+ * The income that books a payment of an invoice (FI-03, D-19 as amended on 2026-10-17, ruling R-19-1) changes only in its
+ * date, the CZK figure following the date by the rule above, and its category: every change of the amount, currency,
+ * client, project, type, description, counterparty, document number or invoice link, and any manual or own-rate CZK
+ * figure, is refused with `payment_transaction_locked` under that key, on the locked row before anything is written. A
+ * form that sends the unchanged values back is not a change. The database guard of plan 10-06 refuses the same for
+ * every other writer; a wrong payment is corrected by deleting it in the invoice detail (`DeletePayment`).
+ *
  * A receipt counts for the client and project of its transaction (D-11), so when either changes the receipts
  * get the new pair in the same database transaction (research Pitfall 5). That is one query update, not a model
  * event: the logged attributes of a document do not include the client or the project.
  */
 final readonly class UpdateTransaction
 {
+    /**
+     * The data keys that fix the CZK figure by hand (D-06), none of which a payment income accepts.
+     */
+    private const array CZK_KEYS = ['czk_amount', 'czk_manual', 'exchange_rate', 'exchange_unit_amount'];
+
     public function __construct(private TransactionCzk $czk) {}
 
     /**
@@ -61,6 +74,11 @@ final readonly class UpdateTransaction
 
         return DB::transaction(function () use ($transaction, $data): Transaction {
             $locked = Transaction::query()->whereKey($transaction->getKey())->lockForUpdate()->firstOrFail();
+
+            if ($locked->isPaymentIncome()) {
+                $this->assertOnlyDateAndCategoryChange($locked, $data);
+            }
+
             $input = TransactionInput::fromArray($data, $locked);
 
             $locked->fill([
@@ -88,6 +106,76 @@ final readonly class UpdateTransaction
 
             return $locked->refresh();
         });
+    }
+
+    /**
+     * Refuses a change of anything but the date and the category of the income of a payment, keyed by the changed
+     * field. The type is compared as sent and the rest after the input is read against the stored row, with the type,
+     * date, category and CZK keys left out, so a type or CZK refusal is not hidden behind another validation error.
+     *
+     * @param  array<string, mixed>  $data
+     *
+     * @throws ValidationException `payment_transaction_locked` under every changed key
+     */
+    private function assertOnlyDateAndCategoryChange(Transaction $stored, array $data): void
+    {
+        $changed = [];
+
+        if (array_key_exists('type', $data)) {
+            $type = $data['type'] instanceof TransactionType ? $data['type']->value : $data['type'];
+
+            if ($type !== $stored->type->value) {
+                $changed[] = 'type';
+            }
+        }
+
+        foreach (['invoice_id', 'invoice_payment_id'] as $link) {
+            if (array_key_exists($link, $data) && $data[$link] !== $stored->getAttribute($link)) {
+                $changed[] = $link;
+            }
+        }
+
+        foreach (self::CZK_KEYS as $key) {
+            if (array_key_exists($key, $data) && $this->setsFigure($key, $data[$key])) {
+                $changed[] = $key;
+            }
+        }
+
+        $input = TransactionInput::fromArray(array_diff_key($data, array_flip(['type', 'transaction_date', 'category_id', ...self::CZK_KEYS])), $stored);
+
+        $compared = [
+            'currency' => $input->amount->currency !== $stored->amount_currency,
+            'amount' => $input->amount->minor !== $stored->amount_minor,
+            'client_id' => $input->clientId !== $stored->client_id,
+            'project_id' => $input->projectId !== $stored->project_id,
+            'description' => $input->description !== $stored->description,
+            'counterparty' => $input->counterparty !== $stored->counterparty,
+            'document_number' => $input->documentNumber !== $stored->document_number,
+        ];
+
+        $changed = [...$changed, ...array_keys(array_filter($compared))];
+
+        if ($changed === []) {
+            return;
+        }
+
+        $message = __('invoices.errors.payment_transaction_locked', ['number' => (string) $stored->invoice()->value('number')]);
+
+        throw ValidationException::withMessages(array_fill_keys($changed, $message));
+    }
+
+    /**
+     * Whether a value of a CZK key fixes the figure by hand: a typed figure, an own rate or its unit amount, or the
+     * manual switch on. A null, an empty text and the manual switch off keep the figure computed, which is what a
+     * form sends back unchanged.
+     */
+    private function setsFigure(string $key, mixed $value): bool
+    {
+        if ($key === 'czk_manual') {
+            return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) === true;
+        }
+
+        return ! ($value === null || (is_string($value) && trim($value) === ''));
     }
 
     /**

@@ -6,6 +6,7 @@ namespace App\Filament\Resources;
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
@@ -143,17 +144,20 @@ final class TimeEntryResource extends Resource
 
     /**
      * The three sections of the entry form. With `$running` true the entry has no
-     * end yet, so Konec is left out and the "Běží" badge stands in its place.
+     * end yet, so Konec is left out and the "Běží" badge stands in its place. With `$reserved` true the entry is
+     * held by an invoice draft (R-10-1): the client, project, task, times and billable flag are disabled, so
+     * they are not sent and the Action keeps the stored values; the description stays editable.
      *
      * @return list<Section>
      */
-    public static function entryFields(bool $running = false): array
+    public static function entryFields(bool $running = false, bool $reserved = false): array
     {
         return [
             Section::make(__('kokpit.time.sections.entry'))
                 ->columns(2)
                 ->schema([
                     Select::make('client_id')
+                        ->disabled($reserved)
                         ->label(__('kokpit.time.fields.client'))
                         ->options(static fn (?TimeEntry $record, Get $get): array => self::withCurrent(
                             app(EntryContextOptions::class)->clients(),
@@ -173,6 +177,7 @@ final class TimeEntryResource extends Resource
                         })
                         ->native(false),
                     Select::make('project_id')
+                        ->disabled($reserved)
                         ->label(__('kokpit.time.fields.project'))
                         ->options(static fn (?TimeEntry $record, Get $get): array => self::withCurrent(
                             app(EntryContextOptions::class)->projects(self::id($get('client_id'))),
@@ -190,6 +195,7 @@ final class TimeEntryResource extends Resource
                         })
                         ->native(false),
                     Select::make('task_id')
+                        ->disabled($reserved)
                         ->label(__('kokpit.time.fields.task'))
                         ->options(static fn (?TimeEntry $record, Get $get): array => self::withCurrent(
                             app(EntryContextOptions::class)->tasks(self::id($get('client_id')), self::id($get('project_id'))),
@@ -216,11 +222,13 @@ final class TimeEntryResource extends Resource
                 ->columns(2)
                 ->schema([
                     DateTimePicker::make('started_at')
+                        ->disabled($reserved)
                         ->label(__('kokpit.time.fields.started_at'))
                         ->seconds()
                         ->required()
                         ->live(),
                     DateTimePicker::make('ended_at')
+                        ->disabled($reserved)
                         ->label(__('kokpit.time.fields.ended_at'))
                         ->seconds()
                         ->required()
@@ -253,6 +261,7 @@ final class TimeEntryResource extends Resource
                         })
                         ->dehydrated(false),
                     Toggle::make('billable')
+                        ->disabled($reserved)
                         ->label(__('kokpit.time.fields.billable'))
                         ->default(true)
                         ->live()
@@ -318,6 +327,23 @@ final class TimeEntryResource extends Resource
                         ->label(__('kokpit.time.fields.billing_state'))
                         ->state(static fn (TimeEntry $record): BillingBadge => $record->billingBadge())
                         ->badge(),
+                    // A reserved entry stays unbilled and is additionally marked as held by a draft (D-04, Surface M).
+                    TextEntry::make('reserved_badge')
+                        ->label(__('invoices.time.draft_field'))
+                        ->state(static fn (TimeEntry $record): string => (string) __('invoices.time.badge'))
+                        ->badge()
+                        ->color('gray')
+                        ->icon(Heroicon::OutlinedLink)
+                        ->tooltip(__('invoices.time.badge_tooltip'))
+                        ->visible(static fn (TimeEntry $record): bool => $record->isReserved()),
+                    // An entry billed by an invoice links to it; a manually billed entry has no invoice and no link.
+                    TextEntry::make('invoice_link')
+                        ->label(__('invoices.time.invoice_field'))
+                        ->state(static fn (TimeEntry $record): string => (string) __('invoices.time.invoice_link', ['number' => $record->invoice instanceof Invoice ? (string) $record->invoice->number : '']))
+                        ->url(static fn (TimeEntry $record): ?string => $record->invoice instanceof Invoice
+                            ? InvoiceResource::getUrl('view', ['record' => $record->invoice])
+                            : null)
+                        ->visible(static fn (TimeEntry $record): bool => $record->isBilled() && $record->invoice?->number !== null),
                     // The hourly rate that would apply and where it comes from, never an amount: the
                     // amount is written when the entry is billed (Phase 10). The resolver refuses non-Admins.
                     TextEntry::make('effective_rate')
@@ -388,6 +414,14 @@ final class TimeEntryResource extends Resource
                 ->label(__('kokpit.time.fields.billing_state'))
                 ->state(static fn (TimeEntry $record): BillingBadge => $record->billingBadge())
                 ->badge(),
+            // A reserved entry stays "Nevyfakturováno" and is also held by a draft (D-04, ruling R-06-3).
+            TextColumn::make('reserved')
+                ->label(__('invoices.time.draft_field'))
+                ->state(static fn (TimeEntry $record): ?string => $record->isReserved() ? (string) __('invoices.time.badge') : null)
+                ->badge()
+                ->color('gray')
+                ->icon(Heroicon::OutlinedLink)
+                ->tooltip(static fn (TimeEntry $record): ?string => $record->isReserved() ? (string) __('invoices.time.badge_tooltip') : null),
             // Overlaps are allowed (D-04); the badge only tells the Admin, and the tooltip names the other entry.
             TextColumn::make('overlap')
                 ->label(__('kokpit.time.fields.overlap'))
@@ -675,7 +709,14 @@ final class TimeEntryResource extends Resource
                         return;
                     }
 
-                    Notification::make()->success()->title(__('kokpit.time.billing.mark.done', ['count' => $result['billed']]))->send();
+                    // A reserved entry is skipped, never billed by hand: the toast names how many (F-13, Surface M).
+                    Notification::make()
+                        ->success()
+                        ->title(__('kokpit.time.billing.mark.done', ['count' => $result['billed']]))
+                        ->body($result['skipped_reserved'] > 0
+                            ? trans_choice('invoices.time.skipped_reserved', $result['skipped_reserved'], ['count' => $result['skipped_reserved']])
+                            : null)
+                        ->send();
                     $livewire->dispatch('time-entry-saved');
                 })
                 ->deselectRecordsAfterCompletion(),

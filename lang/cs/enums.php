@@ -28,6 +28,7 @@ return [
         'task' => 'Úkol',
         'task_comment' => 'Komentář',
         'transaction' => 'Transakce',
+        'invoice' => 'Doklad',
     ],
 
     // DocumentTypeGroup: the file-type groups of the central documents listing (plan 09-14).
@@ -176,6 +177,76 @@ return [
         'cnb' => 'Kurz ČNB',
         'manual' => 'Zadáno ručně',
         'custom' => 'Vlastní kurz',
+    ],
+
+    // Invoicing (plan 10-33): the document kinds, the stored state and the derived display status.
+    'invoice_kind' => [
+        'invoice' => 'Faktura',
+        'proforma' => 'Zálohová faktura',
+        'credit_note' => 'Dobropis',
+    ],
+
+    'invoice_state' => [
+        'draft' => 'Koncept',
+        'issued' => 'Vystaveno',
+    ],
+
+    'invoice_status' => [
+        'draft' => 'Koncept',
+        'unpaid' => 'Nezaplaceno',
+        'partially_paid' => 'Částečně zaplaceno',
+        'overdue' => 'Po splatnosti',
+        'paid' => 'Zaplaceno',
+        'cancelled' => 'Stornováno',
+        'converted' => 'Převedeno na fakturu',
+        'awaiting_invoice' => 'Zaplacená záloha bez faktury',
+        'credit_note' => 'Dobropis',
+    ],
+
+    // The Partner has no draft; a paid proforma reads as paid whether or not its invoice exists.
+    'invoice_status_partner' => [
+        'unpaid' => 'Čeká na úhradu',
+        'partially_paid' => 'Částečně zaplaceno',
+        'overdue' => 'Po splatnosti',
+        'paid' => 'Zaplaceno',
+        'cancelled' => 'Stornováno',
+        'converted' => 'Zaplaceno',
+        'awaiting_invoice' => 'Zaplaceno',
+        'credit_note' => 'Dobropis',
+    ],
+
+    // The tabs of the invoice list (plan 10-19); the last one is the paid proforma still waiting for its invoice.
+    'invoice_list_tab' => [
+        'all' => 'Všechny',
+        'drafts' => 'Koncepty',
+        'unpaid' => 'Nezaplacené',
+        'overdue' => 'Po splatnosti',
+        'paid' => 'Zaplacené',
+        'cancelled' => 'Stornované',
+        'awaiting_invoice' => 'Zálohy k vyfakturování',
+    ],
+
+    'invoice_item_origin' => [
+        'time' => 'Z času',
+        'fixed_amount' => 'Pevná částka',
+        'manual' => 'Ruční položka',
+    ],
+
+    'item_grouping' => [
+        'project' => 'Podle projektu',
+        'task' => 'Podle úkolu',
+    ],
+
+    'payment_method' => [
+        'transfer' => 'Převodem',
+        'cash' => 'Hotově',
+    ],
+
+    'invoice_email_state' => [
+        'queued' => 'Ve frontě',
+        'sending' => 'Odesílá se',
+        'sent' => 'Odesláno',
+        'failed' => 'Odeslání selhalo',
     ],
 
 ];

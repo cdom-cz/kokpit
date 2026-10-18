@@ -10,18 +10,27 @@ use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Actions\RecordPayment;
+use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Money\Money;
 use App\Filament\RelationManagers\TransactionHistoryRelationManager;
+use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\TransactionResource;
 use App\Filament\Resources\TransactionResource\Pages\CreateTransaction;
 use App\Filament\Resources\TransactionResource\Pages\EditTransaction;
 use App\Filament\Resources\TransactionResource\Pages\ListTransactions;
+use Carbon\CarbonImmutable;
+use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Facades\Filament;
+use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Support\Canary;
+use Tests\Support\DocumentFixtures;
+use Tests\Support\InvoiceFixtures;
 
 /*
  * The Admin-only "Transakce" screen (FI-01, D-12, D-13, D-14): create with a live CNB preview, edit with the
@@ -670,5 +679,157 @@ describe('the activity trail', function (): void {
         $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
 
         expect(TransactionHistoryRelationManager::canViewForRecord($transaction, EditTransaction::class))->toBeFalse();
+    });
+});
+
+/**
+ * An issued CZK invoice of a new client paid in full through RecordPayment, which books the income (FI-03).
+ *
+ * @return array{0: Invoice, 1: Transaction}
+ */
+function txScreenPaymentIncome(string $currency = 'CZK'): array
+{
+    DocumentFixtures::fakeDisk();
+    InvoiceFixtures::configureSupplier();
+
+    $admin = auth()->user();
+    assert($admin instanceof User);
+
+    $foreign = $currency !== 'CZK';
+
+    if ($foreign) {
+        // The CNB lists the income is booked and re-dated against (the invoice is issued on the travelled-to today).
+        InvoiceFixtures::cnbRate($currency, '2026-10-14', '25.000');
+        InvoiceFixtures::cnbRate($currency, '2026-10-10', '24.500');
+        InvoiceFixtures::cnbRate($currency, '2026-10-12', '24.000');
+    }
+
+    $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['currency' => $currency]), [InvoiceFixtures::item('Example work', '1', $foreign ? '100.00' : '12500.00')]);
+    $payment = app(RecordPayment::class)->handle($admin, $invoice, ['amount' => $foreign ? '100,00' : '12 500,00', 'paid_on' => '2026-10-10']);
+
+    return [$invoice, Transaction::query()->where('invoice_payment_id', $payment->id)->sole()];
+}
+
+describe('the invoice reference on the list (FI-03, Surface M)', function (): void {
+    it('shows the invoice number as a link to the invoice view for a payment income and a dash for the others', function (): void {
+        [$invoice, $income] = txScreenPaymentIncome();
+        $ordinary = txScreenRecord(['currency' => 'CZK', 'amount' => '250,00']);
+
+        Livewire::test(ListTransactions::class)
+            ->assertCanSeeTableRecords([$income, $ordinary])
+            ->assertTableColumnExists('invoice.number')
+            ->assertTableColumnStateSet('invoice.number', (string) $invoice->number, $income)
+            ->assertTableColumnStateSet('invoice.number', null, $ordinary)
+            ->assertSee(InvoiceResource::getUrl('view', ['record' => $invoice->getKey()]));
+
+        expect($income->description)->toBe('Platba faktury '.$invoice->number);
+    });
+
+    it('narrows the rows with the Faktura filter in both directions', function (): void {
+        [, $income] = txScreenPaymentIncome();
+        $ordinary = txScreenRecord(['currency' => 'CZK', 'amount' => '250,00']);
+
+        Livewire::test(ListTransactions::class)
+            ->filterTable('with_invoice', true)
+            ->assertCanSeeTableRecords([$income])
+            ->assertCanNotSeeTableRecords([$ordinary])
+            ->filterTable('with_invoice', false)
+            ->assertCanSeeTableRecords([$ordinary])
+            ->assertCanNotSeeTableRecords([$income]);
+    });
+});
+
+describe('the edit page locks the income of an invoice payment (FI-03, D-19 as amended, R-19-1)', function (): void {
+    beforeEach(function (): void {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 09:30:00', 'Europe/Prague'));
+    });
+
+    it('disables every field but the date and the category and shows the helper with the invoice number', function (): void {
+        [$invoice, $income] = txScreenPaymentIncome('EUR');
+
+        $page = Livewire::test(EditTransaction::class, ['record' => $income->getKey()]);
+
+        foreach (['type', 'amount', 'currency', 'client_id', 'project_id', 'description', 'counterparty', 'document_number'] as $field) {
+            $page->assertFormFieldIsDisabled($field);
+        }
+
+        $page->assertFormFieldIsEnabled('transaction_date')
+            ->assertFormFieldIsEnabled('category_id')
+            ->assertFormFieldIsHidden('czk_manual')
+            ->assertSee(__('invoices.transactions.helper', ['number' => $invoice->number]))
+            ->assertSee('Změnit lze jen datum a kategorii; chybnou platbu smažte v detailu faktury.');
+    });
+
+    it('leaves an ordinary transaction fully editable and without the helper', function (): void {
+        txScreenRate();
+        $ordinary = txScreenRecord();
+
+        Livewire::test(EditTransaction::class, ['record' => $ordinary->getKey()])
+            ->assertFormFieldIsEnabled('amount')
+            ->assertFormFieldIsEnabled('description')
+            ->assertDontSee('Transakce vznikla z platby faktury');
+    });
+
+    it('saves a changed date with the CZK figure following the CNB list of the new day, and another income category', function (): void {
+        [, $income] = txScreenPaymentIncome('EUR');
+        $other = TransactionCategory::query()->where('type', 'income')->whereKeyNot($income->category_id)->whereNull('parent_id')->orderBy('id')->firstOrFail();
+
+        expect($income->czk_minor)->toBe(245000);
+
+        Livewire::test(EditTransaction::class, ['record' => $income->getKey()])
+            ->fillForm(['transaction_date' => '2026-10-12', 'category_id' => $other->getKey()])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $income->refresh();
+
+        expect($income->transaction_date->toDateString())->toBe('2026-10-12')
+            ->and($income->czk_minor)->toBe(240000)
+            ->and($income->category_id)->toBe($other->getKey())
+            ->and($income->amount_minor)->toBe(10000)
+            ->and($income->invoice_payment_id)->not->toBeNull();
+    });
+
+    it('refuses a forged amount or description in the form state with the field error and changes nothing', function (): void {
+        [$invoice, $income] = txScreenPaymentIncome('EUR');
+        $before = (array) DB::table('transactions')->where('id', $income->getKey())->first();
+        $message = __('invoices.errors.payment_transaction_locked', ['number' => $invoice->number]);
+
+        Livewire::test(EditTransaction::class, ['record' => $income->getKey()])
+            ->set('data.amount', '999,00')
+            ->set('data.description', 'Example edited text')
+            ->call('save')
+            ->assertHasFormErrors(['amount' => $message, 'description' => $message]);
+
+        expect((array) DB::table('transactions')->where('id', $income->getKey())->first())->toBe($before);
+    });
+});
+
+describe('deleting a payment income on the edit page', function (): void {
+    beforeEach(function (): void {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 09:30:00', 'Europe/Prague'));
+    });
+
+    it('shows the refusal of the Action as a danger notification with the action to the invoice and keeps the row', function (): void {
+        [$invoice, $income] = txScreenPaymentIncome();
+        $message = __('invoices.errors.payment_transaction_delete', ['number' => $invoice->number]);
+
+        Livewire::test(EditTransaction::class, ['record' => $income->getKey()])
+            ->mountAction(DeleteAction::class)
+            ->callMountedAction()
+            ->assertNoRedirect()
+            ->assertNotified(
+                Notification::make()
+                    ->danger()
+                    ->title($message)
+                    ->actions([
+                        Action::make('open_invoice')
+                            ->label('Otevřít fakturu')
+                            ->url(InvoiceResource::getUrl('view', ['record' => $invoice->getKey()]))
+                            ->button(),
+                    ]),
+            );
+
+        expect(Transaction::query()->whereKey($income->getKey())->exists())->toBeTrue();
     });
 });

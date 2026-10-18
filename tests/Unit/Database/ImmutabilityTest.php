@@ -64,3 +64,39 @@ it('builds the statement-level truncate guard and the drop statements', function
         ->and(Immutability::dropGuardTriggerSql('invoices'))->toBe('DROP TRIGGER IF EXISTS invoices_frozen_guard ON invoices')
         ->and(Immutability::dropTruncateGuardSql('invoices'))->toBe('DROP TRIGGER IF EXISTS invoices_truncate_guard ON invoices');
 });
+
+it('keeps the default guard of an existing caller byte-identical', function () {
+    expect(Immutability::guardTriggerSql('time_entries', 'billing_state', 'unbilled', ['billing_state', 'billed_at', 'duration_seconds']))
+        ->toBe("CREATE TRIGGER time_entries_frozen_guard BEFORE UPDATE OR DELETE ON time_entries FOR EACH ROW EXECUTE FUNCTION kokpit_guard_frozen_row('billing_state', 'unbilled', 'billing_state,billed_at,duration_seconds,updated_at')");
+});
+
+it('passes the mutable list exactly as given when updated_at is not implied', function () {
+    expect(Immutability::guardTriggerSql('invoices', 'state', 'draft', [], withUpdatedAt: false))
+        ->toContain("kokpit_guard_frozen_row('state', 'draft', '')")
+        ->and(Immutability::guardTriggerSql('invoices', 'state', 'draft', ['internal_note'], withUpdatedAt: false))
+        ->toContain("'internal_note')")
+        ->not->toContain('updated_at');
+});
+
+it('builds the child-of-frozen-parent guard with the documented name and arguments', function () {
+    expect(Immutability::childGuardTriggerSql('invoice_items', 'invoice_id', 'invoices', 'state', 'draft'))
+        ->toBe("CREATE TRIGGER invoice_items_parent_guard BEFORE INSERT OR UPDATE OR DELETE ON invoice_items FOR EACH ROW EXECUTE FUNCTION kokpit_guard_child_of_frozen_parent('invoices', 'invoice_id', 'state', 'draft', '')")
+        ->and(Immutability::childGuardTriggerSql('invoice_admin', 'invoice_id', 'invoices', 'state', 'draft', ['internal_note', 'updated_at']))
+        ->toContain("'internal_note,updated_at')")
+        ->and(Immutability::dropChildGuardTriggerSql('invoice_items'))->toBe('DROP TRIGGER IF EXISTS invoice_items_parent_guard ON invoice_items');
+});
+
+it('rejects a hostile identifier in the child guard builder', function (string $value) {
+    expect(fn () => Immutability::childGuardTriggerSql($value, 'invoice_id', 'invoices', 'state', 'draft'))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => Immutability::childGuardTriggerSql('invoice_items', $value, 'invoices', 'state', 'draft'))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => Immutability::childGuardTriggerSql('invoice_items', 'invoice_id', $value, 'state', 'draft'))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => Immutability::childGuardTriggerSql('invoice_items', 'invoice_id', 'invoices', $value, 'draft'))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => Immutability::childGuardTriggerSql('invoice_items', 'invoice_id', 'invoices', 'state', 'draft', ['note', $value]))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => Immutability::dropChildGuardTriggerSql($value))->toThrow(InvalidArgumentException::class);
+})->with('hostile identifiers');
+
+it('rejects a hostile open state and an overlong table in the child guard builder', function () {
+    expect(fn () => Immutability::childGuardTriggerSql('invoice_items', 'invoice_id', 'invoices', 'state', "draft'"))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => Immutability::childGuardTriggerSql(str_repeat('a', 49), 'invoice_id', 'invoices', 'state', 'draft'))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => Immutability::childGuardTriggerSql('invoice_items', 'invoice_id', str_repeat('a', 49), 'state', 'draft'))->toThrow(InvalidArgumentException::class);
+});

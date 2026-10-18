@@ -39,7 +39,7 @@ use Illuminate\Database\Eloquent\Builder;
  *
  * @phpstan-type Seconds array{worked: int, billable: int, non_billable: int, billed: int, unbilled: int, fixed: int}
  * @phpstan-type Node array{id: ?string, label: string, reference: ?string, currency: ?string, seconds: Seconds, amounts: array<string, Money>, czk: ?Money, czk_missing: int, czk_missing_day: ?string, czk_missing_currency: ?string, fixed: bool, fixed_price: bool, children: list<array<string, mixed>>}
- * @phpstan-type Summary array{worked: int, billable: int, non_billable: int, billed: int, unbilled: int, fixed: int, amounts: array{billed: array<string, Money>, unbilled: array<string, Money>, billable: array<string, Money>}, czk: array{billed: ?Money, unbilled: ?Money, billable: ?Money}, czk_missing: int, czk_missing_by_state: array{billed: int, unbilled: int}}
+ * @phpstan-type Summary array{worked: int, billable: int, non_billable: int, billed: int, unbilled: int, reserved: int, fixed: int, amounts: array{billed: array<string, Money>, unbilled: array<string, Money>, billable: array<string, Money>}, czk: array{billed: ?Money, unbilled: ?Money, billable: ?Money}, czk_missing: int, czk_missing_by_state: array{billed: int, unbilled: int}}
  * @phpstan-type Footer array{seconds: Seconds, czk: ?Money, amounts: array<string, Money>, czk_missing: int}
  * @phpstan-type FixedPrice array{price: Money, price_czk: Money|null, project_seconds: int, effective_rate: Money|null, effective_rate_czk: Money|null, conversion_day: string, czk_missing: bool}
  */
@@ -83,6 +83,8 @@ final readonly class TimeReport
         $amounts = ['billed' => [], 'unbilled' => [], 'billable' => []];
         $czk = ['billed' => null, 'unbilled' => null, 'billable' => null];
         $missingByState = ['billed' => 0, 'unbilled' => 0];
+        // Seconds of unbilled billable time held by a draft document: part of the unbilled figure, never subtracted (D-04, R-06-3).
+        $reservedSeconds = 0;
         $count = 0;
 
         foreach ($reader->entries($filters, $now) as $entry) {
@@ -91,6 +93,10 @@ final readonly class TimeReport
 
             $total->add($entry, $priced);
             $state = $entry->billed ? 'billed' : 'unbilled';
+
+            if ($entry->reserved && $entry->billable && ! $entry->billed) {
+                $reservedSeconds += $entry->seconds;
+            }
 
             if ($priced['czk_missing']) {
                 $missingByState[$state]++;
@@ -145,6 +151,7 @@ final readonly class TimeReport
             'non_billable' => $total->nonBillable,
             'billed' => $total->billed,
             'unbilled' => $total->unbilled,
+            'reserved' => $reservedSeconds,
             'fixed' => $total->fixed,
             'amounts' => $amounts,
             'czk' => $czk,

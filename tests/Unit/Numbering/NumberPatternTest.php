@@ -41,9 +41,11 @@ it('accepts the documented valid patterns', function (string $pattern, DocumentK
     'year, month and counter' => ['{YYYY}{MM}{NNN}', DocumentKind::Invoice],
     'counter only' => ['{NNNNNN}', DocumentKind::Invoice],
     'ten characters exactly' => ['{YYYY}{NNNNNN}', DocumentKind::Invoice],
-    'proforma with prefix and slash' => ['ZF-{YYYY}/{NNNN}', DocumentKind::Proforma],
+    'default proforma' => ['{YYYY}9{NNNN}', DocumentKind::Proforma],
+    'proforma of digits only, ten characters exactly' => ['{YYYY}{NNNNNN}', DocumentKind::Proforma],
+    'credit note with prefix and slash' => ['ZF-{YYYY}/{NNNN}', DocumentKind::CreditNote],
     'credit note with dots and underscore' => ['CN_{YY}.{N}', DocumentKind::CreditNote],
-    'thirty-two characters exactly' => [str_repeat('A', 29).'{N}', DocumentKind::Proforma],
+    'thirty-two characters exactly' => [str_repeat('A', 29).'{N}', DocumentKind::CreditNote],
     'task' => ['{KEY}-{N}', DocumentKind::Task],
 ]);
 
@@ -68,10 +70,16 @@ it('refuses a pattern with the named reason', function (string $pattern, Documen
     'letters in an invoice' => ['INV{YYYY}{NNNN}', DocumentKind::Invoice, 'invoice_digits'],
     'dash in an invoice' => ['{YYYY}-{NNNN}', DocumentKind::Invoice, 'invoice_digits'],
     'too long minimal invoice' => ['{YYYY}{MM}{NNNNNNN}', DocumentKind::Invoice, 'invoice_length'],
+    'letters in a proforma' => ['ZF{YYYY}{NNNN}', DocumentKind::Proforma, 'proforma_digits'],
+    'dash in a proforma' => ['{YYYY}-{NNNN}', DocumentKind::Proforma, 'proforma_digits'],
+    'slash and letters in a proforma' => ['ZF-{YYYY}/{NNNN}', DocumentKind::Proforma, 'proforma_digits'],
+    'too long minimal proforma' => ['{YYYY}{MM}{NNNNNNN}', DocumentKind::Proforma, 'proforma_length'],
+    'credit note without a counter' => ['CN{YYYY}', DocumentKind::CreditNote, 'counter_count'],
     'thirty-three characters' => [str_repeat('A', 30).'{N}', DocumentKind::Proforma, 'too_long'],
-    'space' => ['ZF {YYYY}{N}', DocumentKind::Proforma, 'literal'],
-    'semicolon' => ['ZF;{YYYY}{N}', DocumentKind::Proforma, 'literal'],
-    'stray closing brace' => ['ZF}{N}', DocumentKind::Proforma, 'literal'],
+    'space' => ['ZF {YYYY}{N}', DocumentKind::CreditNote, 'literal'],
+    'semicolon' => ['ZF;{YYYY}{N}', DocumentKind::CreditNote, 'literal'],
+    'stray closing brace' => ['ZF}{N}', DocumentKind::CreditNote, 'literal'],
+    'space in a proforma' => ['{YYYY} {N}', DocumentKind::Proforma, 'literal'],
     'task with a year' => ['{YYYY}-{N}', DocumentKind::Task, 'task_fixed'],
     'task with another separator' => ['{KEY}/{N}', DocumentKind::Task, 'task_fixed'],
     'task with a padded counter' => ['{KEY}-{NNN}', DocumentKind::Task, 'task_fixed'],
@@ -112,7 +120,8 @@ it('writes dates and the padded counter into the number', function (): void {
     expect(NumberPattern::parse('{YYYY}{NNNN}', DocumentKind::Invoice)->format(7, $at))->toBe('2026'.'0007')
         ->and(NumberPattern::parse('{YY}{NNNNNN}', DocumentKind::Invoice)->format(42, $at))->toBe('26'.'000042')
         ->and(NumberPattern::parse('{YYYY}{MM}{NNN}', DocumentKind::Invoice)->format(3, $at))->toBe('202603'.'003')
-        ->and(NumberPattern::parse('ZF-{YYYY}/{NNNN}', DocumentKind::Proforma)->format(12, $at))->toBe('ZF-2026/0012');
+        ->and(NumberPattern::parse('{YYYY}9{NNNN}', DocumentKind::Proforma)->format(12, $at))->toBe('2026'.'9'.'0012')
+        ->and(NumberPattern::parse('ZF-{YYYY}/{NNNN}', DocumentKind::CreditNote)->format(12, $at))->toBe('ZF-2026/0012');
 });
 
 it('refuses to write an invoice number longer than ten characters instead of truncating it', function (): void {
@@ -123,8 +132,16 @@ it('refuses to write an invoice number longer than ten characters instead of tru
         ->and(fn () => $pattern->format(1000000, $at))->toThrow(OverflowException::class);
 });
 
-it('lets the counter of a proforma grow past its pad width without truncation', function (): void {
-    $pattern = NumberPattern::parse('ZF-{NNNN}', DocumentKind::Proforma);
+it('refuses to write a proforma number longer than ten characters instead of truncating it', function (): void {
+    $pattern = NumberPattern::parse('{YYYY}9{NNNN}', DocumentKind::Proforma);
+    $at = pragueNoon('2026-03-09');
+
+    expect($pattern->format(99999, $at))->toBe('2026'.'9'.'99999')
+        ->and(fn () => $pattern->format(100000, $at))->toThrow(OverflowException::class);
+});
+
+it('lets the counter of a credit note grow past its pad width without truncation', function (): void {
+    $pattern = NumberPattern::parse('ZF-{NNNN}', DocumentKind::CreditNote);
 
     expect($pattern->format(12345, pragueNoon('2026-03-09')))->toBe('ZF-12345');
 });

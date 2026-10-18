@@ -24,6 +24,10 @@ use Illuminate\Validation\ValidationException;
  * `exchange_rate`, `exchange_unit_amount`, `description`, `counterparty`, `document_number`, `client_id`,
  * `project_id`. A typed `czk_amount` makes the figure manual unless `czk_manual` is false; an `exchange_rate`
  * (with the unit amount, default 1) makes it custom: the amount converted at that rate, stored as the snapshot.
+ *
+ * The optional invoice link (`invoice_id`, `invoice_payment_id`) is passed by `RecordPayment` only: it is written in
+ * the same insert, with `forceFill`, never read from the data, so no request can book an income against an invoice
+ * (D-19). The database checks that the invoice is of the client and the payment of the invoice.
  */
 final readonly class RecordTransaction
 {
@@ -31,14 +35,15 @@ final readonly class RecordTransaction
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  array{invoice_id: string, invoice_payment_id: string}|null  $invoiceLink
      *
      * @throws ValidationException
      */
-    public function handle(User $actor, array $data): Transaction
+    public function handle(User $actor, array $data, ?array $invoiceLink = null): Transaction
     {
         Gate::forUser($actor)->authorize('create', Transaction::class);
 
-        return DB::transaction(function () use ($data): Transaction {
+        return DB::transaction(function () use ($data, $invoiceLink): Transaction {
             $input = TransactionInput::fromArray($data);
             $czk = $this->czk->resolve($input->amount, $input->transactionDate, $input->manualCzk(), $input->customRate);
 
@@ -56,6 +61,14 @@ final readonly class RecordTransaction
                 'project_id' => $input->projectId,
                 ...$czk,
             ]);
+
+            if ($invoiceLink !== null) {
+                $transaction->forceFill([
+                    'invoice_id' => $invoiceLink['invoice_id'],
+                    'invoice_payment_id' => $invoiceLink['invoice_payment_id'],
+                ]);
+            }
+
             $transaction->save();
 
             return $transaction->refresh();

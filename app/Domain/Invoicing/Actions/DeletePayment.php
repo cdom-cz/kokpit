@@ -1,0 +1,92 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Invoicing\Actions;
+
+use App\Domain\Documents\Actions\DeleteDocument;
+use App\Domain\Finance\Actions\DeleteTransaction;
+use App\Domain\Finance\Models\Transaction;
+use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoicePayment;
+use App\Domain\Invoicing\Queries\InvoiceBalances;
+use App\Domain\Invoicing\Queries\ReceivablesReader;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * Deletes a mistaken payment of an issued invoice or proforma together with the income booked from it (IN-05, IN-06,
+ * FI-03; D-19 as amended by the owner on 2026-10-17, D-13, D-15, D-16, D-17, D-20; rulings R-41-1 to R-41-5). The
+ * Admin only, and the only path that deletes a payment or the income of one: there is no payment edit, and
+ * {@see DeleteTransaction} refuses payment income.
+ *
+ * Everything happens in one database transaction. The order is deliberate:
+ *
+ * 1. the document row is locked first, the lock order shared with {@see RecordPayment} and {@see ConvertProforma}
+ *    (document, payment, income), so a deletion, a conversion and a new payment of one document serialise on that
+ *    row; a row lock fires no UPDATE trigger, so the frozen guard of the issued document is not touched;
+ * 2. the payment is read again under its own lock (gone: `payment_missing`), and a payment that is the source of a
+ *    carried copy on an invoice is refused (`payment_delete_carried`), both before anything else is changed;
+ * 3. the income is locked, then the transaction-local flag `kokpit.payment_deletion` names this very payment, the
+ *    only thing the payment guard and the payment-income guard of plan 10-06 accept;
+ * 4. the receipts of the income go through {@see DeleteDocument} (their stored objects are removed after the commit
+ *    and never when this transaction rolls back), then the income, then the payment, each through its model so the
+ *    `deleted` activity is written with allowlisted attributes only. The income goes first because the key from
+ *    `transactions` to `invoice_payments` is NO ACTION; the deferred pair check of the database then finds the
+ *    payment gone at commit;
+ * 5. the flag is cleared again, so it never outlives the sanctioned statements, even inside a wrapping transaction.
+ *
+ * Nothing is written on the `invoices` row: the status, the remaining amount and the overdue state of the document
+ * are derived from the remaining payments ({@see InvoiceBalances}, {@see ReceivablesReader}). A proforma payment has
+ * no income to delete (D-18). Deleting the invoice-side copy of a carried payment never touches its proforma source
+ * (D-15). A cancelled invoice keeps its payments correctable (D-16). No bell notice is sent, because the Admin
+ * performs the deletion.
+ */
+final readonly class DeletePayment
+{
+    public function __construct(private DeleteDocument $deleteDocument) {}
+
+    /**
+     * @throws ValidationException `payment_missing` or `payment_delete_carried`, both under `payment`
+     */
+    public function handle(User $actor, InvoicePayment $payment): void
+    {
+        Gate::forUser($actor)->authorize('delete', $payment);
+
+        DB::transaction(function () use ($actor, $payment): void {
+            Invoice::query()->whereKey($payment->invoice_id)->lockForUpdate()->firstOrFail();
+
+            $locked = InvoicePayment::query()->whereKey($payment->getKey())->lockForUpdate()->first();
+
+            if (! $locked instanceof InvoicePayment) {
+                throw ValidationException::withMessages(['payment' => __('invoices.errors.payment_missing')]);
+            }
+
+            $copy = InvoicePayment::query()->where('carried_from_payment_id', $locked->id)->first();
+
+            if ($copy instanceof InvoicePayment) {
+                throw ValidationException::withMessages([
+                    'payment' => __('invoices.errors.payment_delete_carried', ['number' => (string) Invoice::query()->whereKey($copy->invoice_id)->value('number')]),
+                ]);
+            }
+
+            $income = Transaction::query()->where('invoice_payment_id', $locked->id)->lockForUpdate()->first();
+
+            DB::select("select set_config('kokpit.payment_deletion', ?, true)", [$locked->id]);
+
+            if ($income instanceof Transaction) {
+                foreach ($income->documents()->orderBy('id')->get() as $receipt) {
+                    $this->deleteDocument->handle($actor, $receipt);
+                }
+
+                $income->delete();
+            }
+
+            $locked->delete();
+
+            DB::select("select set_config('kokpit.payment_deletion', '', true)");
+        });
+    }
+}

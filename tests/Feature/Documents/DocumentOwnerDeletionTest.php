@@ -9,6 +9,7 @@ use App\Domain\Documents\Actions\AttachDocuments;
 use App\Domain\Documents\Enums\DocumentOwnerType;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Finance\Models\Transaction;
+use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -215,12 +216,14 @@ describe('every document owner is archived, append-only or deletes its files its
                 in_array(SoftDeletes::class, class_uses_recursive($class), true) => 'archived',
                 $class === TaskComment::class => 'append-only',
                 $class === Transaction::class => 'deletes its receipts',
+                // An issued invoice is frozen (every DELETE is refused by the database) and a draft owns no file.
+                $class === Invoice::class => 'immutable',
                 default => 'UNGUARDED: '.$class,
             };
         }
 
         $this->assertSame(
-            ['client' => 'archived', 'project' => 'archived', 'task' => 'archived', 'task_comment' => 'append-only', 'transaction' => 'deletes its receipts'],
+            ['client' => 'archived', 'project' => 'archived', 'task' => 'archived', 'task_comment' => 'append-only', 'transaction' => 'deletes its receipts', 'invoice' => 'immutable'],
             $kinds,
             'A document owner kind gained a hard-delete path or is new. Delete its owned documents through DeleteDocument (row, media row and stored object) before the owner row goes, then list the kind here (D-09, research Pitfall 6).',
         );

@@ -159,6 +159,22 @@ it('shows the Czech reason on the invoice pattern field and stores nothing for a
         ->and(sequenceSnapshot())->toBe($counters);
 });
 
+it('names the variable symbol in the Czech refusal of a proforma pattern with letters or too many characters', function (string $pattern, string $reason): void {
+    $page = Livewire::test(SettingsPage::class)
+        ->fillForm([
+            'supplier' => numberingPageSupplier(),
+            'numbering' => ['proforma_pattern' => $pattern],
+        ])
+        ->call('save')
+        ->assertHasFormErrors(['numbering.proforma_pattern']);
+
+    expect($page->errors()->get('data.numbering.proforma_pattern'))->toContain(__("kokpit.settings.numbering.errors.{$reason}"))
+        ->and(__("kokpit.settings.numbering.errors.{$reason}"))->toContain('variabilní symbol');
+})->with([
+    'letters' => ['ZF-{YYYY}/{NNNN}', 'proforma_digits'],
+    'twelve characters' => ['{YYYY}{MM}{NNNNN}0', 'proforma_length'],
+]);
+
 it('refuses an invalid pattern of each document kind with its own reason', function (string $field, string $pattern, string $reason): void {
     $before = storedNumberingPatterns();
 
@@ -173,7 +189,10 @@ it('refuses an invalid pattern of each document kind with its own reason', funct
     expect($page->errors()->get("data.numbering.{$field}"))->toContain(__("kokpit.settings.numbering.errors.{$reason}"))
         ->and(storedNumberingPatterns())->toBe($before);
 })->with([
-    'proforma without a counter' => ['proforma_pattern', 'PF-{YYYY}', 'counter_count'],
+    'proforma without a counter' => ['proforma_pattern', '{YYYY}9', 'counter_count'],
+    'proforma with letters' => ['proforma_pattern', 'ZF-{YYYY}/{NNNN}', 'proforma_digits'],
+    'proforma with a separator' => ['proforma_pattern', '{YYYY}-{NNNN}', 'proforma_digits'],
+    'proforma longer than ten characters' => ['proforma_pattern', '{YYYY}{MM}{NNNNNNN}', 'proforma_length'],
     'credit note with an unknown token' => ['credit_note_pattern', 'CN{XX}{NNNN}', 'unknown_token'],
     'invoice month without a year' => ['invoice_pattern', '{MM}{NNNN}', 'month_without_year'],
 ]);
@@ -193,16 +212,19 @@ it('warns in Czech that numbering restarts at 1 when the reset period changes an
         ->assertDontSeeText($warning);
 });
 
-it('warns for the proforma and the credit note pattern too, each against its own stored pattern', function (string $field): void {
+it('warns for the proforma and the credit note pattern too, each against its own stored pattern', function (string $field, string $monthly): void {
     $warning = __('kokpit.settings.numbering.reset_warning');
 
     Livewire::test(SettingsPage::class)
         ->assertDontSeeText($warning)
         ->set("data.numbering.{$field}", 'X-{MM}-{YYYY}')
         ->assertDontSeeText($warning)
-        ->set("data.numbering.{$field}", '{YYYY}{MM}-{NNNN}')
+        ->set("data.numbering.{$field}", $monthly)
         ->assertSeeText($warning);
-})->with(['proforma_pattern', 'credit_note_pattern']);
+})->with([
+    'proforma' => ['proforma_pattern', '{YYYY}{MM}{NNNN}'],
+    'credit note' => ['credit_note_pattern', '{YYYY}{MM}-{NNNN}'],
+]);
 
 it('shows an own preview under the proforma and the credit note pattern, read from their own counters', function (): void {
     takeNumbers('invoice:'.pragueYear(), 3);
@@ -211,7 +233,7 @@ it('shows an own preview under the proforma and the credit note pattern, read fr
 
     Livewire::test(SettingsPage::class)
         ->assertSeeText(previewLine(pragueYear().'0004'))
-        ->assertSeeText(previewLine(pragueYear().'0002'))
+        ->assertSeeText(previewLine(pragueYear().'9'.'0002'))
         ->assertSeeText(previewLine(pragueYear().'0001'));
 
     expect(sequenceSnapshot())->toBe($before);
@@ -257,7 +279,7 @@ it('saves all three document patterns together and leaves the counters alone', f
             'supplier' => numberingPageSupplier(),
             'numbering' => [
                 'invoice_pattern' => '{YYYY}{NNNNN}',
-                'proforma_pattern' => 'ZF-{YY}{MM}-{NNN}',
+                'proforma_pattern' => '{YY}{MM}9{NNN}',
                 'credit_note_pattern' => 'D{YYYY}/{NNNN}',
             ],
         ])
@@ -267,7 +289,7 @@ it('saves all three document patterns together and leaves the counters alone', f
     expect(storedNumberingPatterns())->toBe([
         'credit_note_pattern' => 'D{YYYY}/{NNNN}',
         'invoice_pattern' => '{YYYY}{NNNNN}',
-        'proforma_pattern' => 'ZF-{YY}{MM}-{NNN}',
+        'proforma_pattern' => '{YY}{MM}9{NNN}',
         'task_pattern' => '{KEY}-{N}',
     ])->and(sequenceSnapshot())->toBe($counters);
 });

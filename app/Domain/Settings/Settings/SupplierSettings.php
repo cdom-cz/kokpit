@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Settings\Settings;
 
+use App\Domain\Settings\DocumentImage;
+
 /**
  * Who issues the documents: the supplier data printed on invoices (group `supplier`).
  *
  * All values are plain strings; an empty string or null means "not filled in".
+ * The two image paths are the exception: only DocumentImage writes them.
  * The rules() below are checked by the settings page and again by save().
  */
 class SupplierSettings extends ValidatedSettings
@@ -35,6 +38,12 @@ class SupplierSettings extends ValidatedSettings
 
     public ?string $registration_note;
 
+    /** Server-generated path of the stored logo (DocumentImage); never typed by a user. */
+    public ?string $logo_path;
+
+    /** Server-generated path of the stored signature or stamp (DocumentImage). */
+    public ?string $signature_path;
+
     public static function group(): string
     {
         return 'supplier';
@@ -57,6 +66,8 @@ class SupplierSettings extends ValidatedSettings
             'phone' => ['nullable', 'max:40'],
             'website' => ['nullable', 'url'],
             'registration_note' => ['nullable', 'max:255'],
+            'logo_path' => ['nullable', 'string', 'regex:'.DocumentImage::pathPattern('logo')],
+            'signature_path' => ['nullable', 'string', 'regex:'.DocumentImage::pathPattern('signature')],
         ];
     }
 }

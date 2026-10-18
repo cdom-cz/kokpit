@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\TimeTracking\Actions;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\TimeTracking\Billing\EntryBilling;
 use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\TimeEntryInput;
@@ -24,6 +26,12 @@ use Illuminate\Support\Facades\Gate;
  * billed raises the DomainException `kokpit.time.errors.nothing_to_unbill` and
  * changes nothing.
  *
+ * Time billed by an issued invoice (a billed entry with an `invoice_id`) is not unlocked here: it is released only
+ * by a full storno credit note (D-14). A selection that contains such an entry is refused as a whole (ruling
+ * R-09-3, all or nothing, so a partial unlock cannot hide which entries stayed locked) with a message naming
+ * the first invoice by id order, and nothing changes; the link guard of the database is the backstop. `preview()`
+ * then counts nothing, because a run would unlock nothing.
+ *
  * Same shape as MarkEntriesBilled: one transaction, rows FOR UPDATE in id order,
  * eligibility decided on the locked rows, one model save per entry so each
  * writes one allowlisted history row. `preview()` is the read-only count for the
@@ -31,11 +39,13 @@ use Illuminate\Support\Facades\Gate;
  */
 final class CancelEntriesBilling
 {
+    public function __construct(private readonly EntryBilling $billing) {}
+
     /**
      * @param  array<array-key, mixed>  $ids
      * @return int the number of entries unlocked
      *
-     * @throws DomainException nothing in the selection is billed
+     * @throws DomainException nothing in the selection is billed, or an entry is billed by an issued invoice
      */
     public function handle(User $actor, array $ids): int
     {
@@ -54,9 +64,9 @@ final class CancelEntriesBilling
                 throw new DomainException(__('kokpit.time.errors.nothing_to_unbill'));
             }
 
-            foreach ($billed as $row) {
-                $row->forceFill(['billing_state' => BillingState::Unbilled, 'billed_at' => null])->save();
-            }
+            $this->refuseInvoiceBilled($billed);
+
+            $this->billing->unbill($billed);
 
             return count($billed);
         });
@@ -71,6 +81,10 @@ final class CancelEntriesBilling
     public function preview(array $ids): array
     {
         $billed = $this->billed($this->selection(TimeEntryInput::uuids($ids), lock: false));
+
+        if ($this->invoiceIds($billed) !== []) {
+            $billed = [];
+        }
 
         return [
             'eligible' => count($billed),
@@ -100,5 +114,47 @@ final class CancelEntriesBilling
     private function billed(Collection $rows): array
     {
         return array_values($rows->filter(static fn (TimeEntry $row): bool => $row->billing_state === BillingState::Billed)->all());
+    }
+
+    /**
+     * Refuses the whole selection when one of its billed rows belongs to an invoice, naming the first invoice by id.
+     *
+     * @param  list<TimeEntry>  $billed
+     *
+     * @throws DomainException
+     */
+    private function refuseInvoiceBilled(array $billed): void
+    {
+        $invoiceIds = $this->invoiceIds($billed);
+
+        if ($invoiceIds === []) {
+            return;
+        }
+
+        $number = Invoice::query()->whereKey($invoiceIds[0])->value('number');
+
+        throw new DomainException(__('kokpit.time.errors.invoice_locked', ['number' => is_string($number) ? $number : '']));
+    }
+
+    /**
+     * The distinct invoice ids of the billed rows, in id order.
+     *
+     * @param  list<TimeEntry>  $billed
+     * @return list<string>
+     */
+    private function invoiceIds(array $billed): array
+    {
+        $ids = [];
+
+        foreach ($billed as $row) {
+            if ($row->invoice_id !== null) {
+                $ids[$row->invoice_id] = $row->invoice_id;
+            }
+        }
+
+        $ids = array_values($ids);
+        sort($ids);
+
+        return $ids;
     }
 }

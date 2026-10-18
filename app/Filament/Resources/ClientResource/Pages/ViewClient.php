@@ -9,6 +9,7 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Rules\EmailHasNoAccount;
 use App\Domain\Clients\Rules\EmailHasNoOpenInvitation;
 use App\Filament\Resources\ClientResource;
+use App\Filament\Resources\ClientResource\Widgets\ClientOverviewStats;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
@@ -39,6 +40,16 @@ final class ViewClient extends ViewRecord
         abort_unless(ClientResource::canAccess(), 403);
 
         parent::mount($record);
+    }
+
+    /**
+     * The stats row "Přehled klienta" above the details: unbilled time, what is owed and what is overdue.
+     *
+     * @return array<class-string>
+     */
+    protected function getHeaderWidgets(): array
+    {
+        return [ClientOverviewStats::class];
     }
 
     /**
