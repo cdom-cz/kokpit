@@ -381,7 +381,8 @@ return [
         ],
         'payments' => [
             'online_payments_enabled' => 'Nabízet online platbu kartou',
-            'online_payments_enabled_hint' => 'Odkazy na platbu kartou přibudou spolu s napojením na Stripe; zatím se jen ukládá, zda je chcete používat.',
+            'online_payments_enabled_hint' => 'Při vystavení faktury nebo zálohové faktury se vytvoří odkaz na platbu kartou přes Stripe. Týká se jen dokladů vystavených později.',
+            'stripe_missing_callout' => 'Stripe není nastavený (v prostředí chybí klíče). Odkazy na platbu se nevytvoří.',
         ],
     ],
 
@@ -976,7 +977,7 @@ return [
             'stage' => 'Stav slouží jen k přehledu a filtrování; nemění oprávnění ani fakturaci.',
             'hourly_rate' => 'Částka v měně klienta, s desetinnou čárkou a bez oddělovače tisíců, například 1500,50.',
             'payment_terms_days' => 'Počet dní od 0 do 365.',
-            'online_payment_enabled' => 'Zapnuto: faktury tohoto klienta půjde zaplatit online.',
+            'online_payment_enabled' => 'Zapnuto: u dokladů tohoto klienta se nabídne platba kartou. Nový koncept převezme tuto hodnotu a u dokladu ji lze přepsat.',
             'tags' => 'Interní štítky klienta. Nesdílejí se s projekty a klient je nikdy nevidí.',
         ],
         'filters' => [

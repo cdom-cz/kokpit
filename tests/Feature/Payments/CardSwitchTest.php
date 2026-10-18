@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Invoicing\Actions\ConvertProforma;
 use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\IssueCreditNote;
@@ -14,11 +15,16 @@ use App\Domain\Payments\Support\PayToken;
 use App\Domain\Payments\Support\PayUrl;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
+use App\Filament\Pages\SettingsPage;
+use App\Filament\Resources\ClientResource\Pages\CreateClient;
+use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportTesting\Testable;
+use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
@@ -166,6 +172,31 @@ function issueWithOverride(bool $clientOnline, ?bool $override): stdClass
     return adminRowOf(app(IssueDocument::class)->handle($admin, $draft));
 }
 
+/**
+ * A credit-note draft of the client, built as system with the only writes the schema allows (as the storno fixture does).
+ */
+function creditNoteDraftOf(Client $client): Invoice
+{
+    return app(PartnerContext::class)->runAsSystem(static function () use ($client): Invoice {
+        $source = InvoiceFixtures::issued($client);
+        $credit = new Invoice;
+        $credit->forceFill([
+            'client_id' => $client->id,
+            'kind' => InvoiceKind::CreditNote,
+            'currency' => $source->currency,
+            'language' => $source->language,
+            'vat_mode' => $source->vat_mode,
+            'credited_invoice_id' => $source->id,
+            'cancels_invoice' => false,
+            'subtotal_minor' => -100,
+            'vat_minor' => 0,
+            'total_minor' => -100,
+        ])->save();
+
+        return $credit;
+    });
+}
+
 it('takes the Admin override of the draft over the client value, in both directions (D-06, A8)', function (): void {
     CardPaymentSetup::enable();
 
@@ -251,24 +282,7 @@ it('refuses the switch on a credit-note draft and on a value that is not a boole
         }
     }
 
-    $credit = app(PartnerContext::class)->runAsSystem(static function () use ($draft, $client): Invoice {
-        $source = InvoiceFixtures::issued($client);
-        $credit = new Invoice;
-        $credit->forceFill([
-            'client_id' => $draft->client_id,
-            'kind' => InvoiceKind::CreditNote,
-            'currency' => $draft->currency,
-            'language' => $draft->language,
-            'vat_mode' => $draft->vat_mode,
-            'credited_invoice_id' => $source->id,
-            'cancels_invoice' => false,
-            'subtotal_minor' => -100,
-            'vat_minor' => 0,
-            'total_minor' => -100,
-        ])->save();
-
-        return $credit;
-    });
+    $credit = creditNoteDraftOf($client);
 
     expect(fn () => app(UpdateDraft::class)->handle($admin, $credit, ['card_payment_enabled' => true]))
         ->toThrow(ValidationException::class);
@@ -315,4 +329,139 @@ it('refuses a token that is malformed or that sits on a document with the switch
     RawSql::expectSqlState('23514', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = true, pay_token = ? WHERE invoice_id = ?', [str_repeat('a', 31), $draft->id]));
     RawSql::expectSqlState('23514', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = true, pay_token = ? WHERE invoice_id = ?', [str_repeat('a', 31).'-', $draft->id]));
     RawSql::expectSqlState('23514', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = false, pay_token = ? WHERE invoice_id = ?', [PayToken::generate(), $draft->id]));
+});
+
+/**
+ * The editor of a draft, as the Admin.
+ */
+function cardEditor(Invoice $draft): Testable
+{
+    return Livewire::test(EditInvoice::class, ['record' => $draft->getRouteKey()]);
+}
+
+function storedCardSwitch(Invoice $draft): bool
+{
+    return (bool) adminRowOf($draft)->card_payment_enabled;
+}
+
+describe('the draft editor', function (): void {
+    it('shows the toggle on for a client with online payment, with the standing helper, and stores an override', function (): void {
+        CardPaymentSetup::enable();
+        $draft = InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example work', '1', '500.00')]);
+
+        $editor = cardEditor($draft)
+            ->assertSee('Platba kartou')
+            ->assertSee('Na dokladu a v e-mailu se zobrazí tlačítko Zaplatit kartou. Po vystavení už nejde změnit.')
+            ->assertSet('data.card_payment_enabled', true)
+            ->assertFormFieldIsEnabled('card_payment_enabled');
+
+        $editor->set('data.card_payment_enabled', false)->call('save')->assertHasNoFormErrors();
+
+        expect(storedCardSwitch($draft))->toBeFalse();
+
+        $editor->set('data.card_payment_enabled', true)->call('save')->assertHasNoFormErrors();
+
+        expect(storedCardSwitch($draft))->toBeTrue();
+    });
+
+    it('disables the toggle with its reason when online payments are off in the settings and keeps the stored value', function (): void {
+        CardPaymentSetup::enable();
+        $draft = InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example work', '1', '500.00')]);
+        CardPaymentSetup::onlinePayments(false);
+
+        cardEditor($draft)
+            ->assertSee('Online platby jsou vypnuté v Nastavení.')
+            ->assertDontSee('Po vystavení už nejde změnit.')
+            ->assertSet('data.card_payment_enabled', false)
+            ->assertFormFieldIsDisabled('card_payment_enabled')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(storedCardSwitch($draft))->toBeTrue();
+    });
+
+    it('disables the toggle with its reason when Stripe is not configured', function (): void {
+        CardPaymentSetup::enable();
+        $draft = InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example work', '1', '500.00')]);
+        StripeTestConfig::clear();
+
+        cardEditor($draft)
+            ->assertSee('Stripe není nastavený. Doplňte klíče v prostředí aplikace.')
+            ->assertSet('data.card_payment_enabled', false)
+            ->assertFormFieldIsDisabled('card_payment_enabled');
+    });
+
+    it('has no toggle on a credit-note draft', function (): void {
+        CardPaymentSetup::enable();
+
+        cardEditor(creditNoteDraftOf(CardPaymentSetup::client()))
+            ->assertFormFieldIsHidden('card_payment_enabled')
+            ->assertDontSee('Na dokladu a v e-mailu se zobrazí tlačítko Zaplatit kartou.');
+    });
+
+    it('lists the card payment in the issue confirmation, yes when the frozen value will be on and no otherwise', function (): void {
+        CardPaymentSetup::enable();
+        $client = CardPaymentSetup::client();
+        $on = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '500.00')]);
+
+        cardEditor($on)
+            ->mountAction('issue')
+            ->assertMountedActionModalSee(['Platba kartou', 'Ano, odkaz se vytvoří po vystavení']);
+
+        $off = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '500.00')]);
+
+        cardEditor($off)
+            ->set('data.card_payment_enabled', false)
+            ->mountAction('issue')
+            ->assertMountedActionModalSee('Platba kartou')
+            ->assertMountedActionModalDontSee('Ano, odkaz se vytvoří po vystavení');
+
+        StripeTestConfig::clear();
+        $unavailable = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '500.00')]);
+
+        cardEditor($unavailable)
+            ->mountAction('issue')
+            ->assertMountedActionModalDontSee('Ano, odkaz se vytvoří po vystavení');
+    });
+});
+
+describe('the settings and the client form', function (): void {
+    it('shows the hint of the settings toggle and the warning callout only while online payments are on and Stripe is not configured', function (): void {
+        $this->actingAs(Canary::admin());
+        $callout = 'Stripe není nastavený (v prostředí chybí klíče). Odkazy na platbu se nevytvoří.';
+
+        CardPaymentSetup::onlinePayments(true);
+        StripeTestConfig::clear();
+
+        $page = Livewire::test(SettingsPage::class)
+            ->assertSee('Při vystavení faktury nebo zálohové faktury se vytvoří odkaz na platbu kartou přes Stripe. Týká se jen dokladů vystavených později.')
+            ->assertSee($callout);
+
+        $page->set('data.payments.online_payments_enabled', false)->assertDontSee($callout);
+        $page->set('data.payments.online_payments_enabled', true)->assertSee($callout);
+
+        StripeTestConfig::configure();
+
+        Livewire::test(SettingsPage::class)->assertDontSee($callout);
+    });
+
+    it('renders no Stripe key and no field for one on the settings page (D-16)', function (): void {
+        $this->actingAs(Canary::admin());
+        CardPaymentSetup::enable();
+
+        $page = Livewire::test(SettingsPage::class);
+        $html = $page->html();
+
+        expect($html)->not->toContain((string) config('services.stripe.secret'))
+            ->and($html)->not->toContain((string) config('services.stripe.webhook_secret'))
+            ->and($html)->not->toContain('stripe_secret')
+            ->and($html)->not->toContain('webhook_secret');
+    });
+
+    it('shows the new hint on the client form toggle', function (): void {
+        $this->actingAs(Canary::admin());
+
+        Livewire::test(CreateClient::class)
+            ->assertSee('Zapnuto: u dokladů tohoto klienta se nabídne platba kartou. Nový koncept převezme tuto hodnotu a u dokladu ji lze přepsat.');
+    });
 });
