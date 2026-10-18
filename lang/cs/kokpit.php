@@ -1242,10 +1242,14 @@ return [
             'archive_description' => 'Archivovaný úkol zmizí ze seznamů a nástěnky, ale zůstane v databázi a jeho číslo zůstane obsazené. Půjde ho obnovit.',
             'escalate' => 'Eskalovat úkol',
             'clear_escalation' => 'Zrušit eskalaci',
+            'change_status' => 'Změnit stav',
+            'change_status_heading' => 'Změnit stav úkolu',
+            'change_status_submit' => 'Uložit stav',
         ],
         'notifications' => [
             'archived' => 'Úkol byl archivován',
             'restored' => 'Úkol byl obnoven',
+            'status_changed' => 'Stav úkolu byl změněn',
             'shared' => [
                 'greeting' => 'Dobrý den,',
                 'action' => 'Otevřít úkol',
