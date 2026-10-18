@@ -26,15 +26,17 @@ final class PayByCardAction
      * @param  Closure(): Invoice  $invoice  the document the host page shows
      * @param  Closure(): bool  $visible  whether the document qualifies (an invoice or proforma, not paid, not cancelled, active link)
      * @param  string  $color  `gray` for the Admin, `primary` for the Partner
+     * @param  (Closure(): ?string)|null  $url  the address to open; the stable pay URL of the document when null. The Partner
+     *                                          passes its own reader, because the token lives in an Admin-only row
      */
-    public static function make(Closure $invoice, Closure $visible, string $color = 'gray'): Action
+    public static function make(Closure $invoice, Closure $visible, string $color = 'gray', ?Closure $url = null): Action
     {
         return Action::make('payByCard')
             ->label(__('payment_links.actions.pay_by_card'))
             ->icon(Heroicon::OutlinedCreditCard)
             ->color($color)
             ->tooltip(__('payment_links.actions.pay_by_card_tooltip'))
-            ->url(static fn (): ?string => PayUrl::forInvoice($invoice()))
+            ->url($url ?? static fn (): ?string => PayUrl::forInvoice($invoice()))
             ->openUrlInNewTab()
             ->visible($visible);
     }
