@@ -41,6 +41,13 @@ return [
         'region' => env('AWS_SES_REGION', env('AWS_DEFAULT_REGION', 'us-east-1')),
     ],
 
+    // Stripe Payment Links (D-16): both secrets live in the environment only. The System page says whether
+    // they are set and never shows them; they are not stored in the settings, the database or any log.
+    'stripe' => [
+        'secret' => env('STRIPE_SECRET'),
+        'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
