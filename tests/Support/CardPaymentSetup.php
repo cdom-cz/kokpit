@@ -17,11 +17,15 @@ use App\Domain\Shared\Auth\PartnerContext;
 final class CardPaymentSetup
 {
     /**
-     * Configures Stripe (both secrets) and switches online payments on in the settings.
+     * Configures Stripe (both secrets), binds the in-memory gateway and switches online payments on in the settings.
+     * The gateway is bound here because issuing a card-on document creates its Stripe link through the queue (sync in
+     * tests): a test must never reach the real gateway. A test that needs the handle calls FakeStripeGateway::install()
+     * again afterwards.
      */
     public static function enable(): void
     {
         StripeTestConfig::configure();
+        FakeStripeGateway::install();
         self::onlinePayments(true);
     }
 

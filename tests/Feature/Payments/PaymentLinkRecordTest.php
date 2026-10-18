@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
+use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Payments\Enums\PaymentLinkDeactivation;
 use App\Domain\Payments\Enums\PaymentLinkState;
@@ -9,6 +11,7 @@ use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Tests\Support\Canary;
 use Tests\Support\CardPaymentSetup;
@@ -23,7 +26,26 @@ use Tests\Support\RawSql;
 beforeEach(function (): void {
     InvoiceFixtures::configureSupplier();
     CardPaymentSetup::enable();
+    Queue::fake();
 });
+
+/**
+ * A card-on document as it stood before the link job existed: issuing now opens its pending link, so the row is moved
+ * to its final state `deactivated` (reason manual), which leaves the document with no live link for a test that opens
+ * or inserts its own. The queue is faked, so no Stripe call happens.
+ */
+function issuedWithoutLink(Client $client, InvoiceKind $kind = InvoiceKind::Invoice, string $amount = '12500.00'): Invoice
+{
+    $invoice = CardPaymentSetup::issued($client, $kind, $amount);
+
+    DB::table('payment_links')->where('invoice_id', $invoice->id)->update([
+        'state' => 'deactivated',
+        'deactivation_reason' => 'manual',
+        'deactivated_at' => now(),
+    ]);
+
+    return $invoice;
+}
 
 /**
  * Opens a pending link for the document as system, the way the link job will: in one transaction, the invoice locked.
@@ -40,7 +62,7 @@ function openLinkFor(Invoice $invoice, ?int $amountMinor = null): PaymentLink
 describe('the tracer', function (): void {
     it('opens a pending link for the full amount of a card-on invoice and shows it in the Admin history', function (): void {
         $client = CardPaymentSetup::client();
-        $invoice = CardPaymentSetup::issued($client);
+        $invoice = issuedWithoutLink($client);
 
         $link = openLinkFor($invoice);
 
@@ -67,7 +89,7 @@ describe('the tracer', function (): void {
 
     it('shows a Partner of the same client no link row and refuses the policy', function (): void {
         $client = CardPaymentSetup::client();
-        $invoice = CardPaymentSetup::issued($client);
+        $invoice = issuedWithoutLink($client);
         $link = openLinkFor($invoice);
 
         $partner = Canary::partnerFor($client->id);
@@ -81,7 +103,7 @@ describe('the tracer', function (): void {
 
     it('refuses to open a link outside a transaction', function (): void {
         $client = CardPaymentSetup::client();
-        $invoice = CardPaymentSetup::issued($client);
+        $invoice = issuedWithoutLink($client);
 
         // RefreshDatabase wraps the test in a transaction; leave it to see the guard.
         $level = DB::transactionLevel();
@@ -150,7 +172,7 @@ function fakeStripeUrl(string $host = 'buy.stripe.com'): string
 
 describe('one live link per document (D-08)', function (): void {
     it('refuses a second pending or active link and accepts a new one after the first is deactivated', function (): void {
-        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $invoice = issuedWithoutLink(CardPaymentSetup::client());
         $first = openLinkFor($invoice);
 
         RawSql::expectSqlState('23505', fn () => openLinkFor($invoice));
@@ -178,7 +200,7 @@ describe('one live link per document (D-08)', function (): void {
     });
 
     it('puts the live link first and otherwise the newest in latestFor', function (): void {
-        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $invoice = issuedWithoutLink(CardPaymentSetup::client());
         $old = rawLink($invoice, ['state' => 'failed', 'failure_class' => 'rejected']);
         $newer = rawLink($invoice, ['state' => 'deactivated', 'deactivation_reason' => 'manual', 'deactivated_at' => now()]);
 
@@ -198,17 +220,17 @@ describe('what may be stored (D-05, D-06)', function (): void {
         $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '1000.00')]);
         RawSql::expectSqlState('KP001', fn () => rawLink($draft));
 
-        $issued = CardPaymentSetup::issued($client);
+        $issued = issuedWithoutLink($client);
         $creditNote = InvoiceFixtures::stornoed($issued);
         RawSql::expectSqlState('KP001', fn () => rawLink($creditNote));
 
-        $off = CardPaymentSetup::issued(InvoiceFixtures::client(['online_payment_enabled' => false]));
+        $off = issuedWithoutLink(InvoiceFixtures::client(['online_payment_enabled' => false]));
         expect(DB::table('invoice_admin')->where('invoice_id', $off->id)->value('card_payment_enabled'))->toBeFalse();
         RawSql::expectSqlState('KP001', fn () => rawLink($off));
     });
 
     it('refuses a link in another currency than the document and a non-positive amount', function (): void {
-        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $invoice = issuedWithoutLink(CardPaymentSetup::client());
 
         RawSql::expectSqlState('23503', fn () => rawLink($invoice, ['currency' => 'EUR']));
         RawSql::expectSqlState('23514', fn () => rawLink($invoice, ['amount_minor' => 0]));
@@ -217,7 +239,7 @@ describe('what may be stored (D-05, D-06)', function (): void {
 
 describe('the shape of a row', function (): void {
     it('refuses an active row without the Stripe id or URL, and an URL that is not https on a stripe.com host', function (): void {
-        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $invoice = issuedWithoutLink(CardPaymentSetup::client());
 
         RawSql::expectSqlState('23514', fn () => rawLink($invoice, ['state' => 'active', 'activated_at' => now()]));
         RawSql::expectSqlState('23514', fn () => rawLink($invoice, ['state' => 'active', 'stripe_link_id' => fakeStripeId(), 'activated_at' => now()]));
@@ -232,13 +254,13 @@ describe('the shape of a row', function (): void {
         // A subdomain of stripe.com and the bare domain are both accepted (a record is never deleted, so each goes
         // to its own document).
         foreach (['buy.stripe.com', 'stripe.com'] as $host) {
-            $document = CardPaymentSetup::issued(CardPaymentSetup::client());
+            $document = issuedWithoutLink(CardPaymentSetup::client());
             RawSql::expectAllowed(fn () => rawLink($document, ['state' => 'active', 'stripe_link_id' => fakeStripeId(), 'stripe_url' => fakeStripeUrl($host), 'activated_at' => now()]));
         }
     });
 
     it('refuses a deactivated row without a reason, a failed row without a class, a reason or class on another state and an unknown value', function (): void {
-        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $invoice = issuedWithoutLink(CardPaymentSetup::client());
 
         RawSql::expectSqlState('23514', fn () => rawLink($invoice, ['state' => 'deactivated', 'deactivated_at' => now()]));
         RawSql::expectSqlState('23514', fn () => rawLink($invoice, ['state' => 'failed']));
@@ -253,8 +275,8 @@ describe('the shape of a row', function (): void {
 describe('the guard on a stored row (D-07, D-08)', function (): void {
     it('refuses a change of the document, currency, amount, creator or creation time', function (): void {
         $client = CardPaymentSetup::client();
-        $invoice = CardPaymentSetup::issued($client);
-        $other = CardPaymentSetup::issued($client, amount: '900.00');
+        $invoice = issuedWithoutLink($client);
+        $other = issuedWithoutLink($client, amount: '900.00');
         $id = rawLink($invoice);
 
         foreach ([
@@ -269,7 +291,7 @@ describe('the guard on a stored row (D-07, D-08)', function (): void {
     });
 
     it('accepts the allowed state moves and refuses the others', function (): void {
-        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $invoice = issuedWithoutLink(CardPaymentSetup::client());
 
         $toActive = rawLink($invoice);
         RawSql::expectAllowed(fn () => DB::table('payment_links')->where('id', $toActive)->update(['state' => 'active', 'stripe_link_id' => fakeStripeId(), 'stripe_url' => fakeStripeUrl(), 'activated_at' => now()]));
@@ -288,13 +310,13 @@ describe('the guard on a stored row (D-07, D-08)', function (): void {
         RawSql::expectSqlState('KP001', fn () => DB::table('payment_links')->where('id', $toFailed)->update(['state' => 'deactivated', 'failure_class' => null, 'deactivation_reason' => 'manual', 'deactivated_at' => now()]));
 
         // An active link never goes back to pending or to failed.
-        $active = rawLink(CardPaymentSetup::issued(CardPaymentSetup::client()), ['state' => 'active', 'stripe_link_id' => fakeStripeId(), 'stripe_url' => fakeStripeUrl(), 'activated_at' => now()]);
+        $active = rawLink(issuedWithoutLink(CardPaymentSetup::client()), ['state' => 'active', 'stripe_link_id' => fakeStripeId(), 'stripe_url' => fakeStripeUrl(), 'activated_at' => now()]);
         RawSql::expectSqlState('KP001', fn () => DB::table('payment_links')->where('id', $active)->update(['state' => 'pending']));
         RawSql::expectSqlState('KP001', fn () => DB::table('payment_links')->where('id', $active)->update(['state' => 'failed', 'failure_class' => 'rejected']));
     });
 
     it('refuses to delete a link', function (): void {
-        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $invoice = issuedWithoutLink(CardPaymentSetup::client());
         $id = rawLink($invoice);
 
         RawSql::expectSqlState('KP001', fn () => DB::table('payment_links')->where('id', $id)->delete());
@@ -302,7 +324,7 @@ describe('the guard on a stored row (D-07, D-08)', function (): void {
     });
 
     it('lets a final row receive its Stripe references and the remote stamp once and nothing else', function (): void {
-        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $invoice = issuedWithoutLink(CardPaymentSetup::client());
         $id = rawLink($invoice, ['state' => 'deactivated', 'deactivation_reason' => 'replaced', 'deactivated_at' => now()]);
         $linkId = fakeStripeId();
 
@@ -326,7 +348,7 @@ describe('the guard on a stored row (D-07, D-08)', function (): void {
     });
 
     it('keeps the Stripe id of an active link fixed once set', function (): void {
-        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $invoice = issuedWithoutLink(CardPaymentSetup::client());
         $id = rawLink($invoice, ['state' => 'active', 'stripe_link_id' => fakeStripeId(), 'stripe_url' => fakeStripeUrl(), 'activated_at' => now()]);
 
         RawSql::expectSqlState('KP001', fn () => DB::table('payment_links')->where('id', $id)->update(['stripe_link_id' => fakeStripeId()]));
