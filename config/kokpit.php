@@ -144,7 +144,7 @@ return [
     | transaction_batch_max_items: largest number of transactions one batch
     |   request may carry.
     | external_max_bytes: largest size in bytes of the free-form `external`
-    |   object an API client may store with an entry.
+    |   object an API client may store with an entry or a transaction.
     | idempotency_ttl_hours: how long a stored Idempotency-Key and its response
     |   are kept before they are purged.
     | idempotency_stale_lock_seconds: a key claimed but never completed is taken

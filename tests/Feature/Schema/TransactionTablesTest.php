@@ -11,6 +11,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
@@ -177,6 +178,30 @@ function transactionTablesCategory(string $type = 'expense'): string
 
     return $id;
 }
+
+describe('the external object', function (): void {
+    it('refuses an external value that is not a JSON object (transactions_external_object_check)', function (string $json): void {
+        $message = null;
+
+        try {
+            DB::transaction(fn () => transactionTablesInsert(['external' => $json]));
+        } catch (QueryException $e) {
+            $message = $e->getMessage();
+        }
+
+        expect($message)->toContain('transactions_external_object_check');
+
+        $id = transactionTablesInsert();
+
+        RawSql::expectSqlState('23514', fn () => DB::update('update transactions set external = ?::jsonb where id = ?', [$json, $id]));
+    })->with(['an empty list' => '[]', 'a list' => '[1]', 'a string' => '"x"', 'a number' => '5', 'a bool' => 'true', 'a json null' => 'null']);
+
+    it('accepts an empty object, an object and an absent external', function (): void {
+        RawSql::expectAllowed(fn () => transactionTablesInsert());
+        RawSql::expectAllowed(fn () => transactionTablesInsert(['external' => '{}']));
+        RawSql::expectAllowed(fn () => transactionTablesInsert(['external' => '{"source": "demo-bank"}']));
+    });
+});
 
 describe('the primary key', function (): void {
     it('defaults the id of a row written by raw SQL to a version 7 uuid', function (): void {
@@ -567,6 +592,12 @@ describe('the income of a payment (ruling R-06-5)', function (): void {
             DB::select("select set_config('kokpit.payment_deletion', ?, true)", [$booked['payment']]);
             DB::update('update transactions set amount_minor = 1, czk_minor = 1 where id = ?', [$booked['income']]);
         });
+    });
+
+    it('keeps the external object of its row frozen', function (): void {
+        $booked = transactionTablesBooked();
+
+        RawSql::expectSqlState('KP001', fn () => DB::update('update transactions set external = ?::jsonb where id = ?', ['{"id": "TX-5001"}', $booked['income']]));
     });
 
     it('follows the date with the CZK figure of a foreign payment', function (): void {

@@ -88,6 +88,11 @@ final class UpdateTransactionRequest extends FormRequest
                 'description' => 'The project: its UUID or its key, for example `DEMO`. `null` clears it. The project must belong to the client.',
                 'example' => 'DEMO',
             ],
+            'external' => [
+                'description' => 'A free-form JSON object for your own bookkeeping, for example the id of the transaction in the bank or tool it was imported from. It must be an object (`{}` is fine, a list, a string or a number is refused with 422), at most 4096 bytes as compact JSON and nested at most 8 levels deep. An absent key keeps the stored object, `null` clears it and an object replaces it whole; nothing is merged. The income of an invoice payment takes none and answers 422.',
+                'type' => 'object',
+                'example' => ['source' => 'demo-bank', 'id' => 'TX-1001'],
+            ],
         ];
     }
 }

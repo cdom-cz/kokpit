@@ -2,8 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Filament\Resources\TransactionResource\Pages\EditTransaction;
+use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
+use Livewire\Livewire;
+use Tests\Support\ApiDocs;
 use Tests\Support\ApiFixtures;
 use Tests\Support\FinanceApiFixtures;
 use Tests\Support\TransactionContract;
@@ -258,4 +263,68 @@ it('stores the external object of each batch item and fails an item with a non-o
     expect(json_decode((string) $a->external, true))->toBe(['id' => 'TX-3001'])
         ->and($c->type)->toBe('object')
         ->and(DB::table('transactions')->where('description', 'row b')->exists())->toBeFalse();
+});
+
+it('writes no activity row when only external changes, and none for a create that carries it', function (): void {
+    $stored = FinanceApiFixtures::transaction($this->txExternalAdmin, ['external' => (object) ['source' => 'demo-bank']]);
+    $before = DB::table('activity_log')->where('subject_type', 'transaction')->where('subject_id', $stored->id)->count();
+
+    Auth::forgetGuards();
+
+    $this->withToken(ApiFixtures::token($this->txExternalAdmin, ['finance:write']))
+        ->patchJson('/api/v1/transactions/'.$stored->id, ['external' => (object) ['source' => 'changed']])
+        ->assertOk();
+
+    $rows = DB::table('activity_log')->where('subject_type', 'transaction')->where('subject_id', $stored->id)->get();
+
+    expect($rows)->toHaveCount($before)
+        ->and(json_encode($rows))->not->toContain('external')
+        ->and(json_encode($rows))->not->toContain('demo-bank');
+});
+
+it('renders no part of external on the panel pages of a transaction, snapshot included', function (): void {
+    $canary = 'canary-'.bin2hex(random_bytes(6));
+    $stored = FinanceApiFixtures::transaction($this->txExternalAdmin, ['external' => (object) ['source' => $canary, 'note' => 'x-'.$canary]]);
+
+    Auth::forgetGuards();
+    $this->actingAs($this->txExternalAdmin);
+
+    foreach (['/admin/transactions', '/admin/transactions/'.$stored->id.'/edit'] as $path) {
+        // The page state travels as an HTML-escaped Livewire snapshot, so the canary is searched in the raw markup.
+        $this->get($path)->assertOk()->assertDontSee($canary, false)->assertDontSee('&quot;external&quot;', false);
+    }
+});
+
+it('keeps the stored external object when the edit form of the panel is saved', function (): void {
+    $stored = FinanceApiFixtures::transaction($this->txExternalAdmin, ['external' => (object) ['source' => 'demo-bank', 'id' => 'TX-6001']]);
+
+    Auth::forgetGuards();
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    $this->actingAs($this->txExternalAdmin);
+
+    Livewire::test(EditTransaction::class, ['record' => $stored->getKey()])
+        ->fillForm(['description' => 'Edited in the panel'])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    $row = DB::selectOne('select description, external from transactions where id = ?', [$stored->id]);
+
+    expect($row->description)->toBe('Edited in the panel')
+        ->and(json_decode((string) $row->external, true))->toEqual(['source' => 'demo-bank', 'id' => 'TX-6001']);
+});
+
+it('documents external as an optional object on create, update and every batch item', function (): void {
+    foreach (['api.v1.transactions.store', 'api.v1.transactions.update'] as $name) {
+        $operation = ApiDocs::operation(Route::getRoutes()->getByName($name));
+        $properties = $operation['requestBody']['content']['application/json']['schema']['properties'] ?? [];
+
+        expect(array_keys($properties))->toContain('external')
+            ->and($properties['external']['description'] ?? '')->toContain('free-form JSON object');
+    }
+
+    $batch = ApiDocs::operation(Route::getRoutes()->getByName('api.v1.transactions.batch'));
+    $items = $batch['requestBody']['content']['application/json']['schema']['properties']['transactions']['items'] ?? [];
+
+    expect(array_keys($items['properties'] ?? []))->toContain('external')
+        ->and($batch['description'])->toContain('`external`');
 });
