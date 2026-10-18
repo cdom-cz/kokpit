@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 11
 current_phase_name: Stripe Payments
 status: executing
-stopped_at: Completed 11-02-PLAN.md
-last_updated: "2026-10-18T13:01:40.884Z"
+stopped_at: Completed 11-03-PLAN.md
+last_updated: "2026-10-18T13:16:19.721Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 11 execution started
-state_head: 52510834ab41b8ce70ed2b9d1ed0ab70f62713d1
+state_head: 5c914a97dc4310b7f103cad8840db779b926a780
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 245
-  completed_plans: 227
+  completed_plans: 228
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 11 (Stripe Payments) — EXECUTING
-Plan: 3 of 20
+Plan: 4 of 20
 Status: Ready to execute
 Last activity: 2026-10-18 — Phase 11 execution started
 
@@ -290,6 +290,7 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P32 | 90min | 3 tasks | 5 files |
 | Phase 11 P01 | 40min | 3 tasks | 15 files |
 | Phase 11 P02 | 55min | 3 tasks | 12 files |
+| Phase 11 P03 | 55min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -726,6 +727,9 @@ Recent decisions affecting current work:
 - [Phase 11]: R11-01-4: ISK and UGX refused with unsupported_currency by the PaymentLinkRequest constructor
 - [Phase 11]: R11-01-5: STRIPE_SECRET and STRIPE_WEBHOOK_SECRET env-only; isConfigured needs both
 - [Phase 11]: R11-02: card payments reach invoice_payments only through RecordPayment::recordLocked(); the database allows a missing creator only for method card
+- [Phase 11]: R11-03-1: card switch effective value is kind AND draft switch AND global setting AND configured Stripe; client flag only defaults the draft switch (assumption A8, owner to confirm)
+- [Phase 11]: R11-03-2: invoice_admin.pay_token varchar(32) unique with format CHECK, frozen with the document, no expiry
+- [Phase 11]: R11-03-3: pay URL is app.url + /pay/ + token, never the request host
 
 ### Pending Todos
 
@@ -781,6 +785,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-18T13:01:39.300Z
-Stopped at: Completed 11-02-PLAN.md
+Last session: 2026-10-18T13:16:18.117Z
+Stopped at: Completed 11-03-PLAN.md
 Resume file: None
