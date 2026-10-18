@@ -23,4 +23,21 @@ return [
         'body_proforma' => 'Záloha :number byla zaplacena (:amount).',
         'action' => 'Otevřít doklad',
     ],
+
+    'duplicate' => [
+        'title' => 'Duplicitní platba kartou',
+        'body' => 'Doklad :number už byl zaplacený a přišla další platba :amount. Příjem nevznikl. Vyřešte ji v přehledu plateb.',
+    ],
+
+    'unmatched' => [
+        'title' => 'Nespárovaná platba kartou',
+        'body' => 'Přišla platba :amount, kterou nelze automaticky zapsat (:reason). Příjem nevznikl. Vyřešte ji v přehledu plateb.',
+    ],
+
+    'refund' => [
+        'title' => 'Stripe oznámil vrácení platby',
+        'body' => 'Vrácení :amount se týká platby kartou. Doklad ani příjem se nezměnily. Zkontrolujte ho v přehledu plateb.',
+    ],
+
+    'open_payment' => 'Otevřít platbu',
 ];

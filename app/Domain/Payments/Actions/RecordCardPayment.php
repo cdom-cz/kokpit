@@ -22,6 +22,7 @@ use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Payments\Notifications\CardPaymentMatchedNotification;
 use App\Domain\Payments\Stripe\StripeEvent;
+use App\Domain\Payments\Support\CardPaymentAlerts;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Resources\InvoiceResource;
 use Carbon\CarbonImmutable;
@@ -51,13 +52,15 @@ use LogicException;
  * The amount and the currency are the session's `amount_total` and `currency`, never the payer's presentment figures
  * (Pitfall 6). The record is claimed first with {@see CardPayment::recordOnce()}: its unique event, session and payment
  * intent make a repeat, the async event of a recorded session, and any event of a recorded payment intent end here
- * with nothing written, also after the matched payment was deleted (D-12, D-14).
+ * with nothing written, also after the matched payment was deleted (D-12, D-14). A duplicate and an unmatched record
+ * alert every Admin once the transaction has committed ({@see CardPaymentAlerts}).
  */
 final readonly class RecordCardPayment implements StripeEventAction
 {
     public function __construct(
         private RecordPayment $payments,
         private InvoiceBalances $balances,
+        private CardPaymentAlerts $alerts,
     ) {}
 
     /**
@@ -177,7 +180,7 @@ final readonly class RecordCardPayment implements StripeEventAction
      */
     private function record(StripeEvent $event, ?PaymentLink $link, ?Invoice $document, CardPaymentType $type, ?CardPaymentReason $reason): ?CardPayment
     {
-        return CardPayment::recordOnce([
+        $record = CardPayment::recordOnce([
             'type' => $type,
             'reason' => $reason,
             'amount_minor' => $event->amountMinor,
@@ -192,6 +195,22 @@ final readonly class RecordCardPayment implements StripeEventAction
             'payment_link_id' => $link?->getKey(),
             'received_at' => CarbonImmutable::now(),
         ]);
+
+        if ($record instanceof CardPayment && $type !== CardPaymentType::Matched) {
+            $this->alertAfterCommit($record);
+        }
+
+        return $record;
+    }
+
+    /**
+     * The problem notice (a duplicate or an unmatched payment) to every Admin once the transaction has committed, so a
+     * rolled-back classification tells nobody and a notice never waits for the queue (PA-07, PA-08, R11-16-2). The
+     * throttle of the alerter is per record, so no payment is merged into an earlier notice.
+     */
+    private function alertAfterCommit(CardPayment $record): void
+    {
+        DB::afterCommit(fn () => $this->alerts->raise($record));
     }
 
     /**
