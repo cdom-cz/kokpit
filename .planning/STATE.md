@@ -4,10 +4,10 @@ current_phase: 11
 current_phase_name: Stripe Payments
 status: verifying
 stopped_at: Completed 11-20-PLAN.md
-last_updated: "2026-10-18T17:55:51.341Z"
+last_updated: "2026-10-18T19:05:15.995Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 11 execution started
-state_head: 6fc699b6c9da8e70377c73377e1804d41f237e20
+state_head: 9701c5601b793fecbcd7744339ccb72ec9853d83
 progress:
   total_phases: 13
   completed_phases: 7
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 Phase: 11 (Stripe Payments) — EXECUTING
 Plan: 20 of 20
 Status: Phase complete — ready for verification
-Last activity: 2026-10-18 - Completed quick task 261018-mic: Add an external identifier column to transactions (exposed via the API)
+Last activity: 2026-10-18 - Completed quick task 261018-rvf: Allow changing a task's status directly in its view, not only in the task detail
 
 Progress: [█████░░░░░] 54%
 
@@ -809,6 +809,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261015-diz | Add overdue highlight to the admin tasks list, reusing the deadlines widget rendering and copy | 2026-10-15 | f9dc2e7 | [261015-diz-add-overdue-highlight-to-the-admin-tasks](./quick/261015-diz-add-overdue-highlight-to-the-admin-tasks/) |
 | 261016-tnb | Show the Checklist section on the admin task view page and allow toggling checklist item states there | 2026-10-16 | e4a5880 | [261016-tnb-task-view-checklist-toggle](./quick/261016-tnb-task-view-checklist-toggle/) |
 | 261018-mic | Add an external identifier column to transactions for passing advanced identifiers (like time_entries.external), exposed via the API | 2026-10-18 | 8dc3ebb | [261018-mic-add-an-external-identifier-column-to-tra](./quick/261018-mic-add-an-external-identifier-column-to-tra/) |
+| 261018-rvf | Allow changing a task's status directly in its view, not only in the task detail | 2026-10-18 | 9701c56 | [261018-rvf-allow-changing-a-task-s-status-directly-](./quick/261018-rvf-allow-changing-a-task-s-status-directly-/) |
 
 ### Roadmap Evolution
 
