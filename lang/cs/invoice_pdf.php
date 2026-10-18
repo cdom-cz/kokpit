@@ -35,6 +35,8 @@ return [
     'payment_method' => 'Způsob úhrady',
     'bank_transfer' => 'Převodem',
     'amount_due' => 'K úhradě',
+    'card_lead' => 'Nebo zaplaťte online kartou:',
+    'card_button' => 'Zaplatit kartou',
     'proforma_note' => 'Nejde o daňový doklad.',
     'corrects_document' => 'Opravuje doklad č. :number',
     'credit_note_no_payment' => 'Dobropis neobsahuje platební údaje. Případné vrácení platby proběhne samostatně.',

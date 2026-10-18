@@ -25,6 +25,9 @@ return [
         'credit_note' => "Dobrý den,\n\nv příloze posíláme :kind č. :number na částku :amount.\n\nPlatba bude vrácena samostatně.\n\nS pozdravem\n:supplier",
     ],
 
+    // The fixed line before the stable pay URL that the mailer appends (D-03); it is not part of the editable text.
+    'pay_block_lead' => 'Doklad můžete zaplatit online kartou:',
+
     // The generated name of the work report attachment: no user text reaches it.
     'work_report_file' => 'pracovni-vykaz-:number.pdf',
 ];
