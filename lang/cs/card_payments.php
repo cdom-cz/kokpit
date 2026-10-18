@@ -39,6 +39,27 @@ return [
         'offered' => 'Nabízeno: :offered',
     ],
 
+    'filters' => [
+        'client' => 'Klient',
+        'currency' => 'Měna',
+        'received' => 'Přijato',
+        'from' => 'Od',
+        'until' => 'Do',
+        'archived' => ':name (archivovaný)',
+    ],
+
+    'empty' => [
+        'all_heading' => 'Zatím žádné platby kartou',
+        'all_body' => 'Platby přijaté přes Stripe se objeví tady. Odkaz na platbu se vytváří při vystavení dokladu, pokud je zapnutá online platba.',
+        'unresolved_heading' => 'Nic k řešení',
+        'unresolved_body' => 'Všechny platby kartou jsou spárované nebo vyřešené.',
+        'matched_heading' => 'Zatím žádná spárovaná platba',
+        'duplicate_heading' => 'Žádné duplicitní platby',
+        'unmatched_heading' => 'Žádné nespárované platby',
+        'refund_heading' => 'Žádná vrácení',
+        'resolved_heading' => 'Zatím nic vyřešeného',
+    ],
+
     'actions' => [
         'open' => 'Otevřít',
     ],
