@@ -75,7 +75,7 @@ return new class extends Migration
         DB::statement('ALTER TABLE card_payments ADD CONSTRAINT card_payments_return_transaction_fk FOREIGN KEY (return_transaction_id) REFERENCES transactions (id) ON DELETE SET NULL');
 
         DB::statement("ALTER TABLE card_payments ADD CONSTRAINT card_payments_type_check CHECK (type IN ('matched', 'duplicate', 'unmatched', 'refund'))");
-        DB::statement("ALTER TABLE card_payments ADD CONSTRAINT card_payments_reason_check CHECK ((type IN ('matched', 'refund') AND reason IS NULL) OR (type = 'duplicate' AND reason = 'already_paid') OR (type = 'unmatched' AND reason IN ('amount', 'currency', 'cancelled', 'undetermined')))");
+        DB::statement("ALTER TABLE card_payments ADD CONSTRAINT card_payments_reason_check CHECK (COALESCE((type IN ('matched', 'refund') AND reason IS NULL) OR (type = 'duplicate' AND reason = 'already_paid') OR (type = 'unmatched' AND reason IN ('amount', 'currency', 'cancelled', 'undetermined')), false))");
         DB::statement("ALTER TABLE card_payments ADD CONSTRAINT card_payments_resolution_check CHECK (resolution IN ('none', 'assigned', 'noted', 'returned'))");
         DB::statement("ALTER TABLE card_payments ADD CONSTRAINT card_payments_resolution_type_check CHECK ((type = 'matched' AND resolution = 'none') OR (type = 'refund' AND resolution IN ('none', 'noted')) OR (type IN ('duplicate', 'unmatched')))");
         DB::statement("ALTER TABLE card_payments ADD CONSTRAINT card_payments_resolved_check CHECK ((resolution = 'none' AND resolved_at IS NULL AND resolved_by IS NULL) OR (resolution <> 'none' AND resolved_at IS NOT NULL AND resolved_by IS NOT NULL))");
@@ -96,6 +96,43 @@ return new class extends Migration
             BEGIN
               IF TG_OP = 'DELETE' THEN
                 RAISE EXCEPTION 'a card payment record is never deleted' USING ERRCODE = 'KP001';
+              END IF;
+
+              IF NEW.id IS DISTINCT FROM OLD.id
+                 OR NEW.type IS DISTINCT FROM OLD.type
+                 OR NEW.reason IS DISTINCT FROM OLD.reason
+                 OR NEW.amount_minor IS DISTINCT FROM OLD.amount_minor
+                 OR NEW.currency IS DISTINCT FROM OLD.currency
+                 OR NEW.offered_amount_minor IS DISTINCT FROM OLD.offered_amount_minor
+                 OR NEW.offered_currency IS DISTINCT FROM OLD.offered_currency
+                 OR NEW.stripe_event_id IS DISTINCT FROM OLD.stripe_event_id
+                 OR NEW.stripe_session_id IS DISTINCT FROM OLD.stripe_session_id
+                 OR NEW.stripe_payment_intent_id IS DISTINCT FROM OLD.stripe_payment_intent_id
+                 OR NEW.stripe_refund_id IS DISTINCT FROM OLD.stripe_refund_id
+                 OR NEW.stripe_link_id IS DISTINCT FROM OLD.stripe_link_id
+                 OR NEW.invoice_id IS DISTINCT FROM OLD.invoice_id
+                 OR NEW.payment_link_id IS DISTINCT FROM OLD.payment_link_id
+                 OR NEW.received_at IS DISTINCT FROM OLD.received_at
+                 OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+                RAISE EXCEPTION 'a card payment record keeps what Stripe reported and what it points at' USING ERRCODE = 'KP001';
+              END IF;
+
+              -- The resolution moves once from none and is final, with everything that belongs to it, the assigned
+              -- document included (it can only be set while the record is resolved, so only from null).
+              IF OLD.resolution <> 'none'
+                 AND (NEW.resolution IS DISTINCT FROM OLD.resolution
+                      OR NEW.resolved_at IS DISTINCT FROM OLD.resolved_at
+                      OR NEW.resolved_by IS DISTINCT FROM OLD.resolved_by
+                      OR NEW.resolution_note IS DISTINCT FROM OLD.resolution_note
+                      OR NEW.assigned_invoice_id IS DISTINCT FROM OLD.assigned_invoice_id) THEN
+                RAISE EXCEPTION 'the resolution of a card payment record is final' USING ERRCODE = 'KP001';
+              END IF;
+
+              -- The two links to the money may be cleared (the payment or the expense is deleted, the database sets
+              -- null) or filled once; a link never moves from one row to another.
+              IF (OLD.invoice_payment_id IS NOT NULL AND NEW.invoice_payment_id IS NOT NULL AND NEW.invoice_payment_id <> OLD.invoice_payment_id)
+                 OR (OLD.return_transaction_id IS NOT NULL AND NEW.return_transaction_id IS NOT NULL AND NEW.return_transaction_id <> OLD.return_transaction_id) THEN
+                RAISE EXCEPTION 'the payment and the return expense of a card payment record never move to another row' USING ERRCODE = 'KP001';
               END IF;
 
               RETURN NEW;

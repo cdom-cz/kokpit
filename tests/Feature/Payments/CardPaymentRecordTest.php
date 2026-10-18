@@ -15,13 +15,16 @@ use App\Domain\Payments\Enums\CardPaymentStatus;
 use App\Domain\Payments\Enums\CardPaymentType;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Money\Money;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Tests\Support\Canary;
 use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\InvoiceFixtures;
+use Tests\Support\RawSql;
 use Tests\Support\StripeEvents;
 
 /*
@@ -197,5 +200,287 @@ describe('the tracer', function (): void {
             ->and(CardPaymentStatus::Booked->getLabel())->toBe('Zapsáno k dokladu')
             ->and(CardPaymentReason::Undetermined->getLabel())->toBe('Doklad nelze určit')
             ->and(CardPaymentType::Refund->getLabel())->toBe('Vrácení');
+    });
+});
+
+/**
+ * A complete row for a raw insert: an unmatched payment of a different amount, with fresh Stripe references.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function rawCardRow(string $invoiceId, array $overrides = []): array
+{
+    return [
+        'id' => (string) Str::uuid7(),
+        'type' => 'unmatched',
+        'reason' => 'amount',
+        'amount_minor' => 1000,
+        'currency' => 'CZK',
+        'invoice_id' => $invoiceId,
+        'received_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+        ...cardRefs(),
+        ...$overrides,
+    ];
+}
+
+/**
+ * Stores a row through recordOnce() and returns its id.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function storedCardRow(string $invoiceId, array $overrides = []): string
+{
+    $row = rawCardRow($invoiceId, $overrides);
+    unset($row['id'], $row['created_at'], $row['updated_at']);
+
+    $record = recordOnceAsSystem($row);
+
+    return $record?->id ?? throw new LogicException('The record was not stored.');
+}
+
+/**
+ * The columns of an Admin resolution by note, in one update.
+ *
+ * @return array<string, mixed>
+ */
+function notedResolution(): array
+{
+    return ['resolution' => 'noted', 'resolution_note' => 'Example note', 'resolved_at' => now(), 'resolved_by' => Canary::admin()->getKey()];
+}
+
+describe('the shape the database insists on', function (): void {
+    it('refuses an inconsistent row with a check violation', function (string $label, array $overrides): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+
+        RawSql::expectSqlState('23514', fn () => DB::table('card_payments')->insert(rawCardRow($invoice->id, $overrides)));
+    })->with([
+        'a matched record with a reason' => ['matched with reason', ['type' => 'matched', 'reason' => 'amount']],
+        'a matched record without an invoice' => ['matched without invoice', ['type' => 'matched', 'reason' => null, 'invoice_id' => null]],
+        'a duplicate without already_paid' => ['duplicate without reason', ['type' => 'duplicate', 'reason' => null]],
+        'a duplicate with another reason' => ['duplicate other reason', ['type' => 'duplicate', 'reason' => 'amount']],
+        'an unmatched record with already_paid' => ['unmatched already paid', ['type' => 'unmatched', 'reason' => 'already_paid']],
+        'an unmatched record without a reason' => ['unmatched without reason', ['reason' => null]],
+        'a refund with a reason' => ['refund with reason', ['type' => 'refund', 'reason' => 'amount', 'stripe_refund_id' => StripeEvents::token('re')]],
+        'a refund without a refund id' => ['refund without id', ['type' => 'refund', 'reason' => null]],
+        'a payment with a refund id' => ['payment with refund id', ['stripe_refund_id' => StripeEvents::token('re')]],
+        'an amount of zero' => ['zero amount', ['amount_minor' => 0]],
+        'a lower case currency' => ['bad currency', ['currency' => 'czk']],
+        'only the offered amount' => ['offered amount only', ['offered_amount_minor' => 500]],
+        'only the offered currency' => ['offered currency only', ['offered_currency' => 'CZK']],
+        'an offered amount of zero' => ['offered zero', ['offered_amount_minor' => 0, 'offered_currency' => 'CZK']],
+        'a resolution that is not known' => ['unknown resolution', ['resolution' => 'ignored']],
+        'a type that is not known' => ['unknown type', ['type' => 'other']],
+    ]);
+
+    it('refuses a second record of the same event, session or payment intent, and of the same refund', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $refs = cardRefs();
+        DB::table('card_payments')->insert(rawCardRow($invoice->id, $refs));
+
+        RawSql::expectSqlState('23505', fn () => DB::table('card_payments')->insert(rawCardRow($invoice->id, ['stripe_event_id' => $refs['stripe_event_id']])));
+        RawSql::expectSqlState('23505', fn () => DB::table('card_payments')->insert(rawCardRow($invoice->id, ['stripe_session_id' => $refs['stripe_session_id']])));
+        RawSql::expectSqlState('23505', fn () => DB::table('card_payments')->insert(rawCardRow($invoice->id, ['stripe_payment_intent_id' => $refs['stripe_payment_intent_id']])));
+
+        $refund = StripeEvents::token('re');
+        DB::table('card_payments')->insert(rawCardRow($invoice->id, ['type' => 'refund', 'reason' => null, 'stripe_refund_id' => $refund, 'stripe_session_id' => null, 'stripe_payment_intent_id' => null]));
+
+        RawSql::expectSqlState('23505', fn () => DB::table('card_payments')->insert(rawCardRow($invoice->id, ['type' => 'refund', 'reason' => null, 'stripe_refund_id' => $refund, 'stripe_session_id' => null, 'stripe_payment_intent_id' => null])));
+    });
+
+    it('accepts a refund that shares the payment intent of the payment it returns', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $refs = cardRefs();
+        DB::table('card_payments')->insert(rawCardRow($invoice->id, $refs));
+
+        RawSql::expectAllowed(fn () => DB::table('card_payments')->insert(rawCardRow($invoice->id, [
+            'type' => 'refund',
+            'reason' => null,
+            'stripe_refund_id' => StripeEvents::token('re'),
+            'stripe_session_id' => null,
+            'stripe_payment_intent_id' => $refs['stripe_payment_intent_id'],
+        ])));
+    });
+
+    it('lets two payments without a session or a payment intent coexist', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+
+        DB::table('card_payments')->insert(rawCardRow($invoice->id, ['stripe_session_id' => null, 'stripe_payment_intent_id' => null]));
+
+        RawSql::expectAllowed(fn () => DB::table('card_payments')->insert(rawCardRow($invoice->id, ['stripe_session_id' => null, 'stripe_payment_intent_id' => null])));
+    });
+});
+
+describe('a record stays as Stripe reported it', function (): void {
+    it('refuses to change what Stripe reported or what the record points at', function (string $column, mixed $value): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $other = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $id = storedCardRow($invoice->id);
+
+        $value = $value instanceof Closure ? $value($other) : $value;
+
+        RawSql::expectSqlState('KP001', fn () => DB::table('card_payments')->where('id', $id)->update([$column => $value]));
+    })->with([
+        'type' => ['type', 'duplicate'],
+        'reason' => ['reason', 'currency'],
+        'amount' => ['amount_minor', 2000],
+        'currency' => ['currency', 'EUR'],
+        'offered amount' => ['offered_amount_minor', 300],
+        'offered currency' => ['offered_currency', 'EUR'],
+        'event id' => ['stripe_event_id', fn () => StripeEvents::token('evt')],
+        'session id' => ['stripe_session_id', fn () => StripeEvents::token('cs')],
+        'payment intent' => ['stripe_payment_intent_id', fn () => StripeEvents::token('pi')],
+        'refund id' => ['stripe_refund_id', fn () => StripeEvents::token('re')],
+        'link id' => ['stripe_link_id', fn () => StripeEvents::token('plink')],
+        'document' => ['invoice_id', fn (Invoice $other): string => $other->id],
+        'receipt time' => ['received_at', fn () => now()->addDay()],
+        'creation time' => ['created_at', fn () => now()->subDay()],
+        'key' => ['id', fn () => (string) Str::uuid7()],
+    ]);
+
+    it('refuses to delete or truncate a record', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $id = storedCardRow($invoice->id);
+
+        RawSql::expectSqlState('KP001', fn () => DB::table('card_payments')->where('id', $id)->delete());
+        RawSql::expectSqlState('KP001', fn () => DB::unprepared('TRUNCATE card_payments'));
+
+        expect(app(PartnerContext::class)->runAsSystem(static fn (): int => CardPayment::query()->whereKey($id)->count()))->toBe(1);
+    });
+
+    it('refuses to point a matched record at another payment, but lets the database clear it', function (): void {
+        $first = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $second = CardPaymentSetup::issued(CardPaymentSetup::client());
+        [, $record] = recordMatchedCardPayment($first);
+        [$otherPayment] = recordMatchedCardPayment($second);
+
+        RawSql::expectSqlState('KP001', fn () => DB::table('card_payments')->where('id', $record?->id)->update(['invoice_payment_id' => $otherPayment->id]));
+        RawSql::expectAllowed(fn () => DB::table('card_payments')->where('id', $record?->id)->update(['invoice_payment_id' => null]));
+    });
+
+    it('accepts a duplicate resolved as returned, the expense being linked later', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $id = storedCardRow($invoice->id, ['type' => 'duplicate', 'reason' => 'already_paid']);
+
+        RawSql::expectAllowed(fn () => DB::table('card_payments')->where('id', $id)->update([
+            'resolution' => 'returned',
+            'resolved_at' => now(),
+            'resolved_by' => Canary::admin()->getKey(),
+        ]));
+    });
+});
+
+describe('a resolution is final', function (): void {
+    it('accepts an unmatched record resolved by a note in one update', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $id = storedCardRow($invoice->id);
+
+        RawSql::expectAllowed(fn () => DB::table('card_payments')->where('id', $id)->update(notedResolution()));
+    });
+
+    it('accepts a duplicate assigned to a document', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $target = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $id = storedCardRow($invoice->id, ['type' => 'duplicate', 'reason' => 'already_paid']);
+
+        RawSql::expectAllowed(fn () => DB::table('card_payments')->where('id', $id)->update([
+            'resolution' => 'assigned',
+            'assigned_invoice_id' => $target->id,
+            'resolved_at' => now(),
+            'resolved_by' => Canary::admin()->getKey(),
+        ]));
+    });
+
+    it('refuses to reopen or change a resolution', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $target = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $noted = storedCardRow($invoice->id);
+        DB::table('card_payments')->where('id', $noted)->update(notedResolution());
+
+        RawSql::expectSqlState('KP001', fn () => DB::table('card_payments')->where('id', $noted)->update(['resolution' => 'none', 'resolved_at' => null, 'resolved_by' => null]));
+        RawSql::expectSqlState('KP001', fn () => DB::table('card_payments')->where('id', $noted)->update(['resolution' => 'assigned', 'assigned_invoice_id' => $target->id]));
+        RawSql::expectSqlState('KP001', fn () => DB::table('card_payments')->where('id', $noted)->update(['resolution_note' => 'Another note']));
+        RawSql::expectSqlState('KP001', fn () => DB::table('card_payments')->where('id', $noted)->update(['resolved_at' => now()->addDay()]));
+
+        $assigned = storedCardRow($invoice->id, ['type' => 'duplicate', 'reason' => 'already_paid']);
+        DB::table('card_payments')->where('id', $assigned)->update([
+            'resolution' => 'assigned',
+            'assigned_invoice_id' => $target->id,
+            'resolved_at' => now(),
+            'resolved_by' => Canary::admin()->getKey(),
+        ]);
+
+        RawSql::expectSqlState('KP001', fn () => DB::table('card_payments')->where('id', $assigned)->update(['assigned_invoice_id' => $invoice->id]));
+    });
+
+    it('refuses an inconsistent resolution with a check violation', function (string $type, string $reason, array $update): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $target = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $refund = $type === 'refund';
+        $matched = $type === 'matched';
+        $id = $refund
+            ? storedCardRow($invoice->id, ['type' => 'refund', 'reason' => null, 'stripe_refund_id' => StripeEvents::token('re'), 'stripe_session_id' => null, 'stripe_payment_intent_id' => null])
+            : storedCardRow($invoice->id, ['type' => $type, 'reason' => $matched ? null : $reason]);
+
+        $update = array_map(static fn (mixed $value): mixed => $value === '@target' ? $target->id : ($value === '@admin' ? Canary::admin()->getKey() : ($value === '@now' ? now() : $value)), $update);
+
+        RawSql::expectSqlState('23514', fn () => DB::table('card_payments')->where('id', $id)->update($update));
+    })->with([
+        'noted without a note' => ['unmatched', 'amount', ['resolution' => 'noted', 'resolved_at' => '@now', 'resolved_by' => '@admin']],
+        'noted with a blank note' => ['unmatched', 'amount', ['resolution' => 'noted', 'resolution_note' => '   ', 'resolved_at' => '@now', 'resolved_by' => '@admin']],
+        'resolved without a time' => ['unmatched', 'amount', ['resolution' => 'noted', 'resolution_note' => 'Example note', 'resolved_by' => '@admin']],
+        'resolved without a person' => ['unmatched', 'amount', ['resolution' => 'noted', 'resolution_note' => 'Example note', 'resolved_at' => '@now']],
+        'a time without a resolution' => ['unmatched', 'amount', ['resolved_at' => '@now', 'resolved_by' => '@admin']],
+        'assigned without a document' => ['unmatched', 'amount', ['resolution' => 'assigned', 'resolved_at' => '@now', 'resolved_by' => '@admin']],
+        'a document without an assignment' => ['unmatched', 'amount', ['assigned_invoice_id' => '@target']],
+        'a matched record with a resolution' => ['matched', '', ['resolution' => 'noted', 'resolution_note' => 'Example note', 'resolved_at' => '@now', 'resolved_by' => '@admin']],
+        'a refund assigned' => ['refund', '', ['resolution' => 'assigned', 'assigned_invoice_id' => '@target', 'resolved_at' => '@now', 'resolved_by' => '@admin']],
+        'a refund returned' => ['refund', '', ['resolution' => 'returned', 'resolved_at' => '@now', 'resolved_by' => '@admin']],
+    ]);
+
+    it('lets a refund be noted', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $id = storedCardRow($invoice->id, ['type' => 'refund', 'reason' => null, 'stripe_refund_id' => StripeEvents::token('re'), 'stripe_session_id' => null, 'stripe_payment_intent_id' => null]);
+
+        RawSql::expectAllowed(fn () => DB::table('card_payments')->where('id', $id)->update(notedResolution()));
+    });
+
+    it('writes an allowlisted history when the Admin resolves a record, without a note or a Stripe reference', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $refs = cardRefs();
+        $id = storedCardRow($invoice->id, $refs);
+
+        $this->actingAs(Canary::admin());
+        $record = CardPayment::query()->findOrFail($id);
+        $record->forceFill([
+            'resolution' => CardPaymentResolution::Noted,
+            'resolution_note' => 'Example note that must stay out of the history',
+            'resolved_at' => now(),
+            'resolved_by' => Canary::admin()->getKey(),
+        ])->save();
+
+        $rows = Activity::query()->where('subject_type', 'card_payment')->where('subject_id', $id)->get();
+        $json = (string) json_encode($rows->map(static fn (Activity $row): mixed => $row->attribute_changes)->all());
+
+        expect($rows)->toHaveCount(1)
+            ->and($json)->toContain('resolution')
+            ->and($json)->not->toContain('resolution_note')
+            ->and($json)->not->toContain('must stay out')
+            ->and($json)->not->toContain($refs['stripe_event_id'])
+            ->and($json)->not->toContain($refs['stripe_payment_intent_id'])
+            ->and($record->fresh()?->status())->toBe(CardPaymentStatus::Resolved);
+    });
+
+    it('derives the status of a record that waits for the Admin', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $id = storedCardRow($invoice->id);
+
+        $record = app(PartnerContext::class)->runAsSystem(static fn (): CardPayment => CardPayment::query()->findOrFail($id));
+
+        expect($record->status())->toBe(CardPaymentStatus::Unresolved)
+            ->and($record->isUnresolved())->toBeTrue()
+            ->and($record->offered())->toBeNull();
     });
 });
