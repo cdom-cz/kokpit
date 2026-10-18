@@ -27,6 +27,8 @@ use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
+use App\Domain\Payments\Enums\PaymentLinkState;
+use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
@@ -60,6 +62,7 @@ use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\TimerClock;
 use Carbon\CarbonImmutable;
 use Closure;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\Support\Probes\PackageProbe;
@@ -107,6 +110,14 @@ final class CanaryRegistry
     }
 
     /**
+     * The Stripe id of the canary payment link, assembled at runtime so no line looks like a real Stripe value.
+     */
+    private static function stripeLinkId(string $canary): string
+    {
+        return implode('_', ['plink', $canary]);
+    }
+
+    /**
      * The strings the Admin must find in the visible rows of a model for one canary: the canary itself
      * for every model that stores text; the Monday of the canary for the models that have a date but
      * no text column (the two Signal day models and the exchange rate); the id of the planner owner for the
@@ -119,6 +130,7 @@ final class CanaryRegistry
     {
         return match ($model) {
             SignalDeepWorkDay::class, SignalDayOverride::class, ExchangeRate::class => [self::signalMonday($canary)],
+            PaymentLink::class => [self::stripeLinkId($canary)],
             SignalSetting::class => [(string) self::plannerOwner()->getKey()],
             default => [$canary],
         };
@@ -350,6 +362,12 @@ final class CanaryRegistry
 
             // One payment of the issued document; the canary is its note.
             InvoicePayment::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
+            // The payment link of the issued document; its Stripe id (built from the canary) is what a Partner must
+            // never read, and the Admin must find.
+            PaymentLink::class => static function (string $clientId, string $canary): void {
                 self::invoiceDocuments($clientId, $canary);
             },
 
@@ -615,6 +633,7 @@ final class CanaryRegistry
             (new InvoiceAdmin(['internal_note' => $canary]))->forceFill([
                 'invoice_id' => $issued->getKey(),
                 'internal_note_updated_at' => TimerClock::now(),
+                'card_payment_enabled' => true,
                 'exchange_rate' => '24.5000000000',
                 'exchange_unit_amount' => 1,
                 'exchange_rate_date' => '2026-10-16',
@@ -662,6 +681,15 @@ final class CanaryRegistry
                 'paid_on' => '2026-10-20',
                 'method' => PaymentMethod::Transfer,
                 'created_by' => $owner,
+            ])->save();
+
+            // The link is opened pending and activated with the Stripe references, the way the link job will.
+            $link = DB::transaction(static fn (): PaymentLink => PaymentLink::open($issued, 6000, Canary::admin()));
+            $link->forceFill([
+                'state' => PaymentLinkState::Active,
+                'stripe_link_id' => self::stripeLinkId($canary),
+                'stripe_url' => implode('', ['https://buy.stripe', '.com/', $canary]),
+                'activated_at' => TimerClock::now(),
             ])->save();
         });
     }

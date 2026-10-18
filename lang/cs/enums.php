@@ -250,4 +250,19 @@ return [
         'failed' => 'Odeslání selhalo',
     ],
 
+    'payment_link_state' => [
+        'pending' => 'Připravuje se',
+        'active' => 'Aktivní',
+        'failed' => 'Vytvoření selhalo',
+        'deactivated' => 'Deaktivován',
+    ],
+
+    'payment_link_deactivation' => [
+        'paid' => 'Doklad je zaplacený.',
+        'cancelled' => 'Doklad byl stornován.',
+        'amount_changed' => 'Po částečné platbě se nabízená částka změnila.',
+        'manual' => 'Deaktivován ručně.',
+        'replaced' => 'Nahrazen novým odkazem.',
+    ],
+
 ];

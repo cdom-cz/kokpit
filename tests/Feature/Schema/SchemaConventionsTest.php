@@ -135,7 +135,7 @@ it('R6 self-check: reports a uuid primary key without the uuidv7() default', fun
     expect(PgSchema::missingUuidv7Default($columns))->toBe(['gadgets.id', 'widgets.id']);
 });
 
-it('keeps the exempt map to the four framework columns, the composite-key discriminators of tasks, transactions, invoice payments and transaction categories, and the Stripe event id of webhook calls, each with a reason', function () {
+it('keeps the exempt map to the four framework columns, the composite-key discriminators of tasks, transactions, invoice payments, payment links and transaction categories, and the Stripe event and link ids, each with a reason', function () {
     expect(array_keys(PgSchema::EXEMPT))->toBe([
         'migrations.id',
         'failed_jobs.id',
@@ -146,6 +146,8 @@ it('keeps the exempt map to the four framework columns, the composite-key discri
         'transaction_categories.type',
         'transaction_categories.parent_depth',
         'invoice_payments.currency',
+        'payment_links.currency',
+        'payment_links.stripe_link_id',
         'webhook_calls.event_id',
     ])->and(array_filter(PgSchema::EXEMPT, fn (string $reason): bool => trim($reason) === ''))->toBe([]);
 });

@@ -24,6 +24,7 @@ use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
+use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Reports\Models\ReportExport;
@@ -82,6 +83,7 @@ final class MorphMap
         'invoice_item_source' => InvoiceItemSource::class,
         'invoice_payment' => InvoicePayment::class,
         'invoice_email' => InvoiceEmail::class,
+        'payment_link' => PaymentLink::class,
         'dashboard_widget_preference' => DashboardWidgetPreference::class,
         'document' => Document::class,
         'document_archive' => DocumentArchive::class,
