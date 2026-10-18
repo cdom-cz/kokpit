@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 11
 current_phase_name: Stripe Payments
 status: executing
-stopped_at: Completed 11-15-PLAN.md
-last_updated: "2026-10-18T16:49:27.217Z"
+stopped_at: Completed 11-16-PLAN.md
+last_updated: "2026-10-18T17:00:57.299Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 11 execution started
-state_head: 90147af1d10d1638e42c420b24280d133d5691c3
+state_head: cb54857f0ef872d70352ca76f58c71d99b0c2132
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 245
-  completed_plans: 241
+  completed_plans: 242
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 11 (Stripe Payments) — EXECUTING
-Plan: 17 of 20
+Plan: 18 of 20
 Status: Ready to execute
 Last activity: 2026-10-18 - Completed quick task 261018-mic: Add an external identifier column to transactions (exposed via the API)
 
@@ -304,6 +304,7 @@ Progress: [█████░░░░░] 54%
 | Phase 11 P14 | 25 min | 3 tasks | 16 files |
 | Phase 11 P19 | 55min | 3 tasks | 6 files |
 | Phase 11 P15 | 25min | 2 tasks | 5 files |
+| Phase 11 P16 | 40min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -759,6 +760,7 @@ Recent decisions affecting current work:
 - [Phase 11]: 11-14: webhook pruning age runs from processed_at (not created_at); the slot age is Carbon's absolute Czech duration
 - [Phase 11]: 11-19: the assign select offers documents that still owe something plus the record's own document even when paid; a hidden Filament action silently drops a stale submit, so a resolution action stays visible while its modal is open and the Action refuses with Platba už byla vyřešena; note limits are validation rules with a live counter, not input maxlength
 - [Phase 11]: 11-15: PartnerPayButton reuses PaymentLinkStatus payable inside runAsSystem and returns only the stable URL or null; the Partner header shows Zaplatit kartou in front of the PDF only while that URL exists
+- [Phase 11]: 11-16: a duplicate or unmatched record alerts from RecordCardPayment::record() after the commit, throttled per record id; refund records leave invoice_payment_id empty and link through the payment intent, document and link
 
 ### Pending Todos
 
@@ -815,6 +817,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-18T16:49:25.460Z
-Stopped at: Completed 11-15-PLAN.md
+Last session: 2026-10-18T17:00:55.416Z
+Stopped at: Completed 11-16-PLAN.md
 Resume file: None
