@@ -8,6 +8,7 @@ use App\Domain\Operations\Health\HealthSlot;
 use App\Domain\Operations\Health\HealthStatus;
 use App\Domain\Operations\Health\Indicators\LastRateDateIndicator;
 use App\Domain\Operations\Health\Indicators\PlaceholderIndicator;
+use App\Domain\Operations\Health\Indicators\UnprocessedWebhooksIndicator;
 use App\Domain\Operations\Health\Indicators\UnsentInvoiceEmailsIndicator;
 use Tests\Support\Probes\HealthProbeIndicator;
 
@@ -45,17 +46,22 @@ it('has the six slots of the System page', function (): void {
     ]);
 });
 
-it('keeps the placeholder, not available yet, for the slots no plan measures yet', function (): void {
-    $results = app(HealthIndicatorRegistry::class)->results();
-
-    expect($results)->toHaveCount(count(HealthSlot::cases()));
-
-    // The last rate date slot is measured for real since Phase 8 (plan 08-10), the unsent invoice e-mails slot since
-    // Phase 10 (plan 10-37); only the webhooks slot waits for Phase 11.
-    foreach ([HealthSlot::UnprocessedWebhooks] as $slot) {
-        expect($results[$slot->value]->status)->toBe(HealthStatus::NotAvailable)
-            ->and($results[$slot->value]->detail)->toBe(__('kokpit.system.not_available_yet'));
+it('has no placeholder left, every slot is measured for real', function (): void {
+    foreach (app(HealthIndicatorRegistry::class)->indicators() as $indicator) {
+        expect($indicator)->not->toBeInstanceOf(PlaceholderIndicator::class);
     }
+});
+
+it('keeps the placeholder answer, not available yet, for a slot nobody measures', function (): void {
+    $result = (new PlaceholderIndicator(HealthSlot::UnprocessedWebhooks))->check();
+
+    expect($result->status)->toBe(HealthStatus::NotAvailable)
+        ->and($result->detail)->toBe(__('kokpit.system.not_available_yet'));
+});
+
+it('measures the unprocessed webhooks for real, so no placeholder holds the slot', function (): void {
+    expect(app(HealthIndicatorRegistry::class)->indicators()[HealthSlot::UnprocessedWebhooks->value])
+        ->toBeInstanceOf(UnprocessedWebhooksIndicator::class);
 });
 
 it('measures the last rate date for real, so no placeholder holds the slot', function (): void {

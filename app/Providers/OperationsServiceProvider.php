@@ -12,6 +12,7 @@ use App\Domain\Operations\Health\Indicators\LastRateDateIndicator;
 use App\Domain\Operations\Health\Indicators\OldestPendingJobIndicator;
 use App\Domain\Operations\Health\Indicators\PlaceholderIndicator;
 use App\Domain\Operations\Health\Indicators\SchedulerHeartbeatIndicator;
+use App\Domain\Operations\Health\Indicators\UnprocessedWebhooksIndicator;
 use App\Domain\Operations\Health\Indicators\UnsentInvoiceEmailsIndicator;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
@@ -37,8 +38,8 @@ final class OperationsServiceProvider extends ServiceProvider
         );
 
         // One indicator per HealthSlot case (D-13). The queue, scheduler and last rate date slots
-        // (Phase 8) and the unsent invoice e-mails slot (Phase 10) are measured for real; the rest
-        // starts as a placeholder that Phase 11 swaps through replace().
+        // (Phase 8), the unsent invoice e-mails slot (Phase 10) and the two Stripe slots (Phase 11)
+        // are measured for real; a slot without a real indicator starts as a placeholder.
         // A slot never stays without an indicator, and register() refuses a second one, so the
         // placeholder is only registered for a slot no real indicator covers.
         $this->app->singleton(HealthIndicatorRegistry::class, function (): HealthIndicatorRegistry {
@@ -48,6 +49,7 @@ final class OperationsServiceProvider extends ServiceProvider
                 new OldestPendingJobIndicator,
                 new SchedulerHeartbeatIndicator,
                 new LastRateDateIndicator,
+                new UnprocessedWebhooksIndicator,
                 new UnsentInvoiceEmailsIndicator,
             ];
 

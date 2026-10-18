@@ -586,6 +586,13 @@ return [
             'alive' => 'Plánovač běží',
             'late' => 'Plánovač se dlouho nezapsal, pravděpodobně neběží',
         ],
+        // The detail of the unprocessed webhooks slot (D-17, UI-SPEC Surface K); :count is the number of stored Stripe
+        // events that are not processed and :age how long the oldest has waited. No payload or exception text.
+        'webhooks' => [
+            'ok' => 'Všechny události ze Stripe byly zpracovány.',
+            'waiting' => 'Čekající události ze Stripe: :count. Nejstarší čeká :age.',
+            'error' => 'Nezpracováno: :count. Nejstarší čeká :age. Zkontrolujte neúspěšné úlohy.',
+        ],
         // The detail of the last rate date slot; :count is the number of working days the newest list is behind.
         'last_rate_date' => [
             'ok' => 'Kurzy jsou aktuální.',

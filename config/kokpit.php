@@ -86,6 +86,9 @@ return [
     |   row may stay in sending (a worker that died mid-send) before it counts
     |   as failed and turns the slot Error. The state of a document is the
     |   state of its latest e-mail row (R-24-1).
+    | unprocessed_webhook_warning_after (D-17): seconds a stored Stripe event
+    |   may wait unprocessed before the unprocessed webhooks slot turns Warning;
+    |   an event that failed for good turns it Error at once.
     |
     | Caveat, delayed jobs: the age of a pending job runs from the creation of
     |   the job, not from the moment it became ready. A job dispatched with a
@@ -105,6 +108,7 @@ return [
         'scheduler_heartbeat_error_after' => 180,
         'unsent_invoice_email_warning_after' => 900,
         'unsent_invoice_email_stale_after' => 3600,
+        'unprocessed_webhook_warning_after' => 900,
     ],
 
     /*

@@ -33,11 +33,11 @@ it('shows the Admin the six Czech slot labels, a status label for each and the p
     }
 
     $response->assertSee(__('enums.health_status.not_available'))
-        ->assertSee(__('kokpit.system.not_available_yet'))
         ->assertSee(__('kokpit.system.navigation_label'))
         ->assertSee('wire:poll', false);
 
-    // Only the webhooks slot is still a placeholder; the unsent invoice e-mails slot is measured since plan 10-37.
+    // No slot is a placeholder any more (the webhooks slot is measured since plan 11-14); the queue slot still says
+    // Not available when the queue does not run on Redis, as in the test environment.
     expect(substr_count((string) $response->getContent(), __('enums.health_status.not_available')))
         ->toBeGreaterThanOrEqual(1);
 });
@@ -154,6 +154,7 @@ it('renders each status with its colour badge and its Czech label', function ():
         HealthSlot::OldestPendingJob->value => HealthStatus::Warning,
         HealthSlot::SchedulerHeartbeat->value => HealthStatus::Error,
         HealthSlot::LastRateDate->value => HealthStatus::NotAvailable,
+        HealthSlot::UnprocessedWebhooks->value => HealthStatus::NotAvailable,
         HealthSlot::UnsentInvoiceEmails->value => HealthStatus::NotAvailable,
     ];
 
