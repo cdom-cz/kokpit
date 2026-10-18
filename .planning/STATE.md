@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 11
 current_phase_name: Stripe Payments
 status: executing
-stopped_at: Completed 11-17-PLAN.md
-last_updated: "2026-10-18T17:11:02.574Z"
+stopped_at: Completed 11-18-PLAN.md
+last_updated: "2026-10-18T17:26:28.538Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 11 execution started
-state_head: 250442c6b21479e25873a7fc8448824446eb5b7f
+state_head: 9762f039d1ddf7594899795678a198b106ba09d1
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 245
-  completed_plans: 243
+  completed_plans: 244
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 11 (Stripe Payments) — EXECUTING
-Plan: 19 of 20
+Plan: 20 of 20
 Status: Ready to execute
 Last activity: 2026-10-18 - Completed quick task 261018-mic: Add an external identifier column to transactions (exposed via the API)
 
@@ -306,6 +306,7 @@ Progress: [█████░░░░░] 54%
 | Phase 11 P15 | 25min | 2 tasks | 5 files |
 | Phase 11 P16 | 40min | 3 tasks | 9 files |
 | Phase 11 P17 | 25min | 2 tasks | 11 files |
+| Phase 11 P18 | 45min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -763,6 +764,7 @@ Recent decisions affecting current work:
 - [Phase 11]: 11-15: PartnerPayButton reuses PaymentLinkStatus payable inside runAsSystem and returns only the stable URL or null; the Partner header shows Zaplatit kartou in front of the PDF only while that URL exists
 - [Phase 11]: 11-16: a duplicate or unmatched record alerts from RecordCardPayment::record() after the commit, throttled per record id; refund records leave invoice_payment_id empty and link through the payment intent, document and link
 - [Phase 11]: 11-17: the dashboard card 'Nevyřešené platby' narrows both boot checks to the AccessRule so a poll after the last resolution renders an empty root instead of a 403
+- [Phase 11]: 11-18: a worker tells an ignored event from a processed one by its own processed_at update; the unlocked twin is deterministic (read before the barrier, wait for the other commit)
 
 ### Pending Todos
 
@@ -819,6 +821,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-18T17:11:00.548Z
-Stopped at: Completed 11-17-PLAN.md
+Last session: 2026-10-18T17:26:26.628Z
+Stopped at: Completed 11-18-PLAN.md
 Resume file: None
