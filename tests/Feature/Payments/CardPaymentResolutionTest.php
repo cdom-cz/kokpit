@@ -6,14 +6,21 @@ use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Invoicing\Enums\PaymentMethod;
+use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Payments\Actions\AssignCardPayment;
+use App\Domain\Payments\Actions\RecordPaymentReturn;
+use App\Domain\Payments\Actions\ResolveCardPayment;
 use App\Domain\Payments\Enums\CardPaymentResolution;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Queries\UnresolvedPayments;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Filament\Resources\CardPaymentResource;
 use App\Filament\Resources\CardPaymentResource\Pages\ViewCardPayment;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -249,5 +256,217 @@ describe('what is offered', function (): void {
             ->assertActionHidden('assignCardPayment')
             ->assertActionHidden('resolveCardPayment')
             ->assertActionHidden('recordPaymentReturn');
+    });
+});
+
+/**
+ * The errors of a refused call, keyed as the Action reports them.
+ *
+ * @return array<string, array<int, string>>
+ */
+function refusal(Closure $call): array
+{
+    try {
+        $call();
+    } catch (ValidationException $exception) {
+        return $exception->errors();
+    }
+
+    return [];
+}
+
+/**
+ * A fictional EUR invoice with the CNB lists its issue and payment need.
+ */
+function eurInvoice(): Invoice
+{
+    foreach (['2026-10-09', '2026-10-12', '2026-10-13', '2026-10-14'] as $day) {
+        InvoiceFixtures::cnbRate('EUR', $day, '25.125');
+    }
+
+    return InvoiceFixtures::issued(InvoiceFixtures::client(['currency' => 'EUR']), [InvoiceFixtures::item('Example work', '1', '500.00')]);
+}
+
+describe('a resolution is final and single', function (): void {
+    it('refuses the second tab with the danger toast, refreshes to the resolved banner and changes nothing', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $record = CardPaymentFixtures::duplicate($invoice);
+
+        $first = resolutionPage($record)->mountAction('resolveCardPayment')->fillForm(['note' => 'První poznámka.']);
+        $second = resolutionPage($record)->mountAction('assignCardPayment');
+        $third = resolutionPage($record)->mountAction('recordPaymentReturn')->fillForm(['category_id' => TransactionCategory::query()->selectable(TransactionType::Expense)->firstOrFail()->id]);
+
+        $first->callMountedAction()->assertNotified('Platba byla označena jako vyřešená');
+
+        $payments = $invoice->payments()->count();
+        $transactions = Transaction::query()->count();
+
+        $second->callMountedAction()
+            ->assertNotified('Platba už byla vyřešena')
+            ->assertDontSee('Nevyřešeno')
+            ->assertSee('Vyřešeno poznámkou')
+            ->assertActionHidden('assignCardPayment')
+            ->assertActionHidden('resolveCardPayment')
+            ->assertActionHidden('recordPaymentReturn');
+        $third->callMountedAction()->assertNotified('Platba už byla vyřešena');
+
+        $stored = storedRecord($record);
+
+        expect($stored->resolution)->toBe(CardPaymentResolution::Noted)
+            ->and($stored->resolution_note)->toBe('První poznámka.')
+            ->and($stored->assigned_invoice_id)->toBeNull()
+            ->and($stored->return_transaction_id)->toBeNull()
+            ->and($invoice->payments()->count())->toBe($payments)
+            ->and(Transaction::query()->count())->toBe($transactions);
+    });
+
+    it('refuses every Action on a resolved record with already_resolved and a matched record with its own refusal', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $resolved = CardPaymentFixtures::resolved($invoice);
+        $matched = CardPaymentFixtures::matched(CardPaymentSetup::issued(CardPaymentSetup::client()));
+        $refund = CardPaymentFixtures::refund($invoice);
+        $category = TransactionCategory::query()->selectable(TransactionType::Expense)->firstOrFail();
+        $already = ['card_payment' => ['Platba už byla vyřešena']];
+
+        expect(refusal(fn () => app(AssignCardPayment::class)->handle($this->admin, $resolved, ['invoice_id' => $invoice->id])))->toBe($already)
+            ->and(refusal(fn () => app(ResolveCardPayment::class)->handle($this->admin, $resolved, 'Další poznámka.')))->toBe($already)
+            ->and(refusal(fn () => app(RecordPaymentReturn::class)->handle($this->admin, $resolved, ['amount' => '1.00', 'returned_on' => '2026-10-14', 'category_id' => $category->id])))->toBe($already)
+            ->and(array_keys(refusal(fn () => app(AssignCardPayment::class)->handle($this->admin, $matched, ['invoice_id' => $invoice->id]))))->toBe(['card_payment'])
+            ->and(array_keys(refusal(fn () => app(ResolveCardPayment::class)->handle($this->admin, $matched, 'Poznámka.'))))->toBe(['card_payment'])
+            ->and(array_keys(refusal(fn () => app(AssignCardPayment::class)->handle($this->admin, $refund, ['invoice_id' => $invoice->id]))))->toBe(['card_payment'])
+            ->and(array_keys(refusal(fn () => app(RecordPaymentReturn::class)->handle($this->admin, $refund, ['amount' => '1.00', 'returned_on' => '2026-10-14', 'category_id' => $category->id]))))->toBe(['card_payment'])
+            ->and(storedRecord($resolved)->resolution_note)->toBe('Returned in the Stripe dashboard (fictional).')
+            ->and($invoice->payments()->count())->toBe(0);
+    });
+});
+
+describe('the currency and the document of an assignment', function (): void {
+    it('offers only documents of the payment currency and says so when there is none', function (): void {
+        CardPaymentSetup::issued(CardPaymentSetup::client());
+        $record = CardPaymentFixtures::unmatched(null, ['currency' => 'EUR', 'amount_minor' => 50000]);
+
+        $page = resolutionPage($record)->mountAction('assignCardPayment');
+
+        $select = $page->instance()->getSchema('mountedActionSchema0')->getFlatComponents()['invoice_id'];
+
+        // The select holds no option, says so in the words of the contract, and the submit stays disabled.
+        expect($page->instance()->getMountedAction()?->getModalSubmitAction()?->isDisabled())->toBeTrue()
+            ->and($select->getOptions())->toBe([])
+            ->and($select->getNoOptionsMessage())->toBe('Žádný nezaplacený doklad ve stejné měně');
+    });
+
+    it('lists the EUR documents for a EUR payment and never the CZK ones, and enables the submit', function (): void {
+        $czk = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $eur = eurInvoice();
+        $record = CardPaymentFixtures::unmatched($eur, ['amount_minor' => 50000]);
+
+        $page = resolutionPage($record)->mountAction('assignCardPayment');
+        $select = $page->instance()->getSchema('mountedActionSchema0')->getFlatComponents()['invoice_id'];
+
+        expect(array_keys($select->getOptions()))->toBe([$eur->id])
+            ->and($select->getOptions()[$eur->id])->toContain((string) $eur->number)
+            ->and($select->getOptions()[$eur->id])->toContain('zbývá')
+            ->and($page->instance()->getMountedAction()?->getModalSubmitAction()?->isDisabled())->toBeFalse();
+
+        $page->fillForm(['invoice_id' => $czk->id])->callMountedAction()->assertHasFormErrors(['invoice_id']);
+
+        expect(storedRecord($record)->resolution)->toBe(CardPaymentResolution::None)
+            ->and($czk->payments()->count())->toBe(0);
+    });
+
+    it('refuses a forged document of another currency with the currency error and writes nothing', function (): void {
+        $czk = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $record = CardPaymentFixtures::unmatched(null, ['currency' => 'EUR', 'amount_minor' => 50000]);
+
+        $errors = refusal(fn () => app(AssignCardPayment::class)->handle($this->admin, $record, ['invoice_id' => $czk->id]));
+
+        expect($errors)->toBe(['invoice_id' => ['Měna platby (EUR) nesouhlasí s měnou dokladu.']])
+            ->and($czk->payments()->count())->toBe(0)
+            ->and(Transaction::query()->count())->toBe(0)
+            ->and(storedRecord($record)->resolution)->toBe(CardPaymentResolution::None);
+    });
+
+    it('warns on a paid document and on an amount that differs, and records the payment anyway', function (): void {
+        $client = CardPaymentSetup::client();
+        $paid = CardPaymentSetup::issued($client);
+        CardPaymentFixtures::matched($paid);
+        $duplicate = CardPaymentFixtures::duplicate($paid);
+
+        $page = resolutionPage($duplicate)->mountAction('assignCardPayment');
+
+        expect(modalHtml($page))->toContain('Doklad je již zaplacený. Platba se zapíše jako další.');
+
+        $page->callMountedAction()->assertHasNoFormErrors();
+
+        expect($paid->payments()->count())->toBe(2)
+            ->and(Transaction::query()->where('invoice_id', $paid->id)->count())->toBe(2);
+
+        $open = CardPaymentSetup::issued($client, amount: '12000.00');
+        $differs = CardPaymentFixtures::unmatched($open);
+        $second = resolutionPage($differs)->mountAction('assignCardPayment');
+
+        expect(modalHtml($second))->toContain('se liší od zbývající částky dokladu')
+            ->and(modalHtml($second))->not->toContain('Doklad je již zaplacený');
+
+        $second->callMountedAction()->assertHasNoFormErrors();
+
+        expect($open->payments()->sole()->amount_minor)->toBe($differs->amount_minor);
+    });
+
+    it('refuses a cancelled document with payment_not_allowed and a draft or unknown id with the document error', function (): void {
+        $client = CardPaymentSetup::client();
+        $cancelled = CardPaymentSetup::issued($client);
+        InvoiceFixtures::stornoed($cancelled);
+        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')]);
+        $record = CardPaymentFixtures::unmatched($cancelled);
+
+        expect(refusal(fn () => app(AssignCardPayment::class)->handle($this->admin, $record, ['invoice_id' => $cancelled->id])))
+            ->toBe(['payment' => [__('invoices.errors.payment_not_allowed')]])
+            ->and(array_keys(refusal(fn () => app(AssignCardPayment::class)->handle($this->admin, $record, ['invoice_id' => $draft->id]))))->toBe(['invoice_id'])
+            ->and(array_keys(refusal(fn () => app(AssignCardPayment::class)->handle($this->admin, $record, ['invoice_id' => 'not-an-id']))))->toBe(['invoice_id'])
+            ->and(array_keys(refusal(fn () => app(AssignCardPayment::class)->handle($this->admin, $record, []))))->toBe(['invoice_id'])
+            ->and(storedRecord($record)->resolution)->toBe(CardPaymentResolution::None);
+
+        // The cancelled invoice is not offered either.
+        $select = resolutionPage($record)->mountAction('assignCardPayment')->instance()->getSchema('mountedActionSchema0')->getFlatComponents()['invoice_id'];
+
+        expect($select->getOptions())->not->toHaveKey($cancelled->id);
+    });
+});
+
+describe('the notes and the Admin', function (): void {
+    it('refuses a note of 501 characters in the resolve and the return modal and accepts exactly 500', function (): void {
+        $record = CardPaymentFixtures::unmatched();
+        $category = TransactionCategory::query()->selectable(TransactionType::Expense)->firstOrFail();
+
+        resolutionPage($record)->mountAction('resolveCardPayment')->fillForm(['note' => str_repeat('a', 501)])->callMountedAction()->assertHasFormErrors(['note']);
+        resolutionPage($record)->mountAction('recordPaymentReturn')->fillForm(['category_id' => $category->id, 'note' => str_repeat('a', 501)])->callMountedAction()->assertHasFormErrors(['note']);
+
+        expect(array_keys(refusal(fn () => app(ResolveCardPayment::class)->handle($this->admin, $record, str_repeat('a', 501)))))->toBe(['note'])
+            ->and(array_keys(refusal(fn () => app(RecordPaymentReturn::class)->handle($this->admin, $record, ['amount' => '1.00', 'returned_on' => '2026-10-14', 'category_id' => $category->id, 'note' => str_repeat('a', 501)]))))->toBe(['note'])
+            ->and(storedRecord($record)->resolution)->toBe(CardPaymentResolution::None)
+            ->and(Transaction::query()->where('type', TransactionType::Expense->value)->exists())->toBeFalse();
+
+        resolutionPage($record)->mountAction('resolveCardPayment')->fillForm(['note' => str_repeat('a', 500)])->callMountedAction()->assertHasNoFormErrors();
+
+        expect(mb_strlen((string) storedRecord($record)->resolution_note))->toBe(500);
+    });
+
+    it('lets a Partner do nothing: the Actions refuse and the record page answers 403', function (): void {
+        $client = CardPaymentSetup::client();
+        $invoice = CardPaymentSetup::issued($client);
+        $record = CardPaymentFixtures::unmatched($invoice);
+        $category = TransactionCategory::query()->selectable(TransactionType::Expense)->firstOrFail();
+        $partner = Canary::partnerFor($client->id);
+
+        expect(fn () => app(AssignCardPayment::class)->handle($partner, $record, ['invoice_id' => $invoice->id]))->toThrow(AuthorizationException::class)
+            ->and(fn () => app(ResolveCardPayment::class)->handle($partner, $record, 'Poznámka.'))->toThrow(AuthorizationException::class)
+            ->and(fn () => app(RecordPaymentReturn::class)->handle($partner, $record, ['amount' => '1.00', 'returned_on' => '2026-10-14', 'category_id' => $category->id]))->toThrow(AuthorizationException::class);
+
+        $this->actingAs($partner);
+        $this->get(CardPaymentResource::getUrl('view', ['record' => $record]))->assertForbidden();
+
+        expect(storedRecord($record)->resolution)->toBe(CardPaymentResolution::None)
+            ->and($invoice->payments()->count())->toBe(0);
     });
 });

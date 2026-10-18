@@ -146,7 +146,7 @@ final class ViewCardPayment extends ViewRecord
             ->label(__('card_payments.actions.assign'))
             ->icon(Heroicon::OutlinedLink)
             ->color(fn (): string => $this->payment()->type === CardPaymentType::Unmatched ? 'primary' : 'gray')
-            ->visible(fn (): bool => $this->offers([CardPaymentType::Unmatched, CardPaymentType::Duplicate]))
+            ->visible(fn (): bool => $this->offers('assignCardPayment', [CardPaymentType::Unmatched, CardPaymentType::Duplicate]))
             ->modalHeading(__('card_payments.assign.heading'))
             ->modalWidth('lg')
             ->modalSubmitActionLabel(__('card_payments.assign.submit'))
@@ -185,7 +185,7 @@ final class ViewCardPayment extends ViewRecord
             ->label(__('card_payments.actions.resolve'))
             ->icon(Heroicon::OutlinedCheckCircle)
             ->color(fn (): string => in_array($this->payment()->type, [CardPaymentType::Duplicate, CardPaymentType::Refund], true) ? 'primary' : 'gray')
-            ->visible(fn (): bool => $this->offers([CardPaymentType::Duplicate, CardPaymentType::Unmatched, CardPaymentType::Refund]))
+            ->visible(fn (): bool => $this->offers('resolveCardPayment', [CardPaymentType::Duplicate, CardPaymentType::Unmatched, CardPaymentType::Refund]))
             ->modalHeading(__('card_payments.resolve.heading'))
             ->modalWidth('lg')
             ->modalSubmitActionLabel(__('card_payments.resolve.submit'))
@@ -218,7 +218,7 @@ final class ViewCardPayment extends ViewRecord
             ->label(__('card_payments.actions.return'))
             ->icon(Heroicon::OutlinedReceiptRefund)
             ->color('gray')
-            ->visible(fn (): bool => $this->offers([CardPaymentType::Duplicate, CardPaymentType::Unmatched]))
+            ->visible(fn (): bool => $this->offers('recordPaymentReturn', [CardPaymentType::Duplicate, CardPaymentType::Unmatched]))
             ->modalHeading(__('card_payments.return.heading'))
             ->modalWidth('lg')
             ->modalSubmitActionLabel(__('card_payments.return.submit'))
@@ -434,16 +434,28 @@ final class ViewCardPayment extends ViewRecord
     }
 
     /**
-     * Whether an action of the given record types is offered: the record waits for the Admin and is of one of the
-     * types. A matched payment is never offered a resolution (D-14), a resolved record none at all (U-11).
+     * Whether the action is offered: the record waits for the Admin and is of one of the types. A matched payment is
+     * never offered a resolution (D-14), a resolved record none at all (U-11).
+     *
+     * An action whose modal is open stays callable even when the record was resolved meanwhile (another tab, a stale
+     * page): Filament would drop the submit of a hidden action without a word, but the Action must answer it with
+     * "Platba už byla vyřešena". The Action re-checks the record under its lock, so this opens nothing.
      *
      * @param  list<CardPaymentType>  $types
      */
-    private function offers(array $types): bool
+    private function offers(string $action, array $types): bool
     {
+        if (! CardPaymentResource::canAccess()) {
+            return false;
+        }
+
+        if (in_array($action, array_column($this->mountedActions ?? [], 'name'), true)) {
+            return true;
+        }
+
         $payment = $this->payment();
 
-        return CardPaymentResource::canAccess() && $payment->isUnresolved() && in_array($payment->type, $types, true);
+        return $payment->isUnresolved() && in_array($payment->type, $types, true);
     }
 
     /**
