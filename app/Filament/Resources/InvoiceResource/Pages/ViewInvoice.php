@@ -18,11 +18,14 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Queries\ReceivablesReader;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
+use App\Domain\Payments\Queries\PaymentLinkStatus;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\InvoiceResource;
 use App\Filament\Support\InvoiceColumns;
 use App\Filament\Support\InvoiceTable;
+use App\Filament\Support\PayByCardAction;
+use App\Filament\Support\PaymentLinkSection;
 use App\Filament\Support\RecordPaymentAction;
 use App\Filament\Support\SendInvoiceEmailAction;
 use Closure;
@@ -73,6 +76,8 @@ use Throwable;
  *
  * The header actions of the later plans (payment, conversion, storno, e-mail) are added to `getHeaderActions()`; a
  * hidden action is not rendered.
+ *
+ * @phpstan-import-type LinkStatusRow from PaymentLinkStatus
  */
 final class ViewInvoice extends ViewRecord
 {
@@ -80,6 +85,14 @@ final class ViewInvoice extends ViewRecord
 
     /** @var array{status: InvoiceStatus, remaining: Money|null, overdue_days: int|null, paid: int}|null */
     private ?array $derived = null;
+
+    /**
+     * The card-payment state of the document, read once per request for the link section, its banners and the header
+     * action. Not persisted by Livewire.
+     *
+     * @var LinkStatusRow|null
+     */
+    private ?array $linkStatus = null;
 
     /**
      * The lines of the invoice with what each can still be credited, read once per request for the credit dialog. Not
@@ -199,10 +212,24 @@ final class ViewInvoice extends ViewRecord
         return [
             $this->downloadPdfAction(),
             SendInvoiceEmailAction::make(fn (): Invoice => $this->invoice()),
+            $this->payByCardAction(),
             $this->recordPaymentAction(),
             $this->convertProformaAction(),
             $this->moreActions(),
         ];
+    }
+
+    /**
+     * "Zaplatit kartou" (PA-02; D-04, UI-SPEC Surface F): the page the client opens, in a new tab. Gray, so that
+     * "Zaznamenat platbu" keeps the one accent; shown only for an invoice or proforma that is not paid, not cancelled
+     * and has an active link.
+     */
+    private function payByCardAction(): Action
+    {
+        return PayByCardAction::make(
+            fn (): Invoice => $this->invoice(),
+            fn (): bool => $this->linkStatus()['payable'],
+        );
     }
 
     /**
@@ -632,6 +659,7 @@ final class ViewInvoice extends ViewRecord
             $this->partiesSection(),
             $this->itemsSection(),
             $this->summarySection(),
+            PaymentLinkSection::section(fn (): Invoice => $this->invoice(), fn () => $this->reloadAdminHalf(), fn (): array => $this->linkStatus()),
             $this->relatedSection(),
             $this->notesSection(),
         ]);
@@ -672,6 +700,7 @@ final class ViewInvoice extends ViewRecord
             ]))
                 ->danger()
                 ->visible(fn (): bool => $this->derived()['status'] === InvoiceStatus::Overdue),
+            ...PaymentLinkSection::banners(fn (): Invoice => $this->invoice(), fn () => $this->reloadAdminHalf(), fn (): array => $this->linkStatus()),
             Callout::make(__('invoices.detail.banners.awaiting_invoice'))
                 ->danger()
                 ->visible(fn (): bool => $this->derived()['status'] === InvoiceStatus::AwaitingInvoice),
@@ -793,6 +822,11 @@ final class ViewInvoice extends ViewRecord
                     ->label(__('invoices.detail.fields.payment_method'))
                     ->state(static fn (): string => __('invoices.draft.payment_method_value'))
                     ->visible(static fn (Invoice $record): bool => $record->kind !== InvoiceKind::CreditNote),
+                // The switch frozen at issue (PA-03; UI-SPEC Surface D): read only, no credit note has one.
+                TextEntry::make('card_payment')
+                    ->label(__('payment_links.frozen.label'))
+                    ->state(fn (): string => __($this->linkStatus()['switch'] ? 'payment_links.frozen.yes' : 'payment_links.frozen.no'))
+                    ->visible(static fn (Invoice $record): bool => $record->kind->carriesPayment()),
             ]);
     }
 
@@ -1081,6 +1115,16 @@ final class ViewInvoice extends ViewRecord
         return $this->derived ??= InvoiceTable::statusOf($this->invoice());
     }
 
+    /**
+     * The card-payment state of the document, read once per request (an Admin-only read).
+     *
+     * @return LinkStatusRow
+     */
+    private function linkStatus(): array
+    {
+        return $this->linkStatus ??= PaymentLinkStatus::for($this->invoice());
+    }
+
     private function pdfPresent(): bool
     {
         return $this->invoice()->admin?->pdfDocument !== null;
@@ -1095,6 +1139,7 @@ final class ViewInvoice extends ViewRecord
         $invoice->unsetRelation('admin');
         $invoice->load('admin.pdfDocument');
         $this->derived = null;
+        $this->linkStatus = null;
     }
 
     private function invoice(): Invoice
