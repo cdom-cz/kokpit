@@ -435,3 +435,116 @@ it('ends two different card payments of one invoice in one match and one duplica
         paymentMatchAssertBooks($ids['invoice'], "round {$round}");
     }
 });
+
+it('ends one event stored by two deliveries at once in one row, five rounds', function () {
+    ['admin' => $admin, 'client' => $client] = paymentMatchArrange();
+    $directory = paymentMatchDirectory();
+    $files = [];
+
+    for ($round = 0; $round < PAYMENT_MATCH_ROUNDS; $round++) {
+        ['link' => $link] = paymentMatchIssue($client, $admin);
+        $event = paymentMatchEvent($link);
+        $file = "{$directory}/event-{$round}.json";
+        file_put_contents($file, json_encode($event, JSON_THROW_ON_ERROR));
+        $files[] = ['file' => $file, 'event' => $event['id']];
+    }
+
+    foreach ($files as $round => $one) {
+        $results = paymentMatchRun($admin->id, [['store', $one['file']], ['store', $one['file']]]);
+
+        expect(paymentMatchUntyped($results))->toBe([], "round {$round} ended in an untyped database error");
+
+        sort($results);
+
+        expect($results)->toBe(['stored:existing', 'stored:new'], "round {$round}")
+            ->and(DB::table('webhook_calls')->where('event_id', $one['event'])->count())->toBe(1);
+    }
+});
+
+it('ends one stored event processed by two workers at once in one record and one payment, five rounds', function () {
+    ['admin' => $admin, 'client' => $client] = paymentMatchArrange();
+    $rounds = [];
+
+    for ($round = 0; $round < PAYMENT_MATCH_ROUNDS; $round++) {
+        ['invoice' => $invoice, 'link' => $link] = paymentMatchIssue($client, $admin);
+        $rounds[] = ['invoice' => $invoice->id, 'call' => paymentMatchStore(paymentMatchEvent($link))];
+    }
+
+    foreach ($rounds as $round => $ids) {
+        $results = paymentMatchRun($admin->id, [['match', $ids['call']], ['match', $ids['call']]]);
+
+        expect(paymentMatchUntyped($results))->toBe([], "round {$round} ended in an untyped database error");
+
+        sort($results);
+
+        expect($results)->toBe(['ignored', 'matched'], "round {$round}")
+            ->and(paymentMatchRecords($ids['invoice']))->toBe(['matched' => 1])
+            ->and(DB::table('invoice_payments')->where('invoice_id', $ids['invoice'])->count())->toBe(1)
+            ->and(DB::table('transactions')->where('invoice_id', $ids['invoice'])->count())->toBe(1)
+            ->and(DB::table('webhook_calls')->where('id', $ids['call'])->count())->toBe(1);
+        paymentMatchAssertBooks($ids['invoice'], "round {$round}");
+    }
+});
+
+it('keeps the books consistent when a manual payment races a card payment of the same invoice, five rounds', function () {
+    ['admin' => $admin, 'client' => $client] = paymentMatchArrange();
+    $rounds = [];
+
+    for ($round = 0; $round < PAYMENT_MATCH_ROUNDS; $round++) {
+        ['invoice' => $invoice, 'link' => $link] = paymentMatchIssue($client, $admin);
+        $rounds[] = ['invoice' => $invoice->id, 'call' => paymentMatchStore(paymentMatchEvent($link))];
+    }
+
+    foreach ($rounds as $round => $ids) {
+        $results = paymentMatchRun($admin->id, [['match', $ids['call']], ['manual', $ids['invoice'], '1000']]);
+
+        expect(paymentMatchUntyped($results))->toBe([], "round {$round} ended in an untyped database error");
+
+        $records = paymentMatchRecords($ids['invoice']);
+
+        if ($results === ['matched', 'recorded']) {
+            // The card payment won the lock: an overpaid invoice, which D-17 of Phase 10 allows.
+            expect($records)->toBe(['matched' => 1], "round {$round}")
+                ->and(DB::table('invoice_payments')->where('invoice_id', $ids['invoice'])->count())->toBe(2)
+                ->and(DB::table('transactions')->where('invoice_id', $ids['invoice'])->count())->toBe(2);
+        } else {
+            // The manual payment won: the card payment no longer matches the amount owed and is kept unmatched.
+            expect($results)->toBe(['unmatched:amount', 'recorded'], "round {$round}")
+                ->and($records)->toBe(['unmatched' => 1])
+                ->and(DB::table('invoice_payments')->where('invoice_id', $ids['invoice'])->count())->toBe(1)
+                ->and(DB::table('transactions')->where('invoice_id', $ids['invoice'])->count())->toBe(1);
+        }
+
+        paymentMatchAssertBooks($ids['invoice'], "round {$round}");
+    }
+});
+
+it('detects the race when the match takes no document lock (mutation run with the skip-lock worker)', function () {
+    ['admin' => $admin, 'client' => $client] = paymentMatchArrange();
+    $rounds = [];
+
+    for ($round = 0; $round < PAYMENT_MATCH_ROUNDS; $round++) {
+        ['invoice' => $invoice, 'link' => $link] = paymentMatchIssue($client, $admin);
+        $rounds[] = [
+            'invoice' => $invoice->id,
+            'unlocked' => paymentMatchStore(paymentMatchEvent($link)),
+            'locked' => paymentMatchStore(paymentMatchEvent($link)),
+        ];
+    }
+
+    $twoMatched = 0;
+
+    foreach ($rounds as $round => $ids) {
+        $results = paymentMatchRun($admin->id, [['skip-lock', $ids['unlocked']], ['match', $ids['locked']]]);
+
+        expect(paymentMatchUntyped($results))->toBe([], "round {$round} ended in an untyped database error");
+
+        if (paymentMatchRecords($ids['invoice']) === ['matched' => 2]
+            && DB::table('invoice_payments')->where('invoice_id', $ids['invoice'])->count() === 2
+            && DB::table('transactions')->where('invoice_id', $ids['invoice'])->count() === 2) {
+            $twoMatched++;
+        }
+    }
+
+    expect($twoMatched)->toBeGreaterThanOrEqual(1, 'the harness did not notice the missing document lock');
+});
