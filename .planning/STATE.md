@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 11
 current_phase_name: Stripe Payments
 status: executing
-stopped_at: Completed 11-14-PLAN.md
-last_updated: "2026-10-18T16:22:53.985Z"
+stopped_at: Completed 11-19-PLAN.md
+last_updated: "2026-10-18T16:41:00.533Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 11 execution started
-state_head: ff1a34651af13cbe65f796cd3005499f3db1477d
+state_head: 94fbd9b79bed20ab7a061911848d4bff93ec7feb
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 245
-  completed_plans: 239
+  completed_plans: 240
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 11 (Stripe Payments) — EXECUTING
-Plan: 15 of 20
+Plan: 16 of 20
 Status: Ready to execute
 Last activity: 2026-10-18 - Completed quick task 261018-mic: Add an external identifier column to transactions (exposed via the API)
 
@@ -302,6 +302,7 @@ Progress: [█████░░░░░] 54%
 | Phase 11 P12 | 55min | 3 tasks | 8 files |
 | Phase 11 P13 | 40min | 3 tasks | 9 files |
 | Phase 11 P14 | 25 min | 3 tasks | 16 files |
+| Phase 11 P19 | 55min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -755,6 +756,7 @@ Recent decisions affecting current work:
 - [Phase 11]: 11-13: handler map accepts StripeEventAction (parsed event) beside StripeEventHandler (stored row); RecordCardPayment::handle(StripeEvent) is mapped directly
 - [Phase 11]: 11-13: a session must agree with its link on the Stripe link id as well as on the document, else unmatched undetermined (T-11-47)
 - [Phase 11]: 11-14: webhook pruning age runs from processed_at (not created_at); the slot age is Carbon's absolute Czech duration
+- [Phase 11]: 11-19: the assign select offers documents that still owe something plus the record's own document even when paid; a hidden Filament action silently drops a stale submit, so a resolution action stays visible while its modal is open and the Action refuses with Platba už byla vyřešena; note limits are validation rules with a live counter, not input maxlength
 
 ### Pending Todos
 
@@ -811,6 +813,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-18T16:22:52.158Z
-Stopped at: Completed 11-14-PLAN.md
+Last session: 2026-10-18T16:40:58.709Z
+Stopped at: Completed 11-19-PLAN.md
 Resume file: None
