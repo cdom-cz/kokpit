@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Payments\Models\PaymentLink;
 use Illuminate\Support\Str;
 
 /**
@@ -23,6 +24,40 @@ final class StripeEvents
     public static function checkoutCompleted(array $object = [], array $event = []): array
     {
         return self::ofType('checkout.session.completed', $object, $event);
+    }
+
+    /**
+     * A checkout.session.completed event of a paid session that came from the given link: the link's Stripe id, the
+     * metadata a Kokpit link carries (the document and the link row), and the amount and currency the link offered.
+     * `$overrides` is merged over the session object, `$event` over the envelope.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @param  array<string, mixed>  $event
+     * @return array<string, mixed>
+     */
+    public static function checkoutFor(PaymentLink $link, array $overrides = [], array $event = []): array
+    {
+        return self::checkoutCompleted(self::sessionFor($link, $overrides), $event);
+    }
+
+    /**
+     * The session object of a paid checkout of the given link, for a test that wraps it in another event type or
+     * repeats the same session under a new event.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    public static function sessionFor(PaymentLink $link, array $overrides = []): array
+    {
+        return array_replace_recursive([
+            'amount_total' => $link->amount_minor,
+            'currency' => strtolower($link->currency),
+            'payment_link' => $link->stripe_link_id,
+            'metadata' => [
+                'invoice_id' => $link->invoice_id,
+                'payment_link_row' => $link->getKey(),
+            ],
+        ], $overrides);
     }
 
     /**

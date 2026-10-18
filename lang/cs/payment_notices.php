@@ -16,4 +16,11 @@ return [
         'body' => 'Doklad :number zatím nemá odkaz na platbu. Klient vidí informační stránku. Vytvořte odkaz znovu v detailu dokladu.',
         'action' => 'Otevřít doklad',
     ],
+
+    'matched' => [
+        'title' => 'Přišla platba kartou',
+        'body' => 'Doklad :number byl zaplacen (:amount).',
+        'body_proforma' => 'Záloha :number byla zaplacena (:amount).',
+        'action' => 'Otevřít doklad',
+    ],
 ];

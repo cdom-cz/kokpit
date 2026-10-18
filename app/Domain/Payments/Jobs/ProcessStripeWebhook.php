@@ -6,6 +6,8 @@ namespace App\Domain\Payments\Jobs;
 
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\Middleware\RunsAsSystem;
+use App\Domain\Payments\Actions\RecordCardPayment;
+use App\Domain\Payments\Stripe\StripeEvent;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\WebhookCall;
 use Illuminate\Queue\Attributes\Backoff;
@@ -55,15 +57,20 @@ final class ProcessStripeWebhook extends ProcessWebhookJob
     }
 
     /**
-     * The handler class of each event type; a type without a handler is only marked processed. The checkout
-     * handlers arrive with plan 11-13 and the refund handler with plan 11-16. A test may bind its own map.
+     * The handler class of each event type; a type without a handler is only marked processed. Both checkout types go
+     * to {@see RecordCardPayment} (R11-13-5); the refund handler arrives with plan 11-16. A handler is a
+     * {@see StripeEventAction} (called with the parsed event) or a {@see StripeEventHandler} (called with the stored
+     * row). A test may bind its own map.
      *
-     * @return array<string, class-string<StripeEventHandler>>
+     * @return array<string, class-string<StripeEventAction|StripeEventHandler>>
      */
     public static function handlers(): array
     {
-        /** @var array<string, class-string<StripeEventHandler>> */
-        return app()->bound(self::HANDLERS_BINDING) ? app(self::HANDLERS_BINDING) : [];
+        /** @var array<string, class-string<StripeEventAction|StripeEventHandler>> */
+        return app()->bound(self::HANDLERS_BINDING) ? app(self::HANDLERS_BINDING) : [
+            'checkout.session.completed' => RecordCardPayment::class,
+            'checkout.session.async_payment_succeeded' => RecordCardPayment::class,
+        ];
     }
 
     public function handle(): void
@@ -78,7 +85,13 @@ final class ProcessStripeWebhook extends ProcessWebhookJob
             $handler = self::handlers()[(string) $call->event_name] ?? null;
 
             if ($handler !== null) {
-                app($handler)->handle($call);
+                $instance = app($handler);
+
+                if ($instance instanceof StripeEventAction) {
+                    $instance->handle(StripeEvent::fromPayload(is_array($call->payload) ? $call->payload : []));
+                } else {
+                    $instance->handle($call);
+                }
             }
 
             $call->forceFill(['processed_at' => now(), 'failed_at' => null, 'failure_class' => null])->save();
