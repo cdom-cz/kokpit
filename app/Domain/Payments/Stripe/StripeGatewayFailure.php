@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Payments\Stripe;
 
+use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
 
@@ -77,6 +78,27 @@ final class StripeGatewayFailure extends RuntimeException
     public static function unsupportedCurrency(?Throwable $previous = null): self
     {
         return new self(self::UNSUPPORTED_CURRENCY, $previous);
+    }
+
+    /**
+     * The failure of a named class, for code that carries the class as data (the fake gateway of the tests,
+     * a stored failure class of a link row).
+     *
+     * @throws InvalidArgumentException for a class that does not exist
+     */
+    public static function forClass(string $failureClass, ?Throwable $previous = null): self
+    {
+        return match ($failureClass) {
+            self::NOT_CONFIGURED => self::notConfigured($previous),
+            self::AUTHENTICATION => self::authentication($previous),
+            self::INVALID_REQUEST => self::invalidRequest($previous),
+            self::RATE_LIMITED => self::rateLimited($previous),
+            self::CONNECTION => self::connection($previous),
+            self::API_ERROR => self::apiError($previous),
+            self::IDEMPOTENCY => self::idempotency($previous),
+            self::UNSUPPORTED_CURRENCY => self::unsupportedCurrency($previous),
+            default => throw new InvalidArgumentException('Unknown Stripe failure class.'),
+        };
     }
 
     /**
