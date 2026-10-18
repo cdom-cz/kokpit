@@ -8,6 +8,7 @@ use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Spatie\WebhookClient\Models\WebhookCall as BaseWebhookCall;
 use Spatie\WebhookClient\WebhookConfig;
@@ -17,8 +18,8 @@ use Spatie\WebhookClient\WebhookConfig;
  *
  * Registered as `webhook_model` of every entry in config/webhook-client.php. The one entry is the Stripe event
  * destination (POST /webhooks/stripe, Phase 11): a handled event is stored once under its unique Stripe event id
- * ({@see self::storeStripeEvent()}) and marked processed or failed by ProcessStripeWebhook. Retention of the
- * processed rows (90 days, D-17) belongs to the pruning of plan 11-14.
+ * ({@see self::storeStripeEvent()}) and marked processed or failed by ProcessStripeWebhook. Processed rows are
+ * pruned after 90 days ({@see self::prunable()}, D-17).
  *
  * Admin-only in Phase 2: a Partner sees no row (DeniesPartners). Later phases open it deliberately with a client-bound
  * constraint and explicit policy grants.
@@ -78,5 +79,27 @@ class WebhookCall extends BaseWebhookCall implements PartnerIsolated
 
             return [$call, $inserted];
         });
+    }
+
+    /**
+     * The rows the pruning may delete (D-17, PA-08): Stripe events that were processed more than
+     * `webhook-client.delete_after_days` (90) days ago.
+     *
+     * The package prunes every row by its creation date, which would also delete an event that never got processed.
+     * This override narrows it: an unprocessed or failed event is never pruned, whatever its age, so a payment event
+     * that is still waiting for the Admin's attention stays visible on the System page. The age runs from the moment
+     * of processing. Card payment records keep their own copy of the Stripe references and depend on no event row.
+     *
+     * @return Builder<static>
+     */
+    public function prunable(): Builder
+    {
+        $days = max(1, (int) config('webhook-client.delete_after_days'));
+
+        return static::query()
+            ->where('name', 'stripe')
+            ->whereNotNull('processed_at')
+            ->whereNull('failed_at')
+            ->where('processed_at', '<', now()->subDays($days));
     }
 }

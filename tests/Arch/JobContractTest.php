@@ -15,6 +15,7 @@ use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
 use App\Domain\Payments\Jobs\CreatePaymentLink;
 use App\Domain\Payments\Jobs\DeactivatePaymentLinks;
 use App\Domain\Payments\Jobs\ProcessStripeWebhook;
+use App\Domain\Payments\Jobs\PruneProcessedWebhookCalls;
 use App\Domain\Reports\Jobs\BuildReportExport;
 use App\Domain\Reports\Jobs\PruneExpiredReportExports;
 use App\Domain\Shared\Models\WebhookCall;
@@ -42,7 +43,7 @@ use Tests\Support\Probes\UndeclaredWebhookProbeJob;
  *
  * @var list<class-string<KokpitJob>>
  */
-const EXPECTED_APPLICATION_JOBS = [RecordWorkerHeartbeat::class, NotifyLongRunningTimers::class, PurgeExpiredIdempotencyKeys::class, PruneExpiredReportExports::class, BuildReportExport::class, BackfillCnbRates::class, BuildDocumentArchive::class, PruneExpiredDocumentArchives::class, RemoveDocumentObjects::class, SendInvoiceEmail::class, CreatePaymentLink::class, DeactivatePaymentLinks::class];
+const EXPECTED_APPLICATION_JOBS = [RecordWorkerHeartbeat::class, NotifyLongRunningTimers::class, PurgeExpiredIdempotencyKeys::class, PruneExpiredReportExports::class, BuildReportExport::class, BackfillCnbRates::class, BuildDocumentArchive::class, PruneExpiredDocumentArchives::class, RemoveDocumentObjects::class, SendInvoiceEmail::class, CreatePaymentLink::class, DeactivatePaymentLinks::class, PruneProcessedWebhookCalls::class];
 
 /**
  * The queued classes that extend the webhook package's ProcessWebhookJob instead of KokpitJob (plan 11-04, R11-04-7).

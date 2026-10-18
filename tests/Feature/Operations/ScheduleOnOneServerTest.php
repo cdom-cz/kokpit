@@ -36,7 +36,7 @@ it('registers the known scheduled events', function (): void {
         app(Schedule::class)->events(),
     );
 
-    expect($descriptions)->toContain('kokpit-heartbeat', 'kokpit-worker-heartbeat', 'kokpit-horizon-snapshot', 'kokpit-long-running-timers', 'kokpit-end-overrun-timers', 'kokpit-api-idempotency-prune', 'kokpit-activity-log-prune', 'kokpit-cnb-rates', 'kokpit-cnb-rates-final', 'kokpit-report-export-prune', 'kokpit-document-archive-prune', 'kokpit-payment-link-sweep');
+    expect($descriptions)->toContain('kokpit-heartbeat', 'kokpit-worker-heartbeat', 'kokpit-horizon-snapshot', 'kokpit-long-running-timers', 'kokpit-end-overrun-timers', 'kokpit-api-idempotency-prune', 'kokpit-activity-log-prune', 'kokpit-cnb-rates', 'kokpit-cnb-rates-final', 'kokpit-report-export-prune', 'kokpit-document-archive-prune', 'kokpit-payment-link-sweep', 'kokpit-webhook-prune');
 });
 
 it('schedules the CNB download at the configured Prague hours and the final run an hour later', function (): void {
