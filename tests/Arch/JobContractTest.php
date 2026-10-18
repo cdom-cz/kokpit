@@ -11,10 +11,12 @@ use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
 use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
+use App\Domain\Payments\Jobs\ProcessStripeWebhook;
 use App\Domain\Reports\Jobs\BuildReportExport;
 use App\Domain\Reports\Jobs\PruneExpiredReportExports;
 use App\Domain\TimeTracking\Jobs\NotifyLongRunningTimers;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Spatie\WebhookClient\Jobs\ProcessWebhookJob;
 use Tests\Support\JobDeclaration;
 use Tests\Support\Probes\ActivityProbeJob;
 use Tests\Support\Probes\FailingProbeJob;
@@ -34,6 +36,15 @@ use Tests\Support\Probes\SettingsReadingProbeJob;
  * @var list<class-string<KokpitJob>>
  */
 const EXPECTED_APPLICATION_JOBS = [RecordWorkerHeartbeat::class, NotifyLongRunningTimers::class, PurgeExpiredIdempotencyKeys::class, PruneExpiredReportExports::class, BuildReportExport::class, BackfillCnbRates::class, BuildDocumentArchive::class, PruneExpiredDocumentArchives::class, RemoveDocumentObjects::class, SendInvoiceEmail::class];
+
+/**
+ * The queued classes that extend the webhook package's ProcessWebhookJob instead of KokpitJob (plan 11-04, R11-04-7).
+ * The package forces that parent, so each one carries the job contract by hand and is admitted only while
+ * JobDeclaration::webhookJobProblems() finds nothing wrong with it.
+ *
+ * @var list<class-string<ProcessWebhookJob>>
+ */
+const EXPECTED_WEBHOOK_JOBS = [ProcessStripeWebhook::class];
 
 /** A concrete job that a self-check subclasses, to prove the declaration is not inherited. */
 #[Idempotent(how: 'Does nothing, so a second run changes nothing')]
@@ -66,10 +77,23 @@ it('makes every dispatchable class under app/ extend KokpitJob', function (): vo
     $classes = JobDeclaration::classesIn(app_path(), 'App');
     $outsiders = array_values(array_filter(
         JobDeclaration::dispatchables($classes),
-        static fn (string $class): bool => ! is_subclass_of($class, KokpitJob::class),
+        static fn (string $class): bool => ! is_subclass_of($class, KokpitJob::class)
+            && ! (in_array($class, EXPECTED_WEBHOOK_JOBS, true) && JobDeclaration::webhookJobProblems($class) === []),
     ));
 
     expect($outsiders)->toBe([]);
+});
+
+it('has exactly the expected webhook jobs under app/, each carrying the job contract by hand', function (): void {
+    $jobs = JobDeclaration::webhookJobs(JobDeclaration::classesIn(app_path(), 'App'));
+    $problems = [];
+
+    foreach ($jobs as $class) {
+        $problems = [...$problems, ...JobDeclaration::webhookJobProblems($class)];
+    }
+
+    expect($jobs)->toEqualCanonicalizing(EXPECTED_WEBHOOK_JOBS)
+        ->and($problems)->toBe([]);
 });
 
 it('gives every concrete job under app/ a non-empty #[Idempotent] explanation', function (): void {
