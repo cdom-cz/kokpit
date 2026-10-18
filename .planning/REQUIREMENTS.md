@@ -137,7 +137,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Payments (Stripe)
 
-- [ ] **PA-01**: Single-use Stripe Payment Link created by queued job at issue when online payment is enabled; failure never blocks issue and alerts Admin
+- [x] **PA-01**: Single-use Stripe Payment Link created by queued job at issue when online payment is enabled; failure never blocks issue and alerts Admin
 - [ ] **PA-02**: "Pay by card" button in e-mail, PDF and invoice detail (Admin and Partner); hidden when paid
 - [ ] **PA-03**: Online payment can be disabled per client and per document
 - [ ] **PA-04**: Link deactivated on payment by any route or on storno; link can be regenerated (old one deactivated first)
@@ -284,7 +284,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | IN-08 | Phase 10 | Complete |
 | IN-09 | Phase 10 | Complete |
 | IN-10 | Phase 10 | Complete |
-| PA-01 | Phase 11 | Pending |
+| PA-01 | Phase 11 | Complete |
 | PA-02 | Phase 11 | Pending |
 | PA-03 | Phase 11 | Pending |
 | PA-04 | Phase 11 | Pending |
