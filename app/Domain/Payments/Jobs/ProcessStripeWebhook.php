@@ -7,6 +7,7 @@ namespace App\Domain\Payments\Jobs;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\Middleware\RunsAsSystem;
 use App\Domain\Payments\Actions\RecordCardPayment;
+use App\Domain\Payments\Actions\RecordRefundEvent;
 use App\Domain\Payments\Stripe\StripeEvent;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\WebhookCall;
@@ -58,7 +59,7 @@ final class ProcessStripeWebhook extends ProcessWebhookJob
 
     /**
      * The handler class of each event type; a type without a handler is only marked processed. Both checkout types go
-     * to {@see RecordCardPayment} (R11-13-5); the refund handler arrives with plan 11-16. A handler is a
+     * to {@see RecordCardPayment} (R11-13-5) and `refund.created` to {@see RecordRefundEvent} (R11-16-4). A handler is a
      * {@see StripeEventAction} (called with the parsed event) or a {@see StripeEventHandler} (called with the stored
      * row). A test may bind its own map.
      *
@@ -70,6 +71,7 @@ final class ProcessStripeWebhook extends ProcessWebhookJob
         return app()->bound(self::HANDLERS_BINDING) ? app(self::HANDLERS_BINDING) : [
             'checkout.session.completed' => RecordCardPayment::class,
             'checkout.session.async_payment_succeeded' => RecordCardPayment::class,
+            'refund.created' => RecordRefundEvent::class,
         ];
     }
 

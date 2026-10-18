@@ -15,6 +15,9 @@ use Throwable;
  * fields below are taken, each one checked, and anything malformed becomes null. The amount is the session's
  * `amount_total` and the currency its `currency`, which are in the currency of the integration (the one the link
  * offered), never the payer's presentment figures. The two metadata ids are kept only when they are UUIDs.
+ *
+ * A refund event (`refund.created`, R11-16-3) carries a refund object: its `id`, positive `amount` and `currency` become
+ * the refund fields, and its `payment_intent` is the payment intent field; the object's id is then not a session id.
  */
 final readonly class StripeEvent
 {
@@ -30,6 +33,9 @@ final readonly class StripeEvent
         public ?string $currency,
         public ?string $invoiceId,
         public ?string $paymentLinkRow,
+        public ?string $refundId = null,
+        public ?int $refundAmountMinor = null,
+        public ?string $refundCurrency = null,
     ) {}
 
     /**
@@ -45,19 +51,24 @@ final readonly class StripeEvent
         $amount = $object['amount_total'] ?? null;
         $currency = $object['currency'] ?? null;
         $created = $payload['created'] ?? null;
+        $isRefund = ($object['object'] ?? null) === 'refund';
+        $refundAmount = $object['amount'] ?? null;
 
         return new self(
             id: self::text($payload['id'] ?? null),
             type: self::text($payload['type'] ?? null),
             created: is_int($created) && $created > 0 ? self::timestamp($created) : null,
-            sessionId: self::text($object['id'] ?? null),
+            sessionId: $isRefund ? null : self::text($object['id'] ?? null),
             paymentStatus: self::text($object['payment_status'] ?? null),
             paymentIntentId: self::text($object['payment_intent'] ?? null),
             paymentLinkId: self::text($object['payment_link'] ?? null),
             amountMinor: is_int($amount) && $amount > 0 ? $amount : null,
-            currency: is_string($currency) && preg_match('/^[A-Za-z]{3}$/', $currency) === 1 ? strtoupper($currency) : null,
+            currency: self::currency($currency),
             invoiceId: self::uuid($metadata['invoice_id'] ?? null),
             paymentLinkRow: self::uuid($metadata['payment_link_row'] ?? null),
+            refundId: $isRefund ? self::text($object['id'] ?? null) : null,
+            refundAmountMinor: $isRefund && is_int($refundAmount) && $refundAmount > 0 ? $refundAmount : null,
+            refundCurrency: $isRefund ? self::currency($currency) : null,
         );
     }
 
@@ -68,6 +79,11 @@ final readonly class StripeEvent
     public function isPaid(): bool
     {
         return $this->paymentStatus === 'paid';
+    }
+
+    private static function currency(mixed $value): ?string
+    {
+        return is_string($value) && preg_match('/^[A-Za-z]{3}$/', $value) === 1 ? strtoupper($value) : null;
     }
 
     private static function text(mixed $value): ?string

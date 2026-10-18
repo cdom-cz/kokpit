@@ -73,6 +73,39 @@ final class StripeEvents
     }
 
     /**
+     * A refund.created event for the given payment intent: the refund object holds its own id, the refunded amount in
+     * minor units, the currency and the payment intent it returns (research "Code Examples"). `$object` is merged over
+     * the refund object (a test that repeats a refund passes its `id`), `$event` over the envelope.
+     *
+     * @param  array<string, mixed>  $object
+     * @param  array<string, mixed>  $event
+     * @return array<string, mixed>
+     */
+    public static function refundCreated(string $paymentIntent, int $amount, string $currency = 'czk', array $object = [], array $event = []): array
+    {
+        $refund = array_replace_recursive([
+            'id' => self::token('re'),
+            'object' => 'refund',
+            'amount' => $amount,
+            'currency' => $currency,
+            'payment_intent' => $paymentIntent,
+            'charge' => self::token('ch'),
+            'status' => 'succeeded',
+        ], $object);
+
+        return array_replace_recursive([
+            'id' => self::token('evt'),
+            'object' => 'event',
+            'api_version' => '2026-09-30.endive',
+            'created' => time(),
+            'livemode' => false,
+            'pending_webhooks' => 1,
+            'type' => 'refund.created',
+            'data' => ['object' => $refund],
+        ], $event);
+    }
+
+    /**
      * An event of any type around a checkout session object (the object is the session of a card payment; a test of
      * another type replaces what it needs through `$object`).
      *
