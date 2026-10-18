@@ -10,6 +10,7 @@ use App\Providers\HorizonServiceProvider;
 use App\Providers\LocalisationServiceProvider;
 use App\Providers\ModelConventionsServiceProvider;
 use App\Providers\OperationsServiceProvider;
+use App\Providers\PaymentsServiceProvider;
 
 return [
     AppServiceProvider::class,
@@ -19,5 +20,6 @@ return [
     ModelConventionsServiceProvider::class,
     LocalisationServiceProvider::class,
     OperationsServiceProvider::class,
+    PaymentsServiceProvider::class,
     HorizonServiceProvider::class,
 ];

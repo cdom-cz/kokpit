@@ -67,6 +67,11 @@
         table.facts td { padding: 0; font-size: 8pt; line-height: 1.4; }
         table.facts td.key { width: 64pt; font-size: 8pt; }
         .sentence { margin-bottom: 8pt; }
+        .card-lead { margin-top: 12pt; font-size: 8pt; line-height: 1.4; color: {{ $palette->ink }}; }
+        table.card-button { margin-top: 4pt; }
+        table.card-button td { background-color: {{ $palette->accent }}; border-radius: 4pt; padding: 8pt 16pt; }
+        table.card-button a { color: {{ $palette->onAccent }}; font-size: 9pt; font-weight: bold; text-decoration: none; }
+        .card-url { margin-top: 4pt; font-size: 8pt; line-height: 1.4; color: {{ $palette->muted }}; white-space: nowrap; }
         .credit-notice { margin-top: 24pt; }
         table.closing { width: 100%; }
         table.closing tr { page-break-inside: avoid; }
@@ -211,6 +216,15 @@
                             </tr>
                         @endforeach
                     </table>
+                    @if ($data->cardPayment !== null)
+                        <div class="card-lead">{{ $data->cardPayment['lead'] }}</div>
+                        <table class="card-button">
+                            <tr>
+                                <td><a href="{{ $data->cardPayment['url'] }}">{{ $data->cardPayment['label'] }}</a></td>
+                            </tr>
+                        </table>
+                        <div class="card-url">{{ $data->cardPayment['url'] }}</div>
+                    @endif
                 </td>
             </tr>
         </table>

@@ -20,6 +20,7 @@ return [
         'due_before_issue' => 'Datum splatnosti nesmí být dříve než datum vystavení.',
         'note_length' => 'Poznámka na dokladu může mít nejvýše 500 znaků.',
         'internal_note_length' => 'Interní poznámka může mít nejvýše 2 000 znaků.',
+        'card_payment_invalid' => 'Platbu kartou lze zapnout nebo vypnout jen u faktury a zálohové faktury.',
 
         // The items of a draft.
         'item_unknown' => 'Položka nepatří k tomuto dokladu.',
@@ -88,6 +89,7 @@ return [
     // The fixed text of the income transaction a payment books (R-16-2).
     'payment_income' => [
         'description' => 'Platba faktury :number',
+        'card_description' => 'Platba kartou faktury :number',
     ],
 
     // Navigation and titles (UI-SPEC Copywriting Contract, "Navigation, titles, enum labels").
@@ -224,6 +226,7 @@ return [
             'taxable_supply_date' => 'Datum zdanitelného plnění',
             'due_date' => 'Datum splatnosti',
             'payment_method' => 'Způsob úhrady',
+            'card_payment' => 'Platba kartou',
             'variable_symbol' => 'Variabilní symbol',
             'note' => 'Poznámka na dokladu',
             'internal_note' => 'Interní poznámka',
@@ -231,6 +234,9 @@ return [
         ],
         'payment_method_value' => 'Převodem',
         'helpers' => [
+            'card_payment' => 'Na dokladu a v e-mailu se zobrazí tlačítko Zaplatit kartou. Po vystavení už nejde změnit.',
+            'card_payment_settings_off' => 'Online platby jsou vypnuté v Nastavení.',
+            'card_payment_stripe_missing' => 'Stripe není nastavený. Doplňte klíče v prostředí aplikace.',
             'variable_symbol' => 'Přidělí se při vystavení.',
             'internal_note' => 'Vidíte jen vy. Na dokladu se nezobrazí.',
             'items' => 'Úpravy položek nemění, které záznamy času jsou k faktuře připojeny.',
@@ -337,6 +343,9 @@ return [
             'issue_date' => 'Datum vystavení',
             'due_date' => 'Splatnost',
             'currency' => 'Měna',
+            'card_payment' => 'Platba kartou',
+            'card_payment_yes' => 'Ano, odkaz se vytvoří po vystavení',
+            'card_payment_no' => 'Ne',
             'rate' => 'Kurz ČNB ke dni vystavení :rate, částka v Kč :czk',
         ],
         'callout' => 'Číslo se přidělí při vystavení (očekávané číslo :number, může se změnit, pokud mezitím vznikne jiný doklad). Po vystavení doklad nelze upravit a nelze ho smazat; změnit půjde jen stav platby a interní poznámka.',
@@ -482,6 +491,7 @@ return [
             'trigger' => 'Smazat platbu',
             'heading' => 'Smazat platbu?',
             'body_invoice' => 'Platba :amount ze dne :date se trvale smaže spolu s příjmem, který z ní vznikl ve financích. Stav úhrady dokladu se přepočítá ze zbývajících plateb. Tento krok nelze vrátit zpět.',
+            'body_card' => 'Platba :amount ze dne :date přišla kartou přes Stripe. Smaže se z dokladu spolu s příjmem, ale peníze se tím nevrací; vrácení proveďte ve Stripe. Opakované doručení stejné události platbu nevytvoří znovu. Tento krok nelze vrátit zpět.',
             'body_proforma' => 'Platba :amount ze dne :date se trvale smaže. U zálohy z ní žádný příjem nevznikl. Tento krok nelze vrátit zpět.',
             'submit' => 'Smazat platbu',
             'cancel' => 'Ponechat platbu',
@@ -503,6 +513,7 @@ return [
             'report_helper' => 'Výkaz obsahuje odpracované hodiny bez cen.',
             'attachments' => 'Přílohy: :files',
             'report_file' => 'pracovní výkaz.pdf',
+            'pay_link' => 'Do e-mailu se automaticky přidá odkaz Zaplatit kartou.',
             'missing_address' => 'Klient nemá vyplněný fakturační e-mail.',
             'submit' => 'Odeslat',
             'cancel' => 'Neodesílat teď',

@@ -11,12 +11,15 @@ use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
+use App\Domain\Invoicing\Enums\PaymentMethod;
 use App\Domain\Invoicing\Issuing\IssueContext;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
 use App\Domain\Invoicing\Support\IssueChecks;
+use App\Domain\Invoicing\Support\PaymentFacts;
 use App\Domain\Invoicing\Support\PaymentInput;
+use App\Domain\Payments\Support\PaymentLinks;
 use App\Domain\Shared\Money\Money;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -44,6 +47,10 @@ use LogicException;
  * nothing is stored.
  *
  * Data keys: see {@see PaymentInput}.
+ *
+ * Two callers, one core: {@see RecordPayment::handle()} is the Admin's, with the Gate; {@see RecordPayment::recordLocked()}
+ * is what both it and a queue job without a user (a matched Stripe card payment) run once the document is locked, so a
+ * payment arriving by card obeys the same rules, income included, as one typed by hand.
  */
 final readonly class RecordPayment
 {
@@ -51,9 +58,13 @@ final readonly class RecordPayment
         private RecordTransaction $transactions,
         private InvoiceBalances $balances,
         private ExchangeRateConverter $rates,
+        private PaymentLinks $paymentLinks,
     ) {}
 
     /**
+     * The manual path: the Admin records a payment by hand. The Gate, the transaction and the lock of the document
+     * are here; everything after the lock is {@see RecordPayment::recordLocked()}, shared with the system path.
+     *
      * @param  array<string, mixed>  $data
      *
      * @throws ValidationException
@@ -65,34 +76,77 @@ final readonly class RecordPayment
         return DB::transaction(function () use ($actor, $invoice, $data): InvoicePayment {
             $locked = Invoice::query()->whereKey($invoice->getKey())->lockForUpdate()->firstOrFail();
 
-            if ($locked->state !== InvoiceState::Issued || ! $locked->kind->carriesPayment() || $locked->isCancelled()) {
+            if ($this->refuses($locked)) {
                 throw ValidationException::withMessages(['payment' => __('invoices.errors.payment_not_allowed')]);
             }
 
-            $input = PaymentInput::fromArray($data, $locked, IssueContext::today());
-            $books = $locked->kind === InvoiceKind::Invoice;
-
-            if ($books) {
-                $this->assertRateExists($locked->currency, $input->incomeDate, $input->incomeDate === $input->paidOn ? 'paid_on' : 'income_date');
-            }
-
-            $payment = new InvoicePayment(['note' => $input->note]);
-            $payment->forceFill([
-                'invoice_id' => $locked->id,
-                'currency' => $locked->currency,
-                'amount_minor' => $input->amount->minor,
-                'paid_on' => $input->paidOn,
-                'method' => $input->method,
-                'created_by' => $actor->getKey(),
-            ]);
-            $payment->save();
-
-            if ($books) {
-                $this->bookIncome($actor, $locked, $payment, $input->amount, $input->incomeDate, $input->categoryId, $input->incomeDate === $input->paidOn ? 'paid_on' : 'income_date');
-            }
-
-            return $payment->refresh();
+            return $this->recordLocked($locked, PaymentInput::fromArray($data, $locked, IssueContext::today())->toFacts(), $actor);
         });
+    }
+
+    /**
+     * The write core of a payment, for a caller that already holds the lock of the document inside its transaction:
+     * the manual path above, and a queue job that matched a Stripe payment, which has no user (PA-06, PA-08; D-10,
+     * D-13). It checks that the document can be paid (`payment_not_allowed`), that the CNB list of the income date
+     * exists for an invoice in a foreign currency, inserts the payment and, for an invoice, books the income through
+     * the one finance write path (CONTEXT rule: income only through the rules of RecordPayment).
+     *
+     * It does no authorisation of its own: the caller authorised (the Admin through the Gate in `handle()`, the system
+     * through the signed webhook and the matching). That is why it is guarded instead: it throws outside a transaction,
+     * and `$actor` may be null only for a card payment, because no person records one (the database holds the same
+     * rule in `invoice_payments_creator_check`). A payment without a creator is traced by its Stripe record and the
+     * activity log, which then has no causer.
+     *
+     * @param  User|null  $actor  the person who records the payment, null only for a card payment of the system
+     *
+     * @throws LogicException outside a transaction, or without an actor for a method other than card
+     * @throws ValidationException `payment_not_allowed`, or `cnb_missing` when the list of the income date is missing
+     */
+    public function recordLocked(Invoice $locked, PaymentFacts $facts, ?User $actor): InvoicePayment
+    {
+        if (DB::transactionLevel() === 0) {
+            throw new LogicException('A payment is recorded inside the caller\'s transaction, with the document locked.');
+        }
+
+        if ($actor === null && $facts->method !== PaymentMethod::Card) {
+            throw new LogicException('Only a card payment is recorded without a person.');
+        }
+
+        if ($this->refuses($locked)) {
+            throw ValidationException::withMessages(['payment' => __('invoices.errors.payment_not_allowed')]);
+        }
+
+        $books = $locked->kind === InvoiceKind::Invoice;
+        $dateKey = $facts->incomeDate === $facts->paidOn ? 'paid_on' : 'income_date';
+
+        if ($books) {
+            $this->assertRateExists($locked->currency, $facts->incomeDate, $dateKey);
+        }
+
+        $payment = new InvoicePayment(['note' => $facts->note]);
+        $payment->forceFill([
+            'invoice_id' => $locked->id,
+            'currency' => $locked->currency,
+            'amount_minor' => $facts->amount->minor,
+            'paid_on' => $facts->paidOn,
+            'method' => $facts->method,
+            'created_by' => $actor?->getKey(),
+        ]);
+        $payment->save();
+
+        if ($books) {
+            $this->bookIncome($locked, $payment, $facts->amount, $facts->incomeDate, $facts->categoryId, $dateKey);
+        }
+
+        // D-08: what is owed changed, so a live payment link that offers the old amount is deactivated in this transaction.
+        $this->paymentLinks->reconcile($locked);
+
+        return $payment->refresh();
+    }
+
+    private function refuses(Invoice $locked): bool
+    {
+        return $locked->state !== InvoiceState::Issued || ! $locked->kind->carriesPayment() || $locked->isCancelled();
     }
 
     /**
@@ -139,7 +193,7 @@ final readonly class RecordPayment
         ]);
         $payment->save();
 
-        $this->bookIncome($actor, $invoice, $payment, $amount, $paidOn, null, 'cnb_missing');
+        $this->bookIncome($invoice, $payment, $amount, $paidOn, null, 'cnb_missing');
 
         return $payment->refresh();
     }
@@ -167,22 +221,25 @@ final readonly class RecordPayment
     }
 
     /**
-     * The income of the payment, through the one finance write path, with the invoice and payment link.
+     * The income of the payment, through the one finance write path, with the invoice and payment link. The payment
+     * itself was authorised by the caller, so the income needs no Gate of its own ({@see RecordTransaction::writePaymentIncome()}).
+     * A card payment has its own description, "Platba kartou faktury :number".
      *
      * @throws ValidationException
      */
-    private function bookIncome(User $actor, Invoice $invoice, InvoicePayment $payment, Money $amount, string $incomeDate, ?string $categoryId, string $dateKey): void
+    private function bookIncome(Invoice $invoice, InvoicePayment $payment, Money $amount, string $incomeDate, ?string $categoryId, string $dateKey): void
     {
         $customer = $invoice->customer_snapshot['name'] ?? null;
+        $description = $payment->method === PaymentMethod::Card ? 'invoices.payment_income.card_description' : 'invoices.payment_income.description';
 
         try {
-            $this->transactions->handle($actor, [
+            $this->transactions->writePaymentIncome([
                 'type' => 'income',
                 'transaction_date' => $incomeDate,
                 'category_id' => $categoryId ?? TransactionCategory::invoicePayments()->getKey(),
                 'amount' => $amount->toMajor(),
                 'currency' => $invoice->currency,
-                'description' => __('invoices.payment_income.description', ['number' => (string) $invoice->number]),
+                'description' => __($description, ['number' => (string) $invoice->number]),
                 'counterparty' => is_string($customer) ? mb_substr($customer, 0, 255) : null,
                 'document_number' => $invoice->number,
                 'client_id' => $invoice->client_id,

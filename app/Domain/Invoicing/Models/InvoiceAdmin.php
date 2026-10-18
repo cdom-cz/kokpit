@@ -30,6 +30,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * writes nothing to its parent: there is no `$touches`, because an issued `invoices` row refuses even an
  * `updated_at` write (R-04-6).
  *
+ * The card switch and the pay token (Phase 11, plan 11-03). `card_payment_enabled` is the Admin's choice on a draft and
+ * is frozen at issue as the AND of the draft switch, the global setting and a configured Stripe, for an invoice or a
+ * proforma only (D-06). `pay_token` is the 32-character bearer value of the stable pay URL, set at issue exactly when
+ * the switch is on and frozen with the document (D-01). The switch is on the history allowlist; the token never is,
+ * because it is a bearer value.
+ *
  * Only the note is fillable. The invoice, its marker, the CNB trio, the CZK total and the PDF link are set with
  * `forceFill` by the Actions. The history is an allowlist: the marker `internal_note_updated_at` is logged and the
  * note text never is (T-10-22).
@@ -43,6 +49,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $exchange_rate_date
  * @property int|null $czk_total_minor
  * @property string|null $pdf_document_id
+ * @property bool $card_payment_enabled
+ * @property string|null $pay_token
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
@@ -55,6 +63,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'exchange_rate_date',
     'czk_total_minor',
     'pdf_document_id',
+    'card_payment_enabled',
 ])]
 final class InvoiceAdmin extends KokpitModel implements PartnerIsolated
 {
@@ -100,6 +109,7 @@ final class InvoiceAdmin extends KokpitModel implements PartnerIsolated
             'exchange_unit_amount' => 'integer',
             'exchange_rate_date' => 'immutable_date',
             'czk_total_minor' => 'integer',
+            'card_payment_enabled' => 'boolean',
         ];
     }
 }

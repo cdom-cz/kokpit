@@ -112,8 +112,12 @@ it('labels where a line of a document came from', function (): void {
 it('labels the payment methods', function (): void {
     expect(PaymentMethod::Transfer->getLabel())->toBe('Převodem')
         ->and(PaymentMethod::Cash->getLabel())->toBe('Hotově')
+        ->and(PaymentMethod::Card->getLabel())->toBe('Kartou')
         ->and(array_map(fn (PaymentMethod $method): string => $method->value, PaymentMethod::cases()))
-        ->toBe(['transfer', 'cash']);
+        ->toBe(['transfer', 'cash', 'card'])
+        ->and(array_map(fn (PaymentMethod $method): string => $method->value, PaymentMethod::manual()))
+        ->toBe(['transfer', 'cash'])
+        ->and(PaymentMethod::Card->isManual())->toBeFalse();
 });
 
 it('labels the e-mail states, with the claim state of the sending job', function (): void {

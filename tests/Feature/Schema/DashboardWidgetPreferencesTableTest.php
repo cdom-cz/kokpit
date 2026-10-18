@@ -42,7 +42,7 @@ function dashPrefSchemaInsert(string $userId, string $widgetKey, array $override
     ], $overrides));
 }
 
-it('refuses a widget key outside the seven cards with a check violation', function (): void {
+it('refuses a widget key outside the eight cards with a check violation', function (): void {
     $admin = Canary::admin();
 
     expect(dashPrefSchemaState(fn () => dashPrefSchemaInsert($admin->id, 'unknown_card')))->toBe('23514');
@@ -65,6 +65,25 @@ it('accepts the receivables card key and gives it back to the old list on rollba
     $migration->up();
 
     expect(dashPrefSchemaState(fn () => dashPrefSchemaInsert($admin->id, 'unpaid_invoices')))->toBeNull();
+});
+
+it('accepts the unresolved payments card key and gives it back to the old list on rollback', function (): void {
+    $admin = Canary::admin();
+
+    expect(dashPrefSchemaState(fn () => dashPrefSchemaInsert($admin->id, 'unresolved_payments')))->toBeNull();
+
+    $migration = require base_path('database/migrations/2026_10_18_000600_add_unresolved_payments_dashboard_widget.php');
+
+    $migration->down();
+
+    // The rollback removed the row of the new card; the seven keys stay accepted, the new one is refused again.
+    expect(DB::table('dashboard_widget_preferences')->where('widget_key', 'unresolved_payments')->count())->toBe(0)
+        ->and(dashPrefSchemaState(fn () => dashPrefSchemaInsert($admin->id, 'unresolved_payments')))->toBe('23514')
+        ->and(dashPrefSchemaState(fn () => dashPrefSchemaInsert($admin->id, 'unpaid_invoices')))->toBeNull();
+
+    $migration->up();
+
+    expect(dashPrefSchemaState(fn () => dashPrefSchemaInsert($admin->id, 'unresolved_payments')))->toBeNull();
 });
 
 it('refuses a second row for the same user and card, and accepts the same card for another user', function (): void {

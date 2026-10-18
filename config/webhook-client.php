@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Payments\Jobs\ProcessStripeWebhook;
+use App\Domain\Payments\Stripe\StripeSignatureValidator;
 use App\Domain\Shared\Models\WebhookCall;
-use Spatie\WebhookClient\SignatureValidator\DefaultSignatureValidator;
 use Spatie\WebhookClient\WebhookProfile\ProcessEverythingWebhookProfile;
 use Spatie\WebhookClient\WebhookResponse\DefaultRespondsTo;
 
@@ -11,31 +12,29 @@ return [
     'configs' => [
         [
             /*
-             * This package supports multiple webhook receiving endpoints. If you only have
-             * one endpoint receiving webhooks, you can use 'default'.
+             * The Stripe event destination (Phase 11, R11-04-1). This is the only receiving endpoint; the
+             * route is POST /webhooks/stripe in routes/public.php.
              */
-            'name' => 'default',
+            'name' => 'stripe',
 
             /*
-             * We expect that every webhook call will be signed using a secret. This secret
-             * is used to verify that the payload has not been tampered with.
+             * The signing secret of the Stripe event destination, from the environment only (D-16). The
+             * validator reads it through StripeConfig; it is repeated here so the package config is complete.
              */
-            'signing_secret' => env('WEBHOOK_CLIENT_SECRET'),
+            'signing_secret' => env('STRIPE_WEBHOOK_SECRET'),
 
             /*
              * The name of the header containing the signature.
              */
-            'signature_header_name' => 'Signature',
+            'signature_header_name' => 'Stripe-Signature',
 
             /*
-             *  This class will verify that the content of the signature header is valid.
-             *
-             * It should implement \Spatie\WebhookClient\SignatureValidator\SignatureValidator
+             * Checks the signature on the raw body with the Stripe SDK, never with a hand-written HMAC (D-15).
              */
-            'signature_validator' => DefaultSignatureValidator::class,
+            'signature_validator' => StripeSignatureValidator::class,
 
             /*
-             * This class determines if the webhook call should be stored and processed.
+             * Every call passes the package profile; StripeWebhookProcessor filters the event types itself.
              */
             'webhook_profile' => ProcessEverythingWebhookProfile::class,
 
@@ -51,37 +50,29 @@ return [
             'webhook_model' => WebhookCall::class,
 
             /*
-             * In this array, you can pass the headers that should be stored on
-             * the webhook call model when a webhook comes in.
-             *
-             * To store all headers, set this value to `*`.
+             * No header is stored: the signature header is not needed after the check.
              */
             'store_headers' => [
 
             ],
 
             /*
-             * When set to true, file uploads on the incoming request are stored
-             * in the dedicated `attachments` column on the webhook call model.
-             * Set to false to skip file extraction entirely.
+             * A Stripe event carries no file upload.
              */
-            'store_attachments' => true,
+            'store_attachments' => false,
 
             /*
-             * The class name of the job that will process the webhook request.
-             *
-             * This should be set to a class that extends \Spatie\WebhookClient\Jobs\ProcessWebhookJob.
+             * The job that processes a stored event; it extends \Spatie\WebhookClient\Jobs\ProcessWebhookJob.
              */
-            'process_webhook_job' => '',
+            'process_webhook_job' => ProcessStripeWebhook::class,
         ],
     ],
 
     /*
-     * The integer amount of days after which models should be deleted.
-     *
-     * It deletes all records after 30 days. Set to null if no models should be deleted.
+     * The integer amount of days after which models should be deleted (D-17). The model overrides prunable() so
+     * that only processed events older than this are removed; failed and unprocessed events are never pruned.
      */
-    'delete_after_days' => 30,
+    'delete_after_days' => 90,
 
     /*
      * Should a unique token be added to the route name

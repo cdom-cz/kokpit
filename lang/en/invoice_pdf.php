@@ -34,6 +34,8 @@ return [
     'payment_method' => 'Payment method',
     'bank_transfer' => 'Bank transfer',
     'amount_due' => 'Amount due',
+    'card_lead' => 'Or pay online by card:',
+    'card_button' => 'Pay by card',
     'proforma_note' => 'This is not a tax document.',
     'corrects_document' => 'Corrects document no. :number',
     'credit_note_no_payment' => 'This credit note carries no payment details. Any refund is made separately.',

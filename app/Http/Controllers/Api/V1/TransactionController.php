@@ -13,6 +13,7 @@ use App\Domain\Finance\Support\SqlState;
 use App\Domain\Identity\ApiAbility;
 use App\Domain\Identity\Models\User;
 use App\Http\Requests\Api\V1\ListTransactionsRequest;
+use App\Http\Requests\Api\V1\RawJsonBody;
 use App\Http\Requests\Api\V1\StoreTransactionRequest;
 use App\Http\Requests\Api\V1\TransactionPayload;
 use App\Http\Requests\Api\V1\UpdateTransactionRequest;
@@ -142,7 +143,7 @@ final class TransactionController
 
     #[Endpoint(
         'Show a transaction',
-        'Requires ability `'.ApiAbility::FinanceRead->value.'`. Returns one income or expense transaction by its UUID. Amounts are integers in minor units (cents, haléře) next to their ISO currency code. `czk_minor` is the amount in CZK and `czk_source` says how it was booked: `identity` (the transaction is in CZK), `cnb` (converted at the Czech National Bank rate of the transaction date or the last banking day before it), `manual` (a CZK figure typed by the user) or `custom` (converted at an own exchange rate). The rate snapshot `exchange_rate`, `exchange_unit_amount` and `exchange_rate_date` is `null` unless the source is `cnb` or `custom`; the rate is a decimal string for `exchange_unit_amount` units of the currency. `description`, `counterparty`, `document_number`, `client_id` and `project_id` are `null` when the transaction has none. Receipts and other files are not part of the API.',
+        'Requires ability `'.ApiAbility::FinanceRead->value.'`. Returns one income or expense transaction by its UUID. Amounts are integers in minor units (cents, haléře) next to their ISO currency code. `czk_minor` is the amount in CZK and `czk_source` says how it was booked: `identity` (the transaction is in CZK), `cnb` (converted at the Czech National Bank rate of the transaction date or the last banking day before it), `manual` (a CZK figure typed by the user) or `custom` (converted at an own exchange rate). The rate snapshot `exchange_rate`, `exchange_unit_amount` and `exchange_rate_date` is `null` unless the source is `cnb` or `custom`; the rate is a decimal string for `exchange_unit_amount` units of the currency. `description`, `counterparty`, `document_number`, `client_id` and `project_id` are `null` when the transaction has none. `external` is the free-form JSON object your import tool stored with the transaction, or `null`. Receipts and other files are not part of the API.',
     )]
     #[UrlParam('id', 'string', 'Transaction UUID.', example: '0199e3b0-1a2b-7c3d-8e4f-a1b2c3d4e5f6')]
     #[Response(TransactionExamples::TRANSACTION, 200, 'A transaction.')]
@@ -162,6 +163,7 @@ final class TransactionController
     #[ResponseField('data.document_number', 'string', 'Number of the receipt or invoice, or null.', nullable: true)]
     #[ResponseField('data.client_id', 'string', 'UUID of the client the transaction belongs to, or null.', nullable: true)]
     #[ResponseField('data.project_id', 'string', 'UUID of the project the transaction belongs to, or null.', nullable: true)]
+    #[ResponseField('data.external', 'object', 'The free-form JSON object your import tool stored with the transaction, or null.', nullable: true)]
     #[ResponseField('data.created_at', 'string', 'Creation instant, ISO 8601 in UTC.')]
     #[ResponseField('data.updated_at', 'string', 'Last change instant, ISO 8601 in UTC.')]
     #[Response(ApiExamples::NOT_FOUND, 404, 'No transaction has this UUID.')]
@@ -172,7 +174,7 @@ final class TransactionController
 
     #[Endpoint(
         'Create a transaction',
-        'Requires ability `'.ApiAbility::FinanceWrite->value.'`. Records an income or expense through the same rules as the application. Give `type`, `transaction_date`, `category_id`, `amount_minor` (minor units, a positive integer) and `currency`. The category is referenced by its UUID (see the transaction categories), the client by its UUID and the project by its UUID or its key; a name is refused. A client and a project are optional, but a project needs its client and must belong to it. The CZK figure is fixed in one of three ways: send `exchange_rate` (a string; with `exchange_unit_amount` for a rate quoted per several units, default 1) to book at an own rate, send `czk_amount_minor` to book the figure the bank used, or send neither and the Czech National Bank rate of the transaction date (or the last banking day before it) is used. Sending both a rate and a figure answers 422 under `exchange_rate`. A transaction in CZK takes none of the three and answers 422 under the field you sent. A currency without any stored rate list is accepted with a rate or a figure; without them it answers 422 under `currency`. When no rate is stored for the day, the answer is 422 under `czk_amount_minor`: send a rate or the figure. Every 422 is keyed by the field names of this request. The answer is 201 with the transaction and a `Location` header. To retry safely, send an optional `Idempotency-Key` header (1 to 255 visible characters, a fresh value for every new transaction; keys are kept for 24 hours and belong to the token that sent them): the same key with the same body creates the transaction once, and every repeat gets the stored 201 and the identical body again, marked with the response header `Idempotent-Replayed: true` (the replay carries no `Location`). Only successful answers are stored, so a request that failed can be corrected and sent again with the same key. The same key with a different body answers 422 with the code `idempotency_key_reused`, a malformed key 422 with `idempotency_key_invalid`, and a repeat while the first request is still running 409 with `idempotency_in_progress`; wait a moment and send it again.',
+        'Requires ability `'.ApiAbility::FinanceWrite->value.'`. Records an income or expense through the same rules as the application. Give `type`, `transaction_date`, `category_id`, `amount_minor` (minor units, a positive integer) and `currency`. The category is referenced by its UUID (see the transaction categories), the client by its UUID and the project by its UUID or its key; a name is refused. A client and a project are optional, but a project needs its client and must belong to it. The CZK figure is fixed in one of three ways: send `exchange_rate` (a string; with `exchange_unit_amount` for a rate quoted per several units, default 1) to book at an own rate, send `czk_amount_minor` to book the figure the bank used, or send neither and the Czech National Bank rate of the transaction date (or the last banking day before it) is used. Sending both a rate and a figure answers 422 under `exchange_rate`. An optional `external` object (at most 4096 bytes as compact JSON, 8 levels deep) is stored as sent. A transaction in CZK takes none of the three and answers 422 under the field you sent. A currency without any stored rate list is accepted with a rate or a figure; without them it answers 422 under `currency`. When no rate is stored for the day, the answer is 422 under `czk_amount_minor`: send a rate or the figure. Every 422 is keyed by the field names of this request. The answer is 201 with the transaction and a `Location` header. To retry safely, send an optional `Idempotency-Key` header (1 to 255 visible characters, a fresh value for every new transaction; keys are kept for 24 hours and belong to the token that sent them): the same key with the same body creates the transaction once, and every repeat gets the stored 201 and the identical body again, marked with the response header `Idempotent-Replayed: true` (the replay carries no `Location`). Only successful answers are stored, so a request that failed can be corrected and sent again with the same key. The same key with a different body answers 422 with the code `idempotency_key_reused`, a malformed key 422 with `idempotency_key_invalid`, and a repeat while the first request is still running 409 with `idempotency_in_progress`; wait a moment and send it again.',
     )]
     #[Header('Idempotency-Key', 'demo-key-0003')]
     #[Response(TransactionExamples::TRANSACTION, 201, 'The transaction was created.')]
@@ -192,6 +194,7 @@ final class TransactionController
     #[ResponseField('data.document_number', 'string', 'Number of the receipt or invoice, or null.', nullable: true)]
     #[ResponseField('data.client_id', 'string', 'UUID of the client the transaction belongs to, or null.', nullable: true)]
     #[ResponseField('data.project_id', 'string', 'UUID of the project the transaction belongs to, or null.', nullable: true)]
+    #[ResponseField('data.external', 'object', 'The free-form JSON object your import tool stored with the transaction, or null.', nullable: true)]
     #[ResponseField('data.created_at', 'string', 'Creation instant, ISO 8601 in UTC.')]
     #[ResponseField('data.updated_at', 'string', 'Last change instant, ISO 8601 in UTC.')]
     #[Response(ApiExamples::IDEMPOTENCY_IN_PROGRESS, 409, 'A request with the same Idempotency-Key is still running (code `idempotency_in_progress`).')]
@@ -200,7 +203,7 @@ final class TransactionController
     public function store(StoreTransactionRequest $request, RecordTransaction $record, ReferenceResolver $refs): JsonResponse
     {
         try {
-            $transaction = $record->handle(self::actor($request), TransactionPayload::forCreate($request->validated(), $refs));
+            $transaction = $record->handle(self::actor($request), TransactionPayload::forCreate($request->validated(), $refs, RawJsonBody::of($request)));
         } catch (ValidationException $e) {
             throw TransactionPayload::remap($e);
         }
@@ -213,7 +216,7 @@ final class TransactionController
 
     #[Endpoint(
         'Update a transaction',
-        'Requires ability `'.ApiAbility::FinanceWrite->value.'`. Edits a transaction through the same rules as the application. Send only the keys to change: an absent key keeps its value, and `null` clears `description`, `counterparty`, `document_number`, `client_id` and `project_id`. A project needs its client, so clearing the client of a transaction that keeps a project answers 422 under `project_id`. `currency` needs `amount_minor` in the same request, because an amount belongs to one currency; without it the answer is 422 under `amount_minor`. A transaction booked at an own rate keeps that rate when its amount changes: the CZK figure is recomputed at the stored rate. A changed currency drops the own rate and uses the Czech National Bank rate. To change how the CZK figure is fixed, send a new `exchange_rate` (a string) for an own rate or a new `czk_amount_minor` for the figure the bank used. `exchange_rate: null` drops an own rate, `czk_amount_minor: null` drops a bank figure, and both `null` return any transaction to the Czech National Bank rate; a `null` of a field the transaction does not use changes nothing. A transaction in CZK takes no rate and no CZK figure. A transaction that books an invoice payment changes only in its `transaction_date` (the CZK figure follows the date) and its `category_id`; any other field answers 422 under that field. Every 422 is keyed by the field names of this request.',
+        'Requires ability `'.ApiAbility::FinanceWrite->value.'`. Edits a transaction through the same rules as the application. Send only the keys to change: an absent key keeps its value, and `null` clears `description`, `counterparty`, `document_number`, `client_id` and `project_id`. A project needs its client, so clearing the client of a transaction that keeps a project answers 422 under `project_id`. `currency` needs `amount_minor` in the same request, because an amount belongs to one currency; without it the answer is 422 under `amount_minor`. A transaction booked at an own rate keeps that rate when its amount changes: the CZK figure is recomputed at the stored rate. A changed currency drops the own rate and uses the Czech National Bank rate. To change how the CZK figure is fixed, send a new `exchange_rate` (a string) for an own rate or a new `czk_amount_minor` for the figure the bank used. `exchange_rate: null` drops an own rate, `czk_amount_minor: null` drops a bank figure, and both `null` return any transaction to the Czech National Bank rate; a `null` of a field the transaction does not use changes nothing. A transaction in CZK takes no rate and no CZK figure. A transaction that books an invoice payment changes only in its `transaction_date` (the CZK figure follows the date) and its `category_id`; any other field answers 422 under that field. An absent `external` keeps the stored object, `null` clears it and an object replaces it whole (nothing is merged); the income of an invoice payment takes none. Every 422 is keyed by the field names of this request.',
     )]
     #[UrlParam('id', 'string', 'Transaction UUID.', example: '0199e3b0-1a2b-7c3d-8e4f-a1b2c3d4e5f6')]
     #[Response(TransactionExamples::TRANSACTION, 200, 'The transaction after the change.')]
@@ -233,6 +236,7 @@ final class TransactionController
     #[ResponseField('data.document_number', 'string', 'Number of the receipt or invoice, or null.', nullable: true)]
     #[ResponseField('data.client_id', 'string', 'UUID of the client the transaction belongs to, or null.', nullable: true)]
     #[ResponseField('data.project_id', 'string', 'UUID of the project the transaction belongs to, or null.', nullable: true)]
+    #[ResponseField('data.external', 'object', 'The free-form JSON object your import tool stored with the transaction, or null.', nullable: true)]
     #[ResponseField('data.created_at', 'string', 'Creation instant, ISO 8601 in UTC.')]
     #[ResponseField('data.updated_at', 'string', 'Last change instant, ISO 8601 in UTC.')]
     #[Response(ApiExamples::NOT_FOUND, 404, 'No transaction has this UUID.')]
@@ -242,7 +246,7 @@ final class TransactionController
         $stored = self::find($transaction);
 
         try {
-            $changed = $update->handle(self::actor($request), $stored, TransactionPayload::forUpdate($request->validated(), $stored, $refs));
+            $changed = $update->handle(self::actor($request), $stored, TransactionPayload::forUpdate($request->validated(), $stored, $refs, RawJsonBody::of($request)));
         } catch (ValidationException $e) {
             throw TransactionPayload::remap($e);
         }

@@ -24,5 +24,7 @@ return [
         'credit_note' => "Hello,\n\nplease find attached :kind no. :number for :amount.\n\nAny refund will be made separately.\n\nKind regards\n:supplier",
     ],
 
+    'pay_block_lead' => 'You can pay this document online by card:',
+
     'work_report_file' => 'work-report-:number.pdf',
 ];

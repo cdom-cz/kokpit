@@ -19,6 +19,10 @@ use App\Domain\Invoicing\Support\DraftTotals;
 use App\Domain\Invoicing\Support\InvoiceSnapshot;
 use App\Domain\Invoicing\Support\IssueChecks;
 use App\Domain\Invoicing\Support\VariableSymbol;
+use App\Domain\Payments\Jobs\CreatePaymentLink;
+use App\Domain\Payments\Models\PaymentLink;
+use App\Domain\Payments\Support\CardPaymentSwitch;
+use App\Domain\Payments\Support\PayToken;
 use App\Domain\Settings\Numbering\DocumentNumbering;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Shared\Money\Money;
@@ -60,6 +64,9 @@ use OverflowException;
  * 10-06 R-06-6), never from `invoices`. A failure of the rendering, of the storage or of the link throws like any
  * other step, so the caller's transaction takes the number, the state, the billing and the document row back, and the
  * stored object is removed by the rollback hook of {@see StoreGeneratedDocument}.
+ *
+ * A document issued with the card switch on gets its pending payment link last, and the queued job that creates the
+ * Stripe link is dispatched after the commit (PA-01, ruling R11-07-1); a Stripe outage can never fail the issue.
  */
 final readonly class DocumentIssuer
 {
@@ -144,7 +151,26 @@ final readonly class DocumentIssuer
 
         $this->storePdf($issued, $admin, $context);
 
+        $this->openPaymentLink($issued, $admin, $context);
+
         return $issued;
+    }
+
+    /**
+     * For a document issued with card payment on, writes the pending payment link for the total and queues the job
+     * that creates it at Stripe (PA-01; D-05, D-06, ruling R11-07-1). The row is written after the flip because the
+     * insert guard of `payment_links` needs the document already issued; the dispatch waits for the commit, and a
+     * rollback of the issue takes the row and the dispatch back. Stripe is not called here.
+     */
+    private function openPaymentLink(Invoice $issued, InvoiceAdmin $admin, IssueContext $context): void
+    {
+        if (! $admin->card_payment_enabled) {
+            return;
+        }
+
+        $link = PaymentLink::open($issued, $issued->total_minor, $context->actor);
+
+        CreatePaymentLink::dispatch($link->id)->afterCommit();
     }
 
     /**
@@ -272,6 +298,11 @@ final readonly class DocumentIssuer
      * refuses an INSERT afterwards (the PDF step writes the PDF link into it). For a document not in CZK it
      * also stores the CNB rate, unit and list date valid on the issue date, or the trio the context hands over, and
      * the CZK total computed from them once (D-12, IN-07, EX-03): the rate is never looked up again.
+     *
+     * The card switch and the pay token are finalised here too (D-01, D-06): the switch becomes the AND of the draft
+     * switch, the global setting and a configured Stripe for an invoice or a proforma, and a document with the switch
+     * on gets its token. The order matters: both columns are frozen with the parent, so the child guard of
+     * `invoice_admin` refuses the write once the state has flipped to issued.
      */
     private function writeAdminRow(Invoice $draft, string $issueDate, IssueContext $context): InvoiceAdmin
     {
@@ -279,7 +310,7 @@ final readonly class DocumentIssuer
 
         if (! $admin instanceof InvoiceAdmin) {
             $admin = new InvoiceAdmin;
-            $admin->forceFill(['invoice_id' => $draft->id]);
+            $admin->forceFill(['invoice_id' => $draft->id, 'card_payment_enabled' => false]);
         }
 
         if ($draft->currency !== 'CZK') {
@@ -292,6 +323,13 @@ final readonly class DocumentIssuer
                 'czk_total_minor' => $draft->total()->convert($rate['rate'], 'CZK', $rate['unit_amount'])->minor,
             ]);
         }
+
+        $cardPayment = app(CardPaymentSwitch::class)->effective($draft->kind, $admin->card_payment_enabled);
+
+        $admin->forceFill([
+            'card_payment_enabled' => $cardPayment,
+            'pay_token' => $cardPayment ? PayToken::generate() : null,
+        ]);
 
         $admin->save();
 

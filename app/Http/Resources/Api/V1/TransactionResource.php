@@ -17,7 +17,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * `czk_minor` is the CZK figure and `czk_source` says where it came from (identity, cnb, manual or custom).
  * The exchange rate columns are the snapshot of the conversion and are null unless the source is `cnb` or
  * `custom`; the rate is a decimal string, never a float. Dates are `Y-m-d`, instants are ISO 8601 in UTC.
- * Receipts and files are not part of the API.
+ * `external` is the free-form object an import tool stored with the transaction, or null. Receipts and files are not
+ * part of the API.
  *
  * @property-read Transaction $resource
  */
@@ -47,6 +48,7 @@ final class TransactionResource extends JsonResource
             'document_number' => $transaction->document_number,
             'client_id' => $transaction->client_id,
             'project_id' => $transaction->project_id,
+            'external' => $transaction->external,
             'created_at' => self::instant($transaction->created_at),
             'updated_at' => self::instant($transaction->updated_at),
         ];

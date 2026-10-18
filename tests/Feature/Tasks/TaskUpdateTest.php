@@ -6,6 +6,7 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Tasks\Actions\ArchiveTask;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
@@ -13,6 +14,8 @@ use App\Filament\RelationManagers\TaskHistoryRelationManager;
 use App\Filament\Resources\TaskResource;
 use App\Filament\Resources\TaskResource\Pages\EditTask;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
+use Filament\Actions\Exceptions\ActionNotResolvableException;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -49,6 +52,14 @@ function taskUpdProject(string $key = 'UPD', bool $visible = false): Project
 function taskUpdTask(Project $project, array $data = []): Task
 {
     return app(CreateTask::class)->handle(test()->admin, $project, ['title' => 'Example update task', ...$data]);
+}
+
+/**
+ * The "Změnit stav" hint action on the status entry of the task page.
+ */
+function taskUpdStatusAction(): TestAction
+{
+    return TestAction::make('changeStatus')->schemaComponent('status', schema: 'infolist');
 }
 
 beforeEach(function (): void {
@@ -530,4 +541,124 @@ it('shows the shared description hint when the project is client-visible and hid
 
     Livewire::test(EditTask::class, ['record' => $shared->reference])->assertSee($hint);
     Livewire::test(EditTask::class, ['record' => $private->reference])->assertDontSee($hint);
+});
+
+it('changes the status on the task page and moves the task to the end of the new column', function (): void {
+    $project = taskUpdProject('STA');
+    taskUpdTask($project, ['status' => 'in_progress']);
+    taskUpdTask($project, ['status' => 'in_progress']);
+    $task = taskUpdTask($project);
+
+    $page = Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->callAction(taskUpdStatusAction(), ['status' => 'in_progress'])
+        ->assertHasNoActionErrors()
+        ->assertNotified(__('kokpit.tasks.notifications.status_changed'));
+
+    $task->refresh();
+
+    expect($task->status)->toBe(ProjectStatus::InProgress)
+        ->and($task->position)->toBe(2)
+        ->and($task->completed_at)->toBeNull();
+
+    $record = $page->instance()->getRecord();
+    assert($record instanceof Task);
+    expect($record->status)->toBe(ProjectStatus::InProgress);
+
+    DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
+});
+
+it('sets completed_at through the task page for Done and clears it for any other status', function (): void {
+    $task = taskUpdTask(taskUpdProject('STD'));
+
+    Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->callAction(taskUpdStatusAction(), ['status' => 'done'])
+        ->assertHasNoActionErrors();
+
+    expect($task->refresh()->completed_at)->not->toBeNull();
+
+    Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->callAction(taskUpdStatusAction(), ['status' => 'to_clarify'])
+        ->assertHasNoActionErrors();
+
+    $task->refresh();
+
+    expect($task->status)->toBe(ProjectStatus::ToClarify)
+        ->and($task->completed_at)->toBeNull();
+
+    DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
+});
+
+it('prefills the status modal with the current status and shows the link with its Czech labels', function (): void {
+    $task = taskUpdTask(taskUpdProject('STM'), ['status' => 'in_review']);
+    $label = __('kokpit.tasks.actions.change_status');
+
+    expect($label)->not->toBe('kokpit.tasks.actions.change_status')
+        ->and(__('kokpit.tasks.notifications.status_changed'))->not->toBe('kokpit.tasks.notifications.status_changed');
+
+    Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->assertSee($label)
+        ->mountAction(taskUpdStatusAction())
+        ->assertMountedActionModalSee(__('kokpit.tasks.actions.change_status_heading'))
+        ->assertSchemaStateSet(['status' => ProjectStatus::InReview]);
+
+    $this->get('/admin/tasks/'.$task->reference)->assertOk()->assertSee('Změnit stav');
+});
+
+it('refuses an unknown status from the task page as an error under the select', function (): void {
+    $task = taskUpdTask(taskUpdProject('STI'));
+
+    Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->callAction(taskUpdStatusAction(), ['status' => 'archived'])
+        ->assertHasActionErrors(['status']);
+
+    $task->refresh();
+
+    expect($task->status)->toBe(ProjectStatus::Planned)
+        ->and($task->position)->toBe(0)
+        ->and($task->completed_at)->toBeNull();
+
+    DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
+});
+
+it('shows no status link on an archived task', function (): void {
+    $task = taskUpdTask(taskUpdProject('STR'));
+    app(ArchiveTask::class)->handle($this->admin, $task);
+
+    $page = Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->assertDontSee(__('kokpit.tasks.actions.change_status'));
+
+    // A hidden hint action cannot be resolved, so a stale page cannot run it either.
+    expect(fn () => $page->callAction(taskUpdStatusAction(), ['status' => 'done']))->toThrow(ActionNotResolvableException::class);
+
+    expect(Task::withTrashed()->findOrFail($task->id)->status)->toBe(ProjectStatus::Planned);
+});
+
+it('gives a Partner no way to change a status on the task page', function (): void {
+    $project = taskUpdProject('PRS', visible: true);
+    $task = taskUpdTask($project);
+    $partner = Canary::partnerFor($project->client_id);
+    $label = __('kokpit.tasks.actions.change_status');
+
+    // The Admin page is Admin-only.
+    $this->actingAs($partner)->get('/admin/tasks/'.$task->reference)->assertForbidden()->assertDontSee($label);
+
+    // A page mounted for the Admin stays hidden once the session belongs to a Partner.
+    $this->actingAs($this->admin);
+    $page = Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->assertSee($label);
+    $this->actingAs($partner);
+    expect(fn () => $page->callAction(taskUpdStatusAction(), ['status' => 'done']))->toThrow(ActionNotResolvableException::class);
+
+    // The domain Action refuses a Partner as well.
+    $seen = Task::query()->where('reference', $task->reference)->firstOrFail();
+    expect(fn () => app(UpdateTask::class)->handle($partner, $seen, ['status' => 'done']))->toThrow(AuthorizationException::class);
+
+    // The Partner's own task page has no such link.
+    $this->get('/admin/my-tasks/'.$task->reference)->assertOk()->assertDontSee($label);
+
+    $this->actingAs($this->admin);
+    $task->refresh();
+
+    expect($task->status)->toBe(ProjectStatus::Planned)
+        ->and($task->completed_at)->toBeNull();
 });

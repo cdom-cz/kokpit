@@ -42,6 +42,9 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * An income that books a payment of an invoice carries `invoice_id` and `invoice_payment_id` (FI-03, D-19). It is
  * created only by `RecordPayment` and the database locks it for every writer except its date and category.
  *
+ * `external` is the importer's free-form object (a bank line id, a source name): written only by RecordTransaction and
+ * UpdateTransaction with `forceFill`, never logged and never shown in the panel.
+ *
  * Only the free text is fillable. The type, category, amounts, CZK figure, snapshot, client and project are set
  * with `forceFill` by trusted code (the Actions), so a request can never write them by mass assignment.
  *
@@ -64,6 +67,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string|null $project_id
  * @property string|null $invoice_id
  * @property string|null $invoice_payment_id
+ * @property \stdClass|null $external
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
@@ -167,6 +171,7 @@ final class Transaction extends KokpitModel implements PartnerIsolated
             'exchange_rate' => 'decimal:10',
             'exchange_unit_amount' => 'integer',
             'exchange_rate_date' => 'immutable_date',
+            'external' => 'object',
         ];
     }
 }

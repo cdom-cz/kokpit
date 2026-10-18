@@ -35,6 +35,14 @@ final class PgSchema
         'transaction_categories.type' => 'income or expense, a member of the composite parent key and of the key a transaction points at, not an identifier',
         'transaction_categories.parent_depth' => 'generated depth discriminator (0 for a child) in the composite parent key, not an identifier',
         'invoice_payments.currency' => 'currency code of the payment, a member of the composite key (invoice_id, currency) that ties it to the currency of its document, not an identifier',
+        'payment_links.currency' => 'currency code of the link, a member of the composite key (invoice_id, currency) that ties it to the currency of its document, not an identifier',
+        'payment_links.stripe_link_id' => 'the text id Stripe assigns to the payment link (plink_...), unique through payment_links_stripe_link_id_unique, not an identifier of this database',
+        'card_payments.stripe_event_id' => 'the text event id Stripe assigns (evt_...), unique through card_payments_event_unique, not an identifier of this database',
+        'card_payments.stripe_session_id' => 'the text id Stripe assigns to the checkout session (cs_...), unique through card_payments_session_unique, not an identifier of this database',
+        'card_payments.stripe_payment_intent_id' => 'the text id Stripe assigns to the payment intent (pi_...), unique among payments through card_payments_payment_intent_unique, not an identifier of this database',
+        'card_payments.stripe_refund_id' => 'the text id Stripe assigns to a refund (re_...), unique through card_payments_refund_unique, not an identifier of this database',
+        'card_payments.stripe_link_id' => 'the text id Stripe assigns to the payment link (plink_...) the payment came through, kept as reported, not an identifier of this database',
+        'webhook_calls.event_id' => 'the text event id Stripe assigns (evt_...), unique per config name through a partial unique index, not an identifier of this database',
     ];
 
     /**

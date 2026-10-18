@@ -18,6 +18,7 @@ enum HealthSlot: string implements HasLabel
     case SchedulerHeartbeat = 'scheduler_heartbeat';
     case LastRateDate = 'last_rate_date';
     case UnprocessedWebhooks = 'unprocessed_webhooks';
+    case Stripe = 'stripe';
     case UnsentInvoiceEmails = 'unsent_invoice_emails';
 
     public function getLabel(): string

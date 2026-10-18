@@ -9,6 +9,7 @@ use App\Domain\Finance\Actions\RecordTransaction;
 use App\Domain\Identity\ApiAbility;
 use App\Domain\Identity\Models\User;
 use App\Http\Requests\Api\V1\BatchStoreTransactionRequest;
+use App\Http\Requests\Api\V1\RawJsonBody;
 use App\Http\Requests\Api\V1\TransactionPayload;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -48,11 +49,12 @@ final class TransactionBatchController
         'exchange_rate' => '25.125',
         'description' => 'Example hosting invoice',
         'counterparty' => 'Demo Hosting',
+        'external' => ['source' => 'demo-bank', 'id' => 'TX-1001'],
     ];
 
     #[Endpoint(
         'Create transactions in a batch',
-        'Requires ability `'.ApiAbility::FinanceWrite->value.'`. Records up to 500 transactions in one request, each one through the same rules as a single create. Every item takes the fields of a single create. The items are saved one by one, each in its own transaction: an item that fails is skipped and reported, and the items before and after it are still saved. The answer is 201 when every item was saved, 207 when some were saved and some failed, and 422 when none was saved, and lists only the failed items. A transaction has no field of your own for a foreign id, so deduplicate on your side: `document_number`, the date and the counterparty are its natural keys, and list the period before you send a batch again under a new key. To retry safely, send an optional `Idempotency-Key` header (1 to 255 visible characters, a fresh value for every new batch; keys are kept for 24 hours and belong to the token that sent them): the same key with the same body saves the batch once, and every repeat gets the stored 201 or 207 and the identical body again, marked with the response header `Idempotent-Replayed: true`. Only successful answers are stored, so a batch that saved nothing can be corrected and sent again with the same key. The same key with a different body answers 422 with the code `idempotency_key_reused`, and a repeat while the first request is still running 409 with `idempotency_in_progress`.',
+        'Requires ability `'.ApiAbility::FinanceWrite->value.'`. Records up to 500 transactions in one request, each one through the same rules as a single create. Every item takes the fields of a single create. The items are saved one by one, each in its own transaction: an item that fails is skipped and reported, and the items before and after it are still saved. The answer is 201 when every item was saved, 207 when some were saved and some failed, and 422 when none was saved, and lists only the failed items. To avoid duplicates, deduplicate on your side: store your own id in `external` (it comes back with every transaction; the API never skips a duplicate because of it), and list the transactions of the period before you send a batch again under a new key. To retry safely, send an optional `Idempotency-Key` header (1 to 255 visible characters, a fresh value for every new batch; keys are kept for 24 hours and belong to the token that sent them): the same key with the same body saves the batch once, and every repeat gets the stored 201 or 207 and the identical body again, marked with the response header `Idempotent-Replayed: true`. Only successful answers are stored, so a batch that saved nothing can be corrected and sent again with the same key. The same key with a different body answers 422 with the code `idempotency_key_reused`, and a repeat while the first request is still running 409 with `idempotency_in_progress`.',
     )]
     #[Header('Idempotency-Key', 'demo-key-0004')]
     #[BodyParam('transactions', 'object[]', 'The transactions to record: 1 to 500 JSON objects, each with the fields of a single create. A list with no item or with more than 500 items answers 422 and saves nothing.', example: [self::EXAMPLE_TRANSACTION])]
@@ -69,6 +71,7 @@ final class TransactionBatchController
     #[BodyParam('transactions[].document_number', 'string', 'Number of the receipt or invoice, at most 64 characters. Optional.', required: false, example: 'DEMO-2026-001')]
     #[BodyParam('transactions[].client_id', 'string', 'UUID of the client the transaction belongs to. Optional.', required: false, example: '0199e39f-c2d4-7a1b-9e0c-d4e5f6a7b8c9')]
     #[BodyParam('transactions[].project_id', 'string', 'The project: its UUID or its key, for example `DEMO`. Optional, but a project needs its client in `client_id`.', required: false, example: 'DEMO')]
+    #[BodyParam('transactions[].external', 'object', 'A free-form JSON object for your own bookkeeping, for example the id of the transaction in the bank or tool it was imported from, at most 4096 bytes as compact JSON and nested at most 8 levels deep. `{}` is fine; a list, a string or a number fails the item. It is returned with the transaction and never used to skip duplicates.', required: false, example: ['source' => 'demo-bank', 'id' => 'TX-1001'])]
     #[Response(TransactionExamples::BATCH_ALL_SAVED, 201, 'Every transaction was saved.')]
     #[Response(TransactionExamples::BATCH_MIXED, 207, 'Some transactions were saved and some failed. `errors` lists only the failed items: `index` is the zero-based position in `transactions`, `errors` the messages by field (`transaction` when the item is not a JSON object, or when it could not be saved because of a fault on the server; send such an item again in a new batch).')]
     #[Response(ApiExamples::IDEMPOTENCY_IN_PROGRESS, 409, 'A request with the same Idempotency-Key is still running (code `idempotency_in_progress`).')]
@@ -79,12 +82,15 @@ final class TransactionBatchController
     {
         $actor = self::actor($request);
         $items = $request->validated('transactions');
+        // The items decoded as objects tell `{}` from `[]` and are where each `external` is taken from.
+        $raw = RawJsonBody::of($request)->transactions ?? [];
+        $raw = is_array($raw) ? array_values($raw) : [];
         $saved = 0;
         $errors = [];
 
         foreach (is_array($items) ? array_values($items) : [] as $index => $item) {
             try {
-                $record->handle($actor, TransactionPayload::forBatchItem($item, $refs));
+                $record->handle($actor, TransactionPayload::forBatchItem($item, $raw[$index] ?? null, $refs));
                 $saved++;
             } catch (ValidationException $e) {
                 $errors[] = ['index' => $index, 'errors' => TransactionPayload::remap($e)->errors()];

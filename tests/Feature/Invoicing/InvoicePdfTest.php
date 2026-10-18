@@ -289,8 +289,12 @@ describe('the snapshot', function (): void {
             ->and($after)->toContain(base64_encode((string) Storage::disk('local')->get($logo)))
             ->and($after)->toContain(base64_encode((string) Storage::disk('local')->get($signature)));
 
-        // It read the document and its lines only: no client, settings, exchange-rate or Admin-only query.
-        expect(implode("\n", $queries))->not->toMatch('/"(clients|settings|exchange_rates|invoice_admin)"/');
+        // It read the document and its lines only: no client, settings, exchange-rate or Admin-only query. The one
+        // exception is the frozen pay token of the card button (Phase 11 D-01), a single-column read of the Admin row.
+        $payTokenReads = array_filter($queries, static fn (string $sql): bool => str_starts_with($sql, 'select "pay_token" from "invoice_admin"'));
+
+        expect($payTokenReads)->toHaveCount(1)
+            ->and(implode("\n", array_diff($queries, $payTokenReads)))->not->toMatch('/"(clients|settings|exchange_rates|invoice_admin)"/');
     });
 
     it('fails instead of printing another image when the stored logo object changed or is gone', function (): void {

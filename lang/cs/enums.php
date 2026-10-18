@@ -128,6 +128,7 @@ return [
         'scheduler_heartbeat' => 'Tep plánovače',
         'last_rate_date' => 'Datum posledního kurzu',
         'unprocessed_webhooks' => 'Nezpracované webhooky',
+        'stripe' => 'Stripe',
         'unsent_invoice_emails' => 'Neodeslané e-maily s fakturou',
     ],
 
@@ -240,6 +241,7 @@ return [
     'payment_method' => [
         'transfer' => 'Převodem',
         'cash' => 'Hotově',
+        'card' => 'Kartou',
     ],
 
     'invoice_email_state' => [
@@ -247,6 +249,50 @@ return [
         'sending' => 'Odesílá se',
         'sent' => 'Odesláno',
         'failed' => 'Odeslání selhalo',
+    ],
+
+    'payment_link_state' => [
+        'pending' => 'Připravuje se',
+        'active' => 'Aktivní',
+        'failed' => 'Vytvoření selhalo',
+        'deactivated' => 'Deaktivován',
+    ],
+
+    'payment_link_deactivation' => [
+        'paid' => 'Doklad je zaplacený.',
+        'cancelled' => 'Doklad byl stornován.',
+        'amount_changed' => 'Po částečné platbě se nabízená částka změnila.',
+        'manual' => 'Deaktivován ručně.',
+        'replaced' => 'Nahrazen novým odkazem.',
+    ],
+
+    'card_payment_type' => [
+        'matched' => 'Spárovaná',
+        'duplicate' => 'Duplicitní',
+        'unmatched' => 'Nespárovaná',
+        'refund' => 'Vrácení',
+    ],
+
+    'card_payment_reason' => [
+        'amount' => 'Jiná částka než nabízel odkaz',
+        'currency' => 'Jiná měna než nabízel odkaz',
+        'already_paid' => 'Doklad už je zaplacený',
+        'cancelled' => 'Doklad je stornovaný',
+        'undetermined' => 'Doklad nelze určit',
+    ],
+
+    'card_payment_resolution' => [
+        'none' => 'Nevyřešeno',
+        'assigned' => 'Přiřazeno k dokladu',
+        'noted' => 'Vyřešeno poznámkou',
+        'returned' => 'Vrácení peněz zaevidováno',
+    ],
+
+    'card_payment_status' => [
+        'booked' => 'Zapsáno k dokladu',
+        'payment_deleted' => 'Smazaná platba',
+        'unresolved' => 'Nevyřešeno',
+        'resolved' => 'Vyřešeno',
     ],
 
 ];

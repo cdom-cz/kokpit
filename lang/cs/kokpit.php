@@ -257,6 +257,17 @@ return [
             'empty_heading' => 'Zatím žádné projekty',
             'empty_description' => 'Projekty, které pro vás Kokpit zpřístupní, se objeví tady.',
         ],
+        // Surface J of Phase 11: the card of the card payments that wait for the Admin; it exists only above zero.
+        'unresolved_payments' => [
+            'heading' => 'Nevyřešené platby',
+            'stat' => 'Nevyřešené platby',
+            'summary' => 'Nevyřešené platby: :count',
+            'parts' => [
+                'duplicate' => '{1} duplicitní :count|[2,4] duplicitní :count|[5,*] duplicitních :count',
+                'unmatched' => '{1} nespárovaná :count|[2,4] nespárované :count|[5,*] nespárovaných :count',
+                'refund' => '{1} vrácení :count|[2,4] vrácení :count|[5,*] vrácení :count',
+            ],
+        ],
     ],
 
     'settings' => [
@@ -381,7 +392,8 @@ return [
         ],
         'payments' => [
             'online_payments_enabled' => 'Nabízet online platbu kartou',
-            'online_payments_enabled_hint' => 'Odkazy na platbu kartou přibudou spolu s napojením na Stripe; zatím se jen ukládá, zda je chcete používat.',
+            'online_payments_enabled_hint' => 'Při vystavení faktury nebo zálohové faktury se vytvoří odkaz na platbu kartou přes Stripe. Týká se jen dokladů vystavených později.',
+            'stripe_missing_callout' => 'Stripe není nastavený (v prostředí chybí klíče). Odkazy na platbu se nevytvoří.',
         ],
     ],
 
@@ -584,6 +596,23 @@ return [
             'never' => 'Plánovač se dosud nezapsal',
             'alive' => 'Plánovač běží',
             'late' => 'Plánovač se dlouho nezapsal, pravděpodobně neběží',
+        ],
+        // The detail of the unprocessed webhooks slot (D-17, UI-SPEC Surface K); :count is the number of stored Stripe
+        // events that are not processed and :age how long the oldest has waited. No payload or exception text.
+        'webhooks' => [
+            'ok' => 'Všechny události ze Stripe byly zpracovány.',
+            'waiting' => 'Čekající události ze Stripe: :count. Nejstarší čeká :age.',
+            'error' => 'Nezpracováno: :count. Nejstarší čeká :age. Zkontrolujte neúspěšné úlohy.',
+        ],
+        // The Stripe slot (D-16, UI-SPEC Surface K, U-14): only whether the two secrets are set, never a value.
+        'stripe' => [
+            'value_set' => 'Nastaveno',
+            'value_unset' => 'Nenastaveno',
+            'configured' => 'Tajný klíč a podpisový klíč webhooku jsou nastavené.',
+            'disabled' => 'Online platby jsou vypnuté.',
+            'missing_enabled' => 'Online platby jsou zapnuté, ale v prostředí chybí klíče Stripe.',
+            'missing_webhook_secret' => 'Chybí podpisový klíč webhooku.',
+            'missing_secret_key' => 'Chybí tajný klíč Stripe.',
         ],
         // The detail of the last rate date slot; :count is the number of working days the newest list is behind.
         'last_rate_date' => [
@@ -976,7 +1005,7 @@ return [
             'stage' => 'Stav slouží jen k přehledu a filtrování; nemění oprávnění ani fakturaci.',
             'hourly_rate' => 'Částka v měně klienta, s desetinnou čárkou a bez oddělovače tisíců, například 1500,50.',
             'payment_terms_days' => 'Počet dní od 0 do 365.',
-            'online_payment_enabled' => 'Zapnuto: faktury tohoto klienta půjde zaplatit online.',
+            'online_payment_enabled' => 'Zapnuto: u dokladů tohoto klienta se nabídne platba kartou. Nový koncept převezme tuto hodnotu a u dokladu ji lze přepsat.',
             'tags' => 'Interní štítky klienta. Nesdílejí se s projekty a klient je nikdy nevidí.',
         ],
         'filters' => [
@@ -1213,10 +1242,14 @@ return [
             'archive_description' => 'Archivovaný úkol zmizí ze seznamů a nástěnky, ale zůstane v databázi a jeho číslo zůstane obsazené. Půjde ho obnovit.',
             'escalate' => 'Eskalovat úkol',
             'clear_escalation' => 'Zrušit eskalaci',
+            'change_status' => 'Změnit stav',
+            'change_status_heading' => 'Změnit stav úkolu',
+            'change_status_submit' => 'Uložit stav',
         ],
         'notifications' => [
             'archived' => 'Úkol byl archivován',
             'restored' => 'Úkol byl obnoven',
+            'status_changed' => 'Stav úkolu byl změněn',
             'shared' => [
                 'greeting' => 'Dobrý den,',
                 'action' => 'Otevřít úkol',

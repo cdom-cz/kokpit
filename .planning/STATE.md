@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 10
-current_phase_name: Invoicing
+current_phase: 11
+current_phase_name: Stripe Payments
 status: verifying
-stopped_at: Completed 10-32-PLAN.md
-last_updated: "2026-10-17T21:32:01.814Z"
-last_activity: 2026-10-17
-last_activity_desc: Phase 10 execution started
-state_head: 6c6eb0464fe7314008f6142ae406048a25e718dc
+stopped_at: Completed 11-20-PLAN.md
+last_updated: "2026-10-18T19:05:15.995Z"
+last_activity: 2026-10-18
+last_activity_desc: Phase 11 execution started
+state_head: 9701c5601b793fecbcd7744339ccb72ec9853d83
 progress:
   total_phases: 13
   completed_phases: 7
-  total_plans: 225
-  completed_plans: 225
+  total_plans: 245
+  completed_plans: 245
   percent: 54
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 10 — Invoicing
+**Current focus:** Phase 11 — Stripe Payments
 
 ## Current Position
 
-Phase: 10 (Invoicing) — EXECUTING
-Plan: 41 of 41
+Phase: 11 (Stripe Payments) — EXECUTING
+Plan: 20 of 20
 Status: Phase complete — ready for verification
-Last activity: 2026-10-17 — Phase 10 execution started
+Last activity: 2026-10-18 - Completed quick task 261018-rvf: Allow changing a task's status directly in its view, not only in the task detail
 
 Progress: [█████░░░░░] 54%
 
@@ -288,6 +288,26 @@ Progress: [█████░░░░░] 54%
 | Phase 10 P30 | 47 min | 3 tasks | 7 files |
 | Phase 10 P31 | 28min | 3 tasks | 10 files |
 | Phase 10 P32 | 90min | 3 tasks | 5 files |
+| Phase 11 P01 | 40min | 3 tasks | 15 files |
+| Phase 11 P02 | 55min | 3 tasks | 12 files |
+| Phase 11 P03 | 55min | 3 tasks | 15 files |
+| Phase 11 P04 | 45min | 3 tasks | 19 files |
+| Phase 11 P05 | 45min | 3 tasks | 12 files |
+| Phase 11 P06 | 30min | 2 tasks | 14 files |
+| Phase 11 P07 | 45min | 3 tasks | 11 files |
+| Phase 11 P08 | 70min | 3 tasks | 12 files |
+| Phase 11 P09 | 45min | 2 tasks | 17 files |
+| Phase 11 P10 | 40min | 3 tasks | 13 files |
+| Phase 11 P11 | 55min | 3 tasks | 10 files |
+| Phase 11 P12 | 55min | 3 tasks | 8 files |
+| Phase 11 P13 | 40min | 3 tasks | 9 files |
+| Phase 11 P14 | 25 min | 3 tasks | 16 files |
+| Phase 11 P19 | 55min | 3 tasks | 6 files |
+| Phase 11 P15 | 25min | 2 tasks | 5 files |
+| Phase 11 P16 | 40min | 3 tasks | 9 files |
+| Phase 11 P17 | 25min | 2 tasks | 11 files |
+| Phase 11 P18 | 45min | 2 tasks | 3 files |
+| Phase 11 P20 | 75min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -719,6 +739,35 @@ Recent decisions affecting current work:
 - [Phase 10]: In the Odeslani tab a sending row older than the System page stale threshold reads as failed; the list column keeps Ve fronte for every sending row
 - [Phase 10]: A document that cannot be credited any more (cancelled elsewhere) is shown as a persistent danger notification plus a redirect, not a field error
 - [Phase 10]: 10-32: the old hand-over test of the Phase 10 bullet was rewritten to assert the R-09-2 wording, not relaxed; no .gitignore entry added
+- [Phase 11]: R11-01-1: official stripe/stripe-php SDK behind the two-method StripeGateway, confined to app/Domain/Payments/Stripe/ (source scan)
+- [Phase 11]: R11-01-2/3: API version pinned 2026-09-30.endive, 20 s timeout, one retry; fixed failure classes, only connection and rate_limited retryable
+- [Phase 11]: R11-01-4: ISK and UGX refused with unsupported_currency by the PaymentLinkRequest constructor
+- [Phase 11]: R11-01-5: STRIPE_SECRET and STRIPE_WEBHOOK_SECRET env-only; isConfigured needs both
+- [Phase 11]: R11-02: card payments reach invoice_payments only through RecordPayment::recordLocked(); the database allows a missing creator only for method card
+- [Phase 11]: R11-03-1: card switch effective value is kind AND draft switch AND global setting AND configured Stripe; client flag only defaults the draft switch (assumption A8, owner to confirm)
+- [Phase 11]: R11-03-2: invoice_admin.pay_token varchar(32) unique with format CHECK, frozen with the document, no expiry
+- [Phase 11]: R11-03-3: pay URL is app.url + /pay/ + token, never the request host
+- [Phase 11]: 11-04: webhook intake stores each handled Stripe event once via INSERT ON CONFLICT DO NOTHING on a partial unique (name, event_id); an unprocessed stored event is dispatched again on redelivery; failures are recorded as a fixed failure_class, never exception text
+- [Phase 11]: R11-05: the PDF card button reads only the frozen pay token; the mail pay-link block is appended at send time from PayLinkBlock and absent for paid and cancelled documents
+- [Phase 11]: R11-06: payment_links guard also freezes stripe_url once set; a link record is never deleted and its Stripe references stay
+- [Phase 11]: [11-07] A returned Stripe URL outside stripe.com fails the row as api_error and keeps the Stripe id; ISK/UGX requests fail in phase A before any call
+- [Phase 11]: [11-07] The link job retries only connection and rate_limited before the last attempt, read from the queue job's maxTries (default 3)
+- [Phase 11]: 11-08: the pay page redirects only when the active link offers exactly what is still owed; a stale link after a partial payment shows the preparing state
+- [Phase 11]: 11-09: card payment record keeps the Stripe references after a payment is deleted (payment key ON DELETE SET NULL, unique event, session, payment intent and refund references); a resolution is final in the guard trigger
+- [Phase 11]: R11-10: PaymentLinks::deactivate() is the one local deactivation shared by reconcile, regenerate and manual deactivation; the remote stamp is set under a row lock only while empty
+- [Phase 11]: 11-11: the type tabs Duplicitní, Nespárované and Vrácení list unresolved records of their type only; every resolved record sits under Vyřešené, so the tabs partition the table
+- [Phase 11]: 11-11: a list that never had a record shows the no-record empty state on every tab; the Livewire update of the record view answers 404 for a Partner (record hidden by the model scope), GET answers 403
+- [Phase 11]: R11-12: link section reads one memoised PaymentLinkStatus per request; regenerable predicate shared by button and banners; list filter and column Admin-only
+- [Phase 11]: 11-13: handler map accepts StripeEventAction (parsed event) beside StripeEventHandler (stored row); RecordCardPayment::handle(StripeEvent) is mapped directly
+- [Phase 11]: 11-13: a session must agree with its link on the Stripe link id as well as on the document, else unmatched undetermined (T-11-47)
+- [Phase 11]: 11-14: webhook pruning age runs from processed_at (not created_at); the slot age is Carbon's absolute Czech duration
+- [Phase 11]: 11-19: the assign select offers documents that still owe something plus the record's own document even when paid; a hidden Filament action silently drops a stale submit, so a resolution action stays visible while its modal is open and the Action refuses with Platba už byla vyřešena; note limits are validation rules with a live counter, not input maxlength
+- [Phase 11]: 11-15: PartnerPayButton reuses PaymentLinkStatus payable inside runAsSystem and returns only the stable URL or null; the Partner header shows Zaplatit kartou in front of the PDF only while that URL exists
+- [Phase 11]: 11-16: a duplicate or unmatched record alerts from RecordCardPayment::record() after the commit, throttled per record id; refund records leave invoice_payment_id empty and link through the payment intent, document and link
+- [Phase 11]: 11-17: the dashboard card 'Nevyřešené platby' narrows both boot checks to the AccessRule so a poll after the last resolution renders an empty root instead of a 403
+- [Phase 11]: 11-18: a worker tells an ignored event from a processed one by its own processed_at update; the unlocked twin is deterministic (read before the barrier, wait for the other commit)
+- [Phase 11]: 11-20: the Partner sweep pins routes/public.php to exactly pay.show and webhooks.stripe and the journey test reads mail from the array transport, not Mail::fake()
+- [Phase 11]: 11-20: the Phase 11 hand-over bullet of CONTRIBUTING is replaced by a Card payments bullet and a Phase 12 public-route bullet, guarded by RepositoryFilesTest
 
 ### Pending Todos
 
@@ -759,6 +808,8 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261015-cv5 | Make dashboard widgets collapsible with the state saved per user in the database | 2026-10-15 | 75a5c2e | [261015-cv5-make-dashboard-widgets-collapsible-with-](./quick/261015-cv5-make-dashboard-widgets-collapsible-with-/) |
 | 261015-diz | Add overdue highlight to the admin tasks list, reusing the deadlines widget rendering and copy | 2026-10-15 | f9dc2e7 | [261015-diz-add-overdue-highlight-to-the-admin-tasks](./quick/261015-diz-add-overdue-highlight-to-the-admin-tasks/) |
 | 261016-tnb | Show the Checklist section on the admin task view page and allow toggling checklist item states there | 2026-10-16 | e4a5880 | [261016-tnb-task-view-checklist-toggle](./quick/261016-tnb-task-view-checklist-toggle/) |
+| 261018-mic | Add an external identifier column to transactions for passing advanced identifiers (like time_entries.external), exposed via the API | 2026-10-18 | 8dc3ebb | [261018-mic-add-an-external-identifier-column-to-tra](./quick/261018-mic-add-an-external-identifier-column-to-tra/) |
+| 261018-rvf | Allow changing a task's status directly in its view, not only in the task detail | 2026-10-18 | 9701c56 | [261018-rvf-allow-changing-a-task-s-status-directly-](./quick/261018-rvf-allow-changing-a-task-s-status-directly-/) |
 
 ### Roadmap Evolution
 
@@ -774,6 +825,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-17T21:32:00.309Z
-Stopped at: Completed 10-32-PLAN.md
+Last session: 2026-10-18T17:55:50.504Z
+Stopped at: Completed 11-20-PLAN.md
 Resume file: None

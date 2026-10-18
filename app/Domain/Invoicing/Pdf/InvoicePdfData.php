@@ -7,6 +7,7 @@ namespace App\Domain\Invoicing\Pdf;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Payments\Support\PayUrl;
 use App\Domain\Settings\DocumentImage;
 use App\Domain\Settings\VatMode;
 use App\Domain\Shared\Money\Money;
@@ -19,8 +20,9 @@ use UnexpectedValueException;
  * Everything the invoice template prints, read from the issued document and nothing else (D-21, D-23; ruling
  * R-15-4). The sources are the columns of the `invoices` row, the `invoice_items` rows and the four frozen
  * snapshots (supplier, customer, bank, appearance). It never reads the client, the supplier or invoicing
- * settings, the exchange rates or the Admin-only row, so a later change of any of them cannot alter a regenerated
- * PDF, and the CNB rate, the CZK total, the internal note and linked time cannot reach the page (UI-SPEC U-16).
+ * settings or the exchange rates, and from the Admin-only row only the frozen pay token of the card button (Phase 11
+ * D-01), so a later change of any of them cannot alter a regenerated PDF, and the CNB rate, the CZK total, the
+ * internal note and linked time cannot reach the page (UI-SPEC U-16).
  *
  * The logo and the signature come from {@see DocumentImage::dataUri()} with the path and SHA-256 of the
  * appearance snapshot, which throws when the stored object is missing or changed, so the regeneration is either
@@ -48,6 +50,7 @@ final readonly class InvoicePdfData
      * @param  list<array{index: int, description: string, quantity: string, unitPrice: string, total: string, vatRate: string|null}>  $items
      * @param  array{label: string, amount: string}  $summary
      * @param  array{qrDataUri: string|null, sentence: list<array{text: string, bold: bool}>, facts: list<array{key: string, value: string}>}|null  $payment
+     * @param  array{lead: string, label: string, url: string}|null  $cardPayment
      * @param  array{uri: string, width: float, height: float}|null  $logo
      * @param  array{uri: string, width: float, height: float}|null  $signature
      * @param  list<string>  $footer
@@ -67,6 +70,7 @@ final readonly class InvoicePdfData
         public array $summary,
         public ?string $note,
         public ?array $payment,
+        public ?array $cardPayment,
         public ?string $creditNoteNotice,
         public array $footer,
         public ?array $signature,
@@ -98,6 +102,7 @@ final readonly class InvoicePdfData
 
         $palette = DocumentPalette::fromAccent(self::text($appearance['accent'] ?? null));
         $images = app(DocumentImage::class);
+        $payment = $kind->carriesPayment() ? self::payment($issued, $t, $date) : null;
 
         return new self(
             kind: $kind,
@@ -121,7 +126,8 @@ final readonly class InvoicePdfData
                 'amount' => $issued->total()->format($locale),
             ],
             note: self::text($issued->note),
-            payment: $kind->carriesPayment() ? self::payment($issued, $t, $date) : null,
+            payment: $payment,
+            cardPayment: $payment === null ? null : self::cardPayment($issued, $t),
             creditNoteNotice: $kind === InvoiceKind::CreditNote ? $t('credit_note_no_payment') : null,
             footer: self::footer(self::text($appearance['footer'] ?? null)),
             signature: self::image($images, $appearance['signature'] ?? null, self::SIGNATURE_MAX_WIDTH, self::SIGNATURE_MAX_HEIGHT),
@@ -311,6 +317,26 @@ final readonly class InvoicePdfData
             ])),
             'facts' => $facts,
         ];
+    }
+
+    /**
+     * The "Pay by card" button of the payment box (D-01, D-05, D-06; ruling R11-05-1), null when the document was not
+     * issued with card payment on. It reads the frozen pay token of the Admin-only row and nothing else, never the
+     * live Stripe link or the payment state, so a PDF regenerated after the document is paid or the link replaced
+     * prints the same button and URL (R11-05-2, Phase 10 D-23). The URL is the stable Kokpit one, never a Stripe URL.
+     *
+     * @param  Closure(string, array<string, string>=): string  $t
+     * @return array{lead: string, label: string, url: string}|null
+     */
+    private static function cardPayment(Invoice $issued, Closure $t): ?array
+    {
+        $url = PayUrl::forInvoice($issued);
+
+        if ($url === null) {
+            return null;
+        }
+
+        return ['lead' => $t('card_lead'), 'label' => $t('card_button'), 'url' => $url];
     }
 
     /**

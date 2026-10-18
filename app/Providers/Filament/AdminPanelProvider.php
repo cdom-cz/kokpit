@@ -103,8 +103,9 @@ class AdminPanelProvider extends PanelProvider
             })
             ->spa()
             // A SPA navigation fetches the link and swaps it into the page, which would swallow a file
-            // response. Every route under /files hands the browser a real response instead.
-            ->spaUrlExceptions(['*/admin/files/*'])
+            // response. Every route under /files hands the browser a real response instead. The public pay page
+            // (/pay/{token}) is a plain request that answers a redirect to Stripe, so it is never fetched in-page.
+            ->spaUrlExceptions(['*/admin/files/*', '*/pay/*'])
             // The bell shows the Admin alerts of failed background jobs (D-11) and the task
             // notifications of both sides (D-07). Every signed-in account has one, and Filament
             // lists only the notifications of the signed-in user, so nobody reads another

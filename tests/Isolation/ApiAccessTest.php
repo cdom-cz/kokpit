@@ -264,7 +264,7 @@ describe('with canaries of two clients seeded', function (): void {
         expect(array_keys($response->json('data')))->toBe([
             'id', 'type', 'transaction_date', 'category_id', 'amount_minor', 'currency', 'czk_minor', 'czk_source',
             'exchange_rate', 'exchange_unit_amount', 'exchange_rate_date', 'description', 'counterparty',
-            'document_number', 'client_id', 'project_id', 'created_at', 'updated_at',
+            'document_number', 'client_id', 'project_id', 'external', 'created_at', 'updated_at',
         ])
             ->and($response->json('data.id'))->toBe($id)
             ->and($response->getContent())->toContain($this->canaryA)

@@ -6,6 +6,7 @@ namespace App\Filament\Pages;
 
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Invoicing\Pdf\DocumentPalette;
+use App\Domain\Payments\Support\StripeConfig;
 use App\Domain\Settings\Banking\BankAccountFormat;
 use App\Domain\Settings\DocumentImage;
 use App\Domain\Settings\Numbering\DocumentKind;
@@ -39,6 +40,7 @@ use Filament\Pages\Concerns\CanUseDatabaseTransactions;
 use Filament\Pages\Concerns\HasUnsavedDataChangesAlert;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Group;
@@ -611,7 +613,12 @@ class SettingsPage extends Page
                 Toggle::make('online_payments_enabled')
                     ->label(__('kokpit.settings.payments.online_payments_enabled'))
                     ->helperText(__('kokpit.settings.payments.online_payments_enabled_hint'))
+                    ->live()
                     ->rules($rules['online_payments_enabled']),
+                // D-16: the keys live in the environment only; the page shows whether they are set, never a value.
+                Callout::make(__('kokpit.settings.payments.stripe_missing_callout'))
+                    ->warning()
+                    ->visible(fn (Get $get): bool => (bool) $get('online_payments_enabled') && ! app(StripeConfig::class)->isConfigured()),
             ])->statePath(PaymentSettings::group()),
         ]);
     }

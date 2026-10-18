@@ -16,10 +16,12 @@ use App\Domain\Invoicing\Actions\UpdateDraft;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Issuing\IssueContext;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Support\DraftPreview;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
 use App\Domain\Invoicing\Support\IssueChecks;
+use App\Domain\Payments\Support\CardPaymentSwitch;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Settings\Banking\BankAccount;
@@ -45,6 +47,7 @@ use Filament\Forms\Components\Repeater\TableColumn;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
@@ -278,6 +281,9 @@ final class EditInvoice extends EditRecord
             TextEntry::make('issue_currency')
                 ->label(__('invoices.issue.summary.currency'))
                 ->state(fn (): string => $this->invoice()->currency),
+            TextEntry::make('issue_card_payment')
+                ->label(__('invoices.issue.summary.card_payment'))
+                ->state(fn (): string => (string) __($this->cardPaymentAtIssue() ? 'invoices.issue.summary.card_payment_yes' : 'invoices.issue.summary.card_payment_no')),
         ];
 
         $quote = $invoice->currency === 'CZK' ? null : $this->czkQuote($day);
@@ -296,6 +302,23 @@ final class EditInvoice extends EditRecord
             Callout::make(fn (): string => (string) __('invoices.issue.callout', ['number' => app(IssueDocument::class)->expectedNumber($this->invoice())]))
                 ->warning(),
         ];
+    }
+
+    /**
+     * What the issue will freeze as the card switch (D-06): the stored draft switch ANDed with the global setting and a
+     * configured Stripe, for an invoice or a proforma only.
+     */
+    private function cardPaymentAtIssue(): bool
+    {
+        return app(CardPaymentSwitch::class)->effective($this->invoice()->kind, $this->storedCardPayment());
+    }
+
+    /**
+     * The switch stored on the Admin-only row of the draft, read fresh so a save just made is seen.
+     */
+    private function storedCardPayment(): bool
+    {
+        return InvoiceAdmin::query()->where('invoice_id', $this->invoice()->getKey())->value('card_payment_enabled') === true;
     }
 
     /**
@@ -470,6 +493,8 @@ final class EditInvoice extends EditRecord
             'taxable_supply_date' => $invoice->taxable_supply_date?->format('Y-m-d'),
             'note' => $invoice->note,
             'internal_note' => $invoice->admin?->internal_note,
+            // A disabled switch shows off whatever is stored; it is not dehydrated, so the stored value stays.
+            'card_payment_enabled' => app(CardPaymentSwitch::class)->available() && $this->storedCardPayment(),
             'items' => $items,
         ];
     }
@@ -498,7 +523,7 @@ final class EditInvoice extends EditRecord
             ];
         }
 
-        return [
+        $values = [
             'currency' => $data['currency'] ?? null,
             'language' => $data['language'] ?? null,
             'issue_date' => self::typedDate($data['issue_date'] ?? null, $data['issue_date_default'] ?? null),
@@ -507,6 +532,14 @@ final class EditInvoice extends EditRecord
             'internal_note' => $data['internal_note'] ?? null,
             'items' => $items,
         ];
+
+        // The switch travels only when the toggle was editable (a disabled or hidden field is not dehydrated), so a
+        // draft kept off by the settings keeps the value it had (D-06).
+        if (array_key_exists('card_payment_enabled', $data) && $this->invoice()->kind->carriesPayment()) {
+            $values['card_payment_enabled'] = (bool) $data['card_payment_enabled'];
+        }
+
+        return $values;
     }
 
     /**
@@ -544,6 +577,18 @@ final class EditInvoice extends EditRecord
         $this->invoice()->refresh();
         $this->preview = null;
         $this->fillForm();
+    }
+
+    /**
+     * The helper of the card switch: the standing note, or the reason the switch is disabled (UI-SPEC Surface D).
+     */
+    private function cardPaymentHelper(): string
+    {
+        return (string) match (app(CardPaymentSwitch::class)->unavailableReason()) {
+            CardPaymentSwitch::SETTINGS_OFF => __('invoices.draft.helpers.card_payment_settings_off'),
+            CardPaymentSwitch::STRIPE_MISSING => __('invoices.draft.helpers.card_payment_stripe_missing'),
+            default => __('invoices.draft.helpers.card_payment'),
+        };
     }
 
     private function documentSection(): Section
@@ -603,6 +648,11 @@ final class EditInvoice extends EditRecord
                 TextEntry::make('payment_method')
                     ->label(__('invoices.draft.fields.payment_method'))
                     ->state(__('invoices.draft.payment_method_value')),
+                Toggle::make('card_payment_enabled')
+                    ->label(__('invoices.draft.fields.card_payment'))
+                    ->helperText(fn (): string => $this->cardPaymentHelper())
+                    ->disabled(fn (): bool => ! app(CardPaymentSwitch::class)->available())
+                    ->visible(fn (): bool => $this->invoice()->kind->carriesPayment()),
                 TextEntry::make('variable_symbol')
                     ->label(__('invoices.draft.fields.variable_symbol'))
                     ->state(__('invoices.draft.helpers.variable_symbol'))

@@ -15,6 +15,7 @@ use App\Domain\Invoicing\Notifications\InvoiceEmailFailedNotification;
 use App\Domain\Invoicing\Pdf\InvoicePdf;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
+use App\Domain\Payments\Support\PayLinkBlock;
 use App\Domain\Reports\WorkReport\WorkReportPdf;
 use App\Domain\Reports\WorkReport\WorkReportSource;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -48,6 +49,9 @@ use Throwable;
  * Delivery is at-least-once (T-10-64): a row that is finished, or that a dead worker left in `sending`, is never
  * sent again by a redelivery. What can send twice is a run that fails after the transport accepted the message, while
  * the row is being marked sent: the next try claims the row again. That one repeat is the stated guarantee.
+ *
+ * For a document issued with card payment on that still owes money, the pay-link block of {@see PayLinkBlock} follows
+ * the stored body at send time (D-03); the log row keeps the confirmed text only.
  *
  * The work report reads the supplier and client lines live, not from the snapshot of the document (R-24-4): the
  * figures in it are hours, and a changed address in the header is an accepted drift of an attachment that carries no
@@ -99,7 +103,7 @@ final class SendInvoiceEmail extends KokpitJob
                 return;
             }
 
-            Mail::to($row->recipient)->send(new InvoiceMail($row->subject, $row->body, $files));
+            Mail::to($row->recipient)->send(new InvoiceMail($row->subject, $this->bodyToSend($row), $files));
 
             InvoiceEmail::query()
                 ->whereKey($row->id)
@@ -172,6 +176,19 @@ final class SendInvoiceEmail extends KokpitJob
                 $admin->notifyNow($notification);
             }
         });
+    }
+
+    /**
+     * The body that leaves: the text the Admin confirmed and, for a document that still owes money and was issued with
+     * card payment on, the fixed pay-link block after it (D-03). The block is added here, at send time, so clearing the
+     * text cannot remove it and a resend of a paid or cancelled document carries none; the log row keeps exactly what
+     * the Admin confirmed.
+     */
+    private function bodyToSend(InvoiceEmail $row): string
+    {
+        $block = PayLinkBlock::forMail(Invoice::query()->findOrFail($row->invoice_id));
+
+        return $block === null ? $row->body : rtrim($row->body).$block;
     }
 
     /**

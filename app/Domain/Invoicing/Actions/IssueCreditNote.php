@@ -18,6 +18,7 @@ use App\Domain\Invoicing\Queries\InvoiceBalances;
 use App\Domain\Invoicing\Support\CreditableQuantities;
 use App\Domain\Invoicing\Support\DraftTotals;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
+use App\Domain\Payments\Support\PaymentLinks;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Billing\EntryBilling;
@@ -69,6 +70,7 @@ final readonly class IssueCreditNote
         private DocumentIssuer $issuer,
         private EntryBilling $billing,
         private InvoiceBalances $balances,
+        private PaymentLinks $paymentLinks,
     ) {}
 
     /**
@@ -89,7 +91,12 @@ final readonly class IssueCreditNote
 
             $quantities = $this->requested($lines, CreditableQuantities::for($locked));
 
-            return $this->issueCredit($actor, $locked, $quantities, false);
+            $credit = $this->issueCredit($actor, $locked, $quantities, false);
+
+            // D-08: the credit note lowers what is owed, so a live payment link that offers the old amount is deactivated here.
+            $this->paymentLinks->reconcile($locked);
+
+            return $credit;
         });
     }
 
@@ -117,6 +124,9 @@ final readonly class IssueCreditNote
             $credit = $this->issueCredit($actor, $locked, $quantities, true);
 
             $this->releaseEntries($locked);
+
+            // D-08: the storno cancels the invoice, so its live payment link is deactivated in the same transaction.
+            $this->paymentLinks->reconcile($locked);
 
             return $credit;
         });

@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Filament\Resources\TaskResource\Pages;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\EstimateHours;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Tasks\Actions\ClearEscalation;
 use App\Domain\Tasks\Actions\ToggleTaskChecklistItem;
+use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Billing\BillingSource;
 use App\Domain\Tasks\Billing\EffectiveBilling;
 use App\Domain\Tasks\Billing\TaskBillingResolver;
@@ -24,6 +26,7 @@ use App\Filament\Support\TaskColumns;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Select;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
@@ -66,6 +69,11 @@ final class ViewTask extends ViewRecord
         $components = [];
 
         foreach ($schema->getComponents(withHidden: true) as $component) {
+            // The status can be changed right where it is read.
+            if ($component instanceof TextEntry && $component->getName() === 'status') {
+                $component->hintAction($this->changeStatusAction());
+            }
+
             $components[] = $component;
 
             // The escalation reads next to the priority (UI-SPEC U-12).
@@ -289,6 +297,65 @@ final class ViewTask extends ViewRecord
 
                     return;
                 }
+
+                $action->success();
+            });
+    }
+
+    /**
+     * The Admin changes the status on the task page with the same effect as saving it on the edit page.
+     * The write is {@see UpdateTask} with the status only (board lock, end of the new column,
+     * completed_at, one history row, the Partner side told once). The link is shown only while
+     * {@see TaskResource::canEdit()} holds, so never on an archived task and never for a Partner; the
+     * body re-checks {@see TaskResource::canAccess()} because /livewire/update is public.
+     */
+    private function changeStatusAction(): Action
+    {
+        return Action::make('changeStatus')
+            ->label(__('kokpit.tasks.actions.change_status'))
+            ->link()
+            ->modalHeading(__('kokpit.tasks.actions.change_status_heading'))
+            ->modalSubmitActionLabel(__('kokpit.tasks.actions.change_status_submit'))
+            ->successNotificationTitle(__('kokpit.tasks.notifications.status_changed'))
+            ->visible(fn (): bool => $this->getRecord() instanceof Task && TaskResource::canEdit($this->getRecord()))
+            ->fillForm(function (): array {
+                $task = $this->getRecord();
+                assert($task instanceof Task);
+
+                return ['status' => TaskResource::enumValue($task->status)];
+            })
+            ->schema([
+                Select::make('status')
+                    ->label(__('kokpit.tasks.fields.status'))
+                    ->options(ProjectStatus::class)
+                    ->required()
+                    ->native(false),
+            ])
+            ->action(function (array $data, Action $action): void {
+                abort_unless(TaskResource::canAccess(), 403);
+
+                $task = $this->getRecord();
+                assert($task instanceof Task);
+
+                $actor = auth()->user();
+                assert($actor instanceof User);
+
+                $status = TaskResource::enumValue($data['status'] ?? null);
+
+                if ($status === null) {
+                    throw ValidationException::withMessages(['mountedActions.0.data.status' => __('kokpit.tasks.errors.status_invalid')]);
+                }
+
+                try {
+                    app(UpdateTask::class)->handle($actor, $task, ['status' => $status]);
+                } catch (ValidationException $e) {
+                    throw ValidationException::withMessages([
+                        'mountedActions.0.data.status' => $e->errors()['status'] ?? [(string) collect($e->errors())->flatten()->first()],
+                    ]);
+                }
+
+                // The badge and the record of the same response show the new status.
+                $task->refresh();
 
                 $action->success();
             });

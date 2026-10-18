@@ -137,14 +137,14 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Payments (Stripe)
 
-- [ ] **PA-01**: Single-use Stripe Payment Link created by queued job at issue when online payment is enabled; failure never blocks issue and alerts Admin
-- [ ] **PA-02**: "Pay by card" button in e-mail, PDF and invoice detail (Admin and Partner); hidden when paid
-- [ ] **PA-03**: Online payment can be disabled per client and per document
-- [ ] **PA-04**: Link deactivated on payment by any route or on storno; link can be regenerated (old one deactivated first)
-- [ ] **PA-05**: Webhook endpoint verifies Stripe signature, stores event with unique event id and answers immediately; processing runs in a job
-- [ ] **PA-06**: Matching by invoice id (fallback link id) with amount and currency check creates payment, marks invoice paid, creates income, deactivates link, notifies Admin
-- [ ] **PA-07**: Second payment of the same invoice is stored as duplicate without income or invoice change and alerts Admin; repeated events are ignored; idempotence enforced by DB unique constraints
-- [ ] **PA-08**: Unmatched payments and refund events are recorded and alerted; Admin payments overview with duplicate/unmatched filters and manual resolution; old webhook events are pruned
+- [x] **PA-01**: Single-use Stripe Payment Link created by queued job at issue when online payment is enabled; failure never blocks issue and alerts Admin
+- [x] **PA-02**: "Pay by card" button in e-mail, PDF and invoice detail (Admin and Partner); hidden when paid
+- [x] **PA-03**: Online payment can be disabled per client and per document
+- [x] **PA-04**: Link deactivated on payment by any route or on storno; link can be regenerated (old one deactivated first)
+- [x] **PA-05**: Webhook endpoint verifies Stripe signature, stores event with unique event id and answers immediately; processing runs in a job
+- [x] **PA-06**: Matching by invoice id (fallback link id) with amount and currency check creates payment, marks invoice paid, creates income, deactivates link, notifies Admin
+- [x] **PA-07**: Second payment of the same invoice is stored as duplicate without income or invoice change and alerts Admin; repeated events are ignored; idempotence enforced by DB unique constraints
+- [x] **PA-08**: Unmatched payments and refund events are recorded and alerted; Admin payments overview with duplicate/unmatched filters and manual resolution; old webhook events are pruned
 
 ### Partner Audit
 
@@ -284,14 +284,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | IN-08 | Phase 10 | Complete |
 | IN-09 | Phase 10 | Complete |
 | IN-10 | Phase 10 | Complete |
-| PA-01 | Phase 11 | Pending |
-| PA-02 | Phase 11 | Pending |
-| PA-03 | Phase 11 | Pending |
-| PA-04 | Phase 11 | Pending |
-| PA-05 | Phase 11 | Pending |
-| PA-06 | Phase 11 | Pending |
-| PA-07 | Phase 11 | Pending |
-| PA-08 | Phase 11 | Pending |
+| PA-01 | Phase 11 | Complete |
+| PA-02 | Phase 11 | Complete |
+| PA-03 | Phase 11 | Complete |
+| PA-04 | Phase 11 | Complete |
+| PA-05 | Phase 11 | Complete |
+| PA-06 | Phase 11 | Complete |
+| PA-07 | Phase 11 | Complete |
+| PA-08 | Phase 11 | Complete |
 | AUD-01 | Phase 12 | Pending |
 | AUD-02 | Phase 12 | Pending |
 

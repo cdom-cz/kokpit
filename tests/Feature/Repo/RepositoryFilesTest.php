@@ -9,6 +9,7 @@ use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Database\CzechCollation;
 use App\Filament\Support\DocumentColumns;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Route;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -874,10 +875,10 @@ it('tells the operator what the Phase 9 documents need from the bucket', functio
         ->and($readme)->toContain('7 days');
 });
 
-it('hands over to Phases 7, 10 and 11, carries no Phase 8 or Phase 9 note and no longer carries the Phase 6 note or the stale labels', function () {
+it('hands over to Phases 7, 10 and 12, carries no Phase 8, Phase 9 or Phase 11 note and no longer carries the Phase 6 note or the stale labels', function () {
     $contributing = repoFile('CONTRIBUTING.md');
 
-    foreach (['Phase 7 (', 'Phase 10 (', 'Phase 11 ('] as $note) {
+    foreach (['Phase 7 (', 'Phase 10 (', 'Phase 12.'] as $note) {
         expect($contributing)->toContain("**{$note}");
     }
 
@@ -889,12 +890,13 @@ it('hands over to Phases 7, 10 and 11, carries no Phase 8 or Phase 9 note and no
         ->and($contributing)->not->toContain('**Phase 7 (calendar and reports)')
         ->and($contributing)->not->toContain('**Phase 8 (exports)')
         ->and($contributing)->not->toContain('**Phase 12 (')
+        ->and($contributing)->not->toContain('**Phase 11 (')
         ->and($contributing)->toContain('**Phase 7 (REST API).**')
         ->and($contributing)->toContain('**Phase 10 (invoicing).**')
-        ->and($contributing)->toContain('**Phase 11 (Stripe).**');
+        ->and($contributing)->toContain('**Phase 12.**');
 
     $phaseTen = substr($contributing, (int) strpos($contributing, '**Phase 10 (invoicing).**'));
-    $phaseTen = substr($phaseTen, 0, (int) strpos($phaseTen, '**Phase 11 (Stripe).**'));
+    $phaseTen = substr($phaseTen, 0, (int) strpos($phaseTen, '**Phase 12.**'));
 
     // What Phase 10 built and the rules later phases inherit (plan 10-32): the single writer of the billing columns
     // (R-09-2 replaces the Phase 6 wording), the issue pipeline and its order, the guards and their limits, the payment
@@ -911,12 +913,12 @@ it('hands over to Phases 7, 10 and 11, carries no Phase 8 or Phase 9 note and no
         expect($phaseTen)->toContain($phrase);
     }
 
-    // The Phase 11 hand-over: the pay button, payment matching, the kind-scoped variable symbol and the only write paths.
-    $phaseEleven = substr($contributing, (int) strpos($contributing, '**Phase 11 (Stripe).**'));
-    $phaseEleven = substr($phaseEleven, 0, (int) strpos($phaseEleven, '- **Search.**'));
+    // What Phase 11 built and the rules later phases inherit: the pay button, payment matching, the kind-scoped variable
+    // symbol and the only write paths (the Card payments bullet of the conventions).
+    $cardPayments = repoContributingBullet('Card payments.');
 
-    foreach (['ViewPartnerInvoice', 'R-07-4', 'VariableSymbol', 'invoice_payments', 'RecordPayment', 'DeletePayment', 'R-41-4', 'UnpaidInvoices', 'Dashboard::getWidgets()'] as $phrase) {
-        expect($phaseEleven)->toContain($phrase);
+    foreach (['ViewPartnerInvoice', 'R-07-4', 'VariableSymbol', 'invoice_payments', 'RecordPayment', 'DeletePayment', 'UnpaidInvoices', 'Dashboard::getWidgets()'] as $phrase) {
+        expect($cardPayments)->toContain($phrase);
     }
 
     // The superseded Phase 6 wording is gone from the time entry rule as well.
@@ -1036,4 +1038,132 @@ it('no longer points the import at a projects counter column', function () {
     // .planning is a public part of the repository; the stale wording is research correction C1.
     expect($requirements)->not->toContain('next_task_number')
         ->and($requirements)->toContain('task:<project uuid>');
+});
+
+/**
+ * The class a documentation name stands for: the one file of that name under app/ or tests/Support, as its full
+ * class name, or null when there is none. A name that two files share (a widget and a query) resolves to the first
+ * that exists.
+ *
+ * @return list<string>
+ */
+function repoClassesNamed(string $short): array
+{
+    $found = [];
+
+    foreach (['app' => 'App', 'tests/Support' => 'Tests\Support'] as $directory => $namespace) {
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(base_path($directory), FilesystemIterator::SKIP_DOTS));
+
+        foreach ($iterator as $file) {
+            if (! $file instanceof SplFileInfo || $file->getFilename() !== $short.'.php') {
+                continue;
+            }
+
+            $relative = substr($file->getPathname(), strlen(base_path($directory)) + 1, -4);
+            $class = $namespace.'\\'.str_replace('/', '\\', $relative);
+
+            if (class_exists($class) || interface_exists($class) || trait_exists($class) || enum_exists($class)) {
+                $found[] = $class;
+            }
+        }
+    }
+
+    return $found;
+}
+
+/**
+ * The text of the CONTRIBUTING.md bullet that starts with the given bold label, to the end of its line.
+ */
+function repoContributingBullet(string $label): string
+{
+    foreach (explode("\n", repoFile('CONTRIBUTING.md')) as $line) {
+        if (str_starts_with($line, '- **'.$label.'**')) {
+            return $line;
+        }
+    }
+
+    return '';
+}
+
+it('hands the card payments over to Phase 12: the Phase 11 bullet is gone and the two public routes are named', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+    $handOver = repoContributingBullet('Phase 12.');
+
+    expect($contributing)->not->toContain('Phase 11 (Stripe)')
+        ->and($handOver)->not->toBe('')
+        ->and($handOver)->toContain('pay.show')
+        ->and($handOver)->toContain('webhooks.stripe')
+        ->and($handOver)->toContain('payment_links')
+        ->and($handOver)->toContain('card_payments');
+
+    // The routes the text names are the routes of routes/public.php, and nothing else is declared there.
+    $source = repoFile('routes/public.php');
+
+    preg_match_all("/->name\('([^']+)'\)/", $source, $names);
+
+    expect($names[1])->toEqualCanonicalizing(['pay.show', 'webhooks.stripe'])
+        ->and(Route::has('pay.show'))->toBeTrue()
+        ->and(Route::has('webhooks.stripe'))->toBeTrue();
+});
+
+it('only names Phase 11 classes, methods and tests in CONTRIBUTING.md that exist', function () {
+    $bullet = repoContributingBullet('Card payments.');
+
+    expect($bullet)->not->toBe('');
+
+    // The mechanisms the text must keep naming (R11-20-3).
+    foreach ([
+        'PaymentLinks::reconcile()', 'RecordPayment::recordLocked()', 'RecordCardPayment', 'RecordRefundEvent', 'CardPayment::recordOnce()',
+        'DeletePayment', 'StripeGateway', 'FakeStripeGateway', 'pay.show', 'webhooks.stripe',
+    ] as $name) {
+        expect($bullet)->toContain($name);
+    }
+
+    // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists.
+    preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet.repoContributingBullet('Phase 12.'), $matches, PREG_SET_ORDER);
+
+    expect(count($matches))->toBeGreaterThan(15);
+
+    foreach ($matches as $match) {
+        $classes = repoClassesNamed($match[1]);
+
+        expect($classes)->not->toBe([], "CONTRIBUTING.md names {$match[1]} but no such class exists");
+
+        if (isset($match[2])) {
+            $exists = array_filter($classes, static fn (string $class): bool => method_exists($class, $match[2]));
+
+            expect($exists)->not->toBe([], "CONTRIBUTING.md names {$match[1]}::{$match[2]}() but no such method exists");
+        }
+    }
+
+    // The enforcing tests the text names.
+    foreach (['tests/Feature/Payments/CardPaymentJourneyTest.php', 'tests/Isolation/CardPaymentLeakTest.php', 'tests/Support/FakeStripeGateway.php'] as $path) {
+        expect($bullet.repoContributingBullet('Phase 12.'))->toContain(basename($path, '.php'));
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$path} but the file does not exist");
+    }
+});
+
+it('documents the owner\'s Stripe setup in the README with placeholders only', function () {
+    $readme = repoFile('README.md');
+
+    foreach ([
+        'Card payments with Stripe', 'STRIPE_SECRET', 'STRIPE_WEBHOOK_SECRET', 'https://kokpit.example.com/webhooks/stripe',
+        'checkout.session.completed', 'checkout.session.async_payment_succeeded', 'refund.created',
+        'used only for invoicing', 'Stripe CLI', 'stripe listen',
+    ] as $needle) {
+        expect($readme)->toContain($needle);
+    }
+
+    // No Stripe key, signing secret, account or object id: the prefixes are assembled so this file holds none either.
+    $prefix = implode('|', ['sk_', 'pk_', 'rk_', 'whsec_', 'acct_', 'evt_', 'cs_', 'pi_', 'plink_']);
+
+    foreach (['README.md', 'CONTRIBUTING.md'] as $file) {
+        expect(preg_match('/\b('.$prefix.')[A-Za-z0-9_]{6,}/', repoFile($file)))->toBe(0, "{$file} must hold no Stripe-shaped value");
+    }
+
+    // Every environment key it names is a documented key of the example file.
+    $example = repoFile('.env.example');
+
+    expect($example)->toContain('STRIPE_SECRET=')
+        ->and($example)->toContain('STRIPE_WEBHOOK_SECRET=');
 });

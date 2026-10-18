@@ -88,6 +88,11 @@ final class StoreTransactionRequest extends FormRequest
                 'description' => 'The project: its UUID or its key, for example `DEMO`. A name is refused. Optional, but a project needs its client in `client_id` and must belong to it.',
                 'example' => 'DEMO',
             ],
+            'external' => [
+                'description' => 'A free-form JSON object for your own bookkeeping, for example the id of the transaction in the bank or tool it was imported from. Optional. It must be an object (`{}` is fine, a list, a string or a number is refused with 422), at most 4096 bytes as compact JSON and nested at most 8 levels deep. It is returned with the transaction (the order of its keys is not kept), never shown in the application and never used to look transactions up or to skip duplicates.',
+                'type' => 'object',
+                'example' => ['source' => 'demo-bank', 'id' => 'TX-1001'],
+            ],
         ];
     }
 }

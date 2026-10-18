@@ -76,7 +76,7 @@ return [
 
             - The answer has the layout above. An item that is not a JSON object fails under the field `transaction`, and so does an item that could not be saved because of a fault on the server: send such an item again in a new batch, with a new key.
             - A list with no item, or with more than 500 transactions, answers `422` under `transactions` and saves nothing. A batch counts as one write against the rate limit of the token.
-            - A transaction has no field for an id of your own. Deduplicate on your side: `document_number`, the date and the counterparty are its natural keys, so list the transactions of the period before you send a batch again under a new key.
+            - To avoid duplicates, deduplicate on your side: store your own id in `external` (it comes back with every transaction), and list the transactions of the period before you resend them under a new key.
             INTRO,
 
     // The base URL displayed in the docs.

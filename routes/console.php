@@ -6,6 +6,8 @@ use App\Domain\Api\Jobs\PurgeExpiredIdempotencyKeys;
 use App\Domain\Documents\Jobs\PruneExpiredDocumentArchives;
 use App\Domain\Operations\Health\Heartbeats;
 use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
+use App\Domain\Payments\Jobs\DeactivatePaymentLinks;
+use App\Domain\Payments\Jobs\PruneProcessedWebhookCalls;
 use App\Domain\Reports\Jobs\PruneExpiredReportExports;
 use App\Domain\TimeTracking\Jobs\NotifyLongRunningTimers;
 use Illuminate\Foundation\Inspiring;
@@ -95,4 +97,20 @@ Schedule::job(new PruneExpiredReportExports)
 Schedule::job(new PruneExpiredDocumentArchives)
     ->daily()
     ->name('kokpit-document-archive-prune')
+    ->onOneServer();
+
+// Deletes the Stripe events that were processed more than webhook-client.delete_after_days (90) days ago (D-17,
+// PA-08). A failed or waiting event is never pruned, and card payment records do not depend on the event row. Runs
+// as system, because the webhook model is Partner-scoped.
+Schedule::job(new PruneProcessedWebhookCalls)
+    ->daily()
+    ->name('kokpit-webhook-prune')
+    ->onOneServer();
+
+// Switches off at Stripe every payment link that was deactivated here but whose remote call was lost to an outage, so a
+// stale link cannot stay payable for long (D-08, research Pattern 3). The after-commit job handles the normal case;
+// this sweep is the repair. Runs as system.
+Schedule::job(new DeactivatePaymentLinks)
+    ->everyFiveMinutes()
+    ->name('kokpit-payment-link-sweep')
     ->onOneServer();

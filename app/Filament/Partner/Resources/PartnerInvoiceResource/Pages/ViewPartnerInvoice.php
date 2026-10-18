@@ -7,8 +7,10 @@ namespace App\Filament\Partner\Resources\PartnerInvoiceResource\Pages;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
+use App\Domain\Payments\Queries\PartnerPayButton;
 use App\Filament\Partner\Resources\PartnerInvoiceResource;
 use App\Filament\Support\InvoiceColumns;
+use App\Filament\Support\PayByCardAction;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
@@ -50,14 +52,30 @@ final class ViewPartnerInvoice extends ViewRecord
     }
 
     /**
-     * The one header action is the PDF. The slot in front of it is reserved for the "Zaplatit kartou" button of
-     * Phase 11; nothing is rendered for it in this phase, not even a disabled placeholder.
+     * The header holds "Zaplatit kartou" in front of the PDF (D-04, UI-SPEC Surfaces F and M): the one accent action,
+     * shown exactly while the document is not paid, not cancelled and has an active link, opening the stable pay URL
+     * in a new tab. Otherwise the header holds the PDF only, with no placeholder. What the button reads is decided by
+     * {@see PartnerPayButton}, which returns the URL or nothing; `canAccess()` is checked again before it is asked.
      *
      * @return list<Action>
      */
     protected function getHeaderActions(): array
     {
+        $record = function (): Invoice {
+            $invoice = $this->getRecord();
+            assert($invoice instanceof Invoice);
+
+            return $invoice;
+        };
+        $url = static fn (Invoice $invoice): ?string => PartnerInvoiceResource::canAccess() ? PartnerPayButton::urlFor($invoice) : null;
+
         return [
+            PayByCardAction::make(
+                $record,
+                static fn (): bool => $url($record()) !== null,
+                'primary',
+                static fn (): ?string => $url($record()),
+            ),
             self::downloadPdfAction(),
         ];
     }

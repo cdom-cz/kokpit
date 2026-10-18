@@ -6,11 +6,16 @@ namespace Tests\Support;
 
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
+use App\Domain\Operations\Jobs\Middleware\RunsAsSystem;
 use FilesystemIterator;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\Attributes\Backoff;
+use Illuminate\Queue\Attributes\Timeout;
+use Illuminate\Queue\Attributes\Tries;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ReflectionClass;
+use Spatie\WebhookClient\Jobs\ProcessWebhookJob;
 
 /**
  * Reads the job contract of queued classes (D-10): every dispatchable job
@@ -66,6 +71,20 @@ final class JobDeclaration
     }
 
     /**
+     * The concrete classes of a list that extend the webhook package's ProcessWebhookJob.
+     *
+     * @param  list<class-string>  $classes
+     * @return list<class-string<ProcessWebhookJob>>
+     */
+    public static function webhookJobs(array $classes): array
+    {
+        return array_values(array_filter(
+            $classes,
+            static fn (string $class): bool => is_subclass_of($class, ProcessWebhookJob::class) && ! (new ReflectionClass($class))->isAbstract(),
+        ));
+    }
+
+    /**
      * The concrete classes of a list that use the Dispatchable bus trait.
      *
      * @param  list<class-string>  $classes
@@ -113,6 +132,56 @@ final class JobDeclaration
             if (! is_string($how) || trim($how) === '') {
                 $problems[] = "{$label} carries #[Idempotent] without an explanation";
             }
+        }
+
+        return $problems;
+    }
+
+    /**
+     * What is wrong with a webhook job that carries the job contract by hand (R11-04-7); empty when it is fine.
+     * The package forces such a job to extend ProcessWebhookJob, so it cannot extend KokpitJob. It keeps the same
+     * declarations, each on the class itself because attributes are not inherited: #[Idempotent] with text, #[Tries],
+     * #[Backoff] and #[Timeout], and middleware() that returns the system context.
+     *
+     * @param  class-string  $class
+     * @return list<string>
+     */
+    public static function webhookJobProblems(string $class): array
+    {
+        $reflection = new ReflectionClass($class);
+        $label = $reflection->isAnonymous() ? 'anonymous class' : $class;
+
+        if (! $reflection->isSubclassOf(ProcessWebhookJob::class)) {
+            return ["{$label} is not a ProcessWebhookJob"];
+        }
+
+        $problems = [];
+        $idempotent = $reflection->getAttributes(Idempotent::class);
+
+        if ($idempotent === []) {
+            $problems[] = "{$label} extends ProcessWebhookJob without #[Idempotent]";
+        }
+
+        foreach ($idempotent as $attribute) {
+            $how = $attribute->getArguments()['how'] ?? $attribute->getArguments()[0] ?? '';
+
+            if (! is_string($how) || trim($how) === '') {
+                $problems[] = "{$label} carries #[Idempotent] without an explanation";
+            }
+        }
+
+        foreach ([Tries::class, Backoff::class, Timeout::class] as $attribute) {
+            if ($reflection->getAttributes($attribute) === []) {
+                $problems[] = "{$label} extends ProcessWebhookJob without #[".class_basename($attribute).']';
+            }
+        }
+
+        $job = $reflection->newInstanceWithoutConstructor();
+        $middleware = method_exists($job, 'middleware') ? $job->middleware() : [];
+        $runsAsSystem = array_filter(is_array($middleware) ? $middleware : [], static fn (mixed $item): bool => $item instanceof RunsAsSystem);
+
+        if ($runsAsSystem === []) {
+            $problems[] = "{$label} extends ProcessWebhookJob without RunsAsSystem in middleware()";
         }
 
         return $problems;
