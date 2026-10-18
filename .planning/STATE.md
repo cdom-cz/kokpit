@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 11
 current_phase_name: Stripe Payments
 status: executing
-stopped_at: Completed 11-07-PLAN.md
-last_updated: "2026-10-18T14:13:12.437Z"
+stopped_at: Completed 11-08-PLAN.md
+last_updated: "2026-10-18T14:38:22.124Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 11 execution started
-state_head: b6965f8a319d14eb9c0f6ea00e1b67783e3173d6
+state_head: 1759a48d6a812ac14f6717607930c3e18b150d50
 progress:
   total_phases: 13
   completed_phases: 7
   total_plans: 245
-  completed_plans: 232
+  completed_plans: 233
   percent: 54
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 11 (Stripe Payments) — EXECUTING
-Plan: 8 of 20
+Plan: 9 of 20
 Status: Ready to execute
 Last activity: 2026-10-18 — Phase 11 execution started
 
@@ -295,6 +295,7 @@ Progress: [█████░░░░░] 54%
 | Phase 11 P05 | 45min | 3 tasks | 12 files |
 | Phase 11 P06 | 30min | 2 tasks | 14 files |
 | Phase 11 P07 | 45min | 3 tasks | 11 files |
+| Phase 11 P08 | 70min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -739,6 +740,7 @@ Recent decisions affecting current work:
 - [Phase 11]: R11-06: payment_links guard also freezes stripe_url once set; a link record is never deleted and its Stripe references stay
 - [Phase 11]: [11-07] A returned Stripe URL outside stripe.com fails the row as api_error and keeps the Stripe id; ISK/UGX requests fail in phase A before any call
 - [Phase 11]: [11-07] The link job retries only connection and rate_limited before the last attempt, read from the queue job's maxTries (default 3)
+- [Phase 11]: 11-08: the pay page redirects only when the active link offers exactly what is still owed; a stale link after a partial payment shows the preparing state
 
 ### Pending Todos
 
@@ -794,6 +796,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-18T14:13:10.705Z
-Stopped at: Completed 11-07-PLAN.md
+Last session: 2026-10-18T14:38:20.449Z
+Stopped at: Completed 11-08-PLAN.md
 Resume file: None
