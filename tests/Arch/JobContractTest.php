@@ -10,17 +10,22 @@ use App\Domain\ExchangeRates\Jobs\BackfillCnbRates;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
+use App\Domain\Operations\Jobs\Middleware\RunsAsSystem;
 use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
 use App\Domain\Payments\Jobs\ProcessStripeWebhook;
 use App\Domain\Reports\Jobs\BuildReportExport;
 use App\Domain\Reports\Jobs\PruneExpiredReportExports;
+use App\Domain\Shared\Models\WebhookCall;
 use App\Domain\TimeTracking\Jobs\NotifyLongRunningTimers;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\Attributes\Backoff;
+use Illuminate\Queue\Attributes\Tries;
 use Spatie\WebhookClient\Jobs\ProcessWebhookJob;
 use Tests\Support\JobDeclaration;
 use Tests\Support\Probes\ActivityProbeJob;
 use Tests\Support\Probes\FailingProbeJob;
 use Tests\Support\Probes\SettingsReadingProbeJob;
+use Tests\Support\Probes\UndeclaredWebhookProbeJob;
 
 /*
  * No background job can skip the job contract (D-10): it extends KokpitJob (retry
@@ -94,6 +99,36 @@ it('has exactly the expected webhook jobs under app/, each carrying the job cont
 
     expect($jobs)->toEqualCanonicalizing(EXPECTED_WEBHOOK_JOBS)
         ->and($problems)->toBe([]);
+});
+
+it('reports a webhook job without #[Idempotent] and without the system context, and one without a retry attribute', function (): void {
+    $problems = JobDeclaration::webhookJobProblems(UndeclaredWebhookProbeJob::class);
+    $untimed = new #[Idempotent(how: 'Does nothing, so a second run changes nothing')] #[Tries(3)] #[Backoff(10, 60, 300)] class(new WebhookCall) extends ProcessWebhookJob
+    {
+        /** @return array<int, object> */
+        public function middleware(): array
+        {
+            return [new RunsAsSystem];
+        }
+    };
+    $outsider = new class extends KokpitJob
+    {
+        public function handle(): void {}
+    };
+
+    expect($problems)->toHaveCount(2)
+        ->and($problems[0])->toContain('without #[Idempotent]')
+        ->and($problems[1])->toContain('without RunsAsSystem')
+        ->and(JobDeclaration::webhookJobProblems($untimed::class))->toHaveCount(1)
+        ->and(JobDeclaration::webhookJobProblems($untimed::class)[0])->toContain('without #[Timeout]')
+        ->and(JobDeclaration::webhookJobProblems($outsider::class))->toHaveCount(1)
+        ->and(JobDeclaration::webhookJobProblems($outsider::class)[0])->toContain('is not a ProcessWebhookJob')
+        ->and(JobDeclaration::webhookJobProblems(ProcessStripeWebhook::class))->toBe([]);
+});
+
+it('does not admit the undeclared webhook probe through the expected list', function (): void {
+    expect(EXPECTED_WEBHOOK_JOBS)->not->toContain(UndeclaredWebhookProbeJob::class)
+        ->and(JobDeclaration::webhookJobs(JobDeclaration::classesIn(base_path('tests/Support/Probes'), 'Tests\\Support\\Probes')))->toContain(UndeclaredWebhookProbeJob::class);
 });
 
 it('gives every concrete job under app/ a non-empty #[Idempotent] explanation', function (): void {

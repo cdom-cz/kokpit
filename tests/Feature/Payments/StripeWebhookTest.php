@@ -2,17 +2,24 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\Jobs\Middleware\RunsAsSystem;
 use App\Domain\Payments\Jobs\ProcessStripeWebhook;
+use App\Domain\Payments\Jobs\StripeEventHandler;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\WebhookCall;
+use Illuminate\Queue\Attributes\Backoff;
+use Illuminate\Queue\Attributes\Timeout;
+use Illuminate\Queue\Attributes\Tries;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Tests\Support\RawSql;
 use Tests\Support\StripeEvents;
 use Tests\Support\StripeTestConfig;
 use Tests\Support\StripeWebhookSigner;
+use Tests\TestCase;
 
 /*
  * The Stripe webhook endpoint (PA-05, PA-07; D-12, D-15, D-16, D-17, D-18). Every body is signed with a random secret
@@ -319,4 +326,181 @@ it('keeps no header and no attachment of the call', function (): void {
     expect($row?->headers)->toBeNull()
         ->and($row?->attachments)->toBeNull()
         ->and($row?->exception)->toBeNull();
+});
+
+// --- Task 3: the job ------------------------------------------------------------------------------------------
+
+/**
+ * A handler the tests register through the handler map: it throws what the test sets and counts its runs.
+ */
+final class ScriptedStripeHandler implements StripeEventHandler
+{
+    public static ?Throwable $throws = null;
+
+    public static int $runs = 0;
+
+    public function handle(WebhookCall $call): void
+    {
+        self::$runs++;
+
+        if (self::$throws !== null) {
+            throw self::$throws;
+        }
+    }
+}
+
+/**
+ * Stores a checkout event without running its job, and returns the stored row.
+ */
+function unprocessedCall(TestCase $test): WebhookCall
+{
+    Queue::fake();
+    StripeWebhookSigner::post($test, StripeEvents::checkoutCompleted())->assertOk();
+
+    return storedStripeCalls()[0];
+}
+
+/**
+ * The job as the queue runs it: through the system-context middleware, from the serialized form.
+ */
+function runJob(WebhookCall $call): void
+{
+    /** @var ProcessStripeWebhook $job */
+    $job = unserialize(serialize(new ProcessStripeWebhook($call)));
+
+    app(PartnerContext::class)->runAsSystem(static fn () => $job->handle());
+}
+
+/**
+ * The stored row again, as the database holds it.
+ */
+function reloaded(WebhookCall $call): stdClass
+{
+    return DB::table('webhook_calls')->where('id', $call->getKey())->first() ?? throw new LogicException('The webhook row is gone.');
+}
+
+beforeEach(function (): void {
+    ScriptedStripeHandler::$throws = null;
+    ScriptedStripeHandler::$runs = 0;
+});
+
+it('does nothing on a second run of a processed event', function (): void {
+    $call = unprocessedCall($this);
+    $this->travelTo(now()->startOfSecond());
+
+    runJob($call);
+    $first = reloaded($call);
+
+    $this->travel(2)->hours();
+    runJob($call);
+    $second = reloaded($call);
+
+    expect($first->processed_at)->not->toBeNull()
+        ->and($second->processed_at)->toBe($first->processed_at)
+        ->and($second->updated_at)->toBe($first->updated_at);
+});
+
+it('runs the registered handler once for its type and marks the event processed in the same step', function (): void {
+    app()->instance(ProcessStripeWebhook::HANDLERS_BINDING, ['checkout.session.completed' => ScriptedStripeHandler::class]);
+    $call = unprocessedCall($this);
+
+    runJob($call);
+    runJob($call);
+
+    expect(ScriptedStripeHandler::$runs)->toBe(1)
+        ->and(reloaded($call)->processed_at)->not->toBeNull();
+});
+
+it('leaves an event unprocessed when its handler throws, and marks it failed with a fixed class only after the last try', function (): void {
+    app()->instance(ProcessStripeWebhook::HANDLERS_BINDING, ['checkout.session.completed' => ScriptedStripeHandler::class]);
+    $call = unprocessedCall($this);
+    $secretText = 'Jane Example paid '.Str::random(12);
+    ScriptedStripeHandler::$throws = ValidationException::withMessages(['rate' => $secretText]);
+
+    expect(fn () => runJob($call))->toThrow(ValidationException::class);
+
+    $afterTry = reloaded($call);
+
+    expect($afterTry->processed_at)->toBeNull()
+        ->and($afterTry->failed_at)->toBeNull();
+
+    (new ProcessStripeWebhook($call))->failed(ScriptedStripeHandler::$throws);
+
+    $row = reloaded($call);
+
+    expect($row->failed_at)->not->toBeNull()
+        ->and($row->failure_class)->toBe('validation')
+        ->and($row->processed_at)->toBeNull()
+        ->and($row->exception)->toBeNull()
+        ->and(json_encode($row, JSON_THROW_ON_ERROR))->not->toContain($secretText)
+        ->and(json_encode($row, JSON_THROW_ON_ERROR))->not->toContain('Jane Example');
+});
+
+it('marks any other failure as unexpected without its message', function (): void {
+    $call = unprocessedCall($this);
+    $message = 'SQLSTATE connection to host '.Str::random(12).' refused';
+
+    (new ProcessStripeWebhook($call))->failed(new RuntimeException($message));
+
+    $row = reloaded($call);
+
+    expect($row->failure_class)->toBe('unexpected')
+        ->and($row->failed_at)->not->toBeNull()
+        ->and(json_encode($row, JSON_THROW_ON_ERROR))->not->toContain($message);
+});
+
+it('clears the failure when a later run succeeds', function (): void {
+    app()->instance(ProcessStripeWebhook::HANDLERS_BINDING, ['checkout.session.completed' => ScriptedStripeHandler::class]);
+    $call = unprocessedCall($this);
+    ScriptedStripeHandler::$throws = new RuntimeException('Fictional failure');
+
+    expect(fn () => runJob($call))->toThrow(RuntimeException::class);
+    (new ProcessStripeWebhook($call))->failed(ScriptedStripeHandler::$throws);
+
+    expect(reloaded($call)->failed_at)->not->toBeNull();
+
+    ScriptedStripeHandler::$throws = null;
+    runJob($call);
+
+    $row = reloaded($call);
+
+    expect($row->processed_at)->not->toBeNull()
+        ->and($row->failed_at)->toBeNull()
+        ->and($row->failure_class)->toBeNull();
+});
+
+it('does not mark a processed event failed', function (): void {
+    $call = unprocessedCall($this);
+    runJob($call);
+
+    (new ProcessStripeWebhook($call))->failed(new RuntimeException('Fictional failure'));
+
+    $row = reloaded($call);
+
+    expect($row->processed_at)->not->toBeNull()
+        ->and($row->failed_at)->toBeNull()
+        ->and($row->failure_class)->toBeNull();
+});
+
+it('dispatches a failed but unprocessed event again on redelivery', function (): void {
+    $event = StripeEvents::checkoutCompleted();
+    Queue::fake();
+    StripeWebhookSigner::post($this, $event)->assertOk();
+    $call = storedStripeCalls()[0];
+    (new ProcessStripeWebhook($call))->failed(new RuntimeException('Fictional failure'));
+
+    StripeWebhookSigner::post($this, $event)->assertOk();
+
+    Queue::assertPushed(ProcessStripeWebhook::class, 2);
+});
+
+it('runs through the system-context middleware and carries the retry contract of the base job', function (): void {
+    $job = new ProcessStripeWebhook(new WebhookCall);
+    $reflection = new ReflectionClass(ProcessStripeWebhook::class);
+
+    expect($job->middleware())->toHaveCount(1)
+        ->and($job->middleware()[0])->toBeInstanceOf(RunsAsSystem::class)
+        ->and($reflection->getAttributes(Tries::class)[0]->getArguments())->toBe([3])
+        ->and($reflection->getAttributes(Backoff::class)[0]->getArguments())->toBe([10, 60, 300])
+        ->and($reflection->getAttributes(Timeout::class)[0]->getArguments())->toBe([60]);
 });
