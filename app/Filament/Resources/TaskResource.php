@@ -89,8 +89,10 @@ final class TaskResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'title';
 
-    /** The only searchable resource of the panel (panel resource opt-in); `id` is never searchable. */
+    /** One of the three Admin-only searchable resources (with ClientResource and ProjectResource); found by KEY-N or title, and `id` is never searchable. */
     protected static bool $isGloballySearchable = true;
+
+    protected static ?int $globalSearchSort = 30;
 
     protected static ?int $navigationSort = 30;
 

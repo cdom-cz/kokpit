@@ -104,7 +104,7 @@ it('runs the panel with strict authorization and global search as a per-resource
     $panel = Filament::getPanel('admin');
 
     // Global search is a Partner leakage surface: the panel switch is on, but a resource is
-    // searchable only when it declares so itself (Phase 5, TaskResource, which is Admin-only).
+    // searchable only when it declares so itself (the Admin-only Client, Project and Task resources).
     expect($panel->isAuthorizationStrict())->toBeTrue()
         ->and($panel->getGlobalSearchProvider())->not->toBeNull()
         ->and($panel->isGlobalSearchResourceOptIn())->toBeTrue();

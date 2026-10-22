@@ -4,10 +4,10 @@ current_phase: 11
 current_phase_name: Stripe Payments
 status: verifying
 stopped_at: Completed 11-20-PLAN.md
-last_updated: "2026-10-18T19:05:15.995Z"
+last_updated: "2026-10-22T19:25:07.966Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 11 execution started
-state_head: 9701c5601b793fecbcd7744339ccb72ec9853d83
+state_head: 30823f68dfd2a0f71fa916f3c0ac5ec517b9b8f3
 progress:
   total_phases: 13
   completed_phases: 7
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 Phase: 11 (Stripe Payments) — EXECUTING
 Plan: 20 of 20
 Status: Phase complete — ready for verification
-Last activity: 2026-10-18 - Completed quick task 261018-rvf: Allow changing a task's status directly in its view, not only in the task detail
+Last activity: 2026-10-22 - Completed quick task 261022-sgn: Improve global search to match client, project and task names, and project and task codes
 
 Progress: [█████░░░░░] 54%
 
@@ -810,6 +810,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261016-tnb | Show the Checklist section on the admin task view page and allow toggling checklist item states there | 2026-10-16 | e4a5880 | [261016-tnb-task-view-checklist-toggle](./quick/261016-tnb-task-view-checklist-toggle/) |
 | 261018-mic | Add an external identifier column to transactions for passing advanced identifiers (like time_entries.external), exposed via the API | 2026-10-18 | 8dc3ebb | [261018-mic-add-an-external-identifier-column-to-tra](./quick/261018-mic-add-an-external-identifier-column-to-tra/) |
 | 261018-rvf | Allow changing a task's status directly in its view, not only in the task detail | 2026-10-18 | 9701c56 | [261018-rvf-allow-changing-a-task-s-status-directly-](./quick/261018-rvf-allow-changing-a-task-s-status-directly-/) |
+| 261022-sgn | Improve global search to match client, project and task names, and project and task codes, with as-you-type suggestions in the current style | 2026-10-22 | 30823f6 | [261022-sgn-improve-global-search-to-match-client-pr](./quick/261022-sgn-improve-global-search-to-match-client-pr/) |
 
 ### Roadmap Evolution
 
