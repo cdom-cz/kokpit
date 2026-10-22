@@ -753,33 +753,37 @@ Plans:
   4. Every saved edit replaces the stored PDF and its QR code and renews the card link when amount or currency change; nothing is sent automatically, and an edit never interleaves with a queued or sending e-mail
   5. A Partner sees only the current version of an edited invoice and none of the lock, unlock or edit surfaces or history
 
-**Plans:** 10 plans in 8 waves
+**Plans:** 12 plans in 9 waves
 
 Plans:
 **Wave 1**
-- [ ] 10.1-01-PLAN.md — Tracer: send-driven lock in the database (lock column, backfill, invoice row guard, child guards, Admin-only row guard), issue leaves documents open, a successful send locks; contract documents amended
+- [ ] 10.1-01-PLAN.md — Tracer: send-driven lock in the database (lock column, backfill, invoice row guard, child guards, Admin-only row guard), issue leaves documents open, a successful send locks
+- [ ] 10.1-11-PLAN.md — Contract documents amended: send-driven Immutability in PROJECT.md and CLAUDE.md, IN-03 amended, IN-11 to IN-15 with traceability
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 10.1-02-PLAN.md — Unlock with a reason through the sanctioned path, lock and unlock audited, lock badge and banners on the detail, architecture test
 - [ ] 10.1-03-PLAN.md — Time link guard and payment-link currency key follow the lock; [BLOCKING] phase migrations applied to the development database
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 10.1-04-PLAN.md — UpdateIssuedDocument for lines and note: shared line writer, PDF replacement, editability rules, credited lines, in-flight e-mail rule, post-send edit audit
+- [ ] 10.1-04-PLAN.md — UpdateIssuedDocument for lines and note: shared line writer, PDF replacement, editability rules, credited lines, frozen conversions
 
 **Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 10.1-12-PLAN.md — In-flight e-mail rule and queue lock, warnings below paid or credited, post-send edit audit
+
+**Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 10.1-05-PLAN.md — Card link and QR follow an edit, render failure rolls back, readable history rows
 - [ ] 10.1-06-PLAN.md — Issued mode of the editor reached from the detail, credited lines frozen in the UI, warnings below paid or credited
 
-**Wave 5** *(blocked on Wave 4 completion)*
+**Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 10.1-07-PLAN.md — Header edits: dates within the numbering period, language, customer and supplier data with refill, bank account refill
 
-**Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 10.1-08-PLAN.md — Currency change with CNB figures of the issue date, re-converted time lines, bank and card link; refused with payments or credit notes
-
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 10.1-09-PLAN.md — Linked time and fixed amounts added and released on an open issued document
+- [ ] 10.1-08-PLAN.md — Currency change with CNB figures of the issue date, re-converted time lines, bank and card link; refused with payments or credit notes (owner ruling in D-06)
 
 **Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 10.1-09-PLAN.md — Linked time and fixed amounts added and released on an open issued document
+
+**Wave 9** *(blocked on Wave 8 completion)*
 - [ ] 10.1-10-PLAN.md — Edit-versus-send concurrency proof, end-to-end journey, Partner sweep, CONTRIBUTING hand-over and phase gate
 
 ### Phase 11: Stripe Payments
