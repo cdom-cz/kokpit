@@ -232,8 +232,85 @@ describe('what may be stored (D-05, D-06)', function (): void {
     it('refuses a link in another currency than the document and a non-positive amount', function (): void {
         $invoice = issuedWithoutLink(CardPaymentSetup::client());
 
-        RawSql::expectSqlState('23503', fn () => rawLink($invoice, ['currency' => 'EUR']));
+        // Plan 10.1-03: the insert guard refuses it (KP001); the composite key that used to answer 23503 is gone.
+        RawSql::expectSqlState('KP001', fn () => rawLink($invoice, ['currency' => 'EUR']));
         RawSql::expectSqlState('23514', fn () => rawLink($invoice, ['amount_minor' => 0]));
+    });
+
+    it('refuses a link of a document that does not exist with the plain key', function (): void {
+        $invoice = issuedWithoutLink(CardPaymentSetup::client());
+
+        RawSql::expectSqlState('23503', fn () => rawLink($invoice, ['invoice_id' => (string) Str::uuid7()]));
+    });
+});
+
+describe('the currency of an open document with link rows (D-06, D-11)', function (): void {
+    /**
+     * An open issued EUR document with one deactivated EUR link row, as a document looks after its link was replaced.
+     */
+    $euroDocumentWithOldLink = static function (): array {
+        InvoiceFixtures::cnbRate('EUR', now()->format('Y-m-d'), '25.00');
+        $invoice = issuedWithoutLink(CardPaymentSetup::client(['currency' => 'EUR']));
+        $old = rawLink($invoice, ['state' => 'deactivated', 'deactivation_reason' => 'replaced', 'deactivated_at' => now()]);
+
+        return [$invoice, $old];
+    };
+
+    it('lets the currency of an open document change while the old link row keeps its currency, and the new link follows it', function () use ($euroDocumentWithOldLink): void {
+        [$invoice, $old] = $euroDocumentWithOldLink();
+        expect($invoice->currency)->toBe('EUR');
+
+        RawSql::expectAllowed(fn () => DB::update(
+            "update invoices set currency = 'CZK', bank_snapshot = ? where id = ?",
+            [json_encode(['account' => 'fictional']), $invoice->id],
+        ));
+
+        expect(DB::table('payment_links')->where('id', $old)->value('currency'))->toBe('EUR')
+            ->and(DB::table('invoices')->where('id', $invoice->id)->value('currency'))->toBe('CZK');
+
+        RawSql::expectSqlState('KP001', fn () => rawLink($invoice, ['currency' => 'EUR']));
+        RawSql::expectAllowed(fn () => rawLink($invoice, ['currency' => 'CZK']));
+    });
+
+    it('refuses a link in the old currency after the change and keeps the old row final', function () use ($euroDocumentWithOldLink): void {
+        [$invoice, $old] = $euroDocumentWithOldLink();
+        DB::update("update invoices set currency = 'CZK' where id = ?", [$invoice->id]);
+
+        RawSql::expectSqlState('KP001', fn () => DB::table('payment_links')->where('id', $old)->update(['currency' => 'CZK']));
+        RawSql::expectSqlState('KP001', fn () => DB::table('payment_links')->where('id', $old)->update(['state' => 'pending', 'deactivation_reason' => null]));
+    });
+
+    it('still refuses the currency change of a document with a recorded payment (the payments key stays)', function () use ($euroDocumentWithOldLink): void {
+        [$invoice] = $euroDocumentWithOldLink();
+        DB::insert(
+            "insert into invoice_payments (invoice_id, currency, amount_minor, paid_on, method, created_by, created_at, updated_at) values (?, ?, 4000, '2026-10-20', 'transfer', ?, now(), now())",
+            [$invoice->id, $invoice->currency, Canary::admin()->id],
+        );
+
+        RawSql::expectSqlState('23503', fn () => DB::update("update invoices set currency = 'CZK' where id = ?", [$invoice->id]));
+        expect(DB::table('invoices')->where('id', $invoice->id)->value('currency'))->toBe('EUR');
+    });
+
+    it('refuses to go down while a link names a currency its document no longer has, and round-trips otherwise', function () use ($euroDocumentWithOldLink): void {
+        $migration = require base_path('database/migrations/2026_10_22_000300_relax_payment_link_currency_key.php');
+        [$invoice] = $euroDocumentWithOldLink();
+
+        // The composite key and the plain key, by name.
+        $keys = static fn (): array => DB::table('pg_constraint')->where('conrelid', DB::raw("'payment_links'::regclass"))->whereIn('conname', ['payment_links_invoice_fk', 'payment_links_invoice_currency_fk'])->orderBy('conname')->pluck('conname')->all();
+        expect($keys())->toBe(['payment_links_invoice_fk']);
+
+        $migration->down();
+
+        expect($keys())->toBe(['payment_links_invoice_currency_fk']);
+        RawSql::expectSqlState('23503', fn () => DB::update("update invoices set currency = 'CZK' where id = ?", [$invoice->id]));
+
+        $migration->up();
+
+        expect($keys())->toBe(['payment_links_invoice_fk']);
+        DB::update("update invoices set currency = 'CZK' where id = ?", [$invoice->id]);
+
+        expect(fn () => $migration->down())->toThrow(RuntimeException::class, 'no longer has');
+        expect($keys())->toBe(['payment_links_invoice_fk']);
     });
 });
 
