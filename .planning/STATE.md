@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: "10.1"
 current_phase_name: Invoices stay fully editable until sent, with a manual unlock (INSERTED)
 status: executing
-stopped_at: Completed 10.1-11-PLAN.md
-last_updated: "2026-10-22T23:28:57.230Z"
+stopped_at: Completed 10.1-02-PLAN.md
+last_updated: "2026-10-22T23:38:04.785Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 10.1 execution started
-state_head: ea2db01d312a86c600d066ba5e258adcf2af9ae6
+state_head: 6c2201160b30b76b80de98650fc7f5b9a52dec25
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 257
-  completed_plans: 247
+  completed_plans: 248
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10.1 (Invoices stay fully editable until sent, with a manual unlock (INSERTED)) — EXECUTING
-Plan: 3 of 12
+Plan: 4 of 12
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 10.1 execution started
 
@@ -310,6 +310,7 @@ Progress: [████░░░░░░] 44%
 | Phase 11 P20 | 75min | 3 tasks | 7 files |
 | Phase 10.1 P01 | 50 min | 2 tasks | 14 files |
 | Phase 10.1 P11 | 5min | 2 tasks | 3 files |
+| Phase 10.1 P02 | 55 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -773,6 +774,8 @@ Recent decisions affecting current work:
 - [Phase 10.1]: A successfully sent document e-mail is the only lock: SendInvoiceEmail marks the row sent and locks the invoice in one transaction, invoice row locked first; a locked row is never written again, not even updated_at.
 - [Phase 10.1]: The database refuses a currency change of any document a credit note names (owner ruling of D-06), in kokpit_guard_invoice_row(); credit notes are locked at issue by DocumentIssuer and by the trigger and are never unlocked.
 - [Phase 10.1]: The send-driven lock replaces status-driven immutability (D-01, D-12)
+- [Phase 10.1]: 10.1-02: UnlockInvoice is the only setter of the unlock setting; lock_state stays off the logged allowlist so InvoiceAudit writes exactly one row per lock and unlock
+- [Phase 10.1]: 10.1-02: the open banner and the unlock action skip a cancelled invoice and a converted proforma (assumption A3); the Locked writer is confined by token to the send job, the credit note issue and the model
 
 ### Pending Todos
 
@@ -835,6 +838,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T23:28:56.201Z
-Stopped at: Completed 10.1-11-PLAN.md
+Last session: 2026-10-22T23:38:03.736Z
+Stopped at: Completed 10.1-02-PLAN.md
 Resume file: None

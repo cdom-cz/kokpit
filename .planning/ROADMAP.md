@@ -752,7 +752,7 @@ Plans:
   4. Every saved edit replaces the stored PDF and its QR code and renews the card link when amount or currency change; nothing is sent automatically, and an edit never interleaves with a queued or sending e-mail
   5. A Partner sees only the current version of an edited invoice and none of the lock, unlock or edit surfaces or history
 
-**Plans:** 2/12 plans executed in 9 waves
+**Plans:** 3/12 plans executed in 9 waves
 
 Plans:
 **Wave 1**
@@ -760,7 +760,7 @@ Plans:
 - [x] 10.1-11-PLAN.md — Contract documents amended: send-driven Immutability in PROJECT.md and CLAUDE.md, IN-03 amended, IN-11 to IN-15 with traceability
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 10.1-02-PLAN.md — Unlock with a reason through the sanctioned path, lock and unlock audited, lock badge and banners on the detail, architecture test
+- [x] 10.1-02-PLAN.md — Unlock with a reason through the sanctioned path, lock and unlock audited, lock badge and banners on the detail, architecture test
 - [ ] 10.1-03-PLAN.md — Time link guard and payment-link currency key follow the lock; [BLOCKING] phase migrations applied to the development database
 
 **Wave 3** *(blocked on Wave 2 completion)*
