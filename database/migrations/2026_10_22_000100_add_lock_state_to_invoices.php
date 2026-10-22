@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\DB;
  * sanctioned unlock: the transaction-local setting `kokpit.invoice_unlock` must name exactly that document, and
  * nothing but `lock_state` and `updated_at` may change with it. Only `UnlockInvoice` (plan 10.1-02) sets the setting,
  * with `set_config('kokpit.invoice_unlock', <invoice id>, true)`, and clears it before its transaction ends; an
- * architecture test keeps the literal out of every other application file, the way `kokpit.payment_deletion` is
+ * architecture test keeps the literal out of every other application file, the way the payment deletion flag is
  * kept. A credit note is never unlocked, setting or not. Locking is always safe, so an open row moves to locked
  * freely.
  *
