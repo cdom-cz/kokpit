@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 current_phase: 11
 current_phase_name: Stripe Payments
 status: verifying
-stopped_at: Completed 11-20-PLAN.md
-last_updated: "2026-10-22T19:25:07.966Z"
-last_activity: 2026-10-18
+stopped_at: Phase 09.2 context gathered
+last_updated: "2026-10-22T21:04:27.680Z"
+last_activity: 2026-10-22
 last_activity_desc: Phase 11 execution started
-state_head: 30823f68dfd2a0f71fa916f3c0ac5ec517b9b8f3
+state_head: bdca665e359e5c099badba845bdf35f4a13336a3
 progress:
-  total_phases: 13
+  total_phases: 17
   completed_phases: 7
   total_plans: 245
   completed_plans: 245
-  percent: 54
+  percent: 41
 ---
 
 # Project State
@@ -32,7 +32,7 @@ Plan: 20 of 20
 Status: Phase complete — ready for verification
 Last activity: 2026-10-22 - Completed quick task 261022-sgn: Improve global search to match client, project and task names, and project and task codes
 
-Progress: [█████░░░░░] 54%
+Progress: [████░░░░░░] 41%
 
 ## Performance Metrics
 
@@ -815,6 +815,10 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 ### Roadmap Evolution
 
 - Phase 09.1 inserted after Phase 9: Transactions API: REST API for the transactions and transaction_categories tables, including bulk creation (URGENT)
+- Phase 13 added: Unified e-mail layout and HTML e-mail templates: one shared layout for all outgoing e-mails, and every sent e-mail converted to an HTML template
+- Phase 14 added: Online payment method and invoice currency: selectable online (Stripe) payment method that replaces bank payment details on the invoice, and selectable invoice currency reflected in the PDF and the Stripe payment
+- Phase 09.2 inserted after Phase 9: Invoices stay fully editable (items and details) until paid or credited (URGENT)
+- Phase 09.3 inserted after Phase 9: Send an e-mail confirming that an invoice has been paid (URGENT)
 
 ## Deferred Items
 
@@ -826,6 +830,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-18T17:55:50.504Z
-Stopped at: Completed 11-20-PLAN.md
-Resume file: None
+Last session: 2026-10-22T21:04:25.555Z
+Stopped at: Phase 09.2 context gathered
+Resume file: .planning/phases/09.2-invoices-stay-fully-editable-items-and-details-until-paid-or/09.2-CONTEXT.md
