@@ -740,7 +740,6 @@ Plans:
 **Wave 13** *(blocked on Wave 12 completion)*
 - [x] 10-32-PLAN.md — End-to-end flow and Partner sweep, CONTRIBUTING and README hand-over, validation map, phase gate
 
-
 ### Phase 10.1: Invoices stay fully editable until sent, with a manual unlock (INSERTED)
 
 **Goal:** Admin can correct an issued invoice or proforma (items, dates, customer and supplier data, bank account, currency, language and linked time) until a successfully sent e-mail locks it, and can unlock a sent document with a recorded reason; number and kind never change, credit notes stay locked, the database enforces the lock, and every post-send change, lock and unlock is audited
@@ -753,11 +752,11 @@ Plans:
   4. Every saved edit replaces the stored PDF and its QR code and renews the card link when amount or currency change; nothing is sent automatically, and an edit never interleaves with a queued or sending e-mail
   5. A Partner sees only the current version of an edited invoice and none of the lock, unlock or edit surfaces or history
 
-**Plans:** 12 plans in 9 waves
+**Plans:** 1/12 plans executed in 9 waves
 
 Plans:
 **Wave 1**
-- [ ] 10.1-01-PLAN.md — Tracer: send-driven lock in the database (lock column, backfill, invoice row guard, child guards, Admin-only row guard), issue leaves documents open, a successful send locks
+- [x] 10.1-01-PLAN.md — Tracer: send-driven lock in the database (lock column, backfill, invoice row guard, child guards, Admin-only row guard), issue leaves documents open, a successful send locks
 - [ ] 10.1-11-PLAN.md — Contract documents amended: send-driven Immutability in PROJECT.md and CLAUDE.md, IN-03 amended, IN-11 to IN-15 with traceability
 
 **Wave 2** *(blocked on Wave 1 completion)*

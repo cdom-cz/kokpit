@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: "10.1"
-current_phase_name: Invoices stay fully editable until sent, with a manual unlock
+current_phase_name: Invoices stay fully editable until sent, with a manual unlock (INSERTED)
 status: executing
-stopped_at: Phase 13 context gathered
-last_updated: "2026-10-22T22:35:50.232Z"
-last_activity: 2026-10-22
-last_activity_desc: Phase 11 execution started
-state_head: 4b7da63bbf42f05d6347e74e7b18a95fa4128243
+stopped_at: Completed 10.1-01-PLAN.md
+last_updated: "2026-10-22T23:27:15.824Z"
+last_activity: 2026-10-23
+last_activity_desc: Phase 10.1 execution started
+state_head: 762f1b786b3f55012c4afcc420e93a8914e29b2c
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 257
-  completed_plans: 245
+  completed_plans: 246
   percent: 44
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 11 — Stripe Payments
+**Current focus:** Phase 10.1 — Invoices stay fully editable until sent, with a manual unlock (INSERTED)
 
 ## Current Position
 
-Phase: 10.1 (Invoices stay fully editable until sent, with a manual unlock) — READY TO EXECUTE
-Plan: 20 of 20
+Phase: 10.1 (Invoices stay fully editable until sent, with a manual unlock (INSERTED)) — EXECUTING
+Plan: 2 of 12
 Status: Ready to execute
-Last activity: 2026-10-22 - Completed quick task 261022-sgn: Improve global search to match client, project and task names, and project and task codes
+Last activity: 2026-10-23 — Phase 10.1 execution started
 
 Progress: [████░░░░░░] 44%
 
@@ -308,6 +308,7 @@ Progress: [████░░░░░░] 44%
 | Phase 11 P17 | 25min | 2 tasks | 11 files |
 | Phase 11 P18 | 45min | 2 tasks | 3 files |
 | Phase 11 P20 | 75min | 3 tasks | 7 files |
+| Phase 10.1 P01 | 50 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -768,6 +769,8 @@ Recent decisions affecting current work:
 - [Phase 11]: 11-18: a worker tells an ignored event from a processed one by its own processed_at update; the unlocked twin is deterministic (read before the barrier, wait for the other commit)
 - [Phase 11]: 11-20: the Partner sweep pins routes/public.php to exactly pay.show and webhooks.stripe and the journey test reads mail from the array transport, not Mail::fake()
 - [Phase 11]: 11-20: the Phase 11 hand-over bullet of CONTRIBUTING is replaced by a Card payments bullet and a Phase 12 public-route bullet, guarded by RepositoryFilesTest
+- [Phase 10.1]: A successfully sent document e-mail is the only lock: SendInvoiceEmail marks the row sent and locks the invoice in one transaction, invoice row locked first; a locked row is never written again, not even updated_at.
+- [Phase 10.1]: The database refuses a currency change of any document a credit note names (owner ruling of D-06), in kokpit_guard_invoice_row(); credit notes are locked at issue by DocumentIssuer and by the trigger and are never unlocked.
 
 ### Pending Todos
 
@@ -830,6 +833,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T21:12:20.872Z
-Stopped at: Phase 13 context gathered
-Resume file: .planning/phases/13-unified-e-mail-layout-and-html-e-mail-templates/13-CONTEXT.md
+Last session: 2026-10-22T23:27:14.810Z
+Stopped at: Completed 10.1-01-PLAN.md
+Resume file: None
