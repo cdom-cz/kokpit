@@ -127,7 +127,12 @@ it('gives a Partner 403 on every client route', function (): void {
     $this->get(ClientResource::getUrl('edit', ['record' => $client->id]))->assertForbidden();
 });
 
-it('is not globally searchable', function (): void {
+it('is globally searchable by name for the Admin only', function (): void {
+    expect(ClientResource::canGloballySearch())->toBeTrue()
+        ->and(ClientResource::getGloballySearchableAttributes())->toBe(['name']);
+
+    $this->actingAs(Canary::partnerFor(Client::factory()->create()->id));
+
     expect(ClientResource::canGloballySearch())->toBeFalse();
 });
 

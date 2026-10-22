@@ -194,3 +194,23 @@ it('returns a Partner no global search result for the own client, project or tas
         ->and(ProjectResource::canGloballySearch())->toBeFalse()
         ->and(TaskResource::canGloballySearch())->toBeFalse();
 });
+
+it('lists the groups in the sidebar order: clients, projects, tasks', function (): void {
+    $client = Client::factory()->create(['name' => 'Example order client']);
+    $project = gsProject($client, 'ORD', 'Example order project');
+    app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example order task']);
+
+    expect(array_keys(gsCategories('Example')))->toBe(['Klienti', 'Projekty', 'Úkoly']);
+});
+
+it('orders clients by name and projects by key inside their group', function (): void {
+    $beta = Client::factory()->create(['name' => 'Example Beta client']);
+    Client::factory()->create(['name' => 'Example Alpha client']);
+    gsProject($beta, 'OTH', 'Example other project');
+    gsProject($beta, 'NWD', 'Example northwind project');
+
+    $categories = gsCategories('Example');
+
+    expect(array_column($categories['Klienti'], 'title'))->toBe(['Example Alpha client', 'Example Beta client'])
+        ->and(array_column($categories['Projekty'], 'title'))->toBe(['NWD · Example northwind project', 'OTH · Example other project']);
+});

@@ -117,9 +117,11 @@ class AdminPanelProvider extends PanelProvider
             ->strictAuthorization()
             // Global search is a Partner leakage surface, so it is opt-in per resource: only a
             // resource that declares $isGloballySearchable on its own class is searchable, and a
-            // resource that inherits the default is not. TaskResource is the only one (an
-            // Admin-only resource, found by KEY-N or title). A Partner sees no result at all,
-            // because every searchable resource is closed to Partners (UI-SPEC A-6).
+            // resource that inherits the default is not. Three resources opt in: ClientResource
+            // (found by name), ProjectResource (by key or name) and TaskResource (by KEY-N or
+            // title). Each is Admin-only by its #[AccessRule], and canGloballySearch() checks
+            // canAccess(), so a Partner sees no result at all (UI-SPEC A-6). The groups follow
+            // the sidebar order through $globalSearchSort: clients, projects, tasks.
             ->globalSearch()
             ->globalSearchResourceOptIn()
             // Built-in TOTP with one-time recovery codes (D-07). Enforcement is per request in
