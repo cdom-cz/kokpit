@@ -24,7 +24,7 @@ E-mails that really leave the system today: the invoice e-mail (`InvoiceMail`, p
 - **D-04:** Operational alerts (sent to Admin) use the same layout and branding as the client-facing e-mails; they differ only in content.
 
 ### Payment e-mails
-- **D-05:** The payment confirmation goes to the client, to the client's invoice e-mail, in the client's language, after an invoice is paid. It covers both card payments and manually recorded payments.
+- **D-05:** The payment confirmation goes to the client, to the client's invoice e-mail, in the client's language, after **every** payment credited to an invoice (partial or full), whether paid by card or recorded manually. A partial payment gets the confirmation with the remaining amount; the final payment gets the "paid in full" wording.
 - **D-06:** The confirmation has no attachment. It states the invoice number, the amount paid, the date and, for a partial payment, the remaining amount.
 
 ### Review of other e-mails
@@ -33,7 +33,7 @@ E-mails that really leave the system today: the invoice e-mail (`InvoiceMail`, p
 ### Claude's Discretion
 - Theme colours, typography and button style (consistent with the Filament panel look).
 - How the logo is delivered to mail clients (inline attachment, hosted URL) and how the layout degrades when no logo is set.
-- Whether a manually recorded payment sends the confirmation automatically or asks the Admin first (D-05 says it is sent; the exact trigger point and de-duplication across partial payments are left to research and planning).
+- The exact trigger point and de-duplication of the confirmation (e.g. a webhook retry or a corrected payment must not send a second e-mail).
 
 </decisions>
 
