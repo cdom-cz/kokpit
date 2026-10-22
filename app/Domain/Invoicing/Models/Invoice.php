@@ -12,6 +12,7 @@ use App\Domain\Documents\Models\Document;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Enums\InvoiceState;
+use App\Domain\Invoicing\Support\IssuedDocumentRules;
 use App\Domain\Settings\VatMode;
 use App\Domain\Shared\Auth\IsolatesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
@@ -173,6 +174,15 @@ final class Invoice extends KokpitModel implements PartnerIsolated
     public function isLocked(): bool
     {
         return $this->lock_state === InvoiceLockState::Locked;
+    }
+
+    /**
+     * Whether the document is an issued invoice or proforma that can be corrected now: nothing in
+     * {@see IssuedDocumentRules::editBlocker()} stands in the way (D-01, D-04). The one answer for pages and Actions.
+     */
+    public function isEditable(): bool
+    {
+        return $this->isIssued() && IssuedDocumentRules::editBlocker($this) === null;
     }
 
     /**

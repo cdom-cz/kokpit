@@ -71,6 +71,13 @@ return [
         'cancelled_not_editable' => 'Stornovaný doklad upravit nelze.',
         'converted_not_editable' => 'Zálohovou fakturu, ze které už vznikla faktura, upravit nelze.',
 
+        // The correction of an open issued document (assumptions A1, A3, A4, A8).
+        'not_issued' => 'Koncept se upravuje v editoru konceptu.',
+        'document_locked' => 'Doklad byl odeslán a je uzamčen. Nejprve ho odemkněte.',
+        'email_in_flight' => 'Doklad se právě odesílá e-mailem. Upravit ho půjde po dokončení odeslání.',
+        'credited_line_frozen' => 'Položka je dobropisovaná: změnit lze jen její text.',
+        'credited_line_delete' => 'Dobropisovanou položku nelze smazat.',
+
         // Conversion of a proforma.
         'proforma_not_issued' => 'Fakturu lze vystavit jen ze zálohy, která je vystavená a není stornovaná.',
         'proforma_not_paid' => 'Zálohu lze převést na fakturu až po úplném zaplacení.',
@@ -91,6 +98,12 @@ return [
         // The stored PDF.
         'pdf_unconfirmed' => 'PDF vystaveného dokladu lze smazat jen s výslovným potvrzením.',
         'pdf_missing' => 'PDF dokladu chybí.',
+    ],
+
+    // Warnings after a correction that leaves the totals below what was received or credited (D-04); the edit still stands.
+    'warnings' => [
+        'total_below_paid' => 'Celková částka je nižší než už zaplacená částka :amount.',
+        'total_below_credited' => 'Celková částka je nižší než dobropisovaná částka :amount.',
     ],
 
     // The fixed text of the income transaction a payment books (R-16-2).

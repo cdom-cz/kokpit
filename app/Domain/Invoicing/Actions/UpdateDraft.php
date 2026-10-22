@@ -19,6 +19,7 @@ use App\Domain\Invoicing\Support\DraftTotals;
 use App\Domain\Invoicing\Support\InvoiceItemInput;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
 use App\Domain\Invoicing\Support\IssueChecks;
+use App\Domain\Invoicing\Support\ItemListWriter;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Support\PragueDay;
 use App\Domain\TimeTracking\Support\TimerClock;
@@ -53,6 +54,7 @@ use OverflowException;
  * - `items`: the whole list of lines, `id?`, `description`, `quantity`, `unit`, `unit_price`, `confirm_zero_price?`
  *   (see {@see InvoiceItemInput}).
  *
+ * The lines are written by {@see ItemListWriter}, shared with the correction of an open issued document (R-10.1-04-1).
  * Lines are matched by id (R-11-3): a line with an id of this draft is updated and keeps its row and its source, a
  * line without one is inserted as a manual line, a stored line missing from the list is deleted with its source,
  * and positions follow the order of the list. An id that does not belong to the draft is a field error
@@ -79,18 +81,13 @@ use OverflowException;
  */
 final readonly class UpdateDraft
 {
-    /**
-     * Where a kept line is parked while the positions are reassigned, so the unique key of (document, position)
-     * is never hit by a reorder. Far above the number of lines a draft may hold.
-     */
-    private const int PARKED_POSITION = 1_000_000;
-
     private const int NOTE_MAX_LENGTH = 500;
 
     public function __construct(
         private UpdateInternalNote $internalNote,
         private DraftPreview $preview,
         private ExchangeRateConverter $rates,
+        private ItemListWriter $writer,
     ) {}
 
     /**
@@ -137,7 +134,7 @@ final readonly class UpdateDraft
                 $this->repriceGenerated($locked, $header['currency'], $today);
             }
 
-            $totals = $this->totals($locked, $header['currency']);
+            $totals = $this->writer->totals($locked, $header['currency']);
 
             $locked->fill(['note' => $header['note']]);
             $locked->forceFill([
@@ -279,7 +276,8 @@ final readonly class UpdateDraft
     }
 
     /**
-     * Replaces the lines of the draft by the list: update by id, insert, delete the missing, order by the list.
+     * Replaces the lines of the draft by the list through {@see ItemListWriter}; a generated line is priced with the
+     * lists of today ({@see UpdateDraft::generatedPrice()}).
      *
      * @param  array<array-key, mixed>  $items
      *
@@ -287,134 +285,13 @@ final readonly class UpdateDraft
      */
     private function saveItems(Invoice $draft, array $items, string $currency, bool $currencyChanged, string $today): void
     {
-        $inputs = InvoiceItemInput::list($items, $currency, $draft->kind, (int) config('kokpit.invoicing.max_items'));
-
-        /** @var Collection<string, InvoiceItem> $existing */
-        $existing = InvoiceItem::query()->where('invoice_id', $draft->id)->with('source')->get()->keyBy('id');
-
-        $kept = $this->assertOwnLines($inputs, $existing, $currency);
-
-        foreach ($existing as $item) {
-            if (! isset($kept[$item->id])) {
-                $item->source?->delete();
-                $item->delete();
-            }
-        }
-
-        // Park every kept line whose position changes, so no reorder ever meets the unique (document, position).
-        foreach ($inputs as $index => $input) {
-            $item = $input->id === null ? null : $existing->get($input->id);
-
-            if ($item instanceof InvoiceItem && $item->position !== $index + 1) {
-                $item->forceFill(['position' => self::PARKED_POSITION + $index + 1])->save();
-            }
-        }
-
-        $quotes = [];
-
-        foreach ($inputs as $index => $input) {
-            $this->writeLine($draft, $input, $input->id === null ? null : $existing->get($input->id), $index + 1, $currency, $currencyChanged, $today, $quotes);
-        }
-    }
-
-    /**
-     * Every id of the list must be a line of this draft, once. Line totals that do not fit are a field error too.
-     *
-     * @param  list<InvoiceItemInput>  $inputs
-     * @param  Collection<string, InvoiceItem>  $existing
-     * @return array<string, true> the ids kept
-     *
-     * @throws ValidationException
-     */
-    private function assertOwnLines(array $inputs, Collection $existing, string $currency): array
-    {
-        $kept = [];
-        $errors = [];
-
-        foreach ($inputs as $index => $input) {
-            if ($input->id !== null) {
-                if (! $existing->has($input->id) || isset($kept[$input->id])) {
-                    $errors["items.{$index}.id"] = [__('invoices.errors.item_unknown')];
-                }
-
-                $kept[$input->id] = true;
-            }
-
-            try {
-                DraftTotals::lineTotal($input->unitPrice, $input->quantity);
-            } catch (OverflowException) {
-                $errors["items.{$index}.unit_price"] = [__('invoices.errors.item_price')];
-            }
-        }
-
-        if ($errors !== []) {
-            throw ValidationException::withMessages($errors);
-        }
-
-        return $kept;
-    }
-
-    /**
-     * @param  array<string, array{rate: string, unit_amount: int, rate_date: string|null}>  $quotes  the quotes found so far, filled in
-     *
-     * @throws ValidationException
-     */
-    private function writeLine(Invoice $draft, InvoiceItemInput $input, ?InvoiceItem $stored, int $position, string $currency, bool $currencyChanged, string $today, array &$quotes): void
-    {
-        $item = $stored ?? new InvoiceItem;
-        $source = $stored instanceof InvoiceItem ? $stored->source : null;
-        $generated = $stored instanceof InvoiceItem && $source instanceof InvoiceItemSource && self::isGenerated($source);
-
-        // The price a generated line shows is the preview, not a typed price; on a change of currency the editor
-        // cannot know the new preview, so the figure it sends for such a line is never read as typed.
-        $priceChanged = $stored instanceof InvoiceItem
-            && ! ($generated && $currencyChanged)
-            && $stored->unit_price_minor !== $input->unitPrice->minor;
-
-        $unitPrice = $input->unitPrice;
-        $lineTotal = DraftTotals::lineTotal($unitPrice, $input->quantity);
-        $converted = false;
-
-        if ($generated && ! $priceChanged) {
-            [$unitPrice, $lineTotal, $converted] = $this->generatedPrice($source, $stored, $input->quantity, $currency, $currencyChanged, $today, $quotes);
-        }
-
-        $item->fill(['description' => $input->description, 'unit' => $input->unit]);
-        $item->forceFill([
-            'invoice_id' => $draft->id,
-            'position' => $position,
-            'quantity' => $input->quantity->toDecimal(),
-            'unit_price_minor' => $unitPrice->minor,
-            'line_total_minor' => $lineTotal->minor,
-            'price_converted' => $converted,
-            'vat_rate' => null,
-            'vat_minor' => 0,
-        ]);
-        $item->save();
-
-        if (! $source instanceof InvoiceItemSource) {
-            $source = new InvoiceItemSource;
-            $source->forceFill([
-                'invoice_item_id' => $item->id,
-                'invoice_id' => $draft->id,
-                'origin' => InvoiceItemOrigin::Manual,
-                'price_manual' => true,
-            ])->save();
-
-            return;
-        }
-
-        if ($priceChanged && ! $source->price_manual) {
-            $source->forceFill(['price_manual' => true])->save();
-        }
-    }
-
-    /**
-     * Whether the price of the line follows its hourly rate: generated from time, the price not typed by hand.
-     */
-    private static function isGenerated(InvoiceItemSource $source): bool
-    {
-        return $source->origin === InvoiceItemOrigin::Time && ! $source->price_manual && $source->sourceRate() instanceof Money;
+        $this->writer->replace(
+            $draft,
+            $items,
+            $currency,
+            $currencyChanged,
+            fn (InvoiceItemSource $source, InvoiceItem $stored, InvoiceQuantity $quantity, array &$quotes): array => $this->generatedPrice($source, $stored, $quantity, $currency, $currencyChanged, $today, $quotes),
+        );
     }
 
     /**
@@ -475,7 +352,7 @@ final readonly class UpdateDraft
         foreach ($items as $item) {
             $source = $item->source;
 
-            if (! $source instanceof InvoiceItemSource || ! self::isGenerated($source)) {
+            if (! $source instanceof InvoiceItemSource || ! ItemListWriter::isGenerated($source)) {
                 continue;
             }
 
@@ -524,25 +401,6 @@ final readonly class UpdateDraft
             } catch (ExchangeRateMissing) {
                 throw ValidationException::withMessages(['currency' => [__('invoices.errors.cnb_missing', ['currency' => $needed, 'date' => IssueChecks::czechDate($today)])]]);
             }
-        }
-    }
-
-    /**
-     * The subtotal, VAT and total from the stored line totals, never from a unit price (D-09).
-     *
-     * @return array{subtotal: Money, vat: Money, total: Money}
-     *
-     * @throws ValidationException when the sum does not fit
-     */
-    private function totals(Invoice $draft, string $currency): array
-    {
-        /** @var list<int> $minors */
-        $minors = InvoiceItem::query()->where('invoice_id', $draft->id)->pluck('line_total_minor')->map(static fn (mixed $minor): int => (int) $minor)->all();
-
-        try {
-            return DraftTotals::for(array_map(static fn (int $minor): Money => Money::ofMinor($minor, $currency), $minors), $currency);
-        } catch (OverflowException) {
-            throw ValidationException::withMessages(['items' => __('invoices.errors.item_price')]);
         }
     }
 }
