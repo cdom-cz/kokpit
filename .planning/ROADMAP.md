@@ -740,6 +740,17 @@ Plans:
 **Wave 13** *(blocked on Wave 12 completion)*
 - [x] 10-32-PLAN.md — End-to-end flow and Partner sweep, CONTRIBUTING and README hand-over, validation map, phase gate
 
+
+### Phase 10.1: Invoices stay fully editable (items and details) until paid or credited (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 10
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 10.1 to break down)
+
 ### Phase 11: Stripe Payments
 
 **Goal**: Issued invoices can be paid by card through Stripe, payments are matched automatically, and duplicate or unmatched payments are surfaced instead of lost
@@ -833,3 +844,23 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 10. Invoicing | 41/41 | In Progress | - |
 | 11. Stripe Payments | 20/20 | In Progress | - |
 | 12. Partner Audit | 0/0 | Not started | - |
+
+### Phase 13: Unified e-mail layout and HTML e-mail templates
+
+**Goal:** Every e-mail the system sends shares one HTML layout built on the Laravel mail theme. The payment e-mails are reworked first: a new confirmation to the client that an invoice has been paid (absorbs the former Phase 10.2), and the invoice e-mail with its "Pay by card" button. The other e-mails (partner invitation, password reset, task notifications, operational alerts) are moved to the layout and their texts reviewed.
+**Requirements**: TBD
+**Depends on:** Phase 12
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 13 to break down)
+
+### Phase 14: Online payment method and invoice currency
+
+**Goal:** An invoice can be set to online payment: the invoice then shows no bank payment details, only what is needed to pay via Stripe. The invoice currency is selectable and carries through to both the PDF and the Stripe payment.
+**Requirements**: TBD
+**Depends on:** Phase 13
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 14 to break down)

@@ -818,7 +818,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 - Phase 13 added: Unified e-mail layout and HTML e-mail templates: one shared layout for all outgoing e-mails, and every sent e-mail converted to an HTML template
 - Phase 14 added: Online payment method and invoice currency: selectable online (Stripe) payment method that replaces bank payment details on the invoice, and selectable invoice currency reflected in the PDF and the Stripe payment
 - Phase 10.1 inserted after Phase 10: Invoices stay fully editable (items and details) until paid or credited (URGENT)
-- Phase 10.2 inserted after Phase 10: Send an e-mail confirming that an invoice has been paid (URGENT)
+- Phase 10.2 removed: the paid-invoice confirmation e-mail is delivered in Phase 13
 
 ## Deferred Items
 
