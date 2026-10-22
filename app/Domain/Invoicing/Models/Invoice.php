@@ -10,6 +10,7 @@ use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Settings\VatMode;
 use App\Domain\Shared\Auth\IsolatesPartners;
@@ -43,8 +44,13 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * correlated fragments. Under the Partner scope the relation finds the own client's issued credit note, so a
  * Partner sees the cancelled state through a row it may read.
  *
- * An issued row accepts no write at all (D-13, R-04-6) and there is no PDF relation: the link to the stored PDF is
- * the Admin-only `invoice_admin.pdf_document_id`.
+ * The freeze criterion is the lock, not the state (IN-11; D-01, D-12, D-08). An issued invoice or proforma stays
+ * open until a successfully sent document e-mail locks it ({@see Invoice::isLocked()}); a credit note is locked at
+ * its own issue. A locked row accepts no write at all, a timestamp-only one included (the database refuses it with
+ * KP001 for every writer), and an open issued row accepts every write except the number, variable symbol, kind,
+ * client, state, VAT mode, appearance snapshot, document links, storno marker and issue time, which never change
+ * once the document is issued. There is no PDF relation: the link to the stored PDF is the Admin-only
+ * `invoice_admin.pdf_document_id`.
  *
  * Only the printed note is fillable. The client, kind, state, number, totals, snapshots and links are set with
  * `forceFill` by the Actions, so a request can never write them by mass assignment. The history is an allowlist:
@@ -58,6 +64,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string|null $variable_symbol
  * @property string $currency
  * @property InvoiceLanguage $language
+ * @property InvoiceLockState $lock_state
  * @property VatMode $vat_mode
  * @property CarbonImmutable|null $issue_date
  * @property CarbonImmutable|null $taxable_supply_date
@@ -158,6 +165,14 @@ final class Invoice extends KokpitModel implements PartnerIsolated
     public function isIssued(): bool
     {
         return $this->state === InvoiceState::Issued;
+    }
+
+    /**
+     * Whether the document is locked: sent by e-mail, or a credit note. A draft is never locked.
+     */
+    public function isLocked(): bool
+    {
+        return $this->lock_state === InvoiceLockState::Locked;
     }
 
     /**
@@ -321,6 +336,7 @@ final class Invoice extends KokpitModel implements PartnerIsolated
         return [
             'kind' => InvoiceKind::class,
             'state' => InvoiceState::class,
+            'lock_state' => InvoiceLockState::class,
             'language' => InvoiceLanguage::class,
             'vat_mode' => VatMode::class,
             'issue_date' => 'immutable_date',

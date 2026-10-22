@@ -8,6 +8,7 @@ use App\Domain\Documents\Actions\StoreGeneratedDocument;
 use App\Domain\ExchangeRates\ExchangeRateConverter;
 use App\Domain\ExchangeRates\ExchangeRateMissing;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
@@ -47,8 +48,10 @@ use OverflowException;
  *
  * The order is deliberate. The reads and the Admin-only rows come first, the number is allocated late so that the
  * counter row stays locked for as short a part of the transaction as possible, and the flip of the state is the
- * last write on the `invoices` row, because an issued row accepts no write at all (plan 10-04 R-04-6): the steps
- * that follow write only time entries, `invoice_admin` and documents.
+ * last write on the `invoices` row: the steps that follow write only time entries, `invoice_admin` and documents.
+ * The flip also sets the lock (IN-11; D-01, D-12): an issued invoice or proforma is left open, so it stays
+ * correctable until a successfully sent e-mail locks it, and a credit note is locked by its own issue and never
+ * opened again. The number and the kind never change after the flip, open or locked.
  *
  * The lines generated from time in another currency than the document are converted before anything else is written:
  * the CNB lists of the issue date price each of them once (ruling R-17-1) and the totals follow the stored amounts
@@ -132,6 +135,7 @@ final readonly class DocumentIssuer
 
         $lockedDraft->forceFill([
             'state' => InvoiceState::Issued,
+            'lock_state' => $kind === InvoiceKind::CreditNote ? InvoiceLockState::Locked : InvoiceLockState::Open,
             'number' => $number,
             'variable_symbol' => VariableSymbol::fromNumber($kind->numberingKind(), $number),
             'issue_date' => $issueDate,
@@ -175,8 +179,8 @@ final readonly class DocumentIssuer
 
     /**
      * Renders the PDF of the issued document from its snapshots, stores it as a document owned by the invoice and
-     * saves the link on the Admin-only row (D-21, D-23). The `invoices` row takes no write: it is frozen (plan 10-04
-     * R-04-6), which is why the link lives in `invoice_admin`.
+     * saves the link on the Admin-only row (D-21, D-23). The `invoices` row takes no write here: the flip was its last
+     * write of the pipeline, and the link lives in `invoice_admin`, which stays writable for it under a lock.
      */
     private function storePdf(Invoice $issued, InvoiceAdmin $admin, IssueContext $context): void
     {

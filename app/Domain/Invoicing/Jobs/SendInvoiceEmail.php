@@ -8,6 +8,7 @@ use App\Domain\Documents\Models\Document;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\RoleName;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
+use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Mail\InvoiceMail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
@@ -52,6 +53,13 @@ use Throwable;
  *
  * For a document issued with card payment on that still owes money, the pay-link block of {@see PayLinkBlock} follows
  * the stored body at send time (D-03); the log row keeps the confirmed text only.
+ *
+ * The successful send of a document e-mail is the only lock of the system (IN-11; D-01, D-02): the sent mark and the
+ * lock of an issued invoice or proforma are written in one transaction that locks the invoice row first, the order of
+ * every edit of the document (invoice, then children). A queued, sending or failed row, a payment, a credit note and
+ * a storno lock nothing, and a document that is locked already is left exactly as it is, because a locked row refuses
+ * even a timestamp-only write. No other e-mail kind may call this step: a later payment confirmation must never lock
+ * the invoice it confirms.
  *
  * The work report reads the supplier and client lines live, not from the snapshot of the document (R-24-4): the
  * figures in it are hours, and a changed address in the header is an accepted drift of an attachment that carries no
@@ -105,14 +113,7 @@ final class SendInvoiceEmail extends KokpitJob
 
             Mail::to($row->recipient)->send(new InvoiceMail($row->subject, $this->bodyToSend($row), $files));
 
-            InvoiceEmail::query()
-                ->whereKey($row->id)
-                ->where('state', InvoiceEmailState::Sending->value)
-                ->update([
-                    'state' => InvoiceEmailState::Sent->value,
-                    'sent_at' => now(),
-                    'updated_at' => now(),
-                ]);
+            $this->markSentAndLock($row);
         } catch (Throwable $e) {
             // Back to queued so the next try can claim the row again; the queue decides when it gives up.
             InvoiceEmail::query()
@@ -125,6 +126,33 @@ final class SendInvoiceEmail extends KokpitJob
             // as the previous exception, which only the failed_jobs record and the log hold.
             throw $e instanceof TransportExceptionInterface ? new RuntimeException(self::TRANSPORT_FAILED, 0, $e) : $e;
         }
+    }
+
+    /**
+     * Marks the row sent and locks the document, in one transaction (D-01). The invoice row is locked first; then the
+     * conditional update from sending to sent; the lock follows only when that update changed the row and the document
+     * is an issued invoice or proforma that is not locked yet. The lock is saved through the model, never a bulk query
+     * update. A failure rolls both back and reaches the catch of {@see self::handle()}, which puts the row back to
+     * queued: the retry may send again, the at-least-once guarantee stated above.
+     */
+    private function markSentAndLock(InvoiceEmail $row): void
+    {
+        DB::transaction(function () use ($row): void {
+            $invoice = Invoice::query()->whereKey($row->invoice_id)->lockForUpdate()->firstOrFail();
+
+            $marked = InvoiceEmail::query()
+                ->whereKey($row->id)
+                ->where('state', InvoiceEmailState::Sending->value)
+                ->update([
+                    'state' => InvoiceEmailState::Sent->value,
+                    'sent_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+            if ($marked === 1 && $invoice->isIssued() && $invoice->kind->carriesPayment() && ! $invoice->isLocked()) {
+                $invoice->forceFill(['lock_state' => InvoiceLockState::Locked])->save();
+            }
+        });
     }
 
     /**

@@ -184,7 +184,8 @@ it('pins the Partner-safe column list of the invoices table', function (): void 
         'issued_at',
         'created_at',
         'updated_at',
-    ], 'The invoices table is readable by Partners for issued documents. Put Admin-only attributes (an internal note, a CNB rate, a CZK total, a payment, the PDF link) into invoice_admin, invoice_item_sources or another Admin-only table; extend this list only after reviewing that every Partner may read the new column.');
+        'lock_state',
+    ], 'The invoices table is readable by Partners for issued documents. Put Admin-only attributes (an internal note, a CNB rate, a CZK total, a payment, the PDF link) into invoice_admin, invoice_item_sources or another Admin-only table; extend this list only after reviewing that every Partner may read the new column. lock_state (open or locked) was reviewed in Phase 10.1: it carries no reason, sender or time of the lock, which live only in the Admin-only activity log.');
 });
 
 it('pins the Partner-safe column list of the invoice_items table', function (): void {

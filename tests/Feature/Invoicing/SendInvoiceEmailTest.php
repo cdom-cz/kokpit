@@ -11,6 +11,7 @@ use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
@@ -475,6 +476,76 @@ describe('a resend', function (): void {
             ->and($invoice->emails()->count())->toBe(2)
             ->and($invoice->emails()->first()?->id)->toBe($second->id)
             ->and(invMailSent())->toHaveCount(1);
+    });
+});
+
+describe('the lock: only a successfully sent document e-mail locks the invoice', function (): void {
+    it('locks the invoice together with the sent mark when the transport accepts the message', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        expect($invoice->lock_state)->toBe(InvoiceLockState::Open);
+
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        expect(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Sent)
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Locked)
+            ->and($invoice->isLocked())->toBeTrue();
+    });
+
+    it('locks a proforma the same way', function (): void {
+        $proforma = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Advance', '1', '5000.00', 'pcs')], InvoiceKind::Proforma);
+
+        app(QueueInvoiceEmail::class)->handle($this->admin, $proforma, invMailData($proforma));
+
+        expect($proforma->refresh()->lock_state)->toBe(InvoiceLockState::Locked);
+    });
+
+    it('leaves the invoice open while the e-mail is only queued', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        expect(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Queued)
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Open);
+    });
+
+    it('leaves the row queued and the invoice open when the transport throws', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => 'recipient@example.com']));
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        invMailBreakTransport('recipient@example.com');
+
+        expect(fn () => invMailTry($row->id))->toThrow(RuntimeException::class);
+        expect(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Queued)
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Open);
+    });
+
+    it('leaves the invoice open when the queue gives up on the e-mail', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        (new SendInvoiceEmail($row->id))->failed(new TransportException('relay refused'));
+
+        expect(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Failed)
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Open);
+    });
+
+    it('keeps a locked invoice as it is when another e-mail is sent for it', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        $before = $invoice->refresh();
+        $snapshot = $before->getAttributes();
+
+        $this->travel(5)->minutes();
+        $second = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        expect(invMailRow($second->id)->state)->toBe(InvoiceEmailState::Sent)
+            ->and(invMailSent())->toHaveCount(2)
+            ->and($invoice->refresh()->getAttributes())->toBe($snapshot);
     });
 });
 

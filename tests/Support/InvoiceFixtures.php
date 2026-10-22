@@ -11,6 +11,7 @@ use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\UpdateDraft;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
@@ -161,6 +162,30 @@ final class InvoiceFixtures
     }
 
     /**
+     * Locks an issued invoice or proforma the way the sent e-mail does (IN-11): a model save of `lock_state` as
+     * system, nothing else on the row. Returns the refreshed document.
+     */
+    public static function lock(Invoice $issued): Invoice
+    {
+        return app(PartnerContext::class)->runAsSystem(static function () use ($issued): Invoice {
+            $row = Invoice::query()->whereKey($issued->id)->firstOrFail();
+            $row->forceFill(['lock_state' => InvoiceLockState::Locked])->save();
+
+            return $row->refresh();
+        });
+    }
+
+    /**
+     * An issued document that is locked: issued through the real pipeline, then locked like a sent one.
+     *
+     * @param  list<array<string, mixed>>  $items  lines built with {@see InvoiceFixtures::item()}
+     */
+    public static function lockedIssued(Client $client, array $items = [], InvoiceKind $kind = InvoiceKind::Invoice): Invoice
+    {
+        return self::lock(self::issued($client, $items, $kind));
+    }
+
+    /**
      * The issued full-storno credit note of an issued invoice, built as system with the only writes the schema
      * allows (plan 10-04 R-04-5): a draft with its lines, each negating a line of the invoice, its Admin-only row,
      * then the flip to issued. Nothing is written on the invoice itself, which is cancelled afterwards because an
@@ -214,6 +239,7 @@ final class InvoiceFixtures
 
             $credit->forceFill([
                 'state' => InvoiceState::Issued,
+                'lock_state' => InvoiceLockState::Locked,
                 'number' => app(DocumentNumbering::class)->next(DocumentKind::CreditNote, CarbonImmutable::now(FilamentTimezone::get())),
                 'issue_date' => CarbonImmutable::now(FilamentTimezone::get())->format('Y-m-d'),
                 'supplier_snapshot' => $source->supplier_snapshot,

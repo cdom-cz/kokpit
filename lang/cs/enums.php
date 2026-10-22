@@ -192,6 +192,11 @@ return [
         'issued' => 'Vystaveno',
     ],
 
+    'invoice_lock_state' => [
+        'open' => 'Lze upravit',
+        'locked' => 'Uzamčeno',
+    ],
+
     'invoice_status' => [
         'draft' => 'Koncept',
         'unpaid' => 'Nezaplaceno',
