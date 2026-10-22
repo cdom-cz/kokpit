@@ -9,6 +9,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
+use App\Domain\Invoicing\Actions\UnlockInvoice;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceLockState;
@@ -18,6 +19,7 @@ use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
@@ -546,6 +548,84 @@ describe('the lock: only a successfully sent document e-mail locks the invoice',
         expect(invMailRow($second->id)->state)->toBe(InvoiceEmailState::Sent)
             ->and(invMailSent())->toHaveCount(2)
             ->and($invoice->refresh()->getAttributes())->toBe($snapshot);
+    });
+});
+
+/**
+ * The lock rows of the history of a document.
+ *
+ * @return list<Activity>
+ */
+function invMailLockRows(Invoice $invoice): array
+{
+    return Activity::query()
+        ->where('subject_type', 'invoice')
+        ->where('subject_id', $invoice->id)
+        ->where('event', 'invoice_locked')
+        ->orderBy('created_at')
+        ->get()
+        ->all();
+}
+
+describe('the lock audit: one history row per lock, written by the send', function (): void {
+    it('writes one row with the sender as causer when the send locks the document', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        $rows = invMailLockRows($invoice);
+
+        expect($rows)->toHaveCount(1)
+            ->and($rows[0]->causer_id)->toBe($this->admin->id)
+            ->and($rows[0]->attribute_changes?->all())->toBe([
+                'attributes' => ['lock_state' => 'locked'],
+                'old' => ['lock_state' => 'open'],
+            ]);
+    });
+
+    it('writes no row for a resend of a locked document', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        $this->travel(5)->minutes();
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        expect(invMailLockRows($invoice))->toHaveCount(1);
+    });
+
+    it('writes no row while the e-mail is queued, when the transport throws or when the queue gives up', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => 'recipient@example.com']));
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        expect(invMailLockRows($invoice))->toBe([]);
+
+        invMailBreakTransport('recipient@example.com');
+
+        expect(fn () => invMailTry($row->id))->toThrow(RuntimeException::class)
+            ->and(invMailLockRows($invoice))->toBe([]);
+
+        (new SendInvoiceEmail($row->id))->failed(new TransportException('relay refused'));
+
+        expect(invMailLockRows($invoice))->toBe([]);
+    });
+
+    it('locks again with a second row after an unlock and the next successful send, and not before', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        $this->travel(5)->minutes();
+        $opened = app(UnlockInvoice::class)->handle($this->admin, $invoice, 'Wrong example quantity on line one');
+
+        expect($opened->isLocked())->toBeFalse()
+            ->and($invoice->refresh()->isLocked())->toBeFalse()
+            ->and(invMailLockRows($invoice))->toHaveCount(1);
+
+        $this->travel(5)->minutes();
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        expect($invoice->refresh()->isLocked())->toBeTrue()
+            ->and(invMailLockRows($invoice))->toHaveCount(2);
     });
 });
 

@@ -14,6 +14,7 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Notifications\InvoiceEmailFailedNotification;
 use App\Domain\Invoicing\Pdf\InvoicePdf;
+use App\Domain\Invoicing\Support\InvoiceAudit;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
 use App\Domain\Payments\Support\PayLinkBlock;
@@ -132,7 +133,8 @@ final class SendInvoiceEmail extends KokpitJob
      * Marks the row sent and locks the document, in one transaction (D-01). The invoice row is locked first; then the
      * conditional update from sending to sent; the lock follows only when that update changed the row and the document
      * is an issued invoice or proforma that is not locked yet. The lock is saved through the model, never a bulk query
-     * update. A failure rolls both back and reaches the catch of {@see self::handle()}, which puts the row back to
+     * update, and {@see InvoiceAudit::locked()} writes its one history row in the same transaction; a resend of a
+     * locked document writes none. A failure rolls both back and reaches the catch of {@see self::handle()}, which puts the row back to
      * queued: the retry may send again, the at-least-once guarantee stated above.
      */
     private function markSentAndLock(InvoiceEmail $row): void
@@ -151,6 +153,9 @@ final class SendInvoiceEmail extends KokpitJob
 
             if ($marked === 1 && $invoice->isIssued() && $invoice->kind->carriesPayment() && ! $invoice->isLocked()) {
                 $invoice->forceFill(['lock_state' => InvoiceLockState::Locked])->save();
+
+                // D-13: the one history row of this lock, in the same transaction, with the sender as causer.
+                InvoiceAudit::locked($invoice, $row->sender);
             }
         });
     }
