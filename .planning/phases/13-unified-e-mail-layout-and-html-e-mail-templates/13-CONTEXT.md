@@ -55,7 +55,7 @@ E-mails that really leave the system today: the invoice e-mail (`InvoiceMail`, p
 ### Prior decisions
 - `.planning/phases/10-invoicing/10-UI-SPEC.md` — U-11 (plain-text e-mail body) and the send dialog.
 - `.planning/phases/11-stripe-payments/11-CONTEXT.md` — D-01..D-04: stable public pay URL in the e-mail, the "Pay by card" button.
-- `.planning/phases/10.1-invoices-stay-fully-editable-items-and-details-until-paid-or/10.1-CONTEXT.md` — a successful invoice e-mail locks the invoice.
+- `.planning/phases/10.1-invoices-stay-fully-editable-until-sent-with-a-manual-unlock/10.1-CONTEXT.md` — a successful invoice e-mail locks the invoice.
 - `.planning/REQUIREMENTS.md` — IN-04 (invoice e-mail), PA-02 (Pay by card button).
 - `.planning/ROADMAP.md` — Phase 13 and the neighbouring Phase 10.2 (paid-invoice confirmation e-mail).
 

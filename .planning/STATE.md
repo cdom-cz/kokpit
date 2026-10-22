@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 11
-current_phase_name: Stripe Payments
-status: verifying
+current_phase: "10.1"
+current_phase_name: Invoices stay fully editable until sent, with a manual unlock
+status: executing
 stopped_at: Phase 13 context gathered
-last_updated: "2026-10-22T21:12:22.197Z"
+last_updated: "2026-10-22T22:35:50.232Z"
 last_activity: 2026-10-22
 last_activity_desc: Phase 11 execution started
-state_head: 70eb5f35255caa8cf8a71a668725c059b4ebc96d
+state_head: 4b7da63bbf42f05d6347e74e7b18a95fa4128243
 progress:
-  total_phases: 17
+  total_phases: 16
   completed_phases: 7
-  total_plans: 245
+  total_plans: 257
   completed_plans: 245
-  percent: 41
+  percent: 44
 ---
 
 # Project State
@@ -27,12 +27,12 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 ## Current Position
 
-Phase: 11 (Stripe Payments) — EXECUTING
+Phase: 10.1 (Invoices stay fully editable until sent, with a manual unlock) — READY TO EXECUTE
 Plan: 20 of 20
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Last activity: 2026-10-22 - Completed quick task 261022-sgn: Improve global search to match client, project and task names, and project and task codes
 
-Progress: [████░░░░░░] 41%
+Progress: [████░░░░░░] 44%
 
 ## Performance Metrics
 
@@ -817,7 +817,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 - Phase 09.1 inserted after Phase 10: Transactions API: REST API for the transactions and transaction_categories tables, including bulk creation (URGENT)
 - Phase 13 added: Unified e-mail layout and HTML e-mail templates: one shared layout for all outgoing e-mails, and every sent e-mail converted to an HTML template
 - Phase 14 added: Online payment method and invoice currency: selectable online (Stripe) payment method that replaces bank payment details on the invoice, and selectable invoice currency reflected in the PDF and the Stripe payment
-- Phase 10.1 inserted after Phase 10: Invoices stay fully editable (items and details) until paid or credited (URGENT)
+- Phase 10.1 inserted after Phase 10: Invoices stay fully editable until sent, with a manual unlock (URGENT)
 - Phase 10.2 removed: the paid-invoice confirmation e-mail is delivered in Phase 13
 
 ## Deferred Items
