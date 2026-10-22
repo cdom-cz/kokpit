@@ -143,15 +143,6 @@ it('finds a task by a word of its title in the global search', function (): void
     expect(taskResSearch('needle')['Úkoly'] ?? [])->toHaveCount(1);
 });
 
-it('shows no project, client or activity result in the global search', function (): void {
-    $project = taskResProject();
-    app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example other task']);
-
-    // The project name, the project key and the client name all match something.
-    expect(array_keys(taskResSearch('Example')))->toBe(['Úkoly'])
-        ->and(taskResSearch('ABC'))->not->toHaveKeys(['Projekty', 'Klienti', 'Aktivita']);
-});
-
 it('returns a Partner no global search result for the reference of an own-client task', function (): void {
     $client = Client::factory()->create();
     $project = app(CreateProject::class)->handle($client, [
@@ -169,20 +160,4 @@ it('returns a Partner no global search result for the reference of an own-client
 
     expect(taskResSearch($task->reference))->toBe([])
         ->and(taskResSearch('Example'))->toBe([]);
-});
-
-it('lets exactly one resource of the panel be globally searchable, the Admin-only TaskResource', function (): void {
-    $searchable = array_values(array_filter(
-        Filament::getResources(),
-        static fn (string $resource): bool => $resource::canGloballySearch(),
-    ));
-
-    expect($searchable)->toBe([TaskResource::class]);
-
-    $this->actingAs(Canary::partnerFor(Client::factory()->create()->id));
-
-    expect(array_values(array_filter(
-        Filament::getResources(),
-        static fn (string $resource): bool => $resource::canGloballySearch(),
-    )))->toBe([]);
 });

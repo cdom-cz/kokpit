@@ -54,7 +54,9 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Str;
 
@@ -78,7 +80,10 @@ final class ProjectResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'name';
 
-    protected static bool $isGloballySearchable = false;
+    /** Admin-only by its AccessRule; found by key or name, and `id` is never searchable. */
+    protected static bool $isGloballySearchable = true;
+
+    protected static ?int $globalSearchSort = 20;
 
     protected static ?int $navigationSort = 20;
 
@@ -117,6 +122,50 @@ final class ProjectResource extends Resource
     public static function getRecordRouteBindingEloquentQuery(): Builder
     {
         return parent::getRecordRouteBindingEloquentQuery()->withoutGlobalScopes([SoftDeletingScope::class]);
+    }
+
+    /**
+     * Searchable by the key and the name, never by the id.
+     *
+     * @return array<string>
+     */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['key', 'name'];
+    }
+
+    public static function getGlobalSearchResultTitle(Model $record): string|Htmlable
+    {
+        return $record instanceof Project ? $record->key.' · '.$record->name : parent::getGlobalSearchResultTitle($record);
+    }
+
+    /**
+     * The client name and the status; never the billing type, a rate, a price, an estimate or the internal note.
+     *
+     * @return array<string, string>
+     */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        if (! $record instanceof Project) {
+            return [];
+        }
+
+        return [
+            __('kokpit.projects.fields.client') => (string) $record->client?->name,
+            __('kokpit.projects.fields.status') => $record->status->getLabel(),
+        ];
+    }
+
+    /**
+     * Archived projects are not suggested. The client is loaded with its archive scope lifted, so the
+     * detail needs no query per row and the Partner scope stays on.
+     */
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        return parent::getGlobalSearchEloquentQuery()
+            ->whereNull((new Project)->qualifyColumn('deleted_at'))
+            ->with(['client' => static fn ($client) => $client->withoutGlobalScopes([SoftDeletingScope::class])])
+            ->orderBy((new Project)->qualifyColumn('key'));
     }
 
     /**

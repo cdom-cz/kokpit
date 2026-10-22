@@ -80,7 +80,8 @@ use InvalidArgumentException;
  * Nothing here writes a row: the Create and Edit pages hand the form state to the
  * domain Actions CreateClient and UpdateClient, which own every rule. The stage
  * is a label and a list filter only (D-10). The client is Admin-only data (D-06):
- * the resource is not globally searchable, and a Partner gets 403 on every route.
+ * the resource is globally searchable by name for the Admin only, and a Partner
+ * gets 403 on every route and no search result.
  * A new client form opens pre-filled from the typed defaults (D-13); the values are
  * copied into the client row and never read from the settings again. Archiving
  * is a soft delete through the domain Actions; there is no force-delete action
@@ -97,7 +98,10 @@ final class ClientResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'name';
 
-    protected static bool $isGloballySearchable = false;
+    /** Admin-only by its AccessRule; found by name, and `id` is never searchable. */
+    protected static bool $isGloballySearchable = true;
+
+    protected static ?int $globalSearchSort = 10;
 
     protected static ?int $navigationSort = 10;
 
@@ -149,6 +153,48 @@ final class ClientResource extends Resource
     public static function getRecordRouteBindingEloquentQuery(): Builder
     {
         return parent::getRecordRouteBindingEloquentQuery()->withoutGlobalScopes([SoftDeletingScope::class]);
+    }
+
+    /**
+     * Searchable by the name, never by the id.
+     *
+     * @return array<string>
+     */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['name'];
+    }
+
+    /**
+     * The company number (when filled) and the stage; never a rate, a currency, a payment term or any money.
+     *
+     * @return array<string, string>
+     */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        if (! $record instanceof Client) {
+            return [];
+        }
+
+        $details = [];
+
+        if ($record->company_number !== null && $record->company_number !== '') {
+            $details[__('kokpit.clients.fields.company_number')] = $record->company_number;
+        }
+
+        $details[__('kokpit.clients.fields.stage')] = $record->stage->getLabel();
+
+        return $details;
+    }
+
+    /**
+     * Archived clients are not suggested; they stay reachable from the list through the trashed filter.
+     */
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        return parent::getGlobalSearchEloquentQuery()
+            ->whereNull((new Client)->qualifyColumn('deleted_at'))
+            ->orderBy((new Client)->qualifyColumn('name'));
     }
 
     public static function form(Schema $schema): Schema
