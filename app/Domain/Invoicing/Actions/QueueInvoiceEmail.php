@@ -43,7 +43,7 @@ final readonly class QueueInvoiceEmail
 
     /**
      * The values the dialog is opened with. `recipient` is null when the client has no invoice e-mail; the work
-     * report is ticked by default whenever the document has linked time.
+     * report is never ticked by default.
      *
      * @return array{recipient: ?string, subject: string, body: string, attach_work_report: bool, has_work_report: bool}
      *
@@ -65,7 +65,7 @@ final readonly class QueueInvoiceEmail
             'recipient' => $recipient,
             'subject' => $this->defaultSubject($issued),
             'body' => $this->defaultBody($issued),
-            'attach_work_report' => $hasReport,
+            'attach_work_report' => false,
             'has_work_report' => $hasReport,
         ];
     }

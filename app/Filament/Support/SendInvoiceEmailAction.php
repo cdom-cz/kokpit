@@ -28,7 +28,7 @@ use Livewire\Component;
  *
  * The dialog asks for the recipient (pre-filled with the invoice e-mail of the client, empty with a helper when the
  * client has none), the subject and the plain text body (both pre-filled in the language of the document), and, only
- * for a document with linked time, whether the work report is attached (default on). A gray line names the
+ * for a document with linked time, whether the work report is attached (default off). A gray line names the
  * attachments, and a second gray line announces the pay-link block that the mailer adds by itself when it applies (D-03,
  * {@see PayLinkBlock::applies()}); the block is never put into the text area. The pre-filled values come from {@see QueueInvoiceEmail::defaults()}, or from the earlier row when the
  * dialog is opened to send again.
@@ -106,7 +106,7 @@ final class SendInvoiceEmailAction
             ->modalWidth('2xl')
             ->stickyModalFooter()
             ->modalSubmitActionLabel(__('invoices.email.dialog.submit'))
-            ->modalSubmitAction(static fn (Action $submit): Action => $submit->icon(Heroicon::OutlinedPaperAirplane))
+            ->modalSubmitAction(static fn (Action $action): Action => $action->icon(Heroicon::OutlinedPaperAirplane))
             ->modalCancelActionLabel(__('invoices.email.dialog.cancel'))
             ->fillForm(static function (Action $action) use ($resolve): array {
                 [$document, $previous] = $resolve($action);

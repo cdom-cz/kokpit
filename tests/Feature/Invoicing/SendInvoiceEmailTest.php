@@ -291,9 +291,9 @@ describe('the tracer: queue the e-mail of an issued invoice and send it', functi
         $defaults = app(QueueInvoiceEmail::class)->defaults($invoice);
 
         expect($defaults['has_work_report'])->toBeTrue()
-            ->and($defaults['attach_work_report'])->toBeTrue();
+            ->and($defaults['attach_work_report'])->toBeFalse();
 
-        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, ['attach_work_report' => true]));
 
         $messages = invMailSent();
 
@@ -325,7 +325,7 @@ describe('the tracer: queue the e-mail of an issued invoice and send it', functi
     it('names the work report in English for an English document', function (): void {
         ['invoice' => $invoice] = invMailInvoiceWithTime('en');
 
-        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, ['attach_work_report' => true]));
 
         expect(invMailAttachmentNames(invMailSent()[0]))->toBe(['invoice-'.$invoice->number.'.pdf', 'work-report-'.$invoice->number.'.pdf']);
     });

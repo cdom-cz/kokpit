@@ -112,7 +112,7 @@ describe('the dialog after the issue', function (): void {
                 'Text',
                 'Přiložit pracovní výkaz',
                 'Výkaz obsahuje odpracované hodiny bez cen.',
-                'Přílohy: '.$invoice->number.'.pdf, pracovní výkaz.pdf',
+                'Přílohy: '.$invoice->number.'.pdf',
                 'Odeslat',
                 'Neodesílat teď',
             ])
@@ -121,7 +121,7 @@ describe('the dialog after the issue', function (): void {
         expect($page->get('mountedActions.0.data.recipient'))->toBe($defaults['recipient'])
             ->and($page->get('mountedActions.0.data.subject'))->toBe($defaults['subject'])
             ->and($page->get('mountedActions.0.data.body'))->toBe($defaults['body'])
-            ->and($page->get('mountedActions.0.data.attach_work_report'))->toBeTrue();
+            ->and($page->get('mountedActions.0.data.attach_work_report'))->toBeFalse();
     });
 
     it('stays closed without the flag and opens on demand from the header', function (): void {
@@ -154,7 +154,7 @@ describe('the dialog after the issue', function (): void {
             ->and($row->recipient)->toBe($invoice->client->invoice_email)
             ->and($row->subject)->toBe('Faktura k úhradě')
             ->and($row->body)->toBe('Dobrý den, posíláme fakturu.')
-            ->and($row->attach_work_report)->toBeTrue()
+            ->and($row->attach_work_report)->toBeFalse()
             ->and($row->created_by)->toBe($this->admin->id);
 
         Queue::assertPushed(SendInvoiceEmail::class, static fn (SendInvoiceEmail $job): bool => $job->emailId === $row->id);

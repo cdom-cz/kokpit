@@ -161,7 +161,7 @@ final class PaymentLinkSection
             ]))
             ->modalSubmitActionLabel(__('payment_links.actions.regenerate.submit'))
             ->modalCancelActionLabel(__('payment_links.actions.regenerate.cancel'))
-            ->modalSubmitAction(static fn (Action $submit): Action => $submit->color('primary'))
+            ->modalSubmitAction(static fn (Action $action): Action => $action->color('primary'))
             ->action(static function () use ($invoice, $reload): void {
                 abort_unless(InvoiceResource::canAccess(), 403);
 
