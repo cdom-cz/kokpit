@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: "10.1"
 current_phase_name: Invoices stay fully editable until sent, with a manual unlock (INSERTED)
 status: executing
-stopped_at: Completed 10.1-02-PLAN.md
-last_updated: "2026-10-22T23:38:04.785Z"
+stopped_at: Completed 10.1-03-PLAN.md
+last_updated: "2026-10-22T23:46:21.082Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 10.1 execution started
-state_head: 6c2201160b30b76b80de98650fc7f5b9a52dec25
+state_head: 6502f3dbbc755f08f18a9911378604ddd4cff2c9
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 257
-  completed_plans: 248
+  completed_plans: 249
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10.1 (Invoices stay fully editable until sent, with a manual unlock (INSERTED)) — EXECUTING
-Plan: 4 of 12
+Plan: 5 of 12
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 10.1 execution started
 
@@ -311,6 +311,7 @@ Progress: [████░░░░░░] 44%
 | Phase 10.1 P01 | 50 min | 2 tasks | 14 files |
 | Phase 10.1 P11 | 5min | 2 tasks | 3 files |
 | Phase 10.1 P02 | 55 min | 2 tasks | 10 files |
+| Phase 10.1 P03 | 40min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -776,6 +777,8 @@ Recent decisions affecting current work:
 - [Phase 10.1]: The send-driven lock replaces status-driven immutability (D-01, D-12)
 - [Phase 10.1]: 10.1-02: UnlockInvoice is the only setter of the unlock setting; lock_state stays off the logged allowlist so InvoiceAudit writes exactly one row per lock and unlock
 - [Phase 10.1]: 10.1-02: the open banner and the unlock action skip a cancelled invoice and a converted proforma (assumption A3); the Locked writer is confined by token to the send job, the credit note issue and the model
+- [Phase 10.1]: 10.1-03: time moves on and off an open issued invoice or proforma; a credit note, cancelled invoice and converted proforma take no time (kokpit_invoice_accepts_time_changes)
+- [Phase 10.1]: 10.1-03: a payment link records the currency it offered and never changes; new links must match the document currency; invoice_payments keeps its composite key
 
 ### Pending Todos
 
@@ -838,6 +841,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T23:38:03.736Z
-Stopped at: Completed 10.1-02-PLAN.md
+Last session: 2026-10-22T23:46:20.030Z
+Stopped at: Completed 10.1-03-PLAN.md
 Resume file: None
