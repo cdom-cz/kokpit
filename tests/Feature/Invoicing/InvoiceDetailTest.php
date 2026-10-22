@@ -598,3 +598,67 @@ describe('the relation tabs', function (): void {
         }
     });
 });
+
+describe('the lock of a sent document', function (): void {
+    it('shows the badge, the locked banner and the unlock action on a locked invoice', function (): void {
+        $invoice = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
+
+        detail($invoice)
+            ->assertSee('Uzamčeno')
+            ->assertSee('Doklad byl odeslán e-mailem a je uzamčen. Upravit ho lze až po odemknutí s uvedením důvodu.')
+            ->assertDontSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.')
+            ->assertActionExists(TestAction::make('unlock')->schemaComponent('locked', schema: 'infolist'))
+            ->assertActionVisible(TestAction::make('unlock')->schemaComponent('locked', schema: 'infolist'));
+    });
+
+    it('opens the document with a reason and tells the Admin', function (): void {
+        $invoice = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
+
+        $page = detail($invoice)->callAction(
+            TestAction::make('unlock')->schemaComponent('locked', schema: 'infolist'),
+            ['reason' => 'Wrong example quantity on line one'],
+        );
+
+        $sent = detailNotifications();
+
+        expect($sent)->toHaveCount(1)
+            ->and($sent[0]['status'])->toBe('success')
+            ->and($sent[0]['title'])->toBe('Doklad je odemčen')
+            ->and($invoice->refresh()->lock_state->value)->toBe('open');
+
+        $page
+            ->assertSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.')
+            ->assertDontSee('Doklad byl odeslán e-mailem a je uzamčen.')
+            ->assertDontSee('Odemknout');
+    });
+
+    it('refuses a short reason under the field and leaves the document locked', function (): void {
+        $invoice = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
+
+        detail($invoice)
+            ->callAction(TestAction::make('unlock')->schemaComponent('locked', schema: 'infolist'), ['reason' => 'too short'])
+            ->assertHasActionErrors(['reason']);
+
+        expect($invoice->refresh()->isLocked())->toBeTrue();
+    });
+
+    it('shows the open banner and no unlock action on an open invoice', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        detail($invoice)
+            ->assertSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.')
+            ->assertDontSee('Uzamčeno')
+            ->assertDontSee('Doklad byl odeslán e-mailem a je uzamčen.')
+            ->assertDontSee('Odemknout');
+    });
+
+    it('shows neither banner nor action on a credit note', function (): void {
+        $invoice = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
+        $credit = app(IssueCreditNote::class)->storno($this->admin, $invoice);
+
+        detail($credit)
+            ->assertDontSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.')
+            ->assertDontSee('Doklad byl odeslán e-mailem a je uzamčen.')
+            ->assertDontSee('Odemknout');
+    });
+});

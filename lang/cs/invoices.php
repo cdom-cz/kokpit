@@ -64,6 +64,13 @@ return [
         'payment_delete_carried' => 'Platba je přenesená na fakturu :number. Nejdřív smažte platbu na faktuře.',
         'payment_missing' => 'Platba už neexistuje. Obnovte stránku.',
 
+        // The unlock of a sent document (D-03, assumptions A1 and A3).
+        'unlock_reason_length' => 'Důvod musí mít 10 až 500 znaků.',
+        'not_locked' => 'Doklad není uzamčen.',
+        'credit_note_locked' => 'Dobropis po vystavení upravit ani odemknout nelze.',
+        'cancelled_not_editable' => 'Stornovaný doklad upravit nelze.',
+        'converted_not_editable' => 'Zálohovou fakturu, ze které už vznikla faktura, upravit nelze.',
+
         // Conversion of a proforma.
         'proforma_not_issued' => 'Fakturu lze vystavit jen ze zálohy, která je vystavená a není stornovaná.',
         'proforma_not_paid' => 'Zálohu lze převést na fakturu až po úplném zaplacení.',
@@ -422,6 +429,8 @@ return [
             'awaiting_invoice' => 'Záloha je zaplacená, ale faktura k ní zatím nebyla vystavena. Příjem se zaúčtuje až při vystavení faktury.',
             'cancelled_paid' => 'Faktura byla stornována, ale platba zůstává zaevidovaná. Vrácení peněz a výdaj zaznamenejte ručně.',
             'credit_exists' => 'K dokladu existuje dobropis :number.',
+            'open_for_edits' => 'Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.',
+            'locked' => 'Doklad byl odeslán e-mailem a je uzamčen. Upravit ho lze až po odemknutí s uvedením důvodu.',
         ],
         'actions' => [
             'download' => 'Stáhnout PDF',
@@ -433,6 +442,14 @@ return [
             'storno' => 'Stornovat',
             'edit_note' => 'Upravit poznámku',
             'open' => 'Otevřít doklad',
+            'unlock' => 'Odemknout',
+        ],
+        'unlock' => [
+            'heading' => 'Odemknout doklad :number',
+            'description' => 'Doklad už zákazník dostal. Po odemknutí ho můžete upravit; po dalším úspěšném odeslání e-mailem se znovu uzamkne.',
+            'reason' => 'Důvod odemknutí',
+            'submit' => 'Odemknout',
+            'done' => 'Doklad je odemčen',
         ],
         'note' => [
             'heading' => 'Interní poznámka',

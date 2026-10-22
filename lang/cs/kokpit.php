@@ -414,6 +414,9 @@ return [
             'updated' => 'Změněno',
             'deleted' => 'Smazáno',
             'description_changed' => 'Popis upraven',
+            'invoice_locked' => 'Doklad uzamčen odesláním',
+            'invoice_unlocked' => 'Doklad odemčen',
+            'invoice_edited' => 'Doklad upraven po odeslání',
             'api_token' => [
                 'created' => 'API token vytvořen',
                 'revoked' => 'API token zneplatněn',
@@ -553,6 +556,8 @@ return [
                 'credited_invoice_id' => 'Opravovaný doklad',
                 'cancels_invoice' => 'Stornuje fakturu',
                 'issued_at' => 'Vystaveno',
+                'lock_state' => 'Zámek dokladu',
+                'unlock_reason' => 'Důvod odemknutí',
             ],
             'time_entry' => [
                 'client_id' => 'Klient',

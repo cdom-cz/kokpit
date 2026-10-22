@@ -9,6 +9,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\ConvertProforma;
 use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\RegeneratePdf;
+use App\Domain\Invoicing\Actions\UnlockInvoice;
 use App\Domain\Invoicing\Actions\UpdateInternalNote;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceStatus;
@@ -70,6 +71,8 @@ use Throwable;
  *
  * Nothing frozen is editable here. The internal note goes through {@see UpdateInternalNote} and the missing PDF
  * through {@see RegeneratePdf}, both of which write only the Admin-only `invoice_admin` row (plan 10-04 R-04-6). The
+ * one other write is the sanctioned unlock of a sent document ({@see UnlockInvoice}, IN-12; D-03): the locked banner
+ * carries the action that asks for a reason and opens the document until the next successful send locks it again. The
  * page is Admin only and the check runs on every Livewire request: a Partner would otherwise be served an own issued
  * invoice through the Partner scope of the model. The state of the document (paid, late, converted) is derived once
  * per request by {@see ReceivablesReader}, so a banner and a badge cannot disagree.
@@ -168,6 +171,14 @@ final class ViewInvoice extends ViewRecord
             '<x-filament::badge color="gray" style="vertical-align: middle;">{{ $kind }}</x-filament::badge> <x-filament::badge :color="$color" style="vertical-align: middle;">{{ $state }}</x-filament::badge>',
             ['kind' => $invoice->kind->getLabel(), 'color' => $status->getColor(), 'state' => $status->getLabel()],
         );
+
+        // The lock of a sent invoice or proforma (IN-11): the page asks `isLocked()` and never names the case.
+        if ($invoice->isIssued() && $invoice->kind->carriesPayment()) {
+            $badges .= ' '.Blade::render(
+                '<x-filament::badge :color="$color" style="vertical-align: middle;">{{ $lock }}</x-filament::badge>',
+                ['color' => $invoice->isLocked() ? 'gray' : 'info', 'lock' => $invoice->lock_state->getLabel()],
+            );
+        }
 
         return new HtmlString(e($this->getTitle()).' '.$badges);
     }
@@ -700,6 +711,15 @@ final class ViewInvoice extends ViewRecord
             ]))
                 ->danger()
                 ->visible(fn (): bool => $this->derived()['status'] === InvoiceStatus::Overdue),
+            Callout::make(__('invoices.detail.banners.open_for_edits'))
+                ->key('open_for_edits')
+                ->info()
+                ->visible(fn (): bool => $this->isEditableDocument() && ! $this->invoice()->isLocked()),
+            Callout::make(__('invoices.detail.banners.locked'))
+                ->key('locked')
+                ->warning()
+                ->visible(fn (): bool => $this->isSentDocument() && $this->invoice()->isLocked())
+                ->actions([$this->unlockAction()]),
             ...PaymentLinkSection::banners(fn (): Invoice => $this->invoice(), fn () => $this->reloadAdminHalf(), fn (): array => $this->linkStatus()),
             Callout::make(__('invoices.detail.banners.awaiting_invoice'))
                 ->danger()
@@ -716,6 +736,93 @@ final class ViewInvoice extends ViewRecord
                 ->visible(fn (): bool => $this->invoice()->isIssued() && ! $this->pdfPresent())
                 ->actions([$this->regeneratePdfAction()]),
         ];
+    }
+
+    /**
+     * An issued invoice or proforma: the two kinds a send can lock. A credit note is locked by its own issue and has
+     * neither the open nor the locked banner.
+     */
+    private function isSentDocument(): bool
+    {
+        $invoice = $this->invoice();
+
+        return $invoice->isIssued() && $invoice->kind->carriesPayment();
+    }
+
+    /**
+     * An issued invoice or proforma that can still be corrected once it is open: not cancelled and, for a proforma,
+     * not converted (assumption A3). The state is derived once per request.
+     */
+    private function isEditableDocument(): bool
+    {
+        return $this->isSentDocument()
+            && ! in_array($this->derived()['status'], [InvoiceStatus::Cancelled, InvoiceStatus::Converted], true);
+    }
+
+    /**
+     * "Odemknout" (IN-12; D-03, D-13): a modal that asks for the reason (10 to 500 characters, judged again by the
+     * Action), then {@see UnlockInvoice}. Visible only for a locked invoice or proforma that is neither cancelled nor
+     * converted. A refused call shows the message under the field or, for a document that changed in the meantime, as a
+     * notification; the page then shows the state as it is now.
+     */
+    private function unlockAction(): Action
+    {
+        return Action::make('unlock')
+            ->label(__('invoices.detail.actions.unlock'))
+            ->color('warning')
+            ->visible(fn (): bool => $this->isEditableDocument() && $this->invoice()->isLocked())
+            ->modalHeading(fn (): string => __('invoices.detail.unlock.heading', ['number' => (string) $this->invoice()->number]))
+            ->modalDescription(__('invoices.detail.unlock.description'))
+            ->modalSubmitActionLabel(__('invoices.detail.unlock.submit'))
+            ->schema([
+                Textarea::make('reason')
+                    ->label(__('invoices.detail.unlock.reason'))
+                    ->required()
+                    ->rows(4)
+                    ->rules([
+                        fn (): Closure => function (string $attribute, mixed $value, Closure $fail): void {
+                            $length = mb_strlen(is_string($value) ? trim($value) : '');
+
+                            if ($length < UnlockInvoice::REASON_MIN || $length > UnlockInvoice::REASON_MAX) {
+                                $fail(__('invoices.errors.unlock_reason_length'));
+                            }
+                        },
+                    ]),
+            ])
+            ->action(function (array $data): void {
+                abort_unless(InvoiceResource::canAccess(), 403);
+
+                $actor = auth()->user();
+                assert($actor instanceof User);
+
+                try {
+                    app(UnlockInvoice::class)->handle($actor, $this->invoice(), is_string($data['reason'] ?? null) ? $data['reason'] : '');
+                } catch (AuthorizationException $exception) {
+                    throw $exception;
+                } catch (ValidationException $exception) {
+                    if (array_key_exists('reason', $exception->errors())) {
+                        throw ValidationException::withMessages(['mountedActions.0.data.reason' => $exception->errors()['reason']]);
+                    }
+
+                    // Unlocked or cancelled elsewhere in the meantime: say why and show the state as it is now.
+                    $this->invoice()->refresh();
+                    $this->reloadAdminHalf();
+
+                    Notification::make()
+                        ->danger()
+                        ->title(__('invoices.issue.failed_title'))
+                        ->body(implode(' ', array_merge(...array_values($exception->errors()))))
+                        ->persistent()
+                        ->send();
+
+                    return;
+                }
+
+                $this->invoice()->refresh();
+                $this->reloadAdminHalf();
+
+                Notification::make()->success()->title(__('invoices.detail.unlock.done'))->send();
+            });
     }
 
     /**
