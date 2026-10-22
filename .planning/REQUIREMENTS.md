@@ -126,7 +126,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 - [x] **IN-01**: Invoices, proformas and credit notes with separate number series, number allocated only on issue
 - [x] **IN-02**: Draft created from unbilled billable time (client, period, projects; grouping per project or task; fixed sums added) plus manual items; items editable; entries reserved so two drafts cannot bill the same time
-- [x] **IN-03**: Issue freezes supplier, customer and bank snapshots, rate and amounts; issued invoices are immutable except payment state and internal note, enforced in the database
+- [ ] **IN-03**: Issue freezes number, kind and the issue snapshots (supplier, customer, bank, rate, amounts); an issued invoice or proforma stays editable until a successful e-mail send locks it, a credit note is locked at issue, and number and kind never change, enforced in the database
 - [x] **IN-04**: PDF generated at issue from snapshots only, stored in documents, with SPAYD QR for CZK bank transfer, in the client's invoice language; sent by queued e-mail with optional work report
 - [x] **IN-05**: Manual payment (transfer, cash) recorded in a payments table; warning if already paid; overdue status derived; overdue overview
 - [x] **IN-06**: Proforma converts to invoice with a link after payment
@@ -276,7 +276,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FI-03 | Phase 10 | Complete |
 | IN-01 | Phase 10 | Complete |
 | IN-02 | Phase 10 | Complete |
-| IN-03 | Phase 10 | Complete |
+| IN-03 | Phase 10.1 | Pending |
 | IN-04 | Phase 10 | Complete |
 | IN-05 | Phase 10 | Complete |
 | IN-06 | Phase 10 | Complete |
