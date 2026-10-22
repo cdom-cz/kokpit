@@ -860,6 +860,7 @@ final class ViewInvoice extends ViewRecord
     private function itemsSection(): Section
     {
         return Section::make(__('invoices.detail.sections.items'))
+            ->columnSpanFull()
             ->schema([
                 RepeatableEntry::make('lines')
                     ->hiddenLabel()
@@ -888,6 +889,7 @@ final class ViewInvoice extends ViewRecord
     private function summarySection(): Section
     {
         return Section::make(__('invoices.detail.sections.summary'))
+            ->columnSpanFull()
             ->columns(['default' => 1, 'md' => 3])
             ->schema([
                 TextEntry::make('summary_total')

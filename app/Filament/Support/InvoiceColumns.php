@@ -211,6 +211,7 @@ final class InvoiceColumns
                         ->placeholder($empty),
                 ]),
             Section::make(__('invoices.partner.detail.sections.items'))
+                ->columnSpanFull()
                 ->schema([
                     RepeatableEntry::make('lines')
                         ->hiddenLabel()
@@ -230,6 +231,7 @@ final class InvoiceColumns
                         ]),
                 ]),
             Section::make(__('invoices.partner.detail.sections.summary'))
+                ->columnSpanFull()
                 ->columns(3)
                 ->schema([
                     TextEntry::make('summary_total')
