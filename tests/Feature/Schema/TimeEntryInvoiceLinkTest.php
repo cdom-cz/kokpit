@@ -60,9 +60,11 @@ function timeLinkDocument(string $clientId, array $overrides = []): string
 }
 
 /**
- * Issues the draft document by raw SQL; a credit note gets a negative total and no due date.
+ * Issues the draft document by raw SQL; a credit note gets a negative total and no due date. The document stays open
+ * (an invoice or proforma the customer has not received yet) unless $locked says it was sent; a credit note is
+ * locked by the database itself.
  */
-function timeLinkIssue(string $documentId): void
+function timeLinkIssue(string $documentId, bool $locked = false): void
 {
     static $sequence = 0;
     $sequence++;
@@ -75,7 +77,7 @@ function timeLinkIssue(string $documentId): void
 
     DB::update(
         'update invoices set state = \'issued\', number = ?, variable_symbol = ?, issue_date = \'2026-10-17\', due_date = ?, subtotal_minor = ?, total_minor = ?, '
-        .'supplier_snapshot = ?, customer_snapshot = ?, bank_snapshot = ?, appearance_snapshot = ?, issued_at = \'2026-10-17 10:30:00+00\' where id = ?',
+        .'supplier_snapshot = ?, customer_snapshot = ?, bank_snapshot = ?, appearance_snapshot = ?, issued_at = \'2026-10-17 10:30:00+00\', lock_state = ? where id = ?',
         [
             $number,
             $creditNote ? null : $number,
@@ -86,6 +88,7 @@ function timeLinkIssue(string $documentId): void
             json_encode(['name' => 'Example Customer a.s.']),
             $creditNote ? null : json_encode(['account' => 'fictional']),
             json_encode(['accent' => '#336699']),
+            $locked || $creditNote ? 'locked' : 'open',
             $documentId,
         ],
     );
@@ -169,16 +172,17 @@ function timeLinkRow(string $entryId): object
 }
 
 /**
- * A billed entry of the draft's client: reserved, the draft issued, then billed with its snapshot.
+ * A billed entry of the draft's client: reserved, the draft issued (locked when $locked says the document was sent),
+ * then billed with its snapshot.
  *
  * @return array{0: string, 1: string} the entry id and the invoice id
  */
-function timeLinkBilledEntry(object $test): array
+function timeLinkBilledEntry(object $test, bool $locked = false): array
 {
     $invoice = timeLinkDocument($test->timeLinkClientA);
     $entry = timeLinkEntry($test->timeLinkUser, $test->timeLinkClientA);
     timeLinkReserve($entry, $invoice);
-    timeLinkIssue($invoice);
+    timeLinkIssue($invoice, $locked);
     timeLinkBill($entry);
 
     return [$entry, $invoice];
@@ -215,13 +219,17 @@ describe('reserving an entry', function (): void {
         RawSql::expectSqlState('KP001', fn () => timeLinkReserve($entry, $draft));
     });
 
-    it('refuses to reserve an entry for an issued document', function (): void {
-        $issued = timeLinkDocument($this->timeLinkClientA);
-        timeLinkIssue($issued);
+    it('refuses to reserve an entry for a locked document, and to create one already linked to an issued document', function (): void {
+        $locked = timeLinkDocument($this->timeLinkClientA);
+        timeLinkIssue($locked, locked: true);
+        $open = timeLinkDocument($this->timeLinkClientA);
+        timeLinkIssue($open);
         $entry = timeLinkEntry($this->timeLinkUser, $this->timeLinkClientA);
 
-        RawSql::expectSqlState('KP001', fn () => timeLinkReserve($entry, $issued));
-        RawSql::expectSqlState('KP001', fn () => timeLinkEntry($this->timeLinkUser, $this->timeLinkClientA, ['invoice_id' => $issued]));
+        RawSql::expectSqlState('KP001', fn () => timeLinkReserve($entry, $locked));
+        RawSql::expectSqlState('KP001', fn () => timeLinkEntry($this->timeLinkUser, $this->timeLinkClientA, ['invoice_id' => $locked]));
+        RawSql::expectSqlState('KP001', fn () => timeLinkEntry($this->timeLinkUser, $this->timeLinkClientA, ['invoice_id' => $open]));
+        expect(timeLinkRow($entry)->invoice_id)->toBeNull();
     });
 
     it('lets a new entry be created already reserved by a draft', function (): void {
@@ -324,8 +332,8 @@ describe('releasing a billed entry', function (): void {
         ));
     });
 
-    it('refuses the release while the invoice is not cancelled, a partial credit note included', function (): void {
-        [$entry, $invoice] = timeLinkBilledEntry($this);
+    it('refuses the release of a locked invoice while it is not cancelled, a partial credit note included', function (): void {
+        [$entry, $invoice] = timeLinkBilledEntry($this, locked: true);
         $release = fn () => DB::update(
             "update time_entries set invoice_id = null, billing_state = 'unbilled', billed_at = null, billed_rate_minor = null, billed_rate_currency = null, billed_amount_minor = null where id = ?",
             [$entry],
@@ -338,8 +346,8 @@ describe('releasing a billed entry', function (): void {
         RawSql::expectSqlState('KP001', $release);
     });
 
-    it('releases an entry once an issued storno credit note names the invoice, with no write on the invoice', function (): void {
-        [$entry, $invoice] = timeLinkBilledEntry($this);
+    it('releases an entry once an issued storno credit note names the locked invoice, with no write on the invoice', function (): void {
+        [$entry, $invoice] = timeLinkBilledEntry($this, locked: true);
         $before = DB::selectOne('select xmin::text as version, updated_at from invoices where id = ?', [$invoice]);
 
         timeLinkIssuedCreditNote($invoice, $this->timeLinkClientA, cancels: true);
@@ -359,14 +367,133 @@ describe('releasing a billed entry', function (): void {
             ->and($after->updated_at)->toBe($before->updated_at);
     });
 
-    it('refuses to release while the storno credit note is only a draft', function (): void {
-        [$entry, $invoice] = timeLinkBilledEntry($this);
+    it('refuses to release a locked invoice while the storno credit note is only a draft', function (): void {
+        [$entry, $invoice] = timeLinkBilledEntry($this, locked: true);
         timeLinkDocument($this->timeLinkClientA, ['kind' => 'credit_note', 'credited_invoice_id' => $invoice, 'cancels_invoice' => 'true']);
 
         RawSql::expectSqlState('KP001', fn () => DB::update(
             "update time_entries set invoice_id = null, billing_state = 'unbilled', billed_at = null, billed_rate_minor = null, billed_rate_currency = null, billed_amount_minor = null where id = ?",
             [$entry],
         ));
+    });
+});
+
+describe('following the lock of the document (D-07)', function (): void {
+    $release = static fn (string $entry) => DB::update(
+        "update time_entries set invoice_id = null, billing_state = 'unbilled', billed_at = null, billed_rate_minor = null, billed_rate_currency = null, billed_amount_minor = null where id = ?",
+        [$entry],
+    );
+
+    it('reserves, bills and releases an entry on an issued document while it is open, for raw SQL too', function () use ($release): void {
+        foreach (['invoice', 'proforma'] as $kind) {
+            $document = timeLinkDocument($this->timeLinkClientA, ['kind' => $kind]);
+            timeLinkIssue($document);
+            $entry = timeLinkEntry($this->timeLinkUser, $this->timeLinkClientA);
+
+            RawSql::expectAllowed(fn () => timeLinkReserve($entry, $document));
+            expect(timeLinkRow($entry)->invoice_id)->toBe($document)
+                ->and(timeLinkRow($entry)->billing_state)->toBe('unbilled');
+
+            RawSql::expectAllowed(fn () => timeLinkBill($entry));
+            expect(timeLinkRow($entry)->billing_state)->toBe('billed')
+                ->and(timeLinkRow($entry)->billed_amount_minor)->toBe(100000);
+
+            RawSql::expectAllowed(fn () => $release($entry));
+            $row = timeLinkRow($entry);
+            expect($row->invoice_id)->toBeNull()
+                ->and($row->billing_state)->toBe('unbilled')
+                ->and($row->billed_at)->toBeNull()
+                ->and($row->billed_rate_minor)->toBeNull()
+                ->and($row->billed_rate_currency)->toBeNull()
+                ->and($row->billed_amount_minor)->toBeNull();
+        }
+    });
+
+    it('refuses a reservation and a release once the document is locked, but still bills an entry reserved before', function () use ($release): void {
+        $document = timeLinkDocument($this->timeLinkClientA);
+        $reserved = timeLinkEntry($this->timeLinkUser, $this->timeLinkClientA);
+        $free = timeLinkEntry($this->timeLinkUser, $this->timeLinkClientA);
+        timeLinkReserve($reserved, $document);
+        timeLinkIssue($document, locked: true);
+
+        RawSql::expectSqlState('KP001', fn () => timeLinkReserve($free, $document));
+        RawSql::expectAllowed(fn () => timeLinkBill($reserved));
+        RawSql::expectSqlState('KP001', fn () => $release($reserved));
+        expect(timeLinkRow($reserved)->billing_state)->toBe('billed')
+            ->and(timeLinkRow($free)->invoice_id)->toBeNull();
+    });
+
+    it('takes no time on a credit note, a cancelled invoice or a proforma that already has its invoice', function (): void {
+        $entry = timeLinkEntry($this->timeLinkUser, $this->timeLinkClientA);
+
+        $invoice = timeLinkDocument($this->timeLinkClientA);
+        timeLinkIssue($invoice);
+        RawSql::expectAllowed(fn () => DB::update('update time_entries set invoice_id = ? where id = ?', [$invoice, $entry]));
+        RawSql::expectAllowed(fn () => DB::update('update time_entries set invoice_id = null where id = ?', [$entry]));
+
+        $creditNote = timeLinkIssuedCreditNote($invoice, $this->timeLinkClientA, cancels: false);
+        RawSql::expectSqlState('KP001', fn () => timeLinkReserve($entry, $creditNote));
+
+        // A partial credit note does not cancel the invoice: it is still open for time.
+        RawSql::expectAllowed(fn () => timeLinkReserve($entry, $invoice));
+        RawSql::expectAllowed(fn () => DB::update('update time_entries set invoice_id = null where id = ?', [$entry]));
+
+        timeLinkIssuedCreditNote($invoice, $this->timeLinkClientA, cancels: true);
+        RawSql::expectSqlState('KP001', fn () => timeLinkReserve($entry, $invoice));
+
+        $proforma = timeLinkDocument($this->timeLinkClientA, ['kind' => 'proforma']);
+        timeLinkIssue($proforma);
+        RawSql::expectAllowed(fn () => timeLinkReserve($entry, $proforma));
+        RawSql::expectAllowed(fn () => DB::update('update time_entries set invoice_id = null where id = ?', [$entry]));
+
+        timeLinkDocument($this->timeLinkClientA, ['proforma_id' => $proforma]);
+        RawSql::expectSqlState('KP001', fn () => timeLinkReserve($entry, $proforma));
+    });
+
+    it('releases the time of an open invoice that an issued storno credit note cancels, and keeps the entry frozen otherwise', function () use ($release): void {
+        [$entry, $invoice] = timeLinkBilledEntry($this);
+        timeLinkIssuedCreditNote($invoice, $this->timeLinkClientA, cancels: true);
+
+        RawSql::expectAllowed(fn () => $release($entry));
+        expect(timeLinkRow($entry)->billing_state)->toBe('unbilled');
+
+        [$billed] = timeLinkBilledEntry($this);
+        RawSql::expectSqlState('KP001', fn () => DB::update("update time_entries set started_at = '2026-10-12 09:00:00+00' where id = ?", [$billed]));
+        RawSql::expectSqlState('KP001', fn () => DB::update('update time_entries set billed_amount_minor = 1 where id = ?', [$billed]));
+    });
+
+    it('answers the question of the helper for every kind of document', function (): void {
+        $answer = static fn (string $document): bool => (bool) DB::selectOne('select kokpit_invoice_accepts_time_changes(?) as accepts', [$document])->accepts;
+
+        $draft = timeLinkDocument($this->timeLinkClientA);
+        $open = timeLinkDocument($this->timeLinkClientA);
+        timeLinkIssue($open);
+        $locked = timeLinkDocument($this->timeLinkClientA);
+        timeLinkIssue($locked, locked: true);
+        $creditNote = timeLinkIssuedCreditNote($locked, $this->timeLinkClientA, cancels: false);
+
+        expect($answer($draft))->toBeTrue()
+            ->and($answer($open))->toBeTrue()
+            ->and($answer($locked))->toBeFalse()
+            ->and($answer($creditNote))->toBeFalse()
+            ->and($answer('00000000-0000-7000-8000-000000000000'))->toBeFalse();
+    });
+
+    it('restores the Phase 10 rule on down() and the lock rule on up()', function (): void {
+        $migration = require base_path('database/migrations/2026_10_22_000200_follow_invoice_lock_in_time_entry_link.php');
+        $open = timeLinkDocument($this->timeLinkClientA);
+        timeLinkIssue($open);
+        $entry = timeLinkEntry($this->timeLinkUser, $this->timeLinkClientA);
+
+        $migration->down();
+
+        $helper = DB::selectOne("select count(*) as total from pg_proc where proname = 'kokpit_invoice_accepts_time_changes'");
+        expect($helper->total)->toBe(0);
+        RawSql::expectSqlState('KP001', fn () => timeLinkReserve($entry, $open));
+
+        $migration->up();
+
+        RawSql::expectAllowed(fn () => timeLinkReserve($entry, $open));
     });
 });
 

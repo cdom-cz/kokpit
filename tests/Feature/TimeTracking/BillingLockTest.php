@@ -751,9 +751,11 @@ function lockDocument(string $clientId, array $overrides = []): string
 }
 
 /**
- * Issues the draft document by raw SQL and returns its number; a credit note gets a negative total.
+ * Issues the draft document by raw SQL and returns its number; a credit note gets a negative total. The document
+ * stays open, as an invoice the customer has not received yet, unless $locked says it was sent (a credit note is
+ * locked by the database itself).
  */
-function lockIssue(string $documentId): string
+function lockIssue(string $documentId, bool $locked = false): string
 {
     static $sequence = 0;
     $sequence++;
@@ -766,7 +768,7 @@ function lockIssue(string $documentId): string
 
     DB::update(
         'update invoices set state = \'issued\', number = ?, variable_symbol = ?, issue_date = \'2026-10-17\', due_date = ?, subtotal_minor = ?, total_minor = ?, '
-        .'supplier_snapshot = ?, customer_snapshot = ?, bank_snapshot = ?, appearance_snapshot = ?, issued_at = \'2026-10-17 10:30:00+00\' where id = ?',
+        .'supplier_snapshot = ?, customer_snapshot = ?, bank_snapshot = ?, appearance_snapshot = ?, issued_at = \'2026-10-17 10:30:00+00\', lock_state = ? where id = ?',
         [
             $number,
             $creditNote ? null : $number,
@@ -777,6 +779,7 @@ function lockIssue(string $documentId): string
             json_encode(['name' => 'Example Customer a.s.']),
             $creditNote ? null : json_encode(['account' => 'fictional']),
             json_encode(['accent' => '#336699']),
+            $locked || $creditNote ? 'locked' : 'open',
             $documentId,
         ],
     );
@@ -907,7 +910,7 @@ it('refuses to unlock an entry billed by an issued invoice, naming it, and leave
     expect(app(CancelEntriesBilling::class)->handle($admin, [$byHand->id]))->toBe(1);
 });
 
-it('releases the time of an invoice only after an issued storno credit note, and a partial one is refused by the database', function (): void {
+it('releases the time of a sent invoice only after an issued storno credit note, and a partial one is refused by the database', function (): void {
     $admin = Canary::admin();
     $this->actingAs($admin);
     $client = lockRatedClient();
@@ -916,7 +919,7 @@ it('releases the time of an invoice only after an issued storno credit note, and
     $invoice = lockSystem(static function () use ($client, $entry): string {
         $invoice = lockDocument($client->id);
         lockRows([$entry], static fn (array $rows) => app(EntryBilling::class)->reserve($rows, $invoice));
-        lockIssue($invoice);
+        lockIssue($invoice, locked: true);
         lockRows([$entry], static fn (array $rows) => app(EntryBilling::class)->bill($rows, CarbonImmutable::parse('2026-10-17 10:30:00', 'UTC')));
 
         return $invoice;
@@ -947,6 +950,45 @@ it('releases the time of an invoice only after an issued storno credit note, and
         ->and($released->billed_rate_minor)->toBeNull()
         ->and($released->billed_rate_currency)->toBeNull()
         ->and($released->billed_amount_minor)->toBeNull();
+});
+
+it('adds and releases the time of an invoice that is issued but not sent, and refuses both once it is locked', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $client = lockRatedClient();
+    $first = lockClientEntry($admin, $client);
+    $second = lockClientEntry($admin, $client, '2026-10-13 08:00:00');
+    $third = lockClientEntry($admin, $client, '2026-10-14 08:00:00');
+
+    $invoice = lockSystem(static function () use ($client, $first): string {
+        $invoice = lockDocument($client->id);
+        lockRows([$first], static fn (array $rows) => app(EntryBilling::class)->reserve($rows, $invoice));
+        lockIssue($invoice);
+        lockRows([$first], static fn (array $rows) => app(EntryBilling::class)->bill($rows, CarbonImmutable::parse('2026-10-17 10:30:00', 'UTC')));
+
+        return $invoice;
+    });
+
+    // Open: time is added to the issued invoice, billed and released again, exactly as on a draft.
+    lockRows([$second], static fn (array $rows) => app(EntryBilling::class)->reserve($rows, $invoice));
+    lockRows([$second], static fn (array $rows) => app(EntryBilling::class)->bill($rows, CarbonImmutable::parse('2026-10-17 10:35:00', 'UTC')));
+    lockRows([$first], static fn (array $rows) => app(EntryBilling::class)->release($rows));
+
+    $released = lockReload($first);
+
+    expect(lockReload($second)->billing_state->value)->toBe('billed')
+        ->and(lockReload($second)->invoice_id)->toBe($invoice)
+        ->and($released->billing_state->value)->toBe('unbilled')
+        ->and($released->invoice_id)->toBeNull()
+        ->and($released->billed_amount_minor)->toBeNull();
+
+    // Locked (sent): the database refuses both for every writer.
+    lockSystem(static fn () => DB::update("update invoices set lock_state = 'locked' where id = ?", [$invoice]));
+
+    expect(lockSystem(static fn (): ?string => lockRefusal(static fn () => lockRows([$third], static fn (array $rows) => app(EntryBilling::class)->reserve($rows, $invoice)))))->toBe('KP001')
+        ->and(lockSystem(static fn (): ?string => lockRefusal(static fn () => lockRows([$second], static fn (array $rows) => app(EntryBilling::class)->release($rows)))))->toBe('KP001')
+        ->and(lockReload($second)->billing_state->value)->toBe('billed')
+        ->and(lockReload($third)->invoice_id)->toBeNull();
 });
 
 it('reserves and unreserves an entry, and repoints the billed entries of a proforma to its invoice', function (): void {
