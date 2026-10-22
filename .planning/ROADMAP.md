@@ -741,15 +741,46 @@ Plans:
 - [x] 10-32-PLAN.md — End-to-end flow and Partner sweep, CONTRIBUTING and README hand-over, validation map, phase gate
 
 
-### Phase 10.1: Invoices stay fully editable (items and details) until paid or credited (INSERTED)
+### Phase 10.1: Invoices stay fully editable until sent, with a manual unlock (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** Admin can correct an issued invoice or proforma (items, dates, customer and supplier data, bank account, currency, language and linked time) until a successfully sent e-mail locks it, and can unlock a sent document with a recorded reason; number and kind never change, credit notes stay locked, the database enforces the lock, and every post-send change, lock and unlock is audited
+**Requirements**: IN-03, IN-11, IN-12, IN-13, IN-14, IN-15
 **Depends on:** Phase 10
-**Plans:** 0 plans
+**Success Criteria** (what must be TRUE):
+  1. An issued invoice or proforma stays editable until a successfully sent document e-mail locks it; queued, failed or pending e-mails, payments, credit notes and storno never lock it; a credit note is locked at issue; number and kind never change; a locked document refuses every write, raw SQL included
+  2. Admin unlocks a locked invoice or proforma only with a reason; the unlock and every lock are in the document history, and the next successful send locks it again
+  3. While open, Admin edits lines, dates, customer and supplier data, bank account, currency, language and linked time; amounts follow the single rounding rule, credited lines and money already received stay consistent, and totals below paid or credited amounts warn instead of blocking
+  4. Every saved edit replaces the stored PDF and its QR code and renews the card link when amount or currency change; nothing is sent automatically, and an edit never interleaves with a queued or sending e-mail
+  5. A Partner sees only the current version of an edited invoice and none of the lock, unlock or edit surfaces or history
+
+**Plans:** 10 plans in 8 waves
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 10.1 to break down)
+**Wave 1**
+- [ ] 10.1-01-PLAN.md — Tracer: send-driven lock in the database (lock column, backfill, invoice row guard, child guards, Admin-only row guard), issue leaves documents open, a successful send locks; contract documents amended
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 10.1-02-PLAN.md — Unlock with a reason through the sanctioned path, lock and unlock audited, lock badge and banners on the detail, architecture test
+- [ ] 10.1-03-PLAN.md — Time link guard and payment-link currency key follow the lock; [BLOCKING] phase migrations applied to the development database
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 10.1-04-PLAN.md — UpdateIssuedDocument for lines and note: shared line writer, PDF replacement, editability rules, credited lines, in-flight e-mail rule, post-send edit audit
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 10.1-05-PLAN.md — Card link and QR follow an edit, render failure rolls back, readable history rows
+- [ ] 10.1-06-PLAN.md — Issued mode of the editor reached from the detail, credited lines frozen in the UI, warnings below paid or credited
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 10.1-07-PLAN.md — Header edits: dates within the numbering period, language, customer and supplier data with refill, bank account refill
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 10.1-08-PLAN.md — Currency change with CNB figures of the issue date, re-converted time lines, bank and card link; refused with payments or credit notes
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 10.1-09-PLAN.md — Linked time and fixed amounts added and released on an open issued document
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 10.1-10-PLAN.md — Edit-versus-send concurrency proof, end-to-end journey, Partner sweep, CONTRIBUTING hand-over and phase gate
 
 ### Phase 11: Stripe Payments
 
