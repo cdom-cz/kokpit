@@ -17,12 +17,18 @@ use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\RelationManagers\ActivityHistoryRelationManager;
 use App\Filament\Resources\ActivityResource;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
 use Filament\GlobalSearch\GlobalSearchResult;
 use Filament\GlobalSearch\GlobalSearchResults;
+use Filament\Schemas\Schema;
+use Filament\Tables\Contracts\HasTable;
+use Filament\Widgets\TableWidget;
 use FilesystemIterator;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Auth;
+use Livewire\Livewire;
 use LogicException;
 use PHPUnit\Framework\Assert;
 use RecursiveDirectoryIterator;
@@ -50,7 +56,7 @@ final class ChannelProbe
      *
      * @var list<string>
      */
-    public const array DRIVEN = ['search', 'api', 'activity'];
+    public const array DRIVEN = ['search', 'selects', 'api', 'activity'];
 
     /**
      * The prefix every canary string starts with: a search for it reaches the rows of both clients.
@@ -153,6 +159,7 @@ final class ChannelProbe
 
         return match ($channel) {
             'search' => $this->searchBlob($model),
+            'selects' => $this->selectsBlob($model),
             'api' => $this->apiBlob($model),
             'activity' => $this->activityBlob(),
             default => throw new LogicException("The channel {$channel} has no driver in ChannelProbe yet; it is not in ChannelProbe::DRIVEN."),
@@ -427,6 +434,201 @@ final class ChannelProbe
         sort($managers, SORT_STRING);
 
         return $managers;
+    }
+
+    /**
+     * The selects of the panel as Partner A: the options (and, for a searchable select, the search results for every
+     * needle of every entity and for the common prefix) of every select and select filter that Partner A can open.
+     * The text of an option is "key label". An option whose key is the primary key of a row of a registered entity
+     * belongs to that entity, because two entities can carry the same canary text (a project name and a task
+     * title), so the text alone cannot say which entity an option shows (R-12-05-3); an option of no known entity
+     * belongs to every entity, so a canary in an option nobody can attribute fails every row.
+     *
+     * @param  class-string  $model
+     */
+    private function selectsBlob(string $model): string
+    {
+        $lines = [];
+
+        foreach ($this->selectOptions() as $option) {
+            if ($option['owner'] === null || $option['owner'] === $model) {
+                $lines[] = $option['text'];
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Every option Partner A can reach through a select, once per test.
+     *
+     * @return list<array{owner: class-string|null, text: string}>
+     */
+    private function selectOptions(): array
+    {
+        if (isset($this->memo['selects'])) {
+            /** @var list<array{owner: class-string|null, text: string}> $memoised */
+            $memoised = $this->memo['selects'];
+
+            return $memoised;
+        }
+
+        $this->actAs($this->partnerA);
+
+        $terms = $this->searchTerms();
+        $owners = $this->keyOwners();
+        $options = [];
+
+        foreach ($this->reachableSelects() as $select) {
+            $found = $this->flattenOptions($select->getOptions());
+
+            if ($select->isSearchable()) {
+                foreach ($terms as $term) {
+                    $found += $this->flattenOptions($select->getSearchResults($term));
+                }
+            }
+
+            foreach ($found as $key => $label) {
+                $options[] = ['owner' => $owners[(string) $key] ?? null, 'text' => $key.' '.$label];
+            }
+        }
+
+        return $this->memo['selects'] = $options;
+    }
+
+    /**
+     * Every select Partner A can open: the select filters of the list page of every resource Partner A may access,
+     * the form selects of its create page when Partner A may create, the same for every relation manager of those
+     * resources mounted on the client A canary row of the owning model, and the filters of every table widget Partner
+     * A may see.
+     *
+     * @return list<Select>
+     */
+    private function reachableSelects(): array
+    {
+        $selects = [];
+
+        foreach (Filament::getPanel('admin')->getResources() as $resource) {
+            if (! $resource::canAccess()) {
+                continue;
+            }
+
+            $pages = $resource::getPages();
+
+            if (isset($pages['index'])) {
+                array_push($selects, ...$this->filterSelects(Livewire::test($pages['index']->getPage())->instance()));
+            }
+
+            if (isset($pages['create']) && $resource::canCreate()) {
+                $form = Livewire::test($pages['create']->getPage())->instance()->getSchema('form');
+
+                array_push($selects, ...($form instanceof Schema ? $this->selectsOf($form) : []));
+            }
+
+            foreach (PanelInventory::relationManagers() as $manager => $owningResource) {
+                if ($owningResource !== $resource) {
+                    continue;
+                }
+
+                $owner = PanelInventory::canaryRecord($resource::getModel(), $this->canaryA);
+                $pageClass = PanelInventory::pageClassOf($resource);
+
+                if ($manager::canViewForRecord($owner, $pageClass)) {
+                    array_push($selects, ...$this->filterSelects(Livewire::test($manager, ['ownerRecord' => $owner, 'pageClass' => $pageClass])->instance()));
+                }
+            }
+        }
+
+        foreach (PanelInventory::panelClasses() as $class) {
+            if (is_subclass_of($class, TableWidget::class) && $class::canView()) {
+                array_push($selects, ...$this->filterSelects(Livewire::test($class)->instance()));
+            }
+        }
+
+        return $selects;
+    }
+
+    /**
+     * The selects in the filter form of a table component; none for a component without a table.
+     *
+     * @return list<Select>
+     */
+    private function filterSelects(object $component): array
+    {
+        return $component instanceof HasTable ? $this->selectsOf($component->getTableFiltersForm()) : [];
+    }
+
+    /**
+     * @return list<Select>
+     */
+    private function selectsOf(Schema $schema): array
+    {
+        return array_values(array_filter($schema->getFlatFields(withHidden: true), static fn (mixed $field): bool => $field instanceof Select));
+    }
+
+    /**
+     * The options of a select as key => label, grouped options flattened.
+     *
+     * @param  array<array-key, mixed>  $options
+     * @return array<string, string>
+     */
+    private function flattenOptions(array $options): array
+    {
+        $flat = [];
+
+        foreach ($options as $key => $label) {
+            if (is_array($label)) {
+                $flat += $this->flattenOptions($label);
+
+                continue;
+            }
+
+            $flat[(string) $key] = $label instanceof Htmlable ? $label->toHtml() : (string) $label;
+        }
+
+        return $flat;
+    }
+
+    /**
+     * Every needle of every entity for both sides, and the common prefix: the terms a searchable select is asked.
+     *
+     * @return list<string>
+     */
+    private function searchTerms(): array
+    {
+        $terms = [self::COMMON_PREFIX];
+
+        foreach (array_keys(CanaryRegistry::fixtures()) as $model) {
+            foreach (['a', 'b'] as $side) {
+                array_push($terms, ...$this->needles($model, $side));
+            }
+        }
+
+        return array_values(array_unique($terms));
+    }
+
+    /**
+     * Primary key => model for the rows of every registered entity, so an option can be attributed to the entity it
+     * shows. Read as system with the scopes off: it is a lookup of the test, not a channel.
+     *
+     * @return array<string, class-string>
+     */
+    private function keyOwners(): array
+    {
+        return app(PartnerContext::class)->runAsSystem(function (): array {
+            $owners = [];
+
+            foreach (array_keys(CanaryRegistry::fixtures()) as $model) {
+                /** @var Model $instance */
+                $instance = new $model;
+
+                foreach ($model::query()->withoutGlobalScopes()->pluck($instance->getKeyName()) as $key) {
+                    $owners[(string) $key] ??= $model;
+                }
+            }
+
+            return $owners;
+        });
     }
 
     private function text(string|Htmlable $value): string

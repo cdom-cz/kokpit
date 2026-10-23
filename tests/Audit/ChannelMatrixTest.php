@@ -247,3 +247,10 @@ it('lets the Admin read the activity rows of both clients, so the activity rows 
         }
     }
 });
+
+it('lets the Partner select offer the own visible project, so the select rows are not vacuous', function (): void {
+    $blob = $this->probe->blob('selects', Project::class);
+
+    expect($blob)->toContain($this->probe->canary('a'))
+        ->and($blob)->not->toContain($this->probe->canary('b'));
+});
