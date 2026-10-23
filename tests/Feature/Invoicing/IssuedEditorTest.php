@@ -872,6 +872,24 @@ describe('the payment method in the issued editor (Phase 14)', function (): void
             ->and(iedAdminRow($invoice)->bank_account_id)->toBe($this->accounts[2]->id);
     });
 
+    it('keeps the stored account when the currency changes to one without an account and the Admin picks the stored account again', function (): void {
+        InvoiceFixtures::cnbRate('USD', '2026-10-14', '22.500');
+        $invoice = iedCardInvoice();
+
+        iedEditor($invoice)
+            ->set('data.currency', 'USD')
+            ->assertActionMounted('changeCurrency')
+            ->callMountedAction()
+            ->assertSet('data.bank_account_id', null)
+            ->set('data.bank_account_id', $this->accounts[0]->id)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(iedRow($invoice)->currency)->toBe('USD')
+            ->and(iedRow($invoice)->bank_snapshot)->toEqual($this->accounts[0]->toArray())
+            ->and(iedAdminRow($invoice)->bank_account_id)->toBe($this->accounts[0]->id);
+    });
+
     it('tells in the currency confirmation that the account is preselected and another one can be picked', function (): void {
         InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Typed work', '1', '100.00')]);

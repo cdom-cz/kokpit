@@ -802,8 +802,9 @@ final class EditInvoice extends EditRecord
             // one without an id, keeps its printed snapshot on an unrelated save (T-14-34, R-14-10-2).
             if (array_key_exists('bank_account_id', $data)) {
                 $account = self::text($data['bank_account_id']);
+                $currencyChanged = is_string($data['currency'] ?? null) && strtoupper($data['currency']) !== $invoice->currency;
 
-                if ($account !== $this->filledAccountId()) {
+                if ($account !== $this->filledAccountId() || ($currencyChanged && $account !== null)) {
                     $values['bank_account_id'] = $account;
                 }
             }
