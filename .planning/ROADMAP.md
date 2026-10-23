@@ -894,7 +894,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 **Goal:** Every e-mail the system sends shares one HTML layout built on the Laravel mail theme. The payment e-mails are reworked first: a new confirmation to the client that an invoice has been paid (absorbs the former Phase 10.2), and the invoice e-mail with its "Pay by card" button. The other e-mails (partner invitation, password reset, task notifications, operational alerts) are moved to the layout and their texts reviewed.
 **Requirements**: P13-01, P13-02, P13-03, P13-04, P13-05, P13-06, P13-07, P13-08, P13-09, P13-10, P13-11 (phase-local, defined in 13-RESEARCH.md)
 **Depends on:** Phase 12
-**Plans:** 7/9 plans executed
+**Plans:** 8/9 plans executed
 
 Plans:
 **Wave 1**
@@ -911,7 +911,7 @@ Plans:
 - [x] 13-07-PLAN.md — Invitation, password reset, task notifications and alerts on the layout with reviewed Czech texts (Wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 13-08-PLAN.md — Confirmation state in the Platby tab and the record dialog; path and failure proofs (Wave 4)
+- [x] 13-08-PLAN.md — Confirmation state in the Platby tab and the record dialog; path and failure proofs (Wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 13-09-PLAN.md — CONTRIBUTING, README and PROJECT.md hand-over, full gate, separate human review in real mail clients (Wave 5)

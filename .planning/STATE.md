@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 13
 current_phase_name: Unified e-mail layout and HTML e-mail templates
 status: executing
-stopped_at: Completed 13-07-PLAN.md
-last_updated: "2026-10-23T21:10:50.718Z"
+stopped_at: Completed 13-08-PLAN.md
+last_updated: "2026-10-23T21:32:13.229Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 13 execution started
-state_head: 9de888db64da224d4a65af1f0038262421c29eef
+state_head: c6ea26a4c35de698b323a80024aa62d338d566a3
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 285
-  completed_plans: 283
+  completed_plans: 284
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 13 (Unified e-mail layout and HTML e-mail templates) — EXECUTING
-Plan: 8 of 9
+Plan: 9 of 9
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 13 execution started
 
@@ -343,6 +343,7 @@ Progress: [████░░░░░░] 44%
 | Phase 13 P05 | 40min | 2 tasks | 10 files |
 | Phase 13 P06 | 30 min | 2 tasks | 10 files |
 | Phase 13 P07 | 25min | 3 tasks | 10 files |
+| Phase 13 P08 | 45min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -860,6 +861,7 @@ Recent decisions affecting current work:
 - [Phase 13]: R-13-07-1: typed and runtime values in the invitation and the alerts pass through MailText::escapeMarkdown; subjects and URLs stay plain
 - [Phase 13]: R-13-07-3: the password reset is Kokpit's subclass of Filament's notification overriding only buildMailMessage; expiry read from the default broker config and pluralised in Czech
 - [Phase 13]: 13-07: the plain-text layout turns the layout's own <br> into line breaks before stripping tags, so a multi-line sign-off keeps its lines
+- [Phase 13]: 13-08: the Platby tab shows the confirmation state per payment and the record dialog names the invoice e-mail it will reach; the Markdown escape keeps no-break spaces of amounts
 
 ### Pending Todos
 
@@ -923,6 +925,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T21:10:48.038Z
-Stopped at: Completed 13-07-PLAN.md
+Last session: 2026-10-23T21:32:10.753Z
+Stopped at: Completed 13-08-PLAN.md
 Resume file: None
