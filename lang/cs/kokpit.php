@@ -559,6 +559,7 @@ return [
                 'lock_state' => 'Zámek dokladu',
                 'unlock_reason' => 'Důvod odemknutí',
                 'note' => 'Poznámka na dokladu',
+                'bank_fingerprint' => 'Bankovní účet (otisk)',
                 'entries' => 'Navázané záznamy času',
                 'item_fields' => [
                     'description' => 'Text',

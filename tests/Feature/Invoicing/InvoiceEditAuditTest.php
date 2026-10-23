@@ -10,6 +10,9 @@ use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Support\InvoiceAudit;
+use App\Domain\Settings\Banking\BankAccount;
+use App\Domain\Settings\Banking\BankAccountFormat;
+use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Filament\Support\ActivityPresenter;
@@ -20,6 +23,7 @@ use Illuminate\Support\Facades\Queue;
 use Tests\Support\Canary;
 use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
+use Tests\Support\FictionalIban;
 use Tests\Support\InvoiceFixtures;
 
 /*
@@ -115,7 +119,56 @@ function editAuditRows(Invoice $invoice, ?string $event = null): array
         ->all();
 }
 
+/**
+ * Replaces the accounts of the settings by one CZK account with the fragment, as system.
+ */
+function editAuditCzkAccount(string $fragment): void
+{
+    app(PartnerContext::class)->runAsSystem(static function () use ($fragment): void {
+        $banks = app(BankAccountSettings::class);
+        $banks->accounts = [new BankAccount(BankAccountFormat::Europe2, 'Replacement CZK account', 'CZK', iban: FictionalIban::czech($fragment))];
+        $banks->save();
+    });
+    app()->forgetScopedInstances();
+}
+
 describe('the audit of an edit after the first send', function (): void {
+    it('audits a bank-only refill after the first send with the bank fingerprint and no bank data', function (): void {
+        $invoice = editAuditSentAndUnlocked();
+        $rowsBefore = count(editAuditRows($invoice));
+        $updatedBefore = count(editAuditRows($invoice, 'updated'));
+        $fingerprintBefore = InvoiceAudit::snapshot(editAuditRow($invoice))['bank_fingerprint'] ?? null;
+
+        editAuditCzkAccount('56');
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['reload_bank' => true]);
+
+        $fingerprintAfter = InvoiceAudit::snapshot(editAuditRow($invoice))['bank_fingerprint'] ?? null;
+        $edited = editAuditRows($invoice, 'invoice_edited');
+
+        expect($edited)->toHaveCount(1);
+
+        $changes = $edited[0]->attribute_changes?->all() ?? [];
+        $payload = (string) json_encode($changes);
+
+        expect($edited[0]->causer_id)->toBe($this->admin->id)
+            ->and($edited[0]->created_at?->equalTo(CarbonImmutable::parse('2026-10-14 09:30:00', 'Europe/Prague')))->toBeTrue()
+            ->and(array_keys($changes['attributes'] ?? []))->toBe(['bank_fingerprint'])
+            ->and(array_keys($changes['old'] ?? []))->toBe(['bank_fingerprint'])
+            ->and($changes['old']['bank_fingerprint'] ?? null)->toBe($fingerprintBefore)
+            ->and($changes['attributes']['bank_fingerprint'] ?? null)->toBe($fingerprintAfter)
+            ->and($fingerprintBefore)->toMatch('/^[0-9a-f]{12}$/')
+            ->and($fingerprintAfter)->toMatch('/^[0-9a-f]{12}$/')
+            ->and($fingerprintAfter)->not->toBe($fingerprintBefore)
+            ->and($payload)->not->toContain(FictionalIban::czech('12'))
+            ->and($payload)->not->toContain(FictionalIban::czech('56'))
+            ->and($payload)->not->toContain('Example CZK account')
+            ->and($payload)->not->toContain('Replacement CZK account')
+            ->and(ActivityPresenter::changes($edited[0]))->toContain('Bankovní účet (otisk): ')
+            ->and(ActivityPresenter::changes($edited[0]))->not->toContain('bank_fingerprint')
+            ->and(count(editAuditRows($invoice, 'updated')))->toBe($updatedBefore)
+            ->and(count(editAuditRows($invoice)))->toBe($rowsBefore + 1);
+    });
+
     it('writes one invoice_edited row with the actor and only the changed values', function (): void {
         $invoice = editAuditSentAndUnlocked();
         [$first, $second] = editAuditLines($invoice);
@@ -201,7 +254,7 @@ describe('what the audit row holds', function (): void {
             ->and(count(editAuditRows($invoice)))->toBe($rowsBefore);
     });
 
-    it('never carries a bank key, the pay token or the internal note', function (): void {
+    it('carries no bank key while the account stays, and never the pay token or the internal note', function (): void {
         CardPaymentSetup::enable();
         $invoice = editAuditSentAndUnlocked(InvoiceFixtures::issued(CardPaymentSetup::client(), [InvoiceFixtures::item('Design', '2', '500.00')]));
         [$first] = editAuditLines($invoice);

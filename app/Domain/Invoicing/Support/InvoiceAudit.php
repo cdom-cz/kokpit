@@ -28,9 +28,11 @@ use App\Domain\Invoicing\Models\InvoiceItem;
  * - {@see self::edited()}: an edit after the first send ({@see UpdateIssuedDocument}), with the values before and after.
  *
  * Each writer writes exactly one row (or none), and the payload is a fixed allowlist of keys: no token, no e-mail
- * address of a recipient, no body, no bank data and no internal note. The party and item texts are in the payload on
- * purpose (assumption A12, an owner-approved exception to "free text is never logged"). The history is read by the
- * Admin only; a Partner never sees an activity row.
+ * address of a recipient, no body, no bank data and no internal note. The bank account is represented only by its
+ * keyed fingerprint ({@see self::snapshot()}, `bank_fingerprint`), so a change of the account is recorded without the
+ * account ever entering the history. The party and item texts are in the payload on purpose (assumption A12, an
+ * owner-approved exception to "free text is never logged"). The history is read by the Admin only; a Partner never
+ * sees an activity row.
  */
 final readonly class InvoiceAudit
 {
@@ -81,8 +83,10 @@ final readonly class InvoiceAudit
     /**
      * The values of an issued document an edit can change, flattened to `key => scalar`: the currency, the language,
      * the three dates, the printed note, the total, the customer and supplier lines as printed, every line by its
-     * position, and the number of linked time entries. The bank snapshot, the pay token and the internal note are not
-     * part of it and never will be (T-10.1-18).
+     * position, and the number of linked time entries. The bank snapshot itself, the pay token and the internal note
+     * are never part of it (T-10.1-18). The bank account appears only as `bank_fingerprint`, which changes when the
+     * account changes and cannot be turned back into it, so the history keeps the fingerprint before and after instead
+     * of the account values (owner decision of 2026-10-23; gap 2 of 10.1-VERIFICATION.md, review WR-02).
      *
      * @return array<string, string|int|null>
      */
@@ -96,6 +100,7 @@ final readonly class InvoiceAudit
             'due_date' => $invoice->due_date?->format('Y-m-d'),
             'note' => $invoice->note,
             'total_minor' => $invoice->total_minor,
+            'bank_fingerprint' => self::bankFingerprint($invoice->bank_snapshot),
         ];
 
         foreach (['customer' => self::CUSTOMER_KEYS, 'supplier' => self::SUPPLIER_KEYS] as $party => $keys) {
@@ -118,6 +123,48 @@ final readonly class InvoiceAudit
         }
 
         $values['entries'] = $invoice->entries()->count();
+
+        return $values;
+    }
+
+    /**
+     * A non-reversible marker of the bank account printed on the document: the first 12 hex characters of an
+     * HMAC-SHA256 keyed with the application key over the canonical JSON of the bank snapshot, null when there is no
+     * snapshot. It is keyed, not a plain hash, because a Czech account number has a small search space that a plain
+     * truncated hash could be brute-forced back through. The keys are sorted recursively before encoding, because the
+     * row read from PostgreSQL jsonb and the array taken from the settings carry the same account in different key
+     * orders, and the order must not fake a change.
+     *
+     * @param  array<array-key, mixed>|null  $bank
+     */
+    private static function bankFingerprint(?array $bank): ?string
+    {
+        if ($bank === null || $bank === []) {
+            return null;
+        }
+
+        $json = json_encode(self::sortedByKey($bank), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+
+        return substr(hash_hmac('sha256', 'invoice-audit-bank|'.$json, (string) config('app.key')), 0, 12);
+    }
+
+    /**
+     * The array with the keys of every level sorted; lists keep their order.
+     *
+     * @param  array<array-key, mixed>  $values
+     * @return array<array-key, mixed>
+     */
+    private static function sortedByKey(array $values): array
+    {
+        if (! array_is_list($values)) {
+            ksort($values, SORT_STRING);
+        }
+
+        foreach ($values as $key => $value) {
+            if (is_array($value)) {
+                $values[$key] = self::sortedByKey($value);
+            }
+        }
 
         return $values;
     }
