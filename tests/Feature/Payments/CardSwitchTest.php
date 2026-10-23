@@ -365,7 +365,7 @@ describe('the draft editor', function (): void {
 
         $editor = cardEditor($draft)
             ->assertSee('Platba kartou')
-            ->assertSee('Na dokladu a v e-mailu se zobrazí tlačítko Zaplatit kartou. Po vystavení už nejde změnit.')
+            ->assertSee('Na dokladu a v e-mailu se zobrazí tlačítko Zaplatit kartou. Do odeslání dokladu jde platbu kartou vypnout nebo zapnout.')
             ->assertSet('data.card_payment_enabled', true)
             ->assertFormFieldIsEnabled('card_payment_enabled');
 
@@ -385,7 +385,7 @@ describe('the draft editor', function (): void {
 
         cardEditor($draft)
             ->assertSee('Online platby jsou vypnuté v Nastavení.')
-            ->assertDontSee('Po vystavení už nejde změnit.')
+            ->assertDontSee('Do odeslání dokladu jde platbu kartou vypnout nebo zapnout.')
             ->assertSet('data.card_payment_enabled', false)
             ->assertFormFieldIsDisabled('card_payment_enabled')
             ->call('save')
