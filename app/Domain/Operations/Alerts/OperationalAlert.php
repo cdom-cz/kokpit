@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations\Alerts;
 
+use App\Domain\Notifications\Mail\MailText;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification as FilamentNotification;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -22,6 +23,12 @@ use Illuminate\Notifications\Notification;
  * payloads by the code that builds it. The action reads "Otevřít stránku Systém"
  * unless the caller names its own label (the CNB rates alert opens the rates overview). The mail subject is the title
  * unless the caller names its own (the payment link alert sends "Kokpit: <title>", plan 11-07).
+ *
+ * The mail shares the layout of every other Kokpit e-mail (D-04): the supplier header and footer, with only the
+ * content and the red button of the error level differing. It sets no sign-off. The title (the greeting) and every
+ * body line are runtime text, such as an exception message with class names and brackets, so each passes through
+ * MailText::escapeMarkdown() and reads exactly as written in both parts; the subject stays plain text and the action
+ * URL is not escaped (R-13-07-1).
  */
 final class OperationalAlert extends Notification
 {
@@ -52,10 +59,10 @@ final class OperationalAlert extends Notification
         $message = (new MailMessage)
             ->error()
             ->subject($this->mailSubject ?? $this->title)
-            ->greeting($this->title);
+            ->greeting(MailText::escapeMarkdown($this->title));
 
         foreach (explode("\n", $this->body) as $line) {
-            $message->line($line);
+            $message->line(MailText::escapeMarkdown($line));
         }
 
         if ($this->actionUrl !== null) {

@@ -1565,7 +1565,7 @@ return [
 
     'alerts' => [
         'link_label' => 'Otevřít stránku Systém',
-        'suppressed' => 'Od posledního upozornění selhalo stejným způsobem dalších úloh: :count',
+        'suppressed' => 'Od posledního upozornění stejným způsobem selhaly další úlohy: :count',
         'failed_job' => [
             'title' => 'Úloha na pozadí selhala',
             'job' => 'Úloha: :job',

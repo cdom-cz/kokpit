@@ -6,6 +6,9 @@ use App\Domain\Clients\Actions\InvitePartner;
 use App\Domain\Clients\Actions\SendPartnerPasswordReset;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Notifications\ResetPasswordNotification;
+use App\Domain\Operations\Alerts\AdminAlerter;
+use App\Domain\Operations\Alerts\OperationalAlert;
+use App\Domain\Tasks\Notifications\TaskCreatedNotification;
 use Dom\HTMLDocument;
 use Filament\Auth\Notifications\ResetPassword as FilamentResetPassword;
 use Filament\Facades\Filament;
@@ -201,5 +204,81 @@ describe('the password reset', function (): void {
 
         expect($notification)->toBeInstanceOf(FilamentResetPassword::class)
             ->and($notification)->toBeInstanceOf(ShouldQueue::class);
+    });
+});
+
+describe('the alerts and task notifications', function (): void {
+    it('shows an alert\'s title and lines exactly as written, with the error button and no sign-off', function (): void {
+        $line = 'Chyba: App\\Jobs\\Fictional_Report_Job: '.notifMailHostile('failed');
+        $title = notifMailHostile('Alert');
+        $url = route('filament.admin.pages.system');
+
+        app(AdminAlerter::class)->alert('notif-mail-alert', new OperationalAlert($title, "Úloha: [queue_name]\n".$line, $url));
+
+        $messages = MailFixtures::to($this->admin->email);
+
+        expect($messages)->toHaveCount(1);
+
+        $email = $messages[0];
+        $dom = notifMailDom($email);
+        $visible = notifMailVisible($dom);
+        $text = (string) $email->getTextBody();
+        $buttons = $dom->querySelectorAll('a.button');
+
+        expect(notifMailFindings($dom))->toBe([])
+            ->and($visible)->toContain($title)
+            ->and($visible)->toContain($line)
+            ->and($visible)->toContain('Úloha: [queue_name]')
+            ->and($visible)->not->toContain('S pozdravem')
+            ->and($buttons)->toHaveCount(1)
+            ->and($buttons[0]?->getAttribute('href'))->toBe($url)
+            ->and($buttons[0]?->getAttribute('class'))->toContain('button-error')
+            ->and($text)->toContain($title)
+            ->and($text)->toContain($line)
+            ->and($text)->not->toMatch('/\\\\[\[\]*_]/')
+            ->and($text)->not->toContain('S pozdravem');
+    });
+
+    it('prints the same header and footer markup on an alert as on a client-facing invitation', function (): void {
+        app(AdminAlerter::class)->alert('notif-mail-brand', new OperationalAlert('Alert title', 'Alert line', route('filament.admin.pages.system')));
+
+        $client = Client::factory()->create();
+        app(InvitePartner::class)->handle($client, 'Jane Example', 'invitee@example.com', $this->admin);
+
+        $alert = notifMailDom(MailFixtures::to($this->admin->email)[0]);
+        $invitation = notifMailDom(MailFixtures::to('invitee@example.com')[0]);
+
+        foreach (['td.header', 'table.footer'] as $selector) {
+            expect($alert->querySelector($selector)?->innerHTML)->not->toBeNull()
+                ->and($alert->querySelector($selector)?->innerHTML)->toBe($invitation->querySelector($selector)?->innerHTML);
+        }
+    });
+
+    it('mails a task notification to the Admin on the supplier layout with the reviewed Czech text', function (): void {
+        $notification = new TaskCreatedNotification(
+            taskReference: 'EX-1',
+            taskTitle: notifMailHostile('Task'),
+            projectKey: 'EX',
+            actorName: notifMailHostile('Pat'),
+            url: route('filament.admin.resources.tasks.view', ['record' => 'EX-1']),
+        );
+
+        $this->admin->notify($notification);
+
+        $messages = MailFixtures::to($this->admin->email);
+
+        expect($messages)->toHaveCount(1);
+
+        $dom = notifMailDom($messages[0]);
+        $visible = notifMailVisible($dom);
+
+        expect(notifMailFindings($dom))->toBe([])
+            ->and($messages[0]->getSubject())->toContain('Nový úkol EX-1')
+            ->and($dom->querySelector('td.header')?->textContent)->toContain('Example Supplier s.r.o.')
+            ->and($visible)->toContain('Dobrý den,')
+            ->and($visible)->toContain('V projektu EX přibyl nový úkol od uživatele '.notifMailHostile('Pat').'.')
+            ->and($visible)->toContain('Způsob doručení upozornění můžete změnit ve svém profilu.')
+            ->and($visible)->not->toContain('S pozdravem')
+            ->and($dom->querySelectorAll('a.button'))->toHaveCount(1);
     });
 });
