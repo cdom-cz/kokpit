@@ -13,17 +13,19 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
+use App\Domain\Invoicing\Support\DocumentPayment;
 use App\Domain\Invoicing\Support\DraftTotals;
 use App\Domain\Invoicing\Support\InvoiceAudit;
 use App\Domain\Invoicing\Support\InvoiceItemInput;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
-use App\Domain\Invoicing\Support\InvoiceSnapshot;
 use App\Domain\Invoicing\Support\IssueChecks;
 use App\Domain\Invoicing\Support\IssuedDocumentRules;
 use App\Domain\Invoicing\Support\IssuedEditFinisher;
 use App\Domain\Invoicing\Support\ItemListWriter;
 use App\Domain\Invoicing\Support\SnapshotInput;
 use App\Domain\Invoicing\Support\TimeLineConversion;
+use App\Domain\Payments\Enums\PaymentLinkDeactivation;
+use App\Domain\Payments\Support\PaymentLinks;
 use App\Domain\Settings\VatMode;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Support\PragueDay;
@@ -51,24 +53,34 @@ use OverflowException;
  * - `language`: `cs` or `en`;
  * - `customer`, `supplier`: the lines of the customer and supplier snapshots, checked by {@see SnapshotInput} (A9); the
  *   VAT payer flag of the supplier is kept as stored;
- * - `reload_bank` (a strict boolean): the bank snapshot is taken again from the settings for the currency of the
- *   document, `bank_missing` under `bank` when there is none; a bank account is never taken from the data (D-06);
+ * - `payment_method` (`transfer` or `online`), `bank_account_id` (the id of a configured account, or null) and
+ *   `card_payment_enabled` (a strict boolean): how the document is paid, decided by
+ *   {@see DocumentPayment::forIssued()} (Phase 14; D-01, D-03, D-05, D-09, D-10). A change of the method deactivates the
+ *   live Stripe link as `replaced` and opens a new one for the remaining amount when card payment is offered
+ *   afterwards (OA-3); the card switch turned off deactivates it as `manual`, turned on opens one. The pay URL never
+ *   changes. Online carries no bank snapshot, transfer carries one (OA-7). The card switch is read from the data on a
+ *   transfer document, which reverses T-10.1-24 (OA-1);
+ * - `reload_bank` (a strict boolean): the bank snapshot is taken again from the settings, from the chosen account or,
+ *   when that is gone, from the first account of the currency of the document; `bank_account_required` under
+ *   `bank_account_id` when there is none. A bank account is never taken from the data, only its id (D-06);
  * - `currency`: a currency of the editor's list ({@see IssuedDocumentRules::currencyChoices()}). A value that differs
  *   from the stored one changes the currency of the document (D-06, R-10.1-08-2), before any write, in this order:
  *   refused as `currency_has_payments` when a payment exists and as `currency_has_credit_notes` when a credit note,
  *   draft or issued, names the document (owner ruling of D-06, 2026-10-23: money received is not re-denominated, the
- *   database holds the same line for every other writer), as `bank_missing` when the settings hold no account for the
- *   new currency and as `cnb_missing` when a needed list of the issue date is missing, all under `currency`. Then the
- *   lines are written in the new currency, the time lines are converted again at the issue date with one rounding and
- *   a fresh conversion snapshot (a rate in the new currency is restored exactly, a price typed by hand and a fixed
- *   amount keep their figure) through {@see TimeLineConversion::freezeAt()}, the bank snapshot follows the currency,
- *   and the CNB rate, unit, list date and CZK total on the Admin-only row are taken again for the issue date, all four
+ *   database holds the same line for every other writer) and as `cnb_missing` when a needed list of the issue date is
+ *   missing, both under `currency`. The currency no longer needs an account of its own: without an explicit account
+ *   the first account of the new currency is preselected, and a transfer document with none is refused as
+ *   `bank_account_required` (D-05, D-07). Then the lines are written in the new currency, the time lines are
+ *   converted again at the issue date with one rounding and a fresh conversion snapshot (a rate in the new currency
+ *   is restored exactly, a price typed by hand and a fixed amount keep their figure) through
+ *   {@see TimeLineConversion::freezeAt()}, the live link is deactivated (`amount_changed`) and a new one opened in
+ *   the new currency, and the CNB rate, unit, list date and CZK total on the Admin-only row are taken again for the issue date, all four
  *   empty for CZK. The stored issue date is the one used, also when the same save moves it (assumption A6);
  * - `internal_note`: saved through {@see UpdateInternalNote}. It prints nowhere, so a save that carries neither
  *   `items` nor `note` does not replace the PDF.
  *
- * Any other key is ignored: the number, the kind, the state, the lock, the totals, the snapshots and the card switch
- * are never read from the data and never written here. Every amount is computed on the server with the one HALF_UP
+ * Any other key is ignored: the number, the kind, the state, the lock, the totals and the snapshots are never read from
+ * the data and never written here. Every amount is computed on the server with the one HALF_UP
  * rule ({@see ItemListWriter}, {@see DraftTotals}), and an id that is not a line of this very document is the field
  * error `items.<n>.id` (T-10.1-14, T-10.1-15).
  *
@@ -84,7 +96,8 @@ use OverflowException;
  *    price, cannot be deleted, and only its text changes (assumption A4);
  * 3. sum the totals; a total that is not positive is refused as `total_not_positive`;
  * 4. save the row (silenced for the model history when the document was ever sent, because the explicit row replaces
- *    it), then {@see IssuedEditFinisher::finish()}: the CZK total, the PDF replacement, the audit row (D-13).
+ *    it) and the Admin-only row, deactivate the live link of a changed method or a switch turned off, then
+ *    {@see IssuedEditFinisher::finish()}: the CZK total, the link, the PDF replacement, the audit row (D-13).
  *
  * The document stays open and nothing is sent; the Admin sends it by hand, and that send locks it again.
  */
@@ -96,7 +109,7 @@ final readonly class UpdateIssuedDocument
         private UpdateInternalNote $internalNote,
         private ItemListWriter $writer,
         private IssuedEditFinisher $finisher,
-        private InvoiceSnapshot $snapshots,
+        private PaymentLinks $links,
         private ExchangeRateConverter $rates,
     ) {}
 
@@ -122,6 +135,7 @@ final readonly class UpdateIssuedDocument
 
             $note = array_key_exists('note', $data) ? $this->note($data['note']) : $locked->note;
             $currency = $change['currency'] ?? $locked->currency;
+            $payment = DocumentPayment::forIssued($locked, $data, $currency, $change !== null);
 
             if ($change !== null) {
                 // The lines are written in the new currency, so the model carries it from here on; the row is saved once.
@@ -151,10 +165,18 @@ final readonly class UpdateIssuedDocument
             }
 
             if ($change !== null) {
-                $header = [...$header, 'currency' => $currency, 'bank_snapshot' => $change['bank']];
+                $header = [...$header, 'currency' => $currency];
             }
 
-            if (! array_key_exists('items', $data) && ! array_key_exists('note', $data) && $header === []) {
+            if ($payment['method_changed']) {
+                $header['payment_method'] = $payment['payment_method'];
+            }
+
+            if (array_key_exists('bank_snapshot', $payment)) {
+                $header['bank_snapshot'] = $payment['bank_snapshot'];
+            }
+
+            if (! array_key_exists('items', $data) && ! array_key_exists('note', $data) && $header === [] && ! $payment['changed']) {
                 return $locked->refresh();
             }
 
@@ -179,7 +201,16 @@ final readonly class UpdateIssuedDocument
                 $this->storeExchangeFigures($locked, $change['rate'], $totals['total']);
             }
 
-            $this->finisher->finish($actor, $locked, $before);
+            DocumentPayment::saveAdmin($locked, $payment['bank_account_id'], $payment['card_payment_enabled'], $payment['pay_token']);
+
+            // The old link goes before the finisher looks for a live one, under the same document lock (T-14-22).
+            if ($payment['method_changed']) {
+                $this->links->deactivateLive($locked, PaymentLinkDeactivation::Replaced);
+            } elseif ($payment['card_changed'] && ! $payment['card_payment_enabled']) {
+                $this->links->deactivateLive($locked, PaymentLinkDeactivation::Manual);
+            }
+
+            $this->finisher->finish($actor, $locked, $before, $payment['method_changed'] || ($payment['card_changed'] && $payment['card_payment_enabled']) || $change !== null);
 
             return $locked->refresh();
         });
@@ -262,18 +293,6 @@ final readonly class UpdateIssuedDocument
             throw ValidationException::withMessages($errors);
         }
 
-        if (array_key_exists('reload_bank', $data)) {
-            if (! is_bool($data['reload_bank'])) {
-                throw new InvalidArgumentException('The bank refill flag of a document is a boolean.');
-            }
-
-            // The account is only ever taken from the settings, for the currency of the document, never from the data.
-            if ($data['reload_bank']) {
-                $values['bank_snapshot'] = $this->snapshots->bank($locked->currency)
-                    ?? throw ValidationException::withMessages(['bank' => __('invoices.errors.bank_missing', ['currency' => $locked->currency])]);
-            }
-        }
-
         return $values;
     }
 
@@ -338,10 +357,11 @@ final readonly class UpdateIssuedDocument
     }
 
     /**
-     * Checks a change of currency before anything is written and gathers what it stores: the new bank account and, for
-     * a foreign currency, the CNB quote of the issue date. Null when the value is the stored currency.
+     * Checks a change of currency before anything is written and gathers what it stores: for a foreign currency, the
+     * CNB quote of the issue date. Null when the value is the stored currency. The bank account is not looked up here:
+     * the currency needs none of its own (D-05, research Pitfall 5), {@see DocumentPayment::forIssued()} decides it.
      *
-     * @return array{currency: string, bank: array<string, string|null>, rate: array{rate: string, unit_amount: int, rate_date: string}|null}|null
+     * @return array{currency: string, rate: array{rate: string, unit_amount: int, rate_date: string}|null}|null
      *
      * @throws ValidationException `currency`
      */
@@ -363,9 +383,6 @@ final readonly class UpdateIssuedDocument
             throw ValidationException::withMessages(['currency' => __('invoices.errors.'.$blocker)]);
         }
 
-        $bank = $this->snapshots->bank($code)
-            ?? throw ValidationException::withMessages(['currency' => __('invoices.errors.bank_missing', ['currency' => $code])]);
-
         $day = $locked->issue_date?->format('Y-m-d') ?? throw new LogicException('An issued document has its issue date.');
         $rate = null;
 
@@ -377,7 +394,7 @@ final readonly class UpdateIssuedDocument
             }
         }
 
-        return ['currency' => $code, 'bank' => $bank, 'rate' => $rate];
+        return ['currency' => $code, 'rate' => $rate];
     }
 
     /**

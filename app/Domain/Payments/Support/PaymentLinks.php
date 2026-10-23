@@ -22,6 +22,9 @@ use LogicException;
  * note, a storno, the deletion of a payment), after that change and with the document row locked, so the link and the
  * document move together or not at all. It never runs on its own: the lock order is document first, link second.
  *
+ * {@see PaymentLinks::deactivateLive()} is the second entry point: it switches the live link off for a reason the
+ * balance does not give, the Admin changing how the document is paid (Phase 14, D-10, OA-3), under the same lock order.
+ *
  * Switching the link off at Stripe is not done here. A deactivated row that has a Stripe id and no
  * `remote_deactivated_at` is handed to {@see DeactivatePaymentLinks} after the commit, and the scheduled sweep of the
  * same job repairs a call that was lost.
@@ -56,6 +59,27 @@ final readonly class PaymentLinks
         $reason = $this->staleReason($locked, $link);
 
         if ($reason !== null) {
+            $this->deactivate($link, $reason);
+        }
+    }
+
+    /**
+     * Deactivates the live link of the locked document, whatever it offers, with the given reason: `replaced` when the
+     * Admin changed the payment method, `manual` when the Admin switched card payment off (Phase 14, D-10, OA-3).
+     * Nothing is done when there is no live link. The deactivation at Stripe is queued for after the commit by
+     * {@see PaymentLinks::deactivate()}.
+     *
+     * @throws LogicException outside a database transaction
+     */
+    public function deactivateLive(Invoice $locked, PaymentLinkDeactivation $reason): void
+    {
+        if (DB::transactionLevel() === 0) {
+            throw new LogicException('PaymentLinks::deactivateLive() must run inside the caller\'s transaction, with the document locked.');
+        }
+
+        $link = PaymentLink::query()->live()->where('invoice_id', $locked->id)->lockForUpdate()->first();
+
+        if ($link instanceof PaymentLink) {
             $this->deactivate($link, $reason);
         }
     }

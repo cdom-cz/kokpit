@@ -32,7 +32,9 @@ use LogicException;
  *    is still offered card payment, a new pending link for the remaining amount is opened. The row is written here,
  *    Stripe is never called inside the transaction: {@see CreatePaymentLink} is dispatched after the commit and is the
  *    only caller of Stripe, so a Stripe outage cannot fail or block an edit (T-10.1-21). A card payment already
- *    recorded keeps its record, and a link the Admin switched off by hand stays off until the Admin regenerates it;
+ *    recorded keeps its record, and a link the Admin switched off by hand stays off until the Admin regenerates it,
+ *    unless the edit itself changed how the document is paid (`$forceNewLink`: a new payment method, the card switch
+ *    turned on, a new currency; Phase 14, D-10, OA-3);
  * 3. the stored PDF is replaced ({@see ReplaceIssuedPdf}), so it prints the corrected document;
  * 4. the audit row of a post-send correction is written ({@see InvoiceAudit::edited()}), from the values before the
  *    edit that the caller took; only this step reads `$before`, and it writes nothing for a document never sent.
@@ -49,10 +51,12 @@ final readonly class IssuedEditFinisher
 
     /**
      * @param  array<string, string|int|null>  $before  {@see InvoiceAudit::snapshot()} taken before the write
+     * @param  bool  $forceNewLink  the edit changed how the document is paid, so a link switched off by hand earlier no
+     *                              longer keeps the new one from opening (the default keeps every older caller as it was)
      *
      * @throws LogicException outside a transaction, or for a foreign-currency document without its stored rate
      */
-    public function finish(User $actor, Invoice $locked, array $before): void
+    public function finish(User $actor, Invoice $locked, array $before, bool $forceNewLink = false): void
     {
         if (DB::transactionLevel() === 0) {
             throw new LogicException('An issued edit is finished inside the caller\'s transaction.');
@@ -60,7 +64,7 @@ final readonly class IssuedEditFinisher
 
         $this->czkTotal($locked);
 
-        $this->paymentLink($actor, $locked);
+        $this->paymentLink($actor, $locked, $forceNewLink);
 
         $this->pdf->handle($actor, $locked);
 
@@ -95,9 +99,11 @@ final readonly class IssuedEditFinisher
      * {@see PaymentLinks::reconcile()} first: a live link that offers anything else than the remaining amount is
      * deactivated, one that still offers it is left alone. A new pending link is opened only when no live link remains
      * and the document may be offered card payment: an issued, uncancelled invoice or proforma with its frozen card
-     * switch on that still owes something, whose newest link was not switched off by the Admin (`manual`).
+     * switch on that still owes something, whose newest link was not switched off by the Admin (`manual`). With
+     * `$forceNewLink` that last rule is skipped, because the Admin has just changed how the document is paid and a new
+     * link is the point of the change (OA-3); every other condition stays.
      */
-    private function paymentLink(User $actor, Invoice $locked): void
+    private function paymentLink(User $actor, Invoice $locked, bool $forceNewLink): void
     {
         $this->links->reconcile($locked);
 
@@ -117,7 +123,7 @@ final readonly class IssuedEditFinisher
             return;
         }
 
-        if (PaymentLink::latestFor($locked->id)?->deactivation_reason === PaymentLinkDeactivation::Manual) {
+        if (! $forceNewLink && PaymentLink::latestFor($locked->id)?->deactivation_reason === PaymentLinkDeactivation::Manual) {
             return;
         }
 

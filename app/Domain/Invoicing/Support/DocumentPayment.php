@@ -9,10 +9,12 @@ use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Payments\Support\CardPaymentSwitch;
+use App\Domain\Payments\Support\PayToken;
 use App\Domain\Settings\Banking\BankAccount;
 use App\Domain\Settings\Settings\BankAccountSettings;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 /**
  * The one rule of how a document is paid (Phase 14; D-01, D-02, D-03, D-05, D-06, owner amendment OA-1): the payment
@@ -33,6 +35,10 @@ use Illuminate\Validation\ValidationException;
  * Resolution of {@see DocumentPayment::account()}: the stored id, found in the settings, is the account; a stored id the
  * settings no longer know is no account; a document with no stored id (a draft created before the phase, or one created
  * when no account had its currency) falls back to the first account of its currency.
+ *
+ * - D-09, D-10, OA-1, OA-3, OA-7: an open issued document keeps the same choices editable until the lock
+ *   ({@see DocumentPayment::forIssued()}). An issued `online` document carries no bank snapshot, an issued `transfer`
+ *   document must carry one, and the pay token is set once and never replaced.
  *
  * Settings are read through `app(...)` at call time, never held, so a long-lived worker sees the current values. The
  * Admin-only row is read here, so every caller runs as the Admin or as system.
@@ -190,25 +196,198 @@ final class DocumentPayment
     }
 
     /**
-     * Writes the chosen account and the card switch on the Admin-only row of the draft, under a row lock, creating
-     * the row when the draft has none. A save that changes nothing writes nothing. Returns the row.
+     * The checked method, account, card switch, token and bank snapshot of an open issued invoice or proforma after an
+     * Admin correction (Phase 14; D-01, D-03, D-05, D-09, D-10, OA-1, OA-3, OA-7). A credit note never reaches it,
+     * because {@see IssuedDocumentRules::assertEditable()} refuses it first. Nothing is written here; the Action
+     * writes the answer and decides what happens to the Stripe link from `method_changed` and `card_changed`.
+     *
+     * In this order: the method (a change to online needs card payment to be available); the account (the data, else
+     * the first account of the new currency when the currency changed, else the stored one); the switch (on for
+     * online; for transfer the Admin's boolean, else the client flag when the document was online, else the stored
+     * one; turning it on needs card payment to be available); the snapshot (none for online; for transfer taken again
+     * from the settings when the document was online, the account or the currency changed, or the refill was asked
+     * for, otherwise the issued snapshot stays); the token (generated once when the switch is on and none exists).
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{payment_method: DocumentPaymentMethod, bank_account_id: ?string, card_payment_enabled: bool, pay_token: ?string, bank_snapshot?: array<string, string|null>|null, method_changed: bool, card_changed: bool, changed: bool}
+     *
+     * @throws ValidationException `payment_method`, `bank_account_id`, `card_payment_enabled`
+     * @throws InvalidArgumentException for a refill flag that is not a boolean
      */
-    public static function saveAdmin(Invoice $locked, ?string $bankAccountId, bool $cardPayment): InvoiceAdmin
+    public static function forIssued(Invoice $locked, array $data, string $currency, bool $currencyChanged): array
+    {
+        $admin = self::adminRow($locked);
+        $storedMethod = $locked->payment_method ?? DocumentPaymentMethod::Transfer;
+        $storedAccount = $admin?->bank_account_id;
+        $storedSwitch = $admin instanceof InvoiceAdmin && $admin->card_payment_enabled;
+        $storedToken = $admin?->pay_token;
+
+        $reload = false;
+
+        if (array_key_exists('reload_bank', $data)) {
+            if (! is_bool($data['reload_bank'])) {
+                throw new InvalidArgumentException('The bank refill flag of a document is a boolean.');
+            }
+
+            $reload = $data['reload_bank'];
+        }
+
+        $method = array_key_exists('payment_method', $data) ? self::method($data['payment_method']) : $storedMethod;
+        $online = $method === DocumentPaymentMethod::Online;
+
+        if ($online && $storedMethod !== DocumentPaymentMethod::Online && self::onlineUnavailableReason($locked) !== null) {
+            throw ValidationException::withMessages(['payment_method' => [__('invoices.errors.online_unavailable')]]);
+        }
+
+        $accountSent = array_key_exists('bank_account_id', $data);
+
+        if ($accountSent) {
+            $accountId = self::accountId($data['bank_account_id']);
+        } elseif ($currencyChanged) {
+            $accountId = self::preselect($currency);
+        } else {
+            $accountId = $storedAccount;
+        }
+
+        $switch = self::issuedSwitch($locked, $data, $method, $storedMethod, $storedSwitch);
+
+        $result = [
+            'payment_method' => $method,
+            'bank_account_id' => $accountId,
+            'card_payment_enabled' => $switch,
+            'pay_token' => $storedToken,
+            'method_changed' => $method !== $storedMethod,
+            'card_changed' => $switch !== $storedSwitch,
+            'changed' => false,
+        ];
+
+        if ($online) {
+            if ($locked->bank_snapshot !== null) {
+                $result['bank_snapshot'] = null;
+            }
+        } else {
+            $retake = $storedMethod === DocumentPaymentMethod::Online || $accountId !== $storedAccount || $currencyChanged || $reload;
+            $taken = self::issuedSnapshot($currency, $accountSent, $accountId, $retake);
+
+            if ($taken !== null) {
+                $result['bank_account_id'] = $taken['account'];
+
+                if ($taken['snapshot'] != $locked->bank_snapshot) {
+                    $result['bank_snapshot'] = $taken['snapshot'];
+                }
+            }
+        }
+
+        if ($switch && $storedToken === null) {
+            $result['pay_token'] = PayToken::generate();
+        }
+
+        $result['changed'] = $result['method_changed']
+            || $result['card_changed']
+            || $result['bank_account_id'] !== $storedAccount
+            || $result['pay_token'] !== $storedToken
+            || array_key_exists('bank_snapshot', $result);
+
+        return $result;
+    }
+
+    /**
+     * The card switch of an open issued document after the correction (D-03, OA-1).
+     *
+     * @param  array<string, mixed>  $data
+     *
+     * @throws ValidationException `card_payment_enabled`
+     */
+    private static function issuedSwitch(Invoice $locked, array $data, DocumentPaymentMethod $method, DocumentPaymentMethod $storedMethod, bool $storedSwitch): bool
+    {
+        $explicit = null;
+
+        if (array_key_exists('card_payment_enabled', $data)) {
+            $explicit = $data['card_payment_enabled'];
+
+            if (! is_bool($explicit)) {
+                throw ValidationException::withMessages(['card_payment_enabled' => [__('invoices.errors.card_payment_invalid')]]);
+            }
+        }
+
+        if ($method === DocumentPaymentMethod::Online) {
+            return true;
+        }
+
+        $switch = match (true) {
+            $explicit !== null => $explicit,
+            $storedMethod === DocumentPaymentMethod::Online => $locked->kind->carriesPayment() && $locked->client?->online_payment_enabled === true,
+            default => $storedSwitch,
+        };
+
+        if ($switch && ! $storedSwitch && ! app(CardPaymentSwitch::class)->available()) {
+            throw ValidationException::withMessages(['card_payment_enabled' => [__('invoices.errors.card_payment_unavailable')]]);
+        }
+
+        return $switch;
+    }
+
+    /**
+     * The bank snapshot of an open issued transfer document: null when the issued one stays, else the account to
+     * record and the snapshot copied from the settings (never from the request, T-10.1-28). The account is the
+     * configured account of the id; when the data sent no id and the id is empty or no longer configured, the first
+     * account of the currency (D-05). No account at all is `bank_account_required`.
+     *
+     * @return array{account: string, snapshot: array<string, string|null>}|null null when the issued snapshot stays
+     *
+     * @throws ValidationException `bank_account_id`
+     */
+    private static function issuedSnapshot(string $currency, bool $accountSent, ?string $accountId, bool $retake): ?array
+    {
+        $settings = app(BankAccountSettings::class);
+
+        // An account sent as empty on a transfer document is refused even when nothing else asks for a new snapshot.
+        if (! $retake && ! ($accountSent && $accountId === null)) {
+            return null;
+        }
+
+        $account = $accountId === null ? null : $settings->find($accountId);
+
+        if (! $account instanceof BankAccount && ! $accountSent) {
+            $account = $settings->firstForCurrency($currency);
+        }
+
+        if (! $account instanceof BankAccount || $account->id === null) {
+            throw ValidationException::withMessages(['bank_account_id' => [__('invoices.errors.bank_account_required')]]);
+        }
+
+        return ['account' => $account->id, 'snapshot' => app(InvoiceSnapshot::class)->bankAccount($account)];
+    }
+
+    /**
+     * Writes the chosen account and the card switch on the Admin-only row of the document, under a row lock, creating
+     * the row when the document has none. The pay token is written only when the stored one is empty: it is set once
+     * and never replaced (D-10, T-14-23). A save that changes nothing writes nothing. Returns the row.
+     */
+    public static function saveAdmin(Invoice $locked, ?string $bankAccountId, bool $cardPayment, ?string $payToken = null): InvoiceAdmin
     {
         $admin = InvoiceAdmin::query()->where('invoice_id', $locked->id)->lockForUpdate()->first();
 
         if (! $admin instanceof InvoiceAdmin) {
             $admin = new InvoiceAdmin;
-            $admin->forceFill(['invoice_id' => $locked->id, 'card_payment_enabled' => $cardPayment, 'bank_account_id' => $bankAccountId])->save();
+            $admin->forceFill(['invoice_id' => $locked->id, 'card_payment_enabled' => $cardPayment, 'bank_account_id' => $bankAccountId, 'pay_token' => $payToken])->save();
 
             return $admin;
         }
 
-        if ($admin->card_payment_enabled === $cardPayment && $admin->bank_account_id === $bankAccountId) {
+        $writeToken = $payToken !== null && $admin->pay_token === null;
+
+        if ($admin->card_payment_enabled === $cardPayment && $admin->bank_account_id === $bankAccountId && ! $writeToken) {
             return $admin;
         }
 
-        $admin->forceFill(['card_payment_enabled' => $cardPayment, 'bank_account_id' => $bankAccountId])->save();
+        $values = ['card_payment_enabled' => $cardPayment, 'bank_account_id' => $bankAccountId];
+
+        if ($writeToken) {
+            $values['pay_token'] = $payToken;
+        }
+
+        $admin->forceFill($values)->save();
 
         return $admin;
     }
