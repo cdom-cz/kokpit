@@ -17,6 +17,9 @@
         <testsuite name="Isolation">
             <directory>tests/Isolation</directory>
         </testsuite>
+        <testsuite name="Audit">
+            <directory>tests/Audit</directory>
+        </testsuite>
         <testsuite name="Concurrency">
             <directory suffix="Test.php">tests/Concurrency</directory>
         </testsuite>

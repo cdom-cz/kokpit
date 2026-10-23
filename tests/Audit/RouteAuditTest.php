@@ -1,0 +1,110 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Support\Facades\Route;
+use Tests\Support\RouteInventory;
+use Tests\Support\RouteRules;
+
+/*
+ * AUD-02, D-04, D-06, D-11, D-12, R-12-01-1/2/3: the route inventory. Every route of the router, vendor and
+ * framework routes included, either carries a recognised authentication middleware or has exactly one entry
+ * in tests/Support/RouteRules.php: the public allowlist (key, means, reason) or the closed list (key, expected
+ * status, reason). A route with neither fails the suite, so a new route, in the application or in a package,
+ * fails the build until it is justified in a pull request diff. An entry without a route, an entry in both
+ * lists, an entry for a route that is in fact authenticated and an entry without a reason fail as well.
+ * Every route is checked on every run, with no sampling.
+ */
+
+it('gives every route an auth middleware or exactly one RouteRules entry, and every entry a route', function (): void {
+    $problems = RouteInventory::problems(RouteInventory::routes(), RouteRules::publicRoutes(), RouteRules::closedRoutes());
+
+    expect($problems)->toBe([], implode("\n", $problems));
+});
+
+it('declares {0} with a known means and a non-empty reason', function (string $key): void {
+    $public = RouteRules::publicRoutes();
+    $closed = RouteRules::closedRoutes();
+
+    expect(RouteRules::problemsIn(
+        array_intersect_key($public, [$key => true]),
+        array_intersect_key($closed, [$key => true]),
+    ))->toBe([]);
+})->with(array_map(
+    static fn (string $key): array => [$key],
+    [...array_keys(RouteRules::publicRoutes()), ...array_keys(RouteRules::closedRoutes())],
+));
+
+it('does not pass vacuously', function (): void {
+    $keys = array_map(RouteInventory::key(...), RouteInventory::routes());
+    $authenticated = array_map(
+        RouteInventory::key(...),
+        array_filter(RouteInventory::routes(), RouteInventory::isAuthenticated(...)),
+    );
+
+    expect($authenticated)->toContain('filament.admin.pages.dashboard')
+        ->and($authenticated)->toContain('api.v1.time-entries.index')
+        ->and(array_filter($authenticated, static fn (string $key): bool => str_starts_with($key, 'horizon.')))->not->toBeEmpty()
+        ->and($keys)->toContain('pay.show')
+        ->and($keys)->toContain('webhooks.stripe')
+        ->and(in_array('default-livewire.update', $keys, true) || array_filter($keys, static fn (string $key): bool => str_starts_with($key, 'POST /livewire-{hash}')) !== [])->toBeTrue();
+});
+
+it('reports a route without an auth middleware and without an entry', function (): void {
+    $bare = Route::get('audit-probe-bare', static fn (): string => 'x');
+    $guarded = Route::middleware('auth:sanctum')->get('audit-probe-guarded', static fn (): string => 'x');
+
+    $problems = RouteInventory::problems(RouteInventory::routes(), RouteRules::publicRoutes(), RouteRules::closedRoutes());
+
+    expect($problems)->toContain(RouteInventory::key($bare).' has no auth middleware and no RouteRules entry')
+        ->and(implode("\n", $problems))->not->toContain(RouteInventory::key($guarded));
+});
+
+it('recognises an authentication middleware exactly, not by prefix', function (): void {
+    $session = Route::middleware('Filament\Http\Middleware\AuthenticateSession')->get('audit-probe-session', static fn (): string => 'x');
+    $basic = Route::middleware('auth.basic')->get('audit-probe-basic', static fn (): string => 'x');
+    $filament = Route::middleware('Filament\Http\Middleware\Authenticate')->get('audit-probe-filament', static fn (): string => 'x');
+    $sanctum = Route::middleware('auth:sanctum')->get('audit-probe-sanctum', static fn (): string => 'x');
+
+    expect(RouteInventory::isAuthenticated($session))->toBeFalse()
+        ->and(RouteInventory::isAuthenticated($basic))->toBeFalse()
+        ->and(RouteInventory::isAuthenticated($filament))->toBeTrue()
+        ->and(RouteInventory::isAuthenticated($sanctum))->toBeTrue();
+});
+
+it('reports a declared entry without a route, a key in both lists and a stale entry for an authenticated route', function (): void {
+    $routes = RouteInventory::routes();
+    $public = RouteRules::publicRoutes();
+    $closed = RouteRules::closedRoutes();
+
+    $withGhost = RouteInventory::problems($routes, [...$public, 'audit.ghost' => ['means' => 'none', 'reason' => 'planted']], $closed);
+    $inBoth = RouteInventory::problems($routes, $public, [...$closed, 'pay.show' => ['status' => 404, 'reason' => 'planted']]);
+    $stale = RouteInventory::problems($routes, [...$public, 'filament.admin.pages.dashboard' => ['means' => 'none', 'reason' => 'planted']], $closed);
+
+    expect($withGhost)->toBe(['audit.ghost is declared in RouteRules but no such route exists'])
+        ->and($inBoth)->toContain('pay.show is declared both public and closed in RouteRules')
+        ->and($stale)->toBe(['filament.admin.pages.dashboard is authenticated; remove the stale RouteRules entry']);
+});
+
+it('rejects an empty reason, a whitespace reason, an unknown means and an unknown closed status', function (): void {
+    expect(RouteRules::problemsIn(['a' => ['means' => 'none', 'reason' => '']], []))->toHaveCount(1)
+        ->and(RouteRules::problemsIn(['a' => ['means' => 'none', 'reason' => " \t\n"]], []))->toHaveCount(1)
+        ->and(RouteRules::problemsIn(['a' => ['means' => 'magic', 'reason' => 'planted']], []))->toHaveCount(1)
+        ->and(RouteRules::problemsIn([], ['a' => ['status' => 200, 'reason' => 'planted']]))->toHaveCount(1)
+        ->and(RouteRules::problemsIn([], ['a' => ['status' => 410, 'reason' => 'planted']]))->toBe([])
+        ->and(RouteRules::problems())->toBe([]);
+});
+
+it('runs against the pinned test environment', function (): void {
+    $keys = array_map(RouteInventory::key(...), RouteInventory::routes());
+
+    expect(config('kokpit.canary_harness'))->toBeTrue()
+        ->and(array_filter($keys, static fn (string $key): bool => str_starts_with($key, 'debugbar') || str_starts_with($key, 'GET /_debugbar')))->toBe([]);
+});
+
+it('keeps the two Phase 11 public routes declared with their means', function (): void {
+    $public = RouteRules::publicRoutes();
+
+    expect($public['pay.show']['means'])->toBe('token')
+        ->and($public['webhooks.stripe']['means'])->toBe('signature');
+});

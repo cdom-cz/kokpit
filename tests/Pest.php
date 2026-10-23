@@ -14,11 +14,14 @@ use Tests\TestCase;
  * commit real rows, so they have no RefreshDatabase wrapper and clean up after
  * themselves. Isolation tests prove the Partner default-deny at the data layer on
  * a test-only tenant model; they use the database inside a RefreshDatabase transaction.
+ * Audit tests compare declarations in tests/Support with the real routes, screens, endpoints and
+ * leak channels, on the database inside a RefreshDatabase transaction.
  */
 pest()->extend(TestCase::class)->use(RefreshDatabase::class)->in('Feature');
 pest()->extend(TestCase::class)->in('Arch');
 pest()->extend(TestCase::class)->in('Concurrency');
 pest()->extend(TestCase::class)->use(RefreshDatabase::class)->in('Isolation');
+pest()->extend(TestCase::class)->use(RefreshDatabase::class)->in('Audit');
 
 /**
  * An example.com address assembled at runtime from fragments, so no test file
