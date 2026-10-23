@@ -98,7 +98,7 @@ final readonly class IssuedEditFinisher
      *
      * {@see PaymentLinks::reconcile()} first: a live link that offers anything else than the remaining amount is
      * deactivated, one that still offers it is left alone. A new pending link is opened only when no live link remains
-     * and the document may be offered card payment: an issued, uncancelled invoice or proforma with its frozen card
+     * and the document may be offered card payment: an issued, uncancelled invoice or proforma with its card
      * switch on that still owes something, whose newest link was not switched off by the Admin (`manual`). With
      * `$forceNewLink` that last rule is skipped, because the Admin has just changed how the document is paid and a new
      * link is the point of the change (OA-3); every other condition stays.

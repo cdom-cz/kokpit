@@ -21,8 +21,9 @@ use App\Domain\Shared\Money\Money;
  *
  * The list reads {@see ExchangeRate}, which denies Partners, so it is called only from Admin pages and Admin Actions;
  * a Partner context gets the accounts, client, current currency and CZK only, which is never shown to a Partner. A
- * listed currency without a CNB list on the issue date is still the `cnb_missing` blocker of issuing, and one without a
- * bank account the refusal of the issued currency change; this class changes only what is offered.
+ * listed currency without a CNB list on the issue date is still the `cnb_missing` blocker of issuing. A listed currency
+ * needs no bank account of its own (D-05, D-07): only a transfer document without any resolvable account is refused, as
+ * `bank_account_required`; this class changes only what is offered.
  */
 final readonly class InvoiceCurrencies
 {

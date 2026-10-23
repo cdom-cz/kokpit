@@ -36,6 +36,11 @@ use Illuminate\Support\Facades\DB;
  * down() refuses to run while any row carries a token with the switch off, because the old check cannot hold it;
  * otherwise it restores the Phase 10.1 guard and the old check, then drops the column.
  *
+ * The tie between the online method and the card switch is application-level only: no CHECK or trigger couples
+ * `invoices.payment_method = 'online'` with `invoice_admin.card_payment_enabled`, because a cross-table rule needs a
+ * trigger and an online invoice converted from a paid proforma while card payment was unavailable rightly keeps the
+ * switch off. `DocumentPayment` owns the rule (14-REVIEW.md IN-01).
+ *
  * Limits are the ones of every guard here: the table owner can disable triggers and session_replication_role = replica
  * skips them, so the production application role must not be a superuser.
  */
