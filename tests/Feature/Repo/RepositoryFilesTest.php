@@ -1200,6 +1200,10 @@ it('only names Phase 11 classes, methods and tests in CONTRIBUTING.md that exist
     // Phase 14 (OA-1): the card switch is editable while the document is open, so the Phase 11 wording is gone.
     expect($bullet)->not->toContain('is frozen at issue');
 
+    // Gap closure (14-REVIEW.md IN-02, OA-1): a first pay token may be set later, on an open issued document.
+    expect($bullet)->toContain('later, on an open issued document')
+        ->and($bullet)->not->toContain('set once, with the first issue, and never changes');
+
     // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists.
     preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet.repoContributingBullet('Phase 12.'), $matches, PREG_SET_ORDER);
 
@@ -1233,6 +1237,8 @@ it('hands the payment method over to later phases: the Payment method and bank a
     foreach ([
         'DocumentPayment::preselect()', 'PayUrl::forInvoice()', 'PaymentLinks::deactivateLive()', 'PayLinkBlock::applies()',
         'BankAccountByIdTest', 'invoice_admin.bank_account_id', 'Phase 13',
+        // Gap closure (14-REVIEW.md IN-01, D-03, OA-2, OA-7): card availability on issued documents, the application-level tie, the converted snapshot.
+        'application-level only', 'card_payment_unavailable', 'IssueContext',
     ] as $name) {
         expect($bullet)->toContain($name);
     }
