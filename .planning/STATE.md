@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 14
 current_phase_name: Switchable payment method and independent invoice currency
 status: executing
-stopped_at: Completed 14-12-PLAN.md
-last_updated: "2026-10-23T15:14:13.892Z"
+stopped_at: Completed 14-13-PLAN.md
+last_updated: "2026-10-23T15:21:14.305Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 14 execution started
-state_head: b3a3c3e14ccee078b0cd991b5dc4e239b1b4b0a2
+state_head: 213aae6b12e46f0a5447f2182cc04effbaa3d030
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 276
-  completed_plans: 273
+  completed_plans: 274
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 14 (Switchable payment method and independent invoice currency) — EXECUTING
-Plan: 13 of 15
+Plan: 14 of 15
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 14 execution started
 
@@ -333,6 +333,7 @@ Progress: [████░░░░░░] 44%
 | Phase 14 P10 | 40 min | 2 tasks | 8 files |
 | Phase 14 P11 | 25min | 2 tasks | 10 files |
 | Phase 14 P12 | 6 min | 2 tasks | 2 files |
+| Phase 14 P13 | 25 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -835,6 +836,7 @@ Recent decisions affecting current work:
 - [Phase 14]: Phase 14 rules live in one CONTRIBUTING bullet (Payment method and bank accounts) under RepositoryFilesTest; Phase 13 e-mail keeps PayLinkBlock::applies() as its one predicate
 - [Phase 14]: PayToken docblock: token generated when the document first offers card payment (issue or later on an open issued document), set once
 - [Phase 14]: R-14-12-1: the issued editor sends bank_account_id when it differs from the filled one or when the currency changes in the same save and an account is chosen; R-14-10-2 is narrowed, not reversed
+- [Phase 14]: R-14-13-2: online branch of issuedSwitch() uses onlineUnavailableReason() (client flag included) instead of CardPaymentSwitch::available()
 
 ### Pending Todos
 
@@ -898,6 +900,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T15:14:12.375Z
-Stopped at: Completed 14-12-PLAN.md
+Last session: 2026-10-23T15:21:12.760Z
+Stopped at: Completed 14-13-PLAN.md
 Resume file: None
