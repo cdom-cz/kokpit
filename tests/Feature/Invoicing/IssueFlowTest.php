@@ -180,7 +180,7 @@ describe('the pre-issue check', function (): void {
             ->and($sent[0]['body'])->toContain('<li>Celková částka musí být větší než nula.</li>');
     });
 
-    it('names the currency of a missing bank account', function (): void {
+    it('names the missing bank account of a transfer document', function (): void {
         $client = InvoiceFixtures::client(['currency' => 'EUR']);
         InvoiceFixtures::cnbRate('EUR', '2026-10-14', '24.500');
         $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')]);
@@ -194,7 +194,7 @@ describe('the pre-issue check', function (): void {
 
         issueEditor($draft)->mountAction('issue')->assertActionNotMounted('issue');
 
-        expect(issueNotifications()[0]['body'])->toContain('<li>Pro měnu EUR není nastaven bankovní účet. Přidejte ho v Nastavení.</li>');
+        expect(issueNotifications()[0]['body'])->toContain('<li>Doklad s úhradou převodem nemá vybraný bankovní účet. Vyberte ho na dokladu, nebo ho přidejte v Nastavení.</li>');
     });
 });
 

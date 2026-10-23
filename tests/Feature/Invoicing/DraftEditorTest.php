@@ -411,7 +411,7 @@ describe('line origins and previews', function (): void {
 
         $editor = editor($draft);
 
-        $editor->assertSee('Pro měnu USD není nastaven bankovní účet. Přidejte ho v')
+        $editor->assertSee('Doklad s úhradou převodem nemá vybraný bankovní účet. Vyberte ho na dokladu, nebo ho přidejte v')
             ->assertSee(SettingsPage::getUrl());
 
         expect($editor->html())->toContain('fi-color-danger');

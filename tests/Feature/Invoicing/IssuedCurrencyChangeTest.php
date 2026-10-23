@@ -506,7 +506,7 @@ describe('a list or an account that is missing', function (): void {
 
         expect(IssuedDocumentRules::currencyChoices($invoice))->toContain('USD')
             ->and($errors['currency'][0])->not->toBe(__('invoices.errors.currency'))
-            ->and($errors['currency'][0])->toBe('Pro měnu USD není nastaven bankovní účet. Přidejte ho v Nastavení.')
+            ->and($errors['currency'][0])->toBe('Doklad s úhradou převodem nemá vybraný bankovní účet. Vyberte ho na dokladu, nebo ho přidejte v Nastavení.')
             ->and(iccState($invoice))->toBe($before);
     });
 
@@ -518,7 +518,7 @@ describe('a list or an account that is missing', function (): void {
 
         $errors = iccRefusal($invoice, ['currency' => 'USD']);
 
-        expect($errors['currency'][0])->toBe('Pro měnu USD není nastaven bankovní účet. Přidejte ho v Nastavení.')
+        expect($errors['currency'][0])->toBe('Doklad s úhradou převodem nemá vybraný bankovní účet. Vyberte ho na dokladu, nebo ho přidejte v Nastavení.')
             ->and(iccState($invoice))->toBe($before);
     });
 });

@@ -9,11 +9,10 @@ use App\Domain\ExchangeRates\ExchangeRateConverter;
 use App\Domain\ExchangeRates\ExchangeRateMissing;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
-use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
-use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
+use App\Domain\Invoicing\Support\DocumentPayment;
 use App\Domain\Invoicing\Support\DraftPreview;
 use App\Domain\Invoicing\Support\DraftTotals;
 use App\Domain\Invoicing\Support\InvoiceItemInput;
@@ -47,10 +46,20 @@ use OverflowException;
  *   only a value the Admin typed is stored (R-11-1);
  * - `note` (at most 500 characters), printed on the document;
  * - `internal_note` (at most 2 000 characters), saved through {@see UpdateInternalNote} in the same transaction;
+ * - `payment_method` (`transfer` | `online`, an invoice or a proforma draft only): how the document is paid (D-02). A
+ *   new draft is `transfer`. Changing to `online` needs card payment to be available (the global setting on, Stripe
+ *   configured and the client flag on) and is refused with `online_unavailable` otherwise; a draft that is already
+ *   online is not refused on a save, the issue blocks it. Any other value is `payment_method_invalid`;
+ * - `bank_account_id` (the UUID of a configured account, or null): the account a transfer document prints (D-05,
+ *   D-06). The account may have any currency. Without the key, a change of currency preselects the first account of
+ *   the new currency and a save of the same currency keeps the stored one. An id the settings do not hold is
+ *   `bank_account_unknown`. A credit-note draft takes neither this key nor `payment_method`: `credit_note_no_payment`;
  * - `card_payment_enabled` (a strict boolean, an invoice or a proforma draft only): the per-document card switch of the
  *   Admin-only row (D-06, ruling R11-03-5). A new draft starts with the client's value; this key overrides it, and the
- *   issue freezes the AND of it with the global setting and a configured Stripe. A credit-note draft or a value that is
- *   not a boolean is refused with `card_payment_invalid` under `card_payment_enabled`;
+ *   issue freezes the AND of it with the global setting and a configured Stripe. `online` forces it on whatever is sent,
+ *   and going back from `online` to `transfer` resets it to the client's flag unless the Admin sends a value (OA-1). A
+ *   credit-note draft or a value that is not a boolean is refused with `card_payment_invalid` under
+ *   `card_payment_enabled`;
  * - `items`: the whole list of lines, `id?`, `description`, `quantity`, `unit`, `unit_price`, `confirm_zero_price?`
  *   (see {@see InvoiceItemInput}).
  *
@@ -108,7 +117,7 @@ final readonly class UpdateDraft
             }
 
             $header = $this->header($data, $locked);
-            $cardPayment = $this->cardPayment($data, $locked);
+            $payment = DocumentPayment::forDraft($locked, $data, $header['currency']);
             $currencyChanged = $header['currency'] !== $locked->currency;
             $today = TimerClock::now()->setTimezone(FilamentTimezone::get())->format('Y-m-d');
 
@@ -120,8 +129,8 @@ final readonly class UpdateDraft
                 $this->internalNote->handle($actor, $locked, is_string($data['internal_note']) ? $data['internal_note'] : null);
             }
 
-            if ($cardPayment !== null) {
-                $this->saveCardPayment($locked, $cardPayment);
+            if ($payment !== null) {
+                DocumentPayment::saveAdmin($locked, $payment['bank_account_id'], $payment['card_payment_enabled']);
             }
 
             if (array_key_exists('items', $data)) {
@@ -146,6 +155,11 @@ final readonly class UpdateDraft
                 'vat_minor' => $totals['vat']->minor,
                 'total_minor' => $totals['total']->minor,
             ]);
+
+            if ($payment !== null) {
+                $locked->forceFill(['payment_method' => $payment['payment_method']]);
+            }
+
             $locked->save();
 
             return $locked->refresh();
@@ -176,48 +190,6 @@ final readonly class UpdateDraft
             'due_date' => $dueDate,
             'note' => array_key_exists('note', $data) ? $this->note($data['note']) : $draft->note,
         ];
-    }
-
-    /**
-     * The checked card switch of the data, or null when the key is absent (D-06, ruling R11-03-5).
-     *
-     * @param  array<string, mixed>  $data
-     *
-     * @throws ValidationException `card_payment_enabled` for a non-boolean or for a credit note
-     */
-    private function cardPayment(array $data, Invoice $draft): ?bool
-    {
-        if (! array_key_exists('card_payment_enabled', $data)) {
-            return null;
-        }
-
-        $value = $data['card_payment_enabled'];
-
-        if (! is_bool($value) || $draft->kind === InvoiceKind::CreditNote) {
-            throw ValidationException::withMessages(['card_payment_enabled' => __('invoices.errors.card_payment_invalid')]);
-        }
-
-        return $value;
-    }
-
-    /**
-     * Writes the switch on the Admin-only row of the draft, creating the row when it is missing (as the internal note
-     * does). A value equal to the stored one writes nothing.
-     */
-    private function saveCardPayment(Invoice $draft, bool $on): void
-    {
-        $admin = InvoiceAdmin::query()->where('invoice_id', $draft->id)->lockForUpdate()->first();
-
-        if (! $admin instanceof InvoiceAdmin) {
-            $admin = new InvoiceAdmin;
-            $admin->forceFill(['invoice_id' => $draft->id, 'card_payment_enabled' => false]);
-        }
-
-        if ($admin->exists && $admin->card_payment_enabled === $on) {
-            return;
-        }
-
-        $admin->forceFill(['card_payment_enabled' => $on])->save();
     }
 
     /**

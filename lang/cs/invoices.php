@@ -23,6 +23,11 @@ return [
         'note_length' => 'Poznámka na dokladu může mít nejvýše 500 znaků.',
         'internal_note_length' => 'Interní poznámka může mít nejvýše 2 000 znaků.',
         'card_payment_invalid' => 'Platbu kartou lze zapnout nebo vypnout jen u faktury a zálohové faktury.',
+        'payment_method_invalid' => 'Zvolte úhradu převodem nebo online.',
+        'bank_account_unknown' => 'Vybraný bankovní účet v Nastavení neexistuje.',
+        'bank_account_required' => 'Doklad s úhradou převodem potřebuje bankovní účet. Vyberte ho.',
+        'card_payment_unavailable' => 'Platbu kartou teď nelze zapnout: online platby jsou vypnuté nebo Stripe není nastavený.',
+        'credit_note_no_payment' => 'Dobropis nemá způsob úhrady ani bankovní účet.',
 
         // The items of a draft.
         'item_unknown' => 'Položka nepatří k tomuto dokladu.',
@@ -37,7 +42,8 @@ return [
         'no_items' => 'Doklad nemá žádnou položku.',
         'total_not_positive' => 'Celková částka musí být větší než nula.',
         'supplier_missing' => 'Doplňte údaje dodavatele v Nastavení.',
-        'bank_missing' => 'Pro měnu :currency není nastaven bankovní účet. Přidejte ho v Nastavení.',
+        'bank_missing' => 'Doklad s úhradou převodem nemá vybraný bankovní účet. Vyberte ho na dokladu, nebo ho přidejte v Nastavení.',
+        'online_unavailable' => 'Úhradu online teď nelze použít: platba kartou musí být zapnutá v Nastavení, Stripe musí být nastavený a klient musí mít online platbu zapnutou.',
         'cnb_missing' => 'Pro měnu :currency není ke dni :date k dispozici kurz ČNB. Stáhněte kurzy v přehledu Kurzy ČNB.',
         'vat_payer_unsupported' => 'Režim plátce DPH zatím není podporován. Přepněte režim DPH v Nastavení.',
         'client_address_missing' => 'Klient nemá vyplněnou fakturační adresu.',

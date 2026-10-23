@@ -349,7 +349,7 @@ function issueBlockerCase(string $case): array
 
             return [
                 InvoiceFixtures::draft(InvoiceFixtures::client(['currency' => 'EUR']), $item, actor: $admin),
-                'Pro měnu EUR není nastaven bankovní účet. Přidejte ho v Nastavení.',
+                'Doklad s úhradou převodem nemá vybraný bankovní účet. Vyberte ho na dokladu, nebo ho přidejte v Nastavení.',
             ];
         })(),
         'cnb_missing' => [

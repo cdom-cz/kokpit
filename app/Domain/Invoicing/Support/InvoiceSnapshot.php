@@ -6,6 +6,7 @@ namespace App\Domain\Invoicing\Support;
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Invoicing\Pdf\DocumentPalette;
+use App\Domain\Settings\Banking\BankAccount;
 use App\Domain\Settings\DocumentImage;
 use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
@@ -15,7 +16,7 @@ use RuntimeException;
 
 /**
  * Builds the snapshots an issued document freezes (D-12, D-21, D-23; ruling R-12-3): the supplier, the customer, the
- * bank account of the document currency and the whole appearance. Once written, a later change of the settings or of
+ * chosen bank account of a transfer document and the whole appearance. Once written, a later change of the settings or of
  * the client never alters the document, and a regenerated PDF reads only these frozen values.
  *
  * The settings are read at the moment of the call, never held, so a long-lived worker never freezes stale values.
@@ -70,13 +71,26 @@ final readonly class InvoiceSnapshot
     }
 
     /**
-     * The bank account of the document currency in its stored shape, or null when none exists.
+     * The first bank account of the currency in its stored shape, or null when none exists. Kept only for the
+     * correction of an open issued document until plans 14-07 and 14-09 move it to the chosen account (plan 14-10
+     * deletes it); a new caller uses {@see InvoiceSnapshot::bankAccount()}.
      *
      * @return array<string, string|null>|null
      */
     public function bank(string $currency): ?array
     {
         return app(BankAccountSettings::class)->forCurrency($currency)?->toArray();
+    }
+
+    /**
+     * The chosen bank account in its snapshot shape: the id-free `toArray()` of the account, so the settings id never
+     * reaches the Partner-readable document (D-05, T-14-15).
+     *
+     * @return array<string, string|null>
+     */
+    public function bankAccount(BankAccount $account): array
+    {
+        return $account->toArray();
     }
 
     /**

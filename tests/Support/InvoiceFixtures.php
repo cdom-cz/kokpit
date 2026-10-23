@@ -10,6 +10,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\UpdateDraft;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Enums\InvoiceState;
@@ -123,6 +124,64 @@ final class InvoiceFixtures
         });
 
         app()->forgetScopedInstances();
+    }
+
+    /**
+     * A fictional Europe 2 bank account (no id yet; saving the settings gives it one). The IBAN is composed at runtime
+     * from the digit fragment, so two accounts with different fragments are two different accounts.
+     */
+    public static function account(string $label, string $currency, string $fragment): BankAccount
+    {
+        return new BankAccount(BankAccountFormat::Europe2, $label, $currency, iban: FictionalIban::czech($fragment));
+    }
+
+    /**
+     * Replaces the bank accounts of the settings with the given ones, in this order, as system, and returns the stored
+     * accounts with their ids.
+     *
+     * @return list<BankAccount>
+     */
+    public static function configureAccounts(BankAccount ...$accounts): array
+    {
+        $stored = app(PartnerContext::class)->runAsSystem(static function () use ($accounts): array {
+            $banks = app(BankAccountSettings::class);
+            $banks->accounts = array_values($accounts);
+            $banks->save();
+
+            return $banks->accounts;
+        });
+
+        app()->forgetScopedInstances();
+
+        return $stored;
+    }
+
+    /**
+     * The id of the configured account with the label.
+     */
+    public static function accountId(string $label): string
+    {
+        $accounts = app(PartnerContext::class)->runAsSystem(static fn (): array => app(BankAccountSettings::class)->accounts);
+
+        foreach ($accounts as $account) {
+            if ($account->label === $label && $account->id !== null) {
+                return $account->id;
+            }
+        }
+
+        throw new \InvalidArgumentException('No configured bank account is labelled '.$label.'.');
+    }
+
+    /**
+     * The draft switched to online payment through UpdateDraft as the Admin; the caller enables card payment first.
+     */
+    public static function online(Invoice $draft): Invoice
+    {
+        $admin = Canary::admin();
+
+        test()->actingAs($admin);
+
+        return app(UpdateDraft::class)->handle($admin, $draft, ['payment_method' => DocumentPaymentMethod::Online->value]);
     }
 
     /**

@@ -7,12 +7,14 @@ namespace App\Domain\Invoicing\Issuing;
 use App\Domain\Documents\Actions\StoreGeneratedDocument;
 use App\Domain\ExchangeRates\ExchangeRateConverter;
 use App\Domain\ExchangeRates\ExchangeRateMissing;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Pdf\InvoicePdf;
+use App\Domain\Invoicing\Support\DocumentPayment;
 use App\Domain\Invoicing\Support\InvoiceSnapshot;
 use App\Domain\Invoicing\Support\IssueChecks;
 use App\Domain\Invoicing\Support\TimeLineConversion;
@@ -64,7 +66,7 @@ use LogicException;
  * other step, so the caller's transaction takes the number, the state, the billing and the document row back, and the
  * stored object is removed by the rollback hook of {@see StoreGeneratedDocument}.
  *
- * A document issued with the card switch on gets its pending payment link last, and the queued job that creates the
+ * A document issued with the card switch on (always the case for an `online` document, D-03) gets its pending payment link last, and the queued job that creates the
  * Stripe link is dispatched after the commit (PA-01, ruling R11-07-1); a Stripe outage can never fail the issue.
  */
 final readonly class DocumentIssuer
@@ -113,7 +115,7 @@ final readonly class DocumentIssuer
 
         $supplier = $this->snapshot->supplier();
         $customer = $this->snapshot->customer($client);
-        $bank = $kind === InvoiceKind::CreditNote ? null : $this->snapshot->bank($lockedDraft->currency);
+        $bank = $this->bankSnapshot($lockedDraft);
         $appearance = $this->snapshot->appearance();
 
         $number = $this->numbering->next($kind->numberingKind(), self::noonOf($issueDate));
@@ -153,6 +155,27 @@ final readonly class DocumentIssuer
         $this->openPaymentLink($issued, $admin, $context);
 
         return $issued;
+    }
+
+    /**
+     * The bank snapshot of the document: none for a credit note and none for an online document, which prints no bank
+     * details (D-01, OA-7); for a transfer document the account the draft chose, copied from the settings (D-05, D-06).
+     * The account may have any currency and is not warned about.
+     *
+     * @return array<string, string|null>|null
+     *
+     * @throws ValidationException `bank_missing` when the account vanished after the blockers ran
+     */
+    private function bankSnapshot(Invoice $draft): ?array
+    {
+        if ($draft->kind === InvoiceKind::CreditNote || $draft->payment_method === DocumentPaymentMethod::Online) {
+            return null;
+        }
+
+        $account = DocumentPayment::account($draft)
+            ?? throw ValidationException::withMessages(['bank_missing' => __('invoices.errors.bank_missing')]);
+
+        return $this->snapshot->bankAccount($account);
     }
 
     /**
@@ -218,9 +241,10 @@ final readonly class DocumentIssuer
      * also stores the CNB rate, unit and list date valid on the issue date, or the trio the context hands over, and
      * the CZK total computed from them once (D-12, IN-07, EX-03): the rate is never looked up again.
      *
-     * The card switch and the pay token are finalised here too (D-01, D-06): the switch becomes the AND of the draft
-     * switch, the global setting and a configured Stripe for an invoice or a proforma, and a document with the switch
-     * on gets its token. The order matters: both columns are frozen with the parent, so the child guard of
+     * The card switch and the pay token are finalised here too (D-01, D-03, D-06): the switch becomes the AND of the draft
+     * switch (forced on for an online document), the global setting and a configured Stripe for an invoice or a
+     * proforma, and a document with the switch on gets its token. A transfer draft whose row names no account records
+     * the account it prints, so every issued transfer document carries the id of its account (D-05). The order matters: both columns are frozen with the parent, so the child guard of
      * `invoice_admin` refuses the write once the state has flipped to issued.
      */
     private function writeAdminRow(Invoice $draft, string $issueDate, IssueContext $context): InvoiceAdmin
@@ -243,7 +267,12 @@ final readonly class DocumentIssuer
             ]);
         }
 
-        $cardPayment = app(CardPaymentSwitch::class)->effective($draft->kind, $admin->card_payment_enabled);
+        $online = $draft->payment_method === DocumentPaymentMethod::Online;
+        $cardPayment = app(CardPaymentSwitch::class)->effective($draft->kind, $online || $admin->card_payment_enabled);
+
+        if ($draft->kind !== InvoiceKind::CreditNote && ! $online && $admin->bank_account_id === null) {
+            $admin->forceFill(['bank_account_id' => DocumentPayment::account($draft)?->id]);
+        }
 
         $admin->forceFill([
             'card_payment_enabled' => $cardPayment,
