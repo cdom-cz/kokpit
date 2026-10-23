@@ -23,7 +23,6 @@ use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
@@ -40,10 +39,11 @@ use InvalidArgumentException;
  * - `document_locked`: the document was sent and is locked until the Admin unlocks it (D-01);
  * - `cancelled_not_editable`: an issued storno credit note names the invoice (A3);
  * - `converted_not_editable`: the proforma already has its invoice (A3);
- * - `email_in_flight`: an e-mail of the document is queued, or sending and younger than the stale threshold of the
- *   System page (A8, R-10.1-04-2). A queued or sending e-mail does not lock the document (D-01), so the edit waits for
- *   it instead: the customer must not receive a PDF that differs from the stored one. An older sending row counts as
- *   failed and a failed row is not in flight, so nothing blocks forever.
+ * - `email_in_flight`: an e-mail of the document is queued or sending and younger than the stale threshold of the
+ *   System page (A8, R-10.1-04-2, review WR-01). A queued or sending e-mail does not lock the document (D-01), so the
+ *   edit waits for it instead: the customer must not receive a PDF that differs from the stored one. An older row counts
+ *   as failed, is never sent by the job ({@see InvoiceEmail::staleBefore()}) and does not block, and a failed row is not
+ *   in flight, so nothing blocks forever.
  *
  * Payments and credit notes are not reasons: an invoice with money already received or credited stays correctable
  * (D-04), {@see IssuedDocumentRules::warnings()} only reports when the total falls below them.
@@ -302,21 +302,15 @@ final class IssuedDocumentRules
     }
 
     /**
-     * Whether an e-mail of the document is queued, or sending and younger than the stale threshold (A8). The age of a
-     * sending row runs from its last move, the same reading as the System page.
+     * Whether an e-mail of the document is queued or sending and younger than the stale threshold (A8). The age of a
+     * row runs from its last move, the same reading as the System page, for a queued row as for a sending one.
      */
     private static function emailInFlight(Invoice $invoice): bool
     {
-        $staleBefore = CarbonImmutable::now()->subSeconds(max(1, (int) config('kokpit.health.unsent_invoice_email_stale_after')));
-
         return InvoiceEmail::query()
             ->where('invoice_id', $invoice->id)
-            ->where(static function (Builder $query) use ($staleBefore): void {
-                $query->where('state', InvoiceEmailState::Queued->value)
-                    ->orWhere(static function (Builder $sending) use ($staleBefore): void {
-                        $sending->where('state', InvoiceEmailState::Sending->value)->where('updated_at', '>', $staleBefore);
-                    });
-            })
+            ->whereIn('state', [InvoiceEmailState::Queued->value, InvoiceEmailState::Sending->value])
+            ->where('updated_at', '>', InvoiceEmail::staleBefore())
             ->exists();
     }
 }

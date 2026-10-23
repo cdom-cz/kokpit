@@ -546,6 +546,25 @@ describe('an e-mail that is on its way', function (): void {
         expect(issuedEditRow($issued)->total_minor)->toBe(150000);
     });
 
+    it('lets an edit through once a queued e-mail has waited past the stale threshold', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        [$line] = issuedEditLines($issued);
+        $stale = (int) config('kokpit.health.unsent_invoice_email_stale_after');
+        issuedEditEmail($issued, InvoiceEmailState::Queued, CarbonImmutable::now()->subSeconds($stale - 60));
+
+        // A minute short of the threshold the queued row still waits.
+        expect(IssuedDocumentRules::editBlocker(issuedEditRow($issued)))->toBe('email_in_flight');
+
+        // Past it the job is taken as lost: the row counts as failed and no longer blocks (review WR-01).
+        issuedEditSystem(static fn (): int => InvoiceEmail::query()->where('invoice_id', $issued->id)->update(['updated_at' => CarbonImmutable::now()->subSeconds($stale + 60)]));
+
+        expect(IssuedDocumentRules::editBlocker(issuedEditRow($issued)))->toBeNull();
+
+        app(UpdateIssuedDocument::class)->handle(Canary::admin(), $issued, ['items' => [issuedEditPayload($line, ['quantity' => '3'])]]);
+
+        expect(issuedEditRow($issued)->total_minor)->toBe(150000);
+    });
+
     it('lets an edit through when the only e-mail failed', function (): void {
         $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
         issuedEditEmail($issued, InvoiceEmailState::Failed, CarbonImmutable::now());

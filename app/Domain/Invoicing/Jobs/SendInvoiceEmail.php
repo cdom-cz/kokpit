@@ -36,15 +36,18 @@ use Throwable;
  * Sends one queued document e-mail (IN-04; D-22, Phase 8 D-10, ruling R-24-1): the PDF stored at issue and, when the
  * row asks for it and the document still has linked time, the work report built from exactly those entries.
  *
- * The unit is the log row. The job claims it with a conditional update (`queued` to `sending`, one attempt counted),
- * so a second run, a double dispatch and a row that is sent, failed or gone do nothing. A run that throws puts the row
- * back to `queued` for the next try; once the queue gives up, {@see self::failed()} marks it `failed` with a fixed
+ * The unit is the log row. The job claims it with a conditional update (`queued` to `sending`, one attempt counted)
+ * in a transaction that locks the invoice row first, the order of every writer, so an edit that was admitted because
+ * the row is stale and the claim of that row never interleave. A second run, a double dispatch and a row that is sent,
+ * failed or gone do nothing. A run that throws puts the row back to `queued` for the next try; once the queue gives up, {@see self::failed()} marks it `failed` with a fixed
  * failure class and tells the Admins in the bell, once. A missing stored PDF (no link, or no object) is final at once:
  * retrying cannot bring it back. A resend is a new row, not a retry of an old one (R-24-1); the state of a document is
  * the state of its latest row, and a row left in `sending` by a dead worker counts as failed after the stale
  * threshold of the System page (plan 10-37).
  *
  * Failure classes (R-24-2): `transport` (the mail transport refused), `attachment_missing` (the PDF object is gone),
+ * `stale` (a queued row whose last move is older than the stale threshold: its job was lost or the worker was down;
+ * the screens already read it as failed and offer the resend, so it is never sent late, D-10; plan 10.1-15),
  * `unexpected` (anything else). Only the class is stored; neither the log nor the bell ever holds an exception text,
  * a provider answer or the recipient (T-10-65).
  *
@@ -76,6 +79,8 @@ final class SendInvoiceEmail extends KokpitJob
 
     public const string FAILURE_UNEXPECTED = 'unexpected';
 
+    public const string FAILURE_STALE = 'stale';
+
     /** The message the queue and the failed-job alert see for a refused transport. */
     private const string TRANSPORT_FAILED = 'The mail transport refused the message.';
 
@@ -88,16 +93,7 @@ final class SendInvoiceEmail extends KokpitJob
             return;
         }
 
-        $claimed = InvoiceEmail::query()
-            ->whereKey($this->emailId)
-            ->where('state', InvoiceEmailState::Queued->value)
-            ->update([
-                'state' => InvoiceEmailState::Sending->value,
-                'attempts' => DB::raw('attempts + 1'),
-                'updated_at' => now(),
-            ]);
-
-        if ($claimed !== 1) {
+        if (! $this->claim()) {
             return;
         }
 
@@ -127,6 +123,59 @@ final class SendInvoiceEmail extends KokpitJob
             // as the previous exception, which only the failed_jobs record and the log hold.
             throw $e instanceof TransportExceptionInterface ? new RuntimeException(self::TRANSPORT_FAILED, 0, $e) : $e;
         }
+    }
+
+    /**
+     * Claims the row for this run, in one transaction that locks the invoice row first (the order of every writer:
+     * invoice, then children; the edit holds the same lock while it asks whether an e-mail is in flight). A queued row
+     * is taken only while its last move is younger than the stale threshold ({@see InvoiceEmail::staleBefore()}).
+     * An older queued row is one the screens already read as failed and the Admin may have edited or resent the
+     * document since, so it is given up here as failed with the class `stale` and the Admins are told once (D-10);
+     * it is never sent late. A row that is sending, sent, failed or gone is left alone. True when the row was claimed.
+     */
+    private function claim(): bool
+    {
+        return DB::transaction(function (): bool {
+            $invoiceId = InvoiceEmail::query()->whereKey($this->emailId)->value('invoice_id');
+
+            if (! is_string($invoiceId)) {
+                return false;
+            }
+
+            Invoice::query()->whereKey($invoiceId)->lockForUpdate()->value('id');
+
+            $cutoff = InvoiceEmail::staleBefore();
+
+            $claimed = InvoiceEmail::query()
+                ->whereKey($this->emailId)
+                ->where('state', InvoiceEmailState::Queued->value)
+                ->where('updated_at', '>', $cutoff)
+                ->update([
+                    'state' => InvoiceEmailState::Sending->value,
+                    'attempts' => DB::raw('attempts + 1'),
+                    'updated_at' => now(),
+                ]);
+
+            if ($claimed === 1) {
+                return true;
+            }
+
+            $gaveUp = InvoiceEmail::query()
+                ->whereKey($this->emailId)
+                ->where('state', InvoiceEmailState::Queued->value)
+                ->where('updated_at', '<=', $cutoff)
+                ->update([
+                    'state' => InvoiceEmailState::Failed->value,
+                    'failure_code' => self::FAILURE_STALE,
+                    'updated_at' => now(),
+                ]);
+
+            if ($gaveUp === 1) {
+                $this->tellAdmins($invoiceId);
+            }
+
+            return false;
+        });
     }
 
     /**
@@ -198,17 +247,24 @@ final class SendInvoiceEmail extends KokpitJob
                 return;
             }
 
-            $invoiceId = InvoiceEmail::query()->whereKey($this->emailId)->value('invoice_id');
-            $number = Invoice::query()->whereKey($invoiceId)->value('number');
-            $notification = new InvoiceEmailFailedNotification(
-                number: is_string($number) ? $number : '',
-                url: InvoiceResource::getUrl('view', ['record' => $invoiceId]),
-            );
-
-            foreach (User::query()->role(RoleName::Admin->value)->get() as $admin) {
-                $admin->notifyNow($notification);
-            }
+            $this->tellAdmins(InvoiceEmail::query()->whereKey($this->emailId)->value('invoice_id'));
         });
+    }
+
+    /**
+     * The one bell notice of a failed send to every Admin. It names the document number only (T-10-65).
+     */
+    private function tellAdmins(mixed $invoiceId): void
+    {
+        $number = Invoice::query()->whereKey($invoiceId)->value('number');
+        $notification = new InvoiceEmailFailedNotification(
+            number: is_string($number) ? $number : '',
+            url: InvoiceResource::getUrl('view', ['record' => $invoiceId]),
+        );
+
+        foreach (User::query()->role(RoleName::Admin->value)->get() as $admin) {
+            $admin->notifyNow($notification);
+        }
     }
 
     /**

@@ -45,6 +45,16 @@ final class InvoiceEmail extends KokpitModel implements PartnerIsolated
     protected $table = 'invoice_emails';
 
     /**
+     * The one definition of the stale cutoff (ruling R-37-1 of the System page, extended to queued rows by plan 10.1-15,
+     * review WR-01): a queued or sending row whose last move (`updated_at`) is at or before this instant belongs to a
+     * lost job or a dead worker and counts as failed. The edit rule, the job and the Odeslani tab all read it here.
+     */
+    public static function staleBefore(): CarbonImmutable
+    {
+        return CarbonImmutable::now()->subSeconds(max(1, (int) config('kokpit.health.unsent_invoice_email_stale_after')));
+    }
+
+    /**
      * @return BelongsTo<Invoice, $this>
      */
     public function invoice(): BelongsTo

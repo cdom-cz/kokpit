@@ -28,6 +28,7 @@ use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Pipeline\Pipeline;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Defer\DeferredCallbackCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
@@ -458,6 +459,72 @@ describe('a send that keeps failing', function (): void {
 
         expect($partner->notifications()->count())->toBe(0)
             ->and(InvoiceEmail::query()->count())->toBe(0);
+    });
+});
+
+describe('a queued e-mail older than the stale threshold', function (): void {
+    /**
+     * Moves the last move of a row to the given number of seconds ago, the way a lost job leaves it.
+     */
+    function invMailAge(string $emailId, int $seconds): void
+    {
+        app(PartnerContext::class)->runAsSystem(static fn (): int => InvoiceEmail::query()->whereKey($emailId)->update(['updated_at' => CarbonImmutable::now()->subSeconds($seconds)]));
+    }
+
+    it('gives the row up as failed with the class stale, sends nothing and locks nothing', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        invMailAge($row->id, (int) config('kokpit.health.unsent_invoice_email_stale_after') + 60);
+
+        invMailTry($row->id);
+
+        expect(invMailSent())->toBe([])
+            ->and(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Failed)
+            ->and(invMailRow($row->id)->failure_code)->toBe('stale')
+            ->and(invMailRow($row->id)->attempts)->toBe(0)
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Open)
+            ->and(invMailBell($this->admin))->toHaveCount(1);
+
+        // A second run changes and tells nothing.
+        invMailTry($row->id);
+
+        expect(invMailSent())->toBe([])
+            ->and(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Failed)
+            ->and(invMailBell($this->admin))->toHaveCount(1);
+    });
+
+    it('still sends a queued row a minute short of the threshold and locks the document', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        invMailAge($row->id, (int) config('kokpit.health.unsent_invoice_email_stale_after') - 60);
+
+        invMailTry($row->id);
+
+        expect(invMailSent())->toHaveCount(1)
+            ->and(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Sent)
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Locked)
+            ->and(invMailBell($this->admin))->toBe([]);
+    });
+
+    it('claims the row under the invoice row lock', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        invMailTry($row->id);
+
+        $lock = array_find_key($queries, static fn (string $sql): bool => str_contains($sql, 'from "invoices"') && str_contains($sql, 'for update'));
+        $claim = array_find_key($queries, static fn (string $sql): bool => str_starts_with($sql, 'update "invoice_emails"') && str_contains($sql, '"state"'));
+
+        expect($lock)->not->toBeNull()
+            ->and($claim)->not->toBeNull()
+            ->and($lock)->toBeLessThan($claim);
     });
 });
 
