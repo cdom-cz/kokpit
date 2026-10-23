@@ -8,6 +8,7 @@ use App\Domain\Documents\Jobs\PruneExpiredDocumentArchives;
 use App\Domain\Documents\Jobs\RemoveDocumentObjects;
 use App\Domain\ExchangeRates\Jobs\BackfillCnbRates;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
+use App\Domain\Invoicing\Jobs\SendPaymentConfirmation;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
 use App\Domain\Operations\Jobs\Middleware\RunsAsSystem;
@@ -39,11 +40,11 @@ use Tests\Support\Probes\UndeclaredWebhookProbeJob;
 /**
  * The application jobs expected under app/. Adding a job is a visible, reviewed
  * change: plan 03-16 added the worker heartbeat job, later phases add theirs (plan 08-12 the export prune,
- * plan 08-16 the export build, plan 08-18 the rates history backfill, plan 09-17 the document archive build, plan 09-27 the queued removal of document objects, plan 10-24 the document e-mail, plan 11-07 the Stripe payment link, plan 11-10 its remote deactivation and sweep).
+ * plan 08-16 the export build, plan 08-18 the rates history backfill, plan 09-17 the document archive build, plan 09-27 the queued removal of document objects, plan 10-24 the document e-mail, plan 13-06 the payment confirmation, plan 11-07 the Stripe payment link, plan 11-10 its remote deactivation and sweep).
  *
  * @var list<class-string<KokpitJob>>
  */
-const EXPECTED_APPLICATION_JOBS = [RecordWorkerHeartbeat::class, NotifyLongRunningTimers::class, PurgeExpiredIdempotencyKeys::class, PruneExpiredReportExports::class, BuildReportExport::class, BackfillCnbRates::class, BuildDocumentArchive::class, PruneExpiredDocumentArchives::class, RemoveDocumentObjects::class, SendInvoiceEmail::class, CreatePaymentLink::class, DeactivatePaymentLinks::class, PruneProcessedWebhookCalls::class];
+const EXPECTED_APPLICATION_JOBS = [RecordWorkerHeartbeat::class, NotifyLongRunningTimers::class, PurgeExpiredIdempotencyKeys::class, PruneExpiredReportExports::class, BuildReportExport::class, BackfillCnbRates::class, BuildDocumentArchive::class, PruneExpiredDocumentArchives::class, RemoveDocumentObjects::class, SendInvoiceEmail::class, SendPaymentConfirmation::class, CreatePaymentLink::class, DeactivatePaymentLinks::class, PruneProcessedWebhookCalls::class];
 
 /**
  * The queued classes that extend the webhook package's ProcessWebhookJob instead of KokpitJob (plan 11-04, R11-04-7).
