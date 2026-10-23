@@ -24,7 +24,8 @@ use LogicException;
  *    never looked up again here;
  * 2. (plan 10.1-05) the card payment link follows the new total;
  * 3. the stored PDF is replaced ({@see ReplaceIssuedPdf}), so it prints the corrected document;
- * 4. (plan 10.1-12) the audit row of a post-send correction is written.
+ * 4. the audit row of a post-send correction is written ({@see InvoiceAudit::edited()}), from the values before the
+ *    edit that the caller took; only this step reads `$before`, and it writes nothing for a document never sent.
  *
  * Nothing is sent: no e-mail row, no queued job (D-10). The Admin sends by hand, and that send locks the document.
  */
@@ -33,9 +34,11 @@ final readonly class IssuedEditFinisher
     public function __construct(private ReplaceIssuedPdf $pdf) {}
 
     /**
+     * @param  array<string, string|int|null>  $before  {@see InvoiceAudit::snapshot()} taken before the write
+     *
      * @throws LogicException outside a transaction, or for a foreign-currency document without its stored rate
      */
-    public function finish(User $actor, Invoice $locked): void
+    public function finish(User $actor, Invoice $locked, array $before): void
     {
         if (DB::transactionLevel() === 0) {
             throw new LogicException('An issued edit is finished inside the caller\'s transaction.');
@@ -44,6 +47,8 @@ final readonly class IssuedEditFinisher
         $this->czkTotal($locked);
 
         $this->pdf->handle($actor, $locked);
+
+        InvoiceAudit::edited($locked, $actor, $before);
     }
 
     /**

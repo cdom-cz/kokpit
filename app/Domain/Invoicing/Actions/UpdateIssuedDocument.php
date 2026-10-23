@@ -9,6 +9,7 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Support\DraftTotals;
+use App\Domain\Invoicing\Support\InvoiceAudit;
 use App\Domain\Invoicing\Support\InvoiceItemInput;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
 use App\Domain\Invoicing\Support\IssuedDocumentRules;
@@ -45,13 +46,15 @@ use OverflowException;
  *
  * 1. authorise `update`, lock the invoice row, and ask {@see IssuedDocumentRules::assertEditable()} on the locked
  *    row: a draft, a credit note, a locked or cancelled invoice and a converted proforma are refused with the field
- *    error `document` before anything is written. Payments and credit notes do not refuse (D-04);
+ *    error `document` before anything is written. Payments and credit notes do not refuse (D-04). The values before
+ *    the write are read for the audit ({@see InvoiceAudit::snapshot()});
  * 2. write the lines. A line generated from time keeps its frozen price: in the currency of the document the stored
  *    unit price times the new quantity, in another currency the quotes of its conversion snapshot through
  *    {@see TimeLineConversion}, never today's lists. A line a credit note credits keeps its quantity, unit and unit
  *    price, cannot be deleted, and only its text changes (assumption A4);
  * 3. sum the totals; a total that is not positive is refused as `total_not_positive`;
- * 4. save the row, then {@see IssuedEditFinisher::finish()}: the CZK total, the PDF replacement.
+ * 4. save the row (silenced for the model history when the document was ever sent, because the explicit row replaces
+ *    it), then {@see IssuedEditFinisher::finish()}: the CZK total, the PDF replacement, the audit row (D-13).
  *
  * The document stays open and nothing is sent; the Admin sends it by hand, and that send locks it again.
  */
@@ -79,6 +82,8 @@ final readonly class UpdateIssuedDocument
             $locked = Invoice::query()->whereKey($issued->getKey())->lockForUpdate()->firstOrFail();
 
             IssuedDocumentRules::assertEditable($locked);
+
+            $before = InvoiceAudit::snapshot($locked);
 
             $note = array_key_exists('note', $data) ? $this->note($data['note']) : $locked->note;
             $currency = $locked->currency;
@@ -111,9 +116,17 @@ final readonly class UpdateIssuedDocument
                 'vat_minor' => $totals['vat']->minor,
                 'total_minor' => $totals['total']->minor,
             ]);
-            $locked->save();
 
-            $this->finisher->finish($actor, $locked);
+            // After the first send the explicit `invoice_edited` row is the history of the edit, so the model must not
+            // add its own `updated` row for the same save (D-13); a never-sent document keeps the model history.
+            if (InvoiceAudit::everSent($locked)) {
+                $locked->disableLogging()->save();
+                $locked->enableLogging();
+            } else {
+                $locked->save();
+            }
+
+            $this->finisher->finish($actor, $locked, $before);
 
             return $locked->refresh();
         });
