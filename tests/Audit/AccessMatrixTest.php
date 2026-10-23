@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Identity\ApiAbility;
 use App\Filament\Pages\Auth\AcceptInvitation;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Partner\Resources\PartnerTaskResource;
@@ -10,13 +11,20 @@ use App\Filament\Resources\ClientResource\RelationManagers\ContactsRelationManag
 use App\Filament\Resources\ProjectResource;
 use App\Filament\Resources\ProjectResource\Pages\ProjectBoard;
 use App\Filament\Widgets\PartnerTasks;
+use App\Livewire\Signal\SignalDay;
 use Filament\Facades\Filament;
+use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
+use Laravel\Sanctum\Http\Middleware\CheckAbilities;
+use Livewire\Livewire;
+use Tests\Support\ApiFixtures;
 use Tests\Support\Canary;
 use Tests\Support\CanaryRegistry;
 use Tests\Support\CardPaymentFixtures;
 use Tests\Support\PanelInventory;
 use Tests\Support\PartnerMatrix;
+use Tests\Support\RouteInventory;
 
 /*
  * US-01, AUD-02, D-01, D-02, D-11, R-12-03-1/2/3: the permission matrix of the screens and endpoints.
@@ -29,6 +37,9 @@ use Tests\Support\PartnerMatrix;
  * equals the declared one, and every Resource index and panel Page answers an HTTP request 200 when declared
  * allowed and 403 when refused. The declaration is never derived from the code under test, and a guard test
  * fails if the matrix file refers to the access-rule reader, the audience enum or a policy (D-01).
+ * The same is done for every /api/v1 route (its one ability, an Admin token with only that ability, a Partner token
+ * with every ability), every plain Livewire component (an Admin mounts it, a Partner is refused) and the Horizon
+ * dashboard (the Admin is admitted, a Partner is answered 403 on every Horizon GET route).
  * Where the code differs from the draft the row states what the code does and the difference is reported to the
  * owner for sign-off (R-12-03-3, D-02).
  */
@@ -90,6 +101,51 @@ function auditAccessLiteralProblems(string $source): array
     return $problems;
 }
 
+/**
+ * The names of the /api/v1 routes of the router, sorted.
+ *
+ * @return list<string>
+ */
+function auditAccessApiRouteNames(): array
+{
+    $names = [];
+
+    foreach (RouteInventory::routes() as $route) {
+        if (str_starts_with($route->uri(), 'api/v1/')) {
+            $names[] = RouteInventory::key($route);
+        }
+    }
+
+    sort($names, SORT_STRING);
+
+    return $names;
+}
+
+/**
+ * The route of the router with that key.
+ */
+function auditAccessRoute(string $key): LaravelRoute
+{
+    foreach (RouteInventory::routes() as $route) {
+        if (RouteInventory::key($route) === $key) {
+            return $route;
+        }
+    }
+
+    throw new LogicException("No route has the key {$key}.");
+}
+
+/**
+ * The parameters a plain Livewire component is mounted with.
+ *
+ * @param  class-string  $class
+ * @return array<string, mixed>
+ */
+function auditAccessLivewireParameters(string $class): array
+{
+    return $class === SignalDay::class ? ['forDate' => now()->toDateString()] : [];
+}
+
 it('declares every panel class and only existing ones', function (): void {
     $differences = auditAccessDifferences('panel class', PanelInventory::panelClasses(), array_keys(auditAccessPanelRows()));
 
@@ -136,6 +192,123 @@ it('reports a matrix source that reads the access rules', function (): void {
     expect(auditAccessLiteralProblems('<?php return AccessRules::allows(Foo::class);'))->toBe(['PartnerMatrix refers to AccessRule'])
         ->and(auditAccessLiteralProblems('<?php return Audience::AdminOnly;'))->toBe(['PartnerMatrix refers to Audience'])
         ->and(auditAccessLiteralProblems('<?php return Foo::class => [];'))->toBe([]);
+});
+
+it('declares every /api/v1 route and only existing ones', function (): void {
+    $differences = auditAccessDifferences('API route', auditAccessApiRouteNames(), array_keys(PartnerMatrix::apiEndpoints()));
+
+    expect(auditAccessApiRouteNames())->toContain('api.v1.time-entries.index')
+        ->and($differences)->toBe([], implode("\n", $differences));
+});
+
+it('reports an undeclared API route and a row without a route', function (): void {
+    $names = auditAccessApiRouteNames();
+    $declared = array_keys(PartnerMatrix::apiEndpoints());
+
+    expect(auditAccessDifferences('API route', [...$names, 'api.v1.planted'], $declared))->toBe(['API route api.v1.planted has no PartnerMatrix row'])
+        ->and(auditAccessDifferences('API route', $names, [...$declared, 'api.v1.ghost']))->toBe(['PartnerMatrix declares API route api.v1.ghost but no such API route exists']);
+});
+
+it('demands exactly the declared ability on {0}', function (string $name): void {
+    $row = PartnerMatrix::apiEndpoints()[$name];
+    $route = auditAccessRoute($name);
+    $abilityMiddleware = array_values(array_filter(
+        RouteInventory::middleware($route),
+        static fn (string $middleware): bool => str_starts_with($middleware, CheckAbilities::class),
+    ));
+
+    expect($abilityMiddleware)->toBe([CheckAbilities::class.':'.$row['ability']]);
+
+    $path = RouteInventory::path($route);
+    $method = RouteInventory::method($route);
+
+    // Both tokens are made first and the guards are forgotten right before each request, as in the isolation
+    // suite: a guard that was resolved in between would answer the next request as the previous token's user.
+    $adminToken = ApiFixtures::token(ApiFixtures::admin(), [$row['ability']]);
+    $partnerToken = ApiFixtures::token(Canary::partnerFor(Canary::twoClients()[0]), ApiAbility::values());
+
+    Auth::forgetGuards();
+    $adminStatus = $this->withToken($adminToken)->json($method, $path)->getStatusCode();
+
+    Auth::forgetGuards();
+    $partnerStatus = $this->withToken($partnerToken)->json($method, $path)->getStatusCode();
+
+    expect($adminStatus)->not->toBeIn([401, 403], "an Admin token with only {$row['ability']} on {$name}")
+        ->and($partnerStatus)->toBe($row['partner'] ? $adminStatus : 401);
+})->with(array_map(
+    static fn (string $name): array => [$name],
+    array_keys(PartnerMatrix::apiEndpoints()),
+));
+
+it('declares every Livewire component and only existing ones', function (): void {
+    $differences = auditAccessDifferences('Livewire component', PanelInventory::livewireComponents(), array_keys(PartnerMatrix::livewireComponents()));
+
+    expect(PanelInventory::livewireComponents())->toContain(SignalDay::class)
+        ->and($differences)->toBe([], implode("\n", $differences));
+});
+
+it('reports an undeclared Livewire component and a row without a component', function (): void {
+    $components = PanelInventory::livewireComponents();
+    $declared = array_keys(PartnerMatrix::livewireComponents());
+
+    expect(auditAccessDifferences('Livewire component', [...$components, 'App\\Livewire\\Planted'], $declared))->toBe(['Livewire component App\\Livewire\\Planted has no PartnerMatrix row'])
+        ->and(auditAccessDifferences('Livewire component', $components, [...$declared, 'App\\Livewire\\Ghost']))->toBe(['PartnerMatrix declares Livewire component App\\Livewire\\Ghost but no such Livewire component exists']);
+});
+
+it('lets the Admin mount and refuses a Partner on {0}', function (string $class): void {
+    $row = PartnerMatrix::livewireComponents()[$class];
+    $parameters = auditAccessLivewireParameters($class);
+
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+    Auth::forgetGuards();
+    $this->actingAs(Canary::admin());
+    $admin = Livewire::test($class, $parameters);
+
+    Auth::forgetGuards();
+    $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
+    $partner = Livewire::test($class, $parameters);
+
+    $row['admin'] ? $admin->assertSuccessful() : $admin->assertForbidden();
+    $row['partner'] ? $partner->assertSuccessful() : $partner->assertForbidden();
+})->with(array_map(
+    static fn (string $class): array => [$class],
+    array_keys(PartnerMatrix::livewireComponents()),
+));
+
+it('admits the Admin to the Horizon dashboard and refuses a Partner on every Horizon GET route', function (): void {
+    $horizon = PartnerMatrix::horizon();
+    $admin = Canary::admin();
+    $partner = Canary::partnerFor(Canary::twoClients()[0]);
+
+    expect(Gate::forUser($admin)->allows('viewHorizon'))->toBe($horizon['admin'])
+        ->and(Gate::forUser($partner)->allows('viewHorizon'))->toBe($horizon['partner']);
+
+    $routes = array_values(array_filter(
+        RouteInventory::routes(),
+        static fn (LaravelRoute $route): bool => str_starts_with(RouteInventory::key($route), $horizon['prefix']) && RouteInventory::method($route) === 'GET',
+    ));
+
+    expect($routes)->not->toBeEmpty()
+        ->and(array_map(RouteInventory::key(...), $routes))->toContain($horizon['dashboard']);
+
+    Auth::forgetGuards();
+    $dashboard = $this->actingAs($admin)->get(RouteInventory::path(auditAccessRoute($horizon['dashboard'])));
+    $adminStatus = $dashboard->getStatusCode();
+
+    $refused = [];
+
+    foreach ($routes as $route) {
+        Auth::forgetGuards();
+        $status = $this->actingAs($partner)->get(RouteInventory::path($route))->getStatusCode();
+
+        if ($status !== ($horizon['partner'] ? 200 : 403)) {
+            $refused[] = RouteInventory::key($route).": got {$status}";
+        }
+    }
+
+    expect($adminStatus)->toBe($horizon['admin'] ? 200 : 403)
+        ->and($refused)->toBe([], implode("\n", $refused));
 });
 
 describe('with canaries of two clients seeded', function (): void {
