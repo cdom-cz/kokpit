@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 12
 current_phase_name: Partner Audit
 status: executing
-stopped_at: Completed 12-02-PLAN.md
-last_updated: "2026-10-23T23:23:05.023Z"
+stopped_at: Completed 12-03-PLAN.md
+last_updated: "2026-10-23T23:38:00.225Z"
 last_activity: 2026-10-24
 last_activity_desc: Phase 12 execution started
-state_head: 737077a36dea3e0afbbd6e095cab1210a1726090
+state_head: c8df16e674be33740e59b026e40f4a4a38eb3f73
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 294
-  completed_plans: 287
+  completed_plans: 288
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 12 (Partner Audit) — EXECUTING
-Plan: 3 of 9
+Plan: 4 of 9
 Status: Ready to execute
 Last activity: 2026-10-24 — Phase 12 execution started
 
@@ -347,6 +347,7 @@ Progress: [████░░░░░░] 44%
 | Phase 13 P09 | 45 min | 3 tasks | 4 files |
 | Phase 12 P01 | 25 min | 2 tasks | 8 files |
 | Phase 12 P02 | 20 min | 2 tasks | 3 files |
+| Phase 12 P03 | 40 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -869,6 +870,9 @@ Recent decisions affecting current work:
 - [Phase 12]: 12-01: auth middleware recognised by exact class or class:parameter, not prefix (AuthenticateSession shares the Filament Authenticate prefix)
 - [Phase 12]: 12-01: composer test and CI Pest step exclude the Audit suite; composer partner-audit and CI step Partner audit run it alone
 - [Phase 12]: 12-02: redirectGuestsTo returns the panel login route (plain variant); the unused Filament export/import routes are closed by explicit 404 Route::bind closures, to be presented to the owner in 12-08
+- [Phase 12]: 12-03: resource pages that carry their own rule (ProjectBoard) count as governed classes in PanelInventory; plain list, create, edit and view pages stay governed by their Resource
+- [Phase 12]: 12-03: the PartnerMatrix literal guard fails on any mention of AccessRule, Audience, Policy, Gate or an access method name in the matrix file
+- [Phase 12]: 12-03: UnresolvedPayments is declared Admin yes; its visibility depends on an unresolved card payment existing, flagged for owner sign-off in 12-08
 
 ### Pending Todos
 
@@ -932,6 +936,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T23:22:58.871Z
-Stopped at: Completed 12-02-PLAN.md
+Last session: 2026-10-23T23:37:56.469Z
+Stopped at: Completed 12-03-PLAN.md
 Resume file: None
