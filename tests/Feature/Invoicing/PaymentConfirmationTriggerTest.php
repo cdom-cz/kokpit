@@ -342,3 +342,96 @@ describe('the paths (Phase 13)', function (): void {
             ->and($source)->not->toContain('lockForUpdate');
     });
 });
+
+describe('the job (Phase 13)', function (): void {
+    it('puts the row back to queued after a refused try, then fails it with a fixed class once the queue gives up', function (): void {
+        $address = exampleEmail('client-invoice');
+        $row = payConfirmHeld(payConfirmInvoice($address));
+
+        payConfirmBreakTransport($address);
+
+        $thrown = null;
+
+        try {
+            payConfirmTry($row->id);
+        } catch (RuntimeException $exception) {
+            $thrown = $exception;
+        }
+
+        $stored = payConfirmStored($row->id);
+
+        expect($thrown)->not->toBeNull()
+            ->and($thrown?->getMessage())->toBe('The mail transport refused the message.')
+            ->and($thrown?->getMessage())->not->toContain($address)
+            ->and($thrown?->getMessage())->not->toContain('rejected by relay')
+            ->and($stored->state)->toBe(PaymentConfirmationState::Queued)
+            ->and($stored->attempts)->toBe(1)
+            ->and(MailFixtures::sent())->toBe([]);
+
+        (new SendPaymentConfirmation($row->id))->failed(new TransportException('550 mailbox <'.$address.'> rejected by relay'));
+
+        $failed = payConfirmStored($row->id);
+        $encoded = (string) json_encode($failed->getAttributes());
+
+        expect($failed->state)->toBe(PaymentConfirmationState::Failed)
+            ->and($failed->failure_code)->toBe(SendPaymentConfirmation::FAILURE_TRANSPORT)
+            ->and($failed->sent_at)->toBeNull()
+            ->and($encoded)->not->toContain('rejected by relay')
+            ->and($encoded)->not->toContain('mailbox');
+
+        // A second report changes nothing.
+        (new SendPaymentConfirmation($row->id))->failed(new LogicException('something else'));
+
+        $again = payConfirmStored($row->id);
+
+        expect($again->state)->toBe(PaymentConfirmationState::Failed)
+            ->and($again->failure_code)->toBe(SendPaymentConfirmation::FAILURE_TRANSPORT)
+            ->and($again->updated_at?->equalTo($failed->updated_at))->toBeTrue();
+    });
+
+    it('classes any other failure as unexpected', function (): void {
+        $row = payConfirmHeld(payConfirmInvoice(exampleEmail('client-invoice')));
+
+        (new SendPaymentConfirmation($row->id))->failed(new LogicException('something broke'));
+
+        $stored = payConfirmStored($row->id);
+
+        expect($stored->state)->toBe(PaymentConfirmationState::Failed)
+            ->and($stored->failure_code)->toBe(SendPaymentConfirmation::FAILURE_UNEXPECTED);
+    });
+
+    it('ends a stored recipient that no longer passes the rule as failed invalid_recipient, without a send', function (): void {
+        $row = payConfirmHeld(payConfirmInvoice(exampleEmail('client-invoice')));
+
+        app(PartnerContext::class)->runAsSystem(static fn (): int => PaymentConfirmation::query()->whereKey($row->id)->update(['recipient' => 'not an address']));
+
+        payConfirmTry($row->id);
+
+        $stored = payConfirmStored($row->id);
+
+        expect($stored->state)->toBe(PaymentConfirmationState::Failed)
+            ->and($stored->failure_code)->toBe(SendPaymentConfirmation::FAILURE_INVALID_RECIPIENT)
+            ->and(MailFixtures::sent())->toBe([]);
+    });
+
+    it('never sends a finished row again, and does nothing for an id that is no UUID', function (): void {
+        $address = exampleEmail('client-invoice');
+        $row = payConfirmHeld(payConfirmInvoice($address));
+        Mail::getSymfonyTransport()->flush();
+
+        payConfirmTry($row->id);
+        payConfirmTry($row->id);
+        SendPaymentConfirmation::dispatchSync($row->id);
+
+        $stored = payConfirmStored($row->id);
+
+        expect($stored->state)->toBe(PaymentConfirmationState::Sent)
+            ->and($stored->attempts)->toBe(1)
+            ->and(MailFixtures::to($address))->toHaveCount(1);
+
+        payConfirmTry('not-a-uuid');
+        (new SendPaymentConfirmation('not-a-uuid'))->failed(new LogicException('x'));
+
+        expect(MailFixtures::to($address))->toHaveCount(1);
+    });
+});
