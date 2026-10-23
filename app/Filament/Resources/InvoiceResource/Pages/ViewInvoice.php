@@ -1291,6 +1291,16 @@ final class ViewInvoice extends ViewRecord
         $invoice = $this->invoice();
         $invoice->unsetRelation('admin');
         $invoice->load('admin.pdfDocument');
+
+        // Time added to or released from an open document moves its lines and totals as well (plan 10.1-09).
+        $totals = Invoice::query()->whereKey($invoice->getKey())->first(['subtotal_minor', 'vat_minor', 'total_minor']);
+
+        if ($totals instanceof Invoice) {
+            $invoice->forceFill($totals->only(['subtotal_minor', 'vat_minor', 'total_minor']))->syncOriginal();
+            $invoice->unsetRelation('items');
+            $invoice->load('items');
+        }
+
         $this->derived = null;
         $this->linkStatus = null;
         $this->warnings = null;

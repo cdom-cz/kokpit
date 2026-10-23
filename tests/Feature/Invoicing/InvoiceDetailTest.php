@@ -502,7 +502,7 @@ describe('the relation tabs', function (): void {
             ->assertSee('Platbu zaznamenáte tlačítkem Zaznamenat platbu.');
     });
 
-    it('lists the billed time read only, with the total in the footer and no add or unlink', function (): void {
+    it('lists the billed time of a locked document read only, with the total in the footer and no add or unlink', function (): void {
         $client = InvoiceFixtures::client();
         $project = detailProject($client, 'Alpha project');
         $one = detailEntry($project, '2026-09-10 08:00:00', '2026-09-10 09:00:00', 'Example one');
@@ -517,7 +517,7 @@ describe('the relation tabs', function (): void {
             'without_project' => false,
             'grouping' => 'project',
         ]);
-        $invoice = app(IssueDocument::class)->handle($this->admin, $draft);
+        $invoice = InvoiceFixtures::lock(app(IssueDocument::class)->handle($this->admin, $draft));
 
         $tab = detailTab(InvoiceEntriesRelationManager::class, $invoice)
             ->assertCanSeeTableRecords([$one, $two])

@@ -844,11 +844,11 @@ describe('the tab of linked time', function (): void {
             ->and(array_map(static fn (InvoiceItem $line): array => [$line->id, $line->quantity, $line->line_total_minor], storedLines($draft)))->toBe($linesBefore);
     });
 
-    it('is read only on an issued document: no add, no unlink', function (): void {
+    it('is read only on a locked issued document: no add, no unlink', function (): void {
         $client = InvoiceFixtures::client();
         $project = editorProject($client, 'Alpha project');
         editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 09:00:00');
-        $issued = app(IssueDocument::class)->handle($this->admin, editorTimeDraft($client, [$project]));
+        $issued = InvoiceFixtures::lock(app(IssueDocument::class)->handle($this->admin, editorTimeDraft($client, [$project])));
 
         entriesTab($issued)
             ->assertSee('Navázaný čas')

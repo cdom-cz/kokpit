@@ -53,8 +53,10 @@ use WeakMap;
  * On a draft it is "Záznamy času" with two actions: "Přidat nový čas" links newly tracked time through
  * {@see AddEntriesToDraft} (new lines are appended, an edited line is never rewritten) and the bulk action
  * "Odpojit od faktury" returns the selected entries to unbilled through {@see ReleaseEntries} (the lines stay, the
- * Admin edits or deletes them). On an issued document the same tab is "Navázaný čas": a read-only list, the time is
- * billed and locked and nothing here can unlink it.
+ * Admin edits or deletes them). On an issued document the same tab is "Navázaný čas": the time is billed, and while the
+ * document is open (not sent, or unlocked by the Admin) the same two actions add and release time exactly as on a draft;
+ * on a locked document, a credit note, a cancelled invoice and a converted proforma the list is read-only
+ * (R-10.1-09-5).
  *
  * Nothing here writes a row. Every id from the browser is re-read through the scoped queries (the picker offers only
  * the eligible entries of the client of the draft, the selection of the bulk action is read back through the table
@@ -78,11 +80,14 @@ final class InvoiceEntriesRelationManager extends RelationManager
     private ?WeakMap $figures = null;
 
     /**
-     * A draft is edited here; an issued document only shows its time.
+     * A draft and an open issued document ({@see Invoice::isEditable()}) are edited here; a locked document, a credit
+     * note, a cancelled invoice and a converted proforma only show their time (R-10.1-09-5).
      */
     public function isReadOnly(): bool
     {
-        return ! $this->document()->isDraft();
+        $document = $this->document();
+
+        return ! ($document->isDraft() || $document->isEditable());
     }
 
     public static function getTitle(Model $ownerRecord, string $pageClass): string
@@ -233,10 +238,7 @@ final class InvoiceEntriesRelationManager extends RelationManager
                     return;
                 }
 
-                Notification::make()
-                    ->success()
-                    ->title(__('invoices.draft.entries.add.toast', ['count' => $result['entries'], 'items' => $result['items']]))
-                    ->send();
+                $this->successToast(__('invoices.draft.entries.add.toast', ['count' => $result['entries'], 'items' => $result['items']]));
 
                 // The editor above joins the new lines to its rows.
                 $this->dispatch('draft-lines-changed');
@@ -264,14 +266,39 @@ final class InvoiceEntriesRelationManager extends RelationManager
 
                 try {
                     app(ReleaseEntries::class)->handle($actor, $this->document(), $records->modelKeys());
+                } catch (ValidationException $exception) {
+                    $message = collect($exception->errors())->flatten()->first();
+
+                    Notification::make()->danger()->title(is_string($message) ? $message : $exception->getMessage())->send();
+
+                    return;
                 } catch (DomainException $exception) {
                     Notification::make()->danger()->title($exception->getMessage())->send();
 
                     return;
                 }
 
-                Notification::make()->success()->title(__('invoices.draft.entries.unlink.toast'))->send();
+                $this->successToast((string) __('invoices.draft.entries.unlink.toast'));
             });
+    }
+
+    /**
+     * The success toast of an add or a release. On an issued document it also says that the PDF was made again and that
+     * nothing was sent, and the page of the document renders its lines, total and PDF again (R-10.1-09-5).
+     */
+    private function successToast(string $title): void
+    {
+        $notification = Notification::make()->success()->title($title);
+
+        if ($this->document()->isDraft()) {
+            $notification->send();
+
+            return;
+        }
+
+        $notification->body(__('invoices.edit_issued.saved'))->send();
+
+        $this->dispatch('invoice-payment-saved');
     }
 
     /**

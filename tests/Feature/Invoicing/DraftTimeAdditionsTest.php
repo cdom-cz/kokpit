@@ -238,15 +238,15 @@ describe('new time on a draft', function (): void {
             ->and(additionFresh($foreign)->invoice_id)->toBeNull();
     });
 
-    it('refuses an issued document with not_draft and a Partner outright', function (): void {
+    it('refuses a locked issued document under document and a Partner outright', function (): void {
         $client = InvoiceFixtures::client();
         $alpha = additionProject($client, 'Alpha project');
         additionEntry($alpha, '2026-09-10 08:00:00', '2026-09-10 09:00:00');
-        $issued = app(IssueDocument::class)->handle($this->admin, additionDraft($client, [$alpha]));
+        $issued = InvoiceFixtures::lock(app(IssueDocument::class)->handle($this->admin, additionDraft($client, [$alpha])));
         $new = additionEntry($alpha, '2026-09-20 08:00:00', '2026-09-20 09:00:00');
 
         expect(fn () => app(AddEntriesToDraft::class)->handle($this->admin, $issued, [$new->id]))
-            ->toThrow(DomainException::class, __('invoices.errors.not_draft'))
+            ->toThrow(ValidationException::class, __('invoices.errors.document_locked'))
             ->and(additionFresh($new)->invoice_id)->toBeNull();
 
         $partner = Canary::partnerFor($client->id);
