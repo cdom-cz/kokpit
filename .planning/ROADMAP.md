@@ -904,7 +904,7 @@ Plans:
 **Goal:** The invoice currency can be changed freely, independent of the payment method (bank transfer or online), the selected bank account, or whether payment is online. The payment method can be switched on the invoice between bank transfer and online (Stripe): bank transfer shows the bank payment details, online shows no bank details, only what is needed to pay via Stripe. When the chosen currency matches a preconfigured bank account, that account is preselected; the account can also be chosen separately and independently of the currency. The chosen currency carries through to the PDF and the Stripe payment.
 **Requirements**: P14-01, P14-02, P14-03, P14-04, P14-05, P14-06, P14-07, P14-08, P14-09
 **Depends on:** Phase 13
-**Plans:** 10/11 plans executed
+**Plans:** 11/11 plans executed
 
 Plans:
 **Wave 1**
@@ -928,4 +928,4 @@ Plans:
 - [x] 14-10-PLAN.md — Issued editor fields; old currency-to-account lookups deleted; architecture test (Wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 14-11-PLAN.md — CONTRIBUTING and PROJECT.md hand-over, docblock sweep, development database migrated, full gate (Wave 6)
+- [x] 14-11-PLAN.md — CONTRIBUTING and PROJECT.md hand-over, docblock sweep, development database migrated, full gate (Wave 6)

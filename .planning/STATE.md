@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 14
 current_phase_name: Switchable payment method and independent invoice currency
-status: executing
-stopped_at: Completed 14-10-PLAN.md
-last_updated: "2026-10-23T12:31:44.966Z"
+status: verifying
+stopped_at: Completed 14-11-PLAN.md
+last_updated: "2026-10-23T13:08:16.633Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 14 execution started
-state_head: d423a20e04b6308a179ec91c8a4d436975bc7a3c
+state_head: 4821aa07d01fe1ec5b2b4ba989c6f257b00b1181
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 272
-  completed_plans: 271
+  completed_plans: 272
   percent: 44
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 Phase: 14 (Switchable payment method and independent invoice currency) — EXECUTING
 Plan: 11 of 11
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-23 — Phase 14 execution started
 
 Progress: [████░░░░░░] 44%
@@ -331,6 +331,7 @@ Progress: [████░░░░░░] 44%
 | Phase 14 P08 | 31 min | 2 tasks | 5 files |
 | Phase 14 P09 | 29 min | 3 tasks | 6 files |
 | Phase 14 P10 | 40 min | 2 tasks | 8 files |
+| Phase 14 P11 | 25min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -830,6 +831,8 @@ Recent decisions affecting current work:
 - [Phase 14]: R-14-09-3: InvoiceAudit::snapshot gains payment_method and card_payment; the account id and the pay token never enter the history
 - [Phase 14]: Plan 14-10: the issued editor sends an account only when the Admin changed it, so a removed or legacy account keeps its printed snapshot on an unrelated save
 - [Phase 14]: Plan 14-10: BankAccountSettings::forCurrency() and InvoiceSnapshot::bank() are deleted; tests/Arch/BankAccountByIdTest.php confines firstForCurrency( to the settings class and DocumentPayment
+- [Phase 14]: Phase 14 rules live in one CONTRIBUTING bullet (Payment method and bank accounts) under RepositoryFilesTest; Phase 13 e-mail keeps PayLinkBlock::applies() as its one predicate
+- [Phase 14]: PayToken docblock: token generated when the document first offers card payment (issue or later on an open issued document), set once
 
 ### Pending Todos
 
@@ -893,6 +896,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T12:31:43.395Z
-Stopped at: Completed 14-10-PLAN.md
+Last session: 2026-10-23T13:08:14.940Z
+Stopped at: Completed 14-11-PLAN.md
 Resume file: None
