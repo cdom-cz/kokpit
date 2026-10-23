@@ -151,6 +151,18 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **PA-07**: Second payment of the same invoice is stored as duplicate without income or invoice change and alerts Admin; repeated events are ignored; idempotence enforced by DB unique constraints
 - [x] **PA-08**: Unmatched payments and refund events are recorded and alerted; Admin payments overview with duplicate/unmatched filters and manual resolution; old webhook events are pruned
 
+### Payment Method and Currency
+
+- [ ] **P14-01**: A draft, invoice or proforma has an exclusive payment method `transfer` or `online`, default `transfer`; a credit note has none
+- [ ] **P14-02**: `transfer` prints the bank box, variable symbol and QR (CZK with a CZ IBAN only); `online` prints none of them, only the pay button or link and the amount and due facts
+- [ ] **P14-03**: Several bank accounts may share a currency; each account has a stable id; a document stores the chosen account separately from its currency
+- [ ] **P14-04**: Setting or changing the currency preselects the first account of that currency; any account may be chosen instead; with no match nothing is preselected and issuing a `transfer` document is blocked
+- [ ] **P14-05**: The currency choices are the CNB currencies plus account currencies and the client currency (plus the current and CZK), without duplicates
+- [ ] **P14-06**: Method, account and currency are editable on an open issued document and frozen once it is locked
+- [ ] **P14-07**: A method or currency change deactivates the live Stripe link and, when card payment is still offered, queues a new one in the document currency; the pay URL stays the same
+- [ ] **P14-08**: A currency change is refused once a payment is recorded; a method or account change is still allowed
+- [ ] **P14-09**: `online` requires card payment to be available (global setting on, Stripe configured, client flag on) and blocks issuing otherwise
+
 ### Partner Audit
 
 - [ ] **AUD-01**: Automated tests prove Partner never sees time, rates, prices, finance, internal comments or other clients' data in UI, search, selects, exports, notifications, activity log and API, for every entity
@@ -302,12 +314,21 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PA-06 | Phase 11 | Complete |
 | PA-07 | Phase 11 | Complete |
 | PA-08 | Phase 11 | Complete |
+| P14-01 | Phase 14 | Pending |
+| P14-02 | Phase 14 | Pending |
+| P14-03 | Phase 14 | Pending |
+| P14-04 | Phase 14 | Pending |
+| P14-05 | Phase 14 | Pending |
+| P14-06 | Phase 14 | Pending |
+| P14-07 | Phase 14 | Pending |
+| P14-08 | Phase 14 | Pending |
+| P14-09 | Phase 14 | Pending |
 | AUD-01 | Phase 12 | Pending |
 | AUD-02 | Phase 12 | Pending |
 
 **Coverage:**
-- v1 requirements: 102 total
-- Mapped to phases: 101
+- v1 requirements: 111 total
+- Mapped to phases: 110
 - Deferred to backlog: 1 (AP-03)
 - Unmapped: 0
 
