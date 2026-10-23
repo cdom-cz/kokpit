@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 13
 current_phase_name: Unified e-mail layout and HTML e-mail templates
 status: executing
-stopped_at: Completed 13-03-PLAN.md
-last_updated: "2026-10-23T20:11:56.771Z"
+stopped_at: Completed 13-04-PLAN.md
+last_updated: "2026-10-23T20:32:17.601Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 13 execution started
-state_head: 227ab5f1554f5cf05cc38bfb3a035ecb59a81de5
+state_head: 9fab69c289c28f125f1ba38f0e186ef747620a29
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 285
-  completed_plans: 279
+  completed_plans: 280
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 13 (Unified e-mail layout and HTML e-mail templates) — EXECUTING
-Plan: 4 of 9
+Plan: 5 of 9
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 13 execution started
 
@@ -339,6 +339,7 @@ Progress: [████░░░░░░] 44%
 | Phase 13 P01 | 55min | 2 tasks | 13 files |
 | Phase 13 P02 | 25min | 2 tasks | 9 files |
 | Phase 13 P03 | 15min | 2 tasks | 6 files |
+| Phase 13 P04 | 35min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -847,6 +848,8 @@ Recent decisions affecting current work:
 - [Phase 13]: R-13-01-1: only the customised mail views are published (layout, message, header, footer, kokpit.css, notifications/email); other components stay the framework fallback
 - [Phase 13]: 13-02: no guard trigger on payment_confirmations; the confirmation mark lives in its own table, not on invoice_payments, invoices or invoice_emails
 - [Phase 13]: Selection not suppression: payment and invoicing tests read the mail transport by recipient and subject (Admin address for alerts), counts exact, nothing names the confirmation
+- [Phase 13]: R-13-04-1: the supplier logo is an inline cid part (kokpit-logo.png, at most 360 x 120 px, shown at most 180 x 60), embedded by EmbedMailLogo only when MailBrand::hasLogo(); no route, URL or data URI
+- [Phase 13]: R-13-04-2: Markdown escaping of mail lines lives in MailText (escapeMarkdown/unescapeMarkdown); the text layout removes the escape backslashes
 
 ### Pending Todos
 
@@ -910,6 +913,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T20:11:54.410Z
-Stopped at: Completed 13-03-PLAN.md
+Last session: 2026-10-23T20:32:15.249Z
+Stopped at: Completed 13-04-PLAN.md
 Resume file: None

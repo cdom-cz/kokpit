@@ -894,7 +894,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 **Goal:** Every e-mail the system sends shares one HTML layout built on the Laravel mail theme. The payment e-mails are reworked first: a new confirmation to the client that an invoice has been paid (absorbs the former Phase 10.2), and the invoice e-mail with its "Pay by card" button. The other e-mails (partner invitation, password reset, task notifications, operational alerts) are moved to the layout and their texts reviewed.
 **Requirements**: P13-01, P13-02, P13-03, P13-04, P13-05, P13-06, P13-07, P13-08, P13-09, P13-10, P13-11 (phase-local, defined in 13-RESEARCH.md)
 **Depends on:** Phase 12
-**Plans:** 3/9 plans executed
+**Plans:** 4/9 plans executed
 
 Plans:
 **Wave 1**
@@ -903,7 +903,7 @@ Plans:
 - [x] 13-03-PLAN.md — Existing payment and invoicing tests select the e-mails they mean by recipient and subject, ready for the confirmation (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 13-04-PLAN.md — Shared mail layout, second half: inline cid logo, plain-text part, MailText escapes, TaskNotification on MailText (Wave 2)
+- [x] 13-04-PLAN.md — Shared mail layout, second half: inline cid logo, plain-text part, MailText escapes, TaskNotification on MailText (Wave 2)
 - [ ] 13-05-PLAN.md — Invoice e-mail on the layout: escaped plain-text body, Pay by card button under PayLinkBlock, document language (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
