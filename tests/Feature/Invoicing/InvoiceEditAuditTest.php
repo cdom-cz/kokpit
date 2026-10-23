@@ -12,10 +12,13 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Support\InvoiceAudit;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
+use App\Filament\Support\ActivityPresenter;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\Canary;
+use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\InvoiceFixtures;
 
@@ -37,9 +40,9 @@ beforeEach(function (): void {
 /**
  * An issued invoice of two lines that was sent once (so it is locked) and unlocked again with a reason.
  */
-function editAuditSentAndUnlocked(): Invoice
+function editAuditSentAndUnlocked(?Invoice $issued = null): Invoice
 {
-    $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [
+    $invoice = $issued ?? InvoiceFixtures::issued(InvoiceFixtures::client(), [
         InvoiceFixtures::item('Design', '2', '500.00'),
         InvoiceFixtures::item('Review', '1', '250.00'),
     ]);
@@ -181,5 +184,63 @@ describe('the audit of an edit after the first send', function (): void {
 
         expect(InvoiceAudit::everSent($queued))->toBeFalse()
             ->and(InvoiceAudit::everSent($sent))->toBeTrue();
+    });
+});
+
+describe('what the audit row holds', function (): void {
+    it('writes no row for an edit that changes nothing', function (): void {
+        $invoice = editAuditSentAndUnlocked();
+        [$first, $second] = editAuditLines($invoice);
+        $rowsBefore = count(editAuditRows($invoice));
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, [
+            'items' => [editAuditPayload($first), editAuditPayload($second)],
+        ]);
+
+        expect(editAuditRows($invoice, 'invoice_edited'))->toBe([])
+            ->and(count(editAuditRows($invoice)))->toBe($rowsBefore);
+    });
+
+    it('never carries a bank key, the pay token or the internal note', function (): void {
+        CardPaymentSetup::enable();
+        $invoice = editAuditSentAndUnlocked(InvoiceFixtures::issued(CardPaymentSetup::client(), [InvoiceFixtures::item('Design', '2', '500.00')]));
+        [$first] = editAuditLines($invoice);
+        $token = (string) DB::table('invoice_admin')->where('invoice_id', $invoice->id)->value('pay_token');
+        $internal = 'Internal '.'example remark';
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, [
+            'items' => [editAuditPayload($first, ['quantity' => '5'])],
+            'internal_note' => $internal,
+        ]);
+
+        $edited = editAuditRows($invoice, 'invoice_edited');
+        $payload = (string) json_encode($edited[0]->attribute_changes?->all());
+
+        expect($edited)->toHaveCount(1)
+            ->and($token)->toMatch('/^[A-Za-z0-9]{32}$/')
+            ->and($payload)->not->toContain($token)
+            ->and($payload)->not->toContain($internal)
+            ->and($payload)->not->toContain('bank')
+            ->and($payload)->not->toContain('internal_note')
+            ->and($payload)->toContain('items.1.quantity');
+    });
+
+    it('stores a long party value whole and shows it cut to 80 characters', function (): void {
+        $invoice = editAuditSentAndUnlocked();
+        $long = str_repeat('x', 120);
+        $before = InvoiceAudit::snapshot($invoice);
+        $before['customer.name'] = $long;
+
+        InvoiceAudit::edited($invoice, $this->admin, $before);
+
+        $edited = editAuditRows($invoice, 'invoice_edited');
+        $stored = $edited[0]->attribute_changes?->all();
+        $shown = ActivityPresenter::changes($edited[0]);
+
+        expect($edited)->toHaveCount(1)
+            ->and($stored['old']['customer.name'] ?? null)->toBe($long)
+            ->and($stored['attributes']['customer.name'] ?? null)->toBe($invoice->customer_snapshot['name'] ?? null)
+            ->and($shown)->toContain(str_repeat('x', 80).'…')
+            ->and($shown)->not->toContain(str_repeat('x', 81));
     });
 });
