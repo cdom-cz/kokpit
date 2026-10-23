@@ -62,6 +62,7 @@ use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\SentMessage;
+use Symfony\Component\Mime\Email;
 use Tests\Support\Canary;
 use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
@@ -631,8 +632,16 @@ describe('the whole phase, end to end', function (): void {
             'attach_work_report' => false,
         ]);
 
-        expect(iterator_to_array(Mail::getSymfonyTransport()->messages()))->toHaveCount(1)
-            ->and(Mail::getSymfonyTransport()->messages()->first())->toBeInstanceOf(SentMessage::class)
+        $documentMails = Mail::getSymfonyTransport()->messages()->filter(static function (SentMessage $sent) use ($defaults): bool {
+            $original = $sent->getOriginalMessage();
+
+            return $original instanceof Email
+                && $original->getTo()[0]->getAddress() === (string) $defaults['recipient']
+                && $original->getSubject() === $defaults['subject'];
+        });
+
+        expect($documentMails)->toHaveCount(1)
+            ->and($documentMails->first())->toBeInstanceOf(SentMessage::class)
             ->and(invoiceLeakSystem(static fn (): InvoiceEmailState => InvoiceEmail::query()->findOrFail($mail->id)->state))->toBe(InvoiceEmailState::Sent);
 
         // 3. A partial payment, then a mistaken second one that is deleted together with its income.

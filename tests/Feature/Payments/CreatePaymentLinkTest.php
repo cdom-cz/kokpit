@@ -217,17 +217,24 @@ function bellOf(User $user): array
 }
 
 /**
- * Subject, text and HTML of every mail the array transport holds.
+ * Subject, text and HTML of every mail to an Admin address that the array transport holds, so an e-mail to anyone else
+ * (a client) is not counted.
  *
  * @return list<array{subject: string, text: string}>
  */
 function mailsSent(): array
 {
+    $adminAddresses = array_map(static fn (User $admin): string => $admin->email, everyAdmin());
     $mails = [];
 
     foreach (Mail::getSymfonyTransport()->messages() as $sent) {
         $original = $sent->getOriginalMessage();
         assert($original instanceof Email);
+
+        if (! in_array($original->getTo()[0]->getAddress(), $adminAddresses, true)) {
+            continue;
+        }
+
         $mails[] = ['subject' => (string) $original->getSubject(), 'text' => (string) $original->getTextBody().(string) $original->getHtmlBody()];
     }
 

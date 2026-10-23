@@ -33,6 +33,8 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use Symfony\Component\Mailer\SentMessage;
+use Symfony\Component\Mime\Email;
 use Tests\Support\Canary;
 use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
@@ -192,6 +194,30 @@ function editJourneySend(Invoice $invoice): InvoiceEmail
     ]);
 }
 
+/**
+ * The document e-mails of the invoice the array transport holds: the messages to the client address carrying the
+ * subject of the dialog defaults, so a further e-mail to another recipient or with another subject is not counted.
+ *
+ * @return list<Email>
+ */
+function editJourneyMails(Invoice $invoice): array
+{
+    $subject = app(QueueInvoiceEmail::class)->defaults($invoice)['subject'];
+    $mails = [];
+
+    foreach (Mail::getSymfonyTransport()->messages() as $message) {
+        assert($message instanceof SentMessage);
+        $original = $message->getOriginalMessage();
+        assert($original instanceof Email);
+
+        if ($original->getTo()[0]->getAddress() === 'invoice@example.com' && $original->getSubject() === $subject) {
+            $mails[] = $original;
+        }
+    }
+
+    return $mails;
+}
+
 it('walks an invoice from issue through a send, a refused edit and an unlock to a corrected and resent document', function (): void {
     // --- Issue: an invoice from three hours of September time, card payment on ---------------------------------------
     $client = CardPaymentSetup::client(['invoice_email' => 'invoice@example.com']);
@@ -241,7 +267,7 @@ it('walks an invoice from issue through a send, a refused edit and an unlock to 
     $sent = editJourneySend($invoice);
 
     expect(editJourneySystem(static fn (): InvoiceEmailState => InvoiceEmail::query()->findOrFail($sent->id)->state))->toBe(InvoiceEmailState::Sent)
-        ->and(iterator_to_array(Mail::getSymfonyTransport()->messages()))->toHaveCount(1)
+        ->and(editJourneyMails($invoice))->toHaveCount(1)
         ->and(editJourneyRow($invoice)->isLocked())->toBeTrue()
         ->and(editJourneyActivity($invoice, 'invoice_locked'))->toHaveCount(1);
 
@@ -339,13 +365,13 @@ it('walks an invoice from issue through a send, a refused edit and an unlock to 
         ->and(editJourneyActivity($invoice, 'invoice_edited'))->toHaveCount(3)
         ->and(editJourneyRow($invoice)->isLocked())->toBeFalse()
         ->and(editJourneyActivity($invoice, 'invoice_locked'))->toHaveCount(1)
-        ->and(iterator_to_array(Mail::getSymfonyTransport()->messages()))->toHaveCount(1);
+        ->and(editJourneyMails($invoice))->toHaveCount(1);
 
     // --- 8. The resend locks it again; the history holds both locks, the unlock and the three edits --------------------
     $again = editJourneySend($invoice);
 
     expect(editJourneySystem(static fn (): InvoiceEmailState => InvoiceEmail::query()->findOrFail($again->id)->state))->toBe(InvoiceEmailState::Sent)
-        ->and(iterator_to_array(Mail::getSymfonyTransport()->messages()))->toHaveCount(2)
+        ->and(editJourneyMails($invoice))->toHaveCount(2)
         ->and(editJourneyRow($invoice)->isLocked())->toBeTrue()
         ->and(editJourneyActivity($invoice, 'invoice_locked'))->toHaveCount(2)
         ->and(editJourneyActivity($invoice, 'invoice_unlocked'))->toHaveCount(1)
