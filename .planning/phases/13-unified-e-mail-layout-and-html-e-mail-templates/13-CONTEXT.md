@@ -31,6 +31,8 @@ E-mails that really leave the system today: the invoice e-mail (`InvoiceMail`, p
 - **D-07:** The partner invitation, password reset, task notifications and operational alerts move to the shared layout and their subjects, texts and CZ/EN translations are reviewed and corrected in the same pass.
   - **Clarification (owner, 2026-10-23):** no English texts exist for these four e-mails and users have no locale. Review them in Czech only; English is required only for the new payment texts, the invoice button and the layout strings. No recipient-language mechanism is added in this phase.
 
+- **Owner confirmations (2026-10-23):** the payment confirmation is also sent for proforma payments (never for credit notes or for payments carried to the converted invoice). A payment deleted after its confirmation left and re-entered as a correction sends its own confirmation; deleting it within the grace window sends nothing.
+
 ### Claude's Discretion
 - Theme colours, typography and button style (consistent with the Filament panel look).
 - How the logo is delivered to mail clients (inline attachment, hosted URL) and how the layout degrades when no logo is set.
