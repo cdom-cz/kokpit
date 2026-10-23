@@ -6,13 +6,13 @@ namespace App\Domain\Invoicing\Support;
 
 use App\Domain\ExchangeRates\ExchangeRateConverter;
 use App\Domain\ExchangeRates\ExchangeRateMissing;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Settings\Numbering\InvalidNumberPattern;
-use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\NumberingSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
@@ -25,6 +25,10 @@ use Illuminate\Validation\ValidationException;
  * allocated, each with its Czech message. The UI asks {@see IssueChecks::blockers()} to show the list without
  * throwing; the issue pipeline asks {@see IssueChecks::assertIssuable()} on the locked row, so a stale page cannot
  * freeze an incomplete document (T-10-32).
+ *
+ * A transfer document needs a bank account to print (D-05, D-06): the account the draft chose, in any currency, or for a
+ * draft that chose none the first account of its currency; a chosen account that was removed from the settings is a
+ * `bank_missing` blocker, not silently replaced. An online document prints no bank details and needs no account.
  *
  * A draft whose lines are priced in other currencies needs the CNB list of each of them on the issue date, a
  * `cnb_missing` blocker for every currency without one (EX-03, ruling R-17-1). While the VAT-payer calculations are not
@@ -73,8 +77,8 @@ final readonly class IssueChecks
             $add('vat_payer_unsupported');
         }
 
-        if (! $creditNote && app(BankAccountSettings::class)->forCurrency($draft->currency) === null) {
-            $add('bank_missing', ['currency' => $draft->currency]);
+        if (! $creditNote && $draft->payment_method !== DocumentPaymentMethod::Online && DocumentPayment::account($draft) === null) {
+            $add('bank_missing');
         }
 
         if ($draft->currency !== 'CZK' && $exchangeSnapshot === null && ! $this->hasRate($draft->currency, $issueDate)) {
