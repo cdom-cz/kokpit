@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 12
 current_phase_name: Partner Audit
 status: executing
-stopped_at: Completed 12-03-PLAN.md
-last_updated: "2026-10-23T23:38:00.225Z"
+stopped_at: Completed 12-05-PLAN.md
+last_updated: "2026-10-23T23:57:48.246Z"
 last_activity: 2026-10-24
 last_activity_desc: Phase 12 execution started
-state_head: c8df16e674be33740e59b026e40f4a4a38eb3f73
+state_head: 5b95606178475cdfd0171ad42cfe1fbc93b15f53
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 294
-  completed_plans: 288
+  completed_plans: 289
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 12 (Partner Audit) — EXECUTING
-Plan: 4 of 9
+Plan: 5 of 9
 Status: Ready to execute
 Last activity: 2026-10-24 — Phase 12 execution started
 
@@ -348,6 +348,7 @@ Progress: [████░░░░░░] 44%
 | Phase 12 P01 | 25 min | 2 tasks | 8 files |
 | Phase 12 P02 | 20 min | 2 tasks | 3 files |
 | Phase 12 P03 | 40 min | 2 tasks | 3 files |
+| Phase 12 P05 | 20 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -873,6 +874,8 @@ Recent decisions affecting current work:
 - [Phase 12]: 12-03: resource pages that carry their own rule (ProjectBoard) count as governed classes in PanelInventory; plain list, create, edit and view pages stay governed by their Resource
 - [Phase 12]: 12-03: the PartnerMatrix literal guard fails on any mention of AccessRule, Audience, Policy, Gate or an access method name in the matrix file
 - [Phase 12]: 12-03: UnresolvedPayments is declared Admin yes; its visibility depends on an unresolved card payment existing, flagged for owner sign-off in 12-08
+- [Phase 12]: 12-05: search and select results are attributed to the entity that produced them (resource model, option key = row primary key), because several entities share the same canary text
+- [Phase 12]: 12-05: the test-only CanaryRecordResource is asked for global search directly; an option no registered entity owns goes into every entity's blob so it fails loudly
 
 ### Pending Todos
 
@@ -936,6 +939,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T23:37:56.469Z
-Stopped at: Completed 12-03-PLAN.md
+Last session: 2026-10-23T23:57:46.337Z
+Stopped at: Completed 12-05-PLAN.md
 Resume file: None
