@@ -752,7 +752,7 @@ Plans:
   4. Every saved edit replaces the stored PDF and its QR code and renews the card link when amount or currency change; nothing is sent automatically, and an edit never interleaves with a queued or sending e-mail
   5. A Partner sees only the current version of an edited invoice and none of the lock, unlock or edit surfaces or history
 
-**Plans:** 10/12 plans executed in 9 waves
+**Plans:** 11/12 plans executed in 9 waves
 
 Plans:
 **Wave 1**
@@ -780,7 +780,7 @@ Plans:
 - [x] 10.1-08-PLAN.md — Currency change with CNB figures of the issue date, re-converted time lines, bank and card link; refused with payments or credit notes (owner ruling in D-06)
 
 **Wave 8** *(blocked on Wave 7 completion)*
-- [ ] 10.1-09-PLAN.md — Linked time and fixed amounts added and released on an open issued document
+- [x] 10.1-09-PLAN.md — Linked time and fixed amounts added and released on an open issued document
 
 **Wave 9** *(blocked on Wave 8 completion)*
 - [ ] 10.1-10-PLAN.md — Edit-versus-send concurrency proof, end-to-end journey, Partner sweep, CONTRIBUTING hand-over and phase gate

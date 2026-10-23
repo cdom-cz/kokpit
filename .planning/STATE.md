@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: "10.1"
 current_phase_name: Invoices stay fully editable until sent, with a manual unlock (INSERTED)
 status: executing
-stopped_at: Completed 10.1-08-PLAN.md
-last_updated: "2026-10-23T01:23:33.540Z"
+stopped_at: Completed 10.1-09-PLAN.md
+last_updated: "2026-10-23T01:42:15.501Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 10.1 execution started
-state_head: d1162926a700223ac9678a48e87346ca40d48072
+state_head: e9b177ba0a5d568122af22713290b5d081f595b0
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 257
-  completed_plans: 255
+  completed_plans: 256
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10.1 (Invoices stay fully editable until sent, with a manual unlock (INSERTED)) — EXECUTING
-Plan: 11 of 12
+Plan: 12 of 12
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 10.1 execution started
 
@@ -318,6 +318,7 @@ Progress: [████░░░░░░] 44%
 | Phase 10.1 P06 | 75min | 3 tasks | 10 files |
 | Phase 10.1 P07 | 70 min | 3 tasks | 7 files |
 | Phase 10.1 P08 | 60 min | 3 tasks | 10 files |
+| Phase 10.1 P09 | 75min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -795,6 +796,8 @@ Recent decisions affecting current work:
 - [Phase 10.1]: 10.1-08: freezeAt() takes persistTotals (default true); a currency change leaves the row save to the Action so a never-sent document keeps one history row
 - [Phase 10.1]: 10.1-08: a currency change uses the CNB lists of the stored issue date (A6), the editor preview uses the same day; refusals of a currency change are all keyed under currency
 - [Phase 10.1]: 10.1-08: currency choices (bank account currencies, client currency, document currency) live in IssuedDocumentRules::currencyChoices(), shared by the editor and the Action
+- [Phase 10.1]: 10.1-09: an issued document that cannot take time is refused under the field document; an add, release or fixed amount that changes nothing skips the finisher
+- [Phase 10.1]: 10.1-09: the issued editor keeps the linked time tab as its only relation manager so the Přidat nový čas button has a dialog to open
 
 ### Pending Todos
 
@@ -857,6 +860,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T01:23:32.389Z
-Stopped at: Completed 10.1-08-PLAN.md
+Last session: 2026-10-23T01:42:14.348Z
+Stopped at: Completed 10.1-09-PLAN.md
 Resume file: None
