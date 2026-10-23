@@ -244,3 +244,61 @@ describe('what the audit row holds', function (): void {
             ->and($shown)->not->toContain(str_repeat('x', 81));
     });
 });
+
+describe('how the history tab reads an edit row', function (): void {
+    it('names edited lines, party fields and the note in Czech', function (): void {
+        $invoice = editAuditSentAndUnlocked();
+        $before = InvoiceAudit::snapshot($invoice);
+        $before['items.2.quantity'] = '9.0000';
+        $before['customer.name'] = 'Former Example Client';
+        $before['note'] = 'Former example note.';
+
+        InvoiceAudit::edited($invoice, $this->admin, $before);
+
+        $edited = editAuditRows($invoice, 'invoice_edited');
+        $shown = ActivityPresenter::changes($edited[0]);
+
+        expect($edited)->toHaveCount(1)
+            ->and($shown)->toContain('Položka 2: Množství: 9.0000 -> 1.0000')
+            ->and($shown)->toContain('Odběratel: Název: Former Example Client -> '.($invoice->customer_snapshot['name'] ?? ''))
+            ->and($shown)->toContain('Poznámka na dokladu: Former example note. -> '.__('kokpit.activity.empty_value'))
+            ->and($shown)->not->toContain('items.2')
+            ->and($shown)->not->toContain('customer.name');
+    });
+
+    it('names a supplier field and a line text', function (): void {
+        $invoice = editAuditSentAndUnlocked();
+        $before = InvoiceAudit::snapshot($invoice);
+        $before['supplier.vat_id'] = 'CZ00000000';
+        $before['items.1.description'] = 'Former text';
+
+        InvoiceAudit::edited($invoice, $this->admin, $before);
+
+        $shown = ActivityPresenter::changes(editAuditRows($invoice, 'invoice_edited')[0]);
+
+        expect($shown)->toContain('Dodavatel: DIČ: CZ00000000 -> ')
+            ->and($shown)->toContain('Položka 1: Text: Former text -> Design');
+    });
+
+    it('keeps the raw name for a dotted key of another subject', function (): void {
+        $activity = new Activity;
+        $activity->setAttribute('subject_type', 'client');
+        $activity->setAttribute('attribute_changes', ['attributes' => ['items.2.quantity' => '3'], 'old' => ['items.2.quantity' => '1']]);
+
+        expect(ActivityPresenter::changes($activity))->toBe('items.2.quantity: 1 -> 3');
+    });
+
+    it('keeps the plain label of an ordinary invoice key', function (): void {
+        $activity = new Activity;
+        $activity->setAttribute('subject_type', 'invoice');
+        $activity->setAttribute('attribute_changes', ['attributes' => ['total_minor' => 3], 'old' => ['total_minor' => 1]]);
+
+        expect(ActivityPresenter::changes($activity))->toBe('Celkem (v nejmenších jednotkách měny): 1 -> 3');
+    });
+
+    it('has a Czech label for the three events of the lock', function (): void {
+        expect(__('kokpit.activity.events.invoice_edited'))->toBe('Doklad upraven po odeslání')
+            ->and(__('kokpit.activity.events.invoice_locked'))->toBe('Doklad uzamčen odesláním')
+            ->and(__('kokpit.activity.events.invoice_unlocked'))->toBe('Doklad odemčen');
+    });
+});

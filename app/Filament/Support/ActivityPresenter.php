@@ -155,7 +155,35 @@ final class ActivityPresenter
             return $name;
         }
 
+        if ($alias === 'invoice') {
+            $composite = self::invoiceCompositeLabel($name);
+
+            if ($composite !== null) {
+                return $composite;
+            }
+        }
+
         return self::translatedOr('kokpit.activity.attributes.'.$alias.'.'.$name, $name);
+    }
+
+    /**
+     * The label of an edit key of an invoice that names a part of the document (R-10.1-05-3): `items.<n>.<field>` reads
+     * "Položka <n>: <field>", `customer.<field>` and `supplier.<field>` read "Odběratel: <field>" and
+     * "Dodavatel: <field>". Any other key is not composite and keeps the plain lookup.
+     */
+    private static function invoiceCompositeLabel(string $name): ?string
+    {
+        $base = 'kokpit.activity.attributes.invoice.';
+
+        if (preg_match('/^items\.(\d+)\.([a-z_]+)$/', $name, $match) === 1) {
+            return __($base.'item_label', ['position' => $match[1]]).': '.self::translatedOr($base.'item_fields.'.$match[2], $match[2]);
+        }
+
+        if (preg_match('/^(customer|supplier)\.([a-z_]+)$/', $name, $match) === 1) {
+            return __($base.$match[1].'_label').': '.self::translatedOr($base.'party_fields.'.$match[2], $match[2]);
+        }
+
+        return null;
     }
 
     /**
