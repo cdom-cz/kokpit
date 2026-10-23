@@ -9,6 +9,7 @@ use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Enums\InvoiceState;
@@ -50,7 +51,9 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * its own issue. A locked row accepts no write at all, a timestamp-only one included (the database refuses it with
  * KP001 for every writer), and an open issued row accepts every write except the number, variable symbol, kind,
  * client, state, VAT mode, appearance snapshot, document links, storno marker and issue time, which never change
- * once the document is issued. There is no PDF relation: the link to the stored PDF is the Admin-only
+ * once the document is issued. The open columns of an issued row are the currency, language, dates, totals, note,
+ * the three snapshots and the payment method (Phase 14, D-09); the method is `transfer` or `online` for an invoice
+ * and a proforma and null for a credit note. There is no PDF relation: the link to the stored PDF is the Admin-only
  * `invoice_admin.pdf_document_id`.
  *
  * Only the printed note is fillable. The client, kind, state, number, totals, snapshots and links are set with
@@ -66,6 +69,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string $currency
  * @property InvoiceLanguage $language
  * @property InvoiceLockState $lock_state
+ * @property DocumentPaymentMethod|null $payment_method null for a credit note only
  * @property VatMode $vat_mode
  * @property CarbonImmutable|null $issue_date
  * @property CarbonImmutable|null $taxable_supply_date
@@ -95,6 +99,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
     'variable_symbol',
     'currency',
     'language',
+    'payment_method',
     'vat_mode',
     'issue_date',
     'taxable_supply_date',
@@ -347,6 +352,7 @@ final class Invoice extends KokpitModel implements PartnerIsolated
             'kind' => InvoiceKind::class,
             'state' => InvoiceState::class,
             'lock_state' => InvoiceLockState::class,
+            'payment_method' => DocumentPaymentMethod::class,
             'language' => InvoiceLanguage::class,
             'vat_mode' => VatMode::class,
             'issue_date' => 'immutable_date',

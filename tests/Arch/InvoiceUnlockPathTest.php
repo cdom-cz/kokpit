@@ -6,8 +6,8 @@ declare(strict_types=1);
  * Two confinements of the lock of an issued document (plan 10.1-02; D-02, D-03, D-12; threat T-10.1-06).
  *
  * 1. Only UnlockInvoice sets the transaction-local setting that lets the database move an invoice from locked to open.
- *    The literal may appear in no other application file and in no migration other than the one that creates the row
- *    guard; tests may use it to prove the guard.
+ *    The literal may appear in no other application file and in no migration other than the ones that create or
+ *    re-create the row guard; tests may use it to prove the guard.
  *
  * 2. The locked state is written only by the successful send of a document e-mail (SendInvoiceEmail) and by the issue of
  *    a credit note (DocumentIssuer), and named by the model that casts it (Invoice). There is no manual "mark as sent"
@@ -48,9 +48,12 @@ it('names the unlock setting in no application file other than UnlockInvoice', f
     expect(invoiceLockFilesNaming(dirname(__DIR__, 2), 'app', INVOICE_UNLOCK_FLAG))->toBe(['app/Domain/Invoicing/Actions/UnlockInvoice.php']);
 });
 
-it('names the unlock setting in no migration other than the one that creates the row guard', function (): void {
+it('names the unlock setting in no migration other than the ones that create or re-create the row guard', function (): void {
+    // Phase 14 re-creates the same row-guard function (CREATE OR REPLACE) to open `payment_method`, so its migration
+    // carries the unchanged unlock branch of that function; it sets nothing.
     expect(invoiceLockFilesNaming(dirname(__DIR__, 2), 'database/migrations', INVOICE_UNLOCK_FLAG))->toBe([
         'database/migrations/2026_10_22_000100_add_lock_state_to_invoices.php',
+        'database/migrations/2026_10_24_000200_add_payment_method_to_invoices.php',
     ]);
 });
 

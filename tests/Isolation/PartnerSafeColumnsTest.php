@@ -185,7 +185,8 @@ it('pins the Partner-safe column list of the invoices table', function (): void 
         'created_at',
         'updated_at',
         'lock_state',
-    ], 'The invoices table is readable by Partners for issued documents. Put Admin-only attributes (an internal note, a CNB rate, a CZK total, a payment, the PDF link) into invoice_admin, invoice_item_sources or another Admin-only table; extend this list only after reviewing that every Partner may read the new column. lock_state (open or locked) was reviewed in Phase 10.1: it carries no reason, sender or time of the lock, which live only in the Admin-only activity log.');
+        'payment_method',
+    ], 'The invoices table is readable by Partners for issued documents. Put Admin-only attributes (an internal note, a CNB rate, a CZK total, a payment, the PDF link) into invoice_admin, invoice_item_sources or another Admin-only table; extend this list only after reviewing that every Partner may read the new column. lock_state (open or locked) was reviewed in Phase 10.1: it carries no reason, sender or time of the lock, which live only in the Admin-only activity log. payment_method (transfer or online) was reviewed in Phase 14: every Partner may read how the own document is paid; it carries no account, price, rate or token.');
 });
 
 it('pins the Partner-safe column list of the invoice_items table', function (): void {
@@ -208,10 +209,15 @@ it('pins the Partner-safe column list of the invoice_items table', function (): 
 });
 
 it('has no invoices or invoice_items column whose name looks like a rate, an internal note, a CNB or CZK figure, a payment, a source or a billing attribute', function (): void {
+    // `invoices.payment_method` is the one reviewed exception (Phase 14, pinned in the list above): it says only how the
+    // own document is paid and carries no account, price, rate or token. Any other `payment` column still fails here.
+    $reviewed = ['invoices' => ['payment_method'], 'invoice_items' => []];
+
     foreach (['invoices', 'invoice_items'] as $table) {
         $suspicious = array_values(array_filter(
             Schema::getColumnListing($table),
-            static fn (string $column): bool => preg_match('/hourly|internal|cnb|czk|exchange|payment|source|cost|budget|estimate|billing/i', $column) === 1,
+            static fn (string $column): bool => ! in_array($column, $reviewed[$table], true)
+                && preg_match('/hourly|internal|cnb|czk|exchange|payment|source|cost|budget|estimate|billing/i', $column) === 1,
         ));
 
         expect($suspicious)->toBe([], "Admin-only attributes belong in invoice_admin, invoice_item_sources or another Admin-only table, not in the Partner-readable {$table} table.");

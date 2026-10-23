@@ -197,6 +197,12 @@ return [
         'locked' => 'Uzamčeno',
     ],
 
+    // Phase 14 (D-01): how one invoice or proforma is paid.
+    'document_payment_method' => [
+        'transfer' => 'Bankovní převod',
+        'online' => 'Online platba kartou',
+    ],
+
     'invoice_status' => [
         'draft' => 'Koncept',
         'unpaid' => 'Nezaplaceno',

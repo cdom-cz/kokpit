@@ -616,6 +616,62 @@ describe('what an issued document must carry', function (): void {
     });
 });
 
+describe('the payment method of a document (Phase 14; D-01, D-02, OA-7)', function (): void {
+    it('defaults a raw-inserted invoice or proforma draft to transfer, whoever writes it', function (string $kind): void {
+        $id = invoiceTablesInsert(['kind' => $kind]);
+
+        expect(DB::selectOne('select payment_method from invoices where id = ?', [$id])->payment_method)->toBe('transfer');
+    })->with(['invoice', 'proforma']);
+
+    it('keeps a raw-inserted credit note without a method and refuses a method on it', function (): void {
+        $clientId = invoiceTablesClient();
+        $invoice = invoiceTablesInsert(['client_id' => $clientId]);
+        $credit = invoiceTablesInsertCreditNote($invoice, $clientId);
+
+        expect(DB::selectOne('select payment_method from invoices where id = ?', [$credit])->payment_method)->toBeNull();
+
+        RawSql::expectSqlState('23514', fn () => DB::update("update invoices set payment_method = 'transfer' where id = ?", [$credit]));
+        RawSql::expectSqlState('23514', fn () => invoiceTablesInsertCreditNote($invoice, $clientId, ['payment_method' => 'transfer']));
+    });
+
+    it('keeps an explicit method on insert and refuses any value but transfer and online', function (): void {
+        $online = invoiceTablesInsert(['payment_method' => 'online']);
+
+        expect(DB::selectOne('select payment_method from invoices where id = ?', [$online])->payment_method)->toBe('online');
+
+        RawSql::expectSqlState('23514', fn () => invoiceTablesInsert(['payment_method' => 'card']));
+        RawSql::expectSqlState('23514', fn () => invoiceTablesInsert(['payment_method' => '']));
+    });
+
+    it('refuses to remove the method of an invoice or a proforma after insert', function (string $kind): void {
+        $id = invoiceTablesInsert(['kind' => $kind]);
+
+        RawSql::expectSqlState('23514', fn () => DB::update('update invoices set payment_method = null where id = ?', [$id]));
+        RawSql::expectSqlState('23514', fn () => DB::update("update invoices set payment_method = 'card' where id = ?", [$id]));
+        RawSql::expectAllowed(fn () => DB::update("update invoices set payment_method = 'online' where id = ?", [$id]));
+    })->with(['invoice', 'proforma']);
+
+    it('lets an issued online invoice or proforma carry no bank snapshot and refuses one with a snapshot (OA-7)', function (string $kind): void {
+        $id = invoiceTablesInsert(['kind' => $kind, 'payment_method' => 'online']);
+
+        RawSql::expectSqlState('23514', fn () => invoiceTablesIssue($id));
+        RawSql::expectAllowed(fn () => invoiceTablesIssue($id, ['bank_snapshot' => null]));
+    })->with(['invoice', 'proforma']);
+
+    it('requires the bank snapshot of an issued transfer invoice or proforma (OA-7)', function (string $kind): void {
+        $id = invoiceTablesInsert(['kind' => $kind, 'payment_method' => 'transfer']);
+
+        RawSql::expectSqlState('23514', fn () => invoiceTablesIssue($id, ['bank_snapshot' => null]));
+        RawSql::expectAllowed(fn () => invoiceTablesIssue($id));
+    })->with(['invoice', 'proforma']);
+
+    it('still requires the due date of an issued online document', function (): void {
+        $id = invoiceTablesInsert(['payment_method' => 'online']);
+
+        RawSql::expectSqlState('23514', fn () => invoiceTablesIssue($id, ['bank_snapshot' => null, 'due_date' => null]));
+    });
+});
+
 /**
  * The arguments a trigger was created with, read from pg_trigger.tgargs (NUL-separated, each one terminated).
  *

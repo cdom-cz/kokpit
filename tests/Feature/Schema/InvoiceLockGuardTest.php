@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Models\Invoice;
@@ -60,6 +61,48 @@ describe('the tracer: issue, open, lock', function (): void {
             ->and($locked->number)->toBe($open->number)
             ->and($locked->total_minor)->toBe($open->total_minor)
             ->and(Invoice::query()->whereKey($open->id)->value('lock_state'))->toBe(InvoiceLockState::Locked);
+    });
+});
+
+describe('the payment method of a document (Phase 14; D-01, D-02, D-09; T-14-04)', function (): void {
+    it('reads transfer on an issued invoice, and accepts a raw switch to online without the bank snapshot while the document is open', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        expect($invoice->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and(DB::selectOne('select payment_method from invoices where id = ?', [$invoice->id])->payment_method)->toBe('transfer');
+
+        RawSql::expectAllowed(fn () => DB::update("update invoices set payment_method = 'online', bank_snapshot = null, updated_at = now() where id = ?", [$invoice->id]));
+
+        expect(DB::selectOne('select payment_method, bank_snapshot from invoices where id = ?', [$invoice->id]))
+            ->payment_method->toBe('online')
+            ->bank_snapshot->toBeNull();
+    });
+
+    it('refuses the same switch with KP001 once the document is locked, and a method change that keeps the snapshot', function (): void {
+        $invoice = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
+
+        RawSql::expectSqlState('KP001', fn () => DB::update("update invoices set payment_method = 'online', bank_snapshot = null, updated_at = now() where id = ?", [$invoice->id]));
+        RawSql::expectSqlState('KP001', fn () => DB::update("update invoices set payment_method = 'online' where id = ?", [$invoice->id]));
+
+        expect(DB::selectOne('select payment_method from invoices where id = ?', [$invoice->id])->payment_method)->toBe('transfer');
+    });
+
+    it('switches back from online to transfer on an open document when the snapshot is restored', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $snapshot = json_encode($invoice->bank_snapshot);
+
+        DB::update("update invoices set payment_method = 'online', bank_snapshot = null where id = ?", [$invoice->id]);
+
+        RawSql::expectSqlState('23514', fn () => DB::update("update invoices set payment_method = 'transfer' where id = ?", [$invoice->id]));
+        RawSql::expectAllowed(fn () => DB::update("update invoices set payment_method = 'transfer', bank_snapshot = ? where id = ?", [$snapshot, $invoice->id]));
+    });
+
+    it('keeps a locked online document frozen too', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        DB::update("update invoices set payment_method = 'online', bank_snapshot = null where id = ?", [$invoice->id]);
+        InvoiceFixtures::lock($invoice->refresh());
+
+        RawSql::expectSqlState('KP001', fn () => DB::update("update invoices set payment_method = 'transfer', bank_snapshot = '{\"account\":\"fictional\"}' where id = ?", [$invoice->id]));
     });
 });
 
@@ -452,8 +495,8 @@ describe('the pinned design', function (): void {
         expect($columns[1])->toBe([
             'currency', 'language', 'issue_date', 'taxable_supply_date', 'due_date',
             'subtotal_minor', 'vat_minor', 'total_minor', 'note',
-            'supplier_snapshot', 'customer_snapshot', 'bank_snapshot', 'lock_state', 'updated_at',
-        ], 'Widening the open list makes a column of an issued document writable; that needs an owner decision (D-08, D-12).');
+            'supplier_snapshot', 'customer_snapshot', 'bank_snapshot', 'payment_method', 'lock_state', 'updated_at',
+        ], 'Widening the open list makes a column of an issued document writable; that needs an owner decision (D-08, D-12; D-09 of Phase 14 opened payment_method on purpose).');
     });
 
     it('names the three child guards with the lock as the lifecycle column', function (): void {
@@ -517,9 +560,12 @@ describe('the migration', function (): void {
 
     it('backfills credit notes and sent documents as locked and every other document as open, without touching updated_at', function () use ($oldModelDocument, $email): void {
         $migration = require base_path('database/migrations/2026_10_22_000100_add_lock_state_to_invoices.php');
+        $paymentMethod = require base_path('database/migrations/2026_10_24_000200_add_payment_method_to_invoices.php');
         $clientId = InvoiceFixtures::client()->id;
         $userId = Canary::admin()->id;
 
+        // Phase 14 sits on top of the lock: its method column is rolled back first and put back last.
+        $paymentMethod->down();
         $migration->down();
 
         $sent = $oldModelDocument($clientId, 'invoice', true);
@@ -534,6 +580,7 @@ describe('the migration', function (): void {
         $email($failedOnly, 'queued', $userId);
 
         $migration->up();
+        $paymentMethod->up();
 
         $locks = collect(DB::select('select id, lock_state, updated_at from invoices where id in (?, ?, ?, ?, ?)', [$sent, $failedOnly, $proforma, $credit, $draft]))->keyBy('id');
 
@@ -554,8 +601,10 @@ describe('the migration', function (): void {
 
     it('restores the frozen-at-issue model on down() and the lock on up()', function () use ($oldModelDocument): void {
         $migration = require base_path('database/migrations/2026_10_22_000100_add_lock_state_to_invoices.php');
+        $paymentMethod = require base_path('database/migrations/2026_10_24_000200_add_payment_method_to_invoices.php');
         $clientId = InvoiceFixtures::client()->id;
 
+        $paymentMethod->down();
         $migration->down();
 
         $hasTrigger = static fn (string $table, string $trigger): bool => (int) DB::selectOne(
@@ -572,6 +621,7 @@ describe('the migration', function (): void {
         RawSql::expectSqlState('KP001', fn () => DB::update("update invoices set note = 'later' where id = ?", [$issued]));
 
         $migration->up();
+        $paymentMethod->up();
 
         expect(Schema::hasColumn('invoices', 'lock_state'))->toBeTrue()
             ->and($hasTrigger('invoices', 'invoices_frozen_guard'))->toBeFalse()
