@@ -10,7 +10,9 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\UpdateDraft;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
@@ -125,6 +127,64 @@ final class InvoiceFixtures
     }
 
     /**
+     * A fictional Europe 2 bank account (no id yet; saving the settings gives it one). The IBAN is composed at runtime
+     * from the digit fragment, so two accounts with different fragments are two different accounts.
+     */
+    public static function account(string $label, string $currency, string $fragment): BankAccount
+    {
+        return new BankAccount(BankAccountFormat::Europe2, $label, $currency, iban: FictionalIban::czech($fragment));
+    }
+
+    /**
+     * Replaces the bank accounts of the settings with the given ones, in this order, as system, and returns the stored
+     * accounts with their ids.
+     *
+     * @return list<BankAccount>
+     */
+    public static function configureAccounts(BankAccount ...$accounts): array
+    {
+        $stored = app(PartnerContext::class)->runAsSystem(static function () use ($accounts): array {
+            $banks = app(BankAccountSettings::class);
+            $banks->accounts = array_values($accounts);
+            $banks->save();
+
+            return $banks->accounts;
+        });
+
+        app()->forgetScopedInstances();
+
+        return $stored;
+    }
+
+    /**
+     * The id of the configured account with the label.
+     */
+    public static function accountId(string $label): string
+    {
+        $accounts = app(PartnerContext::class)->runAsSystem(static fn (): array => app(BankAccountSettings::class)->accounts);
+
+        foreach ($accounts as $account) {
+            if ($account->label === $label && $account->id !== null) {
+                return $account->id;
+            }
+        }
+
+        throw new \InvalidArgumentException('No configured bank account is labelled '.$label.'.');
+    }
+
+    /**
+     * The draft switched to online payment through UpdateDraft as the Admin; the caller enables card payment first.
+     */
+    public static function online(Invoice $draft): Invoice
+    {
+        $admin = Canary::admin();
+
+        test()->actingAs($admin);
+
+        return app(UpdateDraft::class)->handle($admin, $draft, ['payment_method' => DocumentPaymentMethod::Online->value]);
+    }
+
+    /**
      * One stored CNB list row, as the download writes it.
      */
     public static function cnbRate(string $currency, string $day, string $rate, int $unitAmount = 1): void
@@ -158,6 +218,30 @@ final class InvoiceFixtures
         $items = $items === [] ? [self::item('Example work', '1', '1000.00')] : $items;
 
         return app(IssueDocument::class)->handle($admin, self::draft($client, $items, $kind, $admin));
+    }
+
+    /**
+     * Locks an issued invoice or proforma the way the sent e-mail does (IN-11): a model save of `lock_state` as
+     * system, nothing else on the row. Returns the refreshed document.
+     */
+    public static function lock(Invoice $issued): Invoice
+    {
+        return app(PartnerContext::class)->runAsSystem(static function () use ($issued): Invoice {
+            $row = Invoice::query()->whereKey($issued->id)->firstOrFail();
+            $row->forceFill(['lock_state' => InvoiceLockState::Locked])->save();
+
+            return $row->refresh();
+        });
+    }
+
+    /**
+     * An issued document that is locked: issued through the real pipeline, then locked like a sent one.
+     *
+     * @param  list<array<string, mixed>>  $items  lines built with {@see InvoiceFixtures::item()}
+     */
+    public static function lockedIssued(Client $client, array $items = [], InvoiceKind $kind = InvoiceKind::Invoice): Invoice
+    {
+        return self::lock(self::issued($client, $items, $kind));
     }
 
     /**
@@ -214,6 +298,7 @@ final class InvoiceFixtures
 
             $credit->forceFill([
                 'state' => InvoiceState::Issued,
+                'lock_state' => InvoiceLockState::Locked,
                 'number' => app(DocumentNumbering::class)->next(DocumentKind::CreditNote, CarbonImmutable::now(FilamentTimezone::get())),
                 'issue_date' => CarbonImmutable::now(FilamentTimezone::get())->format('Y-m-d'),
                 'supplier_snapshot' => $source->supplier_snapshot,

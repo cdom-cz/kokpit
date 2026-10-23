@@ -12,6 +12,7 @@ use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Actions\UpdateDraft;
+use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
@@ -137,8 +138,41 @@ describe('the heading and the state', function (): void {
             ->assertSee('4. 11. 2026')
             ->assertSee((string) $invoice->variable_symbol)
             ->assertSee('Čeština')
-            ->assertSee('Převodem')
+            ->assertSee('Způsob úhrady')
+            ->assertSee('Bankovní převod')
+            ->assertDontSee('Převodem')
+            ->assertSee('Bankovní účet')
+            ->assertSee('IBAN')
             ->assertDontSee('Datum zdanitelného plnění');
+    });
+
+    it('shows the online method of a document and no bank account, but keeps the variable symbol and the card switch', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        app(PartnerContext::class)->runAsSystem(static function () use ($invoice): void {
+            DB::update("update invoices set payment_method = 'online', bank_snapshot = null where id = ?", [$invoice->id]);
+            DB::update('update invoice_admin set card_payment_enabled = true where invoice_id = ?', [$invoice->id]);
+        });
+
+        detail($invoice)
+            ->assertSee('Způsob úhrady')
+            ->assertSee('Online platba kartou')
+            ->assertDontSee('Bankovní převod')
+            ->assertDontSee('Bankovní účet')
+            ->assertDontSee('IBAN')
+            ->assertSee('Variabilní symbol')
+            ->assertSee((string) $invoice->variable_symbol)
+            ->assertSee('Platba kartou');
+    });
+
+    it('shows neither the method nor the bank account on a credit note', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $creditNote = app(IssueCreditNote::class)->storno($this->admin, $invoice);
+
+        detail($creditNote)
+            ->assertDontSee('Způsob úhrady')
+            ->assertDontSee('Bankovní převod')
+            ->assertDontSee('Bankovní účet');
     });
 });
 
@@ -501,7 +535,7 @@ describe('the relation tabs', function (): void {
             ->assertSee('Platbu zaznamenáte tlačítkem Zaznamenat platbu.');
     });
 
-    it('lists the billed time read only, with the total in the footer and no add or unlink', function (): void {
+    it('lists the billed time of a locked document read only, with the total in the footer and no add or unlink', function (): void {
         $client = InvoiceFixtures::client();
         $project = detailProject($client, 'Alpha project');
         $one = detailEntry($project, '2026-09-10 08:00:00', '2026-09-10 09:00:00', 'Example one');
@@ -516,7 +550,7 @@ describe('the relation tabs', function (): void {
             'without_project' => false,
             'grouping' => 'project',
         ]);
-        $invoice = app(IssueDocument::class)->handle($this->admin, $draft);
+        $invoice = InvoiceFixtures::lock(app(IssueDocument::class)->handle($this->admin, $draft));
 
         $tab = detailTab(InvoiceEntriesRelationManager::class, $invoice)
             ->assertCanSeeTableRecords([$one, $two])
@@ -596,5 +630,124 @@ describe('the relation tabs', function (): void {
 
             detailTab($manager, $invoice)->assertForbidden();
         }
+    });
+});
+
+describe('the lock of a sent document', function (): void {
+    it('shows the badge, the locked banner and the unlock action on a locked invoice', function (): void {
+        $invoice = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
+
+        detail($invoice)
+            ->assertSee('Uzamčeno')
+            ->assertSee('Doklad byl odeslán e-mailem a je uzamčen. Upravit ho lze až po odemknutí s uvedením důvodu.')
+            ->assertDontSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.')
+            ->assertActionExists(TestAction::make('unlock')->schemaComponent('locked', schema: 'infolist'))
+            ->assertActionVisible(TestAction::make('unlock')->schemaComponent('locked', schema: 'infolist'));
+    });
+
+    it('opens the document with a reason and tells the Admin', function (): void {
+        $invoice = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
+
+        $page = detail($invoice)->callAction(
+            TestAction::make('unlock')->schemaComponent('locked', schema: 'infolist'),
+            ['reason' => 'Wrong example quantity on line one'],
+        );
+
+        $sent = detailNotifications();
+
+        expect($sent)->toHaveCount(1)
+            ->and($sent[0]['status'])->toBe('success')
+            ->and($sent[0]['title'])->toBe('Doklad je odemčen')
+            ->and($invoice->refresh()->lock_state->value)->toBe('open');
+
+        $page
+            ->assertSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.')
+            ->assertDontSee('Doklad byl odeslán e-mailem a je uzamčen.')
+            ->assertDontSee('Odemknout');
+    });
+
+    it('refuses a short reason under the field and leaves the document locked', function (): void {
+        $invoice = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
+
+        detail($invoice)
+            ->callAction(TestAction::make('unlock')->schemaComponent('locked', schema: 'infolist'), ['reason' => 'too short'])
+            ->assertHasActionErrors(['reason']);
+
+        expect($invoice->refresh()->isLocked())->toBeTrue();
+    });
+
+    it('shows the open banner and no unlock action on an open invoice', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        detail($invoice)
+            ->assertSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.')
+            ->assertDontSee('Uzamčeno')
+            ->assertDontSee('Doklad byl odeslán e-mailem a je uzamčen.')
+            ->assertDontSee('Odemknout');
+    });
+
+    it('shows neither banner nor action on a credit note', function (): void {
+        $invoice = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
+        $credit = app(IssueCreditNote::class)->storno($this->admin, $invoice);
+
+        detail($credit)
+            ->assertDontSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.')
+            ->assertDontSee('Doklad byl odeslán e-mailem a je uzamčen.')
+            ->assertDontSee('Odemknout');
+    });
+});
+
+describe('the warnings of a corrected total and the edit action', function (): void {
+    it('warns on a paid invoice whose corrected total is below what was paid, and keeps it paid', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        detailPay($invoice, '1000.00');
+        $line = app(PartnerContext::class)->runAsSystem(static fn (): InvoiceItem => InvoiceItem::query()->where('invoice_id', $invoice->id)->firstOrFail());
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['items' => [[
+            'id' => $line->id,
+            'description' => $line->description,
+            'quantity' => '1',
+            'unit' => $line->unit,
+            'unit_price' => $line->unitPrice()->toMajor(),
+        ]]]);
+
+        detail($invoice)
+            ->assertSee(__('invoices.warnings.total_below_paid', ['amount' => detailMoney(100000)]))
+            ->assertSee('Zaplaceno')
+            ->assertDontSee('Celková částka je nižší než dobropisovaná částka');
+    });
+
+    it('warns on an invoice whose total is below the credit notes', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        $line = app(PartnerContext::class)->runAsSystem(static fn (): InvoiceItem => InvoiceItem::query()->where('invoice_id', $invoice->id)->firstOrFail());
+        app(IssueCreditNote::class)->partial($this->admin, $invoice, [$line->id => '1']);
+
+        // The edit keeps a credited line whole, so the total is set directly, the way a state that predates the rule looks.
+        app(PartnerContext::class)->runAsSystem(static function () use ($invoice): void {
+            Invoice::query()->whereKey($invoice->id)->firstOrFail()->forceFill(['subtotal_minor' => 40000, 'vat_minor' => 0, 'total_minor' => 40000])->save();
+        });
+
+        detail($invoice)
+            ->assertSee(__('invoices.warnings.total_below_credited', ['amount' => detailMoney(50000)]))
+            ->assertDontSee('Celková částka je nižší než už zaplacená částka');
+    });
+
+    it('shows no warning after an ordinary correction', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        detailPay($invoice, '400.00');
+
+        detail($invoice)
+            ->assertDontSee('Celková částka je nižší než');
+    });
+
+    it('offers "Upravit" on an open document only', function (): void {
+        $client = InvoiceFixtures::client();
+        $open = InvoiceFixtures::issued($client);
+        $locked = InvoiceFixtures::lockedIssued($client);
+        $credit = app(IssueCreditNote::class)->storno($this->admin, InvoiceFixtures::lockedIssued($client));
+
+        detail($open)->assertActionVisible('edit');
+        detail($locked)->assertActionHidden('edit');
+        detail($credit)->assertActionHidden('edit');
     });
 });

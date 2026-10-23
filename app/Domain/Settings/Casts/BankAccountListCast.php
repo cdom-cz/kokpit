@@ -11,6 +11,11 @@ use Spatie\LaravelSettings\SettingsCasts\SettingsCast;
 /**
  * Stores a list of bank accounts in the settings table as a list of arrays and
  * reads it back as BankAccount value objects.
+ *
+ * The stored arrays carry the account id (toStoredArray()); the snapshot shape
+ * of toArray() never does. A read returns the stored id as it is and never
+ * creates one: an id generated on read would differ on every request and
+ * detach documents from their account (D-04).
  */
 final class BankAccountListCast implements SettingsCast
 {
@@ -45,6 +50,6 @@ final class BankAccountListCast implements SettingsCast
      */
     public function set($payload): array
     {
-        return array_map(static fn (BankAccount $account): array => $account->toArray(), $payload);
+        return array_map(static fn (BankAccount $account): array => $account->toStoredArray(), $payload);
     }
 }

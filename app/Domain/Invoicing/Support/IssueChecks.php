@@ -6,13 +6,13 @@ namespace App\Domain\Invoicing\Support;
 
 use App\Domain\ExchangeRates\ExchangeRateConverter;
 use App\Domain\ExchangeRates\ExchangeRateMissing;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Settings\Numbering\InvalidNumberPattern;
-use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\NumberingSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
@@ -25,6 +25,13 @@ use Illuminate\Validation\ValidationException;
  * allocated, each with its Czech message. The UI asks {@see IssueChecks::blockers()} to show the list without
  * throwing; the issue pipeline asks {@see IssueChecks::assertIssuable()} on the locked row, so a stale page cannot
  * freeze an incomplete document (T-10-32).
+ *
+ * A transfer document needs a bank account to print (D-05, D-06): the account the draft chose, in any currency, or for a
+ * draft that chose none the first account of its currency; a chosen account that was removed from the settings is a
+ * `bank_missing` blocker, not silently replaced. A draft with a bank snapshot to copy (a converted invoice, WR-02) is not
+ * `bank_missing`: it prints that snapshot. An online document prints no bank details and needs no account, but it
+ * is paid by card: while the global setting is off, Stripe is not configured or the client's online-payment flag is off
+ * it is an `online_unavailable` blocker (P14-09), so a document nobody can pay is never issued.
  *
  * A draft whose lines are priced in other currencies needs the CNB list of each of them on the issue date, a
  * `cnb_missing` blocker for every currency without one (EX-03, ruling R-17-1). While the VAT-payer calculations are not
@@ -44,9 +51,10 @@ final readonly class IssueChecks
      *
      * @param  string  $today  the current Prague calendar day, `Y-m-d`
      * @param  array{rate: string, unit_amount: int, rate_date: string}|null  $exchangeSnapshot  a CNB trio the document will copy, so no list is needed
+     * @param  array<string, mixed>|null  $bankSnapshot  bank details the document will copy, so no account is needed
      * @return list<array{key: string, message: string}>
      */
-    public function blockers(Invoice $draft, string $today, ?array $exchangeSnapshot = null): array
+    public function blockers(Invoice $draft, string $today, ?array $exchangeSnapshot = null, ?array $bankSnapshot = null): array
     {
         $blockers = [];
         $add = static function (string $key, array $replace = []) use (&$blockers): void {
@@ -73,8 +81,14 @@ final readonly class IssueChecks
             $add('vat_payer_unsupported');
         }
 
-        if (! $creditNote && app(BankAccountSettings::class)->forCurrency($draft->currency) === null) {
-            $add('bank_missing', ['currency' => $draft->currency]);
+        if (! $creditNote && $draft->payment_method !== DocumentPaymentMethod::Online && $bankSnapshot === null && DocumentPayment::account($draft) === null) {
+            $add('bank_missing');
+        }
+
+        // P14-09: an online document is paid by card, so card payment must work now. A draft converted from a proforma
+        // is exempt: the carried payments pay it in full and it offers nothing by card.
+        if (! $creditNote && $draft->payment_method === DocumentPaymentMethod::Online && $draft->proforma_id === null && DocumentPayment::onlineUnavailableReason($draft) !== null) {
+            $add('online_unavailable');
         }
 
         if ($draft->currency !== 'CZK' && $exchangeSnapshot === null && ! $this->hasRate($draft->currency, $issueDate)) {
@@ -116,12 +130,13 @@ final readonly class IssueChecks
 
     /**
      * @param  array{rate: string, unit_amount: int, rate_date: string}|null  $exchangeSnapshot
+     * @param  array<string, mixed>|null  $bankSnapshot
      *
      * @throws ValidationException keyed by the key of every blocker, a key with the message of each of its blockers
      */
-    public function assertIssuable(Invoice $draft, string $today, ?array $exchangeSnapshot = null): void
+    public function assertIssuable(Invoice $draft, string $today, ?array $exchangeSnapshot = null, ?array $bankSnapshot = null): void
     {
-        $blockers = $this->blockers($draft, $today, $exchangeSnapshot);
+        $blockers = $this->blockers($draft, $today, $exchangeSnapshot, $bankSnapshot);
 
         if ($blockers === []) {
             return;

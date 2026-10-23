@@ -51,6 +51,10 @@ use LogicException;
  * Two callers, one core: {@see RecordPayment::handle()} is the Admin's, with the Gate; {@see RecordPayment::recordLocked()}
  * is what both it and a queue job without a user (a matched Stripe card payment) run once the document is locked, so a
  * payment arriving by card obeys the same rules, income included, as one typed by hand.
+ *
+ * Every payment recorded through that core also queues one confirmation e-mail to the client
+ * ({@see QueuePaymentConfirmation}, Phase 13); the copy {@see RecordPayment::carry()} makes of a proforma payment on
+ * the converted invoice queues none, because the client was told when the proforma was paid.
  */
 final readonly class RecordPayment
 {
@@ -59,6 +63,7 @@ final readonly class RecordPayment
         private InvoiceBalances $balances,
         private ExchangeRateConverter $rates,
         private PaymentLinks $paymentLinks,
+        private QueuePaymentConfirmation $confirmations,
     ) {}
 
     /**
@@ -89,7 +94,8 @@ final readonly class RecordPayment
      * the manual path above, and a queue job that matched a Stripe payment, which has no user (PA-06, PA-08; D-10,
      * D-13). It checks that the document can be paid (`payment_not_allowed`), that the CNB list of the income date
      * exists for an invoice in a foreign currency, inserts the payment and, for an invoice, books the income through
-     * the one finance write path (CONTEXT rule: income only through the rules of RecordPayment).
+     * the one finance write path (CONTEXT rule: income only through the rules of RecordPayment). Once the payment link
+     * is reconciled it queues the one confirmation e-mail of the payment in the same transaction (D-05).
      *
      * It does no authorisation of its own: the caller authorised (the Admin through the Gate in `handle()`, the system
      * through the signed webhook and the matching). That is why it is guarded instead: it throws outside a transaction,
@@ -140,6 +146,9 @@ final readonly class RecordPayment
 
         // D-08: what is owed changed, so a live payment link that offers the old amount is deactivated in this transaction.
         $this->paymentLinks->reconcile($locked);
+
+        // D-05: every payment credited here queues one confirmation e-mail to the client, in this transaction.
+        $this->confirmations->handle($locked, $payment);
 
         return $payment->refresh();
     }

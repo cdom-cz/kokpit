@@ -119,6 +119,17 @@ final class DocumentImage
     }
 
     /**
+     * The stored image as bytes for the one reader that embeds them: the e-mail layout puts the logo into the message
+     * as an inline part (plan 13-04). There is still no public URL; the mail carries the bytes, as the PDF carries a
+     * data URI. Null for a path that is not a document image path (a foreign path never reaches the disk) and for an
+     * object that is gone.
+     */
+    public function contents(string $path): ?string
+    {
+        return $this->bytes($path);
+    }
+
+    /**
      * The bytes of a stored object, or null when the path is not a document image path or the object is gone.
      */
     private function bytes(string $path): ?string

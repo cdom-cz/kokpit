@@ -10,9 +10,8 @@ use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\ItemGrouping;
 use App\Domain\Invoicing\Queries\InvoiceableEntries;
+use App\Domain\Invoicing\Support\InvoiceCurrencies;
 use App\Domain\Projects\Models\Project;
-use App\Domain\Settings\Banking\BankAccount;
-use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Shared\Database\CzechCollation;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Support\DurationFormat;
@@ -430,26 +429,15 @@ final class CreateDraftAction
     }
 
     /**
-     * The currencies of the supplier's bank accounts and the currency of the chosen client, so the default is
-     * always on offer (a missing account is a blocker of issuing, not of the draft).
+     * The currencies the modal offers (D-07): those CNB publishes, those of the supplier's bank accounts, the currency
+     * of the chosen client and CZK, from the one list the editors use. A currency without an account or a CNB list is a
+     * blocker of issuing, not of the draft.
      *
      * @return array<string, string>
      */
     private static function currencyOptions(?string $clientId): array
     {
-        $codes = array_map(
-            static fn (BankAccount $account): string => $account->currency,
-            app(BankAccountSettings::class)->accounts,
-        );
-
-        $client = self::client($clientId);
-
-        if ($client !== null) {
-            $codes[] = $client->currency;
-        }
-
-        $codes = array_values(array_unique($codes));
-        sort($codes);
+        $codes = InvoiceCurrencies::choices(self::client($clientId), null);
 
         return array_combine($codes, $codes);
     }

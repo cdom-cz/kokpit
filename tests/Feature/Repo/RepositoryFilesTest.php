@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Audit\ActivitySourceLabel;
 use App\Domain\Clients\Models\ClientInvitation;
+use App\Domain\Invoicing\Actions\QueuePaymentConfirmation;
+use App\Domain\Notifications\Mail\MailText;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Database\CzechCollation;
@@ -902,7 +904,7 @@ it('hands over to Phases 7, 10 and 12, carries no Phase 8, Phase 9 or Phase 11 n
     // (R-09-2 replaces the Phase 6 wording), the issue pipeline and its order, the guards and their limits, the payment
     // and income rules, the single rounding, the frozen appearance and the licence notes.
     foreach ([
-        'EntryBilling', 'R-09-2', 'DocumentIssuer', 'last write on the `invoices` row', 'accept no write at all', 'R-04-4', 'R-04-5', 'R-04-6',
+        'EntryBilling', 'R-09-2', 'DocumentIssuer', 'last write on the `invoices` row', 'a locked `invoices` row and its items and item sources accept no write', 'R-04-4', 'R-04-5', 'R-04-6',
         'R-06-1', 'R-06-6', 'amending D-13', 'DocumentOwnerType::Invoice', 'DocumentOwnerResolver', 'StoreGeneratedDocument', 'AttachDocuments',
         'archived-owner scopes', 'InvoicePdfController', 'files.invoice', 'DeletePayment', 'kokpit.payment_deletion', 'R-19-1', 'R-41-1 to R-41-5',
         'D-19 as amended on 2026-10-17', 'TransactionCategory::invoicePayments()', 'TransactionCzk', 'RecordPayment', 'only in its date and category',
@@ -993,6 +995,83 @@ it('only names Phase 10 classes, methods and tests in CONTRIBUTING.md that exist
         'tests/Isolation/InvoiceLeakTest.php', 'tests/Arch/PaymentDeletionPathTest.php',
     ] as $path) {
         expect($contributing)->toContain(basename($path, '.php'));
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$path} but the file does not exist");
+    }
+});
+
+it('hands the send-driven lock over to later phases: the Immutability rule and the Editable invoices bullet say who may lock, unlock and edit, and name only what exists', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+    $immutability = repoContributingBullet('Immutability.');
+    $bullet = repoContributingBullet('Editable invoices.');
+
+    // The superseded wording (an issued row accepts no write at all) is gone, rewritten and not relaxed (plan 10.1-10).
+    expect($contributing)->not->toContain('accept no write at all')
+        ->and($contributing)->not->toContain('accepts no write at all')
+        ->and($immutability)->toContain('issued documents once locked by a successful send')
+        ->and($immutability)->toContain('credit notes from their issue')
+        ->and($immutability)->toContain('billed time entries')
+        ->and($immutability)->toContain('always frozen')
+        ->and($immutability)->toContain('`Immutability`')
+        ->and($immutability)->toContain('KP001');
+
+    expect($bullet)->not->toBe('');
+
+    foreach ([
+        '`invoices.lock_state`', '`kokpit_guard_invoice_row()`', 'The only code that locks is `SendInvoiceEmail`', 'the only code that unlocks is `UnlockInvoice`',
+        '`kokpit.invoice_unlock`', '`UpdateIssuedDocument`', '`AddEntriesToDraft`', '`ReleaseEntries`', '`AddFixedAmount`', '`IssuedEditFinisher`',
+        '`PaymentLinks::reconcile()`', '`ReplaceIssuedPdf`', '`InvoiceAudit`', '`IssuedDocumentRules`', '`email_in_flight`', '`invoice_edited`',
+        '`kokpit_invoice_accepts_time_changes()`', '`payment_links_invoice_fk`', 'must not call the lock step',
+        '`RecordCardPayment`', '`kokpit_guard_card_payment_currency()`', '`InvoiceEmail::staleBefore()`', '`bank_fingerprint`',
+    ] as $phrase) {
+        expect($bullet)->toContain($phrase);
+    }
+
+    $classes = [
+        'SendInvoiceEmail' => 'App\Domain\Invoicing\Jobs\SendInvoiceEmail',
+        'UnlockInvoice' => 'App\Domain\Invoicing\Actions\UnlockInvoice',
+        'UpdateIssuedDocument' => 'App\Domain\Invoicing\Actions\UpdateIssuedDocument',
+        'AddEntriesToDraft' => 'App\Domain\Invoicing\Actions\AddEntriesToDraft',
+        'ReleaseEntries' => 'App\Domain\Invoicing\Actions\ReleaseEntries',
+        'AddFixedAmount' => 'App\Domain\Invoicing\Actions\AddFixedAmount',
+        'IssuedEditFinisher' => 'App\Domain\Invoicing\Support\IssuedEditFinisher',
+        'PaymentLinks' => 'App\Domain\Payments\Support\PaymentLinks',
+        'ReplaceIssuedPdf' => 'App\Domain\Invoicing\Actions\ReplaceIssuedPdf',
+        'InvoiceAudit' => 'App\Domain\Invoicing\Support\InvoiceAudit',
+        'IssuedDocumentRules' => 'App\Domain\Invoicing\Support\IssuedDocumentRules',
+        'RecordCardPayment' => 'App\Domain\Payments\Actions\RecordCardPayment',
+        'InvoiceEmail' => 'App\Domain\Invoicing\Models\InvoiceEmail',
+    ];
+
+    foreach ($classes as $short => $class) {
+        expect($bullet)->toContain($short);
+        expect(class_exists($class))->toBeTrue("CONTRIBUTING.md names {$short} but {$class} does not exist");
+    }
+
+    // The database functions and the key the text names are in the migrations of the phase.
+    expect(repoFile('database/migrations/2026_10_22_000100_add_lock_state_to_invoices.php'))->toContain('kokpit_guard_invoice_row')
+        ->and(repoFile('database/migrations/2026_10_22_000200_follow_invoice_lock_in_time_entry_link.php'))->toContain('kokpit_invoice_accepts_time_changes')
+        ->and(repoFile('database/migrations/2026_10_22_000300_relax_payment_link_currency_key.php'))->toContain('payment_links_invoice_fk')
+        ->and(method_exists('App\Domain\Payments\Support\PaymentLinks', 'reconcile'))->toBeTrue();
+
+    // The seams closed by the gap-closure round (plans 10.1-13 to 10.1-15): the card currency pin, the stale e-mail cutoff, the bank fingerprint.
+    expect(repoFile('database/migrations/2026_10_23_000100_pin_card_payment_currency_to_its_payment.php'))->toContain('kokpit_guard_card_payment_currency')
+        ->and(method_exists('App\Domain\Invoicing\Models\InvoiceEmail', 'staleBefore'))->toBeTrue()
+        ->and(repoFile('app/Domain/Invoicing/Support/InvoiceAudit.php'))->toContain('bank_fingerprint');
+
+    // The one lock writer and the one unlock flag the text names.
+    expect(repoFile('app/Domain/Invoicing/Jobs/SendInvoiceEmail.php'))->toContain('InvoiceLockState::Locked')
+        ->and(repoFile('app/Domain/Invoicing/Actions/UnlockInvoice.php'))->toContain('kokpit.invoice_unlock');
+
+    // The enforcing tests the text names.
+    foreach ([
+        'tests/Feature/Schema/InvoiceLockGuardTest.php', 'tests/Arch/InvoiceUnlockPathTest.php', 'tests/Feature/Invoicing/UnlockInvoiceTest.php',
+        'tests/Feature/Invoicing/UpdateIssuedDocumentTest.php', 'tests/Feature/Invoicing/UpdateIssuedDocumentPdfLinkTest.php',
+        'tests/Feature/Invoicing/InvoiceEditAuditTest.php', 'tests/Feature/Invoicing/IssuedEditorTest.php', 'tests/Feature/Invoicing/IssuedTimeEditTest.php',
+        'tests/Concurrency/InvoiceEditSendConcurrencyTest.php', 'tests/Feature/Invoicing/EditableInvoiceJourneyTest.php',
+        'tests/Feature/Payments/PaymentClassificationTest.php', 'tests/Feature/Payments/CardPaymentRecordTest.php',
+        'tests/Feature/Invoicing/SendInvoiceEmailTest.php', 'tests/Feature/Invoicing/EmailDialogTest.php',
+    ] as $path) {
+        expect($bullet)->toContain(basename($path, '.php'));
         expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$path} but the file does not exist");
     }
 });
@@ -1115,9 +1194,17 @@ it('only names Phase 11 classes, methods and tests in CONTRIBUTING.md that exist
     foreach ([
         'PaymentLinks::reconcile()', 'RecordPayment::recordLocked()', 'RecordCardPayment', 'RecordRefundEvent', 'CardPayment::recordOnce()',
         'DeletePayment', 'StripeGateway', 'FakeStripeGateway', 'pay.show', 'webhooks.stripe',
+        'PaymentLinks::deactivateLive()', 'PayUrl::forInvoice()',
     ] as $name) {
         expect($bullet)->toContain($name);
     }
+
+    // Phase 14 (OA-1): the card switch is editable while the document is open, so the Phase 11 wording is gone.
+    expect($bullet)->not->toContain('is frozen at issue');
+
+    // Gap closure (14-REVIEW.md IN-02, OA-1): a first pay token may be set later, on an open issued document.
+    expect($bullet)->toContain('later, on an open issued document')
+        ->and($bullet)->not->toContain('set once, with the first issue, and never changes');
 
     // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists.
     preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet.repoContributingBullet('Phase 12.'), $matches, PREG_SET_ORDER);
@@ -1141,6 +1228,129 @@ it('only names Phase 11 classes, methods and tests in CONTRIBUTING.md that exist
         expect($bullet.repoContributingBullet('Phase 12.'))->toContain(basename($path, '.php'));
         expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$path} but the file does not exist");
     }
+});
+
+it('hands the payment method over to later phases: the Payment method and bank accounts bullet names only what exists', function () {
+    $bullet = repoContributingBullet('Payment method and bank accounts.');
+
+    expect($bullet)->not->toBe('');
+
+    // The mechanisms the text must keep naming (R-14-11-2).
+    foreach ([
+        'DocumentPayment::preselect()', 'PayUrl::forInvoice()', 'PaymentLinks::deactivateLive()', 'PayLinkBlock::applies()',
+        'BankAccountByIdTest', 'invoice_admin.bank_account_id', 'Phase 13',
+        // Gap closure (14-REVIEW.md IN-01, D-03, OA-2, OA-7): card availability on issued documents, the application-level tie, the converted snapshot.
+        'application-level only', 'card_payment_unavailable', 'IssueContext',
+    ] as $name) {
+        expect($bullet)->toContain($name);
+    }
+
+    // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists. A test class lives
+    // under tests/ and is checked as a file below.
+    preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet, $matches, PREG_SET_ORDER);
+
+    expect(count($matches))->toBeGreaterThan(8);
+
+    foreach ($matches as $match) {
+        if (str_ends_with($match[1], 'Test')) {
+            continue;
+        }
+
+        $classes = repoClassesNamed($match[1]);
+
+        expect($classes)->not->toBe([], "CONTRIBUTING.md names {$match[1]} but no such class exists");
+
+        if (isset($match[2])) {
+            $exists = array_filter($classes, static fn (string $class): bool => method_exists($class, $match[2]));
+
+            expect($exists)->not->toBe([], "CONTRIBUTING.md names {$match[1]}::{$match[2]}() but no such method exists");
+        }
+    }
+
+    // The enforcing test the text names.
+    expect(is_file(base_path('tests/Arch/BankAccountByIdTest.php')))->toBeTrue('CONTRIBUTING.md names BankAccountByIdTest but the file does not exist');
+
+    // The columns, the checks and the open editing rules the text names are in the migrations of the phase.
+    expect(repoFile('database/migrations/2026_10_24_000200_add_payment_method_to_invoices.php'))->toContain('invoices_payment_method_kind_check')
+        ->and(repoFile('database/migrations/2026_10_24_000200_add_payment_method_to_invoices.php'))->toContain('invoices_issued_fields_check')
+        ->and(repoFile('database/migrations/2026_10_24_000300_add_bank_account_and_open_card_switch_to_invoice_admin.php'))->toContain('bank_account_id');
+
+    // The Editable invoices bullet lists the new write-path fields, and the Phase 11 wording "frozen at issue" is gone everywhere.
+    expect(repoContributingBullet('Editable invoices.'))->toContain('payment method, bank account and card switch')
+        ->and(repoFile('CONTRIBUTING.md'))->not->toContain('is frozen at issue');
+});
+
+it('hands the e-mail layout over: the E-mail bullet names only what exists', function () {
+    $bullet = repoContributingBullet('E-mail.');
+
+    expect($bullet)->not->toBe('');
+
+    // The rules the text must keep stating (R-13-09-1, D-01 to D-07).
+    foreach ([
+        'published `kokpit` theme', '`config/mail.php`', '`resources/views/vendor/mail`', 'MailBrand', 'system context', 'field whitelist',
+        'fallback to the application name', 'inline cid part', 'never a URL or a route', '`MailText::escapeMarkdown()`', '`PlainTextHtml::paragraphs()`',
+        '`PayLinkBlock::forHtml()`', '`PayLinkBlock::applies()`', '`QueuePaymentConfirmation`', '`RecordPayment::recordLocked()`',
+        '`payment_confirmations`', '`SendPaymentConfirmation`', 'QueuePaymentConfirmation::GRACE_SECONDS', 'never locks', '`ResetPasswordNotification`',
+        '`mail_layout`', '`payment_mail`', 'never `view()->render()`',
+    ] as $phrase) {
+        expect($bullet)->toContain($phrase);
+    }
+
+    // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists. A test class is
+    // checked as a file below.
+    preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet, $matches, PREG_SET_ORDER);
+
+    expect(count($matches))->toBeGreaterThan(10);
+
+    foreach ($matches as $match) {
+        if (str_ends_with($match[1], 'Test')) {
+            continue;
+        }
+
+        $classes = repoClassesNamed($match[1]);
+
+        expect($classes)->not->toBe([], "CONTRIBUTING.md names {$match[1]} but no such class exists");
+
+        if (isset($match[2])) {
+            $exists = array_filter($classes, static fn (string $class): bool => method_exists($class, $match[2]));
+
+            expect($exists)->not->toBe([], "CONTRIBUTING.md names {$match[1]}::{$match[2]}() but no such method exists");
+        }
+    }
+
+    // The other names the text gives: the grace window constant and the unescape step of the text layout.
+    expect(defined(QueuePaymentConfirmation::class.'::GRACE_SECONDS'))->toBeTrue()
+        ->and(method_exists(MailText::class, 'unescapeMarkdown'))->toBeTrue()
+        ->and($bullet)->toContain('unescapeMarkdown()');
+
+    // The enforcing tests the text names exist.
+    $tests = [
+        'MailThemeTest' => 'tests/Feature/Mail/MailThemeTest.php',
+        'MailBrandTest' => 'tests/Feature/Mail/MailBrandTest.php',
+        'InvoiceMailHtmlTest' => 'tests/Feature/Mail/InvoiceMailHtmlTest.php',
+        'NotificationMailsTest' => 'tests/Feature/Mail/NotificationMailsTest.php',
+        'PaymentConfirmationTriggerTest' => 'tests/Feature/Invoicing/PaymentConfirmationTriggerTest.php',
+        'PaymentConfirmationMailTest' => 'tests/Feature/Invoicing/PaymentConfirmationMailTest.php',
+        'PaymentConfirmationSchemaTest' => 'tests/Feature/Invoicing/PaymentConfirmationSchemaTest.php',
+        'PaymentConfirmationAdminTest' => 'tests/Feature/Invoicing/PaymentConfirmationAdminTest.php',
+    ];
+
+    foreach ($tests as $name => $path) {
+        expect($bullet)->toContain($name);
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$name} but {$path} does not exist");
+    }
+
+    // The theme, the views and the lang files the text names exist.
+    expect(config('mail.markdown.theme'))->toBe('kokpit')
+        ->and(is_file(base_path('resources/views/vendor/mail/html/themes/kokpit.css')))->toBeTrue()
+        ->and(is_file(base_path('lang/cs/mail_layout.php')))->toBeTrue()
+        ->and(is_file(base_path('lang/en/payment_mail.php')))->toBeTrue();
+
+    // The Task notifications bullet says the escape lives in MailText, and the neighbours keep their tokens.
+    expect(repoContributingBullet('Task notifications.'))->toContain('MailText')
+        ->and(repoContributingBullet('Payment method and bank accounts.'))->toContain('PayLinkBlock::applies()')
+        ->and(repoContributingBullet('Payment method and bank accounts.'))->toContain('Phase 13')
+        ->and(repoContributingBullet('Editable invoices.'))->toContain('must not call the lock step');
 });
 
 it('documents the owner\'s Stripe setup in the README with placeholders only', function () {

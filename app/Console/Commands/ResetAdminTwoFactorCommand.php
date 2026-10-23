@@ -35,8 +35,7 @@ class ResetAdminTwoFactorCommand extends Command
 
     private function reset(): int
     {
-        $argument = $this->argument('email');
-        $email = Str::lower(trim(is_string($argument) ? $argument : ''));
+        $email = Str::lower(trim($this->argument('email')));
 
         $user = User::query()->whereRaw('lower(email) = ?', [$email])->first();
 

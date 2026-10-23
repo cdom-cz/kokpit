@@ -290,8 +290,9 @@ describe('the snapshot', function (): void {
             ->and($after)->toContain(base64_encode((string) Storage::disk('local')->get($signature)));
 
         // It read the document and its lines only: no client, settings, exchange-rate or Admin-only query. The one
-        // exception is the frozen pay token of the card button (Phase 11 D-01), a single-column read of the Admin row.
-        $payTokenReads = array_filter($queries, static fn (string $sql): bool => str_starts_with($sql, 'select "pay_token" from "invoice_admin"'));
+        // exception is the card switch and the frozen pay token of the card button (Phase 11 D-01, Phase 14 D-03), a
+        // two-column read of the Admin row.
+        $payTokenReads = array_filter($queries, static fn (string $sql): bool => str_starts_with($sql, 'select "card_payment_enabled", "pay_token" from "invoice_admin"'));
 
         expect($payTokenReads)->toHaveCount(1)
             ->and(implode("\n", array_diff($queries, $payTokenReads)))->not->toMatch('/"(clients|settings|exchange_rates|invoice_admin)"/');

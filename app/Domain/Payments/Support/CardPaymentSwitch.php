@@ -13,7 +13,8 @@ use App\Domain\Settings\Settings\PaymentSettings;
  * A document is offered payment by card when its kind carries a payment and is not a credit note (D-05), its own
  * switch is on, the global setting `online_payments_enabled` is on, and both Stripe secrets are set. The client flag
  * is not a fourth operand: it is the default of the draft switch (the draft takes the client's value, the Admin can
- * override it), so the draft switch already holds it.
+ * override it), so the draft switch already holds it. The flag is also a precondition of the online
+ * method, which `DocumentPayment` checks.
  */
 final readonly class CardPaymentSwitch
 {
@@ -27,7 +28,8 @@ final readonly class CardPaymentSwitch
     ) {}
 
     /**
-     * The value frozen at issue.
+     * The value to store on the document: the switch of the document, editable while an issued transfer document is open,
+     * forced on for an online one and frozen by the lock (Phase 14, OA-1).
      */
     public function effective(InvoiceKind $kind, bool $draftSwitch): bool
     {

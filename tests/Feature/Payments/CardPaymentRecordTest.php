@@ -372,6 +372,56 @@ describe('a record stays as Stripe reported it', function (): void {
     });
 });
 
+/**
+ * A CZK payment booked through the card path whose record no longer points at it, so another record may take it: the
+ * payment and the document it belongs to.
+ *
+ * @return array{0: Invoice, 1: InvoicePayment}
+ */
+function freedCzkPayment(): array
+{
+    $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+    [$payment, $record] = recordMatchedCardPayment($invoice);
+
+    DB::table('card_payments')->where('id', $record?->id)->update(['invoice_payment_id' => null]);
+
+    return [$invoice, $payment];
+}
+
+describe('a card payment record and a payment in another currency than it was paid in', function (): void {
+    it('refuses to insert a EUR record that points at a CZK payment', function (): void {
+        [$invoice, $payment] = freedCzkPayment();
+
+        RawSql::expectSqlState('KP001', fn () => DB::table('card_payments')->insert(rawCardRow($invoice->id, [
+            'reason' => 'currency',
+            'currency' => 'EUR',
+            'invoice_payment_id' => $payment->id,
+        ])));
+    });
+
+    it('refuses to fill the payment of a stored EUR record with a CZK payment', function (): void {
+        [$invoice, $payment] = freedCzkPayment();
+        $id = storedCardRow($invoice->id, ['reason' => 'currency', 'currency' => 'EUR']);
+
+        RawSql::expectSqlState('KP001', fn () => DB::table('card_payments')->where('id', $id)->update(['invoice_payment_id' => $payment->id]));
+    });
+
+    it('lets a record take a payment in its own currency and lets the database clear the link again', function (): void {
+        [$invoice, $payment] = freedCzkPayment();
+        $id = storedCardRow($invoice->id, ['reason' => 'amount', 'currency' => 'CZK']);
+
+        RawSql::expectAllowed(fn () => DB::table('card_payments')->where('id', $id)->update(['invoice_payment_id' => $payment->id]));
+        RawSql::expectAllowed(fn () => DB::table('card_payments')->where('id', $id)->update(['invoice_payment_id' => null]));
+    });
+
+    it('lets an unrelated update of a record that points at a payment pass', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        [, $record] = recordMatchedCardPayment($invoice);
+
+        RawSql::expectAllowed(fn () => DB::table('card_payments')->where('id', $record?->id)->update(['updated_at' => now()]));
+    });
+});
+
 describe('a resolution is final', function (): void {
     it('accepts an unmatched record resolved by a note in one update', function (): void {
         $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());

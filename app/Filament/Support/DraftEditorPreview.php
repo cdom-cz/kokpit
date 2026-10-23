@@ -7,13 +7,16 @@ namespace App\Filament\Support;
 use App\Domain\ExchangeRates\ExchangeRateMissing;
 use App\Domain\ExchangeRates\RateFormat;
 use App\Domain\Invoicing\Actions\UpdateDraft;
+use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
 use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Support\DraftPreview;
 use App\Domain\Invoicing\Support\DraftTotals;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
+use App\Domain\Invoicing\Support\TimeLineConversion;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Support\TimerClock;
 use Filament\Support\Facades\FilamentTimezone;
@@ -32,6 +35,16 @@ use OverflowException;
  * {@see UpdateDraft}: a time line whose price the Admin did not type follows its hourly
  * rate (converted with the lists of today when the rate is in another currency), and a typed price makes it manual.
  * What the save then stores is the Action's own computation; this class only previews it.
+ *
+ * The same class serves the editor of an open issued document (plan 10.1-06, research Pitfall 6). There nothing is
+ * priced with the lists of today: a generated line in another currency is priced with the quotes frozen in its
+ * conversion snapshot ({@see TimeLineConversion}, the very call {@see UpdateIssuedDocument}
+ * makes), and the CZK figure of the summary uses the exchange rate stored on the Admin-only row at issue, so the
+ * preview equals what the save stores. The draft path is unchanged.
+ *
+ * A change of currency of an issued document (plan 10.1-08, R-10.1-08-4) is the one place an issued document is priced
+ * with a list: the lists of its stored issue date, never today's, which is exactly what {@see UpdateIssuedDocument}
+ * stores, so the dialog shows the figures the save will write.
  */
 final class DraftEditorPreview
 {
@@ -136,18 +149,56 @@ final class DraftEditorPreview
         $czk = null;
         $missing = false;
 
-        if ($currency !== 'CZK') {
+        if ($this->draft->isIssued() && $currency === $this->draft->currency) {
+            $czk = $this->frozenCzk($totals['total']);
+            $missing = $this->draft->currency !== 'CZK' && $czk === null;
+        } elseif ($currency !== 'CZK') {
             $probe = clone $this->draft;
             $probe->forceFill(['currency' => $currency, 'total_minor' => $totals['total']->minor]);
 
             try {
-                $czk = $this->preview->czkPreview($probe, self::today());
+                $czk = $this->preview->czkPreview($probe, $this->listDay());
             } catch (ExchangeRateMissing) {
                 $missing = true;
             }
         }
 
         return ['subtotal' => $totals['subtotal'], 'total' => $totals['total'], 'czk' => $czk, 'czk_missing' => $missing];
+    }
+
+    /**
+     * The CZK figure of an issued document: the total at the exchange rate, unit and list date stored on the Admin-only
+     * row at issue, never a list of today. Null for a document in CZK and for a row without a stored rate.
+     *
+     * @return array{czk: Money, rate: string, unit: int, rate_date: string}|null
+     */
+    private function frozenCzk(Money $total): ?array
+    {
+        if ($this->draft->currency === 'CZK') {
+            return null;
+        }
+
+        $admin = InvoiceAdmin::query()->where('invoice_id', $this->draft->id)->first();
+
+        if (! $admin instanceof InvoiceAdmin || $admin->exchange_rate === null || $admin->exchange_unit_amount === null || $admin->exchange_rate_date === null) {
+            return null;
+        }
+
+        return [
+            'czk' => Money::ofMinor($total->minor, $this->draft->currency)->convert($admin->exchange_rate, 'CZK', $admin->exchange_unit_amount),
+            'rate' => $admin->exchange_rate,
+            'unit' => $admin->exchange_unit_amount,
+            'rate_date' => $admin->exchange_rate_date->format('Y-m-d'),
+        ];
+    }
+
+    /**
+     * The day whose CNB lists a figure is previewed with: today for a draft, the stored issue date for an issued
+     * document (a change of its currency re-takes the figures for that date).
+     */
+    private function listDay(): string
+    {
+        return $this->draft->isIssued() ? ($this->draft->issue_date?->format('Y-m-d') ?? self::today()) : self::today();
     }
 
     /**
@@ -223,7 +274,8 @@ final class DraftEditorPreview
     /**
      * The price and the amount of a generated line, as the Action will store them: a rate in another currency is
      * previewed with the lists of today, a rate in the currency of the document is restored exactly after a change
-     * of currency, and a missing list keeps the stored preview.
+     * of currency, and a missing list keeps the stored preview. An issued document meets a list only when its currency
+     * changes, and then the list of its issue date; otherwise its converted line uses the quotes of its snapshot.
      *
      * @return array{0: Money|null, 1: Money|null, 2: bool, 3: string|null} unit price, amount, converted, shown rate
      */
@@ -238,8 +290,20 @@ final class DraftEditorPreview
         $effective = $quantity ?? InvoiceQuantity::fromDecimal('1');
 
         try {
+            if ($sourceRate->currency !== $currency && $this->draft->isIssued() && ! $currencyChanged) {
+                $snapshot = $source->conversion_snapshot;
+
+                if ($snapshot === null) {
+                    throw new InvalidArgumentException('A converted line of an issued document has its conversion snapshot.');
+                }
+
+                $line = TimeLineConversion::fromSnapshot($sourceRate, $effective, $snapshot);
+
+                return [$line['unit_price'], $quantity instanceof InvoiceQuantity ? $line['line_total'] : null, true, null];
+            }
+
             if ($sourceRate->currency !== $currency) {
-                $line = $this->preview->convertLine($sourceRate, $effective->toDecimal(), $currency, self::today(), $this->quotes);
+                $line = $this->preview->convertLine($sourceRate, $effective->toDecimal(), $currency, $this->listDay(), $this->quotes);
 
                 return [$line['unit_price'], $quantity instanceof InvoiceQuantity ? $line['line_total'] : null, true, RateFormat::display($line['rate'])];
             }
@@ -247,7 +311,7 @@ final class DraftEditorPreview
             if ($currencyChanged) {
                 return [$sourceRate, $quantity instanceof InvoiceQuantity ? self::lineTotal($sourceRate, $quantity) : null, false, null];
             }
-        } catch (ExchangeRateMissing|OverflowException) {
+        } catch (ExchangeRateMissing|InvalidArgumentException|OverflowException) {
             $unitPrice = Money::ofMinor($stored->unit_price_minor, $currency);
 
             return [

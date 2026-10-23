@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks\Notifications;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Notifications\Mail\MailText;
 use App\Domain\Notifications\NotificationChannel;
 use App\Domain\Notifications\NotificationEvent;
 use App\Domain\Notifications\NotificationPreferences;
@@ -34,6 +35,9 @@ use LogicException;
  *
  * Preferences only narrow: `via()` keeps the channels the recipient has not
  * switched off for the event, and a recipient who switched both off gets nothing.
+ *
+ * The values on a mail line are made inert in Markdown by `MailText::escapeMarkdown()`, the one escape of the e-mail
+ * layout; its plain-text layout removes the backslashes again, so the text part of the mail reads as written.
  */
 abstract class TaskNotification extends Notification implements ShouldQueue
 {
@@ -103,11 +107,11 @@ abstract class TaskNotification extends Notification implements ShouldQueue
             ->line($this->text('mail_line', self::TARGET_MAIL));
 
         foreach ($this->changeLines() as $line) {
-            $message->line(self::escapeMarkdown($line));
+            $message->line(MailText::escapeMarkdown($line));
         }
 
         if ($this->excerpt !== null && $this->excerpt !== '') {
-            $message->line('> '.self::escapeMarkdown($this->excerpt));
+            $message->line('> '.MailText::escapeMarkdown($this->excerpt));
         }
 
         return $message
@@ -183,7 +187,7 @@ abstract class TaskNotification extends Notification implements ShouldQueue
         ];
 
         $escaped = match ($target) {
-            self::TARGET_MAIL => array_map(self::escapeMarkdown(...), $values),
+            self::TARGET_MAIL => array_map(MailText::escapeMarkdown(...), $values),
             self::TARGET_BELL => array_map(static fn (string $value): string => e($value), $values),
             default => $values,
         };
@@ -202,23 +206,5 @@ abstract class TaskNotification extends Notification implements ShouldQueue
         }
 
         return Str::limit($this->excerpt, self::EXCERPT_BELL_LIMIT - 1, '…');
-    }
-
-    /**
-     * Makes a plain-text value inert in the Markdown of the mail: no link, image,
-     * emphasis, code, heading or table can be built from it, and a line break can
-     * not start a new block.
-     *
-     * `<` and `>` are left alone on purpose: the mail renderer HTML-encodes every
-     * line before it parses the Markdown, so they can not open a tag, and a
-     * backslash in front of them would make the renderer show a literal "&lt;".
-     * Do not apply e() to a mail line either: it would be encoded twice and read
-     * "&amp;".
-     */
-    private static function escapeMarkdown(string $text): string
-    {
-        $flat = (string) preg_replace('/\s+/u', ' ', $text);
-
-        return (string) preg_replace('/([\\\\`*_\[\]()#|~!])/', '\\\\$1', $flat);
     }
 }

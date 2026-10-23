@@ -21,10 +21,13 @@ return [
 
     'body' => [
         'with_due_date' => "Hello,\n\nplease find attached :kind no. :number for :amount, due on :due.\n\nPayment details are in the attached document.\n\nKind regards\n:supplier",
+        'with_due_date_online' => "Hello,\n\nplease find attached :kind no. :number for :amount, due on :due.\n\nThis document is to be paid online by card.\n\nKind regards\n:supplier",
         'credit_note' => "Hello,\n\nplease find attached :kind no. :number for :amount.\n\nAny refund will be made separately.\n\nKind regards\n:supplier",
     ],
 
     'pay_block_lead' => 'You can pay this document online by card:',
+
+    'pay_button' => 'Pay by card',
 
     'work_report_file' => 'work-report-:number.pdf',
 ];

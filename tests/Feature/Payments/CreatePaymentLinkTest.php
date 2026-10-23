@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\RoleName;
 use App\Domain\Invoicing\Actions\IssueCreditNote;
+use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\RecordPayment;
+use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Issuing\DocumentIssuer;
 use App\Domain\Invoicing\Issuing\IssueContext;
@@ -215,17 +217,24 @@ function bellOf(User $user): array
 }
 
 /**
- * Subject, text and HTML of every mail the array transport holds.
+ * Subject, text and HTML of every mail to an Admin address that the array transport holds, so an e-mail to anyone else
+ * (a client) is not counted.
  *
  * @return list<array{subject: string, text: string}>
  */
 function mailsSent(): array
 {
+    $adminAddresses = array_map(static fn (User $admin): string => $admin->email, everyAdmin());
     $mails = [];
 
     foreach (Mail::getSymfonyTransport()->messages() as $sent) {
         $original = $sent->getOriginalMessage();
         assert($original instanceof Email);
+
+        if (! in_array($original->getTo()[0]->getAddress(), $adminAddresses, true)) {
+            continue;
+        }
+
         $mails[] = ['subject' => (string) $original->getSubject(), 'text' => (string) $original->getTextBody().(string) $original->getHtmlBody()];
     }
 
@@ -570,6 +579,83 @@ describe('a change of the document around the Stripe call (D-08)', function (): 
             ->and($row->stripe_link_id)->not->toBeNull()
             ->and($this->stripe->deactivated())->toBe([$row->stripe_link_id])
             ->and($row->remote_deactivated_at)->not->toBeNull();
+    });
+
+    it('ends with no active link in the old state when a method change, a switch-off or a currency change lands during the call (D-10, P14-07)', function (string $case, string $reason, ?string $currency): void {
+        $issued = pendingLinkDocument();
+        $link = linkRowOf($issued);
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.000');
+
+        // Only the link job is faked, so the new pending row the edit opens is not run inside the callback.
+        Queue::fake([CreatePaymentLink::class]);
+
+        $this->stripe->onCreate(static function () use ($issued, $case): void {
+            app(UpdateIssuedDocument::class)->handle(Canary::admin(), $issued, match ($case) {
+                'a method change' => ['payment_method' => 'online'],
+                'a switch-off' => ['card_payment_enabled' => false],
+                'a currency change' => ['currency' => 'EUR'],
+            });
+        });
+
+        runLinkJob($link->id);
+
+        $row = app(PartnerContext::class)->runAsSystem(static fn (): PaymentLink => PaymentLink::query()->findOrFail($link->id));
+        $live = app(PartnerContext::class)->runAsSystem(static fn (): array => PaymentLink::query()->live()->where('invoice_id', $issued->id)->get()->all());
+
+        expect($this->stripe->created())->toHaveCount(1)
+            ->and($row->state)->toBe(PaymentLinkState::Deactivated)
+            ->and($row->deactivation_reason?->value)->toBe($reason)
+            ->and($row->stripe_link_id)->not->toBeNull()
+            ->and($row->stripe_url)->toStartWith('https://')
+            ->and($this->stripe->deactivated())->toBe([$row->stripe_link_id])
+            ->and($row->remote_deactivated_at)->not->toBeNull()
+            ->and($row->activated_at)->toBeNull()
+            ->and(mailsSent())->toBe([]);
+
+        if ($currency === null) {
+            expect($live)->toBe([]);
+
+            return;
+        }
+
+        expect($live)->toHaveCount(1)
+            ->and($live[0]->id)->not->toBe($link->id)
+            ->and($live[0]->state)->toBe(PaymentLinkState::Pending)
+            ->and($live[0]->currency)->toBe($currency);
+    })->with([
+        'a method change' => ['a method change', 'replaced', 'CZK'],
+        'a switch-off' => ['a switch-off', 'manual', null],
+        'a currency change' => ['a currency change', 'amount_changed', 'EUR'],
+    ]);
+
+    it('moves an online document to a currency Stripe refuses: the edit commits and the new link fails with unsupported_currency, the Admin alerted (D-08)', function (): void {
+        $client = CardPaymentSetup::client();
+        $admin = Canary::admin();
+        $draft = InvoiceFixtures::online(InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '12500.00')], InvoiceKind::Invoice, $admin));
+        $issued = app(IssueDocument::class)->handle($admin, $draft);
+        $before = linkRowOf($issued);
+
+        expect($before->state)->toBe(PaymentLinkState::Active)
+            ->and($before->currency)->toBe('CZK')
+            ->and($this->stripe->createCalls())->toBe(1);
+
+        InvoiceFixtures::cnbRate('ISK', '2026-10-14', '17.5000000000', 100);
+
+        app(UpdateIssuedDocument::class)->handle($admin, $issued, ['currency' => 'ISK']);
+
+        $fresh = Invoice::query()->findOrFail($issued->id);
+        $old = app(PartnerContext::class)->runAsSystem(static fn (): PaymentLink => PaymentLink::query()->findOrFail($before->id));
+        $new = linkRowOf($issued);
+
+        expect($fresh->currency)->toBe('ISK')
+            ->and($old->state)->toBe(PaymentLinkState::Deactivated)
+            ->and($old->deactivation_reason?->value)->toBe('amount_changed')
+            ->and($new->id)->not->toBe($before->id)
+            ->and($new->state)->toBe(PaymentLinkState::Failed)
+            ->and($new->failure_class)->toBe('unsupported_currency')
+            ->and($new->currency)->toBe('ISK')
+            ->and($this->stripe->createCalls())->toBe(1)
+            ->and(mailsSent())->toHaveCount(count(everyAdmin()));
     });
 
     it('does nothing on a second run for a row that was deactivated before the call', function (): void {

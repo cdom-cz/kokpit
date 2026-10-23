@@ -85,11 +85,13 @@ final class DraftLines
     }
 
     /**
-     * Writes the subtotal, VAT and total of the draft from its stored lines.
+     * Writes the subtotal, VAT and total of the draft from its stored lines. With `$silenceHistory` the model writes no
+     * history row of its own, because an explicit `invoice_edited` row replaces it (an open issued document that was
+     * sent once, R-10.1-04-3); a draft and a never-sent document keep the ordinary model history.
      *
      * @throws ValidationException `items` when the sum does not fit
      */
-    public function refreshTotals(Invoice $draft): void
+    public function refreshTotals(Invoice $draft, bool $silenceHistory = false): void
     {
         $totals = $this->totals($draft);
 
@@ -97,7 +99,16 @@ final class DraftLines
             'subtotal_minor' => $totals['subtotal']->minor,
             'vat_minor' => $totals['vat']->minor,
             'total_minor' => $totals['total']->minor,
-        ])->save();
+        ]);
+
+        if ($silenceHistory) {
+            $draft->disableLogging()->save();
+            $draft->enableLogging();
+
+            return;
+        }
+
+        $draft->save();
     }
 
     /**

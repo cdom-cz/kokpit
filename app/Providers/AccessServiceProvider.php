@@ -24,6 +24,7 @@ use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
+use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Invoicing\Policies\InvoiceItemPolicy;
 use App\Domain\Invoicing\Policies\InvoicePolicy;
 use App\Domain\Payments\Models\CardPayment;
@@ -152,6 +153,9 @@ final class AccessServiceProvider extends ServiceProvider
         // The generation source of a line (rates, seconds) and the e-mail log are Admin-only too (IN-09, R-08-1).
         Gate::policy(InvoiceItemSource::class, AdminOnlyPolicy::class);
         Gate::policy(InvoiceEmail::class, AdminOnlyPolicy::class);
+
+        // The confirmation e-mail of a payment (recipient, remaining amount, state) is Admin-only (Phase 13).
+        Gate::policy(PaymentConfirmation::class, AdminOnlyPolicy::class);
 
         // The Stripe payment link of a document (state, amount, Stripe references) is Admin-only (Phase 11).
         Gate::policy(PaymentLink::class, AdminOnlyPolicy::class);

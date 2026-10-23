@@ -17,8 +17,10 @@ use LogicException;
  * the one writable field of D-13 that lives with the document. The Admin only.
  *
  * Only `invoice_admin.internal_note` and its marker `internal_note_updated_at` change, under the row lock of the
- * invoice. The `invoices` row itself is never written, because an issued row accepts no write at all; the database
- * lets exactly these two columns (and the PDF link) of the Admin-only row move after issue. The activity history
+ * invoice. The `invoices` row itself is never written here: it is the corrected document's own write path
+ * ({@see UpdateIssuedDocument}) while the document is open, and frozen once a send has locked it. The database lets
+ * exactly these two columns (and the PDF link) of the Admin-only row move after issue, whether the document is open
+ * or locked. The activity history
  * records the marker and never the text: free text is not logged in this codebase (T-10-30). A blank note clears the
  * note, and a note equal to the stored one writes nothing, so the marker keeps the time of the last real change.
  */

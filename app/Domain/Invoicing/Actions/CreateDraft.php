@@ -7,11 +7,13 @@ namespace App\Domain\Invoicing\Actions;
 use App\Domain\Clients\Models\Client;
 use App\Domain\ExchangeRates\ExchangeRateMissing;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\ItemGrouping;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Queries\InvoiceableEntries;
+use App\Domain\Invoicing\Support\DocumentPayment;
 use App\Domain\Invoicing\Support\DraftLines;
 use App\Domain\Invoicing\Support\EntryReservation;
 use App\Domain\Invoicing\Support\IssueChecks;
@@ -48,8 +50,12 @@ use OverflowException;
  * in another currency than the draft is previewed with today's CNB rates; without a CNB list for it the draft is
  * refused with `cnb_missing` under `currency` and nothing is reserved (R-13-4). The draft has no number, and its issue and due
  * dates stay null until the Admin types them: a null issue date means "today (Europe/Prague) at issue" and a null due
- * date "the issue date plus the client's payment terms at issue" (R-11-1). A missing bank account for the currency
- * is a blocker of issuing, not an error of the draft (R-11-2).
+ * date "the issue date plus the client's payment terms at issue" (R-11-1).
+ *
+ * A new invoice or proforma draft is always a `transfer` document, whatever the client flag or the global setting says;
+ * the Admin chooses `online` by hand later (D-02). It stores the first configured account of its currency as its chosen
+ * account, or none when no account has that currency (D-05): a transfer document without an account is a blocker of
+ * issuing, not an error of the draft, and an online one needs no account.
  *
  * The Partner-readable `invoices` row and its Admin-only `invoice_admin` row are written together, while the document
  * is a draft: after issue the database accepts no new child row. The card switch of the Admin-only row starts as the
@@ -94,11 +100,17 @@ final readonly class CreateDraft
                 'currency' => $currency,
                 'language' => $client->invoice_language,
                 'vat_mode' => app(InvoicingSettings::class)->vat_mode,
+                'payment_method' => DocumentPaymentMethod::Transfer,
             ])->save();
 
             $admin = new InvoiceAdmin;
             // D-06: the draft takes the client's online-payment value; the Admin can change it on the draft.
-            $admin->forceFill(['invoice_id' => $draft->id, 'card_payment_enabled' => $kind->carriesPayment() && $client->online_payment_enabled])->save();
+            // D-05: the chosen account starts as the first account of the currency, or none.
+            $admin->forceFill([
+                'invoice_id' => $draft->id,
+                'card_payment_enabled' => $kind->carriesPayment() && $client->online_payment_enabled,
+                'bank_account_id' => DocumentPayment::preselect($currency),
+            ])->save();
 
             if ($time !== null) {
                 $this->addTime($draft, $client, $time, $projectIds);

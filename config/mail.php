@@ -129,4 +129,23 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Markdown Mail Settings
+    |--------------------------------------------------------------------------
+    |
+    | Every HTML e-mail renders through the published `kokpit` theme (D-02): the
+    | views live in resources/views/vendor/mail, the theme CSS in html/themes.
+    | All three keys are written out so the component path cannot be lost.
+    |
+    */
+
+    'markdown' => [
+        'theme' => 'kokpit',
+        'paths' => [
+            resource_path('views/vendor/mail'),
+        ],
+        'extensions' => [],
+    ],
+
 ];

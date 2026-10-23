@@ -6,11 +6,13 @@ namespace App\Domain\Invoicing\Actions;
 
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Invoicing\Support\EntryReservation;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -32,8 +34,14 @@ use Illuminate\Validation\ValidationException;
  * injected through it), the subject is capped at 200 and the body at 5 000 characters, and control characters other
  * than a line break and a tab are dropped from both (a NUL byte would also be refused by the database). The body is
  * plain text. The work-report flag is kept only when the document still has linked time: a cancelled invoice has none.
+ *
+ * The document is read with the invoice row lock before the row is written, the same lock an edit of an issued document
+ * takes (A8): an edit either finishes before the e-mail is queued or finds it queued and waits for it.
+ *
+ * Not final on purpose, like {@see EntryReservation}: the concurrency harness substitutes a twin that reads the document
+ * without the lock ({@see self::document()}), to show that the harness can fail. No application code extends it.
  */
-final readonly class QueueInvoiceEmail
+readonly class QueueInvoiceEmail
 {
     private const int RECIPIENT_MAX = 255;
 
@@ -43,7 +51,7 @@ final readonly class QueueInvoiceEmail
 
     /**
      * The values the dialog is opened with. `recipient` is null when the client has no invoice e-mail; the work
-     * report is ticked by default whenever the document has linked time.
+     * report is never ticked by default.
      *
      * @return array{recipient: ?string, subject: string, body: string, attach_work_report: bool, has_work_report: bool}
      *
@@ -65,7 +73,7 @@ final readonly class QueueInvoiceEmail
             'recipient' => $recipient,
             'subject' => $this->defaultSubject($issued),
             'body' => $this->defaultBody($issued),
-            'attach_work_report' => $hasReport,
+            'attach_work_report' => false,
             'has_work_report' => $hasReport,
         ];
     }
@@ -81,7 +89,9 @@ final readonly class QueueInvoiceEmail
         Gate::forUser($actor)->authorize('update', $issued);
 
         return DB::transaction(function () use ($actor, $issued, $data): InvoiceEmail {
-            $document = Invoice::query()->whereKey($issued->getKey())->firstOrFail();
+            // The invoice row lock of every edit of an issued document (A8, R-10.1-04-7): an edit and the queueing of
+            // the document e-mail never interleave, so the e-mail is queued either before the edit or after it.
+            $document = $this->document((string) $issued->getKey());
 
             if (! $document->isIssued()) {
                 throw ValidationException::withMessages(['invoice' => __('invoices.errors.email_not_issued')]);
@@ -109,6 +119,15 @@ final readonly class QueueInvoiceEmail
         });
     }
 
+    /**
+     * The document as it is stored right now, read with the invoice row lock (A8). The only seam of the class: the
+     * concurrency harness overrides it with a read that takes no lock.
+     */
+    protected function document(string $id): Invoice
+    {
+        return Invoice::query()->whereKey($id)->lockForUpdate()->firstOrFail();
+    }
+
     private function defaultSubject(Invoice $issued): string
     {
         return (string) trans('invoice_mail.subject.'.$issued->kind->value, ['number' => (string) $issued->number], $issued->language->value);
@@ -127,8 +146,13 @@ final readonly class QueueInvoiceEmail
             'supplier' => is_string($supplier) ? $supplier : '',
         ];
 
-        // A credit note is not paid, so it has no due date; so does any document that carries none.
-        $key = $issued->kind === InvoiceKind::CreditNote || $issued->due_date === null ? 'credit_note' : 'with_due_date';
+        // A credit note is not paid, so it has no due date; so does any document that carries none. A document of the
+        // online method prints no bank details (Phase 14), so its text must not point at them (A-13-4).
+        $key = match (true) {
+            $issued->kind === InvoiceKind::CreditNote || $issued->due_date === null => 'credit_note',
+            $issued->payment_method === DocumentPaymentMethod::Online => 'with_due_date_online',
+            default => 'with_due_date',
+        };
 
         return (string) trans('invoice_mail.body.'.$key, $replace, $language->value);
     }

@@ -12,7 +12,9 @@ use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Actions\RecordPayment;
+use App\Domain\Invoicing\Actions\UnlockInvoice;
 use App\Domain\Invoicing\Actions\UpdateDraft;
+use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceStatus;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
@@ -22,8 +24,13 @@ use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Queries\ReceivablesReader;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
+use App\Domain\Payments\Enums\PaymentLinkState;
+use App\Domain\Payments\Models\PaymentLink;
+use App\Domain\Payments\Support\PayToken;
+use App\Domain\Payments\Support\PayUrl;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
@@ -35,6 +42,7 @@ use App\Filament\Resources\ClientResource\Pages\ViewClient;
 use App\Filament\Resources\ClientResource\RelationManagers\ClientInvoicesRelationManager;
 use App\Filament\Resources\ClientResource\Widgets\ClientOverviewStats;
 use App\Filament\Resources\InvoiceResource;
+use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEmailsRelationManager;
@@ -43,17 +51,25 @@ use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelat
 use App\Filament\Resources\TransactionResource;
 use App\Filament\Widgets\UnpaidInvoices;
 use Carbon\CarbonImmutable;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Filament\Notifications\Livewire\DatabaseNotifications;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\SentMessage;
+use Symfony\Component\Mime\Email;
 use Tests\Support\Canary;
+use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
+use Tests\Support\FictionalIban;
 use Tests\Support\InvoiceFixtures;
 use Tests\Support\InvoiceScenario;
+use Tests\Support\PdfText;
 
 /*
  * Roadmap Phase 10 success criterion 5 (part), threats T-10-69 and T-10-91: a Partner who opens every surface of the
@@ -616,8 +632,16 @@ describe('the whole phase, end to end', function (): void {
             'attach_work_report' => false,
         ]);
 
-        expect(iterator_to_array(Mail::getSymfonyTransport()->messages()))->toHaveCount(1)
-            ->and(Mail::getSymfonyTransport()->messages()->first())->toBeInstanceOf(SentMessage::class)
+        $documentMails = Mail::getSymfonyTransport()->messages()->filter(static function (SentMessage $sent) use ($defaults): bool {
+            $original = $sent->getOriginalMessage();
+
+            return $original instanceof Email
+                && $original->getTo()[0]->getAddress() === (string) $defaults['recipient']
+                && $original->getSubject() === $defaults['subject'];
+        });
+
+        expect($documentMails)->toHaveCount(1)
+            ->and($documentMails->first())->toBeInstanceOf(SentMessage::class)
             ->and(invoiceLeakSystem(static fn (): InvoiceEmailState => InvoiceEmail::query()->findOrFail($mail->id)->state))->toBe(InvoiceEmailState::Sent);
 
         // 3. A partial payment, then a mistaken second one that is deleted together with its income.
@@ -732,5 +756,251 @@ describe('the whole phase, end to end', function (): void {
 
         expect(invoiceLeakSystem(static fn (): ?string => InvoiceAdmin::query()->where('invoice_id', $invoice->id)->value('internal_note')))->toBe($secrets[0])
             ->and(InvoicePayment::query()->where('invoice_id', $invoice->id)->pluck('note')->all())->toContain($secrets[2])->not->toContain($secrets[3]);
+    });
+});
+
+describe('an invoice that was sent, unlocked and edited (Phase 10.1)', function (): void {
+    /**
+     * Sends the unpaid invoice of client A, unlocks it with a reason and corrects its line, quantity and due date, as
+     * the Admin. The texts are assembled at runtime. The quantity doubles, so the total grows from 4 000 to 8 000.
+     *
+     * @return array{invoice: Invoice, reason: string, old: string, new: string}
+     */
+    function invoiceLeakEdit(): array
+    {
+        $admin = test()->admin;
+        $invoice = test()->a['unpaid'];
+        $reason = implode(' ', ['Unlock', 'reason', bin2hex(random_bytes(4))]);
+        $new = implode(' ', ['Corrected', 'line', bin2hex(random_bytes(4))]);
+
+        test()->actingAs($admin);
+
+        $line = invoiceLeakSystem(static fn (): array => $invoice->items()->orderBy('position')->get()->all())[0];
+        $old = $line->description;
+
+        $defaults = app(QueueInvoiceEmail::class)->defaults($invoice);
+        app(QueueInvoiceEmail::class)->handle($admin, $invoice, [
+            'recipient' => 'invoice@example.com',
+            'subject' => $defaults['subject'],
+            'body' => $defaults['body'],
+            'attach_work_report' => false,
+        ]);
+
+        app(UnlockInvoice::class)->handle($admin, $invoice, $reason);
+
+        app(UpdateIssuedDocument::class)->handle($admin, $invoice, [
+            'items' => [[
+                'id' => $line->id,
+                'description' => $new,
+                'quantity' => '2',
+                'unit' => $line->unit,
+                'unit_price' => $line->unitPrice()->toMajor(),
+            ]],
+            'due_date' => '2026-12-15',
+        ]);
+
+        return ['invoice' => $invoice, 'reason' => $reason, 'old' => $old, 'new' => $new];
+    }
+
+    it('shows a Partner only the current version: list, detail and PDF, never the reason, the old text or the history', function (): void {
+        $edit = invoiceLeakEdit();
+        $invoice = $edit['invoice'];
+        $total = Money::ofMinor(800_000, 'CZK')->format('cs');
+        $hidden = [...invoiceLeakHidden(), $edit['reason']];
+
+        // The Admin side of the pairing: the history holds the reason and the edit, the editor opens.
+        $unlocked = Activity::query()->where('subject_id', $invoice->id)->where('event', 'invoice_unlocked')->get();
+        $edited = Activity::query()->where('subject_id', $invoice->id)->where('event', 'invoice_edited')->get();
+
+        expect($unlocked)->toHaveCount(1)
+            ->and((string) json_encode($unlocked[0]->attribute_changes))->toContain($edit['reason'])
+            ->and($edited)->toHaveCount(1);
+
+        Livewire::test(EditInvoice::class, ['record' => $invoice->getRouteKey()])->assertSuccessful()->assertNoRedirect();
+
+        // The Partner of the client.
+        $this->actingAs($this->partnerA);
+
+        $list = (string) $this->get(PartnerInvoiceResource::getUrl())->assertOk()->assertSee($total)->getContent();
+        $detail = (string) $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $invoice]))
+            ->assertOk()
+            ->assertSee($edit['new'])
+            ->assertSee($total)
+            ->assertSee('15. 12. 2026')
+            ->assertDontSee($edit['old'])
+            ->getContent();
+
+        invoiceLeakAssertClean($list, 'the list with an edited invoice', $hidden);
+        invoiceLeakAssertClean($detail, 'the detail of an edited invoice', $hidden);
+
+        // The PDF route serves the current PDF.
+        $download = Livewire::test(ViewPartnerInvoice::class, ['record' => $invoice->getKey()])->callAction('downloadPdf');
+        $response = $this->get((string) $download->effects['redirect'])->assertOk()->assertHeader('content-type', 'application/pdf');
+        $text = PdfText::flat($response->streamedContent());
+
+        if ($text !== null) {
+            expect($text)->toContain($edit['new'])
+                ->and($text)->not->toContain($edit['old'])
+                ->and($text)->not->toContain($edit['reason']);
+        }
+
+        // Every other page a Partner can open stays clean.
+        foreach (['/admin', '/admin/my-projects', '/admin/my-tasks', '/admin/profile'] as $url) {
+            invoiceLeakAssertClean((string) $this->get($url)->getContent(), $url, $hidden);
+        }
+    });
+
+    it('refuses a Partner the editor, the unlock action, the entries tab, the history and both Actions, and tells the bell nothing', function (): void {
+        $edit = invoiceLeakEdit();
+        $invoice = $edit['invoice'];
+        $hidden = [...invoiceLeakHidden(), $edit['reason'], $edit['new']];
+
+        // Admin positives: the unlock action sits on the locked detail and the entries tab opens.
+        $locked = $this->a['invoice'];
+        $this->actingAs($this->admin);
+        app(QueueInvoiceEmail::class)->handle($this->admin, $locked, [
+            'recipient' => 'invoice@example.com',
+            'subject' => 'Example subject',
+            'body' => 'Example body',
+            'attach_work_report' => false,
+        ]);
+
+        expect(Invoice::query()->whereKey($locked->id)->firstOrFail()->isLocked())->toBeTrue();
+
+        Livewire::test(ViewInvoice::class, ['record' => $locked->getRouteKey()])
+            ->assertSuccessful()
+            ->assertActionVisible(TestAction::make('unlock')->schemaComponent('locked', schema: 'infolist'));
+        Livewire::test(InvoiceEntriesRelationManager::class, ['ownerRecord' => $invoice, 'pageClass' => ViewInvoice::class])->assertSuccessful();
+        $this->get(InvoiceResource::getUrl('edit', ['record' => $invoice]))->assertOk();
+
+        // The Partner of the client.
+        $this->actingAs($this->partnerA);
+
+        foreach ([$invoice, $locked] as $document) {
+            $response = $this->get(InvoiceResource::getUrl('edit', ['record' => $document]));
+            $response->assertForbidden();
+
+            invoiceLeakAssertClean((string) $response->getContent(), 'the editor address of '.$document->id, $hidden);
+
+            Livewire::test(EditInvoice::class, ['record' => $document->getRouteKey()])->assertForbidden();
+            Livewire::test(ViewInvoice::class, ['record' => $document->getRouteKey()])->assertForbidden();
+        }
+
+        Livewire::test(InvoiceEntriesRelationManager::class, ['ownerRecord' => $invoice, 'pageClass' => ViewInvoice::class])->assertForbidden();
+
+        // The domain refuses as well, whatever the page does.
+        $partner = User::query()->whereKey($this->partnerA->id)->firstOrFail();
+
+        expect(fn (): mixed => app(UnlockInvoice::class)->handle($partner, $locked, 'A reason long enough to pass'))->toThrow(AuthorizationException::class)
+            ->and(fn (): mixed => app(UpdateIssuedDocument::class)->handle($partner, $invoice, ['note' => 'Partner note']))->toThrow(AuthorizationException::class)
+            ->and(Invoice::query()->whereKey($locked->id)->firstOrFail()->isLocked())->toBeTrue()
+            ->and(Invoice::query()->whereKey($invoice->id)->firstOrFail()->note)->toBeNull();
+
+        // The history of the edit and of the unlock is the Admin's.
+        expect(Activity::query()->where('subject_id', $invoice->id)->count())->toBe(0)
+            ->and(Activity::query()->where('event', 'invoice_unlocked')->count())->toBe(0);
+
+        $this->get('/admin/activity')->assertForbidden();
+
+        // The bell of the Partner holds nothing of it.
+        $bell = Livewire::test(DatabaseNotifications::class)->html();
+
+        expect($this->partnerA->notifications()->count())->toBe(0)
+            ->and($bell)->not->toContain($edit['reason'])
+            ->and($bell)->not->toContain($edit['new']);
+    });
+
+    it('shows the Partner of another client nothing of an edited invoice', function (): void {
+        $edit = invoiceLeakEdit();
+        $invoice = $edit['invoice'];
+        $partnerB = Canary::partnerFor($this->clientB->id);
+
+        $this->actingAs($partnerB);
+
+        $detail = $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $invoice->id]));
+
+        expect($detail->getStatusCode())->toBe(404);
+
+        invoiceLeakAssertClean((string) $detail->getContent(), 'the 404 of an edited invoice', [$edit['reason'], $edit['new'], $edit['old'], $invoice->id]);
+
+        $list = (string) $this->get(PartnerInvoiceResource::getUrl())->assertOk()->getContent();
+
+        invoiceLeakAssertClean($list, 'the list of another client', [$edit['reason'], $edit['new'], $edit['old'], $invoice->id]);
+
+        $this->get(InvoiceResource::getUrl('edit', ['record' => $invoice]))->assertForbidden();
+        Livewire::test(ViewInvoice::class, ['record' => $invoice->getRouteKey()])->assertForbidden();
+    });
+
+    it('keeps the pay button of an edited card invoice for the Partner, on the same stable address', function (): void {
+        CardPaymentSetup::enable();
+        invoiceLeakSystem(fn (): bool => Client::query()->whereKey($this->clientA->id)->update(['online_payment_enabled' => true]) > 0);
+
+        $this->actingAs($this->admin);
+        $invoice = InvoiceFixtures::issued(Client::query()->findOrFail($this->clientA->id), [InvoiceFixtures::item('Card work', '1', '1000.00')]);
+        $live = static fn (): ?PaymentLink => invoiceLeakSystem(static fn (): ?PaymentLink => PaymentLink::query()->where('invoice_id', $invoice->id)->get()->first(static fn (PaymentLink $link): bool => $link->isLive()));
+
+        expect($live()?->amount_minor)->toBe(100_000);
+
+        $url = PayUrl::forInvoice($invoice);
+        $line = invoiceLeakSystem(static fn (): array => $invoice->items()->orderBy('position')->get()->all())[0];
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['items' => [[
+            'id' => $line->id,
+            'description' => $line->description,
+            'quantity' => '3',
+            'unit' => $line->unit,
+            'unit_price' => $line->unitPrice()->toMajor(),
+        ]]]);
+
+        expect($live()?->state)->toBe(PaymentLinkState::Active)
+            ->and($live()->amount_minor)->toBe(300_000)
+            ->and(PayUrl::forInvoice($invoice))->toBe($url);
+
+        $this->actingAs($this->partnerA);
+
+        Livewire::test(ViewPartnerInvoice::class, ['record' => $invoice->getRouteKey()])
+            ->assertSee('Zaplatit kartou')
+            ->assertSee(Money::ofMinor(300_000, 'CZK')->format('cs'));
+    });
+});
+
+describe('the payment method (Phase 14)', function (): void {
+    it('shows a Partner the method of an own online document and never the account id, the token or an account number', function (): void {
+        $this->actingAs($this->admin);
+        $invoice = InvoiceFixtures::issued(Client::query()->findOrFail($this->clientA->id), [InvoiceFixtures::item('Online work', '1', '1000.00')]);
+        $accountId = (string) Str::uuid7();
+        $token = PayToken::generate();
+
+        // The way the database allows a switch of an open document: the Admin-only row holds the chosen account id, the
+        // card switch and the token. No payment link exists, so the Partner is due no pay button.
+        invoiceLeakSystem(static function () use ($invoice, $accountId, $token): void {
+            DB::update("update invoices set payment_method = 'online', bank_snapshot = null where id = ?", [$invoice->id]);
+            DB::update('update invoice_admin set bank_account_id = ?, card_payment_enabled = true, pay_token = ? where invoice_id = ?', [$accountId, $token, $invoice->id]);
+        });
+
+        // The Admin side of the pairing: the Admin row really holds what the Partner must not meet.
+        $admin = invoiceLeakSystem(static fn (): InvoiceAdmin => InvoiceAdmin::query()->where('invoice_id', $invoice->id)->firstOrFail());
+        expect($admin->bank_account_id)->toBe($accountId)
+            ->and($admin->pay_token)->toBe($token);
+
+        $this->actingAs($this->partnerA);
+        $pages = [
+            'the list' => $this->get(PartnerInvoiceResource::getUrl())->assertOk()->getContent(),
+            'the detail' => $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $invoice]))->assertOk()->assertSee('Online platba kartou')->getContent(),
+        ];
+        $ibans = [FictionalIban::czech('12'), FictionalIban::czech('34')];
+
+        foreach ($pages as $where => $html) {
+            $surface = invoiceLeakSurface((string) $html);
+
+            foreach ([$accountId, $token, 'bank_account_id', 'pay_token', 'card_payment_enabled', ...$ibans, ...array_map(static fn (string $iban): string => trim(chunk_split($iban, 4, ' ')), $ibans)] as $text) {
+                foreach (invoiceLeakForms($text) as $form) {
+                    expect(str_contains($surface, $form))->toBeFalse("{$where} must not hold \"{$text}\"");
+                }
+            }
+        }
+
+        expect(invoiceLeakSurface((string) $pages['the detail']))->not->toContain('Bankovní účet')
+            ->and(invoiceLeakSurface((string) $pages['the detail']))->not->toContain('Zaplatit kartou');
     });
 });

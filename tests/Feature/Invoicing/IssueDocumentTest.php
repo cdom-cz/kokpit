@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\UpdateDraft;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
@@ -181,13 +182,23 @@ it('consumes no number for a draft and previews the expected one', function (): 
         ->and(DB::table('number_sequences')->count())->toBe(0);
 });
 
-it('refuses every write to an issued row, even a touch', function (): void {
+it('leaves an issued invoice open, and refuses every write to it, even a touch, once it is locked', function (): void {
     $admin = Canary::admin();
     $issued = app(IssueDocument::class)->handle($admin, InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Work', '1', '100')], actor: $admin));
 
-    RawSql::expectSqlState('KP001', fn () => $issued->fresh()?->forceFill(['total_minor' => 1])->save());
+    expect($issued->lock_state)->toBe(InvoiceLockState::Open);
+
+    // Open: a correction and a touch are accepted (IN-11, D-12).
+    RawSql::expectAllowed(fn () => $issued->fresh()?->forceFill(['note' => 'Corrected'])->save());
 
     // A touch of the same instant changes nothing and sends no statement, so move the clock first.
+    $this->travelTo(now()->addMinute());
+    RawSql::expectAllowed(fn () => $issued->fresh()?->touch());
+
+    InvoiceFixtures::lock($issued);
+
+    RawSql::expectSqlState('KP001', fn () => $issued->fresh()?->forceFill(['total_minor' => 1])->save());
+
     $this->travelTo(now()->addMinute());
     RawSql::expectSqlState('KP001', fn () => $issued->fresh()?->touch());
 
@@ -338,7 +349,7 @@ function issueBlockerCase(string $case): array
 
             return [
                 InvoiceFixtures::draft(InvoiceFixtures::client(['currency' => 'EUR']), $item, actor: $admin),
-                'Pro měnu EUR není nastaven bankovní účet. Přidejte ho v Nastavení.',
+                'Doklad s úhradou převodem nemá vybraný bankovní účet. Vyberte ho na dokladu, nebo ho přidejte v Nastavení.',
             ];
         })(),
         'cnb_missing' => [

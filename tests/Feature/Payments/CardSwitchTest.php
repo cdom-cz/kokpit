@@ -101,13 +101,25 @@ it('generates tokens of 32 letters and digits that differ and recognises a malfo
         ->and(PayToken::isWellFormed(str_repeat('a', 32)))->toBeTrue();
 });
 
-it('refuses every change of the switch and the token once the document is issued', function (): void {
+it('lets the switch move on an open issued document, never changes a set token, and freezes both once locked', function (): void {
     CardPaymentSetup::enable();
     $issued = CardPaymentSetup::issued(CardPaymentSetup::client());
+    $token = adminRowOf($issued)->pay_token;
+
+    // Open (OA-1): the switch moves in both directions and the token stays what it was printed as.
+    RawSql::expectAllowed(static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = false WHERE invoice_id = ?', [$issued->id]));
+    RawSql::expectAllowed(static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = true WHERE invoice_id = ?', [$issued->id]));
+    RawSql::expectSqlState('KP001', static fn (): int => DB::update('UPDATE invoice_admin SET pay_token = ? WHERE invoice_id = ?', [PayToken::generate(), $issued->id]));
+    RawSql::expectSqlState('KP001', static fn (): int => DB::update('UPDATE invoice_admin SET pay_token = NULL WHERE invoice_id = ?', [$issued->id]));
+
+    // Locked: the switch and the token are frozen with the document.
+    InvoiceFixtures::lock($issued);
 
     RawSql::expectSqlState('KP001', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = false WHERE invoice_id = ?', [$issued->id]));
     RawSql::expectSqlState('KP001', static fn (): int => DB::update('UPDATE invoice_admin SET pay_token = ? WHERE invoice_id = ?', [PayToken::generate(), $issued->id]));
     RawSql::expectSqlState('KP001', static fn (): int => DB::update('UPDATE invoice_admin SET pay_token = NULL WHERE invoice_id = ?', [$issued->id]));
+
+    expect(adminRowOf($issued)->pay_token)->toBe($token);
 });
 
 it('never writes the pay token or its owner row to the activity log', function (): void {
@@ -322,13 +334,15 @@ it('refuses a duplicate pay token with a unique violation', function (): void {
     ));
 });
 
-it('refuses a token that is malformed or that sits on a document with the switch off', function (): void {
+it('refuses a malformed token and accepts a well-formed token with the switch off', function (): void {
     CardPaymentSetup::enable();
     $draft = InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
 
     RawSql::expectSqlState('23514', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = true, pay_token = ? WHERE invoice_id = ?', [str_repeat('a', 31), $draft->id]));
     RawSql::expectSqlState('23514', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = true, pay_token = ? WHERE invoice_id = ?', [str_repeat('a', 31).'-', $draft->id]));
-    RawSql::expectSqlState('23514', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = false, pay_token = ? WHERE invoice_id = ?', [PayToken::generate(), $draft->id]));
+
+    // A token outlives a switch-off (a printed pay URL keeps answering), so the check is about the format only.
+    RawSql::expectAllowed(static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = false, pay_token = ? WHERE invoice_id = ?', [PayToken::generate(), $draft->id]));
 });
 
 /**
@@ -351,7 +365,7 @@ describe('the draft editor', function (): void {
 
         $editor = cardEditor($draft)
             ->assertSee('Platba kartou')
-            ->assertSee('Na dokladu a v e-mailu se zobrazí tlačítko Zaplatit kartou. Po vystavení už nejde změnit.')
+            ->assertSee('Na dokladu a v e-mailu se zobrazí tlačítko Zaplatit kartou. Do odeslání dokladu jde platbu kartou vypnout nebo zapnout.')
             ->assertSet('data.card_payment_enabled', true)
             ->assertFormFieldIsEnabled('card_payment_enabled');
 
@@ -371,7 +385,7 @@ describe('the draft editor', function (): void {
 
         cardEditor($draft)
             ->assertSee('Online platby jsou vypnuté v Nastavení.')
-            ->assertDontSee('Po vystavení už nejde změnit.')
+            ->assertDontSee('Do odeslání dokladu jde platbu kartou vypnout nebo zapnout.')
             ->assertSet('data.card_payment_enabled', false)
             ->assertFormFieldIsDisabled('card_payment_enabled')
             ->call('save')
@@ -462,6 +476,35 @@ describe('the settings and the client form', function (): void {
         $this->actingAs(Canary::admin());
 
         Livewire::test(CreateClient::class)
-            ->assertSee('Zapnuto: u dokladů tohoto klienta se nabídne platba kartou. Nový koncept převezme tuto hodnotu a u dokladu ji lze přepsat.');
+            ->assertSee('Zapnuto: u dokladů tohoto klienta se nabídne platba kartou. Nový koncept převezme tuto hodnotu a u dokladu ji lze přepsat. Úhradu online jde na dokladu zvolit jen se zapnutou online platbou.');
     });
 });
+
+it('blocks the issue of an online draft once card payment is unavailable, and leaves it a draft that can still be saved (P14-09)', function (string $cause): void {
+    CardPaymentSetup::enable();
+    $admin = Canary::admin();
+    $client = CardPaymentSetup::client();
+    $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '2400.00')]);
+    $draft = InvoiceFixtures::online($draft);
+
+    match ($cause) {
+        'settings_off' => CardPaymentSetup::onlinePayments(false),
+        'stripe_missing' => StripeTestConfig::clear(),
+        default => app(PartnerContext::class)->runAsSystem(static fn (): int => $client->newQuery()->whereKey($client->id)->update(['online_payment_enabled' => false])),
+    };
+
+    $saved = app(UpdateDraft::class)->handle($admin, $draft, ['note' => 'Example note']);
+
+    expect($saved->note)->toBe('Example note')
+        ->and($saved->payment_method?->value)->toBe('online');
+
+    try {
+        app(IssueDocument::class)->handle($admin, $saved);
+        $this->fail('An online draft was issued although card payment is unavailable.');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('online_unavailable')
+            ->and($e->errors()['online_unavailable'][0])->toBe(__('invoices.errors.online_unavailable'));
+    }
+
+    expect($saved->fresh()->isDraft())->toBeTrue();
+})->with(['settings_off', 'stripe_missing', 'client_off']);

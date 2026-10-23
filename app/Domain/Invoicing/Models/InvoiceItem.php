@@ -26,9 +26,10 @@ use LogicException;
  * Partner-scoped {@see Invoice} query, so the rules (own client, issued, client not archived) live in one place
  * (IN-09, U-3), the way a task follows its project. A draft never exists for a Partner, so neither do its lines.
  *
- * The lines of an issued document accept no write (the database child guard, plan 10-04). Only the printed text
- * is fillable; the document, position, quantity, amounts, VAT and the credit link are set with `forceFill` by
- * the Actions. The quantity is kept as the exact decimal text of the column; {@see InvoiceItem::quantity()}
+ * The lines of an issued document are written only while the document is open: a sent document is locked and its
+ * lines are frozen until the Admin unlocks it (the database child guard follows `invoices.lock_state`, Phase 10.1;
+ * D-01), and a credit note's lines are frozen from its issue. Only the printed text is fillable; the document,
+ * position, quantity, amounts, VAT and the credit link are set with `forceFill` by the Actions. The quantity is kept as the exact decimal text of the column; {@see InvoiceItem::quantity()}
  * reads it as an {@see InvoiceQuantity}. Money is read in the currency of the parent document.
  *
  * @property string $id

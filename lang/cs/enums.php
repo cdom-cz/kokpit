@@ -192,6 +192,17 @@ return [
         'issued' => 'Vystaveno',
     ],
 
+    'invoice_lock_state' => [
+        'open' => 'Lze upravit',
+        'locked' => 'Uzamčeno',
+    ],
+
+    // Phase 14 (D-01): how one invoice or proforma is paid.
+    'document_payment_method' => [
+        'transfer' => 'Bankovní převod',
+        'online' => 'Online platba kartou',
+    ],
+
     'invoice_status' => [
         'draft' => 'Koncept',
         'unpaid' => 'Nezaplaceno',
@@ -249,6 +260,14 @@ return [
         'sending' => 'Odesílá se',
         'sent' => 'Odesláno',
         'failed' => 'Odeslání selhalo',
+    ],
+
+    'payment_confirmation_state' => [
+        'queued' => 'Čeká na odeslání',
+        'sending' => 'Čeká na odeslání',
+        'sent' => 'Odesláno',
+        'failed' => 'Neodesláno',
+        'skipped' => 'Bez e-mailu',
     ],
 
     'payment_link_state' => [

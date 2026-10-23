@@ -117,6 +117,18 @@ function paMails(): array
 }
 
 /**
+ * The mails addressed to an Admin: the alerts. An e-mail to anyone else (a client) is not among them.
+ *
+ * @return list<array{subject: string, to: string, text: string}>
+ */
+function paAdminMails(): array
+{
+    $addresses = array_map(static fn (User $admin): string => $admin->email, paAdmins());
+
+    return array_values(array_filter(paMails(), static fn (array $mail): bool => in_array($mail['to'], $addresses, true)));
+}
+
+/**
  * The mails with the given subject.
  *
  * @return list<array{subject: string, to: string, text: string}>
@@ -264,7 +276,7 @@ it('gives a matched payment its bell notice only and no problem notice or mail',
         expect(array_column(paBell($admin), 'title'))->toBe(['Přišla platba kartou']);
     }
 
-    expect(paMails())->toBe([]);
+    expect(paAdminMails())->toBe([]);
 });
 
 it('notifies nobody when the transaction of a classified duplicate or unmatched payment is rolled back', function (): void {
@@ -290,5 +302,5 @@ it('notifies nobody when the transaction of a classified duplicate or unmatched 
         expect(array_column(paBell($admin), 'title'))->toBe(['Přišla platba kartou']);
     }
 
-    expect(paMails())->toBe([]);
+    expect(paAdminMails())->toBe([]);
 });

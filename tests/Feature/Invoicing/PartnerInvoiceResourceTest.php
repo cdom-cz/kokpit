@@ -7,6 +7,8 @@ use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
+use App\Domain\Payments\Support\PayToken;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Partner\Resources\PartnerInvoiceResource;
 use App\Filament\Partner\Resources\PartnerInvoiceResource\Pages\ListPartnerInvoices;
@@ -14,10 +16,12 @@ use App\Filament\Partner\Resources\PartnerInvoiceResource\Pages\ViewPartnerInvoi
 use App\Filament\Support\InvoiceColumns;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
+use Tests\Support\FictionalIban;
 use Tests\Support\InvoiceFixtures;
 use Tests\Support\InvoiceScenario;
 
@@ -43,6 +47,22 @@ function partnerInvoicePay(Invoice $invoice, string $amount, string $paidOn = '2
     test()->actingAs($admin);
 
     app(RecordPayment::class)->handle($admin, $invoice, ['amount' => $amount, 'paid_on' => $paidOn]);
+}
+
+/**
+ * An issued, still open document switched to online payment the way the database allows it (Phase 14, plan 14-02): the
+ * method is online, the bank snapshot is gone, the card switch is on and a first pay token is set.
+ */
+function partnerInvoiceOnline(Invoice $issued): Invoice
+{
+    $token = PayToken::generate();
+
+    app(PartnerContext::class)->runAsSystem(static function () use ($issued, $token): void {
+        DB::update("update invoices set payment_method = 'online', bank_snapshot = null where id = ?", [$issued->id]);
+        DB::update('update invoice_admin set card_payment_enabled = true, pay_token = ? where invoice_id = ?', [$token, $issued->id]);
+    });
+
+    return Invoice::query()->whereKey($issued->id)->firstOrFail();
 }
 
 describe('the tracer', function (): void {
@@ -326,5 +346,57 @@ describe('every document state', function (): void {
             ->all();
 
         expect($labels)->toHaveCount(1);
+    });
+});
+
+describe('the payment method (Phase 14)', function (): void {
+    beforeEach(function (): void {
+        $this->client = InvoiceFixtures::client();
+        $this->partner = Canary::partnerFor($this->client->id);
+    });
+
+    it('shows the method, the account lines and the variable symbol of a transfer invoice', function (): void {
+        $invoice = InvoiceFixtures::issued($this->client, [InvoiceFixtures::item('Example work', '1', '10000.00')]);
+        $this->actingAs($this->partner);
+
+        $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $invoice]))
+            ->assertOk()
+            ->assertSee('Způsob úhrady')
+            ->assertSee('Bankovní převod')
+            ->assertDontSee('Online platba kartou')
+            ->assertSee('Bankovní účet')
+            ->assertSee(trim(chunk_split(FictionalIban::czech('12'), 4, ' ')))
+            ->assertSee('Variabilní symbol')
+            ->assertSee((string) $invoice->variable_symbol);
+    });
+
+    it('shows an online invoice with its method and amount and without the account or the variable symbol', function (): void {
+        $issued = InvoiceFixtures::issued($this->client, [InvoiceFixtures::item('Example work', '1', '10000.00')]);
+        $online = partnerInvoiceOnline($issued);
+        $this->actingAs($this->partner);
+
+        $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $online]))
+            ->assertOk()
+            ->assertSee('Způsob úhrady')
+            ->assertSee('Online platba kartou')
+            ->assertDontSee('Bankovní převod')
+            ->assertSee(Money::ofMinor(1_000_000, 'CZK')->format('cs'))
+            ->assertSee('Částka k úhradě')
+            ->assertDontSee(FictionalIban::czech('12'))
+            ->assertDontSee(trim(chunk_split(FictionalIban::czech('12'), 4, ' ')))
+            ->assertDontSee('Bankovní účet')
+            ->assertDontSee('Variabilní symbol');
+    });
+
+    it('shows an online proforma the same way', function (): void {
+        $issued = InvoiceFixtures::issued($this->client, [InvoiceFixtures::item('Advance', '1', '5000.00')], InvoiceKind::Proforma);
+        $online = partnerInvoiceOnline($issued);
+        $this->actingAs($this->partner);
+
+        $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $online]))
+            ->assertOk()
+            ->assertSee('Online platba kartou')
+            ->assertDontSee('Bankovní účet')
+            ->assertDontSee('Variabilní symbol');
     });
 });

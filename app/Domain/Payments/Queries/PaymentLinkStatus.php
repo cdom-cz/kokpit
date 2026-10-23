@@ -20,7 +20,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 
 /**
  * Where the card payment of one document stands, for the Admin (PA-01, PA-02, PA-04; D-04, D-06 to D-09, ruling
- * R11-12-1). Nothing is stored: the state is the frozen switch of `invoice_admin`, the newest `payment_links` row
+ * R11-12-1). Nothing is stored: the state is the stored card switch of `invoice_admin` (editable while the document is open, frozen by the lock), the newest `payment_links` row
  * ({@see PaymentLink::latestFor()}: the live row is always the newest, because a new row is opened only when none is
  * live), the balance and the cancellation.
  *
@@ -42,11 +42,11 @@ final class PaymentLinkStatus
      */
     public const string LATEST_STATE_SQL = "(SELECT latest_link.state FROM payment_links AS latest_link WHERE latest_link.invoice_id = invoices.id ORDER BY CASE WHEN latest_link.state IN ('pending', 'active') THEN 0 ELSE 1 END, latest_link.created_at DESC, latest_link.id DESC LIMIT 1)";
 
-    /** The frozen card switch of the document, as SQL over the table `invoices`. */
+    /** The stored card switch of the document (editable while it is open, frozen by the lock), as SQL over the table `invoices`. */
     public const string SWITCH_SQL = '(SELECT admin_row.card_payment_enabled FROM invoice_admin AS admin_row WHERE admin_row.invoice_id = invoices.id)';
 
     /**
-     * `switch` the frozen card switch; `state` the state of the newest link, null without one; `reason` why a
+     * `switch` the stored card switch; `state` the state of the newest link, null without one; `reason` why a
      * deactivated link ended; `failed` whether the newest link failed; `offered` and `created_at` the amount and
      * creation instant of the newest link; `remaining` what the document still owes (null for a credit note or a
      * draft); `payable` whether the client can pay it by card right now (an invoice or proforma, issued, not paid, not

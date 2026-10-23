@@ -9,22 +9,29 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
+use App\Domain\Invoicing\Actions\UnlockInvoice;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Payments\Support\PayUrl;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
+use Dom\HTMLDocument;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Pipeline\Pipeline;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Defer\DeferredCallbackCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
@@ -34,6 +41,7 @@ use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mime\Email;
 use Tests\Support\Canary;
+use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\InvoiceFixtures;
 use Tests\Support\PdfText;
@@ -205,6 +213,32 @@ describe('the tracer: queue the e-mail of an issued invoice and send it', functi
             ->and($defaults['has_work_report'])->toBeFalse();
     });
 
+    it('pre-fills an online-method document without pointing at bank details, in Czech and in English', function (): void {
+        CardPaymentSetup::enable();
+
+        foreach (['cs', 'en'] as $language) {
+            $client = CardPaymentSetup::client(['invoice_language' => $language]);
+            $draft = InvoiceFixtures::online(InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '12500.00')], InvoiceKind::Invoice, $this->admin));
+            $invoice = app(IssueDocument::class)->handle($this->admin, $draft);
+
+            $body = app(QueueInvoiceEmail::class)->defaults($invoice)['body'];
+
+            expect($invoice->payment_method)->toBe(DocumentPaymentMethod::Online)
+                ->and($body)->toContain($invoice->number)
+                ->and($body)->not->toContain($language === 'cs' ? 'Platební údaje najdete' : 'Payment details are in')
+                ->and($body)->toContain($language === 'cs' ? 'online platební kartou' : 'paid online by card')
+                ->and($body)->toEndWith($language === 'cs' ? "S pozdravem\nExample Supplier s.r.o." : "Kind regards\nExample Supplier s.r.o.");
+        }
+    });
+
+    it('keeps the transfer wording for a transfer document and the credit note wording for a credit note', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $credit = InvoiceFixtures::stornoed($invoice);
+
+        expect(app(QueueInvoiceEmail::class)->defaults($invoice)['body'])->toContain('Platební údaje najdete v přiloženém dokumentu.')
+            ->and(app(QueueInvoiceEmail::class)->defaults($credit)['body'])->toContain('Platba bude vrácena samostatně.');
+    });
+
     it('pre-fills an English proforma in English', function (): void {
         $proforma = InvoiceFixtures::issued(
             InvoiceFixtures::client(['invoice_language' => 'en']),
@@ -246,7 +280,7 @@ describe('the tracer: queue the e-mail of an issued invoice and send it', functi
         Queue::assertPushed(SendInvoiceEmail::class, static fn (SendInvoiceEmail $job): bool => $job->emailId === $row->id);
     });
 
-    it('sends one plain-text mail with the stored PDF and marks the row sent', function (): void {
+    it('sends one mail with an HTML part, a plain-text part and the stored PDF and marks the row sent', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => 'invoice@example.com']));
 
         $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
@@ -259,7 +293,7 @@ describe('the tracer: queue the e-mail of an issued invoice and send it', functi
 
         expect(array_map(static fn ($address): string => $address->getAddress(), $email->getTo()))->toBe(['invoice@example.com'])
             ->and($email->getSubject())->toBe('Faktura '.$invoice->number)
-            ->and($email->getHtmlBody())->toBeNull()
+            ->and((string) $email->getHtmlBody())->toContain('Example Supplier s.r.o.')
             ->and($email->getTextBody())->toStartWith("Dobrý den,\n\nv příloze posíláme fakturu č. ".$invoice->number)
             ->and(invMailAttachmentNames($email))->toBe(['faktura-'.$invoice->number.'.pdf'])
             ->and($email->getAttachments()[0]->getBody())->toStartWith('%PDF-');
@@ -291,9 +325,9 @@ describe('the tracer: queue the e-mail of an issued invoice and send it', functi
         $defaults = app(QueueInvoiceEmail::class)->defaults($invoice);
 
         expect($defaults['has_work_report'])->toBeTrue()
-            ->and($defaults['attach_work_report'])->toBeTrue();
+            ->and($defaults['attach_work_report'])->toBeFalse();
 
-        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, ['attach_work_report' => true]));
 
         $messages = invMailSent();
 
@@ -325,7 +359,7 @@ describe('the tracer: queue the e-mail of an issued invoice and send it', functi
     it('names the work report in English for an English document', function (): void {
         ['invoice' => $invoice] = invMailInvoiceWithTime('en');
 
-        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, ['attach_work_report' => true]));
 
         expect(invMailAttachmentNames(invMailSent()[0]))->toBe(['invoice-'.$invoice->number.'.pdf', 'work-report-'.$invoice->number.'.pdf']);
     });
@@ -458,6 +492,72 @@ describe('a send that keeps failing', function (): void {
     });
 });
 
+describe('a queued e-mail older than the stale threshold', function (): void {
+    /**
+     * Moves the last move of a row to the given number of seconds ago, the way a lost job leaves it.
+     */
+    function invMailAge(string $emailId, int $seconds): void
+    {
+        app(PartnerContext::class)->runAsSystem(static fn (): int => InvoiceEmail::query()->whereKey($emailId)->update(['updated_at' => CarbonImmutable::now()->subSeconds($seconds)]));
+    }
+
+    it('gives the row up as failed with the class stale, sends nothing and locks nothing', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        invMailAge($row->id, (int) config('kokpit.health.unsent_invoice_email_stale_after') + 60);
+
+        invMailTry($row->id);
+
+        expect(invMailSent())->toBe([])
+            ->and(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Failed)
+            ->and(invMailRow($row->id)->failure_code)->toBe('stale')
+            ->and(invMailRow($row->id)->attempts)->toBe(0)
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Open)
+            ->and(invMailBell($this->admin))->toHaveCount(1);
+
+        // A second run changes and tells nothing.
+        invMailTry($row->id);
+
+        expect(invMailSent())->toBe([])
+            ->and(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Failed)
+            ->and(invMailBell($this->admin))->toHaveCount(1);
+    });
+
+    it('still sends a queued row a minute short of the threshold and locks the document', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        invMailAge($row->id, (int) config('kokpit.health.unsent_invoice_email_stale_after') - 60);
+
+        invMailTry($row->id);
+
+        expect(invMailSent())->toHaveCount(1)
+            ->and(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Sent)
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Locked)
+            ->and(invMailBell($this->admin))->toBe([]);
+    });
+
+    it('claims the row under the invoice row lock', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        invMailTry($row->id);
+
+        $lock = array_find_key($queries, static fn (string $sql): bool => str_contains($sql, 'from "invoices"') && str_contains($sql, 'for update'));
+        $claim = array_find_key($queries, static fn (string $sql): bool => str_starts_with($sql, 'update "invoice_emails"') && str_contains($sql, '"state"'));
+
+        expect($lock)->not->toBeNull()
+            ->and($claim)->not->toBeNull()
+            ->and($lock)->toBeLessThan($claim);
+    });
+});
+
 describe('a resend', function (): void {
     it('is a new row; the first stays failed and the latest row decides', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => 'recipient@example.com']));
@@ -475,6 +575,154 @@ describe('a resend', function (): void {
             ->and($invoice->emails()->count())->toBe(2)
             ->and($invoice->emails()->first()?->id)->toBe($second->id)
             ->and(invMailSent())->toHaveCount(1);
+    });
+});
+
+describe('the lock: only a successfully sent document e-mail locks the invoice', function (): void {
+    it('locks the invoice together with the sent mark when the transport accepts the message', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        expect($invoice->lock_state)->toBe(InvoiceLockState::Open);
+
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        expect(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Sent)
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Locked)
+            ->and($invoice->isLocked())->toBeTrue();
+    });
+
+    it('locks a proforma the same way', function (): void {
+        $proforma = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Advance', '1', '5000.00', 'pcs')], InvoiceKind::Proforma);
+
+        app(QueueInvoiceEmail::class)->handle($this->admin, $proforma, invMailData($proforma));
+
+        expect($proforma->refresh()->lock_state)->toBe(InvoiceLockState::Locked);
+    });
+
+    it('leaves the invoice open while the e-mail is only queued', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        expect(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Queued)
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Open);
+    });
+
+    it('leaves the row queued and the invoice open when the transport throws', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => 'recipient@example.com']));
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        invMailBreakTransport('recipient@example.com');
+
+        expect(fn () => invMailTry($row->id))->toThrow(RuntimeException::class);
+        expect(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Queued)
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Open);
+    });
+
+    it('leaves the invoice open when the queue gives up on the e-mail', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        (new SendInvoiceEmail($row->id))->failed(new TransportException('relay refused'));
+
+        expect(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Failed)
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Open);
+    });
+
+    it('keeps a locked invoice as it is when another e-mail is sent for it', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        $before = $invoice->refresh();
+        $snapshot = $before->getAttributes();
+
+        $this->travel(5)->minutes();
+        $second = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        expect(invMailRow($second->id)->state)->toBe(InvoiceEmailState::Sent)
+            ->and(invMailSent())->toHaveCount(2)
+            ->and($invoice->refresh()->getAttributes())->toBe($snapshot);
+    });
+});
+
+/**
+ * The lock rows of the history of a document.
+ *
+ * @return list<Activity>
+ */
+function invMailLockRows(Invoice $invoice): array
+{
+    return Activity::query()
+        ->where('subject_type', 'invoice')
+        ->where('subject_id', $invoice->id)
+        ->where('event', 'invoice_locked')
+        ->orderBy('created_at')
+        ->get()
+        ->all();
+}
+
+describe('the lock audit: one history row per lock, written by the send', function (): void {
+    it('writes one row with the sender as causer when the send locks the document', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        $rows = invMailLockRows($invoice);
+
+        expect($rows)->toHaveCount(1)
+            ->and($rows[0]->causer_id)->toBe($this->admin->id)
+            ->and($rows[0]->attribute_changes?->all())->toBe([
+                'attributes' => ['lock_state' => 'locked'],
+                'old' => ['lock_state' => 'open'],
+            ]);
+    });
+
+    it('writes no row for a resend of a locked document', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        $this->travel(5)->minutes();
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        expect(invMailLockRows($invoice))->toHaveCount(1);
+    });
+
+    it('writes no row while the e-mail is queued, when the transport throws or when the queue gives up', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => 'recipient@example.com']));
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        expect(invMailLockRows($invoice))->toBe([]);
+
+        invMailBreakTransport('recipient@example.com');
+
+        expect(fn () => invMailTry($row->id))->toThrow(RuntimeException::class)
+            ->and(invMailLockRows($invoice))->toBe([]);
+
+        (new SendInvoiceEmail($row->id))->failed(new TransportException('relay refused'));
+
+        expect(invMailLockRows($invoice))->toBe([]);
+    });
+
+    it('locks again with a second row after an unlock and the next successful send, and not before', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        $this->travel(5)->minutes();
+        $opened = app(UnlockInvoice::class)->handle($this->admin, $invoice, 'Wrong example quantity on line one');
+
+        expect($opened->isLocked())->toBeFalse()
+            ->and($invoice->refresh()->isLocked())->toBeFalse()
+            ->and(invMailLockRows($invoice))->toHaveCount(1);
+
+        $this->travel(5)->minutes();
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        expect($invoice->refresh()->isLocked())->toBeTrue()
+            ->and(invMailLockRows($invoice))->toHaveCount(2);
     });
 });
 
@@ -540,15 +788,18 @@ describe('what the dialog may submit', function (): void {
         }
     });
 
-    it('sends the body as plain text, markup and all', function (): void {
+    it('keeps the typed text as it is in the text part and reads it literally in the HTML part, markup and all', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
 
         app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, ['body' => "Hello <b>there</b> & \"friends\"\0"]));
 
         $email = invMailSent()[0];
 
-        expect($email->getHtmlBody())->toBeNull()
-            ->and(trim((string) $email->getTextBody()))->toBe('Hello <b>there</b> & "friends"');
+        $html = HTMLDocument::createFromString((string) $email->getHtmlBody(), LIBXML_NOERROR);
+
+        expect(trim((string) $email->getTextBody()))->toBe('Hello <b>there</b> & "friends"')
+            ->and($html->querySelectorAll('b'))->toHaveCount(0)
+            ->and((string) $html->body?->textContent)->toContain('Hello <b>there</b> & "friends"');
     });
 
     it('refuses a draft', function (): void {
@@ -597,6 +848,49 @@ describe('what the dialog may submit', function (): void {
         invMailTry($row->id);
 
         expect(invMailAttachmentNames(invMailSent()[0]))->toBe(['faktura-'.$invoice->number.'.pdf']);
+    });
+});
+
+describe('the HTML layout (Phase 13)', function (): void {
+    it('sends a card-enabled document as an HTML e-mail with the supplier header, the typed text and a pay button', function (): void {
+        CardPaymentSetup::enable();
+
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client(['invoice_email' => 'invoice@example.com']));
+        $url = PayUrl::forInvoice($invoice);
+        $data = invMailData($invoice);
+
+        Mail::getSymfonyTransport()->flush();
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, $data);
+
+        $messages = invMailSent();
+
+        expect($messages)->toHaveCount(1);
+
+        $email = $messages[0];
+        $html = HTMLDocument::createFromString((string) $email->getHtmlBody(), LIBXML_NOERROR);
+        $buttons = $html->querySelectorAll('a.button');
+
+        expect($url)->not->toBeNull()
+            ->and($buttons)->toHaveCount(1)
+            ->and($buttons[0]?->getAttribute('href'))->toBe($url)
+            ->and(trim((string) $buttons[0]?->textContent))->toBe('Zaplatit kartou')
+            ->and((string) $html->body?->textContent)->toContain('Example Supplier s.r.o.')
+            ->and((string) $html->body?->textContent)->toContain('Doklad můžete zaplatit online kartou:')
+            ->and((string) $html->body?->textContent)->toContain('Pokud tlačítko nefunguje')
+            ->and((string) $html->body?->textContent)->toContain($url)
+            ->and(rtrim((string) $email->getTextBody()))->toBe(rtrim($data['body'])."\n\nDoklad můžete zaplatit online kartou:\n".$url)
+            ->and($email->getSubject())->toBe('Faktura '.$invoice->number)
+            ->and(invMailAttachmentNames($email))->toBe(['faktura-'.$invoice->number.'.pdf']);
+    });
+
+    it('sends a document without card payment with no button', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => 'invoice@example.com']));
+
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        $html = HTMLDocument::createFromString((string) invMailSent()[0]->getHtmlBody(), LIBXML_NOERROR);
+
+        expect($html->querySelectorAll('a.button'))->toHaveCount(0);
     });
 });
 

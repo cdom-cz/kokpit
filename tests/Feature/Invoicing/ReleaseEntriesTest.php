@@ -15,6 +15,7 @@ use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
 use Tests\Support\InvoiceFixtures;
 
@@ -145,12 +146,12 @@ it('ignores the entries of another draft and the free ones', function (): void {
     expect(app(ReleaseEntries::class)->handle($this->admin, $draft, [$entries[2]->id]))->toBe(0);
 });
 
-it('refuses to unlink from an issued document and leaves its time billed', function (): void {
+it('refuses to unlink from a locked issued document and leaves its time billed', function (): void {
     ['entries' => $entries, 'draft' => $draft] = releaseSetup();
-    $issued = app(IssueDocument::class)->handle($this->admin, $draft);
+    $issued = InvoiceFixtures::lock(app(IssueDocument::class)->handle($this->admin, $draft));
 
     expect(fn () => app(ReleaseEntries::class)->handle($this->admin, $issued, [$entries[0]->id]))
-        ->toThrow(DomainException::class, __('invoices.errors.not_draft'));
+        ->toThrow(ValidationException::class, __('invoices.errors.document_locked'));
 
     $stored = releaseFresh($entries[0]);
 

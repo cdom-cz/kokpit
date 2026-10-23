@@ -44,10 +44,15 @@ use LogicException;
  *  2. a document that is not an issued invoice or proforma: `undetermined`;
  *  3. a cancelled invoice: unmatched `cancelled`;
  *  4. nothing owed any more: duplicate `already_paid`;
- *  5. a currency other than the link's: unmatched `currency`;
+ *  5. a currency other than the link's, or a link whose currency is no longer the document's (an open document whose
+ *     currency changed after the payer opened the old session; since migration 2026_10_22_000300 the database no longer
+ *     pins a link to the currency of its document): unmatched `currency`;
  *  6. an amount other than the one the link offered, or other than the one still owed: unmatched `amount`;
  *  7. otherwise matched: the payment and its income through {@see RecordPayment::recordLocked()} with no actor, which
  *     also deactivates the link, and the bell notice to every Admin once the transaction has committed.
+ *
+ * The document comparison of step 5 closes review CR-01 (an old session paid in the former currency must never be booked
+ * in the new one); the database pin of migration 2026_10_23_000100 is the backstop for every other writer.
  *
  * The amount and the currency are the session's `amount_total` and `currency`, never the payer's presentment figures
  * (Pitfall 6). The record is claimed first with {@see CardPayment::recordOnce()}: its unique event, session and payment
@@ -110,7 +115,7 @@ final readonly class RecordCardPayment implements StripeEventAction
             return $this->record($event, $link, $locked, CardPaymentType::Duplicate, CardPaymentReason::AlreadyPaid);
         }
 
-        if ($event->currency !== $link->currency) {
+        if ($event->currency !== $link->currency || $link->currency !== $locked->currency) {
             return $this->record($event, $link, $locked, CardPaymentType::Unmatched, CardPaymentReason::Currency);
         }
 

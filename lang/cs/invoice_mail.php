@@ -22,11 +22,16 @@ return [
 
     'body' => [
         'with_due_date' => "Dobrý den,\n\nv příloze posíláme :kind č. :number na částku :amount se splatností :due.\n\nPlatební údaje najdete v přiloženém dokumentu.\n\nS pozdravem\n:supplier",
+        // A document of the online method prints no bank details, so this text does not point at them (A-13-4).
+        'with_due_date_online' => "Dobrý den,\n\nv příloze posíláme :kind č. :number na částku :amount se splatností :due.\n\nDoklad je určen k úhradě online platební kartou.\n\nS pozdravem\n:supplier",
         'credit_note' => "Dobrý den,\n\nv příloze posíláme :kind č. :number na částku :amount.\n\nPlatba bude vrácena samostatně.\n\nS pozdravem\n:supplier",
     ],
 
     // The fixed line before the stable pay URL that the mailer appends (D-03); it is not part of the editable text.
     'pay_block_lead' => 'Doklad můžete zaplatit online kartou:',
+
+    // The label of the "Pay by card" button of the HTML part; the URL is the stable pay URL.
+    'pay_button' => 'Zaplatit kartou',
 
     // The generated name of the work report attachment: no user text reaches it.
     'work_report_file' => 'pracovni-vykaz-:number.pdf',

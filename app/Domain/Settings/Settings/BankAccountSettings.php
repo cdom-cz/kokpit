@@ -9,16 +9,22 @@ use App\Domain\Settings\Banking\BankAccountFormat;
 use App\Domain\Settings\Casts\BankAccountListCast;
 use App\Domain\Settings\Rules\IbanRule;
 use App\Domain\Settings\Rules\KnownCurrency;
-use App\Domain\Settings\Rules\UniqueCurrencies;
+use App\Domain\Settings\Rules\UniqueAccountIds;
 use Closure;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 /**
- * The supplier's bank accounts (group `bank`), at most one per currency
- * (D-03, D-04). Every stored account has the same shape: fields the chosen
- * format does not show are null.
+ * The supplier's bank accounts (group `bank`). Several accounts may share a
+ * currency: D-04 of Phase 14 overrides Phase 3 D-04 "one account per currency".
+ * Every stored account has the same shape: fields the chosen format does not
+ * show are null.
+ *
+ * Every account has a stable UUID v7 id that a document can point at. The id
+ * is assigned once, in save() or by the settings migration that numbered the
+ * accounts stored before the phase, and never on a read.
  */
 class BankAccountSettings extends ValidatedSettings
 {
@@ -44,15 +50,16 @@ class BankAccountSettings extends ValidatedSettings
     }
 
     /**
-     * Rules of the list as a whole. The rules of a single account depend on its
-     * format and are applied per account by accountRules() in save().
+     * Rules of the list as a whole: every account has an id, no id twice. The
+     * rules of a single account depend on its format and are applied per
+     * account by accountRules() in save().
      *
      * @return array<string, list<mixed>>
      */
     public static function rules(): array
     {
         return [
-            'accounts' => ['array', new UniqueCurrencies],
+            'accounts' => ['array', new UniqueAccountIds],
         ];
     }
 
@@ -108,12 +115,15 @@ class BankAccountSettings extends ValidatedSettings
     }
 
     /**
+     * The form state carries the id of every account, so the Repeater hands it
+     * back on save.
+     *
      * @return array{accounts: list<array<string, string|null>>}
      */
     public function toFormState(): array
     {
         return [
-            'accounts' => array_map(static fn (BankAccount $account): array => $account->toArray(), $this->accounts),
+            'accounts' => array_map(static fn (BankAccount $account): array => $account->toStoredArray(), $this->accounts),
         ];
     }
 
@@ -151,8 +161,9 @@ class BankAccountSettings extends ValidatedSettings
     }
 
     /**
-     * Validates every account by its format, then the list (one account per
-     * currency), and only then writes.
+     * Validates every account by its format, gives every account without an
+     * id a new UUID v7 (D-04), then validates the list (every id a UUID, no id
+     * twice) and only then writes.
      *
      * @throws ValidationException
      */
@@ -179,14 +190,38 @@ class BankAccountSettings extends ValidatedSettings
             throw ValidationException::withMessages($errors);
         }
 
+        $this->accounts = array_map(
+            static fn (BankAccount $account): BankAccount => $account->id === null ? $account->withId((string) Str::uuid7()) : $account,
+            $this->accounts,
+        );
+
         return parent::save();
     }
 
     /**
-     * The account of a currency (compared upper case), or null when none exists.
-     * Invoices use it to pick the account by the client's currency (D-04).
+     * The account with the given id, or null for an unknown id or an account
+     * that has none yet. The exact id match is the one way a document finds
+     * the account it was told to use (D-04).
      */
-    public function forCurrency(string $currency): ?BankAccount
+    public function find(string $id): ?BankAccount
+    {
+        foreach ($this->accounts as $account) {
+            if ($account->id !== null && $account->id === $id) {
+                return $account;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The first account of a currency in the order of the settings list
+     * (compared upper case), or null when none exists. This is the
+     * preselection rule of D-05: the currency only suggests an account, the
+     * document keeps the account it references by id. The only application
+     * caller is DocumentPayment; tests/Arch/BankAccountByIdTest.php keeps it so.
+     */
+    public function firstForCurrency(string $currency): ?BankAccount
     {
         $currency = mb_strtoupper(trim($currency));
 

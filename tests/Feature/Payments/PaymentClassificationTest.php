@@ -7,9 +7,11 @@ use App\Domain\Finance\Models\Transaction;
 use App\Domain\Invoicing\Actions\DeletePayment;
 use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\RecordPayment;
+use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Issuing\IssueContext;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
 use App\Domain\Payments\Actions\RecordCardPayment;
@@ -23,6 +25,7 @@ use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Payments\Stripe\StripeEvent;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\WebhookCall;
+use App\Domain\Shared\Money\Money;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -312,6 +315,78 @@ it('records a payment in another currency as unmatched', function (): void {
         ->and($record->offered_currency)->toBe('CZK')
         ->and(clsPayments($invoice))->toBe([])
         ->and(clsIncomes($invoice))->toBe([]);
+});
+
+/**
+ * An issued CZK card-on invoice whose currency the Admin switched to EUR with the same figure (D-06, D-11): the stored
+ * line keeps its number, so the total reads 12 500,00 in EUR. The link of the old currency is deactivated and a new EUR
+ * link is created against the in-memory gateway.
+ *
+ * @return array{0: Invoice, 1: PaymentLink} the document and its former CZK link
+ */
+function clsSwitchedToEur(): array
+{
+    InvoiceFixtures::cnbRate('EUR', IssueContext::today(), '25.125');
+    [$invoice, $old] = clsInvoice();
+
+    $lines = app(PartnerContext::class)->runAsSystem(static fn (): array => InvoiceItem::query()->where('invoice_id', $invoice->id)->orderBy('position')->get()->all());
+
+    test()->actingAs(test()->admin);
+    app(UpdateIssuedDocument::class)->handle(test()->admin, $invoice, [
+        'currency' => 'EUR',
+        'items' => array_map(static fn (InvoiceItem $line): array => [
+            'id' => $line->id,
+            'description' => $line->description,
+            'quantity' => $line->quantity,
+            'unit' => $line->unit,
+            'unit_price' => Money::ofMinor($line->unit_price_minor, 'EUR')->toMajor(),
+        ], $lines),
+    ]);
+
+    $row = clsRow($invoice);
+
+    expect($row?->currency)->toBe('EUR')
+        ->and($row?->total_minor)->toBe(1_250_000)
+        ->and(app(PartnerContext::class)->runAsSystem(static fn (): PaymentLinkState => PaymentLink::query()->whereKey($old->id)->firstOrFail()->state))->toBe(PaymentLinkState::Deactivated);
+
+    return [$invoice, $old];
+}
+
+it('records a paid session of a link in the former currency of the document as unmatched currency, with no payment and no income', function (): void {
+    [$invoice, $old] = clsSwitchedToEur();
+    $rowBefore = clsRow($invoice);
+
+    StripeWebhookSigner::post($this, StripeEvents::checkoutFor($old))->assertOk();
+
+    $record = clsOnlyRecord();
+
+    expect($record->type)->toBe(CardPaymentType::Unmatched)
+        ->and($record->reason)->toBe(CardPaymentReason::Currency)
+        ->and($record->currency)->toBe('CZK')
+        ->and($record->offered_currency)->toBe('CZK')
+        ->and($record->amount_minor)->toBe(1_250_000)
+        ->and($record->invoice_id)->toBe($invoice->id)
+        ->and(clsPayments($invoice))->toBe([])
+        ->and(clsIncomes($invoice))->toBe([])
+        ->and(clsRemaining($invoice))->toBe(1_250_000)
+        ->and(clsRow($invoice))->toEqual($rowBefore);
+});
+
+it('still matches a paid session of the new link after the currency change, in the new currency', function (): void {
+    [$invoice, $old] = clsSwitchedToEur();
+
+    $new = app(PartnerContext::class)->runAsSystem(static fn (): PaymentLink => PaymentLink::query()
+        ->where('invoice_id', $invoice->id)->where('id', '!=', $old->id)->orderByDesc('created_at')->firstOrFail());
+
+    StripeWebhookSigner::post($this, StripeEvents::checkoutFor($new))->assertOk();
+
+    $incomes = clsIncomes($invoice);
+
+    expect(clsOnlyRecord()->type)->toBe(CardPaymentType::Matched)
+        ->and(clsPayments($invoice))->toHaveCount(1)
+        ->and($incomes)->toHaveCount(1)
+        ->and($incomes[0]->amount_currency)->toBe('EUR')
+        ->and(clsRemaining($invoice))->toBe(0);
 });
 
 it('records the whole offered amount as unmatched once part of the invoice was paid by hand', function (): void {

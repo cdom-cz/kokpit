@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 11
-current_phase_name: Stripe Payments
+current_phase: 13
+current_phase_name: Unified e-mail layout and HTML e-mail templates
 status: verifying
-stopped_at: Completed 11-20-PLAN.md
-last_updated: "2026-10-22T19:25:07.966Z"
-last_activity: 2026-10-18
-last_activity_desc: Phase 11 execution started
-state_head: 30823f68dfd2a0f71fa916f3c0ac5ec517b9b8f3
+stopped_at: Phase 12 context gathered
+last_updated: "2026-10-23T22:11:37.837Z"
+last_activity: 2026-10-23
+last_activity_desc: Phase 13 execution started
+state_head: b516b2ff82f17f55080276f197181649d8d1c89b
 progress:
-  total_phases: 13
+  total_phases: 16
   completed_phases: 7
-  total_plans: 245
-  completed_plans: 245
-  percent: 54
+  total_plans: 285
+  completed_plans: 285
+  percent: 44
 ---
 
 # Project State
@@ -23,21 +23,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 11 — Stripe Payments
+**Current focus:** Phase 13 — Unified e-mail layout and HTML e-mail templates
 
 ## Current Position
 
-Phase: 11 (Stripe Payments) — EXECUTING
-Plan: 20 of 20
+Phase: 13 (Unified e-mail layout and HTML e-mail templates) — EXECUTING
+Plan: 9 of 9
 Status: Phase complete — ready for verification
-Last activity: 2026-10-22 - Completed quick task 261022-sgn: Improve global search to match client, project and task names, and project and task codes
+Last activity: 2026-10-23 — Phase 13 execution started
 
-Progress: [█████░░░░░] 54%
+Progress: [████░░░░░░] 44%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 129
+- Total plans completed: 145
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -53,6 +53,7 @@ Progress: [█████░░░░░] 54%
 | 06 | 14 | - | - |
 | 07 | 20 | - | - |
 | 09.1 | 9 | - | - |
+| 10.1 | 16 | - | - |
 
 **Recent Trend:**
 - Last 5 plans: -
@@ -308,6 +309,42 @@ Progress: [█████░░░░░] 54%
 | Phase 11 P17 | 25min | 2 tasks | 11 files |
 | Phase 11 P18 | 45min | 2 tasks | 3 files |
 | Phase 11 P20 | 75min | 3 tasks | 7 files |
+| Phase 10.1 P01 | 50 min | 2 tasks | 14 files |
+| Phase 10.1 P11 | 5min | 2 tasks | 3 files |
+| Phase 10.1 P02 | 55 min | 2 tasks | 10 files |
+| Phase 10.1 P03 | 40min | 3 tasks | 5 files |
+| Phase 10.1 P04 | 60min | 2 tasks | 10 files |
+| Phase 10.1 P12 | 35 min | 3 tasks | 7 files |
+| Phase 10.1 P05 | 25 min | 3 tasks | 5 files |
+| Phase 10.1 P06 | 75min | 3 tasks | 10 files |
+| Phase 10.1 P07 | 70 min | 3 tasks | 7 files |
+| Phase 10.1 P08 | 60 min | 3 tasks | 10 files |
+| Phase 10.1 P09 | 75min | 3 tasks | 15 files |
+| Phase 10.1 P10 | 110 min | 3 tasks | 13 files |
+| Phase 14 P01 | 25 min | 2 tasks | 9 files |
+| Phase 14 P02 | 40min | 2 tasks | 12 files |
+| Phase 14 P03 | 20 min | 2 tasks | 6 files |
+| Phase 14 P04 | 16 min | 3 tasks | 14 files |
+| Phase 14 P05 | 35 min | 2 tasks | 9 files |
+| Phase 14 P06 | 25min | 2 tasks | 5 files |
+| Phase 14 P07 | 40min | 3 tasks | 7 files |
+| Phase 14 P08 | 31 min | 2 tasks | 5 files |
+| Phase 14 P09 | 29 min | 3 tasks | 6 files |
+| Phase 14 P10 | 40 min | 2 tasks | 8 files |
+| Phase 14 P11 | 25min | 2 tasks | 10 files |
+| Phase 14 P12 | 6 min | 2 tasks | 2 files |
+| Phase 14 P13 | 25 min | 2 tasks | 3 files |
+| Phase 14 P14-14 | 30 min | 2 tasks | 5 files |
+| Phase 14 P15 | 25 min | 2 tasks | 5 files |
+| Phase 13 P01 | 55min | 2 tasks | 13 files |
+| Phase 13 P02 | 25min | 2 tasks | 9 files |
+| Phase 13 P03 | 15min | 2 tasks | 6 files |
+| Phase 13 P04 | 35min | 2 tasks | 14 files |
+| Phase 13 P05 | 40min | 2 tasks | 10 files |
+| Phase 13 P06 | 30 min | 2 tasks | 10 files |
+| Phase 13 P07 | 25min | 3 tasks | 10 files |
+| Phase 13 P08 | 45min | 3 tasks | 11 files |
+| Phase 13 P09 | 45 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -768,6 +805,65 @@ Recent decisions affecting current work:
 - [Phase 11]: 11-18: a worker tells an ignored event from a processed one by its own processed_at update; the unlocked twin is deterministic (read before the barrier, wait for the other commit)
 - [Phase 11]: 11-20: the Partner sweep pins routes/public.php to exactly pay.show and webhooks.stripe and the journey test reads mail from the array transport, not Mail::fake()
 - [Phase 11]: 11-20: the Phase 11 hand-over bullet of CONTRIBUTING is replaced by a Card payments bullet and a Phase 12 public-route bullet, guarded by RepositoryFilesTest
+- [Phase 10.1]: A successfully sent document e-mail is the only lock: SendInvoiceEmail marks the row sent and locks the invoice in one transaction, invoice row locked first; a locked row is never written again, not even updated_at.
+- [Phase 10.1]: The database refuses a currency change of any document a credit note names (owner ruling of D-06), in kokpit_guard_invoice_row(); credit notes are locked at issue by DocumentIssuer and by the trigger and are never unlocked.
+- [Phase 10.1]: The send-driven lock replaces status-driven immutability (D-01, D-12)
+- [Phase 10.1]: 10.1-02: UnlockInvoice is the only setter of the unlock setting; lock_state stays off the logged allowlist so InvoiceAudit writes exactly one row per lock and unlock
+- [Phase 10.1]: 10.1-02: the open banner and the unlock action skip a cancelled invoice and a converted proforma (assumption A3); the Locked writer is confined by token to the send job, the credit note issue and the model
+- [Phase 10.1]: 10.1-03: time moves on and off an open issued invoice or proforma; a credit note, cancelled invoice and converted proforma take no time (kokpit_invoice_accepts_time_changes)
+- [Phase 10.1]: 10.1-03: a payment link records the currency it offered and never changes; new links must match the document currency; invoice_payments keeps its composite key
+- [Phase 10.1]: 10.1-04: an internal-note-only save does not replace the PDF; a line counts as credited when any credit note line (draft or issued) names it
+- [Phase 10.1]: 10.1-12: post-send edits are audited by one invoice_edited row built from a fixed-key snapshot diff; an edit waits for a queued or live sending e-mail and the queue shares the invoice row lock; totals below paid or credited warn without blocking
+- [Phase 10.1]: 10.1-05: a new card link after an edit is opened only when no live link remains, the card switch is on, an amount is owed and the newest link was not switched off manually
+- [Phase 10.1]: 10.1-06: the issued editor mode is fixed at mount in a locked Livewire property, so a draft issued in another tab still meets the Action refusal
+- [Phase 10.1]: 10.1-06: credited rows are disabled but dehydrated, so a crafted change reaches UpdateIssuedDocument and comes back as a field error
+- [Phase 10.1]: 10.1-07: assertIssueDate() collects future, scope and order problems under issue_date; a missing neighbour leaves its bound open with a one-sided message
+- [Phase 10.1]: 10.1-07: customer name limit is 255 (client column), supplier name 200 (SupplierSettings); only changed party fields are validated; bank is refilled from settings only via reload_bank
+- [Phase 10.1]: 10.1-08: freezeAt() takes persistTotals (default true); a currency change leaves the row save to the Action so a never-sent document keeps one history row
+- [Phase 10.1]: 10.1-08: a currency change uses the CNB lists of the stored issue date (A6), the editor preview uses the same day; refusals of a currency change are all keyed under currency
+- [Phase 10.1]: 10.1-08: currency choices (bank account currencies, client currency, document currency) live in IssuedDocumentRules::currencyChoices(), shared by the editor and the Action
+- [Phase 10.1]: 10.1-09: an issued document that cannot take time is refused under the field document; an add, release or fixed amount that changes nothing skips the finisher
+- [Phase 10.1]: 10.1-09: the issued editor keeps the linked time tab as its only relation manager so the Přidat nový čas button has a dialog to open
+- [Phase 10.1]: 10.1-10: the edit-versus-queue mutation twin is judged on the total the queue first read as well as on commit order, because the foreign key from invoice_emails to invoices already serialises the commits
+- [Phase 14]: R-14-01-1: bank account id lives in the settings payload (toStoredArray) and never in the document snapshot shape (toArray)
+- [Phase 14]: R-14-01-5 amended: account-id settings migration writes via SettingsRepository because migrator->update() runs the list cast on stdClass items
+- [Phase 14]: R-14-02-2: payment_method is an open column of kokpit_guard_invoice_row() and defaults to transfer on insert (credit note stays NULL)
+- [Phase 14]: OA-7: invoices_issued_fields_check requires the bank snapshot for an issued transfer document and forbids it for an online one
+- [Phase 14]: OA-1: a first pay token and card switch changes are allowed on an open issued document, a set token never changes; pay token check is format-only
+- [Phase 14]: R-14-03-1: InvoiceCurrencies::choices() is the one currency list (CNB, bank accounts, client, current, CZK), used by the create-draft modal, the draft editor and the open issued editor
+- [Phase 14]: R-14-03-3: a CNB-only currency is offered, but an issued change to it is refused with bank_missing until plan 14-09 decouples the account
+- [Phase 14]: 14-04: DocumentPayment::account() treats a stored but removed account id as no account (never re-picked) and falls back to the first account of the currency only when no id is stored
+- [Phase 14]: 14-04: bank_missing copy is generic (no currency), shared by the draft blockers and, until plans 14-07/14-10, by the correction paths of an open issued document
+- [Phase 14]: R-14-05-1: PayUrl::forInvoice() is the one gate for a printed pay URL: card switch on AND a token; PayLinkBlock::applies()/forMail() stay the one predicate of the invoice e-mail pay block (Phase 13 hand-over, OA-5)
+- [Phase 14]: R-14-05-2: an online document prints no bank detail, variable symbol or QR; its payment box holds the online sentence, the method, the amount due and the card button
+- [Phase 14]: R-14-06-1/2: both invoice details read payment_method; an online document hides bank account and (Partner) variable symbol rows; Admin keeps variable symbol
+- [Phase 14]: 14-07: an account sent as null on an open issued transfer document is refused as bank_account_required; the recorded account id is the one the snapshot was taken from
+- [Phase 14]: 14-08: the draft editor's online option is never disabled for a draft that is already online; the empty-account notice is the field's danger hint with the Settings link
+- [Phase 14]: R-14-09-1: a converted proforma inherits payment_method and, when still configured, bank_account_id; the card switch is on for online and off for transfer
+- [Phase 14]: R-14-09-2: PaymentLinks::reconcile runs after the last carried payment in the conversion transaction, so a fully paid converted invoice has no live link
+- [Phase 14]: R-14-09-3: InvoiceAudit::snapshot gains payment_method and card_payment; the account id and the pay token never enter the history
+- [Phase 14]: Plan 14-10: the issued editor sends an account only when the Admin changed it, so a removed or legacy account keeps its printed snapshot on an unrelated save
+- [Phase 14]: Plan 14-10: BankAccountSettings::forCurrency() and InvoiceSnapshot::bank() are deleted; tests/Arch/BankAccountByIdTest.php confines firstForCurrency( to the settings class and DocumentPayment
+- [Phase 14]: Phase 14 rules live in one CONTRIBUTING bullet (Payment method and bank accounts) under RepositoryFilesTest; Phase 13 e-mail keeps PayLinkBlock::applies() as its one predicate
+- [Phase 14]: PayToken docblock: token generated when the document first offers card payment (issue or later on an open issued document), set once
+- [Phase 14]: R-14-12-1: the issued editor sends bank_account_id when it differs from the filled one or when the currency changes in the same save and an account is chosen; R-14-10-2 is narrowed, not reversed
+- [Phase 14]: R-14-13-2: online branch of issuedSwitch() uses onlineUnavailableReason() (client flag included) instead of CardPaymentSwitch::available()
+- [Phase 14]: R-14-14-4: a converted invoice inherits the proforma's stored account id unfiltered; when that account is no longer configured it prints the proforma's own bank snapshot (handed over through IssueContext), never another account
+- [Phase 13]: R-13-01-3: MailBrand is the single system-context reader of supplier branding for e-mail (whitelist, scoped binding, fallback to the app name on any Throwable)
+- [Phase 13]: R-13-01-1: only the customised mail views are published (layout, message, header, footer, kokpit.css, notifications/email); other components stay the framework fallback
+- [Phase 13]: 13-02: no guard trigger on payment_confirmations; the confirmation mark lives in its own table, not on invoice_payments, invoices or invoice_emails
+- [Phase 13]: Selection not suppression: payment and invoicing tests read the mail transport by recipient and subject (Admin address for alerts), counts exact, nothing names the confirmation
+- [Phase 13]: R-13-04-1: the supplier logo is an inline cid part (kokpit-logo.png, at most 360 x 120 px, shown at most 180 x 60), embedded by EmbedMailLogo only when MailBrand::hasLogo(); no route, URL or data URI
+- [Phase 13]: R-13-04-2: Markdown escaping of mail lines lives in MailText (escapeMarkdown/unescapeMarkdown); the text layout removes the escape backslashes
+- [Phase 13]: R-13-05-1: PayLinkBlock::forHtml() is the one predicate; the HTML button and the text block of the document e-mail come from one call
+- [Phase 13]: A-13-4: an online-method document pre-fills with_due_date_online, which no longer points at bank details
+- [Phase 13]: 13-06: a payment confirmation is queued inside the payment transaction by RecordPayment::recordLocked() with a 300 s grace window; its job claims its own row and never locks the invoice
+- [Phase 13]: 13-06: the confirmation is written in the client's invoice language and mails proformas too (A-13-1); no pay button (A-13-5)
+- [Phase 13]: R-13-07-1: typed and runtime values in the invitation and the alerts pass through MailText::escapeMarkdown; subjects and URLs stay plain
+- [Phase 13]: R-13-07-3: the password reset is Kokpit's subclass of Filament's notification overriding only buildMailMessage; expiry read from the default broker config and pluralised in Czech
+- [Phase 13]: 13-07: the plain-text layout turns the layout's own <br> into line breaks before stripping tags, so a multi-line sign-off keeps its lines
+- [Phase 13]: 13-08: the Platby tab shows the confirmation state per payment and the record dialog names the invoice e-mail it will reach; the Markdown escape keeps no-break spaces of amounts
+- [Phase 13]: 13-09: CONTRIBUTING E-mail bullet guarded by RepositoryFilesTest; PROJECT.md records the Phase 13 decisions and assumptions A-13-1, A-13-3 to A-13-7 as Pending for the owner
 
 ### Pending Todos
 
@@ -814,7 +910,12 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 
 ### Roadmap Evolution
 
-- Phase 09.1 inserted after Phase 9: Transactions API: REST API for the transactions and transaction_categories tables, including bulk creation (URGENT)
+- Phase 09.1 inserted after Phase 10: Transactions API: REST API for the transactions and transaction_categories tables, including bulk creation (URGENT)
+- Phase 13 added: Unified e-mail layout and HTML e-mail templates: one shared layout for all outgoing e-mails, and every sent e-mail converted to an HTML template
+- Phase 14 added: Online payment method and invoice currency: selectable online (Stripe) payment method that replaces bank payment details on the invoice, and selectable invoice currency reflected in the PDF and the Stripe payment
+- Phase 10.1 inserted after Phase 10: Invoices stay fully editable until sent, with a manual unlock (URGENT)
+- Phase 10.2 removed: the paid-invoice confirmation e-mail is delivered in Phase 13
+- Phase 14 edited: edited fields: title, goal (payment method switchable between bank transfer and online; currency independent of method and bank account; account preselected by matching currency, separately selectable)
 
 ## Deferred Items
 
@@ -826,6 +927,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-18T17:55:50.504Z
-Stopped at: Completed 11-20-PLAN.md
-Resume file: None
+Last session: 2026-10-23T22:11:34.910Z
+Stopped at: Phase 12 context gathered
+Resume file: .planning/phases/12-partner-audit/12-CONTEXT.md

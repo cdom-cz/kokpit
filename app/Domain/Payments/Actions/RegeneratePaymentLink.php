@@ -26,7 +26,7 @@ use Illuminate\Validation\ValidationException;
  * pending link for the remaining amount is opened and created by the same idempotent job as at issue.
  *
  * Refused under `payment_link`: `not_regenerable` for a document that is not an issued, uncancelled invoice or
- * proforma with its frozen card switch on and an amount still owed, and `preparing` while the live link is still
+ * proforma with its card switch on and an amount still owed, and `preparing` while the live link is still
  * being created. The Admin only.
  */
 final readonly class RegeneratePaymentLink

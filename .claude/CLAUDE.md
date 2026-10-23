@@ -16,7 +16,7 @@ Kokpit is an open-source (AGPL-3.0) web CRM/ERP for a freelancer or small compan
 - **Data integrity**: UUID v7 keys everywhere incl. package morph columns; FK, unique, partial indexes and check constraints enforced in DB
 - **Repository hygiene**: no secrets, real data or instance-specific values in git; enforced by tooling from step 0 (local denylist outside repo, pre-commit hook, gitleaks, CI)
 - **Concurrency**: number sequences (tasks, invoices) must be gap-free and duplicate-free under concurrent creation
-- **Immutability**: issued invoices and billed time entries are immutable; snapshots for supplier, customer, rates, exchange rates
+- **Immutability**: an issued invoice or proforma stays editable until a successful e-mail send locks it; Admin may unlock a sent document with a recorded reason; number and kind never change; credit notes and billed time entries are immutable; snapshots for supplier, customer, rates, exchange rates
 
 <!-- GSD:project-end -->
 

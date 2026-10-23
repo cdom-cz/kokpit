@@ -11,7 +11,6 @@ use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Concerns\EnforcesRelationManagerAccessRule;
 use App\Filament\Support\SendInvoiceEmailAction;
-use Carbon\CarbonImmutable;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -27,8 +26,9 @@ use Livewire\Attributes\On;
  * reads none of it.
  *
  * The note is never the stored failure class and never an exception or provider text (T-10-65): the query does not
- * even select it. A row still `sending` after the stale threshold of the System page belongs to a worker that died and
- * reads as failed (ruling R-37-1), so the Admin can send again. "Odeslat znovu" is offered on failed rows only and opens
+ * even select it. A row still `queued` or `sending` after the stale threshold of the System page belongs to a lost job
+ * or a worker that died and reads as failed (ruling R-37-1, queued rows by plan 10.1-15), so the Admin can send again;
+ * the job never sends such a row. "Odeslat znovu" is offered on failed rows only and opens
  * the shared dialog pre-filled with the values of that row; the send is a new row.
  */
 #[AccessRule(Audience::AdminOnly, reason: 'The send log holds recipients and bodies of e-mails with documents: a Partner never sees it, not even for the own invoice (IN-09).')]
@@ -112,20 +112,19 @@ final class InvoiceEmailsRelationManager extends RelationManager
     }
 
     /**
-     * The state of a row as the Admin should read it: a send that a dead worker left in `sending` for longer than the
-     * stale threshold counts as failed (ruling R-37-1).
+     * The state of a row as the Admin should read it: a send that is still queued or sending past the stale threshold
+     * belongs to a lost job or a dead worker and counts as failed (ruling R-37-1, extended to queued rows by plan
+     * 10.1-15; the job never sends such a row).
      */
     private function effectiveState(InvoiceEmail $email): InvoiceEmailState
     {
-        if ($email->state !== InvoiceEmailState::Sending) {
+        if ($email->state !== InvoiceEmailState::Queued && $email->state !== InvoiceEmailState::Sending) {
             return $email->state;
         }
 
-        $staleAfter = max(1, (int) config('kokpit.health.unsent_invoice_email_stale_after'));
-
-        return $email->updated_at !== null && $email->updated_at->lessThanOrEqualTo(CarbonImmutable::now()->subSeconds($staleAfter))
+        return $email->updated_at !== null && $email->updated_at->lessThanOrEqualTo(InvoiceEmail::staleBefore())
             ? InvoiceEmailState::Failed
-            : InvoiceEmailState::Sending;
+            : $email->state;
     }
 
     private function invoice(): Invoice

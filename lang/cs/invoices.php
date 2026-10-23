@@ -15,12 +15,19 @@ return [
         'client_unknown' => 'Vyberte klienta.',
         'kind' => 'Zvolte fakturu nebo zálohovou fakturu.',
         'currency' => 'Zvolte platnou měnu.',
+        'currency_has_payments' => 'Měnu nelze změnit, k dokladu jsou zaznamenané platby.',
+        'currency_has_credit_notes' => 'Měnu nelze změnit, k faktuře existuje dobropis.',
         'language' => 'Zvolte jazyk dokladu.',
         'date_invalid' => 'Zadejte platné datum.',
         'due_before_issue' => 'Datum splatnosti nesmí být dříve než datum vystavení.',
         'note_length' => 'Poznámka na dokladu může mít nejvýše 500 znaků.',
         'internal_note_length' => 'Interní poznámka může mít nejvýše 2 000 znaků.',
         'card_payment_invalid' => 'Platbu kartou lze zapnout nebo vypnout jen u faktury a zálohové faktury.',
+        'payment_method_invalid' => 'Zvolte úhradu převodem nebo online.',
+        'bank_account_unknown' => 'Vybraný bankovní účet v Nastavení neexistuje.',
+        'bank_account_required' => 'Doklad s úhradou převodem potřebuje bankovní účet. Vyberte ho.',
+        'card_payment_unavailable' => 'Platbu kartou teď nelze zapnout: online platby jsou vypnuté nebo Stripe není nastavený.',
+        'credit_note_no_payment' => 'Dobropis nemá způsob úhrady ani bankovní účet.',
 
         // The items of a draft.
         'item_unknown' => 'Položka nepatří k tomuto dokladu.',
@@ -35,13 +42,25 @@ return [
         'no_items' => 'Doklad nemá žádnou položku.',
         'total_not_positive' => 'Celková částka musí být větší než nula.',
         'supplier_missing' => 'Doplňte údaje dodavatele v Nastavení.',
-        'bank_missing' => 'Pro měnu :currency není nastaven bankovní účet. Přidejte ho v Nastavení.',
+        'bank_missing' => 'Doklad s úhradou převodem nemá vybraný bankovní účet. Vyberte ho na dokladu, nebo ho přidejte v Nastavení.',
+        'online_unavailable' => 'Úhradu online teď nelze použít: platba kartou musí být zapnutá v Nastavení, Stripe musí být nastavený a klient musí mít online platbu zapnutou.',
         'cnb_missing' => 'Pro měnu :currency není ke dni :date k dispozici kurz ČNB. Stáhněte kurzy v přehledu Kurzy ČNB.',
         'vat_payer_unsupported' => 'Režim plátce DPH zatím není podporován. Přepněte režim DPH v Nastavení.',
         'client_address_missing' => 'Klient nemá vyplněnou fakturační adresu.',
         'issue_date_future' => 'Datum vystavení nesmí být později než dnes.',
         'issue_date_before_latest' => 'Datum vystavení nesmí být dříve než :date, kdy byl vystaven poslední doklad této řady.',
+        'issue_date_scope' => 'Datum vystavení musí zůstat ve stejném období číselné řady jako původní datum.',
+        'issue_date_order' => 'Datum vystavení musí ležet mezi :previous a :next, daty sousedních dokladů řady.',
+        'issue_date_after_previous' => 'Datum vystavení nesmí být dříve než :previous, datum předchozího dokladu řady.',
+        'issue_date_before_next' => 'Datum vystavení nesmí být později než :next, datum následujícího dokladu řady.',
+        'taxable_supply_not_payer' => 'Datum zdanitelného plnění se u neplátce DPH neuvádí.',
         'pattern_invalid' => 'Číselná řada pro :kind není platná. Opravte ji v Nastavení.',
+
+        // The customer and supplier lines of an open issued document (plan 10.1-07).
+        'party_required' => 'Vyplňte název.',
+        'party_max' => 'Zadejte nejvýše :max znaků.',
+        'party_country' => 'Zadejte kód země ze dvou velkých písmen, například CZ.',
+        'party_format' => 'Hodnota nemá platný formát.',
         'entries_changed' => 'Některé připojené záznamy času se mezitím změnily. Zkontrolujte koncept a vystavte ho znovu.',
 
         // Time added to a draft.
@@ -64,6 +83,20 @@ return [
         'payment_delete_carried' => 'Platba je přenesená na fakturu :number. Nejdřív smažte platbu na faktuře.',
         'payment_missing' => 'Platba už neexistuje. Obnovte stránku.',
 
+        // The unlock of a sent document (D-03, assumptions A1 and A3).
+        'unlock_reason_length' => 'Důvod musí mít 10 až 500 znaků.',
+        'not_locked' => 'Doklad není uzamčen.',
+        'credit_note_locked' => 'Dobropis po vystavení upravit ani odemknout nelze.',
+        'cancelled_not_editable' => 'Stornovaný doklad upravit nelze.',
+        'converted_not_editable' => 'Zálohovou fakturu, ze které už vznikla faktura, upravit nelze.',
+
+        // The correction of an open issued document (assumptions A1, A3, A4, A8).
+        'not_issued' => 'Koncept se upravuje v editoru konceptu.',
+        'document_locked' => 'Doklad byl odeslán a je uzamčen. Nejprve ho odemkněte.',
+        'email_in_flight' => 'Doklad se právě odesílá e-mailem. Upravit ho půjde po dokončení odeslání.',
+        'credited_line_frozen' => 'Položka je dobropisovaná: změnit lze jen její text.',
+        'credited_line_delete' => 'Dobropisovanou položku nelze smazat.',
+
         // Conversion of a proforma.
         'proforma_not_issued' => 'Fakturu lze vystavit jen ze zálohy, která je vystavená a není stornovaná.',
         'proforma_not_paid' => 'Zálohu lze převést na fakturu až po úplném zaplacení.',
@@ -84,6 +117,13 @@ return [
         // The stored PDF.
         'pdf_unconfirmed' => 'PDF vystaveného dokladu lze smazat jen s výslovným potvrzením.',
         'pdf_missing' => 'PDF dokladu chybí.',
+    ],
+
+    // Warnings after a correction that leaves the totals below what was received or credited (D-04); the edit still stands.
+    'warnings' => [
+        'total_below_paid' => 'Celková částka je nižší než už zaplacená částka :amount.',
+        'total_below_credited' => 'Celková částka je nižší než dobropisovaná částka :amount.',
+        'issue_date_rates_kept' => 'Kurz ČNB a převedené položky zůstávají z původního data vystavení.',
     ],
 
     // The fixed text of the income transaction a payment books (R-16-2).
@@ -232,9 +272,16 @@ return [
             'internal_note' => 'Interní poznámka',
             'confirm_zero_price' => 'Potvrzuji nulovou cenu',
         ],
-        'payment_method_value' => 'Převodem',
         'helpers' => [
-            'card_payment' => 'Na dokladu a v e-mailu se zobrazí tlačítko Zaplatit kartou. Po vystavení už nejde změnit.',
+            'payment_method' => 'Převodem: na dokladu budou bankovní údaje a QR kód. Online: jen tlačítko Zaplatit kartou, bez bankovních údajů.',
+            'payment_method_settings_off' => 'Online úhradu nelze zvolit: online platby jsou vypnuté v Nastavení.',
+            'payment_method_stripe_missing' => 'Online úhradu nelze zvolit: Stripe není nastavený.',
+            'payment_method_client_off' => 'Online úhradu nelze zvolit: klient nemá zapnutou online platbu.',
+            'bank_account' => 'Při změně měny se předvybere první účet v této měně. Vybrat jde kterýkoli účet.',
+            'bank_account_none' => 'Bez bankovního účtu',
+            'bank_account_missing' => 'Bez bankovního účtu nejde doklad s úhradou převodem vystavit. Účty spravujete v Nastavení.',
+            'card_payment' => 'Na dokladu a v e-mailu se zobrazí tlačítko Zaplatit kartou. Do odeslání dokladu jde platbu kartou vypnout nebo zapnout.',
+            'card_payment_online' => 'U online úhrady je platba kartou vždy zapnutá.',
             'card_payment_settings_off' => 'Online platby jsou vypnuté v Nastavení.',
             'card_payment_stripe_missing' => 'Stripe není nastavený. Doplňte klíče v prostředí aplikace.',
             'variable_symbol' => 'Přidělí se při vystavení.',
@@ -343,6 +390,7 @@ return [
             'issue_date' => 'Datum vystavení',
             'due_date' => 'Splatnost',
             'currency' => 'Měna',
+            'payment_method' => 'Způsob úhrady',
             'card_payment' => 'Platba kartou',
             'card_payment_yes' => 'Ano, odkaz se vytvoří po vystavení',
             'card_payment_no' => 'Ne',
@@ -365,6 +413,44 @@ return [
         'links' => [
             'settings' => 'Otevřít Nastavení',
             'rates' => 'Otevřít Kurzy ČNB',
+        ],
+    ],
+
+    // The editor of an open issued invoice or proforma (plan 10.1-06): the same editor as a draft, in issued mode.
+    'edit_issued' => [
+        'title' => 'Úprava dokladu :number',
+        'badge' => 'Vystaveno, lze upravit',
+        'save' => 'Uložit změny',
+        'cancel' => 'Zpět na doklad',
+        'saved' => 'Změny jsou uložené. PDF bylo vytvořeno znovu, doklad nebyl odeslán.',
+        'number_hint' => 'Číslo a druh dokladu se nemění.',
+        'credited_hint' => 'Dobropisovaná položka: měnit lze jen text.',
+        'parties' => 'Odběratel a dodavatel',
+        'customer' => 'Odběratel',
+        'supplier' => 'Dodavatel',
+        'refill_customer' => 'Načíst z karty klienta',
+        'refill_supplier' => 'Načíst z nastavení dodavatele',
+        'refill_bank' => 'Načíst bankovní účet z nastavení',
+        'bank_pending' => 'Po uložení se použije účet:',
+        'bank_online' => 'Online úhrada: doklad bankovní údaje netiskne.',
+        'currency_change' => [
+            'heading' => 'Změnit měnu dokladu?',
+            'body' => 'Kurz ČNB, položky z času a platební odkaz se převezmou znovu ke dni vystavení a bankovní účet se předvybere podle nové měny (vybrat jde i jiný). Ručně zadané jednotkové ceny a pevné částky se nepřepočítají. Zkontrolujte je po změně.',
+            'submit' => 'Změnit měnu',
+            'cancel' => 'Ponechat měnu',
+        ],
+        'party_fields' => [
+            'name' => 'Název',
+            'street' => 'Ulice',
+            'city' => 'Město',
+            'postal_code' => 'PSČ',
+            'country' => 'Země (kód)',
+            'company_id' => 'IČO',
+            'vat_id' => 'DIČ',
+            'email' => 'E-mail',
+            'phone' => 'Telefon',
+            'website' => 'Web',
+            'registration_note' => 'Zápis v rejstříku',
         ],
     ],
 
@@ -422,6 +508,8 @@ return [
             'awaiting_invoice' => 'Záloha je zaplacená, ale faktura k ní zatím nebyla vystavena. Příjem se zaúčtuje až při vystavení faktury.',
             'cancelled_paid' => 'Faktura byla stornována, ale platba zůstává zaevidovaná. Vrácení peněz a výdaj zaznamenejte ručně.',
             'credit_exists' => 'K dokladu existuje dobropis :number.',
+            'open_for_edits' => 'Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.',
+            'locked' => 'Doklad byl odeslán e-mailem a je uzamčen. Upravit ho lze až po odemknutí s uvedením důvodu.',
         ],
         'actions' => [
             'download' => 'Stáhnout PDF',
@@ -433,6 +521,15 @@ return [
             'storno' => 'Stornovat',
             'edit_note' => 'Upravit poznámku',
             'open' => 'Otevřít doklad',
+            'unlock' => 'Odemknout',
+            'edit' => 'Upravit',
+        ],
+        'unlock' => [
+            'heading' => 'Odemknout doklad :number',
+            'description' => 'Doklad už zákazník dostal. Po odemknutí ho můžete upravit; po dalším úspěšném odeslání e-mailem se znovu uzamkne.',
+            'reason' => 'Důvod odemknutí',
+            'submit' => 'Odemknout',
+            'done' => 'Doklad je odemčen',
         ],
         'note' => [
             'heading' => 'Interní poznámka',
@@ -463,6 +560,7 @@ return [
             'method' => 'Způsob',
             'category' => 'Kategorie příjmu',
             'note' => 'Poznámka',
+            'confirmation' => 'Potvrzení klientovi',
         ],
         'helper' => 'Uloženou platbu nelze upravit. Chybnou platbu smažte akcí Smazat platbu; smaže se i příjem, který z ní vznikl.',
         'empty_heading' => 'Zatím žádná platba',
@@ -480,6 +578,8 @@ return [
             'proforma_callout' => 'Platba se u zálohy jen eviduje. Příjem se zaúčtuje až při vystavení faktury.',
             'already_paid' => 'Faktura je již zaplacená.',
             'over_amount' => 'Zadaná částka je vyšší než zbývající částka (:remaining).',
+            'confirmation_hint' => 'Klientovi odejde na :email potvrzení přijetí platby.',
+            'confirmation_hint_none' => 'Klient nemá použitelný fakturační e-mail, potvrzení platby se neodešle.',
             'not_editable' => 'Uloženou platbu nelze upravit, jen smazat.',
             'submit' => 'Uložit platbu',
             'submit_anyway' => 'Přesto uložit platbu',
@@ -686,7 +786,7 @@ return [
         'draft_field' => 'Koncept faktury',
         'open_draft' => 'Otevřít koncept',
         'skipped_reserved' => '{1} Přeskočen :count záznam připojený ke konceptu faktury. Odpojte ho v konceptu.|[2,4] Přeskočeny :count záznamy připojené ke konceptu faktury. Odpojte je v konceptu.|[5,*] Přeskočeno :count záznamů připojených ke konceptu faktury. Odpojte je v konceptu.',
-        'unlock_refusal' => 'Záznam patří k vystavené faktuře :number a nelze ho odemknout. Vystavte dobropis.',
+        'unlock_refusal' => 'Záznam patří k vystavené faktuře :number. Uvolnit ho lze na faktuře, dokud není odeslaná, nebo dobropisem.',
     ],
 
     // Surface N: the Partner view. The Partner state labels are in enums.php (invoice_status_partner).

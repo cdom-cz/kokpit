@@ -12,7 +12,9 @@ use Tests\Support\RawSql;
 /*
  * The storage end of the billing documents (IN-01, IN-03, IN-08, IN-09, D-13): the invoices and invoice_items
  * tables are written with raw SQL here, so the proof holds for every writer. Names, numbers and amounts are
- * invented; no real business data. Issued numbers are composed from fragments.
+ * invented; no real business data. Issued numbers are composed from fragments. Since phase 10.1 an issued document
+ * is open until it is locked (IN-11): the frozen-state proofs run on a locked document, the open state has its own
+ * cases, and the full state x lock matrix lives in InvoiceLockGuardTest.
  */
 
 /**
@@ -136,6 +138,17 @@ function invoiceTablesIssue(string $invoiceId, array $overrides = []): void
 }
 
 /**
+ * Issues the draft by raw SQL and locks it in the same statement, the state of a document that has been sent (IN-11).
+ * An issued document is open until then; the frozen-state proofs below run on a locked one.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function invoiceTablesIssueLocked(string $invoiceId, array $overrides = []): void
+{
+    invoiceTablesIssue($invoiceId, ['lock_state' => 'locked', ...$overrides]);
+}
+
+/**
  * A draft with two items.
  *
  * @return array{0: string, 1: string, 2: string} the invoice id and the two item ids
@@ -170,10 +183,10 @@ describe('a draft and its items', function (): void {
     });
 });
 
-describe('an issued invoice', function (): void {
+describe('a locked issued invoice', function (): void {
     it('accepts no write at all, a timestamp-only one included', function (): void {
         [$invoiceId] = invoiceTablesDraftWithItems();
-        invoiceTablesIssue($invoiceId);
+        invoiceTablesIssueLocked($invoiceId);
 
         RawSql::expectSqlState('KP001', fn () => DB::update('update invoices set total_minor = 7 where id = ?', [$invoiceId]));
         RawSql::expectSqlState('KP001', fn () => DB::update("update invoices set note = 'later' where id = ?", [$invoiceId]));
@@ -185,7 +198,7 @@ describe('an issued invoice', function (): void {
 
     it('refuses TRUNCATE of both tables', function (): void {
         [$invoiceId] = invoiceTablesDraftWithItems();
-        invoiceTablesIssue($invoiceId);
+        invoiceTablesIssueLocked($invoiceId);
 
         RawSql::expectSqlState('KP001', fn () => DB::unprepared('TRUNCATE invoices CASCADE'));
         RawSql::expectSqlState('KP001', fn () => DB::unprepared('TRUNCATE invoice_items CASCADE'));
@@ -195,7 +208,7 @@ describe('an issued invoice', function (): void {
 
     it('refuses to add, change or delete an item, a timestamp-only change included', function (): void {
         [$invoiceId, $itemId] = invoiceTablesDraftWithItems();
-        invoiceTablesIssue($invoiceId);
+        invoiceTablesIssueLocked($invoiceId);
 
         RawSql::expectSqlState('KP001', fn () => invoiceTablesInsertItem($invoiceId, ['position' => 3]));
         RawSql::expectSqlState('KP001', fn () => DB::update("update invoice_items set description = 'Renamed' where id = ?", [$itemId]));
@@ -203,18 +216,18 @@ describe('an issued invoice', function (): void {
         RawSql::expectSqlState('KP001', fn () => DB::delete('delete from invoice_items where id = ?', [$itemId]));
     });
 
-    it('refuses to move an item of a draft under an issued document and the other way round', function (): void {
+    it('refuses to move an item of a draft under a locked document and the other way round', function (): void {
         [$draftId, $draftItem] = invoiceTablesDraftWithItems();
         [$issuedId, $issuedItem] = invoiceTablesDraftWithItems();
-        invoiceTablesIssue($issuedId);
+        invoiceTablesIssueLocked($issuedId);
 
         RawSql::expectSqlState('KP001', fn () => DB::update('update invoice_items set invoice_id = ?, position = 9 where id = ?', [$issuedId, $draftItem]));
         RawSql::expectSqlState('KP001', fn () => DB::update('update invoice_items set invoice_id = ?, position = 9 where id = ?', [$draftId, $issuedItem]));
     });
 
-    it('proves each guard by a mutation: without the item guard or with the implied timestamp the same statement is accepted', function (): void {
+    it('proves each guard by a mutation: without the item guard or the row guard the same statement is accepted', function (): void {
         [$invoiceId, $itemId] = invoiceTablesDraftWithItems();
-        invoiceTablesIssue($invoiceId);
+        invoiceTablesIssueLocked($invoiceId);
 
         $insertItem = fn () => RawSql::expectSqlState('KP001', fn () => invoiceTablesInsertItem($invoiceId, ['position' => 3]));
         $touchInvoice = fn () => RawSql::expectSqlState('KP001', fn () => DB::update('update invoices set updated_at = now() where id = ?', [$invoiceId]));
@@ -228,9 +241,44 @@ describe('an issued invoice', function (): void {
         expect($insertItem)->toThrow(AssertionFailedError::class, 'was accepted');
         expect($touchItem)->toThrow(AssertionFailedError::class, 'was accepted');
 
-        DB::unprepared(Immutability::dropGuardTriggerSql('invoices'));
-        DB::unprepared(Immutability::guardTriggerSql('invoices', 'state', 'draft', []));
+        DB::unprepared('DROP TRIGGER invoices_row_guard ON invoices');
         expect($touchInvoice)->toThrow(AssertionFailedError::class, 'was accepted');
+    });
+});
+
+describe('an open issued invoice', function (): void {
+    it('takes corrections of its open columns and keeps its identity', function (): void {
+        [$invoiceId] = invoiceTablesDraftWithItems();
+        invoiceTablesIssue($invoiceId);
+
+        RawSql::expectAllowed(fn () => DB::update("update invoices set subtotal_minor = 7, total_minor = 7, note = 'later', updated_at = now() where id = ?", [$invoiceId]));
+        RawSql::expectAllowed(fn () => DB::update('update invoices set updated_at = now() where id = ?', [$invoiceId]));
+
+        RawSql::expectSqlState('KP001', fn () => DB::update('update invoices set cancels_invoice = true where id = ?', [$invoiceId]));
+        RawSql::expectSqlState('KP001', fn () => DB::update("update invoices set state = 'draft' where id = ?", [$invoiceId]));
+        RawSql::expectSqlState('KP001', fn () => DB::delete('delete from invoices where id = ?', [$invoiceId]));
+    });
+
+    it('accepts items to be added, changed and deleted', function (): void {
+        [$invoiceId, $itemId] = invoiceTablesDraftWithItems();
+        invoiceTablesIssue($invoiceId);
+
+        RawSql::expectAllowed(fn () => invoiceTablesInsertItem($invoiceId, ['position' => 3]));
+        RawSql::expectAllowed(fn () => DB::update("update invoice_items set description = 'Renamed', updated_at = now() where id = ?", [$itemId]));
+        RawSql::expectAllowed(fn () => DB::delete('delete from invoice_items where id = ?', [$itemId]));
+    });
+
+    it('proves the guard by a mutation: without the row guard its identity can be rewritten', function (): void {
+        [$invoiceId] = invoiceTablesDraftWithItems();
+        invoiceTablesIssue($invoiceId);
+
+        $renumber = fn () => RawSql::expectSqlState('KP001', fn () => DB::update("update invoices set number = '9999'||'0001' where id = ?", [$invoiceId]));
+
+        $renumber();
+
+        DB::unprepared('DROP TRIGGER invoices_row_guard ON invoices');
+
+        expect($renumber)->toThrow(AssertionFailedError::class, 'was accepted');
     });
 });
 
@@ -474,7 +522,8 @@ describe('the storno marker', function (): void {
     it('freezes the storno marker with the credit note at its own issue', function (): void {
         $clientId = invoiceTablesClient();
         $invoice = invoiceTablesInsert(['client_id' => $clientId]);
-        invoiceTablesIssue($invoice);
+        // A storno locks nothing (D-01): the cancelled invoice refuses a write here only because it is locked itself.
+        invoiceTablesIssueLocked($invoice);
         $credit = invoiceTablesInsertCreditNote($invoice, $clientId, ['cancels_invoice' => true]);
         invoiceTablesInsertItem($credit, ['quantity' => '-2.0000', 'line_total_minor' => -100000]);
         invoiceTablesIssue($credit, invoiceTablesCreditFields());
@@ -567,6 +616,62 @@ describe('what an issued document must carry', function (): void {
     });
 });
 
+describe('the payment method of a document (Phase 14; D-01, D-02, OA-7)', function (): void {
+    it('defaults a raw-inserted invoice or proforma draft to transfer, whoever writes it', function (string $kind): void {
+        $id = invoiceTablesInsert(['kind' => $kind]);
+
+        expect(DB::selectOne('select payment_method from invoices where id = ?', [$id])->payment_method)->toBe('transfer');
+    })->with(['invoice', 'proforma']);
+
+    it('keeps a raw-inserted credit note without a method and refuses a method on it', function (): void {
+        $clientId = invoiceTablesClient();
+        $invoice = invoiceTablesInsert(['client_id' => $clientId]);
+        $credit = invoiceTablesInsertCreditNote($invoice, $clientId);
+
+        expect(DB::selectOne('select payment_method from invoices where id = ?', [$credit])->payment_method)->toBeNull();
+
+        RawSql::expectSqlState('23514', fn () => DB::update("update invoices set payment_method = 'transfer' where id = ?", [$credit]));
+        RawSql::expectSqlState('23514', fn () => invoiceTablesInsertCreditNote($invoice, $clientId, ['payment_method' => 'transfer']));
+    });
+
+    it('keeps an explicit method on insert and refuses any value but transfer and online', function (): void {
+        $online = invoiceTablesInsert(['payment_method' => 'online']);
+
+        expect(DB::selectOne('select payment_method from invoices where id = ?', [$online])->payment_method)->toBe('online');
+
+        RawSql::expectSqlState('23514', fn () => invoiceTablesInsert(['payment_method' => 'card']));
+        RawSql::expectSqlState('23514', fn () => invoiceTablesInsert(['payment_method' => '']));
+    });
+
+    it('refuses to remove the method of an invoice or a proforma after insert', function (string $kind): void {
+        $id = invoiceTablesInsert(['kind' => $kind]);
+
+        RawSql::expectSqlState('23514', fn () => DB::update('update invoices set payment_method = null where id = ?', [$id]));
+        RawSql::expectSqlState('23514', fn () => DB::update("update invoices set payment_method = 'card' where id = ?", [$id]));
+        RawSql::expectAllowed(fn () => DB::update("update invoices set payment_method = 'online' where id = ?", [$id]));
+    })->with(['invoice', 'proforma']);
+
+    it('lets an issued online invoice or proforma carry no bank snapshot and refuses one with a snapshot (OA-7)', function (string $kind): void {
+        $id = invoiceTablesInsert(['kind' => $kind, 'payment_method' => 'online']);
+
+        RawSql::expectSqlState('23514', fn () => invoiceTablesIssue($id));
+        RawSql::expectAllowed(fn () => invoiceTablesIssue($id, ['bank_snapshot' => null]));
+    })->with(['invoice', 'proforma']);
+
+    it('requires the bank snapshot of an issued transfer invoice or proforma (OA-7)', function (string $kind): void {
+        $id = invoiceTablesInsert(['kind' => $kind, 'payment_method' => 'transfer']);
+
+        RawSql::expectSqlState('23514', fn () => invoiceTablesIssue($id, ['bank_snapshot' => null]));
+        RawSql::expectAllowed(fn () => invoiceTablesIssue($id));
+    })->with(['invoice', 'proforma']);
+
+    it('still requires the due date of an issued online document', function (): void {
+        $id = invoiceTablesInsert(['payment_method' => 'online']);
+
+        RawSql::expectSqlState('23514', fn () => invoiceTablesIssue($id, ['bank_snapshot' => null, 'due_date' => null]));
+    });
+});
+
 /**
  * The arguments a trigger was created with, read from pg_trigger.tgargs (NUL-separated, each one terminated).
  *
@@ -589,34 +694,41 @@ function invoiceTablesTriggerArguments(string $table, string $trigger): array
 }
 
 describe('the guards of the invoice tables', function (): void {
-    it('keeps the guard function and the four triggers in place', function (): void {
-        expect((int) DB::selectOne("select count(*) as n from pg_proc where proname = 'kokpit_guard_child_of_frozen_parent'")->n)->toBe(1);
+    it('keeps the guard functions and the triggers in place', function (): void {
+        foreach (['kokpit_guard_child_of_frozen_parent', 'kokpit_guard_invoice_row', 'kokpit_guard_invoice_admin_issued'] as $function) {
+            expect((int) DB::selectOne('select count(*) as n from pg_proc where proname = ?', [$function])->n)->toBe(1, "The function {$function} must exist.");
+        }
 
         foreach ([
-            ['invoices', 'invoices_frozen_guard'],
+            ['invoices', 'invoices_row_guard'],
             ['invoices', 'invoices_truncate_guard'],
             ['invoice_items', 'invoice_items_parent_guard'],
             ['invoice_items', 'invoice_items_truncate_guard'],
+            ['invoice_admin', 'invoice_admin_parent_guard'],
+            ['invoice_admin', 'invoice_admin_issued_guard'],
+            ['invoice_item_sources', 'invoice_item_sources_parent_guard'],
         ] as [$table, $trigger]) {
             expect((int) DB::selectOne(
                 'select count(*) as n from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relname = ? and t.tgname = ? and not t.tgisinternal',
                 [$table, $trigger],
             )->n)->toBe(1, "The trigger {$trigger} must exist on {$table}.");
         }
+
+        expect((int) DB::selectOne("select count(*) as n from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relname = 'invoices' and t.tgname = 'invoices_frozen_guard' and not t.tgisinternal")->n)->toBe(0, 'The generic frozen guard would let an open issued row be deleted; invoices_row_guard replaces it.');
     });
 
-    it('lists no writable column on an issued invoice or an item of one', function (): void {
-        $reason = 'Any post-issue write on the invoices or invoice_items tables needs an owner decision amending D-13 and roadmap criterion 2; the payment state and the internal note live in Admin-only tables.';
+    it('lists no writable column on a locked invoice item and keys the item guard on the lock', function (): void {
+        $reason = 'Any write on the items of a locked invoice needs an owner decision amending D-12; the payment state and the internal note live in Admin-only tables. The children follow invoices.lock_state, not the state.';
 
-        expect(invoiceTablesTriggerArguments('invoices', 'invoices_frozen_guard'))->toBe(['state', 'draft', ''], $reason)
-            ->and(invoiceTablesTriggerArguments('invoice_items', 'invoice_items_parent_guard'))->toBe(['invoices', 'invoice_id', 'state', 'draft', ''], $reason);
+        expect(invoiceTablesTriggerArguments('invoices', 'invoices_row_guard'))->toBe([], $reason)
+            ->and(invoiceTablesTriggerArguments('invoice_items', 'invoice_items_parent_guard'))->toBe(['invoices', 'invoice_id', 'lock_state', 'open', ''], $reason);
     });
 
-    it('catches a guard that gained a writable column', function (): void {
-        DB::unprepared(Immutability::dropGuardTriggerSql('invoices'));
-        DB::unprepared(Immutability::guardTriggerSql('invoices', 'state', 'draft', ['note'], withUpdatedAt: false));
+    it('catches an item guard that gained a writable column', function (): void {
+        DB::unprepared(Immutability::dropChildGuardTriggerSql('invoice_items'));
+        DB::unprepared(Immutability::childGuardTriggerSql('invoice_items', 'invoice_id', 'invoices', 'lock_state', 'open', ['description']));
 
-        expect(invoiceTablesTriggerArguments('invoices', 'invoices_frozen_guard'))->not->toBe(['state', 'draft', '']);
+        expect(invoiceTablesTriggerArguments('invoice_items', 'invoice_items_parent_guard'))->not->toBe(['invoices', 'invoice_id', 'lock_state', 'open', '']);
     });
 
     it('has no generated column on a guarded table', function (): void {

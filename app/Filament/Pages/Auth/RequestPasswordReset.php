@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Filament\Pages\Auth;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Identity\Notifications\ResetPasswordNotification;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use DanHarrin\LivewireRateLimiting\Exceptions\TooManyRequestsException;
-use Filament\Auth\Notifications\ResetPassword as ResetPasswordNotification;
 use Filament\Auth\Pages\PasswordReset\RequestPasswordReset as BaseRequestPasswordReset;
 use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
@@ -29,6 +29,8 @@ use SensitiveParameter;
  * as they are; a throttled repeat looks like any other request. The broker runs
  * for every address, so the timing is the same too; the cost is a token row that is
  * never delivered for a deactivated account.
+ *
+ * The e-mail is Kokpit's own notification (a subclass of Filament's, with Kokpit's texts), not Filament's class.
  */
 #[AccessRule(Audience::Guest, reason: 'The public forgot-password page: a visitor without an account session asks for a link; it reveals nothing about which addresses have an account.')]
 final class RequestPasswordReset extends BaseRequestPasswordReset

@@ -30,11 +30,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * writes nothing to its parent: there is no `$touches`, because an issued `invoices` row refuses even an
  * `updated_at` write (R-04-6).
  *
- * The card switch and the pay token (Phase 11, plan 11-03). `card_payment_enabled` is the Admin's choice on a draft and
- * is frozen at issue as the AND of the draft switch, the global setting and a configured Stripe, for an invoice or a
- * proforma only (D-06). `pay_token` is the 32-character bearer value of the stable pay URL, set at issue exactly when
- * the switch is on and frozen with the document (D-01). The switch is on the history allowlist; the token never is,
- * because it is a bearer value.
+ * The card switch and the pay token (Phase 11, plan 11-03; opened in Phase 14, D-03, D-09, owner amendment OA-1).
+ * `card_payment_enabled` is the Admin's choice on a draft, and at issue it starts as the AND of the draft switch, the
+ * global setting and a configured Stripe, for an invoice or a proforma only. It is editable on an open issued
+ * `transfer` document and forced on for an `online` one; the lock freezes it. `pay_token` is the 32-character bearer
+ * value of the stable pay URL: it is set once (a first token may be set on an open issued document), never changes or
+ * disappears afterwards, and outlives a switch-off so a printed pay URL keeps answering; the lock freezes it too. The
+ * switch is on the history allowlist; the token never is, because it is a bearer value.
+ *
+ * `bank_account_id` is the stable id of the chosen entry of the `bank.accounts` setting (Phase 14, D-05), kept apart
+ * from the currency. It has no foreign key and is not on the history allowlist: the account of an issued document is
+ * audited by its bank fingerprint, and the id says nothing a reader needs. It is Admin-only and frozen by the lock.
  *
  * Only the note is fillable. The invoice, its marker, the CNB trio, the CZK total and the PDF link are set with
  * `forceFill` by the Actions. The history is an allowlist: the marker `internal_note_updated_at` is logged and the
@@ -51,6 +57,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $pdf_document_id
  * @property bool $card_payment_enabled
  * @property string|null $pay_token
+ * @property string|null $bank_account_id
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */

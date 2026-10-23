@@ -63,7 +63,7 @@ Tracked time turns into an issued, payable invoice in one pass, with no unbilled
 - **Data integrity**: UUID v7 keys everywhere incl. package morph columns; FK, unique, partial indexes and check constraints enforced in DB
 - **Repository hygiene**: no secrets, real data or instance-specific values in git; enforced by tooling from step 0 (local denylist outside repo, pre-commit hook, gitleaks, CI)
 - **Concurrency**: number sequences (tasks, invoices) must be gap-free and duplicate-free under concurrent creation
-- **Immutability**: issued invoices and billed time entries are immutable; snapshots for supplier, customer, rates, exchange rates
+- **Immutability**: an issued invoice or proforma stays editable until a successful e-mail send locks it; Admin may unlock a sent document with a recorded reason; number and kind never change; credit notes and billed time entries are immutable; snapshots for supplier, customer, rates, exchange rates
 
 ## Key Decisions
 
@@ -79,6 +79,14 @@ Tracked time turns into an issued, payable invoice in one pass, with no unbilled
 | Planning docs committed only after hygiene check passes | Public repo; `commit_docs` off until step 0 is done | — Pending |
 | Local development on DDEV | Reproducible environment for contributors of a public repo | — Pending |
 | PostgreSQL 18, Redis for queue/cache/sessions, RustFS as S3-compatible storage | Stack chosen by owner; replaces the brief's open choice (DB vs Redis queue, S3 provider) | — Pending |
+| The send-driven lock replaces status-driven immutability: an issued invoice or proforma is locked only by a successful e-mail send and Admin can unlock it with a reason (Phase 10.1, D-01, D-12) | An issued document may need correction before the customer has it; the database still enforces the lock once sent | — Pending |
+| Payment method per document (transfer or online) independent of currency and bank account; bank accounts have stable ids and several may share a currency (Phase 14, D-01, D-04; overrides Phase 3 D-04) | Online invoices must not print bank details; the account is a choice, the currency only preselects it | — Pending |
+| Card switch editable on an open issued transfer document, forced on for online, frozen by the lock; pay token set once (Phase 14, OA-1; amends Phase 11 D-06) | The method can change until the document is sent; the printed pay URL must keep working | — Pending |
+| Every e-mail renders through one published `kokpit` mail theme; the supplier branding is read only through `MailBrand` (system context, field whitelist, fallback to the application name) and the logo is an inline cid part, never a route (Phase 13, D-02, D-03, D-04) | One look for every e-mail without a new public route or a Partner-scope leak | — Pending |
+| The document e-mail keeps its plain-text body, escaped into HTML by `PlainTextHtml`, and gains a card button under `PayLinkBlock::applies()`; every typed value in a Markdown line is escaped with `MailText` (Phase 13, D-01) | An Admin-typed body must never inject markup, and the button and the text block must never disagree | — Pending |
+| Payment confirmation: after every recorded payment the client gets an e-mail, queued from `RecordPayment::recordLocked()`, one `payment_confirmations` row per payment, sent after a five-minute grace window, never locks the invoice; proforma payments are confirmed, carried copies are not (Phase 13, D-05, D-06, A-13-1, A-13-6) | Clients learn that a payment arrived; a payment taken back within the window sends nothing | — Pending |
+| The invitation, password reset, task and alert e-mails are reviewed in Czech only; English is required only for the new payment texts, the invoice button and the layout strings; no recipient-language mechanism is added (Phase 13, D-07 clarification, owner-approved 2026-10-23, so the owner's decision and not an assumption) | The single admin and Czech clients; a language mechanism for other recipients is out of scope | — Pending |
+| Phase 13 planner assumptions for the owner to confirm or overrule: A-13-3 (a back-filled payment is confirmed too, and the record dialog says so beforehand), A-13-4 (an online-method document gets its own pre-filled body), A-13-5 (no pay-the-rest button in a partial confirmation), A-13-7 (the confirmation state shows in the Platby tab); A-13-1 and A-13-6 are in the payment confirmation row | Recorded so each can be overruled later without searching the plans | — Pending |
 | Assumptions kept: Partner sees visible-project tasks, creates/comments but cannot change status/priority; fixed task statuses; project key frozen after first task; invoice number `{YYYY}{NNNN}` | Brief's open questions 1-5 | — Pending |
 
 ## Evolution

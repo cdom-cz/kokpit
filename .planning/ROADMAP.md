@@ -740,6 +740,61 @@ Plans:
 **Wave 13** *(blocked on Wave 12 completion)*
 - [x] 10-32-PLAN.md — End-to-end flow and Partner sweep, CONTRIBUTING and README hand-over, validation map, phase gate
 
+### Phase 10.1: Invoices stay fully editable until sent, with a manual unlock (INSERTED)
+
+**Goal:** Admin can correct an issued invoice or proforma (items, dates, customer and supplier data, bank account, currency, language and linked time) until a successfully sent e-mail locks it, and can unlock a sent document with a recorded reason; number and kind never change, credit notes stay locked, the database enforces the lock, and every post-send change, lock and unlock is audited
+**Requirements**: IN-03, IN-11, IN-12, IN-13, IN-14, IN-15
+**Depends on:** Phase 10
+**Success Criteria** (what must be TRUE):
+  1. An issued invoice or proforma stays editable until a successfully sent document e-mail locks it; queued, failed or pending e-mails, payments, credit notes and storno never lock it; a credit note is locked at issue; number and kind never change; a locked document refuses every write, raw SQL included
+  2. Admin unlocks a locked invoice or proforma only with a reason; the unlock and every lock are in the document history, and the next successful send locks it again
+  3. While open, Admin edits lines, dates, customer and supplier data, bank account, currency, language and linked time; amounts follow the single rounding rule, credited lines and money already received stay consistent, and totals below paid or credited amounts warn instead of blocking
+  4. Every saved edit replaces the stored PDF and its QR code and renews the card link when amount or currency change; nothing is sent automatically, and an edit never interleaves with a queued or sending e-mail
+  5. A Partner sees only the current version of an edited invoice and none of the lock, unlock or edit surfaces or history
+
+**Plans:** 16/16 plans complete in 9 waves (4 gap-closure plans 10.1-13 to 10.1-16 from 10.1-VERIFICATION.md and 10.1-REVIEW.md, planned in 2 gap waves)
+
+Plans:
+**Wave 1**
+- [x] 10.1-01-PLAN.md — Tracer: send-driven lock in the database (lock column, backfill, invoice row guard, child guards, Admin-only row guard), issue leaves documents open, a successful send locks
+- [x] 10.1-11-PLAN.md — Contract documents amended: send-driven Immutability in PROJECT.md and CLAUDE.md, IN-03 amended, IN-11 to IN-15 with traceability
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 10.1-02-PLAN.md — Unlock with a reason through the sanctioned path, lock and unlock audited, lock badge and banners on the detail, architecture test
+- [x] 10.1-03-PLAN.md — Time link guard and payment-link currency key follow the lock; [BLOCKING] phase migrations applied to the development database
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 10.1-04-PLAN.md — UpdateIssuedDocument for lines and note: shared line writer, PDF replacement, editability rules, credited lines, frozen conversions
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 10.1-12-PLAN.md — In-flight e-mail rule and queue lock, warnings below paid or credited, post-send edit audit
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 10.1-05-PLAN.md — Card link and QR follow an edit, render failure rolls back, readable history rows
+- [x] 10.1-06-PLAN.md — Issued mode of the editor reached from the detail, credited lines frozen in the UI, warnings below paid or credited
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 10.1-07-PLAN.md — Header edits: dates within the numbering period, language, customer and supplier data with refill, bank account refill
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 10.1-08-PLAN.md — Currency change with CNB figures of the issue date, re-converted time lines, bank and card link; refused with payments or credit notes (owner ruling in D-06)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 10.1-09-PLAN.md — Linked time and fixed amounts added and released on an open issued document
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [x] 10.1-10-PLAN.md — Edit-versus-send concurrency proof, end-to-end journey, Partner sweep, CONTRIBUTING hand-over and phase gate
+
+**Gap closure** *(from 10.1-VERIFICATION.md and 10.1-REVIEW.md; gap plans waves 1-2, run with `/gsd-execute-phase 10.1 --gaps-only`)*
+
+**Gap wave 1**
+- [x] 10.1-13-PLAN.md — CR-01 (gap 1): a paid card session whose link currency is no longer the document's is unmatched `currency`, nothing booked; webhook test after a CZK to EUR change with the same figure; database pin of a card payment record to a payment in its own currency (IN-13, IN-14)
+- [x] 10.1-14-PLAN.md — WR-02 (gap 2): keyed `bank_fingerprint` in the audited snapshot, so a bank-only refill after the first send writes one `invoice_edited` row without any bank data (IN-15)
+- [x] 10.1-15-PLAN.md — WR-01: a queued e-mail row ages out at the stale threshold like a sending one, the job claims under the invoice row lock and never sends a stale row, the Odeslání tab offers the resend (IN-13, IN-14)
+
+**Gap wave 2** *(blocked on gap wave 1 completion)*
+- [x] 10.1-16-PLAN.md — CONTRIBUTING hand-over pinned by RepositoryFilesTest, phase regression gate, review disposition (WR-03, WR-04 and IN-01 to IN-06 deferred, WR-04 with owner options), validation rows, REQUIREMENTS.md consistency check
+
 ### Phase 11: Stripe Payments
 
 **Goal**: Issued invoices can be paid by card through Stripe, payments are matched automatically, and duplicate or unmatched payments are surfaced instead of lost
@@ -833,3 +888,69 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 10. Invoicing | 41/41 | In Progress | - |
 | 11. Stripe Payments | 20/20 | In Progress | - |
 | 12. Partner Audit | 0/0 | Not started | - |
+
+### Phase 13: Unified e-mail layout and HTML e-mail templates
+
+**Goal:** Every e-mail the system sends shares one HTML layout built on the Laravel mail theme. The payment e-mails are reworked first: a new confirmation to the client that an invoice has been paid (absorbs the former Phase 10.2), and the invoice e-mail with its "Pay by card" button. The other e-mails (partner invitation, password reset, task notifications, operational alerts) are moved to the layout and their texts reviewed.
+**Requirements**: P13-01, P13-02, P13-03, P13-04, P13-05, P13-06, P13-07, P13-08, P13-09, P13-10, P13-11 (phase-local, defined in 13-RESEARCH.md)
+**Depends on:** Phase 12
+**Plans:** 9/9 plans executed
+
+Plans:
+**Wave 1**
+- [x] 13-01-PLAN.md — Shared mail layout, theme and brand: published kokpit theme, MailBrand header and footer, notification view, layout strings (Wave 1)
+- [x] 13-02-PLAN.md — Payment confirmation storage: payment_confirmations table, model and state enum, Admin-only registries, database contract (Wave 1)
+- [x] 13-03-PLAN.md — Existing payment and invoicing tests select the e-mails they mean by recipient and subject, ready for the confirmation (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 13-04-PLAN.md — Shared mail layout, second half: inline cid logo, plain-text part, MailText escapes, TaskNotification on MailText (Wave 2)
+- [x] 13-05-PLAN.md — Invoice e-mail on the layout: escaped plain-text body, Pay by card button under PayLinkBlock, document language (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 13-06-PLAN.md — Payment confirmation trigger, send job and e-mail: one per payment from RecordPayment::recordLocked(), full and partial wording in cs and en (Wave 3)
+- [x] 13-07-PLAN.md — Invitation, password reset, task notifications and alerts on the layout with reviewed Czech texts (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 13-08-PLAN.md — Confirmation state in the Platby tab and the record dialog; path and failure proofs (Wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 13-09-PLAN.md — CONTRIBUTING, README and PROJECT.md hand-over, full gate, separate human review in real mail clients (Wave 5)
+
+### Phase 14: Switchable payment method and independent invoice currency
+
+**Goal:** The invoice currency can be changed freely, independent of the payment method (bank transfer or online), the selected bank account, or whether payment is online. The payment method can be switched on the invoice between bank transfer and online (Stripe): bank transfer shows the bank payment details, online shows no bank details, only what is needed to pay via Stripe. When the chosen currency matches a preconfigured bank account, that account is preselected; the account can also be chosen separately and independently of the currency. The chosen currency carries through to the PDF and the Stripe payment.
+**Requirements**: P14-01, P14-02, P14-03, P14-04, P14-05, P14-06, P14-07, P14-08, P14-09
+**Depends on:** Phase 13
+**Plans:** 15/15 plans executed
+
+Plans:
+**Wave 1**
+- [x] 14-01-PLAN.md — Bank accounts get stable UUID v7 ids; several accounts per currency; Repeater id round trip (Wave 1)
+- [x] 14-02-PLAN.md — `invoices.payment_method` with guard, checks and backfill; open card switch and set-once token; account id on `invoice_admin` (Wave 1)
+- [x] 14-03-PLAN.md — One union currency list (CNB + accounts + client + current + CZK) for every editor (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 14-04-PLAN.md — Draft method and account, preselection, online availability, issue without bank snapshot for online (Wave 2)
+- [x] 14-05-PLAN.md — PDF payment box by method; pay URL gated on switch AND token (Wave 2)
+- [x] 14-06-PLAN.md — Admin and Partner detail show the method; no bank rows for online (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 14-07-PLAN.md — Open issued document: method, account, switch and currency changes with the Stripe link following (Wave 3)
+- [x] 14-08-PLAN.md — Draft editor: method, account and card toggle; preselection on currency change (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 14-09-PLAN.md — Proforma conversion inherits method and account; link-job race; audit of method changes (Wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 14-10-PLAN.md — Issued editor fields; old currency-to-account lookups deleted; architecture test (Wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 14-11-PLAN.md — CONTRIBUTING and PROJECT.md hand-over, docblock sweep, development database migrated, full gate (Wave 6)
+
+**Gap closure, Wave 1** *(from 14-VERIFICATION.md)*
+- [x] 14-12-PLAN.md — CR-01: the issued editor keeps a re-picked stored account through a currency change (gap closure, Wave 1)
+- [x] 14-13-PLAN.md — WR-01: the card switch needs card payment to be available on every issued path that turns it on or keeps it on (gap closure, Wave 1)
+- [x] 14-14-PLAN.md — WR-02: a paid proforma whose account was removed converts and the invoice prints the proforma's bank snapshot (gap closure, Wave 1)
+
+**Gap closure, Wave 2** *(blocked on gap closure Wave 1 completion)*
+- [x] 14-15-PLAN.md — IN-01 and IN-02 doc fixes, CONTRIBUTING hand-over of the gap rules, full gate (gap closure, Wave 2)

@@ -8,6 +8,7 @@ use App\Domain\Invoicing\Actions\AddFixedAmount;
 use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\UpdateDraft;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Projects\Actions\CreateProject;
@@ -23,10 +24,14 @@ use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEntriesRelati
 use Carbon\CarbonImmutable;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
+use Tests\Support\CardPaymentSetup;
+use Tests\Support\DocumentFixtures;
 use Tests\Support\InvoiceFixtures;
+use Tests\Support\StripeTestConfig;
 
 /*
  * The draft editor (IN-02, IN-07, IN-08, IN-10; D-03, D-06, D-09, UI-SPEC Surface C): a thin layer over the domain
@@ -238,11 +243,20 @@ describe('the tracer: open a draft, change a line, save, and see the server figu
         expect(storedLines($draft)[1]->quantity)->toBe('1.0000');
     });
 
-    it('redirects the edit address of an issued document to its page', function (): void {
-        $issued = InvoiceFixtures::issued(InvoiceFixtures::client());
+    it('redirects the edit address of a locked issued document to its page', function (): void {
+        $locked = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
 
-        $this->get(InvoiceResource::getUrl('edit', ['record' => $issued]))
-            ->assertRedirect(InvoiceResource::getUrl('view', ['record' => $issued]));
+        $this->get(InvoiceResource::getUrl('edit', ['record' => $locked]))
+            ->assertRedirect(InvoiceResource::getUrl('view', ['record' => $locked]));
+    });
+
+    it('opens the editor of an open issued document in issued mode instead of redirecting', function (): void {
+        $open = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        $this->get(InvoiceResource::getUrl('edit', ['record' => $open]))
+            ->assertOk()
+            ->assertSee('Úprava dokladu '.$open->number)
+            ->assertSee('Uložit změny');
     });
 
     it('answers a Partner with 403 on the editor, before the draft is looked up', function (): void {
@@ -402,7 +416,7 @@ describe('line origins and previews', function (): void {
 
         $editor = editor($draft);
 
-        $editor->assertSee('Pro měnu USD není nastaven bankovní účet. Přidejte ho v')
+        $editor->assertSee('Bez bankovního účtu nejde doklad s úhradou převodem vystavit. Účty spravujete v')
             ->assertSee(SettingsPage::getUrl());
 
         expect($editor->html())->toContain('fi-color-danger');
@@ -477,6 +491,222 @@ describe('the currency of a draft', function (): void {
 
         expect(storedDraft($draft)->currency)->toBe('EUR')
             ->and(storedLines($draft)[0]->line_total_minor)->toBe(12000);
+    });
+});
+
+describe('the payment method and the account (Phase 14)', function (): void {
+    beforeEach(function (): void {
+        DocumentFixtures::fakeDisk();
+        CardPaymentSetup::enable();
+        $this->accounts = InvoiceFixtures::configureAccounts(
+            InvoiceFixtures::account('Example CZK A', 'CZK', '11'),
+            InvoiceFixtures::account('Example CZK B', 'CZK', '22'),
+            InvoiceFixtures::account('Example EUR A', 'EUR', '33'),
+        );
+    });
+
+    /** The Admin-only row of the draft as the raw database holds it. */
+    function methodAdminRow(Invoice $draft): stdClass
+    {
+        return DB::table('invoice_admin')->where('invoice_id', $draft->id)->first() ?? throw new LogicException('No Admin row.');
+    }
+
+    it('opens on transfer with the first account of the currency, switches to online, saves, and issues without bank details', function (): void {
+        $draft = InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example work', '1', '12500.00')]);
+
+        $editor = editor($draft);
+
+        expect($editor->get('data.payment_method'))->toBe('transfer')
+            ->and($editor->get('data.bank_account_id'))->toBe($this->accounts[0]->id)
+            ->and($editor->get('data.card_payment_enabled'))->toBeTrue();
+
+        $editor->assertFormFieldIsVisible('bank_account_id')
+            ->assertFormFieldIsEnabled('card_payment_enabled')
+            ->set('data.payment_method', 'online')
+            ->assertSet('data.card_payment_enabled', true)
+            ->assertFormFieldIsDisabled('card_payment_enabled')
+            ->assertFormFieldIsHidden('bank_account_id')
+            ->assertSee('U online úhrady je platba kartou vždy zapnutá.')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(storedDraft($draft)->payment_method)->toBe(DocumentPaymentMethod::Online)
+            ->and(methodAdminRow($draft)->card_payment_enabled)->toBeTrue()
+            ->and(methodAdminRow($draft)->bank_account_id)->toBe($this->accounts[0]->id);
+
+        $editor->mountAction('issue')
+            ->assertMountedActionModalSee(['Způsob úhrady', 'Online platba kartou', 'Ano, odkaz se vytvoří po vystavení'])
+            ->callMountedAction()
+            ->assertHasNoActionErrors();
+
+        $issued = storedDraft($draft);
+
+        expect($issued->isIssued())->toBeTrue()
+            ->and($issued->payment_method)->toBe(DocumentPaymentMethod::Online)
+            ->and($issued->bank_snapshot)->toBeNull();
+    });
+
+    it('saves a transfer draft with the chosen account and keeps the card toggle the Admin chose', function (): void {
+        $draft = InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        editor($draft)
+            ->set('data.bank_account_id', $this->accounts[1]->id)
+            ->set('data.card_payment_enabled', false)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(storedDraft($draft)->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and(methodAdminRow($draft)->bank_account_id)->toBe($this->accounts[1]->id)
+            ->and(methodAdminRow($draft)->card_payment_enabled)->toBeFalse();
+    });
+
+    it('preselects the first account of the new currency at once, when no price was typed by hand', function (): void {
+        $draft = InvoiceFixtures::draft(CardPaymentSetup::client());
+
+        $editor = editor($draft);
+
+        expect($editor->get('data.bank_account_id'))->toBe($this->accounts[0]->id);
+
+        $editor->set('data.currency', 'EUR')->assertActionNotMounted();
+
+        expect($editor->get('data.currency'))->toBe('EUR')
+            ->and($editor->get('data.bank_account_id'))->toBe($this->accounts[2]->id);
+
+        $editor->call('save')->assertHasNoFormErrors();
+
+        expect(storedDraft($draft)->currency)->toBe('EUR')
+            ->and(methodAdminRow($draft)->bank_account_id)->toBe($this->accounts[2]->id);
+    });
+
+    it('preselects the account of the new currency after the confirmation of typed prices, and keeps the old one when it is not given', function (): void {
+        $draft = InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        $editor = editor($draft)->set('data.currency', 'EUR')->assertActionMounted('changeCurrency');
+
+        expect($editor->get('data.currency'))->toBe('CZK')
+            ->and($editor->get('data.bank_account_id'))->toBe($this->accounts[0]->id);
+
+        $editor->unmountAction();
+
+        expect($editor->get('data.bank_account_id'))->toBe($this->accounts[0]->id);
+
+        $editor->set('data.currency', 'EUR')->callMountedAction()->assertHasNoActionErrors();
+
+        expect($editor->get('data.currency'))->toBe('EUR')
+            ->and($editor->get('data.bank_account_id'))->toBe($this->accounts[2]->id);
+
+        $editor->call('save')->assertHasNoFormErrors();
+
+        expect(methodAdminRow($draft)->bank_account_id)->toBe($this->accounts[2]->id);
+    });
+
+    it('offers every configured account whatever the currency, and stores the one picked', function (): void {
+        $draft = InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        $editor = editor($draft)
+            ->assertFormFieldExists('bank_account_id', fn ($field): bool => array_keys($field->getOptions()) === array_map(static fn ($account): string => (string) $account->id, $this->accounts))
+            ->assertSee('Example EUR A')
+            ->set('data.bank_account_id', $this->accounts[1]->id)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(methodAdminRow($draft)->bank_account_id)->toBe($this->accounts[1]->id);
+
+        // The EUR account on a CZK draft is a choice the Admin may make (D-06).
+        $editor->set('data.bank_account_id', $this->accounts[2]->id)->call('save')->assertHasNoFormErrors();
+
+        expect(methodAdminRow($draft)->bank_account_id)->toBe($this->accounts[2]->id)
+            ->and(storedDraft($draft)->currency)->toBe('CZK');
+    });
+
+    it('leaves the account empty for a currency without one, says so with the link to the settings, and blocks the issue', function (): void {
+        $draft = InvoiceFixtures::draft(CardPaymentSetup::client(['currency' => 'USD']), [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        $editor = editor($draft);
+
+        expect($editor->get('data.bank_account_id'))->toBeNull();
+
+        $editor->assertSee('Bez bankovního účtu nejde doklad s úhradou převodem vystavit. Účty spravujete v')
+            ->assertSee(SettingsPage::getUrl());
+
+        expect($editor->html())->toContain('fi-color-danger');
+
+        $editor->call('save')->assertHasNoFormErrors();
+
+        expect(methodAdminRow($draft)->bank_account_id)->toBeNull();
+
+        $editor->mountAction('issue')->assertActionNotMounted('issue');
+
+        expect(storedDraft($draft)->isDraft())->toBeTrue();
+    });
+
+    it('disables the online option with the reason, and refuses a crafted online value under the field', function (string $case, string $reason): void {
+        $client = CardPaymentSetup::client();
+        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        match ($case) {
+            'client' => app(PartnerContext::class)->runAsSystem(static fn (): bool => $client->forceFill(['online_payment_enabled' => false])->save()),
+            'settings' => CardPaymentSetup::onlinePayments(false),
+            default => StripeTestConfig::clear(),
+        };
+
+        $editor = editor($draft)
+            ->assertSee($reason)
+            ->assertFormFieldExists('payment_method', fn ($field): bool => $field->isOptionDisabled('online', 'Online') && ! $field->isOptionDisabled('transfer', 'Převodem'));
+
+        $editor->set('data.payment_method', 'online')->call('save')->assertHasFormErrors(['payment_method']);
+
+        expect(storedDraft($draft)->payment_method)->toBe(DocumentPaymentMethod::Transfer);
+    })->with([
+        'the client flag is off' => ['client', 'Online úhradu nelze zvolit: klient nemá zapnutou online platbu.'],
+        'online payments are off in the settings' => ['settings', 'Online úhradu nelze zvolit: online platby jsou vypnuté v Nastavení.'],
+        'Stripe is missing' => ['stripe', 'Online úhradu nelze zvolit: Stripe není nastavený.'],
+    ]);
+
+    it('sets the toggle to the client flag when an online draft goes back to transfer', function (bool $flag): void {
+        $client = CardPaymentSetup::client();
+        $draft = InvoiceFixtures::online(InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')]));
+        app(PartnerContext::class)->runAsSystem(static fn (): bool => $client->forceFill(['online_payment_enabled' => $flag])->save());
+
+        $editor = editor($draft)->assertSet('data.card_payment_enabled', true);
+
+        // Online stays selectable for a draft that is online already, whatever the client flag says now.
+        $editor->assertFormFieldExists('payment_method', fn ($field): bool => ! $field->isOptionDisabled('online', 'Online'));
+
+        $editor->set('data.payment_method', 'transfer')
+            ->assertSet('data.card_payment_enabled', $flag)
+            ->assertSet('data.bank_account_id', $this->accounts[0]->id)
+            ->assertFormFieldIsEnabled('card_payment_enabled')
+            ->assertFormFieldIsVisible('bank_account_id')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(storedDraft($draft)->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and(methodAdminRow($draft)->card_payment_enabled)->toBe($flag);
+    })->with([
+        'the client flag is on' => [true],
+        'the client flag is off' => [false],
+    ]);
+
+    it('lets the Admin keep the toggle off on transfer', function (): void {
+        $draft = InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        editor($draft)
+            ->set('data.card_payment_enabled', false)
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->set('data.payment_method', 'online')
+            ->assertSet('data.card_payment_enabled', true);
+    });
+
+    it('fills the stored online method of a draft with the toggle on', function (): void {
+        $draft = InvoiceFixtures::online(InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]));
+
+        editor($draft)
+            ->assertSet('data.payment_method', 'online')
+            ->assertSet('data.card_payment_enabled', true)
+            ->assertFormFieldIsDisabled('card_payment_enabled')
+            ->assertFormFieldIsHidden('bank_account_id');
     });
 });
 
@@ -835,11 +1065,11 @@ describe('the tab of linked time', function (): void {
             ->and(array_map(static fn (InvoiceItem $line): array => [$line->id, $line->quantity, $line->line_total_minor], storedLines($draft)))->toBe($linesBefore);
     });
 
-    it('is read only on an issued document: no add, no unlink', function (): void {
+    it('is read only on a locked issued document: no add, no unlink', function (): void {
         $client = InvoiceFixtures::client();
         $project = editorProject($client, 'Alpha project');
         editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 09:00:00');
-        $issued = app(IssueDocument::class)->handle($this->admin, editorTimeDraft($client, [$project]));
+        $issued = InvoiceFixtures::lock(app(IssueDocument::class)->handle($this->admin, editorTimeDraft($client, [$project])));
 
         entriesTab($issued)
             ->assertSee('Navázaný čas')

@@ -9,6 +9,13 @@ use InvalidArgumentException;
 /**
  * One bank account of the supplier. The stored shape is the same for every
  * account (every key present); fields the format does not show are null.
+ *
+ * The account has a stable UUID v7 id (D-04), the identity a document points
+ * at; the list position and the currency are not. The id is assigned by
+ * BankAccountSettings::save() or by the settings migration, never on read, so
+ * it is null only for an account that has not been saved yet. It belongs to
+ * the settings payload (toStoredArray()) and never to the snapshot shape of
+ * toArray(), which is copied onto documents a Partner can read.
  */
 final readonly class BankAccount
 {
@@ -23,6 +30,7 @@ final readonly class BankAccount
         public ?string $iban = null,
         public ?string $recipientName = null,
         public ?string $bankAddress = null,
+        public ?string $id = null,
     ) {}
 
     /**
@@ -57,6 +65,7 @@ final readonly class BankAccount
             iban: $shown('iban'),
             recipientName: $shown('recipient_name'),
             bankAddress: $shown('bank_address'),
+            id: self::text($data['id'] ?? null),
         );
     }
 
@@ -80,10 +89,34 @@ final readonly class BankAccount
             iban: ($iban = $clean($this->iban)) === null ? null : Iban::normalise($iban),
             recipientName: $clean($this->recipientName),
             bankAddress: $clean($this->bankAddress),
+            id: $this->id,
         );
     }
 
     /**
+     * A copy of the account with the given id.
+     */
+    public function withId(string $id): self
+    {
+        return new self(
+            format: $this->format,
+            label: $this->label,
+            currency: $this->currency,
+            bic: $this->bic,
+            accountNumber: $this->accountNumber,
+            bankCode: $this->bankCode,
+            bankName: $this->bankName,
+            iban: $this->iban,
+            recipientName: $this->recipientName,
+            bankAddress: $this->bankAddress,
+            id: $id,
+        );
+    }
+
+    /**
+     * The snapshot shape: the account as copied onto a document. It never
+     * carries the settings id (T-14-11).
+     *
      * @return array{format: string, label: string, currency: string, bic: ?string, account_number: ?string, bank_code: ?string, bank_name: ?string, iban: ?string, recipient_name: ?string, bank_address: ?string}
      */
     public function toArray(): array
@@ -102,6 +135,16 @@ final readonly class BankAccount
             'recipient_name' => $shown('recipient_name', $this->recipientName),
             'bank_address' => $shown('bank_address', $this->bankAddress),
         ];
+    }
+
+    /**
+     * The settings payload shape: the id first, then the snapshot shape.
+     *
+     * @return array{id: ?string, format: string, label: string, currency: string, bic: ?string, account_number: ?string, bank_code: ?string, bank_name: ?string, iban: ?string, recipient_name: ?string, bank_address: ?string}
+     */
+    public function toStoredArray(): array
+    {
+        return ['id' => $this->id, ...$this->toArray()];
     }
 
     private static function text(mixed $value): ?string

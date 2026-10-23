@@ -7,6 +7,8 @@ use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Pdf\InvoicePdf;
+use App\Domain\Payments\Support\PayToken;
+use App\Domain\Payments\Support\PayUrl;
 use App\Domain\Settings\Banking\BankAccount;
 use App\Domain\Settings\Banking\BankAccountFormat;
 use App\Domain\Settings\DocumentImage;
@@ -17,6 +19,7 @@ use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
@@ -83,6 +86,23 @@ function variantFlat(string $html): string
 function variantMoney(int $minor, string $currency, string $locale): string
 {
     return trim((string) preg_replace('/[\s\x{00A0}]+/u', ' ', Money::ofMinor($minor, $currency)->format($locale)));
+}
+
+/**
+ * An issued, still open document switched to online payment the way the database allows it (Phase 14, plan 14-02): the
+ * method is online, the bank snapshot is gone, the card switch is on and a first pay token is set. Returns the document
+ * read again, and the token through the second parameter.
+ */
+function variantOnline(Invoice $issued, ?string &$token = null): Invoice
+{
+    $token = PayToken::generate();
+
+    app(PartnerContext::class)->runAsSystem(static function () use ($issued, $token): void {
+        DB::update("update invoices set payment_method = 'online', bank_snapshot = null where id = ?", [$issued->id]);
+        DB::update('update invoice_admin set card_payment_enabled = true, pay_token = ? where invoice_id = ?', [$token, $issued->id]);
+    });
+
+    return Invoice::query()->whereKey($issued->id)->firstOrFail();
 }
 
 beforeEach(function (): void {
@@ -221,6 +241,134 @@ describe('a document in another currency', function (): void {
         expect($text)->toContain('AMOUNT DUE')
             ->and($text)->toContain(variantMoney(20000, 'EUR', 'en'))
             ->and($text)->toContain('Variable symbol');
+    });
+});
+
+describe('the payment method (Phase 14)', function (): void {
+    it('prints an online CZK document with the amount, the online sentence and the card button, and no bank detail, symbol or QR', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Consulting', '1', '1000.00')]);
+        $iban = FictionalIban::czech('12');
+        $online = variantOnline($issued, $token);
+
+        $html = app(InvoicePdf::class)->html($online);
+        $text = variantFlat($html);
+
+        expect($text)->toContain(variantMoney(100000, 'CZK', 'cs'))
+            ->and($text)->toContain('Prosíme o úhradu částky')
+            ->and($text)->toContain('online platební kartou do')
+            ->and($text)->toContain('Online platební kartou')
+            ->and($text)->toContain('Způsob úhrady')
+            ->and($text)->toContain('K úhradě')
+            ->and($text)->toContain('Zaplaťte online kartou:')
+            ->and($text)->not->toContain('Nebo zaplaťte')
+            ->and($text)->toContain('Zaplatit kartou')
+            ->and($text)->toContain(PayUrl::for($token))
+            ->and($text)->not->toContain('IBAN')
+            ->and($text)->not->toContain('Číslo účtu')
+            ->and($text)->not->toContain('Variabilní symbol')
+            ->and($text)->not->toContain('Převodem')
+            ->and($text)->not->toContain('na účet')
+            ->and($text)->not->toContain(trim(chunk_split($iban, 4, ' ')))
+            ->and($html)->not->toContain($iban)
+            ->and(variantImages($html))->toBe([]);
+    });
+
+    it('keeps the bank box and the QR of a transfer document', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Consulting', '1', '1000.00')]);
+
+        $html = app(InvoicePdf::class)->html($issued);
+        $text = variantFlat($html);
+
+        expect($issued->payment_method?->value)->toBe('transfer')
+            ->and($text)->toContain('IBAN')
+            ->and($text)->toContain('na účet')
+            ->and($text)->toContain('Variabilní symbol')
+            ->and($text)->toContain('Převodem')
+            ->and($text)->toContain(variantMoney(100000, 'CZK', 'cs'))
+            ->and($text)->not->toContain('Online platební kartou')
+            ->and(variantImages($html))->toHaveCount(1);
+    });
+
+    it('prints every amount of an online EUR document in EUR, with the button and no bank detail', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.000');
+        $issued = InvoiceFixtures::issued(
+            InvoiceFixtures::client(['currency' => 'EUR', 'hourly_rate' => Money::ofMinor(0, 'EUR')]),
+            [InvoiceFixtures::item('Consulting', '2', '100.00')],
+        );
+        $online = variantOnline($issued, $token);
+
+        $html = app(InvoicePdf::class)->html($online);
+        $text = variantFlat($html);
+        $amount = variantMoney(20000, 'EUR', 'cs');
+
+        expect($online->currency)->toBe('EUR')
+            ->and(substr_count($text, $amount))->toBeGreaterThanOrEqual(3)
+            ->and($text)->not->toContain(variantMoney(20000, 'CZK', 'cs'))
+            ->and($text)->toContain('Zaplatit kartou')
+            ->and($text)->toContain(PayUrl::for($token))
+            ->and($text)->not->toContain('IBAN')
+            ->and($text)->not->toContain('Variabilní symbol')
+            ->and(variantImages($html))->toBe([]);
+    });
+
+    it('prints the English words of an online English document', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_language' => 'en']), [InvoiceFixtures::item('Consulting', '1', '1000.00')]);
+        $online = variantOnline($issued);
+
+        $text = variantFlat(app(InvoicePdf::class)->html($online));
+
+        expect($text)->toContain('Please pay '.variantMoney(100000, 'CZK', 'en').' online by card by')
+            ->and($text)->toContain('Online by card')
+            ->and($text)->toContain('Pay online by card:')
+            ->and($text)->not->toContain('Or pay online by card:')
+            ->and($text)->toContain('Pay by card')
+            ->and($text)->not->toContain('Variable symbol')
+            ->and($text)->not->toContain('Bank transfer');
+    });
+
+    it('prints an online proforma the same way', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Advance', '1', '5000.00', 'ks')], InvoiceKind::Proforma);
+        $online = variantOnline($issued);
+
+        $text = variantFlat(app(InvoicePdf::class)->html($online));
+
+        expect($text)->toContain('ZÁLOHOVÁ FAKTURA')
+            ->and($text)->toContain('Online platební kartou')
+            ->and($text)->toContain('Zaplatit kartou')
+            ->and($text)->not->toContain('Variabilní symbol');
+    });
+
+    it('prints the account rows and the QR of a CZK document paid to a Czech IBAN whatever the currency of the account itself', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Consulting', '1', '1000.00')]);
+        $snapshot = $issued->bank_snapshot;
+        $iban = (string) ($snapshot['iban'] ?? '');
+
+        // The snapshotted account is a CZK one; the same account stored as a EUR one prints the same box and QR.
+        app(PartnerContext::class)->runAsSystem(static function () use ($issued, $snapshot): void {
+            DB::update('update invoices set bank_snapshot = ? where id = ?', [json_encode([...$snapshot, 'currency' => 'EUR'], JSON_THROW_ON_ERROR), $issued->id]);
+        });
+
+        $html = app(InvoicePdf::class)->html(Invoice::query()->whereKey($issued->id)->firstOrFail());
+        $text = variantFlat($html);
+
+        expect($iban)->not->toBe('')
+            ->and($text)->toContain(trim(chunk_split($iban, 4, ' ')))
+            ->and($text)->toContain('Variabilní symbol')
+            ->and(variantImages($html))->toHaveCount(1);
+    });
+
+    it('prints no QR for a EUR document, though its Czech IBAN would be accepted for CZK', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.000');
+        $issued = InvoiceFixtures::issued(
+            InvoiceFixtures::client(['currency' => 'EUR', 'hourly_rate' => Money::ofMinor(0, 'EUR')]),
+            [InvoiceFixtures::item('Consulting', '2', '100.00')],
+        );
+
+        $html = app(InvoicePdf::class)->html($issued);
+
+        expect($issued->currency)->toBe('EUR')
+            ->and(variantFlat($html))->toContain('IBAN')
+            ->and(variantImages($html))->toBe([]);
     });
 });
 

@@ -126,7 +126,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 - [x] **IN-01**: Invoices, proformas and credit notes with separate number series, number allocated only on issue
 - [x] **IN-02**: Draft created from unbilled billable time (client, period, projects; grouping per project or task; fixed sums added) plus manual items; items editable; entries reserved so two drafts cannot bill the same time
-- [x] **IN-03**: Issue freezes supplier, customer and bank snapshots, rate and amounts; issued invoices are immutable except payment state and internal note, enforced in the database
+- [x] **IN-03**: Issue freezes number, kind and the issue snapshots (supplier, customer, bank, rate, amounts); an issued invoice or proforma stays editable until a successful e-mail send locks it, a credit note is locked at issue, and number and kind never change, enforced in the database
 - [x] **IN-04**: PDF generated at issue from snapshots only, stored in documents, with SPAYD QR for CZK bank transfer, in the client's invoice language; sent by queued e-mail with optional work report
 - [x] **IN-05**: Manual payment (transfer, cash) recorded in a payments table; warning if already paid; overdue status derived; overdue overview
 - [x] **IN-06**: Proforma converts to invoice with a link after payment
@@ -134,6 +134,11 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **IN-08**: Non-VAT-payer mode is the default and fully tested; data model prepared for VAT payer
 - [x] **IN-09**: Partner sees own issued invoices and proformas (list, detail, PDF, pay button) read-only, never drafts, internal notes, linked time or rates
 - [x] **IN-10**: Cancelling or deleting a draft, or storno, returns linked entries to unbilled
+- [x] **IN-11**: An issued invoice or proforma is locked only by a successfully sent document e-mail; queued, pending or failed e-mails, payments, credit notes and storno never lock it
+- [x] **IN-12**: Admin unlocks a locked invoice or proforma with a mandatory reason; the unlock is audited and the document stays editable until the next successful send locks it again
+- [x] **IN-13**: While unlocked, Admin edits items, dates, customer and supplier snapshots, bank account, currency, language and linked time of an issued invoice or proforma; totals are recomputed with the single rounding rule, and totals below what was paid or credited warn instead of blocking
+- [x] **IN-14**: Saving an edit regenerates and replaces the stored PDF with its QR code and refreshes the card payment link when amount or currency change; nothing is sent automatically
+- [x] **IN-15**: Every change to an issued document after its first send, every lock and every unlock is audited with who, when, the values before and after and the unlock reason; a bank account change is audited by a non-reversible keyed fingerprint of the account (the fingerprints before and after, who and when) instead of the account values, so the account number never enters the history
 
 ### Payments (Stripe)
 
@@ -145,6 +150,18 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **PA-06**: Matching by invoice id (fallback link id) with amount and currency check creates payment, marks invoice paid, creates income, deactivates link, notifies Admin
 - [x] **PA-07**: Second payment of the same invoice is stored as duplicate without income or invoice change and alerts Admin; repeated events are ignored; idempotence enforced by DB unique constraints
 - [x] **PA-08**: Unmatched payments and refund events are recorded and alerted; Admin payments overview with duplicate/unmatched filters and manual resolution; old webhook events are pruned
+
+### Payment Method and Currency
+
+- [x] **P14-01**: A draft, invoice or proforma has an exclusive payment method `transfer` or `online`, default `transfer`; a credit note has none
+- [x] **P14-02**: `transfer` prints the bank box, variable symbol and QR (CZK with a CZ IBAN only); `online` prints none of them, only the pay button or link and the amount and due facts
+- [x] **P14-03**: Several bank accounts may share a currency; each account has a stable id; a document stores the chosen account separately from its currency
+- [x] **P14-04**: Setting or changing the currency preselects the first account of that currency; any account may be chosen instead; with no match nothing is preselected and issuing a `transfer` document is blocked
+- [x] **P14-05**: The currency choices are the CNB currencies plus account currencies and the client currency (plus the current and CZK), without duplicates
+- [x] **P14-06**: Method, account and currency are editable on an open issued document and frozen once it is locked
+- [x] **P14-07**: A method or currency change deactivates the live Stripe link and, when card payment is still offered, queues a new one in the document currency; the pay URL stays the same
+- [x] **P14-08**: A currency change is refused once a payment is recorded; a method or account change is still allowed
+- [x] **P14-09**: `online` requires card payment to be available (global setting on, Stripe configured, client flag on) and blocks issuing otherwise
 
 ### Partner Audit
 
@@ -276,7 +293,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FI-03 | Phase 10 | Complete |
 | IN-01 | Phase 10 | Complete |
 | IN-02 | Phase 10 | Complete |
-| IN-03 | Phase 10 | Complete |
+| IN-03 | Phase 10.1 | Complete |
 | IN-04 | Phase 10 | Complete |
 | IN-05 | Phase 10 | Complete |
 | IN-06 | Phase 10 | Complete |
@@ -284,6 +301,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | IN-08 | Phase 10 | Complete |
 | IN-09 | Phase 10 | Complete |
 | IN-10 | Phase 10 | Complete |
+| IN-11 | Phase 10.1 | Complete |
+| IN-12 | Phase 10.1 | Complete |
+| IN-13 | Phase 10.1 | Complete |
+| IN-14 | Phase 10.1 | Complete |
+| IN-15 | Phase 10.1 | Complete |
 | PA-01 | Phase 11 | Complete |
 | PA-02 | Phase 11 | Complete |
 | PA-03 | Phase 11 | Complete |
@@ -292,12 +314,21 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PA-06 | Phase 11 | Complete |
 | PA-07 | Phase 11 | Complete |
 | PA-08 | Phase 11 | Complete |
+| P14-01 | Phase 14 | Complete |
+| P14-02 | Phase 14 | Complete |
+| P14-03 | Phase 14 | Complete |
+| P14-04 | Phase 14 | Complete |
+| P14-05 | Phase 14 | Complete |
+| P14-06 | Phase 14 | Complete |
+| P14-07 | Phase 14 | Complete |
+| P14-08 | Phase 14 | Complete |
+| P14-09 | Phase 14 | Complete |
 | AUD-01 | Phase 12 | Pending |
 | AUD-02 | Phase 12 | Pending |
 
 **Coverage:**
-- v1 requirements: 97 total
-- Mapped to phases: 96
+- v1 requirements: 111 total
+- Mapped to phases: 110
 - Deferred to backlog: 1 (AP-03)
 - Unmapped: 0
 
@@ -305,4 +336,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-10-06*
-*Last updated: 2026-10-06 after roadmap creation (traceability filled)*
+*Last updated: 2026-10-23 for Phase 10.1 (send-driven lock: IN-03 amended, IN-11 to IN-15 added; IN-15 amended: bank account audited by fingerprint, owner decision of 2026-10-23)*

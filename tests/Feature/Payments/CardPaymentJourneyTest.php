@@ -8,6 +8,7 @@ use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoicePayment;
+use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
 use App\Domain\Operations\Health\HealthStatus;
 use App\Domain\Operations\Health\Indicators\StripeConfigIndicator;
@@ -199,7 +200,7 @@ it('walks an invoice from issue to a resolved duplicate: link, PDF, e-mail, pay 
         'attach_work_report' => false,
     ]);
 
-    $toClient = array_values(array_filter(journeyMails(), static fn (Email $mail): bool => $mail->getTo()[0]->getAddress() === 'invoice@example.com'));
+    $toClient = array_values(array_filter(journeyMails(), static fn (Email $mail): bool => $mail->getTo()[0]->getAddress() === 'invoice@example.com' && $mail->getSubject() === $defaults['subject']));
 
     expect($toClient)->toHaveCount(1)
         ->and(rtrim((string) $toClient[0]->getTextBody()))->toEndWith("\n\nDoklad můžete zaplatit online kartou:\n".$url)
@@ -221,6 +222,9 @@ it('walks an invoice from issue to a resolved duplicate: link, PDF, e-mail, pay 
     app('auth')->forgetGuards();
 
     $first = StripeEvents::checkoutFor($link);
+    $confirmationSubject = 'Potvrzení platby dokladu '.$invoice->number;
+
+    Mail::getSymfonyTransport()->flush();
 
     StripeWebhookSigner::post($this, $first)->assertOk();
 
@@ -234,6 +238,25 @@ it('walks an invoice from issue to a resolved duplicate: link, PDF, e-mail, pay 
         ->and($incomes)->toHaveCount(1)
         ->and($records[0]->invoice_payment_id)->toBe($payments[0]->id)
         ->and(journeySystem(fn (): ?int => app(InvoiceBalances::class)->for([$invoice->id])[$invoice->id]['remaining']))->toBe(0);
+
+    // --- The client got exactly one confirmation of the matched payment (Phase 13, D-05) ------------------------------------------
+    $confirmations = array_values(array_filter(journeyMails(), static fn (Email $mail): bool => $mail->getSubject() === $confirmationSubject));
+    $confirmationRows = journeySystem(static fn (): array => PaymentConfirmation::query()->where('invoice_id', $invoice->id)->get()->all());
+
+    expect($confirmations)->toHaveCount(1)
+        ->and($confirmations[0]->getTo()[0]->getAddress())->toBe('invoice@example.com')
+        ->and((string) $confirmations[0]->getTextBody())->toContain('Doklad je tímto zcela uhrazen.')
+        ->and($confirmations[0]->getAttachments())->toBe([])
+        ->and($confirmationRows)->toHaveCount(1)
+        ->and($confirmationRows[0]->invoice_payment_id)->toBe($payments[0]->id)
+        ->and($confirmationRows[0]->state->value)->toBe('sent');
+
+    // The very same signed event delivered again is a replay: it adds no payment, no row and no e-mail.
+    StripeWebhookSigner::post($this, $first)->assertOk();
+
+    expect(array_values(array_filter(journeyMails(), static fn (Email $mail): bool => $mail->getSubject() === $confirmationSubject)))->toHaveCount(1)
+        ->and(journeySystem(static fn (): int => PaymentConfirmation::query()->where('invoice_id', $invoice->id)->count()))->toBe(1)
+        ->and(journeySystem(static fn (): int => InvoicePayment::query()->where('invoice_id', $invoice->id)->count()))->toBe(1);
 
     $link = journeyLink($invoice);
 
@@ -264,6 +287,10 @@ it('walks an invoice from issue to a resolved duplicate: link, PDF, e-mail, pay 
         ->and(journeySystem(static fn (): int => InvoicePayment::query()->where('invoice_id', $invoice->id)->count()))->toBe(1)
         ->and(journeySystem(static fn (): int => Transaction::query()->where('invoice_id', $invoice->id)->count()))->toBe(1)
         ->and(journeyBellTitles($this->admin))->toContain('Duplicitní platba kartou');
+
+    // The duplicate of a paid document confirms nothing to the client.
+    expect(array_values(array_filter(journeyMails(), static fn (Email $mail): bool => $mail->getSubject() === $confirmationSubject)))->toBe([])
+        ->and(journeySystem(static fn (): int => PaymentConfirmation::query()->where('invoice_id', $invoice->id)->count()))->toBe(1);
 
     $alerts = array_values(array_filter(journeyMails(), static fn (Email $mail): bool => $mail->getSubject() === 'Kokpit: Duplicitní platba kartou'));
 

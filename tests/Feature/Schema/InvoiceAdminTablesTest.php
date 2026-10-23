@@ -8,6 +8,7 @@ use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Models\Task;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\AssertionFailedError;
 use Tests\Support\RawSql;
 
@@ -59,9 +60,10 @@ function adminTablesDocument(string $clientId, array $overrides = []): string
 }
 
 /**
- * Issues the draft document by raw SQL; a credit note gets a negative total and no due date.
+ * Issues the draft document by raw SQL; a credit note gets a negative total and no due date. The document is left
+ * open unless the caller asks for the lock of a sent document (IN-11); a credit note is locked by its own issue.
  */
-function adminTablesIssue(string $documentId): void
+function adminTablesIssue(string $documentId, bool $locked = false): void
 {
     static $sequence = 0;
     $sequence++;
@@ -74,7 +76,7 @@ function adminTablesIssue(string $documentId): void
 
     DB::update(
         'update invoices set state = \'issued\', number = ?, variable_symbol = ?, issue_date = \'2026-10-17\', due_date = ?, subtotal_minor = ?, total_minor = ?, '
-        .'supplier_snapshot = ?, customer_snapshot = ?, bank_snapshot = ?, appearance_snapshot = ?, issued_at = \'2026-10-17 10:30:00+00\' where id = ?',
+        .'supplier_snapshot = ?, customer_snapshot = ?, bank_snapshot = ?, appearance_snapshot = ?, issued_at = \'2026-10-17 10:30:00+00\', lock_state = ? where id = ?',
         [
             $number,
             $creditNote ? null : $number,
@@ -85,6 +87,7 @@ function adminTablesIssue(string $documentId): void
             json_encode(['name' => 'Example Customer a.s.']),
             $creditNote ? null : json_encode(['account' => 'fictional']),
             json_encode(['accent' => '#336699']),
+            $locked || $creditNote ? 'locked' : 'open',
             $documentId,
         ],
     );
@@ -186,11 +189,12 @@ function adminTablesDeleteFlagged(string $paymentId, ?string $flag = null): void
 }
 
 /**
- * An issued invoice with an admin row, a line and a source of that line, built while the invoice was a draft.
+ * An issued invoice with an admin row, a line and a source of that line, built while the invoice was a draft. It is
+ * locked like a sent document unless the caller asks for an open one.
  *
  * @return array{invoice: string, admin: string, item: string, source: string}
  */
-function adminTablesIssuedWithSide(object $test): array
+function adminTablesIssuedWithSide(object $test, bool $locked = true): array
 {
     $invoice = adminTablesDocument($test->adminTablesClient);
     $admin = adminTablesAdminRow($invoice, ['internal_note' => 'Fictional note']);
@@ -199,13 +203,13 @@ function adminTablesIssuedWithSide(object $test): array
     /** @var object{id: string} $source */
     $source = DB::selectOne("insert into invoice_item_sources (invoice_item_id, invoice_id, origin, created_at, updated_at) values (?, ?, 'manual', '2026-10-17 10:00:00+00', '2026-10-17 10:00:00+00') returning id", [$item, $invoice]);
 
-    adminTablesIssue($invoice);
+    adminTablesIssue($invoice, $locked);
 
     return ['invoice' => $invoice, 'admin' => $admin, 'item' => $item, 'source' => $source->id];
 }
 
 describe('invoice_admin', function (): void {
-    it('keeps the internal note editable after issue and freezes the CNB columns, the row and the second row', function (): void {
+    it('keeps the internal note editable under a lock and freezes the CNB columns, the row and the second row', function (): void {
         ['invoice' => $invoice, 'admin' => $admin] = adminTablesIssuedWithSide($this);
 
         RawSql::expectAllowed(fn () => DB::update("update invoice_admin set internal_note = 'Changed note', internal_note_updated_at = now(), updated_at = now() where id = ?", [$admin]));
@@ -217,6 +221,97 @@ describe('invoice_admin', function (): void {
         RawSql::expectSqlState('KP001', fn () => DB::delete('delete from invoice_admin where id = ?', [$admin]));
         RawSql::expectSqlState('KP001', fn () => adminTablesAdminRow($invoice));
         RawSql::expectSqlState('KP001', fn () => DB::unprepared('TRUNCATE invoice_admin'));
+    });
+
+    it('takes the CNB figures while the document is open, and never changes its document or deletes the row', function (): void {
+        ['invoice' => $invoice, 'admin' => $admin] = adminTablesIssuedWithSide($this, locked: false);
+
+        RawSql::expectAllowed(fn () => DB::update("update invoice_admin set exchange_rate = 24.5, exchange_unit_amount = 1, exchange_rate_date = '2026-10-17', czk_total_minor = 24500, updated_at = now() where id = ?", [$admin]));
+        RawSql::expectAllowed(fn () => DB::update("update invoice_admin set internal_note = 'Changed note', internal_note_updated_at = now() where id = ?", [$admin]));
+
+        RawSql::expectSqlState('KP001', fn () => DB::update('update invoice_admin set invoice_id = ? where id = ?', [adminTablesDocument($this->adminTablesClient), $admin]));
+        RawSql::expectSqlState('KP001', fn () => DB::delete('delete from invoice_admin where id = ?', [$admin]));
+        RawSql::expectSqlState('23505', fn () => adminTablesAdminRow($invoice));
+    });
+
+    it('takes a card switch change, a first pay token and a bank account id on an open issued document (OA-1, D-03, D-05)', function (): void {
+        ['admin' => $admin] = adminTablesIssuedWithSide($this, locked: false);
+        $token = str_repeat('d', 32);
+        $account = (string) Str::uuid7();
+
+        RawSql::expectAllowed(fn () => DB::update('update invoice_admin set card_payment_enabled = true where id = ?', [$admin]));
+        RawSql::expectAllowed(fn () => DB::update('update invoice_admin set card_payment_enabled = false where id = ?', [$admin]));
+        RawSql::expectAllowed(fn () => DB::update('update invoice_admin set card_payment_enabled = true, pay_token = ? where id = ?', [$token, $admin]));
+        RawSql::expectAllowed(fn () => DB::update('update invoice_admin set card_payment_enabled = false where id = ?', [$admin]));
+        RawSql::expectAllowed(fn () => DB::update('update invoice_admin set bank_account_id = ? where id = ?', [$account, $admin]));
+        RawSql::expectAllowed(fn () => DB::update('update invoice_admin set bank_account_id = null where id = ?', [$admin]));
+
+        $row = DB::selectOne('select card_payment_enabled, pay_token, bank_account_id from invoice_admin where id = ?', [$admin]);
+
+        expect($row->card_payment_enabled)->toBeFalse()
+            ->and($row->pay_token)->toBe($token)
+            ->and($row->bank_account_id)->toBeNull();
+    });
+
+    it('never changes or removes a set pay token of an issued document, open or locked, and keeps it after a switch-off', function (bool $locked): void {
+        $invoice = adminTablesDocument($this->adminTablesClient);
+        $token = str_repeat('b', 32);
+        $admin = adminTablesAdminRow($invoice, ['card_payment_enabled' => true, 'pay_token' => $token]);
+        adminTablesIssue($invoice, $locked);
+
+        RawSql::expectSqlState('KP001', fn () => DB::update("update invoice_admin set pay_token = '".str_repeat('c', 32)."' where id = ?", [$admin]));
+        RawSql::expectSqlState('KP001', fn () => DB::update('update invoice_admin set pay_token = null where id = ?', [$admin]));
+        RawSql::expectSqlState('KP001', fn () => DB::update('update invoice_admin set pay_token = null, card_payment_enabled = false where id = ?', [$admin]));
+        RawSql::expectSqlState('KP001', fn () => DB::delete('delete from invoice_admin where id = ?', [$admin]));
+        RawSql::expectAllowed(fn () => DB::update("update invoice_admin set internal_note = 'Still editable' where id = ?", [$admin]));
+
+        expect(DB::selectOne('select pay_token from invoice_admin where id = ?', [$admin])->pay_token)->toBe($token);
+    })->with(['open' => [false], 'locked' => [true]]);
+
+    it('lets the token of an open issued document outlive a switch-off, and freezes the switch once locked', function (): void {
+        $invoice = adminTablesDocument($this->adminTablesClient);
+        $token = str_repeat('e', 32);
+        $admin = adminTablesAdminRow($invoice, ['card_payment_enabled' => true, 'pay_token' => $token]);
+        adminTablesIssue($invoice, false);
+
+        RawSql::expectAllowed(fn () => DB::update('update invoice_admin set card_payment_enabled = false where id = ?', [$admin]));
+        expect(DB::selectOne('select card_payment_enabled, pay_token from invoice_admin where id = ?', [$admin]))
+            ->card_payment_enabled->toBeFalse()
+            ->pay_token->toBe($token);
+
+        DB::update("update invoices set lock_state = 'locked' where id = ?", [$invoice]);
+
+        RawSql::expectSqlState('KP001', fn () => DB::update('update invoice_admin set card_payment_enabled = true where id = ?', [$admin]));
+    });
+
+    it('freezes the switch, a first token and the bank account id of a locked issued document (T-14-08)', function (): void {
+        ['admin' => $admin] = adminTablesIssuedWithSide($this);
+
+        RawSql::expectSqlState('KP001', fn () => DB::update('update invoice_admin set card_payment_enabled = true where id = ?', [$admin]));
+        RawSql::expectSqlState('KP001', fn () => DB::update('update invoice_admin set pay_token = ? where id = ?', [str_repeat('f', 32), $admin]));
+        RawSql::expectSqlState('KP001', fn () => DB::update('update invoice_admin set bank_account_id = ? where id = ?', [(string) Str::uuid7(), $admin]));
+        RawSql::expectAllowed(fn () => DB::update("update invoice_admin set internal_note = 'Still editable', internal_note_updated_at = now(), updated_at = now() where id = ?", [$admin]));
+
+        // A stored account id is frozen as well.
+        $invoice = adminTablesDocument($this->adminTablesClient);
+        $withAccount = adminTablesAdminRow($invoice, ['bank_account_id' => (string) Str::uuid7()]);
+        adminTablesIssue($invoice, true);
+
+        RawSql::expectSqlState('KP001', fn () => DB::update('update invoice_admin set bank_account_id = null where id = ?', [$withAccount]));
+    });
+
+    it('leaves the switch, the token and the bank account id of a draft free, and checks the token format only', function (): void {
+        $draft = adminTablesDocument($this->adminTablesClient);
+        $admin = adminTablesAdminRow($draft);
+
+        RawSql::expectAllowed(fn () => DB::update('update invoice_admin set card_payment_enabled = true, bank_account_id = ? where id = ?', [(string) Str::uuid7(), $admin]));
+        RawSql::expectAllowed(fn () => DB::update('update invoice_admin set pay_token = ? where id = ?', [str_repeat('g', 32), $admin]));
+        RawSql::expectAllowed(fn () => DB::update('update invoice_admin set pay_token = ?, card_payment_enabled = false where id = ?', [str_repeat('h', 32), $admin]));
+        RawSql::expectAllowed(fn () => DB::update('update invoice_admin set pay_token = null, bank_account_id = null where id = ?', [$admin]));
+
+        RawSql::expectSqlState('23514', fn () => DB::update('update invoice_admin set pay_token = ? where id = ?', [str_repeat('g', 31), $admin]));
+        RawSql::expectSqlState('23514', fn () => DB::update('update invoice_admin set pay_token = ? where id = ?', [str_repeat('g', 31).'-', $admin]));
+        RawSql::expectSqlState('22P02', fn () => DB::update("update invoice_admin set bank_account_id = 'not-a-uuid' where id = ?", [$admin]));
     });
 
     it('stays freely editable and deletable on a draft', function (): void {
@@ -309,7 +404,16 @@ describe('the PDF link of an issued document (ruling R-06-6)', function (): void
 });
 
 describe('invoice_item_sources', function (): void {
-    it('is frozen with its document, a timestamp-only write included', function (): void {
+    it('is open while its document is open', function (): void {
+        ['invoice' => $invoice, 'source' => $source] = adminTablesIssuedWithSide($this, locked: false);
+
+        RawSql::expectAllowed(fn () => DB::update('update invoice_item_sources set price_manual = true, updated_at = now() where id = ?', [$source]));
+        RawSql::expectAllowed(fn () => DB::insert("insert into invoice_item_sources (invoice_item_id, invoice_id, origin) values (?, ?, 'manual')", [adminTablesItem($invoice, 2), $invoice]));
+        RawSql::expectAllowed(fn () => DB::delete('delete from invoice_item_sources where id = ?', [$source]));
+        RawSql::expectSqlState('KP001', fn () => DB::unprepared('TRUNCATE invoice_item_sources'));
+    });
+
+    it('is frozen with its document once the document is locked, a timestamp-only write included', function (): void {
         ['invoice' => $invoice, 'source' => $source] = adminTablesIssuedWithSide($this);
 
         RawSql::expectSqlState('KP001', fn () => DB::update('update invoice_item_sources set price_manual = true where id = ?', [$source]));
