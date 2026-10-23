@@ -146,3 +146,80 @@ describe('the tracer (Phase 13)', function (): void {
             ->and(Gate::forUser($partner)->denies('view', $row))->toBeTrue();
     });
 });
+
+describe('the contract (Phase 13)', function (): void {
+    it('refuses a row with an unknown state', function (): void {
+        [$invoice, $payment] = payConfirmSchemaPayment();
+
+        RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['state' => 'delivered'])));
+    });
+
+    it('refuses a language other than cs and en', function (): void {
+        [$invoice, $payment] = payConfirmSchemaPayment();
+
+        RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['language' => 'de'])));
+    });
+
+    it('refuses a negative remaining amount', function (): void {
+        [$invoice, $payment] = payConfirmSchemaPayment();
+
+        RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['remaining_minor' => -1])));
+    });
+
+    it('refuses negative attempts', function (): void {
+        [$invoice, $payment] = payConfirmSchemaPayment();
+
+        RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['attempts' => -1])));
+    });
+
+    it('ties sent_at to the sent state in both directions', function (): void {
+        [$invoice, $payment] = payConfirmSchemaPayment();
+
+        RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['sent_at' => null])));
+        RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['state' => 'queued', 'sent_at' => '2026-10-14 10:05:00+00'])));
+    });
+
+    it('allows a failure code only on a failed row', function (): void {
+        [$invoice, $payment] = payConfirmSchemaPayment();
+
+        RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['state' => 'queued', 'sent_at' => null, 'failure_code' => 'smtp'])));
+        RawSql::expectAllowed(static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['state' => 'failed', 'sent_at' => null, 'failure_code' => 'smtp'])));
+    });
+
+    it('keeps the recipient null exactly when the row is skipped and never blank', function (): void {
+        [$invoice, $payment] = payConfirmSchemaPayment();
+
+        $skipped = ['state' => 'skipped', 'sent_at' => null, 'attempts' => 0];
+
+        RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, [...$skipped, 'recipient' => exampleEmail('client-invoice')])));
+        RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['state' => 'queued', 'sent_at' => null, 'recipient' => null])));
+        RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['recipient' => '   '])));
+        RawSql::expectAllowed(static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, [...$skipped, 'recipient' => null])));
+    });
+
+    it('refuses a row for a payment that does not exist', function (): void {
+        [$invoice, $payment] = payConfirmSchemaPayment();
+
+        RawSql::expectSqlState('23503', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['invoice_payment_id' => '00000000-0000-7000-8000-000000000000'])));
+    });
+
+    it('starts a row with only the required columns as queued with zero attempts', function (): void {
+        [$invoice, $payment] = payConfirmSchemaPayment();
+
+        payConfirmSchemaInsert([
+            'invoice_payment_id' => $payment->id,
+            'invoice_id' => $invoice->id,
+            'recipient' => exampleEmail('client-invoice'),
+            'language' => 'en',
+            'remaining_minor' => 5000,
+        ]);
+
+        $row = DB::table('payment_confirmations')->where('invoice_payment_id', $payment->id)->first();
+
+        expect($row)->not->toBeNull()
+            ->and($row->state)->toBe('queued')
+            ->and($row->attempts)->toBe(0)
+            ->and($row->sent_at)->toBeNull()
+            ->and($row->failure_code)->toBeNull();
+    });
+});
