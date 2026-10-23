@@ -92,9 +92,9 @@ use Throwable;
  * - a draft, in draft mode: "Uložit koncept" hands the form state to {@see UpdateDraft}, and the header actions
  *   issue and delete the draft;
  * - an open issued invoice or proforma, in issued mode (R-10.1-06-1): reached from the detail, the number and the kind
- *   are shown read-only, the card switch, "Vystavit" and "Smazat koncept" are absent, the currency, the language and
- *   the dates are read-only, and "Uložit změny" hands only the lines and the notes to {@see UpdateIssuedDocument}. The
- *   address of a document that cannot be edited (locked, a credit note, cancelled, converted, an e-mail on its way, see
+ *   are shown read-only, "Vystavit" and "Smazat koncept" are absent, and "Uložit změny" hands the lines, the notes, the
+ *   header, the payment method, the bank account and the card switch to {@see UpdateIssuedDocument} (Phase 14: the
+ *   three payment fields follow the rules of the draft editor, and the Action re-checks them). The address of a document that cannot be edited (locked, a credit note, cancelled, converted, an e-mail on its way, see
  *   {@see IssuedDocumentRules::editBlocker()}) redirects to the detail with the reason as a notification. A line that a
  *   credit note credits shows its quantity, unit and unit price disabled and cannot be removed (A4); the Action keeps
  *   that rule whatever the browser sends.
@@ -616,14 +616,19 @@ final class EditInvoice extends EditRecord
             'taxable_supply_date' => $invoice->taxable_supply_date?->format('Y-m-d'),
             'note' => $invoice->note,
             'internal_note' => $invoice->admin?->internal_note,
-            // A disabled switch shows off whatever is stored; it is not dehydrated, so the stored value stays. An online
-            // document shows it on: the switch is forced on for it (D-03).
-            'card_payment_enabled' => $this->storedMethod() === DocumentPaymentMethod::Online && $invoice->kind->carriesPayment()
-                ? true
-                : app(CardPaymentSwitch::class)->available() && $this->storedCardPayment(),
+            // A disabled switch is not dehydrated, so the stored value stays. An online document shows it on: the switch is
+            // forced on for it (D-03). A draft shows a switch that cannot be edited now as off; an issued document shows
+            // the value it stores (R-14-10-1).
+            'card_payment_enabled' => match (true) {
+                $this->storedMethod() === DocumentPaymentMethod::Online && $invoice->kind->carriesPayment() => true,
+                $this->issuedMode() => $this->storedCardPayment(),
+                default => app(CardPaymentSwitch::class)->available() && $this->storedCardPayment(),
+            },
+            // An issued document shows the stored account only while it is still configured; a document whose account was
+            // removed, or a legacy one without an id, shows none and keeps its printed one (R-14-10-1, D-05).
             ...($invoice->kind->carriesPayment() ? [
                 'payment_method' => $this->storedMethod()->value,
-                'bank_account_id' => DocumentPayment::account($invoice)?->id,
+                'bank_account_id' => $this->issuedMode() ? $this->filledAccountId() : DocumentPayment::account($invoice)?->id,
             ] : []),
             'items' => $items,
             ...($this->issuedMode() ? [
@@ -712,8 +717,10 @@ final class EditInvoice extends EditRecord
 
     /**
      * The values {@see UpdateIssuedDocument} takes: the lines, the two notes and the header the editor offers (the
-     * currency, the dates, the language, the customer and supplier lines, the bank refill flag). The number, the kind and
-     * the card switch are not read from the form at all (T-10.1-24). A
+     * currency, the dates, the language, the customer and supplier lines, the bank refill flag) and, for an invoice or a
+     * proforma, the payment method, the card switch and the bank account. The number and the kind are not read from the
+     * form at all. The card switch is read from the form (owner answer OA-1, which reverses T-10.1-24) and the Action
+     * re-checks it, like the method and the account. A
      * credited line whose fields did not travel (a disabled field is not part of the state) takes them from the stored
      * line; the Action compares them with the stored line again.
      *
@@ -775,9 +782,31 @@ final class EditInvoice extends EditRecord
             }
         }
 
-        // The account itself never travels: only the wish to take it again from the settings (T-10.1-28).
+        // The account itself never travels, only its id and the wish to take it again from the settings (T-10.1-28).
         if (($data['reload_bank'] ?? false) === true) {
             $values['reload_bank'] = true;
+        }
+
+        if ($invoice->kind->carriesPayment()) {
+            // The method and the switch travel when their fields were dehydrated (a disabled or hidden field is not part
+            // of the state); the Action re-checks both (T-14-33).
+            if (array_key_exists('payment_method', $data)) {
+                $values['payment_method'] = $data['payment_method'];
+            }
+
+            if (array_key_exists('card_payment_enabled', $data)) {
+                $values['card_payment_enabled'] = (bool) $data['card_payment_enabled'];
+            }
+
+            // The account travels only when the Admin changed it: a document whose stored account was removed, or a legacy
+            // one without an id, keeps its printed snapshot on an unrelated save (T-14-34, R-14-10-2).
+            if (array_key_exists('bank_account_id', $data)) {
+                $account = self::text($data['bank_account_id']);
+
+                if ($account !== $this->filledAccountId()) {
+                    $values['bank_account_id'] = $account;
+                }
+            }
         }
 
         return $values;
@@ -834,12 +863,6 @@ final class EditInvoice extends EditRecord
 
                 if (isset($errors['document'])) {
                     Notification::make()->danger()->title(implode(' ', $errors['document']))->send();
-
-                    throw new Halt;
-                }
-
-                if (isset($errors['bank'])) {
-                    Notification::make()->danger()->title(implode(' ', $errors['bank']))->send();
 
                     throw new Halt;
                 }
@@ -964,7 +987,7 @@ final class EditInvoice extends EditRecord
             ->afterStateUpdated(function (Get $get, Set $set, mixed $state, mixed $old): void {
                 $this->methodChosen($get, $set, $state, $old);
             })
-            ->visible(fn (): bool => ! $this->issuedMode() && $this->invoice()->kind->carriesPayment());
+            ->visible(fn (): bool => $this->invoice()->kind->carriesPayment());
     }
 
     /**
@@ -979,10 +1002,32 @@ final class EditInvoice extends EditRecord
             ->placeholder(__('invoices.draft.helpers.bank_account_none'))
             ->native(false)
             ->live()
-            ->helperText(fn (Get $get): ?string => blank($get('bank_account_id')) ? null : (string) __('invoices.draft.helpers.bank_account'))
-            ->hint(fn (Get $get): ?Htmlable => blank($get('bank_account_id')) ? $this->bankAccountMissingHint() : null)
+            ->helperText(fn (Get $get): ?string => $this->accountHintShown($get) ? null : (string) __('invoices.draft.helpers.bank_account'))
+            ->hint(fn (Get $get): ?Htmlable => $this->accountHintShown($get) ? $this->bankAccountMissingHint() : null)
             ->hintColor('danger')
-            ->visible(fn (Get $get): bool => ! $this->issuedMode() && $this->invoice()->kind->carriesPayment() && ! $this->isOnline($get('payment_method')));
+            ->visible(fn (Get $get): bool => $this->invoice()->kind->carriesPayment() && ! $this->isOnline($get('payment_method')));
+    }
+
+    /**
+     * Whether the field shows the danger line of an empty account: a draft without an account cannot be issued. An issued
+     * document keeps its printed account whatever the field shows, so it has no such line (the section of the bank account
+     * says what the save will print).
+     */
+    private function accountHintShown(Get $get): bool
+    {
+        return ! $this->issuedMode() && blank($get('bank_account_id'));
+    }
+
+    /**
+     * The id of the account the issued editor fills: the stored one while the settings still hold it, else none. A
+     * document whose account was removed, or a legacy one without an id, fills none and keeps its printed snapshot until
+     * the Admin picks another (R-14-10-1, R-14-10-2).
+     */
+    private function filledAccountId(): ?string
+    {
+        $id = $this->invoice()->admin?->bank_account_id;
+
+        return is_string($id) && app(BankAccountSettings::class)->find($id) instanceof BankAccount ? $id : null;
     }
 
     /**
@@ -1106,7 +1151,7 @@ final class EditInvoice extends EditRecord
                     ->label(__('invoices.draft.fields.card_payment'))
                     ->helperText(fn (Get $get): string => $this->isOnline($get('payment_method')) ? (string) __('invoices.draft.helpers.card_payment_online') : $this->cardPaymentHelper())
                     ->disabled(fn (Get $get): bool => ! app(CardPaymentSwitch::class)->available() || $this->isOnline($get('payment_method')))
-                    ->visible(fn (): bool => ! $this->issuedMode() && $this->invoice()->kind->carriesPayment()),
+                    ->visible(fn (): bool => $this->invoice()->kind->carriesPayment()),
                 TextEntry::make('variable_symbol')
                     ->label(__('invoices.draft.fields.variable_symbol'))
                     ->state(fn (): string => $this->issuedMode() ? (string) $this->invoice()->variable_symbol : (string) __('invoices.draft.helpers.variable_symbol'))
@@ -1134,7 +1179,8 @@ final class EditInvoice extends EditRecord
     /**
      * "Odběratel a dodavatel" of an issued document (D-06, A9): the lines printed on this document, free fields of its
      * own snapshots, each party with an action that fills the fields again from the card or the settings, and the bank
-     * account read-only with an action that takes it again from the settings. Nothing is written until "Uložit změny".
+     * account read-only (the account is chosen in the document section) with an action that takes it again from the
+     * settings. Nothing is written until "Uložit změny".
      */
     private function partiesSection(): Section
     {
@@ -1158,10 +1204,12 @@ final class EditInvoice extends EditRecord
                     Hidden::make('reload_bank')->default(false),
                     TextEntry::make('issued_bank_account')
                         ->label(__('invoices.draft.fields.bank_account'))
-                        ->state(fn (Get $get): HtmlString => $this->issuedBankState($get('reload_bank') === true, $get('currency')))
+                        ->state(fn (Get $get): HtmlString => $this->issuedBankState($get))
                         ->html(),
-                    Actions::make([$this->refillBankAction()])->key('bankActions'),
-                ])->columnSpanFull(),
+                    Actions::make([$this->refillBankAction()])
+                        ->key('bankActions')
+                        ->visible(fn (Get $get): bool => ! $this->isOnline($get('payment_method'))),
+                ])->columnSpanFull()->visible(fn (): bool => $this->invoice()->kind->carriesPayment()),
             ]);
     }
 
@@ -1195,8 +1243,9 @@ final class EditInvoice extends EditRecord
     }
 
     /**
-     * "Načíst bankovní účet z nastavení": marks the account to be taken again from the settings for the currency of the
-     * document at the save. A currency without an account is refused here already, with the message of the issue.
+     * "Načíst bankovní účet z nastavení": marks the snapshot of the account to be taken again from the settings at the
+     * save: the account chosen in the form, or the first account of the currency when none is chosen. Nothing to take
+     * is refused here already, with the message of the Action (R-14-10-3).
      */
     private function refillBankAction(): Action
     {
@@ -1205,10 +1254,10 @@ final class EditInvoice extends EditRecord
             ->icon(Heroicon::OutlinedArrowPath)
             ->color('gray')
             ->action(function (): void {
-                $currency = $this->invoice()->currency;
+                $chosen = self::text($this->data['bank_account_id'] ?? null);
 
-                if ($this->bankAccountFor($currency) === null) {
-                    Notification::make()->danger()->title(__('invoices.errors.bank_missing', ['currency' => $currency]))->send();
+                if (! $this->accountToPrint($chosen, $this->currentCurrency()) instanceof BankAccount) {
+                    Notification::make()->danger()->title(__('invoices.errors.bank_account_required'))->send();
 
                     return;
                 }
@@ -1233,20 +1282,58 @@ final class EditInvoice extends EditRecord
     }
 
     /**
-     * The bank account of the document as it is stored, or, once the refill is marked, the account the save will take.
+     * What the section of the bank account shows (R-14-10-3, D-01): the printed account while nothing changes; the
+     * account the save will print when the chosen account differs from the stored one, the method moves from online to
+     * transfer, the currency changed or the refill is marked; and the line that an online document prints no bank
+     * details.
      */
-    private function issuedBankState(bool $reload, mixed $currency): HtmlString
+    private function issuedBankState(Get $get): HtmlString
     {
-        // A chosen currency takes the account of the settings for it at the save, like the refill does (D-06).
-        $chosen = is_string($currency) && $currency !== '' ? strtoupper($currency) : $this->invoice()->currency;
-
-        if ($reload || $chosen !== $this->invoice()->currency) {
-            return new HtmlString(e(__('invoices.edit_issued.bank_pending')).'<br>'.$this->bankAccountState($chosen));
+        if ($this->isOnline($get('payment_method'))) {
+            return new HtmlString(e(__('invoices.edit_issued.bank_online')));
         }
 
-        $lines = InvoiceColumns::bankLines($this->invoice());
+        $chosen = self::text($get('bank_account_id'));
+        $currency = $this->currentCurrency();
+        $changes = $get('reload_bank') === true
+            || $this->storedMethod() === DocumentPaymentMethod::Online
+            || $currency !== $this->invoice()->currency
+            || $chosen !== $this->filledAccountId();
 
-        return new HtmlString($lines === [] ? e(__('invoices.navigation.empty_value')) : implode('<br>', array_map('e', $lines)));
+        if (! $changes) {
+            $lines = InvoiceColumns::bankLines($this->invoice());
+
+            return new HtmlString($lines === [] ? e(__('invoices.navigation.empty_value')) : implode('<br>', array_map('e', $lines)));
+        }
+
+        $account = $this->accountToPrint($chosen, $currency);
+        $text = $account instanceof BankAccount
+            ? e($account->label.' · '.self::accountNumber($account))
+            : e(__('invoices.errors.bank_account_required'));
+
+        return new HtmlString(e(__('invoices.edit_issued.bank_pending')).'<br>'.$text);
+    }
+
+    /**
+     * The account a save of the form will print: the chosen one when the settings hold it; with none chosen and none
+     * filled (a legacy document, or one whose account was removed) the first account of the currency, which is what the
+     * Action takes when no account is sent (D-05); else none, which the Action refuses as `bank_account_required`.
+     */
+    private function accountToPrint(?string $chosen, string $currency): ?BankAccount
+    {
+        $settings = app(BankAccountSettings::class);
+
+        if ($chosen !== null) {
+            return $settings->find($chosen);
+        }
+
+        if ($this->filledAccountId() !== null) {
+            return null;
+        }
+
+        $preselected = DocumentPayment::preselect($currency);
+
+        return $preselected === null ? null : $settings->find($preselected);
     }
 
     /**
@@ -1488,8 +1575,8 @@ final class EditInvoice extends EditRecord
                 $data = $this->data ?? [];
                 $data['currency'] = $currency;
                 $data['items'] = $this->repricedItems(is_array($data['items'] ?? null) ? $data['items'] : [], $currency);
-                // The account follows the confirmed currency like it follows an unconfirmed one (research Pitfall 10); in
-                // issued mode the field is hidden, so the state has no effect there.
+                // The account follows the confirmed currency like it follows an unconfirmed one (research Pitfall 10), in a
+                // draft and in an issued document; the Admin may pick another one afterwards (D-05, D-06).
                 $data['bank_account_id'] = DocumentPayment::preselect($currency);
                 $this->data = $data;
             });
@@ -1846,28 +1933,6 @@ final class EditInvoice extends EditRecord
         $codes = IssuedDocumentRules::currencyChoices($this->invoice());
 
         return array_combine($codes, $codes);
-    }
-
-    private function bankAccountFor(mixed $currency): ?BankAccount
-    {
-        return is_string($currency) && $currency !== '' ? app(BankAccountSettings::class)->forCurrency($currency) : null;
-    }
-
-    /**
-     * The account of the currency, or the danger message with the link to the settings (UI-SPEC C1).
-     */
-    private function bankAccountState(mixed $currency): HtmlString
-    {
-        $account = $this->bankAccountFor($currency);
-
-        if ($account instanceof BankAccount) {
-            return new HtmlString(e($account->label.' · '.self::accountNumber($account)));
-        }
-
-        $message = e(__('invoices.errors.bank_missing', ['currency' => is_string($currency) ? $currency : $this->invoice()->currency]));
-        $link = '<a href="'.e(SettingsPage::getUrl()).'" style="text-decoration: underline;">'.e(__('invoices.draft.settings_link')).'</a>';
-
-        return new HtmlString(str_replace(e(__('invoices.draft.settings_link')), $link, $message));
     }
 
     private static function accountNumber(BankAccount $account): string

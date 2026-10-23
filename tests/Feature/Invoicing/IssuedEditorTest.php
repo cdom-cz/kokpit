@@ -10,9 +10,14 @@ use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Actions\UpdateDraft;
+use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Payments\Enums\PaymentLinkState;
+use App\Domain\Payments\Jobs\CreatePaymentLink;
+use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
@@ -29,7 +34,9 @@ use Illuminate\Support\Facades\Queue;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
+use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
+use Tests\Support\FictionalIban;
 use Tests\Support\InvoiceFixtures;
 
 /*
@@ -615,5 +622,263 @@ describe('the currency of an open issued document', function (): void {
 
         expect(iedRow($issued)->getAttributes())->toBe($before)
             ->and(iedLines($issued)[0]->unit_price_minor)->toBe(150000);
+    });
+});
+
+/**
+ * The IBAN of an account as the document prints it: groups of four.
+ */
+function iedPrintedIban(string $fragment): string
+{
+    return trim(chunk_split(FictionalIban::czech($fragment), 4, ' '));
+}
+
+describe('the payment method in the issued editor (Phase 14)', function (): void {
+    beforeEach(function (): void {
+        CardPaymentSetup::enable();
+        $this->accounts = InvoiceFixtures::configureAccounts(
+            InvoiceFixtures::account('First CZK', 'CZK', '12'),
+            InvoiceFixtures::account('Second CZK', 'CZK', '56'),
+            InvoiceFixtures::account('Example EUR', 'EUR', '34'),
+        );
+    });
+
+    /**
+     * An open issued transfer invoice of a client with online payment on; the card switch is turned off when asked.
+     */
+    function iedCardInvoice(bool $cardOn = true, bool $clientFlag = true): Invoice
+    {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client(['online_payment_enabled' => $clientFlag]));
+
+        if (! $cardOn) {
+            app(UpdateIssuedDocument::class)->handle(test()->admin, $invoice, ['card_payment_enabled' => false]);
+        }
+
+        return $invoice;
+    }
+
+    /**
+     * The payment links of the document, oldest first.
+     *
+     * @return list<PaymentLink>
+     */
+    function iedLinks(Invoice $invoice): array
+    {
+        return array_values(app(PartnerContext::class)->runAsSystem(static fn (): array => PaymentLink::query()->where('invoice_id', $invoice->id)->orderBy('created_at')->orderBy('id')->get()->all()));
+    }
+
+    /**
+     * The Admin-only row of the document, read fresh.
+     */
+    function iedAdminRow(Invoice $invoice): object
+    {
+        return DB::table('invoice_admin')->where('invoice_id', $invoice->id)->firstOrFail();
+    }
+
+    it('tracer: switches an unsent card-off transfer invoice to online, and the detail shows the method, no bank rows, a new PDF and a pending link', function (): void {
+        $invoice = iedCardInvoice(cardOn: false);
+        $oldPdf = iedPdfId($invoice);
+        $printed = iedPrintedIban('12');
+
+        iedDetail($invoice)->assertSee('Bankovní převod')->assertSee($printed);
+
+        Queue::fake([CreatePaymentLink::class]);
+
+        iedEditor($invoice)
+            ->assertSet('data.payment_method', 'transfer')
+            ->assertSet('data.bank_account_id', $this->accounts[0]->id)
+            ->assertSet('data.card_payment_enabled', false)
+            ->assertFormFieldIsEnabled('card_payment_enabled')
+            ->assertFormFieldIsVisible('bank_account_id')
+            ->set('data.payment_method', 'online')
+            ->assertSet('data.card_payment_enabled', true)
+            ->assertFormFieldIsDisabled('card_payment_enabled')
+            ->assertFormFieldIsHidden('bank_account_id')
+            ->assertSee('Online úhrada: doklad bankovní údaje netiskne.')
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertRedirect(InvoiceResource::getUrl('view', ['record' => $invoice]));
+
+        $links = iedLinks($invoice);
+
+        expect(iedRow($invoice)->payment_method)->toBe(DocumentPaymentMethod::Online)
+            ->and(iedRow($invoice)->bank_snapshot)->toBeNull()
+            ->and(iedPdfId($invoice))->not->toBeNull()
+            ->and(iedPdfId($invoice))->not->toBe($oldPdf)
+            ->and(iedAdminRow($invoice)->card_payment_enabled)->toBeTrue()
+            ->and(array_values(array_filter($links, static fn (PaymentLink $link): bool => $link->state === PaymentLinkState::Pending)))->toHaveCount(1);
+
+        Queue::assertPushed(CreatePaymentLink::class);
+
+        iedDetail($invoice)->assertSee('Online platba kartou')->assertDontSee($printed);
+    });
+
+    it('goes back to transfer on the second account of the currency: the toggle follows the client flag, the new snapshot is the chosen account', function (): void {
+        $invoice = iedCardInvoice();
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'online']);
+
+        $editor = iedEditor($invoice)
+            ->assertSet('data.payment_method', 'online')
+            ->assertSet('data.card_payment_enabled', true)
+            ->assertFormFieldIsDisabled('card_payment_enabled')
+            ->assertFormFieldIsHidden('bank_account_id');
+
+        $editor->set('data.payment_method', 'transfer')
+            ->assertSet('data.card_payment_enabled', true)
+            ->assertFormFieldIsEnabled('card_payment_enabled')
+            ->assertFormFieldIsVisible('bank_account_id')
+            ->assertSet('data.bank_account_id', $this->accounts[0]->id)
+            ->assertSee('Po uložení se použije účet:')
+            ->set('data.bank_account_id', $this->accounts[1]->id)
+            ->assertSee('Second CZK')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(iedRow($invoice)->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and(iedRow($invoice)->bank_snapshot)->toEqual($this->accounts[1]->toArray())
+            ->and(iedAdminRow($invoice)->bank_account_id)->toBe($this->accounts[1]->id);
+
+        iedDetail($invoice)->assertSee('Bankovní převod')->assertSee(iedPrintedIban('56'));
+    });
+
+    it('lets the Admin turn the card switch of a transfer invoice off and on again, and the link follows', function (): void {
+        $invoice = iedCardInvoice();
+
+        iedEditor($invoice)->assertSet('data.card_payment_enabled', true)->set('data.card_payment_enabled', false)->call('save')->assertHasNoFormErrors();
+
+        expect((bool) iedAdminRow($invoice)->card_payment_enabled)->toBeFalse()
+            ->and(array_values(array_filter(iedLinks($invoice), static fn (PaymentLink $link): bool => $link->isLive())))->toHaveCount(0);
+
+        iedEditor($invoice)->assertSet('data.card_payment_enabled', false)->set('data.card_payment_enabled', true)->call('save')->assertHasNoFormErrors();
+
+        expect((bool) iedAdminRow($invoice)->card_payment_enabled)->toBeTrue()
+            ->and(array_values(array_filter(iedLinks($invoice), static fn (PaymentLink $link): bool => $link->isLive())))->toHaveCount(1);
+    });
+
+    it('shows the printed account while nothing changes and the chosen one once it does', function (): void {
+        $invoice = iedCardInvoice();
+
+        iedEditor($invoice)
+            ->assertSee(iedPrintedIban('12'))
+            ->assertDontSee('Po uložení se použije účet:')
+            ->set('data.bank_account_id', $this->accounts[1]->id)
+            ->assertSee('Po uložení se použije účet:')
+            ->assertSee('Second CZK')
+            ->set('data.bank_account_id', $this->accounts[0]->id)
+            ->assertDontSee('Po uložení se použije účet:');
+    });
+
+    it('disables the online option with the reason, refuses a crafted online value under the field, and writes nothing', function (): void {
+        $invoice = iedCardInvoice(clientFlag: false);
+        $before = iedRow($invoice)->getAttributes();
+
+        $editor = iedEditor($invoice)
+            ->assertSee('Online úhradu nelze zvolit: klient nemá zapnutou online platbu.')
+            ->assertFormFieldExists('payment_method', fn ($field): bool => $field->isOptionDisabled('online', 'Online') && ! $field->isOptionDisabled('transfer', 'Převodem'));
+
+        $editor->set('data.payment_method', 'online')->call('save')->assertHasFormErrors(['payment_method'])->assertNoRedirect();
+
+        expect(iedRow($invoice)->getAttributes())->toBe($before);
+    });
+
+    it('keeps the online option selectable on a document that is online already', function (): void {
+        $invoice = iedCardInvoice();
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'online']);
+        CardPaymentSetup::onlinePayments(false);
+
+        iedEditor($invoice)
+            ->assertFormFieldExists('payment_method', fn ($field): bool => ! $field->isOptionDisabled('online', 'Online'))
+            ->set('data.note', 'Still online.')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(iedRow($invoice)->payment_method)->toBe(DocumentPaymentMethod::Online)
+            ->and(iedRow($invoice)->note)->toBe('Still online.');
+    });
+
+    it('locks the card toggle while card payment is unavailable and does not send it', function (): void {
+        $invoice = iedCardInvoice(cardOn: false);
+        CardPaymentSetup::onlinePayments(false);
+
+        iedEditor($invoice)
+            ->assertFormFieldIsDisabled('card_payment_enabled')
+            ->set('data.note', 'Toggle untouched.')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect((bool) iedAdminRow($invoice)->card_payment_enabled)->toBeFalse()
+            ->and(iedRow($invoice)->note)->toBe('Toggle untouched.');
+    });
+
+    it('shows a refusal of the Action under the account field and writes nothing', function (): void {
+        $invoice = iedCardInvoice();
+        $before = iedRow($invoice)->bank_snapshot;
+
+        iedEditor($invoice)
+            ->set('data.bank_account_id', null)
+            ->call('save')
+            ->assertHasFormErrors(['bank_account_id'])
+            ->assertSee(__('invoices.errors.bank_account_required'))
+            ->assertNoRedirect();
+
+        expect(iedRow($invoice)->bank_snapshot)->toBe($before);
+    });
+
+    it('keeps the printed account on an unrelated save when the stored account was removed from the settings', function (): void {
+        $invoice = iedCardInvoice();
+        $printed = iedRow($invoice)->bank_snapshot;
+
+        InvoiceFixtures::configureAccounts(InvoiceFixtures::account('Only EUR', 'EUR', '34'));
+
+        iedEditor($invoice)
+            ->assertSet('data.bank_account_id', null)
+            ->assertSee(iedPrintedIban('12'))
+            ->set('data.note', 'Unrelated change.')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(iedRow($invoice)->note)->toBe('Unrelated change.')
+            ->and(iedRow($invoice)->bank_snapshot)->toBe($printed);
+    });
+
+    it('preselects the first account of the new currency on a currency change, and any account can be picked afterwards', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $invoice = iedCardInvoice();
+
+        // The line is typed by hand, so the change waits for the confirmation; the account follows after it (Pitfall 10).
+        iedEditor($invoice)
+            ->set('data.currency', 'EUR')
+            ->assertActionMounted('changeCurrency')
+            ->callMountedAction()
+            ->assertSet('data.bank_account_id', $this->accounts[2]->id)
+            ->assertSee('Po uložení se použije účet:')
+            ->assertSee('Example EUR')
+            ->set('data.bank_account_id', $this->accounts[1]->id)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(iedRow($invoice)->currency)->toBe('EUR')
+            ->and(iedRow($invoice)->bank_snapshot)->toEqual($this->accounts[1]->toArray())
+            ->and(iedAdminRow($invoice)->bank_account_id)->toBe($this->accounts[1]->id);
+    });
+
+    it('takes the preselected account of the new currency when the Admin does not pick another', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $invoice = iedCardInvoice();
+
+        iedEditor($invoice)->set('data.currency', 'EUR')->callMountedAction()->call('save')->assertHasNoFormErrors();
+
+        expect(iedRow($invoice)->bank_snapshot)->toEqual($this->accounts[2]->toArray())
+            ->and(iedAdminRow($invoice)->bank_account_id)->toBe($this->accounts[2]->id);
+    });
+
+    it('tells in the currency confirmation that the account is preselected and another one can be picked', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Typed work', '1', '100.00')]);
+
+        iedEditor($invoice)
+            ->set('data.currency', 'EUR')
+            ->assertActionMounted('changeCurrency')
+            ->assertMountedActionModalSee('bankovní účet se předvybere podle nové měny (vybrat jde i jiný)');
     });
 });

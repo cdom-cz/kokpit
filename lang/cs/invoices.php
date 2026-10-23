@@ -431,10 +431,11 @@ return [
         'refill_customer' => 'Načíst z karty klienta',
         'refill_supplier' => 'Načíst z nastavení dodavatele',
         'refill_bank' => 'Načíst bankovní účet z nastavení',
-        'bank_pending' => 'Po uložení se použije účet z nastavení:',
+        'bank_pending' => 'Po uložení se použije účet:',
+        'bank_online' => 'Online úhrada: doklad bankovní údaje netiskne.',
         'currency_change' => [
             'heading' => 'Změnit měnu dokladu?',
-            'body' => 'Kurz ČNB, položky z času, bankovní účet i platební odkaz se převezmou znovu ke dni vystavení. Ručně zadané jednotkové ceny a pevné částky se nepřepočítají. Zkontrolujte je po změně.',
+            'body' => 'Kurz ČNB, položky z času a platební odkaz se převezmou znovu ke dni vystavení a bankovní účet se předvybere podle nové měny (vybrat jde i jiný). Ručně zadané jednotkové ceny a pevné částky se nepřepočítají. Zkontrolujte je po změně.',
             'submit' => 'Změnit měnu',
             'cancel' => 'Ponechat měnu',
         ],

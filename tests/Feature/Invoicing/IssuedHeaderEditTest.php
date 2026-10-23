@@ -748,25 +748,53 @@ describe('the bank account', function (): void {
         app()->forgetScopedInstances();
     }
 
-    it('is refilled from the settings for the currency of the document, and the QR code of the new PDF names it', function (): void {
+    it('is refilled from the chosen account as the settings hold it now, not from the first account of the currency, and the QR code of the new PDF names it', function (): void {
+        $accounts = InvoiceFixtures::configureAccounts(
+            InvoiceFixtures::account('First CZK', 'CZK', '12'),
+            InvoiceFixtures::account('Second CZK', 'CZK', '56'),
+        );
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['bank_account_id' => $accounts[1]->id]);
+        $old = hedRow($invoice)->bank_snapshot;
+
+        // The second account keeps its id and changes its number in the settings.
+        $moved = new BankAccount(BankAccountFormat::Europe2, 'Second CZK', 'CZK', iban: FictionalIban::czech('78'), id: $accounts[1]->id);
+        InvoiceFixtures::configureAccounts($accounts[0], $moved);
+
+        hedEditor($invoice)
+            ->assertSet('data.bank_account_id', $accounts[1]->id)
+            ->callAction(TestAction::make('refillBank')->schemaComponent('bankActions', schema: 'form'))
+            ->assertSet('data.reload_bank', true)
+            ->assertSee('Po uložení se použije účet:')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $row = hedRow($invoice);
+
+        preg_match_all('#<img src="(data:image/png;base64,[^"]+)"#', app(InvoicePdf::class)->html($row), $images);
+
+        expect($row->bank_snapshot)->toEqual($moved->toArray())
+            ->and($row->bank_snapshot)->not->toBe($old)
+            ->and(hedAdmin($invoice)->bank_account_id)->toBe($accounts[1]->id)
+            ->and($images[1])->toHaveCount(1)
+            ->and(QrDecode::payload($images[1][0]))->toContain(FictionalIban::czech('78'));
+    });
+
+    it('is refilled from the first account of the currency when the stored account was removed from the settings', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
         $old = hedRow($invoice)->bank_snapshot;
         hedCzkAccount('56');
 
         hedEditor($invoice)
+            ->assertSet('data.bank_account_id', null)
             ->callAction(TestAction::make('refillBank')->schemaComponent('bankActions', schema: 'form'))
             ->call('save')
             ->assertHasNoFormErrors();
 
-        $row = hedRow($invoice);
         $expected = app(PartnerContext::class)->runAsSystem(static fn (): array => app(BankAccountSettings::class)->firstForCurrency('CZK')?->toArray() ?? []);
 
-        preg_match_all('#<img src="(data:image/png;base64,[^"]+)"#', app(InvoicePdf::class)->html($row), $images);
-
-        expect($row->bank_snapshot)->toEqual($expected)
-            ->and($row->bank_snapshot)->not->toBe($old)
-            ->and($images[1])->toHaveCount(1)
-            ->and(QrDecode::payload($images[1][0]))->toContain(FictionalIban::czech('56'));
+        expect(hedRow($invoice)->bank_snapshot)->toEqual($expected)
+            ->and(hedRow($invoice)->bank_snapshot)->not->toBe($old);
     });
 
     it('keeps the stored account when the editor saves without the refill', function (): void {
@@ -812,7 +840,7 @@ describe('the bank account', function (): void {
 
         hedEditor($invoice)
             ->callAction(TestAction::make('refillBank')->schemaComponent('bankActions', schema: 'form'))
-            ->assertNotified(__('invoices.errors.bank_missing', ['currency' => 'CZK']));
+            ->assertNotified(__('invoices.errors.bank_account_required'));
     });
 
     it('is refilled from the chosen account when it is still configured, and from the first account of the currency when it was removed', function (): void {
