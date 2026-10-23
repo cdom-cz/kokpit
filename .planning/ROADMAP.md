@@ -752,7 +752,7 @@ Plans:
   4. Every saved edit replaces the stored PDF and its QR code and renews the card link when amount or currency change; nothing is sent automatically, and an edit never interleaves with a queued or sending e-mail
   5. A Partner sees only the current version of an edited invoice and none of the lock, unlock or edit surfaces or history
 
-**Plans:** 12/12 plans executed in 9 waves
+**Plans:** 12/16 plans executed in 9 waves (4 gap-closure plans 10.1-13 to 10.1-16 from 10.1-VERIFICATION.md and 10.1-REVIEW.md, planned in 2 gap waves)
 
 Plans:
 **Wave 1**
@@ -784,6 +784,16 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 - [x] 10.1-10-PLAN.md — Edit-versus-send concurrency proof, end-to-end journey, Partner sweep, CONTRIBUTING hand-over and phase gate
+
+**Gap closure** *(from 10.1-VERIFICATION.md and 10.1-REVIEW.md; gap plans waves 1-2, run with `/gsd-execute-phase 10.1 --gaps-only`)*
+
+**Gap wave 1**
+- [ ] 10.1-13-PLAN.md — CR-01 (gap 1): a paid card session whose link currency is no longer the document's is unmatched `currency`, nothing booked; webhook test after a CZK to EUR change with the same figure; database pin of a card payment record to a payment in its own currency (IN-13, IN-14)
+- [ ] 10.1-14-PLAN.md — WR-02 (gap 2): keyed `bank_fingerprint` in the audited snapshot, so a bank-only refill after the first send writes one `invoice_edited` row without any bank data (IN-15)
+- [ ] 10.1-15-PLAN.md — WR-01: a queued e-mail row ages out at the stale threshold like a sending one, the job claims under the invoice row lock and never sends a stale row, the Odeslání tab offers the resend (IN-13, IN-14)
+
+**Gap wave 2** *(blocked on gap wave 1 completion)*
+- [ ] 10.1-16-PLAN.md — CONTRIBUTING hand-over pinned by RepositoryFilesTest, phase regression gate, review disposition (WR-03, WR-04 and IN-01 to IN-06 deferred, WR-04 with owner options), validation rows, REQUIREMENTS.md consistency check
 
 ### Phase 11: Stripe Payments
 
