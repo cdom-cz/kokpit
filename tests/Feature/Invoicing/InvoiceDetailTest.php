@@ -679,7 +679,7 @@ describe('the warnings of a corrected total and the edit action', function (): v
         ]]]);
 
         detail($invoice)
-            ->assertSee('Celková částka je nižší než už zaplacená částka '.detailMoney(100000).'.')
+            ->assertSee(__('invoices.warnings.total_below_paid', ['amount' => detailMoney(100000)]))
             ->assertSee('Zaplaceno')
             ->assertDontSee('Celková částka je nižší než dobropisovaná částka');
     });
@@ -695,7 +695,7 @@ describe('the warnings of a corrected total and the edit action', function (): v
         });
 
         detail($invoice)
-            ->assertSee('Celková částka je nižší než dobropisovaná částka '.detailMoney(50000).'.')
+            ->assertSee(__('invoices.warnings.total_below_credited', ['amount' => detailMoney(50000)]))
             ->assertDontSee('Celková částka je nižší než už zaplacená částka');
     });
 
