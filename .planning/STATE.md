@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 14
 current_phase_name: Switchable payment method and independent invoice currency
 status: executing
-stopped_at: Completed 14-03-PLAN.md
-last_updated: "2026-10-23T09:40:43.639Z"
+stopped_at: Completed 14-04-PLAN.md
+last_updated: "2026-10-23T10:14:56.004Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 14 execution started
-state_head: 827e34cccfac01e8fd961b341e24e12b054f313c
+state_head: 5cc5938c73f67bd2cca418a8622fe8013533cc1d
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 272
-  completed_plans: 264
+  completed_plans: 265
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 14 (Switchable payment method and independent invoice currency) — EXECUTING
-Plan: 4 of 11
+Plan: 5 of 11
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 14 execution started
 
@@ -324,6 +324,7 @@ Progress: [████░░░░░░] 44%
 | Phase 14 P01 | 25 min | 2 tasks | 9 files |
 | Phase 14 P02 | 40min | 2 tasks | 12 files |
 | Phase 14 P03 | 20 min | 2 tasks | 6 files |
+| Phase 14 P04 | 16 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -811,6 +812,8 @@ Recent decisions affecting current work:
 - [Phase 14]: OA-1: a first pay token and card switch changes are allowed on an open issued document, a set token never changes; pay token check is format-only
 - [Phase 14]: R-14-03-1: InvoiceCurrencies::choices() is the one currency list (CNB, bank accounts, client, current, CZK), used by the create-draft modal, the draft editor and the open issued editor
 - [Phase 14]: R-14-03-3: a CNB-only currency is offered, but an issued change to it is refused with bank_missing until plan 14-09 decouples the account
+- [Phase 14]: 14-04: DocumentPayment::account() treats a stored but removed account id as no account (never re-picked) and falls back to the first account of the currency only when no id is stored
+- [Phase 14]: 14-04: bank_missing copy is generic (no currency), shared by the draft blockers and, until plans 14-07/14-10, by the correction paths of an open issued document
 
 ### Pending Todos
 
@@ -874,6 +877,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T09:40:42.165Z
-Stopped at: Completed 14-03-PLAN.md
+Last session: 2026-10-23T10:14:54.582Z
+Stopped at: Completed 14-04-PLAN.md
 Resume file: None
