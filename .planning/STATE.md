@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 14
 current_phase_name: Switchable payment method and independent invoice currency
 status: executing
-stopped_at: Completed 14-02-PLAN.md
-last_updated: "2026-10-23T09:34:02.883Z"
+stopped_at: Completed 14-03-PLAN.md
+last_updated: "2026-10-23T09:40:43.639Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 14 execution started
-state_head: 9ac3c6673d1c38b277e97b8e8f03c672d345be01
+state_head: 827e34cccfac01e8fd961b341e24e12b054f313c
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 272
-  completed_plans: 263
+  completed_plans: 264
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 14 (Switchable payment method and independent invoice currency) — EXECUTING
-Plan: 3 of 11
+Plan: 4 of 11
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 14 execution started
 
@@ -323,6 +323,7 @@ Progress: [████░░░░░░] 44%
 | Phase 10.1 P10 | 110 min | 3 tasks | 13 files |
 | Phase 14 P01 | 25 min | 2 tasks | 9 files |
 | Phase 14 P02 | 40min | 2 tasks | 12 files |
+| Phase 14 P03 | 20 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -808,6 +809,8 @@ Recent decisions affecting current work:
 - [Phase 14]: R-14-02-2: payment_method is an open column of kokpit_guard_invoice_row() and defaults to transfer on insert (credit note stays NULL)
 - [Phase 14]: OA-7: invoices_issued_fields_check requires the bank snapshot for an issued transfer document and forbids it for an online one
 - [Phase 14]: OA-1: a first pay token and card switch changes are allowed on an open issued document, a set token never changes; pay token check is format-only
+- [Phase 14]: R-14-03-1: InvoiceCurrencies::choices() is the one currency list (CNB, bank accounts, client, current, CZK), used by the create-draft modal, the draft editor and the open issued editor
+- [Phase 14]: R-14-03-3: a CNB-only currency is offered, but an issued change to it is refused with bank_missing until plan 14-09 decouples the account
 
 ### Pending Todos
 
@@ -871,6 +874,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T09:34:01.405Z
-Stopped at: Completed 14-02-PLAN.md
+Last session: 2026-10-23T09:40:42.165Z
+Stopped at: Completed 14-03-PLAN.md
 Resume file: None
