@@ -320,8 +320,13 @@ final class DocumentPayment
             default => $storedSwitch,
         };
 
-        if ($switch && ! $storedSwitch && ! app(CardPaymentSwitch::class)->available()) {
-            throw ValidationException::withMessages(['card_payment_enabled' => [__('invoices.errors.card_payment_unavailable')]]);
+        // A switch that turns on, or stays on after a change from online, needs card payment to be available (WR-01).
+        if ($switch && (! $storedSwitch || $storedMethod === DocumentPaymentMethod::Online) && ! app(CardPaymentSwitch::class)->available()) {
+            if ($explicit === true) {
+                throw ValidationException::withMessages(['card_payment_enabled' => [__('invoices.errors.card_payment_unavailable')]]);
+            }
+
+            return false;
         }
 
         return $switch;

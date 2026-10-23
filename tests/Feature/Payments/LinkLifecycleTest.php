@@ -42,6 +42,7 @@ use Tests\Support\DocumentFixtures;
 use Tests\Support\FakeStripeGateway;
 use Tests\Support\InvoiceFixtures;
 use Tests\Support\PdfText;
+use Tests\Support\StripeTestConfig;
 
 /*
  * The link follows what the document owes (PA-04; D-07, D-08, research Pattern 3): every route that changes the
@@ -663,6 +664,26 @@ describe('a change of the payment method (Phase 14)', function (): void {
             ->and(app(PayPageState::class)->resolve($token)['outcome'])->toBe(PayPageOutcome::Preparing)
             ->and(lifecycleRow($invoice)->bank_snapshot)->not->toBeNull();
     });
+
+    it('goes back to transfer while card payment is unavailable: the switch off, the online link replaced, no new link and no pay URL', function (string $cause): void {
+        $invoice = lifecycleOnline();
+        $token = (string) lifecycleAdminRow($invoice)->pay_token;
+
+        match ($cause) {
+            'settings_off' => CardPaymentSetup::onlinePayments(false),
+            default => StripeTestConfig::clear(),
+        };
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'transfer']);
+
+        expect(lifecycleRow($invoice)->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and(lifecycleRow($invoice)->bank_snapshot)->not->toBeNull()
+            ->and(lifecycleAdminRow($invoice)->card_payment_enabled)->toBeFalse()
+            ->and(lifecycleAdminRow($invoice)->pay_token)->toBe($token)
+            ->and(lifecycleLive($invoice))->toBeNull()
+            ->and(lifecycleReasons($invoice))->toBe(['replaced', 'replaced'])
+            ->and(PayUrl::forInvoice(lifecycleRow($invoice)))->toBeNull();
+    })->with(['settings_off', 'stripe_missing']);
 
     it('goes back to transfer with the switch sent off for a client whose flag is on: the switch off and no new link', function (): void {
         $invoice = lifecycleOnline();
