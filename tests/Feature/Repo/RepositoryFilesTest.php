@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Audit\ActivitySourceLabel;
 use App\Domain\Clients\Models\ClientInvitation;
+use App\Domain\Invoicing\Actions\QueuePaymentConfirmation;
+use App\Domain\Notifications\Mail\MailText;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Database\CzechCollation;
@@ -1276,6 +1278,79 @@ it('hands the payment method over to later phases: the Payment method and bank a
     // The Editable invoices bullet lists the new write-path fields, and the Phase 11 wording "frozen at issue" is gone everywhere.
     expect(repoContributingBullet('Editable invoices.'))->toContain('payment method, bank account and card switch')
         ->and(repoFile('CONTRIBUTING.md'))->not->toContain('is frozen at issue');
+});
+
+it('hands the e-mail layout over: the E-mail bullet names only what exists', function () {
+    $bullet = repoContributingBullet('E-mail.');
+
+    expect($bullet)->not->toBe('');
+
+    // The rules the text must keep stating (R-13-09-1, D-01 to D-07).
+    foreach ([
+        'published `kokpit` theme', '`config/mail.php`', '`resources/views/vendor/mail`', 'MailBrand', 'system context', 'field whitelist',
+        'fallback to the application name', 'inline cid part', 'never a URL or a route', '`MailText::escapeMarkdown()`', '`PlainTextHtml::paragraphs()`',
+        '`PayLinkBlock::forHtml()`', '`PayLinkBlock::applies()`', '`QueuePaymentConfirmation`', '`RecordPayment::recordLocked()`',
+        '`payment_confirmations`', '`SendPaymentConfirmation`', 'QueuePaymentConfirmation::GRACE_SECONDS', 'never locks', '`ResetPasswordNotification`',
+        '`mail_layout`', '`payment_mail`', 'never `view()->render()`',
+    ] as $phrase) {
+        expect($bullet)->toContain($phrase);
+    }
+
+    // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists. A test class is
+    // checked as a file below.
+    preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet, $matches, PREG_SET_ORDER);
+
+    expect(count($matches))->toBeGreaterThan(10);
+
+    foreach ($matches as $match) {
+        if (str_ends_with($match[1], 'Test')) {
+            continue;
+        }
+
+        $classes = repoClassesNamed($match[1]);
+
+        expect($classes)->not->toBe([], "CONTRIBUTING.md names {$match[1]} but no such class exists");
+
+        if (isset($match[2])) {
+            $exists = array_filter($classes, static fn (string $class): bool => method_exists($class, $match[2]));
+
+            expect($exists)->not->toBe([], "CONTRIBUTING.md names {$match[1]}::{$match[2]}() but no such method exists");
+        }
+    }
+
+    // The other names the text gives: the grace window constant and the unescape step of the text layout.
+    expect(defined(QueuePaymentConfirmation::class.'::GRACE_SECONDS'))->toBeTrue()
+        ->and(method_exists(MailText::class, 'unescapeMarkdown'))->toBeTrue()
+        ->and($bullet)->toContain('unescapeMarkdown()');
+
+    // The enforcing tests the text names exist.
+    $tests = [
+        'MailThemeTest' => 'tests/Feature/Mail/MailThemeTest.php',
+        'MailBrandTest' => 'tests/Feature/Mail/MailBrandTest.php',
+        'InvoiceMailHtmlTest' => 'tests/Feature/Mail/InvoiceMailHtmlTest.php',
+        'NotificationMailsTest' => 'tests/Feature/Mail/NotificationMailsTest.php',
+        'PaymentConfirmationTriggerTest' => 'tests/Feature/Invoicing/PaymentConfirmationTriggerTest.php',
+        'PaymentConfirmationMailTest' => 'tests/Feature/Invoicing/PaymentConfirmationMailTest.php',
+        'PaymentConfirmationSchemaTest' => 'tests/Feature/Invoicing/PaymentConfirmationSchemaTest.php',
+        'PaymentConfirmationAdminTest' => 'tests/Feature/Invoicing/PaymentConfirmationAdminTest.php',
+    ];
+
+    foreach ($tests as $name => $path) {
+        expect($bullet)->toContain($name);
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$name} but {$path} does not exist");
+    }
+
+    // The theme, the views and the lang files the text names exist.
+    expect(config('mail.markdown.theme'))->toBe('kokpit')
+        ->and(is_file(base_path('resources/views/vendor/mail/html/themes/kokpit.css')))->toBeTrue()
+        ->and(is_file(base_path('lang/cs/mail_layout.php')))->toBeTrue()
+        ->and(is_file(base_path('lang/en/payment_mail.php')))->toBeTrue();
+
+    // The Task notifications bullet says the escape lives in MailText, and the neighbours keep their tokens.
+    expect(repoContributingBullet('Task notifications.'))->toContain('MailText')
+        ->and(repoContributingBullet('Payment method and bank accounts.'))->toContain('PayLinkBlock::applies()')
+        ->and(repoContributingBullet('Payment method and bank accounts.'))->toContain('Phase 13')
+        ->and(repoContributingBullet('Editable invoices.'))->toContain('must not call the lock step');
 });
 
 it('documents the owner\'s Stripe setup in the README with placeholders only', function () {
