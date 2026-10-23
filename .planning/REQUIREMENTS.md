@@ -138,7 +138,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [ ] **IN-12**: Admin unlocks a locked invoice or proforma with a mandatory reason; the unlock is audited and the document stays editable until the next successful send locks it again
 - [ ] **IN-13**: While unlocked, Admin edits items, dates, customer and supplier snapshots, bank account, currency, language and linked time of an issued invoice or proforma; totals are recomputed with the single rounding rule, and totals below what was paid or credited warn instead of blocking
 - [ ] **IN-14**: Saving an edit regenerates and replaces the stored PDF with its QR code and refreshes the card payment link when amount or currency change; nothing is sent automatically
-- [ ] **IN-15**: Every change to an issued document after its first send, every lock and every unlock is audited with who, when, the values before and after and the unlock reason
+- [ ] **IN-15**: Every change to an issued document after its first send, every lock and every unlock is audited with who, when, the values before and after and the unlock reason; a bank account change is audited by a non-reversible keyed fingerprint of the account (the fingerprints before and after, who and when) instead of the account values, so the account number never enters the history
 
 ### Payments (Stripe)
 
@@ -315,4 +315,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-10-06*
-*Last updated: 2026-10-22 for Phase 10.1 (send-driven lock: IN-03 amended, IN-11 to IN-15 added)*
+*Last updated: 2026-10-23 for Phase 10.1 (send-driven lock: IN-03 amended, IN-11 to IN-15 added; IN-15 amended: bank account audited by fingerprint, owner decision of 2026-10-23)*
