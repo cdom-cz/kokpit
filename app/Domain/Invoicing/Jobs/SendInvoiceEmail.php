@@ -55,8 +55,9 @@ use Throwable;
  * sent again by a redelivery. What can send twice is a run that fails after the transport accepted the message, while
  * the row is being marked sent: the next try claims the row again. That one repeat is the stated guarantee.
  *
- * For a document issued with card payment on that still owes money, the pay-link block of {@see PayLinkBlock} follows
- * the stored body at send time (D-03); the log row keeps the confirmed text only.
+ * For a document issued with card payment on that still owes money, the "Pay by card" button of the HTML part and the
+ * pay-link block of the text part both follow the stored body at send time, from one call of {@see PayLinkBlock::forHtml()}
+ * (D-03; Phase 13 D-01); the log row keeps the confirmed text only.
  *
  * The successful send of a document e-mail is the only lock of the system (IN-11; D-01, D-02): the sent mark and the
  * lock of an issued invoice or proforma are written in one transaction that locks the invoice row first, the order of
@@ -108,7 +109,12 @@ final class SendInvoiceEmail extends KokpitJob
                 return;
             }
 
-            Mail::to($row->recipient)->send(new InvoiceMail($row->subject, $this->bodyToSend($row), $files));
+            $invoice = Invoice::query()->findOrFail($row->invoice_id);
+
+            // One predicate for both parts: the button of the HTML part and the block of the text part come from this call.
+            $link = PayLinkBlock::forHtml($invoice);
+
+            Mail::to($row->recipient)->send(new InvoiceMail($row->subject, $row->body, $link, $files, $invoice->language->value));
 
             $this->markSentAndLock($row);
         } catch (Throwable $e) {
@@ -265,19 +271,6 @@ final class SendInvoiceEmail extends KokpitJob
         foreach (User::query()->role(RoleName::Admin->value)->get() as $admin) {
             $admin->notifyNow($notification);
         }
-    }
-
-    /**
-     * The body that leaves: the text the Admin confirmed and, for a document that still owes money and was issued with
-     * card payment on, the fixed pay-link block after it (D-03). The block is added here, at send time, so clearing the
-     * text cannot remove it and a resend of a paid or cancelled document carries none; the log row keeps exactly what
-     * the Admin confirmed.
-     */
-    private function bodyToSend(InvoiceEmail $row): string
-    {
-        $block = PayLinkBlock::forMail(Invoice::query()->findOrFail($row->invoice_id));
-
-        return $block === null ? $row->body : rtrim($row->body).$block;
     }
 
     /**

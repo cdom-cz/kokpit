@@ -26,5 +26,7 @@ return [
 
     'pay_block_lead' => 'You can pay this document online by card:',
 
+    'pay_button' => 'Pay by card',
+
     'work_report_file' => 'work-report-:number.pdf',
 ];

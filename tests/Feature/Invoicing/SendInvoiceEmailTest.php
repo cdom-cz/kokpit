@@ -17,12 +17,14 @@ use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Payments\Support\PayUrl;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
+use Dom\HTMLDocument;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Pipeline\Pipeline;
@@ -38,6 +40,7 @@ use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mime\Email;
 use Tests\Support\Canary;
+use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\InvoiceFixtures;
 use Tests\Support\PdfText;
@@ -250,7 +253,7 @@ describe('the tracer: queue the e-mail of an issued invoice and send it', functi
         Queue::assertPushed(SendInvoiceEmail::class, static fn (SendInvoiceEmail $job): bool => $job->emailId === $row->id);
     });
 
-    it('sends one plain-text mail with the stored PDF and marks the row sent', function (): void {
+    it('sends one mail with an HTML part, a plain-text part and the stored PDF and marks the row sent', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => 'invoice@example.com']));
 
         $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
@@ -263,7 +266,7 @@ describe('the tracer: queue the e-mail of an issued invoice and send it', functi
 
         expect(array_map(static fn ($address): string => $address->getAddress(), $email->getTo()))->toBe(['invoice@example.com'])
             ->and($email->getSubject())->toBe('Faktura '.$invoice->number)
-            ->and($email->getHtmlBody())->toBeNull()
+            ->and((string) $email->getHtmlBody())->toContain('Example Supplier s.r.o.')
             ->and($email->getTextBody())->toStartWith("Dobrý den,\n\nv příloze posíláme fakturu č. ".$invoice->number)
             ->and(invMailAttachmentNames($email))->toBe(['faktura-'.$invoice->number.'.pdf'])
             ->and($email->getAttachments()[0]->getBody())->toStartWith('%PDF-');
@@ -758,15 +761,18 @@ describe('what the dialog may submit', function (): void {
         }
     });
 
-    it('sends the body as plain text, markup and all', function (): void {
+    it('keeps the typed text as it is in the text part and reads it literally in the HTML part, markup and all', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
 
         app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, ['body' => "Hello <b>there</b> & \"friends\"\0"]));
 
         $email = invMailSent()[0];
 
-        expect($email->getHtmlBody())->toBeNull()
-            ->and(trim((string) $email->getTextBody()))->toBe('Hello <b>there</b> & "friends"');
+        $html = HTMLDocument::createFromString((string) $email->getHtmlBody(), LIBXML_NOERROR);
+
+        expect(trim((string) $email->getTextBody()))->toBe('Hello <b>there</b> & "friends"')
+            ->and($html->querySelectorAll('b'))->toHaveCount(0)
+            ->and((string) $html->body?->textContent)->toContain('Hello <b>there</b> & "friends"');
     });
 
     it('refuses a draft', function (): void {
@@ -815,6 +821,49 @@ describe('what the dialog may submit', function (): void {
         invMailTry($row->id);
 
         expect(invMailAttachmentNames(invMailSent()[0]))->toBe(['faktura-'.$invoice->number.'.pdf']);
+    });
+});
+
+describe('the HTML layout (Phase 13)', function (): void {
+    it('sends a card-enabled document as an HTML e-mail with the supplier header, the typed text and a pay button', function (): void {
+        CardPaymentSetup::enable();
+
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client(['invoice_email' => 'invoice@example.com']));
+        $url = PayUrl::forInvoice($invoice);
+        $data = invMailData($invoice);
+
+        Mail::getSymfonyTransport()->flush();
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, $data);
+
+        $messages = invMailSent();
+
+        expect($messages)->toHaveCount(1);
+
+        $email = $messages[0];
+        $html = HTMLDocument::createFromString((string) $email->getHtmlBody(), LIBXML_NOERROR);
+        $buttons = $html->querySelectorAll('a.button');
+
+        expect($url)->not->toBeNull()
+            ->and($buttons)->toHaveCount(1)
+            ->and($buttons[0]?->getAttribute('href'))->toBe($url)
+            ->and(trim((string) $buttons[0]?->textContent))->toBe('Zaplatit kartou')
+            ->and((string) $html->body?->textContent)->toContain('Example Supplier s.r.o.')
+            ->and((string) $html->body?->textContent)->toContain('Doklad můžete zaplatit online kartou:')
+            ->and((string) $html->body?->textContent)->toContain('Pokud tlačítko nefunguje')
+            ->and((string) $html->body?->textContent)->toContain($url)
+            ->and(rtrim((string) $email->getTextBody()))->toBe(rtrim($data['body'])."\n\nDoklad můžete zaplatit online kartou:\n".$url)
+            ->and($email->getSubject())->toBe('Faktura '.$invoice->number)
+            ->and(invMailAttachmentNames($email))->toBe(['faktura-'.$invoice->number.'.pdf']);
+    });
+
+    it('sends a document without card payment with no button', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => 'invoice@example.com']));
+
+        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        $html = HTMLDocument::createFromString((string) invMailSent()[0]->getHtmlBody(), LIBXML_NOERROR);
+
+        expect($html->querySelectorAll('a.button'))->toHaveCount(0);
     });
 });
 

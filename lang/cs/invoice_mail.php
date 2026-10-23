@@ -28,6 +28,9 @@ return [
     // The fixed line before the stable pay URL that the mailer appends (D-03); it is not part of the editable text.
     'pay_block_lead' => 'Doklad můžete zaplatit online kartou:',
 
+    // The label of the "Pay by card" button of the HTML part; the URL is the stable pay URL.
+    'pay_button' => 'Zaplatit kartou',
+
     // The generated name of the work report attachment: no user text reaches it.
     'work_report_file' => 'pracovni-vykaz-:number.pdf',
 ];
