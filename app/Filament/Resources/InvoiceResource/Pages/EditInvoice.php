@@ -674,8 +674,8 @@ final class EditInvoice extends EditRecord
 
     /**
      * The values {@see UpdateIssuedDocument} takes: the lines, the two notes and the header the editor offers (the
-     * dates, the language, the customer and supplier lines, the bank refill flag). The number, the kind, the currency and the card switch are not read from
-     * the form at all (T-10.1-24). A
+     * currency, the dates, the language, the customer and supplier lines, the bank refill flag). The number, the kind and
+     * the card switch are not read from the form at all (T-10.1-24). A
      * credited line whose fields did not travel (a disabled field is not part of the state) takes them from the stored
      * line; the Action compares them with the stored line again.
      *
@@ -724,6 +724,12 @@ final class EditInvoice extends EditRecord
             'due_date' => $data['due_date'] ?? null,
             'language' => $data['language'] ?? null,
         ];
+
+        // The Action re-checks the code against the list of the editor, the payments, the credit notes, the account and
+        // the CNB lists, so a forged value changes nothing (T-10.1-31).
+        if (is_string($data['currency'] ?? null)) {
+            $values['currency'] = $data['currency'];
+        }
 
         foreach (['customer', 'supplier'] as $party) {
             if (is_array($data[$party] ?? null)) {
@@ -877,8 +883,8 @@ final class EditInvoice extends EditRecord
 
     private function documentSection(): Section
     {
-        // An issued document keeps its number, kind and currency read-only here (D-08); the dates and the language are
-        // editable, the currency follows in a later step of the phase.
+        // An issued document keeps its number and kind read-only here (D-08); the currency, the dates and the language are
+        // editable (D-06).
         $issued = $this->issuedMode();
 
         return Section::make(__('invoices.draft.sections.document'))
@@ -904,7 +910,6 @@ final class EditInvoice extends EditRecord
                     ->label(__('invoices.draft.fields.currency'))
                     ->options(fn (): array => $this->currencyOptions())
                     ->native(false)
-                    ->disabled($issued)
                     ->required()
                     ->live()
                     ->afterStateUpdated(function (Get $get, Set $set, mixed $state, mixed $old): void {
@@ -1003,7 +1008,7 @@ final class EditInvoice extends EditRecord
                     Hidden::make('reload_bank')->default(false),
                     TextEntry::make('issued_bank_account')
                         ->label(__('invoices.draft.fields.bank_account'))
-                        ->state(fn (Get $get): HtmlString => $this->issuedBankState($get('reload_bank') === true))
+                        ->state(fn (Get $get): HtmlString => $this->issuedBankState($get('reload_bank') === true, $get('currency')))
                         ->html(),
                     Actions::make([$this->refillBankAction()])->key('bankActions'),
                 ])->columnSpanFull(),
@@ -1080,10 +1085,13 @@ final class EditInvoice extends EditRecord
     /**
      * The bank account of the document as it is stored, or, once the refill is marked, the account the save will take.
      */
-    private function issuedBankState(bool $reload): HtmlString
+    private function issuedBankState(bool $reload, mixed $currency): HtmlString
     {
-        if ($reload) {
-            return new HtmlString(e(__('invoices.edit_issued.bank_pending')).'<br>'.$this->bankAccountState($this->invoice()->currency));
+        // A chosen currency takes the account of the settings for it at the save, like the refill does (D-06).
+        $chosen = is_string($currency) && $currency !== '' ? strtoupper($currency) : $this->invoice()->currency;
+
+        if ($reload || $chosen !== $this->invoice()->currency) {
+            return new HtmlString(e(__('invoices.edit_issued.bank_pending')).'<br>'.$this->bankAccountState($chosen));
         }
 
         $lines = InvoiceColumns::bankLines($this->invoice());
@@ -1304,12 +1312,15 @@ final class EditInvoice extends EditRecord
      */
     protected function changeCurrencyAction(): Action
     {
+        // An issued document says that the CNB figures, the account and the card link follow (D-06, D-11).
+        $copy = $this->issuedMode() ? 'invoices.edit_issued.currency_change' : 'invoices.draft.currency_change';
+
         return Action::make('changeCurrency')
             ->requiresConfirmation()
-            ->modalHeading(__('invoices.draft.currency_change.heading'))
-            ->modalDescription(__('invoices.draft.currency_change.body'))
-            ->modalSubmitActionLabel(__('invoices.draft.currency_change.submit'))
-            ->modalCancelActionLabel(__('invoices.draft.currency_change.cancel'))
+            ->modalHeading(__($copy.'.heading'))
+            ->modalDescription(__($copy.'.body'))
+            ->modalSubmitActionLabel(__($copy.'.submit'))
+            ->modalCancelActionLabel(__($copy.'.cancel'))
             ->action(function (array $arguments): void {
                 $currency = strtoupper(is_string($arguments['currency'] ?? null) ? $arguments['currency'] : '');
 
@@ -1365,7 +1376,9 @@ final class EditInvoice extends EditRecord
                 ]);
             }
         } elseif ($summary['czk_missing']) {
-            $missing = (string) __('invoices.errors.cnb_missing', ['currency' => $currency, 'date' => IssueChecks::czechDate(DraftEditorPreview::today())]);
+            // An issued document is priced with the lists of its issue date, a draft with today's.
+            $day = $this->issuedMode() ? ($this->invoice()->issue_date?->format('Y-m-d') ?? DraftEditorPreview::today()) : DraftEditorPreview::today();
+            $missing = (string) __('invoices.errors.cnb_missing', ['currency' => $currency, 'date' => IssueChecks::czechDate($day)]);
         }
 
         // The non-payer mode has no VAT line, and the subtotal equals the total (IN-08).
@@ -1654,11 +1667,6 @@ final class EditInvoice extends EditRecord
      */
     private function currentCurrency(): string
     {
-        // The currency of an issued document is read-only here, whatever the form state holds.
-        if ($this->issuedMode()) {
-            return $this->invoice()->currency;
-        }
-
         $currency = $this->data['currency'] ?? null;
 
         return is_string($currency) && Money::isKnownCurrency(strtoupper($currency)) ? strtoupper($currency) : $this->invoice()->currency;
@@ -1671,13 +1679,7 @@ final class EditInvoice extends EditRecord
      */
     private function currencyOptions(): array
     {
-        $codes = array_map(static fn (BankAccount $account): string => $account->currency, app(BankAccountSettings::class)->accounts);
-        $codes[] = $this->invoice()->currency;
-
-        $codes[] = $this->client()->currency;
-
-        $codes = array_values(array_unique($codes));
-        sort($codes);
+        $codes = IssuedDocumentRules::currencyChoices($this->invoice());
 
         return array_combine($codes, $codes);
     }

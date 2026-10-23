@@ -9,6 +9,7 @@ use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Actions\RecordPayment;
+use App\Domain\Invoicing\Actions\UpdateDraft;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
@@ -149,7 +150,7 @@ describe('the tracer: from the detail to a corrected invoice', function (): void
             ->assertSee(Money::ofMinor(150000, 'CZK')->format('cs'));
     });
 
-    it('offers the dates, the language and the customer lines for editing while the currency stays read-only', function (): void {
+    it('offers the currency, the dates, the language and the customer lines for editing', function (): void {
         $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
 
         iedEditor($issued)
@@ -158,7 +159,7 @@ describe('the tracer: from the detail to a corrected invoice', function (): void
             ->assertFormFieldExists('due_date', fn ($field): bool => ! $field->isDisabled())
             ->assertFormFieldExists('language', fn ($field): bool => ! $field->isDisabled())
             ->assertFormFieldExists('customer.name', fn ($field): bool => ! $field->isDisabled())
-            ->assertFormFieldExists('currency', fn ($field): bool => $field->isDisabled())
+            ->assertFormFieldExists('currency', fn ($field): bool => ! $field->isDisabled())
             ->assertFormSet(['customer.name' => iedRow($issued)->customer_snapshot['name']]);
     });
 
@@ -475,5 +476,144 @@ describe('a total below what was paid', function (): void {
             ->assertNoRedirect();
 
         expect(iedRow($issued)->total_minor)->toBe(100000);
+    });
+});
+
+/**
+ * An issued document of one time line (ten hours at 1 500 an hour, rate in CZK) and, when asked, one typed line of
+ * 100,00, in the currency; the CNB list of the issue day is stored for EUR.
+ */
+function iedCurrencyIssued(string $currency, bool $typed): Invoice
+{
+    InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+
+    $client = InvoiceFixtures::client();
+    $project = app(CreateProject::class)->handle($client, [
+        'name' => 'Alpha currency project',
+        'key' => Canary::projectKey(),
+        'billing_type' => 'hourly',
+        'hourly_rate' => '1500',
+    ]);
+    $start = CarbonImmutable::parse('2026-09-10 08:00:00', 'UTC');
+    $factory = TimeEntry::factory()->forProject($project);
+    app(PartnerContext::class)->runAsSystem(static fn (): TimeEntry => $factory->create(['user_id' => Canary::admin()->id, 'started_at' => $start, 'ended_at' => $start->addHours(10)]));
+
+    $draft = app(CreateDraft::class)->handle(test()->admin, [
+        'client_id' => $client->id,
+        'kind' => 'invoice',
+        'source' => 'time',
+        'period_from' => '2026-09-01',
+        'period_to' => '2026-09-30',
+        'project_ids' => [$project->id],
+        'without_project' => false,
+        'grouping' => 'project',
+        'currency' => $currency,
+    ]);
+
+    if ($typed) {
+        $items = array_map(static fn (InvoiceItem $item): array => [
+            'id' => $item->id,
+            'description' => $item->description,
+            'quantity' => $item->quantity,
+            'unit' => $item->unit,
+            'unit_price' => Money::ofMinor($item->unit_price_minor, $currency)->toMajor(),
+        ], iedLines($draft));
+        $items[] = InvoiceFixtures::item('Typed design work', '1', '100.00');
+
+        app(UpdateDraft::class)->handle(test()->admin, $draft, ['items' => $items]);
+    }
+
+    return app(IssueDocument::class)->handle(test()->admin, $draft);
+}
+
+describe('the currency of an open issued document', function (): void {
+    it('asks before typed prices are kept, shows the rate price of the time line and stores what it showed', function (): void {
+        $issued = iedCurrencyIssued('EUR', true);
+        $editor = iedEditor($issued);
+        [$timeKey, $typedKey] = iedKeys($editor);
+
+        expect($editor->get("data.items.{$timeKey}.unit_price"))->toBe('59,70');
+
+        $editor->set('data.currency', 'CZK')
+            ->assertActionMounted('changeCurrency')
+            ->assertMountedActionModalSee(['Změnit měnu dokladu?', 'Ručně zadané jednotkové ceny a pevné částky se nepřepočítají.']);
+
+        expect($editor->get('data.currency'))->toBe('EUR');
+
+        $editor->callMountedAction()->assertHasNoActionErrors();
+
+        expect($editor->get('data.currency'))->toBe('CZK')
+            ->and($editor->get("data.items.{$timeKey}.unit_price"))->toBe('1500,00')
+            ->and($editor->get("data.items.{$typedKey}.unit_price"))->toBe('100,00');
+
+        $editor->assertSee(Money::ofMinor(1510000, 'CZK')->format('cs'))
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertRedirect(InvoiceResource::getUrl('view', ['record' => $issued]));
+
+        $row = iedRow($issued);
+        [$time, $typed] = iedLines($issued);
+
+        expect($row->currency)->toBe('CZK')
+            ->and($time->unit_price_minor)->toBe(150000)
+            ->and($time->line_total_minor)->toBe(1500000)
+            ->and($typed->unit_price_minor)->toBe(10000)
+            ->and($row->total_minor)->toBe(1510000)
+            ->and(DB::table('invoice_admin')->where('invoice_id', $issued->id)->value('czk_total_minor'))->toBeNull();
+    });
+
+    it('keeps the currency when the confirmation is not given', function (): void {
+        $issued = iedCurrencyIssued('EUR', true);
+
+        $editor = iedEditor($issued)->set('data.currency', 'CZK')->assertActionMounted('changeCurrency')->unmountAction();
+
+        expect($editor->get('data.currency'))->toBe('EUR');
+    });
+
+    it('previews a currency change with the lists of the issue date', function (): void {
+        $issued = iedCurrencyIssued('CZK', false);
+
+        // A newer list for a later day: a preview with today's list would show another amount.
+        $this->travelTo(CarbonImmutable::parse('2026-10-20 09:30:00', 'Europe/Prague'));
+        InvoiceFixtures::cnbRate('EUR', '2026-10-20', '27.000');
+
+        $editor = iedEditor($issued)->set('data.currency', 'EUR')->assertActionNotMounted();
+        [$key] = iedKeys($editor);
+
+        $expected = Money::ofMinor(150000, 'CZK')->timesThroughCzk('10.0000', '1', 1, 'EUR', '25.125', 1);
+        $wrong = Money::ofMinor(150000, 'CZK')->timesThroughCzk('10.0000', '1', 1, 'EUR', '27.000', 1);
+        $czk = Money::ofMinor($expected->minor, 'EUR')->convert('25.125', 'CZK', 1);
+
+        expect($wrong->minor)->not->toBe($expected->minor)
+            ->and($editor->get("data.items.{$key}.unit_price"))->toBe('59,70');
+
+        $editor->assertSee($expected->format('cs'))
+            ->assertDontSee($wrong->format('cs'))
+            ->assertSee(__('invoices.detail.summary.czk_total', ['czk' => $czk->format('cs')]))
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $admin = DB::table('invoice_admin')->where('invoice_id', $issued->id)->first();
+
+        expect(iedLines($issued)[0]->line_total_minor)->toBe($expected->minor)
+            ->and(iedRow($issued)->currency)->toBe('EUR')
+            ->and(iedRow($issued)->total_minor)->toBe($expected->minor)
+            ->and($admin?->czk_total_minor)->toBe($czk->minor)
+            ->and($admin?->exchange_rate_date)->toBe('2026-10-14');
+    });
+
+    it('shows the refusal of a document with a payment under the currency and stores nothing', function (): void {
+        $issued = iedCurrencyIssued('CZK', true);
+        app(RecordPayment::class)->handle($this->admin, $issued, ['amount' => '400.00', 'paid_on' => '2026-10-14']);
+        $before = iedRow($issued)->getAttributes();
+
+        $editor = iedEditor($issued)->set('data.currency', 'EUR')->callMountedAction();
+        $editor->call('save')
+            ->assertHasFormErrors(['currency'])
+            ->assertSee('Měnu nelze změnit, k dokladu jsou zaznamenané platby.')
+            ->assertNoRedirect();
+
+        expect(iedRow($issued)->getAttributes())->toBe($before)
+            ->and(iedLines($issued)[0]->unit_price_minor)->toBe(150000);
     });
 });
