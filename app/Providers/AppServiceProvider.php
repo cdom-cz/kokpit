@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Domain\Notifications\Mail\MailBrand;
 use App\Support\ProductionConfigGuard;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -18,7 +19,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // The supplier branding of every e-mail: one read per request, console run or queue job, and the next job
+        // reads again (the scope PartnerContext uses). MailBrand::read() runs as system and never throws (D-03).
+        $this->app->scoped(MailBrand::class, static fn (): MailBrand => MailBrand::read());
     }
 
     /**
