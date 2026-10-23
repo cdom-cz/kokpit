@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Invoicing\Actions\CreateDraft;
+use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\IssueDocument;
+use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Actions\UpdateDraft;
 use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
+use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
@@ -22,13 +25,16 @@ use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
 use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\FakeStripeGateway;
 use Tests\Support\InvoiceFixtures;
 use Tests\Support\QrDecode;
+use Tests\Support\RawSql;
 
 /*
  * The currency of an open issued invoice or proforma (IN-13, IN-14; D-06 with its owner ruling of 2026-10-23, D-11;
@@ -273,5 +279,231 @@ describe('the tracer: a EUR invoice with a CZK-rated time line and a card link i
             ->and($links[1]->amount_minor)->toBe(100000);
 
         Queue::assertPushed(CreatePaymentLink::class, 1);
+    });
+});
+
+/**
+ * Everything a refused change must leave as it was: the row, the lines with their conversion, the Admin-only row and
+ * the link rows.
+ *
+ * @return array<string, mixed>
+ */
+function iccState(Invoice $document): array
+{
+    return iccSystem(static fn (): array => [
+        'row' => iccRow($document)->getAttributes(),
+        'lines' => array_map(static fn (InvoiceItem $line): array => [...$line->getAttributes(), 'snapshot' => $line->source?->conversion_snapshot], iccLines($document)),
+        'admin' => iccAdmin($document)->getAttributes(),
+        'links' => array_map(static fn (PaymentLink $link): array => $link->getAttributes(), iccLinks($document)),
+    ]);
+}
+
+/**
+ * The messages the Action refuses with, by key.
+ *
+ * @param  array<string, mixed>  $data
+ * @return array<string, list<string>>
+ */
+function iccRefusal(Invoice $document, array $data): array
+{
+    try {
+        app(UpdateIssuedDocument::class)->handle(test()->admin, $document, $data);
+    } catch (ValidationException $exception) {
+        return $exception->errors();
+    }
+
+    return [];
+}
+
+/**
+ * A draft credit note that names the invoice, built as system with the only writes the schema allows, nothing else.
+ */
+function iccDraftCreditNote(Invoice $invoice): Invoice
+{
+    return iccSystem(static function () use ($invoice): Invoice {
+        $source = iccRow($invoice);
+        $credit = new Invoice;
+        $credit->forceFill([
+            'client_id' => $source->client_id,
+            'kind' => InvoiceKind::CreditNote,
+            'currency' => $source->currency,
+            'language' => $source->language,
+            'vat_mode' => $source->vat_mode,
+            'credited_invoice_id' => $source->id,
+            'subtotal_minor' => -100,
+            'vat_minor' => 0,
+            'total_minor' => -100,
+        ])->save();
+
+        return $credit;
+    });
+}
+
+describe('the conversion of the lines at the issue date', function (): void {
+    it('converts a CZK-rated line to EUR with the lists valid on the stored issue date, one rounding and a fresh snapshot', function (): void {
+        $invoice = iccIssued(InvoiceFixtures::client(), 'CZK', lists: ['EUR' => '25.125']);
+        [$time, $typed] = iccLines($invoice);
+
+        expect($time->price_converted)->toBeFalse()
+            ->and($time->source?->conversion_snapshot)->toBeNull();
+
+        // A newer list for a later day exists; the change must not use it.
+        $this->travelTo(CarbonImmutable::parse('2026-10-20 09:30:00', 'Europe/Prague'));
+        InvoiceFixtures::cnbRate('EUR', '2026-10-20', '27.000');
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, [
+            'currency' => 'EUR',
+            'items' => [
+                iccPayload($time, 'EUR', ['unit_price' => '59,70']),
+                iccPayload($typed, 'EUR', ['unit_price' => '100.00']),
+            ],
+        ]);
+
+        [$timeAfter, $typedAfter] = iccLines($invoice);
+        $expected = Money::ofMinor(150000, 'CZK')->timesThroughCzk('10.0000', '1', 1, 'EUR', '25.125', 1);
+        $snapshot = $timeAfter->source?->conversion_snapshot;
+        $row = iccRow($invoice);
+        $admin = iccAdmin($invoice);
+
+        expect($timeAfter->line_total_minor)->toBe($expected->minor)
+            ->and($timeAfter->unit_price_minor)->toBe(5970)
+            ->and($timeAfter->price_converted)->toBeTrue()
+            ->and($snapshot)->toBeArray()
+            ->and($snapshot['target_currency'])->toBe('EUR')
+            ->and($snapshot['target_rate'])->toBe('25.1250000000')
+            ->and($snapshot['rate_date'])->toBe('2026-10-14')
+            // The typed price keeps its figure, whatever the new currency is.
+            ->and($typedAfter->unit_price_minor)->toBe(10000)
+            ->and($typedAfter->line_total_minor)->toBe(10000)
+            ->and($row->total_minor)->toBe($expected->minor + 10000)
+            ->and($row->bank_snapshot['currency'] ?? null)->toBe('EUR')
+            ->and((string) $admin->exchange_rate)->toStartWith('25.125')
+            ->and($admin->exchange_unit_amount)->toBe(1)
+            ->and($admin->exchange_rate_date?->format('Y-m-d'))->toBe('2026-10-14')
+            ->and($admin->czk_total_minor)->toBe(Money::ofMinor($row->total_minor, 'EUR')->convert('25.125', 'CZK', 1)->minor);
+    });
+
+    it('converts the lines again without a list of lines in the data and restores the rate exactly when the currency comes back', function (): void {
+        $invoice = iccIssued(InvoiceFixtures::client(), 'CZK', lists: ['EUR' => '25.125']);
+        $before = iccState($invoice);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['currency' => 'EUR']);
+
+        expect(iccLines($invoice)[0]->price_converted)->toBeTrue()
+            ->and(iccLines($invoice)[0]->line_total_minor)->toBe(Money::ofMinor(150000, 'CZK')->timesThroughCzk('10.0000', '1', 1, 'EUR', '25.125', 1)->minor);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['currency' => 'CZK']);
+
+        $after = iccState($invoice);
+
+        expect($after['lines'][0]['unit_price_minor'])->toBe(150000)
+            ->and($after['lines'][0]['line_total_minor'])->toBe(1500000)
+            ->and($after['lines'][0]['price_converted'])->toBe($before['lines'][0]['price_converted'])
+            ->and($after['lines'][0]['snapshot'])->toBeNull()
+            ->and($after['row']['total_minor'])->toBe(1500000 + $before['lines'][1]['line_total_minor'])
+            ->and($after['admin']['exchange_rate'])->toBeNull()
+            ->and($after['admin']['czk_total_minor'])->toBeNull();
+    });
+
+    it('changes nothing when the currency in the data is the stored one, whatever its case and spaces', function (): void {
+        $invoice = iccIssued(InvoiceFixtures::client(), 'CZK', lists: ['EUR' => '25.125']);
+        $before = iccState($invoice);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['currency' => 'czk ']);
+
+        expect(iccState($invoice))->toBe($before);
+    });
+});
+
+describe('where the currency must not change', function (): void {
+    it('refuses a document with a payment, writes nothing, and the database refuses it for any other writer', function (): void {
+        $invoice = iccIssued(CardPaymentSetup::client(), 'CZK', lists: ['EUR' => '25.125']);
+        app(RecordPayment::class)->handle($this->admin, $invoice, ['amount' => '400.00', 'paid_on' => '2026-10-14']);
+        $before = iccState($invoice);
+
+        $errors = iccRefusal($invoice, ['currency' => 'EUR']);
+
+        expect($errors)->toBe(['currency' => ['Měnu nelze změnit, k dokladu jsou zaznamenané platby.']])
+            ->and($errors['currency'][0])->toBe(__('invoices.errors.currency_has_payments'))
+            ->and(iccState($invoice))->toBe($before);
+
+        RawSql::expectSqlState('23503', static fn (): int => DB::update("update invoices set currency = 'EUR' where id = ?", [$invoice->id]));
+    });
+
+    it('still allows every other edit of a document with a payment, also with its own currency in the data', function (): void {
+        $invoice = iccIssued(InvoiceFixtures::client(), 'CZK', lists: ['EUR' => '25.125']);
+        app(RecordPayment::class)->handle($this->admin, $invoice, ['amount' => '400.00', 'paid_on' => '2026-10-14']);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['currency' => 'CZK', 'note' => 'A corrected note.']);
+
+        expect(iccRow($invoice)->note)->toBe('A corrected note.')
+            ->and(iccRow($invoice)->currency)->toBe('CZK');
+    });
+
+    it('refuses an invoice with a partial credit note and one with only a draft credit note', function (): void {
+        $withIssued = iccIssued(InvoiceFixtures::client(), 'CZK', lists: ['EUR' => '25.125']);
+        app(IssueCreditNote::class)->partial($this->admin, $withIssued, [iccLines($withIssued)[1]->id => '1']);
+        $beforeIssued = iccState($withIssued);
+
+        expect(iccRefusal($withIssued, ['currency' => 'EUR']))->toBe(['currency' => [__('invoices.errors.currency_has_credit_notes')]])
+            ->and(__('invoices.errors.currency_has_credit_notes'))->toBe('Měnu nelze změnit, k faktuře existuje dobropis.')
+            ->and(iccState($withIssued))->toBe($beforeIssued);
+
+        // The credit note rule of the invoice row guard holds for raw SQL (plan 10.1-01).
+        RawSql::expectSqlState('KP001', static fn (): int => DB::update("update invoices set currency = 'EUR' where id = ?", [$withIssued->id]));
+
+        $withDraft = iccIssued(InvoiceFixtures::client(), 'CZK', lists: []);
+        iccDraftCreditNote($withDraft);
+        $beforeDraft = iccState($withDraft);
+
+        expect(iccRefusal($withDraft, ['currency' => 'EUR']))->toBe(['currency' => ['Měnu nelze změnit, k faktuře existuje dobropis.']])
+            ->and(iccState($withDraft))->toBe($beforeDraft);
+    });
+
+    it('refuses a currency that is not in the list of the editor', function (): void {
+        $invoice = iccIssued(InvoiceFixtures::client(), 'CZK', lists: []);
+        $before = iccState($invoice);
+
+        foreach (['JPY', 'XXX', '', 'eu', 5] as $value) {
+            expect(iccRefusal($invoice, ['currency' => $value]))->toBe(['currency' => ['Zvolte platnou měnu.']]);
+        }
+
+        expect(iccState($invoice))->toBe($before);
+    });
+});
+
+describe('a list or an account that is missing', function (): void {
+    it('refuses cnb_missing with the issue date when the list of the new currency is missing', function (): void {
+        $invoice = iccIssued(InvoiceFixtures::client(), 'CZK', lists: []);
+        $before = iccState($invoice);
+
+        $errors = iccRefusal($invoice, ['currency' => 'EUR']);
+
+        expect($errors['currency'][0])->toContain('EUR')->toContain('14. 10. 2026')
+            ->and(iccState($invoice))->toBe($before);
+    });
+
+    it('refuses cnb_missing when the list a time line is converted with is missing for the issue date', function (): void {
+        // A USD rate on a EUR document: both lists exist on the issue day 2026-10-14, but not on 2026-10-13.
+        $invoice = iccIssued(InvoiceFixtures::client(['currency' => 'USD']), 'EUR', lists: ['EUR' => '25.125', 'USD' => '22.500']);
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['issue_date' => '2026-10-13', 'due_date' => '2026-10-27']);
+        $before = iccState($invoice);
+
+        $errors = iccRefusal($invoice, ['currency' => 'CZK']);
+
+        expect($errors['currency'][0])->toContain('USD')->toContain('13. 10. 2026')
+            ->and(iccState($invoice))->toBe($before);
+    });
+
+    it('refuses bank_missing when the settings hold no account for the new currency', function (): void {
+        // The currency of the client is offered, so it is a choice; without an account it cannot be taken.
+        $invoice = iccIssued(InvoiceFixtures::client(['currency' => 'USD']), 'CZK', lists: ['USD' => '22.500']);
+        InvoiceFixtures::cnbRate('USD', '2026-10-13', '22.000');
+        $before = iccState($invoice);
+
+        $errors = iccRefusal($invoice, ['currency' => 'USD']);
+
+        expect($errors['currency'][0])->toBe('Pro měnu USD není nastaven bankovní účet. Přidejte ho v Nastavení.')
+            ->and(iccState($invoice))->toBe($before);
     });
 });
