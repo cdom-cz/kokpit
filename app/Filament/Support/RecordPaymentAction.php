@@ -7,6 +7,7 @@ namespace App\Filament\Support;
 use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Actions\QueuePaymentConfirmation;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceStatus;
@@ -44,6 +45,8 @@ use OverflowException;
  * hidden and a gray callout says why. The callouts for a document that is already paid or an amount above the
  * remaining amount come live from {@see RecordPayment::warnings()}; they are a confirmation, never a block, and the
  * submit then reads "Přesto uložit platbu" (D-17).
+ *
+ * A gray line says whom the confirmation e-mail of the payment will reach, or that it reaches nobody (Phase 13, A-13-3).
  *
  * The write is {@see RecordPayment::handle()}, which re-validates every key and decides on the locked row; this class
  * only maps its field errors back under the modal fields. The invoice the host shows is read again through the
@@ -187,8 +190,23 @@ final class RecordPaymentAction
                 ->label(__('invoices.payments.record.fields.note'))
                 ->rows(2)
                 ->maxLength(500),
+            Text::make(static fn (): string => self::confirmationHint($fresh()))->color('gray'),
             Text::make(__('invoices.payments.record.not_editable'))->color('gray'),
         ];
+    }
+
+    /**
+     * Who the client's confirmation of this payment will reach, or that it reaches nobody (D-05, A-13-3). The rule is
+     * the one the queueing uses, so the hint never promises what the write will not do; it never blocks the save. The
+     * address is plain text here, the schema escapes it.
+     */
+    private static function confirmationHint(Invoice $invoice): string
+    {
+        $email = QueuePaymentConfirmation::recipientFor($invoice);
+
+        return $email === null
+            ? __('invoices.payments.record.confirmation_hint_none')
+            : __('invoices.payments.record.confirmation_hint', ['email' => $email]);
     }
 
     /**

@@ -262,6 +262,14 @@ return [
         'failed' => 'Odeslání selhalo',
     ],
 
+    'payment_confirmation_state' => [
+        'queued' => 'Čeká na odeslání',
+        'sending' => 'Čeká na odeslání',
+        'sent' => 'Odesláno',
+        'failed' => 'Neodesláno',
+        'skipped' => 'Bez e-mailu',
+    ],
+
     'payment_link_state' => [
         'pending' => 'Připravuje se',
         'active' => 'Aktivní',

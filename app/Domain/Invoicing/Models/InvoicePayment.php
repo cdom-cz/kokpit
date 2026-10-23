@@ -89,6 +89,17 @@ final class InvoicePayment extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * The confirmation e-mail of the payment (Phase 13, R-13-08-1), read only: a carried copy and a payment recorded
+     * before the confirmation existed have none. The payment row itself stays immutable.
+     *
+     * @return HasOne<PaymentConfirmation, $this>
+     */
+    public function confirmation(): HasOne
+    {
+        return $this->hasOne(PaymentConfirmation::class, 'invoice_payment_id');
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

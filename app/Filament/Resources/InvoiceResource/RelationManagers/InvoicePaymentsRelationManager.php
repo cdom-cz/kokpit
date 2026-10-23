@@ -7,6 +7,7 @@ namespace App\Filament\Resources\InvoiceResource\RelationManagers;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\DeletePayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\PaymentConfirmationState;
 use App\Domain\Invoicing\Enums\PaymentMethod;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoicePayment;
@@ -31,7 +32,10 @@ use Livewire\Attributes\On;
 /**
  * The "Platby" tab of an issued invoice or proforma (IN-05, FI-03; D-17, UI-SPEC Surface F): the payments, newest
  * first, with the way they were paid, the income category they were booked under (a link to the transaction, a dash on
- * a proforma, which books no income) and the note. Admin only: a payment is finance data and a Partner reads none.
+ * a proforma, which books no income) and the note and, per payment, whether the confirmation e-mail to the client is waiting, sent, failed or skipped for lack
+ * of an invoice e-mail (Phase 13, A-13-7; a dash for a payment without one: a carried copy, or one recorded before the
+ * confirmation existed). The column shows the state only, never the recipient or a failure class. Admin only: a
+ * payment is finance data and a Partner reads none.
  *
  * A stored payment is never edited (D-19 as amended on 2026-10-17). The tab has two actions: the gray header action
  * "Zaznamenat platbu" (shared with the primary one of the page) and the one destructive row action "Smazat platbu",
@@ -85,7 +89,7 @@ final class InvoicePaymentsRelationManager extends RelationManager
 
         return $table
             ->description(__('invoices.payments.helper'))
-            ->modifyQueryUsing(static fn (Builder $query): Builder => $query->with('transaction.category'))
+            ->modifyQueryUsing(static fn (Builder $query): Builder => $query->with(['transaction.category', 'confirmation']))
             ->columns([
                 TextColumn::make('paid_on')
                     ->label(__('invoices.payments.columns.paid_on'))
@@ -108,6 +112,16 @@ final class InvoicePaymentsRelationManager extends RelationManager
                     ->label(__('invoices.payments.columns.note'))
                     ->placeholder($empty)
                     ->wrap(),
+                TextColumn::make('confirmation')
+                    ->label(__('invoices.payments.columns.confirmation'))
+                    ->state(static fn (InvoicePayment $record): ?string => $record->confirmation?->state->getLabel())
+                    ->badge()
+                    ->color(static fn (InvoicePayment $record): string => match ($record->confirmation?->state) {
+                        PaymentConfirmationState::Sent => 'success',
+                        PaymentConfirmationState::Failed => 'danger',
+                        default => 'gray',
+                    })
+                    ->placeholder($empty),
             ])
             ->defaultSort(static fn (Builder $query): Builder => $query->orderByDesc('paid_on')->orderByDesc('id'))
             ->paginated(false)
