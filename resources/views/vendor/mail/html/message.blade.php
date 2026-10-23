@@ -1,9 +1,15 @@
 @php($brand = \App\Domain\Notifications\Mail\MailBrand::current())
 <x-mail::layout>
-{{-- Header: the supplier name (D-03). Every value is read through MailBrand, never from the settings directly. --}}
+{{-- Header: the supplier logo as an inline cid image, else the supplier name as text (D-03). The cid is emitted only when
+     MailBrand holds the logo, the same decider the EmbedMailLogo listener uses, so there is never a dangling cid.
+     Every value is read through MailBrand, never from the settings directly. --}}
 <x-slot:header>
 <x-mail::header :url="$brand->website">
+@if ($brand->hasLogo())
+<img src="cid:{{ \App\Domain\Notifications\Mail\MailBrand::LOGO_NAME }}" alt="{{ $brand->name }}" width="{{ $brand->logoWidth }}" height="{{ $brand->logoHeight }}" style="border: 0; display: block; margin: 0 auto;">
+@else
 {{ $brand->name }}
+@endif
 </x-mail::header>
 </x-slot:header>
 

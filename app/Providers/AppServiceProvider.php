@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Domain\Notifications\Mail\EmbedMailLogo;
 use App\Domain\Notifications\Mail\MailBrand;
 use App\Support\ProductionConfigGuard;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
@@ -38,6 +41,9 @@ class AppServiceProvider extends ServiceProvider
         // invitation accept page say so explicitly); this default covers the panel's reset and
         // profile pages, which use the framework default.
         Password::defaults(static fn (): Password => Password::min(12));
+
+        // The supplier logo travels as one inline cid part of the message (D-03); domain folders are not discovered.
+        Event::listen(MessageSending::class, EmbedMailLogo::class);
 
         RateLimiter::for('invitation', fn (Request $request): Limit => Limit::perMinute(10)->by($request->ip()));
 

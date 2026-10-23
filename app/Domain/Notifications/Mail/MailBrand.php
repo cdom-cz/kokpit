@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Notifications\Mail;
 
+use App\Domain\Settings\DocumentImage;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Shared\Auth\PartnerContext;
 use Throwable;
@@ -19,6 +20,8 @@ use Throwable;
  * header and footer (research Pitfall 1).
  *
  * It reads a fixed whitelist of fields and nothing else: never a bank account, never the signature image (T-13-01).
+ * The logo is the one stored image it reads, through DocumentImage::contents() and MailLogo::fromPng(); the bytes are
+ * held here once per scope for the header (`hasLogo()`) and for the EmbedMailLogo listener, which share this one decider.
  * It holds raw values only; the views escape them and translate the labels when they render, so the locale of each
  * e-mail decides the labels (R-13-01-4).
  *
@@ -30,7 +33,7 @@ use Throwable;
  */
 final readonly class MailBrand
 {
-    /** The content id of the inline logo image; plan 13-04 embeds it. */
+    /** The content id of the inline logo image; EmbedMailLogo embeds it and the header references it. */
     public const string LOGO_NAME = 'kokpit-logo.png';
 
     public function __construct(
@@ -61,6 +64,7 @@ final readonly class MailBrand
         try {
             return app(PartnerContext::class)->runAsSystem(static function (): self {
                 $supplier = app(SupplierSettings::class);
+                $logo = self::readLogo($supplier->logo_path);
 
                 return new self(
                     name: self::blankToNull($supplier->company_name) ?? self::applicationName(),
@@ -73,6 +77,9 @@ final readonly class MailBrand
                     phone: self::blankToNull($supplier->phone),
                     website: self::blankToNull($supplier->website),
                     registrationNote: self::blankToNull($supplier->registration_note),
+                    logoPng: $logo['png'] ?? null,
+                    logoWidth: $logo['width'] ?? null,
+                    logoHeight: $logo['height'] ?? null,
                 );
             });
         } catch (Throwable) {
@@ -97,6 +104,27 @@ final readonly class MailBrand
     public function hasLogo(): bool
     {
         return $this->logoPng !== null;
+    }
+
+    /**
+     * The downscaled logo and its display size, or null when there is no logo, its object is gone or it cannot be
+     * decoded: the header then shows the name as text and the layout holds no cid reference (D-03).
+     *
+     * @return array{png: string, width: int, height: int}|null
+     */
+    private static function readLogo(?string $path): ?array
+    {
+        if ($path === null || $path === '') {
+            return null;
+        }
+
+        try {
+            $png = app(DocumentImage::class)->contents($path);
+
+            return $png === null ? null : MailLogo::fromPng($png);
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private static function applicationName(): string
