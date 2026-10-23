@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Testing\TestResponse;
+use Tests\Support\Canary;
 use Tests\Support\RouteInventory;
 use Tests\Support\RouteRules;
 
@@ -107,4 +110,76 @@ it('keeps the two Phase 11 public routes declared with their means', function ()
 
     expect($public['pay.show']['means'])->toBe('token')
         ->and($public['webhooks.stripe']['means'])->toBe('signature');
+});
+
+/**
+ * Every route under api/v1/.
+ *
+ * @return list<Illuminate\Routing\Route>
+ */
+function auditApiRoutes(): array
+{
+    return array_values(array_filter(
+        RouteInventory::routes(),
+        static fn (Illuminate\Routing\Route $route): bool => str_starts_with($route->uri(), 'api/v1/'),
+    ));
+}
+
+/**
+ * An anonymous-style request with no header at all (R-12-02-1): never ->json(), which hides defect 1.
+ */
+function auditRequest(Illuminate\Routing\Route $route): TestResponse
+{
+    Auth::forgetGuards();
+
+    return test()->call(RouteInventory::method($route), RouteInventory::path($route));
+}
+
+it('defect 1: answers 401 JSON to a guest on every /api/v1 route that sends no Accept header', function (): void {
+    $routes = auditApiRoutes();
+    $offenders = [];
+
+    foreach ($routes as $route) {
+        $response = auditRequest($route);
+
+        if ($response->getStatusCode() !== 401 || ! str_contains((string) $response->headers->get('Content-Type'), 'application/json')) {
+            $offenders[] = RouteInventory::key($route).' '.RouteInventory::method($route).' '.RouteInventory::path($route)
+                .' answered '.$response->getStatusCode().' '.$response->headers->get('Content-Type');
+        }
+    }
+
+    expect($routes)->not->toBeEmpty()
+        ->and($offenders)->toBe([], implode("\n", $offenders));
+});
+
+it('defect 1: answers 401 to a signed-in Admin and Partner session on every /api/v1 route that sends no Accept header', function (): void {
+    [$clientId] = Canary::twoClients();
+    $routes = auditApiRoutes();
+    $offenders = [];
+
+    foreach ([Canary::admin(), Canary::partnerFor($clientId)] as $user) {
+        foreach ($routes as $route) {
+            Auth::forgetGuards();
+            $response = test()->actingAs($user)->call(RouteInventory::method($route), RouteInventory::path($route));
+
+            if ($response->getStatusCode() !== 401) {
+                $offenders[] = RouteInventory::key($route).' as user '.$user->getKey().' answered '.$response->getStatusCode();
+            }
+        }
+    }
+
+    expect($routes)->not->toBeEmpty()
+        ->and($offenders)->toBe([], implode("\n", $offenders));
+});
+
+it('keeps the Filament login redirect and the Horizon 403 for a guest', function (): void {
+    Auth::forgetGuards();
+    $dashboard = test()->get('/admin');
+
+    Auth::forgetGuards();
+    $horizon = test()->get('/horizon');
+
+    expect($dashboard->getStatusCode())->toBeIn([301, 302, 303, 307, 308])
+        ->and((string) $dashboard->headers->get('Location'))->toEndWith('/admin/login')
+        ->and($horizon->getStatusCode())->toBe(403);
 });
