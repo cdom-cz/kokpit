@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: "10.1"
-current_phase_name: Invoices stay fully editable until sent, with a manual unlock (INSERTED)
-status: executing
-stopped_at: Completed 10.1-10-PLAN.md
-last_updated: "2026-10-23T06:13:50.614Z"
+current_phase: 8
+current_phase_name: Exchange Rates and Reports
+status: verifying
+stopped_at: Phase 10.1 complete, ready to verify Phase 8
+last_updated: "2026-10-23T07:38:30.495Z"
 last_activity: 2026-10-23
-last_activity_desc: Phase 10.1 execution started
-state_head: cf7a93bb834b8e14c3fc9edf031a5d6dc104f8a3
+last_activity_desc: Phase 10.1 complete, transitioned to Phase 8
+state_head: d34604a4cb87885fc9f1dfcb1435b51ac1cd376e
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 261
-  completed_plans: 257
-  percent: 44
+  completed_plans: 261
+  percent: 58
 ---
 
 # Project State
@@ -27,17 +27,17 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 ## Current Position
 
-Phase: 10.1 (Invoices stay fully editable until sent, with a manual unlock (INSERTED)) — READY TO EXECUTE
-Plan: 12 of 12
-Status: Ready to execute
-Last activity: 2026-10-23 — Phase 10.1 execution started
+Phase: 8 — Exchange Rates and Reports
+Plan: 27
+Status: Phase complete — ready for verification
+Last activity: 2026-10-23 — Phase 10.1 complete, transitioned to Phase 8
 
-Progress: [████░░░░░░] 44%
+Progress: [██████░░░░] 58%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 129
+- Total plans completed: 145
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -53,6 +53,7 @@ Progress: [████░░░░░░] 44%
 | 06 | 14 | - | - |
 | 07 | 20 | - | - |
 | 09.1 | 9 | - | - |
+| 10.1 | 16 | - | - |
 
 **Recent Trend:**
 - Last 5 plans: -
@@ -851,6 +852,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 - Phase 14 added: Online payment method and invoice currency: selectable online (Stripe) payment method that replaces bank payment details on the invoice, and selectable invoice currency reflected in the PDF and the Stripe payment
 - Phase 10.1 inserted after Phase 10: Invoices stay fully editable until sent, with a manual unlock (URGENT)
 - Phase 10.2 removed: the paid-invoice confirmation e-mail is delivered in Phase 13
+- Phase 14 edited: edited fields: title, goal (payment method switchable between bank transfer and online; currency independent of method and bank account; account preselected by matching currency, separately selectable)
 
 ## Deferred Items
 
@@ -863,5 +865,5 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-23T02:23:39.540Z
-Stopped at: Completed 10.1-10-PLAN.md
+Stopped at: Phase 10.1 complete, ready to verify Phase 8
 Resume file: None
