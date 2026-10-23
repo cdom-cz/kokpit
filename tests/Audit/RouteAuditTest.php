@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Canary;
 use Tests\Support\RouteInventory;
@@ -182,4 +184,28 @@ it('keeps the Filament login redirect and the Horizon 403 for a guest', function
     expect($dashboard->getStatusCode())->toBeIn([301, 302, 303, 307, 308])
         ->and((string) $dashboard->headers->get('Location'))->toEndWith('/admin/login')
         ->and($horizon->getStatusCode())->toBe(403);
+});
+
+it('defect 2: closes the Filament export and import download routes with 404 for a guest, a Partner and an Admin', function (): void {
+    [$clientId] = Canary::twoClients();
+    $paths = [
+        '/filament/exports/'.Str::uuid().'/download',
+        '/filament/imports/'.Str::uuid().'/failed-rows/download',
+    ];
+    $offenders = [];
+
+    foreach ([null, Canary::partnerFor($clientId), Canary::admin()] as $user) {
+        foreach ($paths as $path) {
+            Auth::forgetGuards();
+            $response = $user === null ? test()->get($path) : test()->actingAs($user)->get($path);
+
+            if ($response->getStatusCode() !== 404) {
+                $offenders[] = $path.' as '.($user === null ? 'guest' : $user->getKey()).' answered '.$response->getStatusCode();
+            }
+        }
+    }
+
+    expect($offenders)->toBe([], implode("\n", $offenders))
+        ->and(Schema::hasTable('exports'))->toBeFalse()
+        ->and(Schema::hasTable('imports'))->toBeFalse();
 });
