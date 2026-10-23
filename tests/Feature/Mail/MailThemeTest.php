@@ -409,6 +409,15 @@ describe('the Markdown escape', function (): void {
             ->and(MailText::unescapeMarkdown('a \\x stays'))->toBe('a \\x stays');
     });
 
+    it('collapses white space and line breaks but keeps the no-break spaces of a formatted amount', function (): void {
+        $amount = "12\u{00A0}500,00\u{00A0}K\u{010D}";
+        $narrow = "1\u{202F}000,00\u{202F}EUR";
+
+        expect(MailText::escapeMarkdown("a  b\n\tc"))->toBe('a b c')
+            ->and(MailText::escapeMarkdown($amount))->toBe($amount)
+            ->and(MailText::escapeMarkdown($narrow))->toBe($narrow);
+    });
+
     it('leaves angle brackets and ampersands alone', function (): void {
         expect(MailText::escapeMarkdown('A < B & C > D'))->toBe('A < B & C > D');
     });

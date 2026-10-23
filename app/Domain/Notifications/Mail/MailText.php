@@ -19,7 +19,7 @@ final class MailText
     /**
      * Makes a plain-text value inert in the Markdown of the mail: no link, image,
      * emphasis, code, heading or table can be built from it, and a line break can
-     * not start a new block.
+     * not start a new block. White space collapses to one space, except the no-break spaces of a formatted amount.
      *
      * `<` and `>` are left alone on purpose: the mail renderer HTML-encodes every
      * line before it parses the Markdown, so they can not open a tag, and a
@@ -29,7 +29,8 @@ final class MailText
      */
     public static function escapeMarkdown(string $text): string
     {
-        $flat = (string) preg_replace('/\s+/u', ' ', $text);
+        // A no-break space (U+00A0) and a narrow no-break space (U+202F) stay: they hold a formatted amount together.
+        $flat = (string) preg_replace('/[^\S\x{00A0}\x{202F}]+/u', ' ', $text);
 
         return (string) preg_replace('/([\\\\`*_\[\]()#|~!])/', '\\\\$1', $flat);
     }
