@@ -1192,9 +1192,13 @@ it('only names Phase 11 classes, methods and tests in CONTRIBUTING.md that exist
     foreach ([
         'PaymentLinks::reconcile()', 'RecordPayment::recordLocked()', 'RecordCardPayment', 'RecordRefundEvent', 'CardPayment::recordOnce()',
         'DeletePayment', 'StripeGateway', 'FakeStripeGateway', 'pay.show', 'webhooks.stripe',
+        'PaymentLinks::deactivateLive()', 'PayUrl::forInvoice()',
     ] as $name) {
         expect($bullet)->toContain($name);
     }
+
+    // Phase 14 (OA-1): the card switch is editable while the document is open, so the Phase 11 wording is gone.
+    expect($bullet)->not->toContain('is frozen at issue');
 
     // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists.
     preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet.repoContributingBullet('Phase 12.'), $matches, PREG_SET_ORDER);
@@ -1218,6 +1222,54 @@ it('only names Phase 11 classes, methods and tests in CONTRIBUTING.md that exist
         expect($bullet.repoContributingBullet('Phase 12.'))->toContain(basename($path, '.php'));
         expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$path} but the file does not exist");
     }
+});
+
+it('hands the payment method over to later phases: the Payment method and bank accounts bullet names only what exists', function () {
+    $bullet = repoContributingBullet('Payment method and bank accounts.');
+
+    expect($bullet)->not->toBe('');
+
+    // The mechanisms the text must keep naming (R-14-11-2).
+    foreach ([
+        'DocumentPayment::preselect()', 'PayUrl::forInvoice()', 'PaymentLinks::deactivateLive()', 'PayLinkBlock::applies()',
+        'BankAccountByIdTest', 'invoice_admin.bank_account_id', 'Phase 13',
+    ] as $name) {
+        expect($bullet)->toContain($name);
+    }
+
+    // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists. A test class lives
+    // under tests/ and is checked as a file below.
+    preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet, $matches, PREG_SET_ORDER);
+
+    expect(count($matches))->toBeGreaterThan(8);
+
+    foreach ($matches as $match) {
+        if (str_ends_with($match[1], 'Test')) {
+            continue;
+        }
+
+        $classes = repoClassesNamed($match[1]);
+
+        expect($classes)->not->toBe([], "CONTRIBUTING.md names {$match[1]} but no such class exists");
+
+        if (isset($match[2])) {
+            $exists = array_filter($classes, static fn (string $class): bool => method_exists($class, $match[2]));
+
+            expect($exists)->not->toBe([], "CONTRIBUTING.md names {$match[1]}::{$match[2]}() but no such method exists");
+        }
+    }
+
+    // The enforcing test the text names.
+    expect(is_file(base_path('tests/Arch/BankAccountByIdTest.php')))->toBeTrue('CONTRIBUTING.md names BankAccountByIdTest but the file does not exist');
+
+    // The columns, the checks and the open editing rules the text names are in the migrations of the phase.
+    expect(repoFile('database/migrations/2026_10_24_000200_add_payment_method_to_invoices.php'))->toContain('invoices_payment_method_kind_check')
+        ->and(repoFile('database/migrations/2026_10_24_000200_add_payment_method_to_invoices.php'))->toContain('invoices_issued_fields_check')
+        ->and(repoFile('database/migrations/2026_10_24_000300_add_bank_account_and_open_card_switch_to_invoice_admin.php'))->toContain('bank_account_id');
+
+    // The Editable invoices bullet lists the new write-path fields, and the Phase 11 wording "frozen at issue" is gone everywhere.
+    expect(repoContributingBullet('Editable invoices.'))->toContain('payment method, bank account and card switch')
+        ->and(repoFile('CONTRIBUTING.md'))->not->toContain('is frozen at issue');
 });
 
 it('documents the owner\'s Stripe setup in the README with placeholders only', function () {
