@@ -12,6 +12,7 @@ use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Actions\UpdateDraft;
+use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
@@ -660,5 +661,60 @@ describe('the lock of a sent document', function (): void {
             ->assertDontSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.')
             ->assertDontSee('Doklad byl odeslán e-mailem a je uzamčen.')
             ->assertDontSee('Odemknout');
+    });
+});
+
+describe('the warnings of a corrected total and the edit action', function (): void {
+    it('warns on a paid invoice whose corrected total is below what was paid, and keeps it paid', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        detailPay($invoice, '1000.00');
+        $line = app(PartnerContext::class)->runAsSystem(static fn (): InvoiceItem => InvoiceItem::query()->where('invoice_id', $invoice->id)->firstOrFail());
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['items' => [[
+            'id' => $line->id,
+            'description' => $line->description,
+            'quantity' => '1',
+            'unit' => $line->unit,
+            'unit_price' => $line->unitPrice()->toMajor(),
+        ]]]);
+
+        detail($invoice)
+            ->assertSee('Celková částka je nižší než už zaplacená částka '.detailMoney(100000).'.')
+            ->assertSee('Zaplaceno')
+            ->assertDontSee('Celková částka je nižší než dobropisovaná částka');
+    });
+
+    it('warns on an invoice whose total is below the credit notes', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        $line = app(PartnerContext::class)->runAsSystem(static fn (): InvoiceItem => InvoiceItem::query()->where('invoice_id', $invoice->id)->firstOrFail());
+        app(IssueCreditNote::class)->partial($this->admin, $invoice, [$line->id => '1']);
+
+        // The edit keeps a credited line whole, so the total is set directly, the way a state that predates the rule looks.
+        app(PartnerContext::class)->runAsSystem(static function () use ($invoice): void {
+            Invoice::query()->whereKey($invoice->id)->firstOrFail()->forceFill(['subtotal_minor' => 40000, 'vat_minor' => 0, 'total_minor' => 40000])->save();
+        });
+
+        detail($invoice)
+            ->assertSee('Celková částka je nižší než dobropisovaná částka '.detailMoney(50000).'.')
+            ->assertDontSee('Celková částka je nižší než už zaplacená částka');
+    });
+
+    it('shows no warning after an ordinary correction', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        detailPay($invoice, '400.00');
+
+        detail($invoice)
+            ->assertDontSee('Celková částka je nižší než');
+    });
+
+    it('offers "Upravit" on an open document only', function (): void {
+        $client = InvoiceFixtures::client();
+        $open = InvoiceFixtures::issued($client);
+        $locked = InvoiceFixtures::lockedIssued($client);
+        $credit = app(IssueCreditNote::class)->storno($this->admin, InvoiceFixtures::lockedIssued($client));
+
+        detail($open)->assertActionVisible('edit');
+        detail($locked)->assertActionHidden('edit');
+        detail($credit)->assertActionHidden('edit');
     });
 });

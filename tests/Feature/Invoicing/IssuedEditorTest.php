@@ -21,6 +21,8 @@ use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Notifications\Livewire\Notifications;
+use Filament\Notifications\NotificationMailbox;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Features\SupportTesting\Testable;
@@ -382,5 +384,77 @@ describe('the preview of a converted time line', function (): void {
 
         expect(iedLines($issued)[0]->line_total_minor)->toBe($expected->minor)
             ->and(iedRow($issued)->total_minor)->toBe($expected->minor);
+    });
+});
+
+/**
+ * The notifications sent so far, flushed from the mailbox.
+ *
+ * @return list<array{title: string, status: string}>
+ */
+function iedNotifications(): array
+{
+    app(NotificationMailbox::class)->flush();
+
+    $panel = new Notifications;
+    $panel->mount();
+    $panel->pullNotificationsFromSession();
+
+    $sent = [];
+
+    foreach ($panel->notifications as $notification) {
+        $sent[] = ['title' => (string) $notification->getTitle(), 'status' => (string) $notification->getStatus()];
+    }
+
+    return $sent;
+}
+
+describe('a total below what was paid', function (): void {
+    it('saves, says so with a warning after the success message, and does not block', function (): void {
+        $paid = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        app(RecordPayment::class)->handle($this->admin, $paid, ['amount' => '1000.00', 'paid_on' => '2026-10-13']);
+        $editor = iedEditor($paid);
+        [$key] = iedKeys($editor);
+
+        $editor->set("data.items.{$key}.quantity", '1')
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertRedirect(InvoiceResource::getUrl('view', ['record' => $paid]));
+
+        $sent = iedNotifications();
+
+        expect($sent)->toHaveCount(2)
+            ->and($sent[0])->toBe(['title' => 'Změny jsou uložené. PDF bylo vytvořeno znovu, doklad nebyl odeslán.', 'status' => 'success'])
+            ->and($sent[1])->toBe(['title' => 'Celková částka je nižší než už zaplacená částka '.Money::ofMinor(100000, 'CZK')->format('cs').'.', 'status' => 'warning'])
+            ->and(iedRow($paid)->total_minor)->toBe(50000);
+    });
+
+    it('sends the success message alone after an ordinary edit', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        app(RecordPayment::class)->handle($this->admin, $issued, ['amount' => '400.00', 'paid_on' => '2026-10-13']);
+        $editor = iedEditor($issued);
+        [$key] = iedKeys($editor);
+
+        $editor->set("data.items.{$key}.quantity", '3')->call('save')->assertHasNoFormErrors();
+
+        $sent = iedNotifications();
+
+        expect($sent)->toHaveCount(1)
+            ->and($sent[0]['status'])->toBe('success')
+            ->and(iedRow($issued)->total_minor)->toBe(150000);
+    });
+
+    it('refuses a total that is not positive under the table of lines and writes nothing', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        $editor = iedEditor($issued);
+        [$key] = iedKeys($editor);
+
+        $editor->set("data.items.{$key}.unit_price", '0')
+            ->set("data.items.{$key}.confirm_zero_price", true)
+            ->call('save')
+            ->assertHasFormErrors(['items'])
+            ->assertNoRedirect();
+
+        expect(iedRow($issued)->total_minor)->toBe(100000);
     });
 });

@@ -756,7 +756,8 @@ final class EditInvoice extends EditRecord
     /**
      * The stored lines have their ids, positions and previews after a save, so the form is filled again. After the save
      * of an issued document the page says what happened (D-09, D-10): the PDF was created again and nothing was sent,
-     * and one warning for each amount the new total fell below (D-04); the redirect to the detail follows.
+     * and one warning for each amount the new total fell below (D-04, {@see IssuedDocumentRules::warnings()}); the
+     * redirect to the detail follows.
      */
     protected function afterSave(): void
     {

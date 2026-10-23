@@ -19,6 +19,7 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Queries\ReceivablesReader;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
+use App\Domain\Invoicing\Support\IssuedDocumentRules;
 use App\Domain\Payments\Queries\PaymentLinkStatus;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Resources\ClientResource;
@@ -97,6 +98,14 @@ final class ViewInvoice extends ViewRecord
      * @var LinkStatusRow|null
      */
     private ?array $linkStatus = null;
+
+    /**
+     * What is odd about the total after a correction, read once per request for the two warning banners (D-04):
+     * {@see IssuedDocumentRules::warnings()}. Not persisted by Livewire.
+     *
+     * @var array<string, Money>|null
+     */
+    private ?array $warnings = null;
 
     /**
      * The lines of the invoice with what each can still be credited, read once per request for the credit dialog. Not
@@ -737,6 +746,14 @@ final class ViewInvoice extends ViewRecord
                 ->warning()
                 ->visible(fn (): bool => $this->isSentDocument() && $this->invoice()->isLocked())
                 ->actions([$this->unlockAction()]),
+            // A total below what was paid or credited is allowed after a correction and flagged, never blocked (D-04).
+            ...array_map(
+                fn (string $key): Callout => Callout::make(fn (): string => (string) __('invoices.warnings.'.$key, ['amount' => ($this->warnings()[$key] ?? Money::zero($this->invoice()->currency))->format('cs')]))
+                    ->key('warning_'.$key)
+                    ->warning()
+                    ->visible(fn (): bool => isset($this->warnings()[$key])),
+                ['total_below_paid', 'total_below_credited'],
+            ),
             ...PaymentLinkSection::banners(fn (): Invoice => $this->invoice(), fn () => $this->reloadAdminHalf(), fn (): array => $this->linkStatus()),
             Callout::make(__('invoices.detail.banners.awaiting_invoice'))
                 ->danger()
@@ -753,6 +770,16 @@ final class ViewInvoice extends ViewRecord
                 ->visible(fn (): bool => $this->invoice()->isIssued() && ! $this->pdfPresent())
                 ->actions([$this->regeneratePdfAction()]),
         ];
+    }
+
+    /**
+     * The warnings of the amounts of the document, by their copy key (see {@see self::$warnings}).
+     *
+     * @return array<string, Money>
+     */
+    private function warnings(): array
+    {
+        return $this->warnings ??= IssuedDocumentRules::warnings($this->invoice());
     }
 
     /**
@@ -1266,6 +1293,7 @@ final class ViewInvoice extends ViewRecord
         $invoice->load('admin.pdfDocument');
         $this->derived = null;
         $this->linkStatus = null;
+        $this->warnings = null;
     }
 
     private function invoice(): Invoice
