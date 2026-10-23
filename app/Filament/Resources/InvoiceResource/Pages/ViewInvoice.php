@@ -11,6 +11,7 @@ use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\RegeneratePdf;
 use App\Domain\Invoicing\Actions\UnlockInvoice;
 use App\Domain\Invoicing\Actions\UpdateInternalNote;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceStatus;
 use App\Domain\Invoicing\Models\Invoice;
@@ -963,7 +964,8 @@ final class ViewInvoice extends ViewRecord
                     ->state(static fn (Invoice $record): array => InvoiceColumns::bankLines($record))
                     ->listWithLineBreaks()
                     ->placeholder($empty)
-                    ->visible(static fn (Invoice $record): bool => $record->kind !== InvoiceKind::CreditNote),
+                    // D-01: only a transfer document names an account; an online one prints none and a credit note has no method.
+                    ->visible(static fn (Invoice $record): bool => $record->kind !== InvoiceKind::CreditNote && $record->payment_method === DocumentPaymentMethod::Transfer),
                 TextEntry::make('source_proforma')
                     ->label(__('invoices.detail.fields.source_proforma'))
                     ->state(static fn (Invoice $record): ?string => $record->proforma?->number)
@@ -971,7 +973,7 @@ final class ViewInvoice extends ViewRecord
                     ->visible(static fn (Invoice $record): bool => $record->proforma_id !== null),
                 TextEntry::make('payment_method')
                     ->label(__('invoices.detail.fields.payment_method'))
-                    ->state(static fn (): string => __('invoices.draft.payment_method_value'))
+                    ->state(static fn (Invoice $record): ?string => $record->payment_method?->getLabel())
                     ->visible(static fn (Invoice $record): bool => $record->kind !== InvoiceKind::CreditNote),
                 // The switch frozen at issue (PA-03; UI-SPEC Surface D): read only, no credit note has one.
                 TextEntry::make('card_payment')

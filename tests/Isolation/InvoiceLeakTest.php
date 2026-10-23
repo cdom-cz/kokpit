@@ -26,6 +26,7 @@ use App\Domain\Invoicing\Queries\ReceivablesReader;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
 use App\Domain\Payments\Enums\PaymentLinkState;
 use App\Domain\Payments\Models\PaymentLink;
+use App\Domain\Payments\Support\PayToken;
 use App\Domain\Payments\Support\PayUrl;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -54,14 +55,17 @@ use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Filament\Notifications\Livewire\DatabaseNotifications;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\SentMessage;
 use Tests\Support\Canary;
 use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
+use Tests\Support\FictionalIban;
 use Tests\Support\InvoiceFixtures;
 use Tests\Support\InvoiceScenario;
 use Tests\Support\PdfText;
@@ -948,5 +952,46 @@ describe('an invoice that was sent, unlocked and edited (Phase 10.1)', function 
         Livewire::test(ViewPartnerInvoice::class, ['record' => $invoice->getRouteKey()])
             ->assertSee('Zaplatit kartou')
             ->assertSee(Money::ofMinor(300_000, 'CZK')->format('cs'));
+    });
+});
+
+describe('the payment method (Phase 14)', function (): void {
+    it('shows a Partner the method of an own online document and never the account id, the token or an account number', function (): void {
+        $this->actingAs($this->admin);
+        $invoice = InvoiceFixtures::issued(Client::query()->findOrFail($this->clientA->id), [InvoiceFixtures::item('Online work', '1', '1000.00')]);
+        $accountId = (string) Str::uuid7();
+        $token = PayToken::generate();
+
+        // The way the database allows a switch of an open document: the Admin-only row holds the chosen account id, the
+        // card switch and the token. No payment link exists, so the Partner is due no pay button.
+        invoiceLeakSystem(static function () use ($invoice, $accountId, $token): void {
+            DB::update("update invoices set payment_method = 'online', bank_snapshot = null where id = ?", [$invoice->id]);
+            DB::update('update invoice_admin set bank_account_id = ?, card_payment_enabled = true, pay_token = ? where invoice_id = ?', [$accountId, $token, $invoice->id]);
+        });
+
+        // The Admin side of the pairing: the Admin row really holds what the Partner must not meet.
+        $admin = invoiceLeakSystem(static fn (): InvoiceAdmin => InvoiceAdmin::query()->where('invoice_id', $invoice->id)->firstOrFail());
+        expect($admin->bank_account_id)->toBe($accountId)
+            ->and($admin->pay_token)->toBe($token);
+
+        $this->actingAs($this->partnerA);
+        $pages = [
+            'the list' => $this->get(PartnerInvoiceResource::getUrl())->assertOk()->getContent(),
+            'the detail' => $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $invoice]))->assertOk()->assertSee('Online platba kartou')->getContent(),
+        ];
+        $ibans = [FictionalIban::czech('12'), FictionalIban::czech('34')];
+
+        foreach ($pages as $where => $html) {
+            $surface = invoiceLeakSurface((string) $html);
+
+            foreach ([$accountId, $token, 'bank_account_id', 'pay_token', 'card_payment_enabled', ...$ibans, ...array_map(static fn (string $iban): string => trim(chunk_split($iban, 4, ' ')), $ibans)] as $text) {
+                foreach (invoiceLeakForms($text) as $form) {
+                    expect(str_contains($surface, $form))->toBeFalse("{$where} must not hold \"{$text}\"");
+                }
+            }
+        }
+
+        expect(invoiceLeakSurface((string) $pages['the detail']))->not->toContain('Bankovní účet')
+            ->and(invoiceLeakSurface((string) $pages['the detail']))->not->toContain('Zaplatit kartou');
     });
 });

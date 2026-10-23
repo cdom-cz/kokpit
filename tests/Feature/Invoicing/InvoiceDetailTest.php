@@ -138,8 +138,41 @@ describe('the heading and the state', function (): void {
             ->assertSee('4. 11. 2026')
             ->assertSee((string) $invoice->variable_symbol)
             ->assertSee('Čeština')
-            ->assertSee('Převodem')
+            ->assertSee('Způsob úhrady')
+            ->assertSee('Bankovní převod')
+            ->assertDontSee('Převodem')
+            ->assertSee('Bankovní účet')
+            ->assertSee('IBAN')
             ->assertDontSee('Datum zdanitelného plnění');
+    });
+
+    it('shows the online method of a document and no bank account, but keeps the variable symbol and the card switch', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        app(PartnerContext::class)->runAsSystem(static function () use ($invoice): void {
+            DB::update("update invoices set payment_method = 'online', bank_snapshot = null where id = ?", [$invoice->id]);
+            DB::update('update invoice_admin set card_payment_enabled = true where invoice_id = ?', [$invoice->id]);
+        });
+
+        detail($invoice)
+            ->assertSee('Způsob úhrady')
+            ->assertSee('Online platba kartou')
+            ->assertDontSee('Bankovní převod')
+            ->assertDontSee('Bankovní účet')
+            ->assertDontSee('IBAN')
+            ->assertSee('Variabilní symbol')
+            ->assertSee((string) $invoice->variable_symbol)
+            ->assertSee('Platba kartou');
+    });
+
+    it('shows neither the method nor the bank account on a credit note', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $creditNote = app(IssueCreditNote::class)->storno($this->admin, $invoice);
+
+        detail($creditNote)
+            ->assertDontSee('Způsob úhrady')
+            ->assertDontSee('Bankovní převod')
+            ->assertDontSee('Bankovní účet');
     });
 });
 
