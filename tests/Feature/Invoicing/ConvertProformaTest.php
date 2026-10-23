@@ -20,6 +20,7 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
 use App\Domain\Invoicing\Queries\ReceivablesReader;
+use App\Domain\Invoicing\Support\InvoiceSnapshot;
 use App\Domain\Payments\Enums\PaymentLinkDeactivation;
 use App\Domain\Payments\Enums\PaymentLinkState;
 use App\Domain\Payments\Models\PaymentLink;
@@ -458,6 +459,100 @@ describe('the payment method of the converted invoice (Phase 14)', function (): 
             ->and($links->first()->deactivation_reason)->toBe(PaymentLinkDeactivation::Paid)
             ->and(convertSystem(static fn (): int => PaymentLink::query()->where('invoice_id', $invoice->id)->live()->count()))->toBe(0)
             ->and($proformaLinksOf())->toBe($proformaLinksBefore);
+    });
+});
+
+describe('the payment method of the converted invoice (Phase 14): edges', function (): void {
+    it('turns a transfer proforma with the second CZK account into a transfer invoice with that account and no card switch', function (): void {
+        Queue::fake();
+        CardPaymentSetup::enable();
+        [, $second] = InvoiceFixtures::configureAccounts(
+            InvoiceFixtures::account('Example CZK A', 'CZK', '11'),
+            InvoiceFixtures::account('Example CZK B', 'CZK', '22'),
+            InvoiceFixtures::account('Example EUR A', 'EUR', '33'),
+        );
+        $client = CardPaymentSetup::client();
+
+        $proforma = convertPaymentProforma($client, DocumentPaymentMethod::Transfer, $second->id);
+        $proformaRow = convertAdminRow($proforma);
+        convertPay($proforma, '3900', '2026-10-04');
+
+        $invoice = app(ConvertProforma::class)->handle($this->admin, $proforma);
+        $row = convertAdminRow($invoice);
+        $expected = app(InvoiceSnapshot::class)->bankAccount($second);
+
+        // The proforma itself carried the card switch (the client flag is on), the converted invoice must not.
+        expect($proformaRow->card_payment_enabled)->toBeTrue()
+            ->and($invoice->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and($invoice->bank_snapshot)->toEqual($expected)
+            ->and($row->bank_account_id)->toBe($second->id)
+            ->and($row->card_payment_enabled)->toBeFalse()
+            ->and($row->pay_token)->toBeNull()
+            ->and(convertSystem(static fn (): int => PaymentLink::query()->where('invoice_id', $invoice->id)->count()))->toBe(0);
+    });
+
+    it('converts with the first account of the currency when the account the proforma chose was removed from the settings', function (): void {
+        Queue::fake();
+        [$first, $second] = InvoiceFixtures::configureAccounts(
+            InvoiceFixtures::account('Example CZK A', 'CZK', '11'),
+            InvoiceFixtures::account('Example CZK B', 'CZK', '22'),
+        );
+        $client = InvoiceFixtures::client();
+
+        $proforma = convertPaymentProforma($client, DocumentPaymentMethod::Transfer, $second->id);
+        convertPay($proforma, '3900', '2026-10-04');
+        InvoiceFixtures::configureAccounts($first);
+
+        $invoice = app(ConvertProforma::class)->handle($this->admin, $proforma);
+
+        expect($invoice->bank_snapshot)->toEqual(app(InvoiceSnapshot::class)->bankAccount($first))
+            ->and(convertAdminRow($invoice)->bank_account_id)->toBe($first->id);
+    });
+
+    it('refuses the conversion with bank_missing and writes nothing when no account of the currency is left', function (): void {
+        Queue::fake();
+        [, , $eur] = InvoiceFixtures::configureAccounts(
+            InvoiceFixtures::account('Example CZK A', 'CZK', '11'),
+            InvoiceFixtures::account('Example CZK B', 'CZK', '22'),
+            InvoiceFixtures::account('Example EUR A', 'EUR', '33'),
+        );
+        $client = InvoiceFixtures::client();
+
+        $proforma = convertPaymentProforma($client, DocumentPaymentMethod::Transfer);
+        convertPay($proforma, '3900', '2026-10-04');
+        InvoiceFixtures::configureAccounts($eur);
+        $sequences = convertSequences();
+
+        try {
+            app(ConvertProforma::class)->handle($this->admin, $proforma);
+            $this->fail('The conversion had to be refused.');
+        } catch (ValidationException $exception) {
+            expect($exception->errors())->toHaveKey('bank_missing');
+        }
+
+        expect(Invoice::query()->whereNotNull('proforma_id')->count())->toBe(0)
+            ->and(convertSequences())->toBe($sequences)
+            ->and(InvoicePayment::query()->count())->toBe(1)
+            ->and(Transaction::query()->count())->toBe(0);
+    });
+
+    it('converts an online proforma while online payments are off in the settings: online, switch off, no token, no link', function (): void {
+        Queue::fake();
+        CardPaymentSetup::enable();
+        $client = CardPaymentSetup::client();
+
+        $proforma = convertPaymentProforma($client, DocumentPaymentMethod::Online);
+        convertPay($proforma, '3900', '2026-10-04');
+        CardPaymentSetup::onlinePayments(false);
+
+        $invoice = app(ConvertProforma::class)->handle($this->admin, $proforma);
+        $row = convertAdminRow($invoice);
+
+        expect($invoice->payment_method)->toBe(DocumentPaymentMethod::Online)
+            ->and($invoice->bank_snapshot)->toBeNull()
+            ->and($row->card_payment_enabled)->toBeFalse()
+            ->and($row->pay_token)->toBeNull()
+            ->and(convertSystem(static fn (): int => PaymentLink::query()->where('invoice_id', $invoice->id)->count()))->toBe(0);
     });
 });
 
