@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 13
 current_phase_name: Unified e-mail layout and HTML e-mail templates
-status: executing
-stopped_at: Completed 13-08-PLAN.md
-last_updated: "2026-10-23T21:32:13.229Z"
+status: verifying
+stopped_at: Completed 13-09-PLAN.md
+last_updated: "2026-10-23T21:54:22.556Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 13 execution started
-state_head: c6ea26a4c35de698b323a80024aa62d338d566a3
+state_head: 5110a90909fc34ba17d9800229f980c1a470b9af
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 285
-  completed_plans: 284
+  completed_plans: 285
   percent: 44
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 Phase: 13 (Unified e-mail layout and HTML e-mail templates) — EXECUTING
 Plan: 9 of 9
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-23 — Phase 13 execution started
 
 Progress: [████░░░░░░] 44%
@@ -344,6 +344,7 @@ Progress: [████░░░░░░] 44%
 | Phase 13 P06 | 30 min | 2 tasks | 10 files |
 | Phase 13 P07 | 25min | 3 tasks | 10 files |
 | Phase 13 P08 | 45min | 3 tasks | 11 files |
+| Phase 13 P09 | 45 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -862,6 +863,7 @@ Recent decisions affecting current work:
 - [Phase 13]: R-13-07-3: the password reset is Kokpit's subclass of Filament's notification overriding only buildMailMessage; expiry read from the default broker config and pluralised in Czech
 - [Phase 13]: 13-07: the plain-text layout turns the layout's own <br> into line breaks before stripping tags, so a multi-line sign-off keeps its lines
 - [Phase 13]: 13-08: the Platby tab shows the confirmation state per payment and the record dialog names the invoice e-mail it will reach; the Markdown escape keeps no-break spaces of amounts
+- [Phase 13]: 13-09: CONTRIBUTING E-mail bullet guarded by RepositoryFilesTest; PROJECT.md records the Phase 13 decisions and assumptions A-13-1, A-13-3 to A-13-7 as Pending for the owner
 
 ### Pending Todos
 
@@ -925,6 +927,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T21:32:10.753Z
-Stopped at: Completed 13-08-PLAN.md
+Last session: 2026-10-23T21:54:20.581Z
+Stopped at: Completed 13-09-PLAN.md
 Resume file: None
