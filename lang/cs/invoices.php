@@ -388,6 +388,17 @@ return [
         ],
     ],
 
+    // The editor of an open issued invoice or proforma (plan 10.1-06): the same editor as a draft, in issued mode.
+    'edit_issued' => [
+        'title' => 'Úprava dokladu :number',
+        'badge' => 'Vystaveno, lze upravit',
+        'save' => 'Uložit změny',
+        'cancel' => 'Zpět na doklad',
+        'saved' => 'Změny jsou uložené. PDF bylo vytvořeno znovu, doklad nebyl odeslán.',
+        'number_hint' => 'Číslo a druh dokladu se nemění.',
+        'credited_hint' => 'Dobropisovaná položka: měnit lze jen text.',
+    ],
+
     // Surface E: the issued document page.
     'detail' => [
         'sections' => [
@@ -456,6 +467,7 @@ return [
             'edit_note' => 'Upravit poznámku',
             'open' => 'Otevřít doklad',
             'unlock' => 'Odemknout',
+            'edit' => 'Upravit',
         ],
         'unlock' => [
             'heading' => 'Odemknout doklad :number',

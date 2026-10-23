@@ -13,6 +13,7 @@ use App\Domain\Invoicing\Actions\AddFixedAmount;
 use App\Domain\Invoicing\Actions\DeleteDraft;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\UpdateDraft;
+use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Issuing\IssueContext;
 use App\Domain\Invoicing\Models\Invoice;
@@ -21,6 +22,7 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Support\DraftPreview;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
 use App\Domain\Invoicing\Support\IssueChecks;
+use App\Domain\Invoicing\Support\IssuedDocumentRules;
 use App\Domain\Payments\Support\CardPaymentSwitch;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Models\Project;
@@ -72,16 +74,28 @@ use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 use Throwable;
 
 /**
- * The draft editor (IN-02, IN-07, IN-08, IN-10; UI-SPEC Surface C): the header fields, the items table and the
- * summary, as a thin layer over the domain Actions.
+ * The document editor (IN-02, IN-07, IN-08, IN-10, IN-13, IN-14; UI-SPEC Surface C): the header fields, the items table
+ * and the summary, as a thin layer over the domain Actions. It serves two kinds of document with one form (research:
+ * generalise the editor, never fork it):
  *
- * The form state is a plain array. "Uložit koncept" hands it to {@see UpdateDraft}, which re-validates every key and
- * computes every amount, so a value the browser sends for a total, a position or an id of another document changes
- * nothing (T-10-66). `Repeater::relationship()` is not used and the page never writes a row itself.
+ * - a draft, in draft mode: "Uložit koncept" hands the form state to {@see UpdateDraft}, and the header actions
+ *   issue and delete the draft;
+ * - an open issued invoice or proforma, in issued mode (R-10.1-06-1): reached from the detail, the number and the kind
+ *   are shown read-only, the card switch, "Vystavit" and "Smazat koncept" are absent, the currency, the language and
+ *   the dates are read-only, and "Uložit změny" hands only the lines and the notes to {@see UpdateIssuedDocument}. The
+ *   address of a document that cannot be edited (locked, a credit note, cancelled, converted, an e-mail on its way, see
+ *   {@see IssuedDocumentRules::editBlocker()}) redirects to the detail with the reason as a notification. A line that a
+ *   credit note credits shows its quantity, unit and unit price disabled and cannot be removed (A4); the Action keeps
+ *   that rule whatever the browser sends.
+ *
+ * The form state is a plain array. The Action re-validates every key and computes every amount, so a value the
+ * browser sends for a total, a position or an id of another document changes nothing (T-10-66).
+ * `Repeater::relationship()` is not used and the page never writes a row itself.
  *
  * Ruling R-25-1: the amount of each line and the summary are recomputed on the server on every change (the quantity
  * and the price are debounced) by {@see DraftEditorPreview}, never in JavaScript, so the single rounding point of the
@@ -101,7 +115,20 @@ final class EditInvoice extends EditRecord
      */
     protected ?bool $hasUnsavedDataChangesAlert = true;
 
+    /**
+     * Whether the page was opened on an issued document. Locked, so the browser cannot flip the mode.
+     */
+    #[Locked]
+    public bool $issuedEditor = false;
+
     protected ?DraftEditorPreview $preview = null;
+
+    /**
+     * The credited line ids of an issued document, read once per request (see {@see self::creditedIds()}).
+     *
+     * @var array<string, true>|null
+     */
+    protected ?array $credited = null;
 
     /**
      * The Admin check of every request, before any other code of the page runs. A Partner is refused with 403 before
@@ -113,21 +140,61 @@ final class EditInvoice extends EditRecord
     }
 
     /**
-     * An issued document is never editable: its edit address goes to the document page.
+     * A draft opens as it always did. An issued document opens only while it can be edited
+     * ({@see Invoice::isEditable()}, which is {@see IssuedDocumentRules::editBlocker()} being null); any other issued document goes to the document page with the reason
+     * as a warning (R-10.1-06-1).
      */
     public function mount(int|string $record): void
     {
+        // The form is built while the parent mounts, so the mode is known before that.
+        $first = $this->resolveRecord($record);
+        $this->issuedEditor = $first instanceof Invoice && $first->isIssued();
+
         parent::mount($record);
 
         $invoice = $this->invoice();
 
-        if (! $invoice->isDraft()) {
-            $this->redirect(InvoiceResource::getUrl('view', ['record' => $invoice]));
+        if ($invoice->isDraft()) {
+            return;
         }
+
+        $blocker = IssuedDocumentRules::editBlocker($invoice);
+
+        if ($blocker === null) {
+            return;
+        }
+
+        Notification::make()->warning()->title(__('invoices.errors.'.$blocker))->send();
+
+        $this->redirect(InvoiceResource::getUrl('view', ['record' => $invoice]));
+    }
+
+    /**
+     * Whether the page edits an issued document. It is decided once, by the record of the first request ({@see
+     * self::mount()}), and kept for the whole life of the page: an editor opened on a draft stays a draft editor even
+     * when the draft is issued in another tab meanwhile, so its "Vystavit" and "Uložit koncept" meet the refusal of the
+     * Action and send the Admin to the detail instead of losing their buttons.
+     */
+    private function issuedMode(): bool
+    {
+        return $this->issuedEditor;
+    }
+
+    /**
+     * An issued document has no tabs under its editor: the payments, the e-mail log and the history live on the detail,
+     * and a payment recorded here would move the amounts under an open edit.
+     */
+    public function getRelationManagers(): array
+    {
+        return $this->issuedMode() ? [] : parent::getRelationManagers();
     }
 
     public function getTitle(): string
     {
+        if ($this->issuedMode()) {
+            return (string) __('invoices.edit_issued.title', ['number' => (string) $this->invoice()->number]);
+        }
+
         return match ($this->invoice()->kind) {
             InvoiceKind::Proforma => __('invoices.navigation.draft_proforma'),
             InvoiceKind::CreditNote => __('invoices.navigation.draft_credit_note'),
@@ -137,6 +204,15 @@ final class EditInvoice extends EditRecord
 
     public function getHeading(): Htmlable
     {
+        if ($this->issuedMode()) {
+            $badges = Blade::render(
+                '<x-filament::badge color="gray" style="vertical-align: middle;">{{ $kind }}</x-filament::badge> <x-filament::badge color="info" style="vertical-align: middle;">{{ $label }}</x-filament::badge>',
+                ['kind' => $this->invoice()->kind->getLabel(), 'label' => __('invoices.edit_issued.badge')],
+            );
+
+            return new HtmlString(e($this->getTitle()).' '.$badges);
+        }
+
         $badge = Blade::render('<x-filament::badge color="gray" style="vertical-align: middle;">{{ $label }}</x-filament::badge>', ['label' => __('invoices.draft.badge')]);
 
         return new HtmlString(e($this->getTitle()).' '.$badge);
@@ -157,10 +233,16 @@ final class EditInvoice extends EditRecord
      * "Smazat koncept" (IN-10): the destructive confirmation, DeleteDraft, and back to the list; "Vystavit" (IN-01,
      * UI-SPEC Surface D): the pre-issue check and the confirmation of the issue.
      *
+     * An issued document has neither: it is already issued and it is not thrown away here.
+     *
      * @return array<Action>
      */
     protected function getHeaderActions(): array
     {
+        if ($this->issuedMode()) {
+            return [];
+        }
+
         return [$this->deleteDraftAction(), $this->issueAction()];
     }
 
@@ -447,12 +529,23 @@ final class EditInvoice extends EditRecord
     }
 
     /**
-     * A single "Uložit koncept" in the form footer; autosave is not used.
+     * A single "Uložit koncept" in the form footer; autosave is not used. An issued document has "Uložit změny" and a
+     * gray link back to the document.
      *
      * @return array<Action>
      */
     protected function getFormActions(): array
     {
+        if ($this->issuedMode()) {
+            return [
+                $this->getSaveFormAction()->label(__('invoices.edit_issued.save')),
+                Action::make('cancel')
+                    ->label(__('invoices.edit_issued.cancel'))
+                    ->url(InvoiceResource::getUrl('view', ['record' => $this->invoice()]))
+                    ->color('gray'),
+            ];
+        }
+
         return [
             $this->getSaveFormAction()
                 ->label(__('invoices.draft.actions.save'))
@@ -508,6 +601,10 @@ final class EditInvoice extends EditRecord
      */
     protected function mutateFormDataBeforeSave(array $data): array
     {
+        if ($this->issuedMode()) {
+            return $this->issuedValues($data);
+        }
+
         $items = [];
 
         foreach (array_values(is_array($data['items'] ?? null) ? $data['items'] : []) as $item) {
@@ -543,6 +640,56 @@ final class EditInvoice extends EditRecord
     }
 
     /**
+     * The values {@see UpdateIssuedDocument} takes: the lines and the two notes, nothing else. The number, the kind,
+     * the currency, the language, the dates and the card switch are not read from the form at all (T-10.1-24). A
+     * credited line whose fields did not travel (a disabled field is not part of the state) takes them from the stored
+     * line; the Action compares them with the stored line again.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{items: list<array<string, mixed>>, note: mixed, internal_note: mixed}
+     */
+    private function issuedValues(array $data): array
+    {
+        $invoice = $this->invoice();
+        $credited = IssuedDocumentRules::creditedLineIds($invoice);
+        $stored = InvoiceItem::query()->where('invoice_id', $invoice->id)->get()->keyBy('id');
+        $items = [];
+
+        foreach (array_values(is_array($data['items'] ?? null) ? $data['items'] : []) as $item) {
+            $line = is_array($item) ? $item : [];
+            $id = is_string($line['id'] ?? null) ? $line['id'] : null;
+            $row = [
+                'id' => $id,
+                'description' => $line['description'] ?? null,
+                'quantity' => $line['quantity'] ?? null,
+                'unit' => $line['unit'] ?? null,
+                'unit_price' => $line['unit_price'] ?? null,
+                'confirm_zero_price' => (bool) ($line['confirm_zero_price'] ?? false),
+            ];
+
+            $own = $id === null ? null : $stored->get($id);
+
+            if ($own instanceof InvoiceItem && isset($credited[$own->id])) {
+                $state = $this->itemState($own, $invoice->currency);
+
+                foreach (['quantity', 'unit', 'unit_price'] as $field) {
+                    if (! array_key_exists($field, $line)) {
+                        $row[$field] = $state[$field];
+                    }
+                }
+            }
+
+            $items[] = $row;
+        }
+
+        return [
+            'items' => $items,
+            'note' => $data['note'] ?? null,
+            'internal_note' => $data['internal_note'] ?? null,
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      */
     protected function handleRecordUpdate(Model $record, array $data): Model
@@ -551,6 +698,10 @@ final class EditInvoice extends EditRecord
 
         $actor = auth()->user();
         assert($actor instanceof User);
+
+        if ($this->issuedMode()) {
+            return $this->updateIssued($actor, $record, $data);
+        }
 
         // The Action names an item error `items.<n>.<field>` by position; the repeater keys its rows by uuid.
         $keys = array_keys(is_array($this->data['items'] ?? null) ? $this->data['items'] : []);
@@ -570,13 +721,79 @@ final class EditInvoice extends EditRecord
     }
 
     /**
-     * The stored lines have their ids, positions and previews after a save, so the form is filled again.
+     * Saves an open issued document through {@see UpdateIssuedDocument}. An error of a line is shown under its row,
+     * exactly as for a draft; the error `document` (the document was locked, sent or queued in the meantime) is a
+     * notification and nothing is written; a total that is not positive is shown under the table of lines.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function updateIssued(User $actor, Invoice $record, array $data): Invoice
+    {
+        $keys = array_keys(is_array($this->data['items'] ?? null) ? $this->data['items'] : []);
+
+        return $this->withFormErrors(function () use ($actor, $record, $data, $keys): Invoice {
+            try {
+                return app(UpdateIssuedDocument::class)->handle($actor, $record, $data);
+            } catch (ValidationException $exception) {
+                $errors = $exception->errors();
+
+                if (isset($errors['document'])) {
+                    Notification::make()->danger()->title(implode(' ', $errors['document']))->send();
+
+                    throw new Halt;
+                }
+
+                if (isset($errors['total_not_positive'])) {
+                    $errors['items'] = [...($errors['items'] ?? []), ...$errors['total_not_positive']];
+                    unset($errors['total_not_positive']);
+                }
+
+                throw self::underRows(ValidationException::withMessages($errors), $keys);
+            }
+        });
+    }
+
+    /**
+     * The stored lines have their ids, positions and previews after a save, so the form is filled again. After the save
+     * of an issued document the page says what happened (D-09, D-10): the PDF was created again and nothing was sent,
+     * and one warning for each amount the new total fell below (D-04); the redirect to the detail follows.
      */
     protected function afterSave(): void
     {
         $this->invoice()->refresh();
         $this->preview = null;
+        $this->credited = null;
         $this->fillForm();
+
+        if (! $this->issuedMode()) {
+            return;
+        }
+
+        Notification::make()->success()->title(__('invoices.edit_issued.saved'))->send();
+
+        foreach (IssuedDocumentRules::warnings($this->invoice()) as $key => $amount) {
+            Notification::make()
+                ->warning()
+                ->title(__('invoices.warnings.'.$key, ['amount' => $amount->format('cs')]))
+                ->persistent()
+                ->send();
+        }
+    }
+
+    /**
+     * An issued document sends its own message from {@see self::afterSave()}, in the order success first.
+     */
+    protected function getSavedNotification(): ?Notification
+    {
+        return $this->issuedMode() ? null : parent::getSavedNotification();
+    }
+
+    /**
+     * An issued document goes back to its detail after the save, where the new total, the PDF and the warnings are.
+     */
+    protected function getRedirectUrl(): ?string
+    {
+        return $this->issuedMode() ? InvoiceResource::getUrl('view', ['record' => $this->invoice()]) : parent::getRedirectUrl();
     }
 
     /**
@@ -593,6 +810,10 @@ final class EditInvoice extends EditRecord
 
     private function documentSection(): Section
     {
+        // An issued document keeps its number, kind, currency, language and dates read-only here (D-08); the plans of
+        // the currency and the dates open them later.
+        $issued = $this->issuedMode();
+
         return Section::make(__('invoices.draft.sections.document'))
             ->columns(['default' => 1, 'lg' => 2])
             ->schema([
@@ -605,10 +826,18 @@ final class EditInvoice extends EditRecord
                     ->state(fn (): string => $this->invoice()->kind->getLabel())
                     ->badge()
                     ->color('gray'),
+                TextEntry::make('document_number')
+                    ->label(__('invoices.detail.fields.number'))
+                    ->state(fn (): string => (string) $this->invoice()->number)
+                    ->visible($issued),
+                Text::make(__('invoices.edit_issued.number_hint'))
+                    ->color('gray')
+                    ->visible($issued),
                 Select::make('currency')
                     ->label(__('invoices.draft.fields.currency'))
                     ->options(fn (): array => $this->currencyOptions())
                     ->native(false)
+                    ->disabled($issued)
                     ->required()
                     ->live()
                     ->afterStateUpdated(function (Get $get, Set $set, mixed $state, mixed $old): void {
@@ -618,15 +847,18 @@ final class EditInvoice extends EditRecord
                     ->label(__('invoices.draft.fields.bank_account'))
                     ->state(fn (Get $get): HtmlString => $this->bankAccountState($get('currency')))
                     ->color(fn (Get $get): ?string => $this->bankAccountFor($get('currency')) === null ? 'danger' : null)
-                    ->html(),
+                    ->html()
+                    ->visible(! $issued),
                 Select::make('language')
                     ->label(__('invoices.draft.fields.language'))
                     ->options(InvoiceLanguage::class)
                     ->native(false)
+                    ->disabled($issued)
                     ->required(),
                 Group::make([
                     DatePicker::make('issue_date')
                         ->label(__('invoices.draft.fields.issue_date'))
+                        ->disabled($issued)
                         ->live()
                         ->afterStateUpdated(function (Get $get, Set $set): void {
                             $this->followIssueDate($get, $set);
@@ -635,7 +867,8 @@ final class EditInvoice extends EditRecord
                 ]),
                 Group::make([
                     DatePicker::make('due_date')
-                        ->label(__('invoices.draft.fields.due_date')),
+                        ->label(__('invoices.draft.fields.due_date'))
+                        ->disabled($issued),
                     Hidden::make('due_date_default'),
                 ]),
                 // IN-08: the taxable-supply date exists on a VAT payer's document only; in the non-payer mode the
@@ -652,11 +885,11 @@ final class EditInvoice extends EditRecord
                     ->label(__('invoices.draft.fields.card_payment'))
                     ->helperText(fn (): string => $this->cardPaymentHelper())
                     ->disabled(fn (): bool => ! app(CardPaymentSwitch::class)->available())
-                    ->visible(fn (): bool => $this->invoice()->kind->carriesPayment()),
+                    ->visible(fn (): bool => ! $this->issuedMode() && $this->invoice()->kind->carriesPayment()),
                 TextEntry::make('variable_symbol')
                     ->label(__('invoices.draft.fields.variable_symbol'))
-                    ->state(__('invoices.draft.helpers.variable_symbol'))
-                    ->color('gray'),
+                    ->state(fn (): string => $this->issuedMode() ? (string) $this->invoice()->variable_symbol : (string) __('invoices.draft.helpers.variable_symbol'))
+                    ->color(fn (): ?string => $this->issuedMode() ? null : 'gray'),
                 Textarea::make('note')
                     ->label(__('invoices.draft.fields.note'))
                     ->maxLength(500)
@@ -700,6 +933,9 @@ final class EditInvoice extends EditRecord
                                 ->hiddenLabel()
                                 ->maxLength(500)
                                 ->extraInputAttributes(['data-draft-description' => 'true']),
+                            Text::make(__('invoices.edit_issued.credited_hint'))
+                                ->color('gray')
+                                ->visible(fn (Get $get): bool => $this->isCreditedRow($get)),
                             Text::make(__('invoices.draft.badges.from_time'))
                                 ->badge()
                                 ->color('gray')
@@ -712,6 +948,8 @@ final class EditInvoice extends EditRecord
                                 ->label(__('invoices.draft.columns.quantity'))
                                 ->hiddenLabel()
                                 ->default('1')
+                                ->disabled(fn (Get $get): bool => $this->isCreditedRow($get))
+                                ->dehydrated()
                                 ->live(debounce: 500)
                                 ->extraInputAttributes(['inputmode' => 'decimal', 'style' => 'text-align: right; font-variant-numeric: tabular-nums;']),
                             Text::make(fn (Get $get): string => DurationFormat::hoursMinutes($this->lineOf($get)['seconds'] ?? 0))
@@ -724,11 +962,15 @@ final class EditInvoice extends EditRecord
                             ->hiddenLabel()
                             ->default('ks')
                             ->datalist(['h', 'ks', 'den', 'měs.', 'paušál'])
+                            ->disabled(fn (Get $get): bool => $this->isCreditedRow($get))
+                            ->dehydrated()
                             ->maxLength(16),
                         Group::make([
                             TextInput::make('unit_price')
                                 ->label(__('invoices.draft.columns.unit_price'))
                                 ->hiddenLabel()
+                                ->disabled(fn (Get $get): bool => $this->isCreditedRow($get))
+                                ->dehydrated()
                                 ->live(debounce: 500)
                                 ->extraInputAttributes(['inputmode' => 'decimal', 'style' => 'text-align: right; font-variant-numeric: tabular-nums;']),
                             Checkbox::make('confirm_zero_price')
@@ -760,16 +1002,19 @@ final class EditInvoice extends EditRecord
                     ->reorderableWithButtons(false)
                     ->deleteAction(fn (Action $action, Component $component): Action => $action
                         ->label(fn (array $arguments): string => __('invoices.draft.item_actions.delete', ['n' => $this->positionOf($component, $arguments['item'] ?? null)]))
-                        ->icon(Heroicon::OutlinedTrash))
+                        ->icon(Heroicon::OutlinedTrash)
+                        // A line a credit note credits cannot be removed (A4); the Action refuses it as well.
+                        ->visible(fn (array $arguments, Component $component): bool => ! $this->isCreditedKey($component, $arguments['item'] ?? null)))
                     ->moveUpAction(fn (Action $action): Action => $action->label(__('invoices.draft.item_actions.move_up')))
                     ->moveDownAction(fn (Action $action): Action => $action->label(__('invoices.draft.item_actions.move_down'))),
                 Text::make(__('invoices.errors.items_cap', ['max' => $max]))
                     ->color('gray')
                     ->visible(fn (): bool => count($this->lineStates()) >= $max),
+                // The buttons that add time or a fixed amount are for a draft; plan 10.1-09 opens them for an issued one.
                 Actions::make([
                     $this->addFixedAmountAction(),
                     $this->addTimeAction(),
-                ])->key('itemActions'),
+                ])->key('itemActions')->visible(! $this->issuedMode()),
             ]);
     }
 
@@ -887,7 +1132,7 @@ final class EditInvoice extends EditRecord
     /**
      * The strings of the summary block, computed on the server from the lines in the form (R-25-1).
      *
-     * @return array{subtotal: string|null, vat: string|null, total: string, czk: string|null, czkMissing: string|null}
+     * @return array{subtotal: string|null, vat: string|null, total: string, czk: string|null, czkNote: string|null, czkMissing: string|null}
      */
     private function summaryData(): array
     {
@@ -900,16 +1145,24 @@ final class EditInvoice extends EditRecord
 
         $summary = $this->preview()->summary($totals, $currency);
         $czk = null;
+        $note = null;
         $missing = null;
 
         if ($summary['czk'] !== null) {
             $quote = $summary['czk'];
             $rate = RateFormat::display($quote['rate']).($quote['unit'] === 1 ? '' : ' / '.$quote['unit']);
-            $czk = (string) __('invoices.draft.summary.czk_preview', [
-                'czk' => $quote['czk']->format('cs'),
-                'rate' => $rate,
-                'date' => IssueChecks::czechDate($quote['rate_date']),
-            ]);
+
+            if ($this->issuedMode()) {
+                // The figures stored at issue, as the detail shows them; the rate is never looked up again.
+                $czk = (string) __('invoices.detail.summary.czk_total', ['czk' => $quote['czk']->format('cs')]);
+                $note = (string) __('invoices.detail.summary.rate', ['date' => IssueChecks::czechDate($quote['rate_date']), 'rate' => $rate]);
+            } else {
+                $czk = (string) __('invoices.draft.summary.czk_preview', [
+                    'czk' => $quote['czk']->format('cs'),
+                    'rate' => $rate,
+                    'date' => IssueChecks::czechDate($quote['rate_date']),
+                ]);
+            }
         } elseif ($summary['czk_missing']) {
             $missing = (string) __('invoices.errors.cnb_missing', ['currency' => $currency, 'date' => IssueChecks::czechDate(DraftEditorPreview::today())]);
         }
@@ -920,6 +1173,7 @@ final class EditInvoice extends EditRecord
             'vat' => null,
             'total' => $summary['total']->format('cs'),
             'czk' => $czk,
+            'czkNote' => $note,
             'czkMissing' => $missing,
         ];
     }
@@ -1199,6 +1453,11 @@ final class EditInvoice extends EditRecord
      */
     private function currentCurrency(): string
     {
+        // The currency of an issued document is read-only here, whatever the form state holds.
+        if ($this->issuedMode()) {
+            return $this->invoice()->currency;
+        }
+
         $currency = $this->data['currency'] ?? null;
 
         return is_string($currency) && Money::isKnownCurrency(strtoupper($currency)) ? strtoupper($currency) : $this->invoice()->currency;
@@ -1263,6 +1522,47 @@ final class EditInvoice extends EditRecord
         $items = $this->data['items'] ?? [];
 
         return is_array($items) ? array_values(array_filter($items, 'is_array')) : [];
+    }
+
+    /**
+     * The ids of the lines of this document that a credit note line names (A4), read once per request; empty for a draft.
+     * It is recomputed from the database on every request and never kept in the Livewire state, where a browser could
+     * change it.
+     *
+     * @return array<string, true>
+     */
+    private function creditedIds(): array
+    {
+        if (! $this->issuedMode()) {
+            return [];
+        }
+
+        return $this->credited ??= IssuedDocumentRules::creditedLineIds($this->invoice());
+    }
+
+    /**
+     * Whether the row the closure runs in is a line that a credit note credits.
+     */
+    private function isCreditedRow(Get $get): bool
+    {
+        $id = self::text($get('id'));
+
+        return $id !== null && isset($this->creditedIds()[$id]);
+    }
+
+    /**
+     * Whether the row with the repeater key is a line that a credit note credits.
+     */
+    private function isCreditedKey(Component $component, mixed $key): bool
+    {
+        if (! is_string($key) && ! is_int($key)) {
+            return false;
+        }
+
+        $row = ($component->getRawState() ?? [])[$key] ?? null;
+        $id = is_array($row) ? self::text($row['id'] ?? null) : null;
+
+        return $id !== null && isset($this->creditedIds()[$id]);
     }
 
     /**

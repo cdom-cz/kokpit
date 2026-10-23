@@ -238,11 +238,20 @@ describe('the tracer: open a draft, change a line, save, and see the server figu
         expect(storedLines($draft)[1]->quantity)->toBe('1.0000');
     });
 
-    it('redirects the edit address of an issued document to its page', function (): void {
-        $issued = InvoiceFixtures::issued(InvoiceFixtures::client());
+    it('redirects the edit address of a locked issued document to its page', function (): void {
+        $locked = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
 
-        $this->get(InvoiceResource::getUrl('edit', ['record' => $issued]))
-            ->assertRedirect(InvoiceResource::getUrl('view', ['record' => $issued]));
+        $this->get(InvoiceResource::getUrl('edit', ['record' => $locked]))
+            ->assertRedirect(InvoiceResource::getUrl('view', ['record' => $locked]));
+    });
+
+    it('opens the editor of an open issued document in issued mode instead of redirecting', function (): void {
+        $open = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        $this->get(InvoiceResource::getUrl('edit', ['record' => $open]))
+            ->assertOk()
+            ->assertSee('Úprava dokladu '.$open->number)
+            ->assertSee('Uložit změny');
     });
 
     it('answers a Partner with 403 on the editor, before the draft is looked up', function (): void {

@@ -9,6 +9,7 @@ use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
 use App\Domain\Shared\Money\Money;
 use Carbon\CarbonImmutable;
@@ -94,6 +95,26 @@ final class IssuedDocumentRules
         }
 
         return $warnings;
+    }
+
+    /**
+     * The ids of the lines of the document that a credit note line names, draft or issued (assumption A4): such a line
+     * keeps its quantity, unit and unit price and cannot be deleted. The write path and the editor ask here, so both
+     * see the same lines.
+     *
+     * @return array<string, true> the ids as keys
+     */
+    public static function creditedLineIds(Invoice $invoice): array
+    {
+        /** @var array<string, true> $credited */
+        $credited = InvoiceItem::query()
+            ->whereIn('credited_item_id', InvoiceItem::query()->where('invoice_id', $invoice->id)->select('id'))
+            ->distinct()
+            ->pluck('credited_item_id')
+            ->mapWithKeys(static fn (mixed $id): array => [(string) $id => true])
+            ->all();
+
+        return $credited;
     }
 
     /**

@@ -169,13 +169,7 @@ final readonly class UpdateIssuedDocument
      */
     private function creditedLineRule(Invoice $locked): Closure
     {
-        /** @var array<array-key, true> $credited */
-        $credited = InvoiceItem::query()
-            ->whereIn('credited_item_id', InvoiceItem::query()->where('invoice_id', $locked->id)->select('id'))
-            ->distinct()
-            ->pluck('credited_item_id')
-            ->mapWithKeys(static fn (mixed $id): array => [(string) $id => true])
-            ->all();
+        $credited = IssuedDocumentRules::creditedLineIds($locked);
 
         return static function (?InvoiceItem $stored, ?InvoiceItemInput $input, int $index) use ($credited): void {
             if (! $stored instanceof InvoiceItem || ! isset($credited[$stored->id])) {

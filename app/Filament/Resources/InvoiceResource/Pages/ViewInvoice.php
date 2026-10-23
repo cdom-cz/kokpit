@@ -78,7 +78,8 @@ use Throwable;
  * per request by {@see ReceivablesReader}, so a banner and a badge cannot disagree.
  *
  * The header actions of the later plans (payment, conversion, storno, e-mail) are added to `getHeaderActions()`; a
- * hidden action is not rendered.
+ * hidden action is not rendered. While the document is open ({@see Invoice::isEditable()}) the first one is "Upravit",
+ * the link to the editor, which serves a draft and an open issued document alike.
  *
  * @phpstan-import-type LinkStatusRow from PaymentLinkStatus
  */
@@ -212,7 +213,7 @@ final class ViewInvoice extends ViewRecord
     }
 
     /**
-     * "Stáhnout PDF" when the stored PDF exists, "Zaznamenat platbu" on a document that still owes something and
+     * "Upravit" while the document is open, first (D-05, R-10.1-06-4); "Stáhnout PDF" when the stored PDF exists, "Zaznamenat platbu" on a document that still owes something and
      * "Vystavit fakturu" on a paid proforma without an invoice, and the group "Další akce" with the partial credit note and the
      * storno, and "Odeslat e-mailem" (UI-SPEC E2).
      *
@@ -221,6 +222,7 @@ final class ViewInvoice extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            $this->editAction(),
             $this->downloadPdfAction(),
             SendInvoiceEmailAction::make(fn (): Invoice => $this->invoice()),
             $this->payByCardAction(),
@@ -228,6 +230,21 @@ final class ViewInvoice extends ViewRecord
             $this->convertProformaAction(),
             $this->moreActions(),
         ];
+    }
+
+    /**
+     * "Upravit" (IN-13; D-05, R-10.1-06-4): the link to the editor of the document, offered only while
+     * {@see Invoice::isEditable()} says the document can be corrected: open, not cancelled, not a converted proforma,
+     * no e-mail on its way. A locked document is opened with "Odemknout" first.
+     */
+    private function editAction(): Action
+    {
+        return Action::make('edit')
+            ->label(__('invoices.detail.actions.edit'))
+            ->icon(Heroicon::OutlinedPencilSquare)
+            ->color('gray')
+            ->url(fn (): string => InvoiceResource::getUrl('edit', ['record' => $this->invoice()]))
+            ->visible(fn (): bool => $this->invoice()->isEditable());
     }
 
     /**

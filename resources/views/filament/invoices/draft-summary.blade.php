@@ -27,7 +27,7 @@
 
     @if (filled($czk))
         <p style="margin: 1rem 0 0; color: var(--gray-500);">{{ $czk }}</p>
-        <p style="margin: 0.25rem 0 0; color: var(--gray-500); font-size: 0.875rem;">{{ __('invoices.draft.summary.czk_frozen') }}</p>
+        <p style="margin: 0.25rem 0 0; color: var(--gray-500); font-size: 0.875rem;">{{ filled($czkNote ?? null) ? $czkNote : __('invoices.draft.summary.czk_frozen') }}</p>
     @elseif (filled($czkMissing))
         <p style="margin: 1rem 0 0; color: var(--gray-500);">{{ $czkMissing }}</p>
     @endif
