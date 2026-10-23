@@ -10,6 +10,7 @@ use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
 
@@ -23,12 +24,15 @@ use App\Domain\Invoicing\Models\InvoiceItem;
  *   the sender is the causer;
  * - {@see self::unlocked()}: the Admin opened the document ({@see UnlockInvoice}); the reason is free text written to
  *   the log on purpose (D-13 overrides the rule that free text is never logged, assumption A12);
- * - {@see self::snapshot()}: the flat values of the document an edit can change, read before and after the edit;
+ * - {@see self::snapshot()}: the flat values of the document an edit can change, read before and after the edit: the
+ *   currency, the language, the dates, the printed note, the total, the payment method (`payment_method`), the card
+ *   switch (`card_payment`, 1 or 0), the bank fingerprint, the printed customer and supplier lines, every item line and
+ *   the number of linked time entries (Phase 14, D-09, ruling R-14-09-3);
  * - {@see self::everSent()}: whether the customer ever received the document, which decides whether an edit is audited;
  * - {@see self::edited()}: an edit after the first send ({@see UpdateIssuedDocument}), with the values before and after.
  *
  * Each writer writes exactly one row (or none), and the payload is a fixed allowlist of keys: no token, no e-mail
- * address of a recipient, no body, no bank data and no internal note. The bank account is represented only by its
+ * address of a recipient, no body, no bank data, no bank account id and no internal note. The bank account is represented only by its
  * keyed fingerprint ({@see self::snapshot()}, `bank_fingerprint`), so a change of the account is recorded without the
  * account ever entering the history. The party and item texts are in the payload on purpose (assumption A12, an
  * owner-approved exception to "free text is never logged"). The history is read by the Admin only; a Partner never
@@ -82,9 +86,10 @@ final readonly class InvoiceAudit
 
     /**
      * The values of an issued document an edit can change, flattened to `key => scalar`: the currency, the language,
-     * the three dates, the printed note, the total, the customer and supplier lines as printed, every line by its
-     * position, and the number of linked time entries. The bank snapshot itself, the pay token and the internal note
-     * are never part of it (T-10.1-18). The bank account appears only as `bank_fingerprint`, which changes when the
+     * the three dates, the printed note, the total, the payment method (`payment_method`, null for a credit note), the
+     * card switch (`card_payment`, 1 or 0, null when the Admin-only row is missing), the customer and supplier lines
+     * as printed, every line by its position, and the number of linked time entries. The bank snapshot itself, the
+     * Admin-only account id, the pay token and the internal note are never part of it (T-10.1-18, T-14-32). The bank account appears only as `bank_fingerprint`, which changes when the
      * account changes and cannot be turned back into it, so the history keeps the fingerprint before and after instead
      * of the account values (owner decision of 2026-10-23; gap 2 of 10.1-VERIFICATION.md, review WR-02).
      *
@@ -100,6 +105,8 @@ final readonly class InvoiceAudit
             'due_date' => $invoice->due_date?->format('Y-m-d'),
             'note' => $invoice->note,
             'total_minor' => $invoice->total_minor,
+            'payment_method' => $invoice->payment_method?->value,
+            'card_payment' => self::cardPayment($invoice),
             'bank_fingerprint' => self::bankFingerprint($invoice->bank_snapshot),
         ];
 
@@ -125,6 +132,17 @@ final readonly class InvoiceAudit
         $values['entries'] = $invoice->entries()->count();
 
         return $values;
+    }
+
+    /**
+     * The card switch of the Admin-only row as 1 or 0, null when the document has no such row. Only the switch is read,
+     * never the pay token or the account id.
+     */
+    private static function cardPayment(Invoice $invoice): ?int
+    {
+        $switch = InvoiceAdmin::query()->where('invoice_id', $invoice->id)->value('card_payment_enabled');
+
+        return $switch === null ? null : (int) (bool) $switch;
     }
 
     /**

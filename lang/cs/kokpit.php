@@ -560,6 +560,8 @@ return [
                 'lock_state' => 'Zámek dokladu',
                 'unlock_reason' => 'Důvod odemknutí',
                 'note' => 'Poznámka na dokladu',
+                'payment_method' => 'Způsob úhrady',
+                'card_payment' => 'Platba kartou',
                 'bank_fingerprint' => 'Bankovní účet (otisk)',
                 'entries' => 'Navázané záznamy času',
                 'item_fields' => [

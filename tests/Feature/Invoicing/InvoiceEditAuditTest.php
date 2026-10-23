@@ -363,6 +363,109 @@ describe('what the audit row holds', function (): void {
     });
 });
 
+/**
+ * Every activity row of the document as one JSON text, to search for values that must never be in the history.
+ */
+function editAuditEverything(Invoice $invoice): string
+{
+    return (string) json_encode(DB::table('activity_log')->where('subject_id', $invoice->id)->get()->all());
+}
+
+describe('the payment method and the card switch in the history (Phase 14; D-09, IN-15)', function (): void {
+    /**
+     * A sent and unlocked transfer invoice whose card switch is off: the client had online payment off at the issue,
+     * and has it on again afterwards, so the document can go online.
+     */
+    function editAuditCardOffDocument(): Invoice
+    {
+        CardPaymentSetup::enable();
+        $client = CardPaymentSetup::client(['online_payment_enabled' => false]);
+        $invoice = editAuditSentAndUnlocked(InvoiceFixtures::issued($client, [InvoiceFixtures::item('Design', '2', '500.00')]));
+        app(PartnerContext::class)->runAsSystem(static fn () => $client->forceFill(['online_payment_enabled' => true])->save());
+
+        return $invoice;
+    }
+
+    it('records a switch to online and back with the method, the card switch and the bank fingerprint, and nothing else', function (): void {
+        $invoice = editAuditCardOffDocument();
+        $before = InvoiceAudit::snapshot(editAuditRow($invoice));
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'online']);
+
+        $online = InvoiceAudit::snapshot(editAuditRow($invoice));
+        $edited = editAuditRows($invoice, 'invoice_edited');
+        $first = $edited[0]->attribute_changes?->all() ?? [];
+
+        expect($edited)->toHaveCount(1)
+            ->and($before['payment_method'])->toBe('transfer')
+            ->and($before['card_payment'])->toBe(0)
+            ->and($before['bank_fingerprint'])->toMatch('/^[0-9a-f]{12}$/')
+            ->and($edited[0]->causer_id)->toBe($this->admin->id)
+            ->and(array_keys($first['attributes'] ?? []))->toBe(['payment_method', 'card_payment', 'bank_fingerprint'])
+            ->and($first['old'])->toBe(['payment_method' => 'transfer', 'card_payment' => 0, 'bank_fingerprint' => $before['bank_fingerprint']])
+            ->and($first['attributes'])->toBe(['payment_method' => 'online', 'card_payment' => 1, 'bank_fingerprint' => null])
+            ->and($online['bank_fingerprint'])->toBeNull();
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'transfer', 'card_payment_enabled' => false]);
+
+        $edited = editAuditRows($invoice, 'invoice_edited');
+        $second = $edited[1]->attribute_changes?->all() ?? [];
+
+        expect($edited)->toHaveCount(2)
+            ->and($second['old'])->toBe(['payment_method' => 'online', 'card_payment' => 1, 'bank_fingerprint' => null])
+            ->and($second['attributes'])->toBe(['payment_method' => 'transfer', 'card_payment' => 0, 'bank_fingerprint' => $before['bank_fingerprint']]);
+    });
+
+    it('records a change of the card switch alone as one key', function (): void {
+        CardPaymentSetup::enable();
+        $invoice = editAuditSentAndUnlocked(InvoiceFixtures::issued(CardPaymentSetup::client(), [InvoiceFixtures::item('Design', '2', '500.00')]));
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['card_payment_enabled' => false]);
+
+        $edited = editAuditRows($invoice, 'invoice_edited');
+        $changes = $edited[0]->attribute_changes?->all() ?? [];
+
+        expect($edited)->toHaveCount(1)
+            ->and($changes)->toBe(['attributes' => ['card_payment' => 0], 'old' => ['card_payment' => 1]])
+            ->and(ActivityPresenter::changes($edited[0]))->toContain('Platba kartou: ')
+            ->and(ActivityPresenter::changes($edited[0]))->not->toContain('card_payment');
+    });
+
+    it('never puts the Admin-only account id or the pay token into any row of the document', function (): void {
+        $invoice = editAuditCardOffDocument();
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'online']);
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'transfer', 'card_payment_enabled' => false]);
+
+        $row = DB::table('invoice_admin')->where('invoice_id', $invoice->id)->first();
+        $everything = editAuditEverything($invoice);
+
+        expect($row)->not->toBeNull()
+            ->and((string) $row->bank_account_id)->toMatch('/^[0-9a-f-]{36}$/')
+            ->and((string) $row->pay_token)->toMatch('/^[A-Za-z0-9]{32}$/')
+            ->and($everything)->not->toContain((string) $row->bank_account_id)
+            ->and($everything)->not->toContain((string) $row->pay_token)
+            ->and($everything)->not->toContain('bank_account_id')
+            ->and($everything)->not->toContain('pay_token');
+    });
+
+    it('keeps the ordinary model history of a document never sent and writes no invoice_edited row', function (): void {
+        CardPaymentSetup::enable();
+        $invoice = InvoiceFixtures::issued(CardPaymentSetup::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        $updatedBefore = count(editAuditRows($invoice, 'updated'));
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'online']);
+
+        $updated = editAuditRows($invoice, 'updated');
+        $changes = $updated[$updatedBefore]->attribute_changes?->all() ?? [];
+
+        expect(editAuditRows($invoice, 'invoice_edited'))->toBe([])
+            ->and($updated)->toHaveCount($updatedBefore + 1)
+            ->and($changes['attributes'] ?? [])->toHaveKey('payment_method', 'online')
+            ->and($changes['old'] ?? [])->toHaveKey('payment_method', 'transfer');
+    });
+});
+
 describe('how the history tab reads an edit row', function (): void {
     it('names edited lines, party fields and the note in Czech', function (): void {
         $invoice = editAuditSentAndUnlocked();
