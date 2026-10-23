@@ -5,14 +5,19 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Notifications\PartnerInvitation;
 use App\Domain\Notifications\Mail\MailBrand;
+use App\Domain\Operations\Alerts\AdminAlerter;
+use App\Domain\Operations\Alerts\OperationalAlert;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Shared\Auth\PartnerContext;
 use Dom\HTMLDocument;
+use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Notifications\Notification as BaseNotification;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Symfony\Component\Mime\Email;
 use Tests\Support\Canary;
+use Tests\Support\FictionalIban;
 use Tests\Support\InvoiceFixtures;
 use Tests\Support\MailFixtures;
 
@@ -33,6 +38,42 @@ function mailThemeInvitation(?string $locale = null): Email
 {
     $address = exampleEmail();
     $notification = new PartnerInvitation('Example Invitee', 'Example Client', 'https://app.example.com/invitation/abc', '1. 1. 2030 12:00');
+
+    if ($locale !== null) {
+        $notification->locale($locale);
+    }
+
+    Notification::route('mail', $address)->notify($notification);
+
+    $sent = MailFixtures::to($address);
+
+    expect($sent)->toHaveCount(1);
+
+    return $sent[0];
+}
+
+/**
+ * Sends a test-local notification that builds the given message to a fictional on-demand address and returns the
+ * one message that left.
+ */
+function mailThemeNotify(MailMessage $message, ?string $locale = null): Email
+{
+    $address = exampleEmail();
+    $notification = new class($message) extends BaseNotification
+    {
+        public function __construct(private readonly MailMessage $message) {}
+
+        /** @return list<string> */
+        public function via(object $notifiable): array
+        {
+            return ['mail'];
+        }
+
+        public function toMail(object $notifiable): MailMessage
+        {
+            return $this->message;
+        }
+    };
 
     if ($locale !== null) {
         $notification->locale($locale);
@@ -192,5 +233,96 @@ describe('the brand reader', function (): void {
 
         expect(MailBrand::current())->not->toBe($first)
             ->and(MailBrand::current()->name)->toBe('Example Supplier s.r.o.');
+    });
+});
+
+describe('the notification view', function (): void {
+    it('opens with the neutral greeting in the language of the e-mail unless the notification sets one', function (): void {
+        $message = static fn (): MailMessage => (new MailMessage)->subject('Example subject')->line('Example line.');
+
+        expect(mailThemeText(mailThemeDocument(mailThemeNotify($message())), 'h1'))->toBe('Dobrý den,')
+            ->and(mailThemeText(mailThemeDocument(mailThemeNotify($message(), 'en')), 'h1'))->toBe('Hello,')
+            ->and(mailThemeText(mailThemeDocument(mailThemeNotify($message()->greeting('Example greeting'))), 'h1'))->toBe('Example greeting')
+            ->and(mailThemeText(mailThemeDocument(mailThemeNotify($message()->error())), 'h1'))->toBe('Dobrý den,');
+    });
+
+    it('prints no sign-off unless the notification sets a salutation', function (): void {
+        $html = (string) mailThemeNotify((new MailMessage)->subject('Example subject')->line('Example line.')->action('Open example', 'https://app.example.com/open')->line('Example outro.'))->getHtmlBody();
+        $text = mailThemeText(mailThemeDocument(mailThemeNotify((new MailMessage)->line('Example line.')->line('Example outro.'))), 'body');
+
+        expect($html)->not->toContain('S pozdravem')
+            ->and($html)->not->toContain('Regards')
+            ->and($text)->not->toContain('S pozdravem')
+            ->and($text)->not->toContain('Regards');
+    });
+
+    it('shows a two-line salutation as two escaped lines joined by a line break', function (): void {
+        $email = mailThemeNotify((new MailMessage)->line('Example line.')->salutation("Kind regards\nExample <i>Sender</i> & Co"));
+        $document = mailThemeDocument($email);
+        $paragraphs = array_values(array_filter(
+            iterator_to_array($document->querySelectorAll('td.content-cell p')),
+            static fn ($p): bool => str_contains((string) $p->textContent, 'Kind regards'),
+        ));
+
+        expect($paragraphs)->toHaveCount(1)
+            ->and($paragraphs[0]->querySelectorAll('br'))->toHaveCount(1)
+            ->and($paragraphs[0]->querySelectorAll('i'))->toHaveCount(0)
+            ->and(trim((string) preg_replace('/\s+/u', ' ', (string) $paragraphs[0]->textContent)))->toBe('Kind regardsExample <i>Sender</i> & Co');
+    });
+
+    it('explains a button with the layout fallback sentence and the link, never the framework sentence', function (): void {
+        $message = static fn (): MailMessage => (new MailMessage)->line('Example line.')->action('Open example', 'https://app.example.com/open');
+        $czech = mailThemeText(mailThemeDocument(mailThemeNotify($message())), 'table.subcopy');
+        $english = mailThemeText(mailThemeDocument(mailThemeNotify($message(), 'en')), 'table.subcopy');
+
+        expect($czech)->toStartWith('Pokud tlačítko nefunguje, zkopírujte tento odkaz do prohlížeče:')
+            ->and($czech)->toContain('https://app.example.com/open')
+            ->and($czech)->not->toContain('Open example')
+            ->and($english)->toStartWith('If the button does not work, copy this link into your browser:')
+            ->and($english)->toContain('https://app.example.com/open');
+    });
+});
+
+describe('the operational alert', function (): void {
+    it('keeps the error button colour and shares the header and footer markup of every other e-mail', function (): void {
+        Canary::admin();
+
+        app(AdminAlerter::class)->alert('mail-theme-test', new OperationalAlert('Example alert', "First line\nSecond line", 'https://app.example.com/system'));
+
+        $alerts = array_values(array_filter(MailFixtures::sent(), static fn (Email $email): bool => $email->getSubject() === 'Example alert'));
+
+        expect($alerts)->toHaveCount(1);
+
+        $alert = mailThemeDocument($alerts[0]);
+        $invitation = mailThemeDocument(mailThemeInvitation());
+
+        expect((string) $alert->querySelector('a.button')?->getAttribute('style'))->toContain('#dc2626')
+            ->and($alert->querySelector('td.header')?->innerHTML)->toBe($invitation->querySelector('td.header')?->innerHTML)
+            ->and($alert->querySelector('table.footer')?->innerHTML)->toBe($invitation->querySelector('table.footer')?->innerHTML);
+    });
+});
+
+describe('the brand reader whitelist and fallback', function (): void {
+    it('never prints a bank account, in either part of the e-mail', function (): void {
+        $email = mailThemeInvitation();
+        $everything = (string) $email->getHtmlBody().' '.(string) $email->getTextBody();
+
+        foreach (['12', '34'] as $fragment) {
+            $iban = FictionalIban::czech($fragment);
+
+            expect($everything)->not->toContain($iban)
+                ->and($everything)->not->toContain(str_replace(' ', '', $iban))
+                ->and($everything)->not->toContain('Example CZK account');
+        }
+    });
+
+    it('still sends the e-mail with the application name when the settings cannot be read', function (): void {
+        app()->bind(SupplierSettings::class, static fn () => throw new RuntimeException('settings unavailable'));
+        app()->forgetScopedInstances();
+
+        $document = mailThemeDocument(mailThemeInvitation());
+
+        expect(mailThemeText($document, 'td.header'))->toBe((string) config('app.name'))
+            ->and(mailThemeFooterLines($document))->toBe([(string) config('app.name')]);
     });
 });
