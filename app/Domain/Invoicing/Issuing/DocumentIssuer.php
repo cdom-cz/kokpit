@@ -12,13 +12,10 @@ use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
-use App\Domain\Invoicing\Models\InvoiceItem;
-use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Pdf\InvoicePdf;
-use App\Domain\Invoicing\Support\DraftPreview;
-use App\Domain\Invoicing\Support\DraftTotals;
 use App\Domain\Invoicing\Support\InvoiceSnapshot;
 use App\Domain\Invoicing\Support\IssueChecks;
+use App\Domain\Invoicing\Support\TimeLineConversion;
 use App\Domain\Invoicing\Support\VariableSymbol;
 use App\Domain\Payments\Jobs\CreatePaymentLink;
 use App\Domain\Payments\Models\PaymentLink;
@@ -26,7 +23,6 @@ use App\Domain\Payments\Support\CardPaymentSwitch;
 use App\Domain\Payments\Support\PayToken;
 use App\Domain\Settings\Numbering\DocumentNumbering;
 use App\Domain\Settings\Settings\InvoicingSettings;
-use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Billing\EntryBilling;
 use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
@@ -38,7 +34,6 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use LogicException;
-use OverflowException;
 
 /**
  * The issue pipeline shared by IssueDocument, ConvertProforma and IssueCreditNote (research Pattern 3, ruling
@@ -55,7 +50,8 @@ use OverflowException;
  *
  * The lines generated from time in another currency than the document are converted before anything else is written:
  * the CNB lists of the issue date price each of them once (ruling R-17-1) and the totals follow the stored amounts
- * (D-09, D-12, IN-07). Their rate and the CZK total of the document are frozen from the same lists afterwards.
+ * (D-09, D-12, IN-07), through {@see TimeLineConversion::freezeAt()}, the same code the change of currency of an open
+ * issued document runs. Their rate and the CZK total of the document are frozen from the same lists afterwards.
  *
  * The billing of the time comes right after the flip, because the link guard of `time_entries` bills an entry only
  * when its document is already issued (plan 10-06). Every entry the draft holds is locked in id order and must still
@@ -79,7 +75,6 @@ final readonly class DocumentIssuer
         private IssueChecks $checks,
         private ExchangeRateConverter $rates,
         private EntryBilling $billing,
-        private DraftPreview $conversion,
         private InvoicePdf $pdf,
         private StoreGeneratedDocument $storage,
     ) {}
@@ -112,7 +107,7 @@ final readonly class DocumentIssuer
             ? null
             : ($lockedDraft->due_date?->format('Y-m-d') ?? self::addDays($issueDate, $client->payment_terms_days));
 
-        $this->convertTimeLines($lockedDraft, $issueDate);
+        TimeLineConversion::freezeAt($lockedDraft, $issueDate);
 
         $admin = $this->writeAdminRow($lockedDraft, $issueDate, $context);
 
@@ -187,86 +182,6 @@ final readonly class DocumentIssuer
         $document = $this->storage->handle($context->actor, $issued, $this->pdf->render($issued), $this->pdf->fileName($issued));
 
         $admin->forceFill(['pdf_document_id' => $document->getKey()])->save();
-    }
-
-    /**
-     * Converts the time lines of the draft that are priced in another currency than the document, with the CNB lists
-     * valid on the issue date (D-09, ruling R-17-1): the line amount is {@see Money::timesThroughCzk()} of the quantity
-     * and the source rate, rounded once from the exact conversion (through {@see DraftPreview::convertLine()}), the printed unit price is the display figure of the same conversion and never
-     * feeds the amount, and the line is flagged `price_converted`. Both quotes and the list date are frozen in the
-     * conversion snapshot of the line (ruling R-17-2). A price typed by hand is left exact. The document totals are
-     * then recomputed as the sum of the stored line amounts, before the state flips.
-     *
-     * A line whose source already carries a snapshot was frozen before and is not converted again.
-     *
-     * @throws ValidationException `cnb_missing` when a needed list is missing, `items` when an amount does not fit,
-     *                             `total_not_positive` when the converted total is no longer positive
-     */
-    private function convertTimeLines(Invoice $draft, string $issueDate): void
-    {
-        /** @var Collection<int, InvoiceItem> $items */
-        $items = InvoiceItem::query()->where('invoice_id', $draft->id)->with('source')->orderBy('position')->get();
-
-        $quotes = [];
-        $changed = false;
-
-        foreach ($items as $item) {
-            $source = $item->source;
-
-            if (! $source instanceof InvoiceItemSource
-                || $source->conversion_snapshot !== null
-                || ! DraftPreview::needsConversion($source, $draft->currency)) {
-                continue;
-            }
-
-            try {
-                $converted = $this->conversion->convertLine(
-                    $source->sourceRate() ?? throw new LogicException('A converted line has its source rate.'),
-                    $item->quantity,
-                    $draft->currency,
-                    $issueDate,
-                    $quotes,
-                );
-            } catch (ExchangeRateMissing $missing) {
-                throw ValidationException::withMessages([
-                    'cnb_missing' => __('invoices.errors.cnb_missing', ['currency' => $missing->currency, 'date' => IssueChecks::czechDate($issueDate)]),
-                ]);
-            } catch (OverflowException) {
-                throw ValidationException::withMessages(['items' => __('invoices.errors.item_price')]);
-            }
-
-            $item->forceFill([
-                'unit_price_minor' => $converted['unit_price']->minor,
-                'line_total_minor' => $converted['line_total']->minor,
-                'price_converted' => true,
-            ])->save();
-
-            $source->forceFill(['conversion_snapshot' => $converted['snapshot']])->save();
-            $changed = true;
-        }
-
-        if (! $changed) {
-            return;
-        }
-
-        /** @var list<int> $minors */
-        $minors = InvoiceItem::query()->where('invoice_id', $draft->id)->pluck('line_total_minor')->map(static fn (mixed $minor): int => (int) $minor)->all();
-
-        try {
-            $totals = DraftTotals::for(array_map(static fn (int $minor): Money => Money::ofMinor($minor, $draft->currency), $minors), $draft->currency);
-        } catch (OverflowException) {
-            throw ValidationException::withMessages(['items' => __('invoices.errors.item_price')]);
-        }
-
-        if ($draft->kind === InvoiceKind::CreditNote ? ! $totals['total']->isNegative() : ! $totals['total']->isPositive()) {
-            throw ValidationException::withMessages(['total_not_positive' => __('invoices.errors.total_not_positive')]);
-        }
-
-        $draft->forceFill([
-            'subtotal_minor' => $totals['subtotal']->minor,
-            'vat_minor' => $totals['vat']->minor,
-            'total_minor' => $totals['total']->minor,
-        ])->save();
     }
 
     /**

@@ -32,7 +32,8 @@ final readonly class PaymentLinks
 
     /**
      * Deactivates the live link of the locked document when it no longer offers what is owed: `cancelled` after a
-     * storno, `paid` when nothing is left, `amount_changed` when the remaining amount differs from the offered one.
+     * storno, `paid` when nothing is left, `amount_changed` when the remaining amount differs from the offered one or the link is in another currency than
+     * the document.
      * Nothing is done when there is no live link or when it still offers the remaining amount.
      *
      * The balance is read inside the caller's transaction, so it sees the caller's uncommitted writes, and the
@@ -72,6 +73,12 @@ final readonly class PaymentLinks
 
         if ($remaining <= 0) {
             return PaymentLinkDeactivation::Paid;
+        }
+
+        // A link in another currency than the document asks for something else even when the number is equal (the
+        // currency of an open document may change, R-10.1-08-3).
+        if ($link->currency !== $locked->currency) {
+            return PaymentLinkDeactivation::AmountChanged;
         }
 
         return $remaining === $link->amount_minor ? null : PaymentLinkDeactivation::AmountChanged;

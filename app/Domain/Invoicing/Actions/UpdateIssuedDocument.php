@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Domain\Invoicing\Actions;
 
 use App\Domain\Clients\Enums\InvoiceLanguage;
+use App\Domain\ExchangeRates\ExchangeRateConverter;
+use App\Domain\ExchangeRates\ExchangeRateMissing;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Issuing\IssueContext;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Support\DraftTotals;
@@ -15,6 +18,7 @@ use App\Domain\Invoicing\Support\InvoiceAudit;
 use App\Domain\Invoicing\Support\InvoiceItemInput;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
 use App\Domain\Invoicing\Support\InvoiceSnapshot;
+use App\Domain\Invoicing\Support\IssueChecks;
 use App\Domain\Invoicing\Support\IssuedDocumentRules;
 use App\Domain\Invoicing\Support\IssuedEditFinisher;
 use App\Domain\Invoicing\Support\ItemListWriter;
@@ -49,6 +53,17 @@ use OverflowException;
  *   VAT payer flag of the supplier is kept as stored;
  * - `reload_bank` (a strict boolean): the bank snapshot is taken again from the settings for the currency of the
  *   document, `bank_missing` under `bank` when there is none; a bank account is never taken from the data (D-06);
+ * - `currency`: a currency of the editor's list ({@see IssuedDocumentRules::currencyChoices()}). A value that differs
+ *   from the stored one changes the currency of the document (D-06, R-10.1-08-2), before any write, in this order:
+ *   refused as `currency_has_payments` when a payment exists and as `currency_has_credit_notes` when a credit note,
+ *   draft or issued, names the document (owner ruling of D-06, 2026-10-23: money received is not re-denominated, the
+ *   database holds the same line for every other writer), as `bank_missing` when the settings hold no account for the
+ *   new currency and as `cnb_missing` when a needed list of the issue date is missing, all under `currency`. Then the
+ *   lines are written in the new currency, the time lines are converted again at the issue date with one rounding and
+ *   a fresh conversion snapshot (a rate in the new currency is restored exactly, a price typed by hand and a fixed
+ *   amount keep their figure) through {@see TimeLineConversion::freezeAt()}, the bank snapshot follows the currency,
+ *   and the CNB rate, unit, list date and CZK total on the Admin-only row are taken again for the issue date, all four
+ *   empty for CZK. The stored issue date is the one used, also when the same save moves it (assumption A6);
  * - `internal_note`: saved through {@see UpdateInternalNote}. It prints nowhere, so a save that carries neither
  *   `items` nor `note` does not replace the PDF.
  *
@@ -82,6 +97,7 @@ final readonly class UpdateIssuedDocument
         private ItemListWriter $writer,
         private IssuedEditFinisher $finisher,
         private InvoiceSnapshot $snapshots,
+        private ExchangeRateConverter $rates,
     ) {}
 
     /**
@@ -102,16 +118,26 @@ final readonly class UpdateIssuedDocument
             $before = InvoiceAudit::snapshot($locked);
 
             $header = $this->header($locked, $data);
+            $change = array_key_exists('currency', $data) ? $this->currencyChange($locked, $data['currency']) : null;
 
             $note = array_key_exists('note', $data) ? $this->note($data['note']) : $locked->note;
-            $currency = $locked->currency;
+            $currency = $change['currency'] ?? $locked->currency;
+
+            if ($change !== null) {
+                // The lines are written in the new currency, so the model carries it from here on; the row is saved once.
+                $locked->forceFill(['currency' => $currency]);
+            }
 
             if (array_key_exists('items', $data)) {
                 if (! is_array($data['items'])) {
                     throw new InvalidArgumentException('The items of a document are a list of lines.');
                 }
 
-                $this->writer->replace($locked, $data['items'], $currency, false, $this->issuedPrice($currency), $this->creditedLineRule($locked));
+                $this->writer->replace($locked, $data['items'], $currency, $change !== null, $change === null ? $this->issuedPrice($currency) : $this->placeholderPrice($currency), $this->creditedLineRule($locked));
+            }
+
+            if ($change !== null) {
+                $this->convertAgain($locked, $locked->issue_date?->format('Y-m-d') ?? throw new LogicException('An issued document has its issue date.'));
             }
 
             $totals = $this->writer->totals($locked, $currency);
@@ -122,6 +148,10 @@ final readonly class UpdateIssuedDocument
 
             if (array_key_exists('internal_note', $data)) {
                 $this->internalNote->handle($actor, $locked, is_string($data['internal_note']) ? $data['internal_note'] : null);
+            }
+
+            if ($change !== null) {
+                $header = [...$header, 'currency' => $currency, 'bank_snapshot' => $change['bank']];
             }
 
             if (! array_key_exists('items', $data) && ! array_key_exists('note', $data) && $header === []) {
@@ -143,6 +173,10 @@ final readonly class UpdateIssuedDocument
                 $locked->enableLogging();
             } else {
                 $locked->save();
+            }
+
+            if ($change !== null) {
+                $this->storeExchangeFigures($locked, $change['rate'], $totals['total']);
             }
 
             $this->finisher->finish($actor, $locked, $before);
@@ -301,6 +335,112 @@ final readonly class UpdateIssuedDocument
         $language = $value instanceof InvoiceLanguage ? $value : (is_string($value) ? InvoiceLanguage::tryFrom($value) : null);
 
         return $language ?? throw ValidationException::withMessages(['language' => __('invoices.errors.language')]);
+    }
+
+    /**
+     * Checks a change of currency before anything is written and gathers what it stores: the new bank account and, for
+     * a foreign currency, the CNB quote of the issue date. Null when the value is the stored currency.
+     *
+     * @return array{currency: string, bank: array<string, string|null>, rate: array{rate: string, unit_amount: int, rate_date: string}|null}|null
+     *
+     * @throws ValidationException `currency`
+     */
+    private function currencyChange(Invoice $locked, mixed $value): ?array
+    {
+        $code = is_string($value) ? strtoupper(trim($value)) : '';
+
+        if (! in_array($code, IssuedDocumentRules::currencyChoices($locked), true)) {
+            throw ValidationException::withMessages(['currency' => __('invoices.errors.currency')]);
+        }
+
+        if ($code === $locked->currency) {
+            return null;
+        }
+
+        $blocker = IssuedDocumentRules::currencyBlocker($locked);
+
+        if ($blocker !== null) {
+            throw ValidationException::withMessages(['currency' => __('invoices.errors.'.$blocker)]);
+        }
+
+        $bank = $this->snapshots->bank($code)
+            ?? throw ValidationException::withMessages(['currency' => __('invoices.errors.bank_missing', ['currency' => $code])]);
+
+        $day = $locked->issue_date?->format('Y-m-d') ?? throw new LogicException('An issued document has its issue date.');
+        $rate = null;
+
+        if ($code !== 'CZK') {
+            try {
+                $rate = $this->rates->rateFor($code, $day);
+            } catch (ExchangeRateMissing) {
+                throw ValidationException::withMessages(['currency' => __('invoices.errors.cnb_missing', ['currency' => $code, 'date' => IssueChecks::czechDate($day)])]);
+            }
+        }
+
+        return ['currency' => $code, 'bank' => $bank, 'rate' => $rate];
+    }
+
+    /**
+     * Prices the time lines again for the new currency with the lists of the issue date (R-10.1-08-1). The row is not
+     * saved here, the Action saves it once with everything else. A list missing for the rate of a line is the same
+     * refusal as a missing list of the new currency.
+     *
+     * @throws ValidationException `currency` for a missing list, `items`, `total_not_positive`
+     */
+    private function convertAgain(Invoice $locked, string $day): void
+    {
+        try {
+            TimeLineConversion::freezeAt($locked, $day, true, false);
+        } catch (ValidationException $exception) {
+            $missing = $exception->errors()['cnb_missing'] ?? null;
+
+            if ($missing === null) {
+                throw $exception;
+            }
+
+            throw ValidationException::withMessages(['currency' => $missing]);
+        }
+    }
+
+    /**
+     * Stores the exchange figures of the new currency on the Admin-only row, computed once from the new total: the
+     * CNB rate, unit, list date and the CZK total, or all four empty for CZK (D-12, IN-07).
+     *
+     * @param  array{rate: string, unit_amount: int, rate_date: string}|null  $rate
+     */
+    private function storeExchangeFigures(Invoice $locked, ?array $rate, Money $total): void
+    {
+        $admin = InvoiceAdmin::query()->where('invoice_id', $locked->id)->lockForUpdate()->first()
+            ?? throw new LogicException('An issued document has its Admin-only row.');
+
+        $admin->forceFill($rate === null
+            ? ['exchange_rate' => null, 'exchange_unit_amount' => null, 'exchange_rate_date' => null, 'czk_total_minor' => null]
+            : [
+                'exchange_rate' => $rate['rate'],
+                'exchange_unit_amount' => $rate['unit_amount'],
+                'exchange_rate_date' => $rate['rate_date'],
+                'czk_total_minor' => $total->convert($rate['rate'], 'CZK', $rate['unit_amount'])->minor,
+            ])->save();
+    }
+
+    /**
+     * The price a generated line has while the change of currency is being written: a rate in the new currency exactly,
+     * any other line the stored figure, which {@see TimeLineConversion::freezeAt()} replaces right after.
+     *
+     * @return Closure(InvoiceItemSource, InvoiceItem, InvoiceQuantity, array<string, array{rate: string, unit_amount: int, rate_date: string|null}> &): array{0: Money, 1: Money, 2: bool}
+     */
+    private function placeholderPrice(string $currency): Closure
+    {
+        return static function (InvoiceItemSource $source, InvoiceItem $stored, InvoiceQuantity $quantity, array &$quotes) use ($currency): array {
+            $rate = $source->sourceRate() ?? throw new LogicException('A generated line has its source rate.');
+            $unitPrice = $rate->currency === $currency ? $rate : Money::ofMinor($stored->unit_price_minor, $currency);
+
+            try {
+                return [$unitPrice, DraftTotals::lineTotal($unitPrice, $quantity), false];
+            } catch (OverflowException) {
+                throw ValidationException::withMessages(['items' => __('invoices.errors.item_price')]);
+            }
+        };
     }
 
     /**

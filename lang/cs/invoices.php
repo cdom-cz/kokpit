@@ -15,6 +15,8 @@ return [
         'client_unknown' => 'Vyberte klienta.',
         'kind' => 'Zvolte fakturu nebo zálohovou fakturu.',
         'currency' => 'Zvolte platnou měnu.',
+        'currency_has_payments' => 'Měnu nelze změnit, k dokladu jsou zaznamenané platby.',
+        'currency_has_credit_notes' => 'Měnu nelze změnit, k faktuře existuje dobropis.',
         'language' => 'Zvolte jazyk dokladu.',
         'date_invalid' => 'Zadejte platné datum.',
         'due_before_issue' => 'Datum splatnosti nesmí být dříve než datum vystavení.',
@@ -416,6 +418,12 @@ return [
         'refill_supplier' => 'Načíst z nastavení dodavatele',
         'refill_bank' => 'Načíst bankovní účet z nastavení',
         'bank_pending' => 'Po uložení se použije účet z nastavení:',
+        'currency_change' => [
+            'heading' => 'Změnit měnu dokladu?',
+            'body' => 'Kurz ČNB, položky z času, bankovní účet i platební odkaz se převezmou znovu ke dni vystavení. Ručně zadané jednotkové ceny a pevné částky se nepřepočítají. Zkontrolujte je po změně.',
+            'submit' => 'Změnit měnu',
+            'cancel' => 'Ponechat měnu',
+        ],
         'party_fields' => [
             'name' => 'Název',
             'street' => 'Ulice',

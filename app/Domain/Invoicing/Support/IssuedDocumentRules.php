@@ -12,8 +12,11 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
+use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
+use App\Domain\Settings\Banking\BankAccount;
 use App\Domain\Settings\Numbering\InvalidNumberPattern;
+use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\NumberingSettings;
 use App\Domain\Shared\Money\Money;
 use Carbon\CarbonImmutable;
@@ -64,6 +67,43 @@ final class IssuedDocumentRules
             self::emailInFlight($invoice) => 'email_in_flight',
             default => null,
         };
+    }
+
+    /**
+     * Why the currency of the document cannot change, as the key of `invoices.errors`, or null when it can (D-06, owner
+     * ruling of 2026-10-23, an amendment of D-04 for the currency only): money received is not re-denominated, so a
+     * document with a recorded payment (`currency_has_payments`) or one that any credit note, draft or issued, names
+     * (`currency_has_credit_notes`) keeps its currency. Every other edit of such a document stays allowed. The database
+     * holds the same line for every other writer: the key of the payments and the currency rule of the invoice row guard.
+     */
+    public static function currencyBlocker(Invoice $invoice): ?string
+    {
+        return match (true) {
+            InvoicePayment::query()->where('invoice_id', $invoice->id)->exists() => 'currency_has_payments',
+            Invoice::query()->where('credited_invoice_id', $invoice->id)->exists() => 'currency_has_credit_notes',
+            default => null,
+        };
+    }
+
+    /**
+     * The currencies the editor offers for the document, sorted: those of the supplier's bank accounts, the currency of
+     * the client and the one the document has now. The write path accepts nothing else (T-10.1-31).
+     *
+     * @return list<string>
+     */
+    public static function currencyChoices(Invoice $invoice): array
+    {
+        $codes = array_map(static fn (BankAccount $account): string => $account->currency, app(BankAccountSettings::class)->accounts);
+        $codes[] = $invoice->currency;
+
+        if ($invoice->client !== null) {
+            $codes[] = $invoice->client->currency;
+        }
+
+        $codes = array_values(array_unique($codes));
+        sort($codes);
+
+        return $codes;
     }
 
     /**
