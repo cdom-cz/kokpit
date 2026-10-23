@@ -9,6 +9,11 @@ use App\Domain\Invoicing\Actions\ReplaceIssuedPdf;
 use App\Domain\Invoicing\Issuing\DocumentIssuer;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Queries\InvoiceBalances;
+use App\Domain\Payments\Enums\PaymentLinkDeactivation;
+use App\Domain\Payments\Jobs\CreatePaymentLink;
+use App\Domain\Payments\Models\PaymentLink;
+use App\Domain\Payments\Support\PaymentLinks;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 
@@ -22,7 +27,12 @@ use LogicException;
  * 1. a document not in CZK gets its CZK total again from the new total at the stored rate, unit and list date,
  *    exactly as {@see DocumentIssuer} computed it at issue (D-12, IN-07): the rate is
  *    never looked up again here;
- * 2. (plan 10.1-05) the card payment link follows the new total;
+ * 2. the card payment link follows what the document owes now (D-11): the live link that no longer offers it is
+ *    deactivated (`amount_changed`, `paid`, `cancelled`) by {@see PaymentLinks::reconcile()}, and, when the document
+ *    is still offered card payment, a new pending link for the remaining amount is opened. The row is written here,
+ *    Stripe is never called inside the transaction: {@see CreatePaymentLink} is dispatched after the commit and is the
+ *    only caller of Stripe, so a Stripe outage cannot fail or block an edit (T-10.1-21). A card payment already
+ *    recorded keeps its record, and a link the Admin switched off by hand stays off until the Admin regenerates it;
  * 3. the stored PDF is replaced ({@see ReplaceIssuedPdf}), so it prints the corrected document;
  * 4. the audit row of a post-send correction is written ({@see InvoiceAudit::edited()}), from the values before the
  *    edit that the caller took; only this step reads `$before`, and it writes nothing for a document never sent.
@@ -31,7 +41,11 @@ use LogicException;
  */
 final readonly class IssuedEditFinisher
 {
-    public function __construct(private ReplaceIssuedPdf $pdf) {}
+    public function __construct(
+        private ReplaceIssuedPdf $pdf,
+        private PaymentLinks $links,
+        private InvoiceBalances $balances,
+    ) {}
 
     /**
      * @param  array<string, string|int|null>  $before  {@see InvoiceAudit::snapshot()} taken before the write
@@ -45,6 +59,8 @@ final readonly class IssuedEditFinisher
         }
 
         $this->czkTotal($locked);
+
+        $this->paymentLink($actor, $locked);
 
         $this->pdf->handle($actor, $locked);
 
@@ -71,5 +87,42 @@ final readonly class IssuedEditFinisher
         if ($admin->czk_total_minor !== $czk) {
             $admin->forceFill(['czk_total_minor' => $czk])->save();
         }
+    }
+
+    /**
+     * Brings the card link in line with what the document owes (R-10.1-05-1).
+     *
+     * {@see PaymentLinks::reconcile()} first: a live link that offers anything else than the remaining amount is
+     * deactivated, one that still offers it is left alone. A new pending link is opened only when no live link remains
+     * and the document may be offered card payment: an issued, uncancelled invoice or proforma with its frozen card
+     * switch on that still owes something, whose newest link was not switched off by the Admin (`manual`).
+     */
+    private function paymentLink(User $actor, Invoice $locked): void
+    {
+        $this->links->reconcile($locked);
+
+        if (! $locked->isIssued() || ! $locked->kind->carriesPayment() || $locked->isCancelled()) {
+            return;
+        }
+
+        $admin = InvoiceAdmin::query()->where('invoice_id', $locked->id)->first();
+
+        if (! $admin instanceof InvoiceAdmin || ! $admin->card_payment_enabled) {
+            return;
+        }
+
+        $remaining = $this->balances->for([$locked->id])[$locked->id]['remaining'] ?? 0;
+
+        if ($remaining <= 0 || PaymentLink::query()->live()->where('invoice_id', $locked->id)->exists()) {
+            return;
+        }
+
+        if (PaymentLink::latestFor($locked->id)?->deactivation_reason === PaymentLinkDeactivation::Manual) {
+            return;
+        }
+
+        $link = PaymentLink::open($locked, $remaining, $actor);
+
+        CreatePaymentLink::dispatch($link->id)->afterCommit();
     }
 }
