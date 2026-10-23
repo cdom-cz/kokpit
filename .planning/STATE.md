@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 14
 current_phase_name: Switchable payment method and independent invoice currency
 status: executing
-stopped_at: Completed 14-13-PLAN.md
-last_updated: "2026-10-23T15:21:14.305Z"
+stopped_at: Completed 14-14-PLAN.md
+last_updated: "2026-10-23T15:29:32.423Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 14 execution started
-state_head: 213aae6b12e46f0a5447f2182cc04effbaa3d030
+state_head: a1d12de79aedb4143cbc09b875d795fce9c0b879
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 276
-  completed_plans: 274
+  completed_plans: 275
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 14 (Switchable payment method and independent invoice currency) — EXECUTING
-Plan: 14 of 15
+Plan: 15 of 15
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 14 execution started
 
@@ -334,6 +334,7 @@ Progress: [████░░░░░░] 44%
 | Phase 14 P11 | 25min | 2 tasks | 10 files |
 | Phase 14 P12 | 6 min | 2 tasks | 2 files |
 | Phase 14 P13 | 25 min | 2 tasks | 3 files |
+| Phase 14 P14-14 | 30 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -837,6 +838,7 @@ Recent decisions affecting current work:
 - [Phase 14]: PayToken docblock: token generated when the document first offers card payment (issue or later on an open issued document), set once
 - [Phase 14]: R-14-12-1: the issued editor sends bank_account_id when it differs from the filled one or when the currency changes in the same save and an account is chosen; R-14-10-2 is narrowed, not reversed
 - [Phase 14]: R-14-13-2: online branch of issuedSwitch() uses onlineUnavailableReason() (client flag included) instead of CardPaymentSwitch::available()
+- [Phase 14]: R-14-14-4: a converted invoice inherits the proforma's stored account id unfiltered; when that account is no longer configured it prints the proforma's own bank snapshot (handed over through IssueContext), never another account
 
 ### Pending Todos
 
@@ -900,6 +902,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T15:21:12.760Z
-Stopped at: Completed 14-13-PLAN.md
+Last session: 2026-10-23T15:29:30.840Z
+Stopped at: Completed 14-14-PLAN.md
 Resume file: None
