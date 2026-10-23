@@ -10,6 +10,7 @@ use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Actions\UnlockInvoice;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceLockState;
@@ -210,6 +211,32 @@ describe('the tracer: queue the e-mail of an issued invoice and send it', functi
             ->and($defaults['body'])->toEndWith("S pozdravem\nExample Supplier s.r.o.")
             ->and($defaults['attach_work_report'])->toBeFalse()
             ->and($defaults['has_work_report'])->toBeFalse();
+    });
+
+    it('pre-fills an online-method document without pointing at bank details, in Czech and in English', function (): void {
+        CardPaymentSetup::enable();
+
+        foreach (['cs', 'en'] as $language) {
+            $client = CardPaymentSetup::client(['invoice_language' => $language]);
+            $draft = InvoiceFixtures::online(InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '12500.00')], InvoiceKind::Invoice, $this->admin));
+            $invoice = app(IssueDocument::class)->handle($this->admin, $draft);
+
+            $body = app(QueueInvoiceEmail::class)->defaults($invoice)['body'];
+
+            expect($invoice->payment_method)->toBe(DocumentPaymentMethod::Online)
+                ->and($body)->toContain($invoice->number)
+                ->and($body)->not->toContain($language === 'cs' ? 'Platební údaje najdete' : 'Payment details are in')
+                ->and($body)->toContain($language === 'cs' ? 'online platební kartou' : 'paid online by card')
+                ->and($body)->toEndWith($language === 'cs' ? "S pozdravem\nExample Supplier s.r.o." : "Kind regards\nExample Supplier s.r.o.");
+        }
+    });
+
+    it('keeps the transfer wording for a transfer document and the credit note wording for a credit note', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $credit = InvoiceFixtures::stornoed($invoice);
+
+        expect(app(QueueInvoiceEmail::class)->defaults($invoice)['body'])->toContain('Platební údaje najdete v přiloženém dokumentu.')
+            ->and(app(QueueInvoiceEmail::class)->defaults($credit)['body'])->toContain('Platba bude vrácena samostatně.');
     });
 
     it('pre-fills an English proforma in English', function (): void {

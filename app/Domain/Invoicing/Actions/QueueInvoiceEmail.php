@@ -6,6 +6,7 @@ namespace App\Domain\Invoicing\Actions;
 
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
@@ -145,8 +146,13 @@ readonly class QueueInvoiceEmail
             'supplier' => is_string($supplier) ? $supplier : '',
         ];
 
-        // A credit note is not paid, so it has no due date; so does any document that carries none.
-        $key = $issued->kind === InvoiceKind::CreditNote || $issued->due_date === null ? 'credit_note' : 'with_due_date';
+        // A credit note is not paid, so it has no due date; so does any document that carries none. A document of the
+        // online method prints no bank details (Phase 14), so its text must not point at them (A-13-4).
+        $key = match (true) {
+            $issued->kind === InvoiceKind::CreditNote || $issued->due_date === null => 'credit_note',
+            $issued->payment_method === DocumentPaymentMethod::Online => 'with_due_date_online',
+            default => 'with_due_date',
+        };
 
         return (string) trans('invoice_mail.body.'.$key, $replace, $language->value);
     }
