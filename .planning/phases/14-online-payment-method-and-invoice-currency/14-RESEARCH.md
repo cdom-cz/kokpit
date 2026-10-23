@@ -393,17 +393,17 @@ Built on `PaymentLinks::deactivate()` [VERIFIED: PaymentLinks.php:94-109].
 | A9 | The proposed requirement IDs P14-01..09 do not collide with the ID scheme the owner wants. | Phase Requirements | Rename before planning. |
 | A10 | Stripe presentment-currency availability depends on the Stripe account country; the docs page rendered without its currency table in this session, so no claim is made about which CNB currencies Stripe accepts beyond ISK/UGX refused by `PaymentLinkRequest`. | Pitfall 8 | A CNB currency Stripe does not take fails at link creation (handled by D-08/D-09). |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Card switch for `transfer` documents (D-03 assumption).**
    - What we know: D-03 keeps the switch for `transfer`; CONTEXT asks to confirm in planning. The switch is currently frozen at issue and hidden on the issued editor.
    - What's unclear: whether the Admin can turn the switch on/off on an open issued transfer document, and what the switch becomes after online -> transfer.
-   - Recommendation: show the toggle in both editors for `transfer`; on online -> transfer in the form, reset the toggle to the client's flag (as a new draft would). Ask the owner once before planning.
-2. **Proforma conversion.** What method and account does the invoice made from a paid proforma get? Recommendation: inherit both; call `PaymentLinks::reconcile` after the carries (Pitfall 7).
-3. **Manual switch-off versus an explicit method change.** Recommendation: the explicit change wins (A4).
-4. **Partner wording for `online`.** Discretion item. Recommendation: payment section shows "Platba online (kartou)" and the pay button; bank rows and variable symbol hidden. The bank rows read `bank_snapshot`, which is NULL for `online`, so only the label and the VS row need a condition.
-5. **E-mail body for `online`.** The Czech body says "Platební údaje najdete v přiloženém dokumentu." [VERIFIED: lang/cs/invoice_mail.php body `with_due_date`] and the pay block lead says "Doklad můžete zaplatit online kartou:" [VERIFIED: same file `pay_block_lead`]. Both are acceptable for `online`. Phase 13 rebuilds the invoice e-mail around `PayLinkBlock`; keep `PayLinkBlock::applies/forMail` as the one predicate so Phase 13's template inherits the new gate. Phase 13 has only a CONTEXT so far (no plans); if it is planned first, tell its planner that the pay-block gate changes here.
-6. **Requirement IDs.** None mapped; register before planning (A9).
+   - Recommendation: show the toggle in both editors for `transfer`; on online -> transfer in the form, reset the toggle to the client's flag (as a new draft would). RESOLVED: owner confirmed on 2026-10-23, recorded as OA-1 in 14-CONTEXT.md.
+2. **Proforma conversion.** What method and account does the invoice made from a paid proforma get? Recommendation: inherit both; call `PaymentLinks::reconcile` after the carries (Pitfall 7). RESOLVED: OA-2 in 14-CONTEXT.md.
+3. **Manual switch-off versus an explicit method change.** Recommendation: the explicit change wins (A4). RESOLVED: OA-3 in 14-CONTEXT.md.
+4. **Partner wording for `online`.** Discretion item. Recommendation: payment section shows "Platba online (kartou)" and the pay button; bank rows and variable symbol hidden. The bank rows read `bank_snapshot`, which is NULL for `online`, so only the label and the VS row need a condition. RESOLVED: adopted by plans 05 and 06.
+5. **E-mail body for `online`.** The Czech body says "Platební údaje najdete v přiloženém dokumentu." [VERIFIED: lang/cs/invoice_mail.php body `with_due_date`] and the pay block lead says "Doklad můžete zaplatit online kartou:" [VERIFIED: same file `pay_block_lead`]. Both are acceptable for `online`. Phase 13 rebuilds the invoice e-mail around `PayLinkBlock`; keep `PayLinkBlock::applies/forMail` as the one predicate so Phase 13's template inherits the new gate. Phase 13 has only a CONTEXT so far (no plans); if it is planned first, tell its planner that the pay-block gate changes here. RESOLVED: OA-5; hand-over in plan 11.
+6. **Requirement IDs.** None mapped; RESOLVED: P14-01..P14-09 registered in REQUIREMENTS.md (OA-4).
 
 ## Environment Availability
 

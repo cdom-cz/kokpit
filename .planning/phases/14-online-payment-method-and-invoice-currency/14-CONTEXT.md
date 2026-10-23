@@ -101,6 +101,21 @@ None — discussion stayed within phase scope.
 
 </deferred>
 
+<amendments>
+## Owner Amendments (planning session, 2026-10-23)
+
+Recorded from the owner's answers given during `/gsd-plan-phase 14`. They are binding for the plans and cited there as OA-1 to OA-6.
+
+- **OA-1 (amends Phase 11 D-06 and T-10.1-24):** The card switch is no longer frozen at issue. It is editable on `transfer` documents in the draft and in the open issued editor; it is forced on and locked for `online`; on online -> transfer it resets to the client's flag. It freezes again when the document is locked. A first pay token may therefore be set once on an open issued document.
+- **OA-2:** Proforma conversion: the invoice inherits the proforma's payment method and bank account, and `ConvertProforma` calls `PaymentLinks::reconcile` after the carries.
+- **OA-3:** An explicit payment-method change opens a new payment link (deactivation reason `replaced`, not `manual`).
+- **OA-4:** Requirement IDs P14-01..P14-09 are registered in REQUIREMENTS.md.
+- **OA-5:** Phase 13 note: `PayLinkBlock` gates on "switch AND token" after this phase.
+- **OA-6:** The Filament Repeater `Hidden('id')` Livewire round-trip is covered by a Wave 0 test.
+- **OA-7 (carve-out of Phase 10 D-12):** An issued `online` document carries no bank snapshot (`bank_snapshot` NULL); an issued `transfer` document must carry one. D-01 (no bank details on online documents) requires this; D-06's snapshot is taken from the chosen account for `transfer` documents only.
+</amendments>
+
+
 ---
 
 *Phase: 14-Switchable payment method and independent invoice currency*
