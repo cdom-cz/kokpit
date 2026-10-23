@@ -1019,6 +1019,7 @@ it('hands the send-driven lock over to later phases: the Immutability rule and t
         '`kokpit.invoice_unlock`', '`UpdateIssuedDocument`', '`AddEntriesToDraft`', '`ReleaseEntries`', '`AddFixedAmount`', '`IssuedEditFinisher`',
         '`PaymentLinks::reconcile()`', '`ReplaceIssuedPdf`', '`InvoiceAudit`', '`IssuedDocumentRules`', '`email_in_flight`', '`invoice_edited`',
         '`kokpit_invoice_accepts_time_changes()`', '`payment_links_invoice_fk`', 'must not call the lock step',
+        '`RecordCardPayment`', '`kokpit_guard_card_payment_currency()`', '`InvoiceEmail::staleBefore()`', '`bank_fingerprint`',
     ] as $phrase) {
         expect($bullet)->toContain($phrase);
     }
@@ -1035,6 +1036,8 @@ it('hands the send-driven lock over to later phases: the Immutability rule and t
         'ReplaceIssuedPdf' => 'App\Domain\Invoicing\Actions\ReplaceIssuedPdf',
         'InvoiceAudit' => 'App\Domain\Invoicing\Support\InvoiceAudit',
         'IssuedDocumentRules' => 'App\Domain\Invoicing\Support\IssuedDocumentRules',
+        'RecordCardPayment' => 'App\Domain\Payments\Actions\RecordCardPayment',
+        'InvoiceEmail' => 'App\Domain\Invoicing\Models\InvoiceEmail',
     ];
 
     foreach ($classes as $short => $class) {
@@ -1048,6 +1051,11 @@ it('hands the send-driven lock over to later phases: the Immutability rule and t
         ->and(repoFile('database/migrations/2026_10_22_000300_relax_payment_link_currency_key.php'))->toContain('payment_links_invoice_fk')
         ->and(method_exists('App\Domain\Payments\Support\PaymentLinks', 'reconcile'))->toBeTrue();
 
+    // The seams closed by the gap-closure round (plans 10.1-13 to 10.1-15): the card currency pin, the stale e-mail cutoff, the bank fingerprint.
+    expect(repoFile('database/migrations/2026_10_23_000100_pin_card_payment_currency_to_its_payment.php'))->toContain('kokpit_guard_card_payment_currency')
+        ->and(method_exists('App\Domain\Invoicing\Models\InvoiceEmail', 'staleBefore'))->toBeTrue()
+        ->and(repoFile('app/Domain/Invoicing/Support/InvoiceAudit.php'))->toContain('bank_fingerprint');
+
     // The one lock writer and the one unlock flag the text names.
     expect(repoFile('app/Domain/Invoicing/Jobs/SendInvoiceEmail.php'))->toContain('InvoiceLockState::Locked')
         ->and(repoFile('app/Domain/Invoicing/Actions/UnlockInvoice.php'))->toContain('kokpit.invoice_unlock');
@@ -1058,6 +1066,8 @@ it('hands the send-driven lock over to later phases: the Immutability rule and t
         'tests/Feature/Invoicing/UpdateIssuedDocumentTest.php', 'tests/Feature/Invoicing/UpdateIssuedDocumentPdfLinkTest.php',
         'tests/Feature/Invoicing/InvoiceEditAuditTest.php', 'tests/Feature/Invoicing/IssuedEditorTest.php', 'tests/Feature/Invoicing/IssuedTimeEditTest.php',
         'tests/Concurrency/InvoiceEditSendConcurrencyTest.php', 'tests/Feature/Invoicing/EditableInvoiceJourneyTest.php',
+        'tests/Feature/Payments/PaymentClassificationTest.php', 'tests/Feature/Payments/CardPaymentRecordTest.php',
+        'tests/Feature/Invoicing/SendInvoiceEmailTest.php', 'tests/Feature/Invoicing/EmailDialogTest.php',
     ] as $path) {
         expect($bullet)->toContain(basename($path, '.php'));
         expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$path} but the file does not exist");
