@@ -32,6 +32,9 @@ use Illuminate\Validation\ValidationException;
  * injected through it), the subject is capped at 200 and the body at 5 000 characters, and control characters other
  * than a line break and a tab are dropped from both (a NUL byte would also be refused by the database). The body is
  * plain text. The work-report flag is kept only when the document still has linked time: a cancelled invoice has none.
+ *
+ * The document is read with the invoice row lock before the row is written, the same lock an edit of an issued document
+ * takes (A8): an edit either finishes before the e-mail is queued or finds it queued and waits for it.
  */
 final readonly class QueueInvoiceEmail
 {
@@ -81,7 +84,9 @@ final readonly class QueueInvoiceEmail
         Gate::forUser($actor)->authorize('update', $issued);
 
         return DB::transaction(function () use ($actor, $issued, $data): InvoiceEmail {
-            $document = Invoice::query()->whereKey($issued->getKey())->firstOrFail();
+            // The invoice row lock of every edit of an issued document (A8, R-10.1-04-7): an edit and the queueing of
+            // the document e-mail never interleave, so the e-mail is queued either before the edit or after it.
+            $document = Invoice::query()->whereKey($issued->getKey())->lockForUpdate()->firstOrFail();
 
             if (! $document->isIssued()) {
                 throw ValidationException::withMessages(['invoice' => __('invoices.errors.email_not_issued')]);

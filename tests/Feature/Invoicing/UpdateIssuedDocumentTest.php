@@ -7,14 +7,20 @@ use App\Domain\Invoicing\Actions\ConvertProforma;
 use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\IssueDocument;
+use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
+use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Enums\InvoiceState;
+use App\Domain\Invoicing\Enums\InvoiceStatus;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Queries\ReceivablesReader;
+use App\Domain\Invoicing\Support\IssuedDocumentRules;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Media;
@@ -485,5 +491,137 @@ describe('a frozen conversion', function (): void {
             ->and(issuedEditRow($issued)->total_minor)->toBe($expected->minor)
             ->and(DB::table('invoice_admin')->where('invoice_id', $issued->id)->value('czk_total_minor'))->toBe($total->minor)
             ->and((string) DB::table('invoice_admin')->where('invoice_id', $issued->id)->value('exchange_rate'))->toStartWith('25.125');
+    });
+});
+
+/**
+ * Queues a document e-mail of the invoice without running the job (the row stays `queued`), then moves the row to the
+ * given state and last move, the way the job and a dead worker leave it.
+ */
+function issuedEditEmail(Invoice $invoice, InvoiceEmailState $state, CarbonImmutable $movedAt): void
+{
+    Queue::fake();
+
+    $row = app(QueueInvoiceEmail::class)->handle(Canary::admin(), $invoice, [
+        'recipient' => 'jane@example.com',
+        'subject' => 'Example invoice',
+        'body' => 'Example body',
+        'attach_work_report' => false,
+    ]);
+
+    issuedEditSystem(static fn (): int => InvoiceEmail::query()->whereKey($row->id)->update(['state' => $state->value, 'updated_at' => $movedAt]));
+}
+
+describe('an e-mail that is on its way', function (): void {
+    it('refuses an edit while an e-mail is queued, and writes nothing', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        [$line] = issuedEditLines($issued);
+        issuedEditEmail($issued, InvoiceEmailState::Queued, CarbonImmutable::now());
+        $before = issuedEditState($issued);
+
+        expect(issuedEditRefusal($issued, ['items' => [issuedEditPayload($line, ['quantity' => '3'])]]))->toBe(['document' => [__('invoices.errors.email_in_flight')]])
+            ->and(issuedEditState($issued))->toBe($before)
+            ->and(IssuedDocumentRules::editBlocker(issuedEditRow($issued)))->toBe('email_in_flight');
+    });
+
+    it('refuses an edit while an e-mail is sending and younger than the stale threshold', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        [$line] = issuedEditLines($issued);
+        issuedEditEmail($issued, InvoiceEmailState::Sending, CarbonImmutable::now()->subMinutes(10));
+        $before = issuedEditState($issued);
+
+        expect(issuedEditRefusal($issued, ['note' => 'Changed.']))->toBe(['document' => [__('invoices.errors.email_in_flight')]])
+            ->and(issuedEditState($issued))->toBe($before);
+
+        // The same row, a minute short of the threshold, still waits; past it, it counts as failed.
+        $stale = (int) config('kokpit.health.unsent_invoice_email_stale_after');
+        issuedEditSystem(static fn (): int => InvoiceEmail::query()->where('invoice_id', $issued->id)->update(['updated_at' => CarbonImmutable::now()->subSeconds($stale - 60)]));
+
+        expect(IssuedDocumentRules::editBlocker(issuedEditRow($issued)))->toBe('email_in_flight');
+
+        issuedEditSystem(static fn (): int => InvoiceEmail::query()->where('invoice_id', $issued->id)->update(['updated_at' => CarbonImmutable::now()->subSeconds($stale + 60)]));
+
+        app(UpdateIssuedDocument::class)->handle(Canary::admin(), $issued, ['items' => [issuedEditPayload($line, ['quantity' => '3'])]]);
+
+        expect(issuedEditRow($issued)->total_minor)->toBe(150000);
+    });
+
+    it('lets an edit through when the only e-mail failed', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        issuedEditEmail($issued, InvoiceEmailState::Failed, CarbonImmutable::now());
+
+        app(UpdateIssuedDocument::class)->handle(Canary::admin(), $issued, ['note' => 'Changed.']);
+
+        expect(issuedEditRow($issued)->note)->toBe('Changed.');
+    });
+
+    it('takes the invoice row lock before the queue writes its row', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        app(QueueInvoiceEmail::class)->handle(Canary::admin(), $issued, [
+            'recipient' => 'jane@example.com',
+            'subject' => 'Example invoice',
+            'body' => 'Example body',
+            'attach_work_report' => false,
+        ]);
+
+        $lock = array_find_key($queries, static fn (string $sql): bool => str_contains($sql, 'from "invoices"') && str_contains($sql, 'for update'));
+        $insert = array_find_key($queries, static fn (string $sql): bool => str_starts_with($sql, 'insert into "invoice_emails"'));
+
+        expect($lock)->not->toBeNull()
+            ->and($insert)->not->toBeNull()
+            ->and($lock)->toBeLessThan($insert);
+    });
+});
+
+describe('a total below what was paid or credited', function (): void {
+    it('warns with the paid amount, keeps the status paid and the remaining at zero', function (): void {
+        $paid = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        [$line] = issuedEditLines($paid);
+        app(RecordPayment::class)->handle(Canary::admin(), $paid, ['amount' => '1000.00', 'paid_on' => '2026-10-13']);
+
+        app(UpdateIssuedDocument::class)->handle(Canary::admin(), $paid, ['items' => [issuedEditPayload($line, ['quantity' => '1'])]]);
+
+        $warnings = issuedEditSystem(static fn (): array => IssuedDocumentRules::warnings(issuedEditRow($paid)));
+        $status = issuedEditSystem(static fn (): array => app(ReceivablesReader::class)->statuses([issuedEditRow($paid)], '2026-10-14'));
+
+        expect(array_keys($warnings))->toBe(['total_below_paid'])
+            ->and($warnings['total_below_paid']->minor)->toBe(100000)
+            ->and($status[$paid->id]['status'])->toBe(InvoiceStatus::Paid)
+            ->and($status[$paid->id]['remaining']?->minor)->toBe(0);
+    });
+
+    it('warns with the credited amount when a credit note exceeds the total', function (): void {
+        $credited = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        [$design] = issuedEditLines($credited);
+        app(IssueCreditNote::class)->partial(Canary::admin(), $credited, [$design->id => '1']);
+
+        // The edit path keeps a credited line whole (A4), so its total cannot fall below the credit by itself: the
+        // total is set directly, the way a stored state that predates the rule would look.
+        issuedEditSystem(static function () use ($credited): void {
+            issuedEditRow($credited)->forceFill(['subtotal_minor' => 40000, 'vat_minor' => 0, 'total_minor' => 40000])->save();
+        });
+
+        $warnings = issuedEditSystem(static fn (): array => IssuedDocumentRules::warnings(issuedEditRow($credited)));
+
+        expect(array_keys($warnings))->toBe(['total_below_credited'])
+            ->and($warnings['total_below_credited']->minor)->toBe(50000);
+    });
+
+    it('reports nothing for an ordinary edit, a draft or a document without balances', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '100.00')]);
+        [$line] = issuedEditLines($issued);
+        app(RecordPayment::class)->handle(Canary::admin(), $issued, ['amount' => '400.00', 'paid_on' => '2026-10-13']);
+
+        app(UpdateIssuedDocument::class)->handle(Canary::admin(), $issued, ['items' => [issuedEditPayload($line, ['quantity' => '3'])]]);
+
+        expect(issuedEditSystem(static fn (): array => IssuedDocumentRules::warnings(issuedEditRow($issued))))->toBe([])
+            ->and(issuedEditSystem(static fn (): array => IssuedDocumentRules::warnings(issuedEditRow($draft))))->toBe([]);
     });
 });
