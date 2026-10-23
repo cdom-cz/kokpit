@@ -479,3 +479,32 @@ describe('the settings and the client form', function (): void {
             ->assertSee('Zapnuto: u dokladů tohoto klienta se nabídne platba kartou. Nový koncept převezme tuto hodnotu a u dokladu ji lze přepsat.');
     });
 });
+
+it('blocks the issue of an online draft once card payment is unavailable, and leaves it a draft that can still be saved (P14-09)', function (string $cause): void {
+    CardPaymentSetup::enable();
+    $admin = Canary::admin();
+    $client = CardPaymentSetup::client();
+    $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '2400.00')]);
+    $draft = InvoiceFixtures::online($draft);
+
+    match ($cause) {
+        'settings_off' => CardPaymentSetup::onlinePayments(false),
+        'stripe_missing' => StripeTestConfig::clear(),
+        default => app(PartnerContext::class)->runAsSystem(static fn (): int => $client->newQuery()->whereKey($client->id)->update(['online_payment_enabled' => false])),
+    };
+
+    $saved = app(UpdateDraft::class)->handle($admin, $draft, ['note' => 'Example note']);
+
+    expect($saved->note)->toBe('Example note')
+        ->and($saved->payment_method?->value)->toBe('online');
+
+    try {
+        app(IssueDocument::class)->handle($admin, $saved);
+        $this->fail('An online draft was issued although card payment is unavailable.');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('online_unavailable')
+            ->and($e->errors()['online_unavailable'][0])->toBe(__('invoices.errors.online_unavailable'));
+    }
+
+    expect($saved->fresh()->isDraft())->toBeTrue();
+})->with(['settings_off', 'stripe_missing', 'client_off']);

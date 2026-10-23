@@ -288,3 +288,153 @@ describe('the chosen account (D-05, D-06)', function (): void {
         expect(dpAdminRow($draft)->bank_account_id)->toBeNull();
     });
 });
+
+/**
+ * Switches the online-payment flag of a client, as system.
+ */
+function dpClientFlag(Client $client, bool $on): void
+{
+    app(PartnerContext::class)->runAsSystem(static fn (): int => Client::query()->whereKey($client->id)->update(['online_payment_enabled' => $on]));
+}
+
+/**
+ * A credit-note draft of the client, built as system with the only writes the schema allows: no method, no Admin row.
+ */
+function dpCreditNoteDraft(Client $client): Invoice
+{
+    return app(PartnerContext::class)->runAsSystem(static function () use ($client): Invoice {
+        $source = InvoiceFixtures::issued($client);
+        $credit = new Invoice;
+        $credit->forceFill([
+            'client_id' => $client->id,
+            'kind' => InvoiceKind::CreditNote,
+            'currency' => $source->currency,
+            'language' => $source->language,
+            'vat_mode' => $source->vat_mode,
+            'credited_invoice_id' => $source->id,
+            'cancels_invoice' => false,
+            'subtotal_minor' => -100,
+            'vat_minor' => 0,
+            'total_minor' => -100,
+        ])->save();
+
+        return $credit;
+    });
+}
+
+describe('online needs card payment (D-03, P14-09)', function (): void {
+    beforeEach(function (): void {
+        CardPaymentSetup::enable();
+        InvoiceFixtures::configureAccounts(InvoiceFixtures::account('Example CZK account', 'CZK', '11'));
+    });
+
+    it('refuses the change to online while the global setting is off, a Stripe secret is missing or the client flag is off', function (string $cause): void {
+        $client = CardPaymentSetup::client(['online_payment_enabled' => $cause !== 'client_off']);
+        $draft = dpSave(dpCreate($client), ['items' => [InvoiceFixtures::item('Example work', '1', '800.00')]]);
+
+        match ($cause) {
+            'settings_off' => CardPaymentSetup::onlinePayments(false),
+            'stripe_missing' => config(['services.stripe.secret' => null]),
+            default => null,
+        };
+
+        $errors = dpRefused(fn () => InvoiceFixtures::online($draft));
+
+        expect($errors)->toHaveKey('payment_method')
+            ->and($errors['payment_method'][0])->toBe('Úhradu online teď nelze použít: platba kartou musí být zapnutá v Nastavení, Stripe musí být nastavený a klient musí mít online platbu zapnutou.')
+            ->and($draft->fresh()->payment_method)->toBe(DocumentPaymentMethod::Transfer);
+    })->with(['settings_off', 'stripe_missing', 'client_off']);
+
+    it('keeps the card switch on for an online draft whatever the data says', function (): void {
+        $draft = InvoiceFixtures::online(dpCreate(CardPaymentSetup::client()));
+
+        $draft = dpSave($draft, ['card_payment_enabled' => false]);
+
+        expect(dpAdminRow($draft)->card_payment_enabled)->toBeTrue()
+            ->and($draft->payment_method)->toBe(DocumentPaymentMethod::Online);
+
+        $draft = dpSave($draft, ['payment_method' => 'online', 'card_payment_enabled' => false]);
+
+        expect(dpAdminRow($draft)->card_payment_enabled)->toBeTrue();
+    });
+
+    it('resets the switch to the client flag on online to transfer, unless the Admin sends a value (OA-1)', function (bool $clientOn, ?bool $sent, bool $expected): void {
+        $client = CardPaymentSetup::client();
+        $draft = InvoiceFixtures::online(dpCreate($client));
+
+        dpClientFlag($client, $clientOn);
+
+        $data = ['payment_method' => 'transfer'];
+
+        if ($sent !== null) {
+            $data['card_payment_enabled'] = $sent;
+        }
+
+        $draft = dpSave($draft, $data);
+
+        expect($draft->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and(dpAdminRow($draft)->card_payment_enabled)->toBe($expected);
+    })->with([
+        'client flag on, nothing sent' => [true, null, true],
+        'client flag off, nothing sent' => [false, null, false],
+        'client flag on, false sent' => [true, false, false],
+        'client flag off, true sent' => [false, true, true],
+    ]);
+
+    it('lets the Admin turn the card switch on for a transfer draft of a client with the flag off, and the issue freezes it through the settings', function (): void {
+        $client = CardPaymentSetup::client(['online_payment_enabled' => false]);
+        $draft = dpSave(dpCreate($client), ['items' => [InvoiceFixtures::item('Example work', '1', '800.00')]]);
+
+        expect(dpAdminRow($draft)->card_payment_enabled)->toBeFalse();
+
+        $draft = dpSave($draft, ['card_payment_enabled' => true]);
+
+        expect(dpAdminRow($draft)->card_payment_enabled)->toBeTrue()
+            ->and($draft->payment_method)->toBe(DocumentPaymentMethod::Transfer);
+
+        $issued = app(IssueDocument::class)->handle(Canary::admin(), $draft);
+
+        expect(dpAdminRow($issued)->card_payment_enabled)->toBeTrue()
+            ->and($issued->bank_snapshot)->not->toBeNull();
+    });
+
+    it('refuses a payment method that is neither transfer nor online', function (mixed $value): void {
+        $draft = dpCreate(CardPaymentSetup::client());
+
+        $errors = dpRefused(fn () => dpSave($draft, ['payment_method' => $value]));
+
+        expect($errors)->toHaveKey('payment_method')
+            ->and($errors['payment_method'][0])->toBe('Zvolte úhradu převodem nebo online.')
+            ->and($draft->fresh()->payment_method)->toBe(DocumentPaymentMethod::Transfer);
+    })->with(['card', '', 5, null]);
+
+    it('refuses the method and the account on a credit-note draft, keeps it without a method, and refuses its card key as before', function (): void {
+        $credit = dpCreditNoteDraft(CardPaymentSetup::client());
+
+        foreach (['payment_method' => 'transfer', 'bank_account_id' => InvoiceFixtures::accountId('Example CZK account')] as $key => $value) {
+            $errors = dpRefused(fn () => dpSave($credit, [$key => $value]));
+
+            expect($errors)->toHaveKey($key)
+                ->and($errors[$key][0])->toBe('Dobropis nemá způsob úhrady ani bankovní účet.');
+        }
+
+        $errors = dpRefused(fn () => dpSave($credit, ['card_payment_enabled' => true]));
+
+        expect($errors['card_payment_enabled'][0])->toBe(__('invoices.errors.card_payment_invalid'))
+            ->and(DB::table('invoices')->where('id', $credit->id)->value('payment_method'))->toBeNull();
+    });
+
+    it('does not block an online draft converted from a proforma, and blocks any other once card payment is unavailable', function (): void {
+        $client = CardPaymentSetup::client();
+        $draft = InvoiceFixtures::online(dpSave(dpCreate($client), ['items' => [InvoiceFixtures::item('Example work', '1', '800.00')]]));
+
+        CardPaymentSetup::onlinePayments(false);
+
+        expect(dpBlockerKeys($draft))->toContain('online_unavailable');
+
+        $converted = $draft->fresh();
+        $converted->forceFill(['proforma_id' => (string) Str::uuid()]);
+
+        expect(array_column(app(IssueChecks::class)->blockers($converted, '2026-10-14'), 'key'))->not->toContain('online_unavailable');
+    });
+});
