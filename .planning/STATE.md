@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: "10.1"
 current_phase_name: Invoices stay fully editable until sent, with a manual unlock (INSERTED)
-status: executing
-stopped_at: Completed 10.1-09-PLAN.md
-last_updated: "2026-10-23T01:42:15.501Z"
+status: verifying
+stopped_at: Completed 10.1-10-PLAN.md
+last_updated: "2026-10-23T02:23:40.725Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 10.1 execution started
-state_head: e9b177ba0a5d568122af22713290b5d081f595b0
+state_head: 679e99226b7b5c6aa6b088f151159e02eb10d00c
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 257
-  completed_plans: 256
+  completed_plans: 257
   percent: 44
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 Phase: 10.1 (Invoices stay fully editable until sent, with a manual unlock (INSERTED)) — EXECUTING
 Plan: 12 of 12
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-23 — Phase 10.1 execution started
 
 Progress: [████░░░░░░] 44%
@@ -319,6 +319,7 @@ Progress: [████░░░░░░] 44%
 | Phase 10.1 P07 | 70 min | 3 tasks | 7 files |
 | Phase 10.1 P08 | 60 min | 3 tasks | 10 files |
 | Phase 10.1 P09 | 75min | 3 tasks | 15 files |
+| Phase 10.1 P10 | 110 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -798,6 +799,7 @@ Recent decisions affecting current work:
 - [Phase 10.1]: 10.1-08: currency choices (bank account currencies, client currency, document currency) live in IssuedDocumentRules::currencyChoices(), shared by the editor and the Action
 - [Phase 10.1]: 10.1-09: an issued document that cannot take time is refused under the field document; an add, release or fixed amount that changes nothing skips the finisher
 - [Phase 10.1]: 10.1-09: the issued editor keeps the linked time tab as its only relation manager so the Přidat nový čas button has a dialog to open
+- [Phase 10.1]: 10.1-10: the edit-versus-queue mutation twin is judged on the total the queue first read as well as on commit order, because the foreign key from invoice_emails to invoices already serialises the commits
 
 ### Pending Todos
 
@@ -860,6 +862,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T01:42:14.348Z
-Stopped at: Completed 10.1-09-PLAN.md
+Last session: 2026-10-23T02:23:39.540Z
+Stopped at: Completed 10.1-10-PLAN.md
 Resume file: None

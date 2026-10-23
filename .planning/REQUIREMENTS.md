@@ -134,8 +134,8 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **IN-08**: Non-VAT-payer mode is the default and fully tested; data model prepared for VAT payer
 - [x] **IN-09**: Partner sees own issued invoices and proformas (list, detail, PDF, pay button) read-only, never drafts, internal notes, linked time or rates
 - [x] **IN-10**: Cancelling or deleting a draft, or storno, returns linked entries to unbilled
-- [ ] **IN-11**: An issued invoice or proforma is locked only by a successfully sent document e-mail; queued, pending or failed e-mails, payments, credit notes and storno never lock it
-- [ ] **IN-12**: Admin unlocks a locked invoice or proforma with a mandatory reason; the unlock is audited and the document stays editable until the next successful send locks it again
+- [x] **IN-11**: An issued invoice or proforma is locked only by a successfully sent document e-mail; queued, pending or failed e-mails, payments, credit notes and storno never lock it
+- [x] **IN-12**: Admin unlocks a locked invoice or proforma with a mandatory reason; the unlock is audited and the document stays editable until the next successful send locks it again
 - [x] **IN-13**: While unlocked, Admin edits items, dates, customer and supplier snapshots, bank account, currency, language and linked time of an issued invoice or proforma; totals are recomputed with the single rounding rule, and totals below what was paid or credited warn instead of blocking
 - [x] **IN-14**: Saving an edit regenerates and replaces the stored PDF with its QR code and refreshes the card payment link when amount or currency change; nothing is sent automatically
 - [x] **IN-15**: Every change to an issued document after its first send, every lock and every unlock is audited with who, when, the values before and after and the unlock reason
@@ -289,8 +289,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | IN-08 | Phase 10 | Complete |
 | IN-09 | Phase 10 | Complete |
 | IN-10 | Phase 10 | Complete |
-| IN-11 | Phase 10.1 | Pending |
-| IN-12 | Phase 10.1 | Pending |
+| IN-11 | Phase 10.1 | Complete |
+| IN-12 | Phase 10.1 | Complete |
 | IN-13 | Phase 10.1 | Complete |
 | IN-14 | Phase 10.1 | Complete |
 | IN-15 | Phase 10.1 | Complete |
