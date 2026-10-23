@@ -3,11 +3,19 @@
 declare(strict_types=1);
 
 use App\Domain\Documents\Models\Document;
+use App\Domain\Invoicing\Actions\ConvertProforma;
+use App\Domain\Invoicing\Actions\CreateDraft;
+use App\Domain\Invoicing\Actions\IssueCreditNote;
+use App\Domain\Invoicing\Actions\IssueDocument;
+use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
+use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
@@ -149,5 +157,230 @@ describe('the tracer: from the detail to a corrected invoice', function (): void
             ->assertRedirect(InvoiceResource::getUrl('view', ['record' => $proforma]));
 
         expect(iedRow($proforma)->note)->toBe('Corrected advance note.');
+    });
+});
+
+describe('what the editor refuses to open', function (): void {
+    /**
+     * Opens the editor of the document and returns it, so the redirect and the notification can be asserted.
+     */
+    function iedOpenRefused(Invoice $invoice, string $reason): void
+    {
+        iedEditor($invoice)
+            ->assertRedirect(InvoiceResource::getUrl('view', ['record' => $invoice]))
+            ->assertNotified(__('invoices.errors.'.$reason));
+    }
+
+    it('sends a locked invoice to its detail with the reason', function (): void {
+        iedOpenRefused(InvoiceFixtures::lockedIssued(InvoiceFixtures::client()), 'document_locked');
+    });
+
+    it('sends a credit note to its detail with the reason', function (): void {
+        $credit = InvoiceFixtures::stornoed(InvoiceFixtures::issued(InvoiceFixtures::client()));
+
+        iedOpenRefused($credit, 'credit_note_locked');
+    });
+
+    it('sends a cancelled invoice to its detail with the reason', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client());
+        InvoiceFixtures::stornoed($issued);
+
+        iedOpenRefused($issued, 'cancelled_not_editable');
+    });
+
+    it('sends a converted proforma to its detail with the reason', function (): void {
+        $proforma = InvoiceFixtures::issued(InvoiceFixtures::client(), [], InvoiceKind::Proforma);
+        app(RecordPayment::class)->handle($this->admin, $proforma, ['amount' => '1000.00', 'paid_on' => '2026-10-13']);
+        app(ConvertProforma::class)->handle($this->admin, $proforma);
+
+        iedOpenRefused($proforma, 'converted_not_editable');
+    });
+
+    it('sends a document whose e-mail is on its way to its detail with the reason', function (): void {
+        Queue::fake();
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client());
+        app(QueueInvoiceEmail::class)->handle($this->admin, $issued, [
+            'recipient' => 'jane@example.com',
+            'subject' => 'Example invoice',
+            'body' => 'Example body',
+            'attach_work_report' => false,
+        ]);
+
+        iedOpenRefused($issued, 'email_in_flight');
+    });
+
+    it('shows no "Upravit" on the detail of a document that cannot be edited', function (): void {
+        $locked = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
+        $credit = InvoiceFixtures::stornoed(InvoiceFixtures::issued(InvoiceFixtures::client()));
+
+        iedDetail($locked)->assertActionHidden('edit');
+        iedDetail($credit)->assertActionHidden('edit');
+    });
+
+    it('answers a Partner with 403 on the editor of an own open issued invoice, before the record is read', function (): void {
+        $client = InvoiceFixtures::client();
+        $issued = InvoiceFixtures::issued($client);
+
+        $this->actingAs(Canary::partnerFor($client->id));
+
+        $this->get(InvoiceResource::getUrl('edit', ['record' => $issued]))->assertForbidden();
+        Livewire::test(EditInvoice::class, ['record' => $issued->getRouteKey()])->assertForbidden();
+    });
+
+    it('answers a Partner with 403 on the save of an editor that was opened by the Admin', function (): void {
+        $client = InvoiceFixtures::client();
+        $issued = InvoiceFixtures::issued($client, [InvoiceFixtures::item('Design', '2', '500.00')]);
+        $editor = iedEditor($issued);
+
+        $this->actingAs(Canary::partnerFor($client->id));
+
+        $editor->call('save')->assertForbidden();
+
+        expect(iedRow($issued)->total_minor)->toBe(100000);
+    });
+
+    it('does not save when the document was sent while the editor was open', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        $editor = iedEditor($issued);
+        [$key] = iedKeys($editor);
+
+        InvoiceFixtures::lock($issued);
+
+        $editor->set("data.items.{$key}.quantity", '9')
+            ->call('save')
+            ->assertNoRedirect()
+            ->assertNotified(__('invoices.errors.document_locked'));
+
+        expect(iedRow($issued)->total_minor)->toBe(100000);
+    });
+});
+
+describe('a line that a credit note credits', function (): void {
+    /**
+     * An issued invoice of two lines, the first credited by one unit, and its editor.
+     *
+     * @return array{0: Invoice, 1: Testable, 2: string, 3: string}
+     */
+    function iedCreditedEditor(): array
+    {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00'), InvoiceFixtures::item('Review', '1', '250.00')]);
+        [$design] = iedLines($issued);
+        app(IssueCreditNote::class)->partial(Canary::admin(), $issued, [$design->id => '1']);
+
+        $editor = iedEditor($issued);
+        [$designKey, $reviewKey] = iedKeys($editor);
+
+        return [$issued, $editor, $designKey, $reviewKey];
+    }
+
+    it('shows its quantity, unit and unit price disabled and no delete button, while the other line stays free', function (): void {
+        [, $editor, $designKey, $reviewKey] = iedCreditedEditor();
+
+        $editor->assertFormFieldDisabled("items.{$designKey}.quantity")
+            ->assertFormFieldDisabled("items.{$designKey}.unit")
+            ->assertFormFieldDisabled("items.{$designKey}.unit_price")
+            ->assertFormFieldEnabled("items.{$designKey}.description")
+            ->assertFormFieldEnabled("items.{$reviewKey}.quantity")
+            ->assertFormFieldEnabled("items.{$reviewKey}.unit_price")
+            ->assertFormComponentActionHidden('items', 'delete', ['item' => $designKey])
+            ->assertFormComponentActionVisible('items', 'delete', ['item' => $reviewKey])
+            ->assertSee('Dobropisovaná položka: měnit lze jen text.');
+    });
+
+    it('saves an unchanged credited row together with a changed other row', function (): void {
+        [$issued, $editor, $designKey, $reviewKey] = iedCreditedEditor();
+
+        $editor->set("data.items.{$designKey}.description", 'Design of the landing page')
+            ->set("data.items.{$reviewKey}.quantity", '4')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $lines = iedLines($issued);
+
+        expect($lines[0]->description)->toBe('Design of the landing page')
+            ->and($lines[0]->line_total_minor)->toBe(100000)
+            ->and($lines[1]->line_total_minor)->toBe(100000)
+            ->and(iedRow($issued)->total_minor)->toBe(200000);
+    });
+
+    it('refuses a crafted change of a credited row as a field error and keeps the stored figures', function (): void {
+        [$issued, $editor, $designKey] = iedCreditedEditor();
+
+        $editor->set("data.items.{$designKey}.quantity", '9')
+            ->set("data.items.{$designKey}.unit_price", '1,00')
+            ->call('save')
+            ->assertHasFormErrors(["items.{$designKey}.quantity"])
+            ->assertSee(__('invoices.errors.credited_line_frozen'));
+
+        $lines = iedLines($issued);
+
+        expect($lines[0]->quantity)->toBe('2.0000')
+            ->and($lines[0]->unit_price_minor)->toBe(50000)
+            ->and($lines[0]->line_total_minor)->toBe(100000)
+            ->and(iedRow($issued)->total_minor)->toBe(125000);
+    });
+
+    it('does not let a row be removed from the state either: the Action refuses a missing credited line', function (): void {
+        [$issued, $editor, $designKey] = iedCreditedEditor();
+        $state = $editor->get('data.items');
+        unset($state[$designKey]);
+
+        $editor->set('data.items', $state)->call('save')->assertHasFormErrors(['items']);
+
+        expect(iedLines($issued))->toHaveCount(2)
+            ->and(iedRow($issued)->total_minor)->toBe(125000);
+    });
+});
+
+describe('the preview of a converted time line', function (): void {
+    it('prices the amount with the frozen quotes, not with the lists of today, and shows the stored CZK figure', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = app(CreateProject::class)->handle($client, [
+            'name' => 'Alpha conversion project',
+            'key' => Canary::projectKey(),
+            'billing_type' => 'hourly',
+            'hourly_rate' => '1500',
+        ]);
+        $start = CarbonImmutable::parse('2026-09-10 08:00:00', 'UTC');
+        $factory = TimeEntry::factory()->forProject($project);
+        app(PartnerContext::class)->runAsSystem(static fn (): TimeEntry => $factory->create(['user_id' => Canary::admin()->id, 'started_at' => $start, 'ended_at' => $start->addHours(10)]));
+
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $draft = app(CreateDraft::class)->handle($this->admin, [
+            'client_id' => $client->id,
+            'kind' => 'invoice',
+            'source' => 'time',
+            'period_from' => '2026-09-01',
+            'period_to' => '2026-09-30',
+            'project_ids' => [$project->id],
+            'without_project' => false,
+            'grouping' => 'project',
+            'currency' => 'EUR',
+        ]);
+        $issued = app(IssueDocument::class)->handle($this->admin, $draft);
+
+        // A newer list for a later day: a re-price with today's lists would show another amount.
+        $this->travelTo(CarbonImmutable::parse('2026-10-20 09:30:00', 'Europe/Prague'));
+        InvoiceFixtures::cnbRate('EUR', '2026-10-20', '27.000');
+
+        $editor = iedEditor($issued);
+        [$key] = iedKeys($editor);
+
+        $expected = Money::ofMinor(150000, 'CZK')->timesThroughCzk('3.0000', '1', 1, 'EUR', '25.125', 1);
+        $czk = Money::ofMinor($expected->minor, 'EUR')->convert('25.125', 'CZK', 1);
+        $wrong = Money::ofMinor(150000, 'CZK')->timesThroughCzk('3.0000', '1', 1, 'EUR', '27.000', 1);
+
+        $editor->set("data.items.{$key}.quantity", '3')
+            ->assertSee($expected->format('cs'))
+            ->assertDontSee($wrong->format('cs'))
+            ->assertSee(__('invoices.detail.summary.czk_total', ['czk' => $czk->format('cs')]))
+            ->assertDontSee(__('invoices.draft.summary.czk_frozen'));
+
+        expect($wrong->minor)->not->toBe($expected->minor);
+
+        $editor->call('save')->assertHasNoFormErrors();
+
+        expect(iedLines($issued)[0]->line_total_minor)->toBe($expected->minor)
+            ->and(iedRow($issued)->total_minor)->toBe($expected->minor);
     });
 });
