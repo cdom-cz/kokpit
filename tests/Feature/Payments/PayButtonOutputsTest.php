@@ -100,7 +100,12 @@ function payOutSend(Invoice $invoice, ?string $body = null): string
         'attach_work_report' => false,
     ]);
 
-    $messages = payOutMails();
+    // Only the document e-mail this helper just queued: by recipient and subject, so a further e-mail does not count.
+    $messages = array_values(array_filter(
+        payOutMails(),
+        static fn (Email $mail): bool => $mail->getTo()[0]->getAddress() === 'invoice@example.com'
+            && $mail->getSubject() === $defaults['subject'],
+    ));
 
     expect($messages)->toHaveCount(1);
 

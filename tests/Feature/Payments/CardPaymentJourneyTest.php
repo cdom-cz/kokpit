@@ -199,7 +199,7 @@ it('walks an invoice from issue to a resolved duplicate: link, PDF, e-mail, pay 
         'attach_work_report' => false,
     ]);
 
-    $toClient = array_values(array_filter(journeyMails(), static fn (Email $mail): bool => $mail->getTo()[0]->getAddress() === 'invoice@example.com'));
+    $toClient = array_values(array_filter(journeyMails(), static fn (Email $mail): bool => $mail->getTo()[0]->getAddress() === 'invoice@example.com' && $mail->getSubject() === $defaults['subject']));
 
     expect($toClient)->toHaveCount(1)
         ->and(rtrim((string) $toClient[0]->getTextBody()))->toEndWith("\n\nDoklad můžete zaplatit online kartou:\n".$url)
