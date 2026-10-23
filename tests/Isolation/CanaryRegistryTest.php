@@ -16,6 +16,7 @@ use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
+use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Projects\Models\Project;
@@ -126,6 +127,7 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         InvoiceItem::class,
         InvoiceItemSource::class,
         InvoicePayment::class,
+        PaymentConfirmation::class,
         PaymentLink::class,
         CardPayment::class,
         Media::class,

@@ -20,6 +20,7 @@ use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceItemOrigin;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
+use App\Domain\Invoicing\Enums\PaymentConfirmationState;
 use App\Domain\Invoicing\Enums\PaymentMethod;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
@@ -27,6 +28,7 @@ use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
+use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Payments\Enums\CardPaymentReason;
 use App\Domain\Payments\Enums\CardPaymentResolution;
 use App\Domain\Payments\Enums\CardPaymentType;
@@ -395,6 +397,11 @@ final class CanaryRegistry
                 self::invoiceDocuments($clientId, $canary);
             },
 
+            // One sent confirmation of the canary payment; the canary is part of its recipient.
+            PaymentConfirmation::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
             // A CNB rate row has no text and no client: the canary is the published day (the Monday of the
             // canary), under a fictional currency code, so two canaries never collide on the unique key of a
             // currency and day. A Partner reading any rate would be caught by that day.
@@ -693,13 +700,25 @@ final class CanaryRegistry
                 'issued_at' => TimerClock::now(),
             ])->save();
 
-            (new InvoicePayment(['note' => $canary]))->forceFill([
+            $payment = (new InvoicePayment(['note' => $canary]))->forceFill([
                 'invoice_id' => $issued->getKey(),
                 'currency' => 'CZK',
                 'amount_minor' => 4000,
                 'paid_on' => '2026-10-20',
                 'method' => PaymentMethod::Transfer,
                 'created_by' => $owner,
+            ]);
+            $payment->save();
+
+            (new PaymentConfirmation)->forceFill([
+                'invoice_payment_id' => $payment->getKey(),
+                'invoice_id' => $issued->getKey(),
+                'recipient' => implode('@', [$canary, implode('.', ['example', 'com'])]),
+                'language' => 'cs',
+                'remaining_minor' => 6000,
+                'state' => PaymentConfirmationState::Sent,
+                'attempts' => 1,
+                'sent_at' => TimerClock::now(),
             ])->save();
 
             // The link is opened pending and activated with the Stripe references, the way the link job will.
