@@ -913,6 +913,19 @@ describe('the payment method and the card switch (Phase 14)', function (): void 
             ->and(hedRow($invoice)->updated_at->equalTo($before))->toBeTrue();
     });
 
+    it('refuses the switch sent on with a change from online to transfer while card payment is unavailable, and writes nothing', function (): void {
+        $invoice = hedCardInvoice();
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'online']);
+        CardPaymentSetup::onlinePayments(false);
+
+        $errors = hedRefusal($invoice, ['payment_method' => 'transfer', 'card_payment_enabled' => true]);
+
+        expect($errors['card_payment_enabled'] ?? null)->toBe([__('invoices.errors.card_payment_unavailable')])
+            ->and(hedRow($invoice)->payment_method->value)->toBe('online')
+            ->and(hedRow($invoice)->bank_snapshot)->toBeNull()
+            ->and(hedAdmin($invoice)->card_payment_enabled)->toBeTrue();
+    });
+
     it('refuses the switch that is not a boolean', function (): void {
         $invoice = hedCardInvoice();
 

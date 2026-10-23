@@ -202,9 +202,11 @@ final class DocumentPayment
      * writes the answer and decides what happens to the Stripe link from `method_changed` and `card_changed`.
      *
      * In this order: the method (a change to online needs card payment to be available); the account (the data, else
-     * the first account of the new currency when the currency changed, else the stored one); the switch (on for
-     * online; for transfer the Admin's boolean, else the client flag when the document was online, else the stored
-     * one; turning it on needs card payment to be available); the snapshot (none for online; for transfer taken again
+     * the first account of the new currency when the currency changed, else the stored one); the switch (for online it
+     * stays on, and turns on only while card payment is available to the document; for transfer the Admin's boolean,
+     * else the client flag when the document was online, else the stored one; a value that turns the switch on, or
+     * keeps it on after a change from online, needs card payment to be available: a derived value falls back to off,
+     * an explicit request is refused, WR-01); the snapshot (none for online; for transfer taken again
      * from the settings when the document was online, the account or the currency changed, or the refill was asked
      * for, otherwise the issued snapshot stays); the token (generated once when the switch is on and none exists).
      *
@@ -292,7 +294,10 @@ final class DocumentPayment
     }
 
     /**
-     * The card switch of an open issued document after the correction (D-03, OA-1).
+     * The card switch of an open issued document after the correction (D-03, OA-1, WR-01). Every result that turns the
+     * switch on, or keeps it on after a change from online, needs card payment to be available: online keeps a stored
+     * switch and turns a stored-off one on only while {@see DocumentPayment::onlineUnavailableReason()} is null;
+     * transfer degrades a derived value to off and refuses an explicit `true`.
      *
      * @param  array<string, mixed>  $data
      *
@@ -310,8 +315,10 @@ final class DocumentPayment
             }
         }
 
+        // Online keeps a switch that is on, and turns a stored-off one on only while card payment is available to the
+        // document (WR-01, P14-09); a change from transfer to online is refused earlier while it is not.
         if ($method === DocumentPaymentMethod::Online) {
-            return true;
+            return $storedSwitch || self::onlineUnavailableReason($locked) === null;
         }
 
         $switch = match (true) {

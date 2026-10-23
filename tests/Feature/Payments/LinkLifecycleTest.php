@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Domain\Documents\Models\Document;
+use App\Domain\Invoicing\Actions\ConvertProforma;
 use App\Domain\Invoicing\Actions\DeletePayment;
 use App\Domain\Invoicing\Actions\IssueCreditNote;
+use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
 use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
@@ -553,6 +555,45 @@ describe('a change of the payment method (Phase 14)', function (): void {
 
         return $invoice;
     }
+
+    /**
+     * An online invoice converted from a proforma paid in full while online payments were off: online, switch off, no
+     * token, no link.
+     */
+    function lifecycleConvertedOnline(): Invoice
+    {
+        $admin = test()->admin;
+        $draft = InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example advance', '1', '3900.00')], InvoiceKind::Proforma, $admin);
+        $draft = InvoiceFixtures::online($draft);
+        $proforma = app(IssueDocument::class)->handle($admin, $draft->refresh());
+
+        lifecyclePay($proforma, '3900');
+        CardPaymentSetup::onlinePayments(false);
+
+        return app(ConvertProforma::class)->handle($admin, $proforma);
+    }
+
+    it('keeps the switch of an online invoice converted while card payment was unavailable off on an unrelated save, and turns it on once card payment works again', function (): void {
+        $invoice = lifecycleConvertedOnline();
+
+        expect(lifecycleRow($invoice)->payment_method)->toBe(DocumentPaymentMethod::Online)
+            ->and(lifecycleAdminRow($invoice)->card_payment_enabled)->toBeFalse();
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['note' => 'Unrelated change.']);
+
+        expect(lifecycleRow($invoice)->note)->toBe('Unrelated change.')
+            ->and(lifecycleAdminRow($invoice)->card_payment_enabled)->toBeFalse()
+            ->and(lifecycleAdminRow($invoice)->pay_token)->toBeNull()
+            ->and(lifecycleLinks($invoice))->toHaveCount(0);
+
+        CardPaymentSetup::onlinePayments(true);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['note' => 'Second change.']);
+
+        expect(lifecycleAdminRow($invoice)->card_payment_enabled)->toBeTrue()
+            ->and(PayToken::isWellFormed((string) lifecycleAdminRow($invoice)->pay_token))->toBeTrue()
+            ->and(lifecycleLive($invoice))->toBeNull();
+    });
 
     it('switches an open transfer invoice to online: no bank snapshot, the old link replaced, a new link on the same pay URL, the PDF replaced', function (): void {
         $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
