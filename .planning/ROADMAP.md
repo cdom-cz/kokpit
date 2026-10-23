@@ -907,14 +907,25 @@ Plans:
 **Plans:** 11 plans
 
 Plans:
+**Wave 1**
 - [ ] 14-01-PLAN.md — Bank accounts get stable UUID v7 ids; several accounts per currency; Repeater id round trip (Wave 1)
 - [ ] 14-02-PLAN.md — `invoices.payment_method` with guard, checks and backfill; open card switch and set-once token; account id on `invoice_admin` (Wave 1)
 - [ ] 14-03-PLAN.md — One union currency list (CNB + accounts + client + current + CZK) for every editor (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 14-04-PLAN.md — Draft method and account, preselection, online availability, issue without bank snapshot for online (Wave 2)
 - [ ] 14-05-PLAN.md — PDF payment box by method; pay URL gated on switch AND token (Wave 2)
 - [ ] 14-06-PLAN.md — Admin and Partner detail show the method; no bank rows for online (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 14-07-PLAN.md — Open issued document: method, account, switch and currency changes with the Stripe link following (Wave 3)
 - [ ] 14-08-PLAN.md — Draft editor: method, account and card toggle; preselection on currency change (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 14-09-PLAN.md — Proforma conversion inherits method and account; link-job race; audit of method changes (Wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 14-10-PLAN.md — Issued editor fields; old currency-to-account lookups deleted; architecture test (Wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 14-11-PLAN.md — CONTRIBUTING and PROJECT.md hand-over, docblock sweep, development database migrated, full gate (Wave 6)
