@@ -30,6 +30,7 @@ use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -351,6 +352,9 @@ class SettingsPage extends Page
                     ->defaultItems(0)
                     ->columns(2)
                     ->schema([
+                        // The stable id of an existing account travels in the form state and comes back on save;
+                        // a new item has none and gets one in BankAccountSettings::save() (D-04).
+                        Hidden::make('id'),
                         TextInput::make('label')
                             ->label(__('kokpit.settings.bank.label'))
                             ->required()
@@ -361,13 +365,12 @@ class SettingsPage extends Page
                             ->native(false)
                             ->live()
                             ->required(),
-                        // Canonical upper-case codes, so distinct() also catches duplicates (D-04).
+                        // Several accounts may share a currency (D-04); the currency only preselects the account of a document.
                         Select::make('currency')
                             ->label(__('kokpit.settings.bank.currency'))
                             ->options($currencies)
                             ->searchable()
                             ->required()
-                            ->distinct()
                             ->rules(fn (): array => BankAccountSettings::commonRules('currency')),
                         TextInput::make('bic')
                             ->label(__('kokpit.settings.bank.bic'))

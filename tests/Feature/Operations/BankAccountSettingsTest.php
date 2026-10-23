@@ -9,14 +9,16 @@ use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Filament\Pages\SettingsPage;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
 /*
- * The bank tab of the settings page (D-03, D-04): accounts per currency, the
- * format decides the fields, the IBAN is checked by the own rule.
+ * The bank tab of the settings page (D-03, D-04): several accounts per
+ * currency, each with a stable id, the format decides the fields, the IBAN is
+ * checked by the own rule.
  *
  * Fictional IBANs are composed at runtime from a country and a digit fragment,
  * so no line of this file holds a complete IBAN or an account number with its
@@ -282,45 +284,89 @@ it('refuses a World account without an account number, recipient name or bank na
     expect(bankErrorKeys($test, $field))->toHaveCount(1);
 })->with(['account_number', 'recipient_name', 'bank_name']);
 
-it('refuses a second account in the same currency with a form error on its currency field', function (): void {
+it('keeps the id of an existing account through a Livewire save of the settings form', function (): void {
     $this->actingAs(Canary::admin());
 
-    $test = Livewire::test(SettingsPage::class)
-        ->fillForm(bankFormState([
-            bankEurope1(),
-            bankEurope1(['label' => 'Second CZK', 'iban' => fictionalIban('CZ', '6')]),
-        ]));
+    Livewire::test(SettingsPage::class)
+        ->fillForm(bankFormState([bankEurope1(['currency' => 'EUR', 'label' => 'Example EUR A'])]))
+        ->call('save')
+        ->assertHasNoFormErrors();
 
-    [, $second] = array_keys($test->get('data.bank.accounts'));
-    $test->call('save');
+    app()->forgetScopedInstances();
+    $account = app(BankAccountSettings::class)->accounts[0];
+    $id = $account->id;
 
-    // Laravel's distinct rule marks every duplicate, so the first item's currency is flagged as well.
-    expect(bankErrorKeys($test, 'currency'))->toContain("data.bank.accounts.{$second}.currency");
+    expect($id)->toBeString()
+        ->and(Str::isUuid($id))->toBeTrue()
+        ->and($id[14])->toBe('7')
+        ->and($account->toArray())->not->toHaveKey('id');
 
     app()->forgetScopedInstances();
 
-    expect(app(BankAccountSettings::class)->accounts)->toBe([]);
+    $test = Livewire::test(SettingsPage::class);
+    $shown = array_values($test->get('data.bank.accounts'));
+
+    expect($shown)->toHaveCount(1)
+        ->and($shown[0]['id'])->toBe($id);
+
+    [$key] = array_keys($test->get('data.bank.accounts'));
+    $test->fillForm(['bank' => ['accounts' => [$key => [...$shown[0], 'label' => 'Example EUR renamed']]]])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    app()->forgetScopedInstances();
+    $reloaded = app(BankAccountSettings::class)->accounts;
+
+    expect($reloaded)->toHaveCount(1)
+        ->and($reloaded[0]->label)->toBe('Example EUR renamed')
+        ->and($reloaded[0]->id)->toBe($id);
 });
 
-it('refuses two accounts in the same currency written outside the form, names the currency and changes nothing', function (): void {
+it('stores two accounts in the same currency, each with its own id', function (): void {
+    $this->actingAs(Canary::admin());
+    $eurA = ['format' => 'europe_2', 'label' => 'Example EUR A', 'currency' => 'EUR', 'iban' => fictionalIban('DE')];
+    $eurB = ['format' => 'europe_2', 'label' => 'Example EUR B', 'currency' => 'EUR', 'iban' => fictionalIban('DE', '5')];
+
+    Livewire::test(SettingsPage::class)
+        ->fillForm(bankFormState([$eurA, $eurB]))
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    app()->forgetScopedInstances();
+    $accounts = app(BankAccountSettings::class)->accounts;
+
+    expect($accounts)->toHaveCount(2)
+        ->and(array_map(fn (BankAccount $account): string => $account->label, $accounts))->toBe(['Example EUR A', 'Example EUR B'])
+        ->and($accounts[0]->id)->not->toBe($accounts[1]->id);
+
+    foreach ($accounts as $account) {
+        expect(Str::isUuid((string) $account->id))->toBeTrue()
+            ->and(((string) $account->id)[14])->toBe('7');
+    }
+});
+
+it('refuses a malformed or duplicate account id written outside the form and changes nothing', function (array $ids, string $messageKey): void {
     $this->actingAs(Canary::admin());
     $before = DB::table('settings')->where('group', 'bank')->pluck('payload', 'name')->all();
 
     $settings = app(BankAccountSettings::class);
     $settings->fillFromFormState(['accounts' => [
-        bankEurope1(['currency' => 'czk']),
-        bankEurope1(['label' => 'Second CZK', 'currency' => 'CZK', 'iban' => fictionalIban('CZ', '6')]),
+        bankEurope1(['id' => $ids[0]]),
+        bankEurope1(['label' => 'Second CZK', 'iban' => fictionalIban('CZ', '6'), 'id' => $ids[1]]),
     ]]);
 
     try {
         $settings->save();
         $this->fail('Expected a ValidationException.');
     } catch (ValidationException $exception) {
-        expect(implode(' ', array_merge(...array_values($exception->errors()))))->toContain('CZK');
+        expect(implode(' ', array_merge(...array_values($exception->errors()))))->toContain(__($messageKey));
     }
 
     expect(DB::table('settings')->where('group', 'bank')->pluck('payload', 'name')->all())->toBe($before);
-});
+})->with([
+    'not a uuid' => [['not-a-uuid', '01933333-3333-7333-8333-333333333333'], 'kokpit.settings.bank.id_invalid'],
+    'duplicate' => [['01933333-3333-7333-8333-333333333333', '01933333-3333-7333-8333-333333333333'], 'kokpit.settings.bank.id_duplicate'],
+]);
 
 it('refuses an invalid IBAN written outside the form and changes nothing', function (): void {
     $this->actingAs(Canary::admin());
@@ -392,7 +438,7 @@ it('writes every key for every account and null for the fields the format hides'
     $settings->save();
 
     $stored = json_decode((string) DB::table('settings')->where('group', 'bank')->where('name', 'accounts')->value('payload'), true, 512, JSON_THROW_ON_ERROR);
-    $keys = ['format', 'label', 'currency', 'bic', 'account_number', 'bank_code', 'bank_name', 'iban', 'recipient_name', 'bank_address'];
+    $keys = ['id', 'format', 'label', 'currency', 'bic', 'account_number', 'bank_code', 'bank_name', 'iban', 'recipient_name', 'bank_address'];
 
     expect(array_keys($stored[0]))->toEqualCanonicalizing($keys)
         ->and(array_keys($stored[1]))->toEqualCanonicalizing($keys)

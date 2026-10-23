@@ -326,7 +326,8 @@ return [
             'iban_hint' => 'Potřebujeme ho pro QR platbu na fakturách.',
             'iban_invalid' => 'Zadejte platný IBAN včetně kontrolních číslic.',
             'format_invalid' => 'Vyberte podporovaný formát účtu.',
-            'currency_duplicate' => 'Pro měnu :currency už existuje jiný bankovní účet; každá měna může mít jen jeden.',
+            'id_invalid' => 'Bankovní účet má neplatný identifikátor.',
+            'id_duplicate' => 'Dva bankovní účty mají stejný identifikátor.',
         ],
         'invoicing' => [
             'vat_mode' => 'Režim DPH',
