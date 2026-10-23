@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: "10.1"
 current_phase_name: Invoices stay fully editable until sent, with a manual unlock (INSERTED)
 status: executing
-stopped_at: Completed 10.1-04-PLAN.md
-last_updated: "2026-10-22T23:58:32.497Z"
+stopped_at: Completed 10.1-12-PLAN.md
+last_updated: "2026-10-23T00:11:26.964Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 10.1 execution started
-state_head: 7cf701b2f2c197829ec531520b38468df144e119
+state_head: 35754d1d463cc1110a6b88117e21008cd4bf87d6
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 257
-  completed_plans: 250
+  completed_plans: 251
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10.1 (Invoices stay fully editable until sent, with a manual unlock (INSERTED)) — EXECUTING
-Plan: 6 of 12
+Plan: 7 of 12
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 10.1 execution started
 
@@ -313,6 +313,7 @@ Progress: [████░░░░░░] 44%
 | Phase 10.1 P02 | 55 min | 2 tasks | 10 files |
 | Phase 10.1 P03 | 40min | 3 tasks | 5 files |
 | Phase 10.1 P04 | 60min | 2 tasks | 10 files |
+| Phase 10.1 P12 | 35 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -781,6 +782,7 @@ Recent decisions affecting current work:
 - [Phase 10.1]: 10.1-03: time moves on and off an open issued invoice or proforma; a credit note, cancelled invoice and converted proforma take no time (kokpit_invoice_accepts_time_changes)
 - [Phase 10.1]: 10.1-03: a payment link records the currency it offered and never changes; new links must match the document currency; invoice_payments keeps its composite key
 - [Phase 10.1]: 10.1-04: an internal-note-only save does not replace the PDF; a line counts as credited when any credit note line (draft or issued) names it
+- [Phase 10.1]: 10.1-12: post-send edits are audited by one invoice_edited row built from a fixed-key snapshot diff; an edit waits for a queued or live sending e-mail and the queue shares the invoice row lock; totals below paid or credited warn without blocking
 
 ### Pending Todos
 
@@ -843,6 +845,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T23:58:31.432Z
-Stopped at: Completed 10.1-04-PLAN.md
+Last session: 2026-10-23T00:11:25.887Z
+Stopped at: Completed 10.1-12-PLAN.md
 Resume file: None
