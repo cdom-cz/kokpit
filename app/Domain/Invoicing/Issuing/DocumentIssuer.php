@@ -99,7 +99,7 @@ final readonly class DocumentIssuer
             throw new DomainException(__('invoices.errors.not_draft'));
         }
 
-        $this->checks->assertIssuable($lockedDraft, $context->today, $context->exchangeSnapshot);
+        $this->checks->assertIssuable($lockedDraft, $context->today, $context->exchangeSnapshot, $context->bankSnapshot);
 
         $kind = $lockedDraft->kind;
         $client = $lockedDraft->client ?? throw new LogicException('A document always has its client.');
@@ -115,7 +115,7 @@ final readonly class DocumentIssuer
 
         $supplier = $this->snapshot->supplier();
         $customer = $this->snapshot->customer($client);
-        $bank = $this->bankSnapshot($lockedDraft);
+        $bank = $this->bankSnapshot($lockedDraft, $context->bankSnapshot);
         $appearance = $this->snapshot->appearance();
 
         $number = $this->numbering->next($kind->numberingKind(), self::noonOf($issueDate));
@@ -162,20 +162,25 @@ final readonly class DocumentIssuer
      * details (D-01, OA-7); for a transfer document the account the draft chose, copied from the settings (D-05, D-06).
      * The account may have any currency and is not warned about.
      *
-     * @return array<string, string|null>|null
+     * @param  array<string, mixed>|null  $inherited  the bank snapshot of the document this one copies (a converted
+     *                                                invoice), printed when the draft's account cannot be resolved
+     * @return array<string, mixed>|null
      *
      * @throws ValidationException `bank_missing` when the account vanished after the blockers ran
      */
-    private function bankSnapshot(Invoice $draft): ?array
+    private function bankSnapshot(Invoice $draft, ?array $inherited = null): ?array
     {
         if ($draft->kind === InvoiceKind::CreditNote || $draft->payment_method === DocumentPaymentMethod::Online) {
             return null;
         }
 
-        $account = DocumentPayment::account($draft)
-            ?? throw ValidationException::withMessages(['bank_missing' => __('invoices.errors.bank_missing')]);
+        $account = DocumentPayment::account($draft);
 
-        return $this->snapshot->bankAccount($account);
+        if ($account !== null) {
+            return $this->snapshot->bankAccount($account);
+        }
+
+        return $inherited ?? throw ValidationException::withMessages(['bank_missing' => __('invoices.errors.bank_missing')]);
     }
 
     /**

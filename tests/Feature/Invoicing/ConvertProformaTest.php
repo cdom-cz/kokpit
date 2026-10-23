@@ -491,7 +491,7 @@ describe('the payment method of the converted invoice (Phase 14): edges', functi
             ->and(convertSystem(static fn (): int => PaymentLink::query()->where('invoice_id', $invoice->id)->count()))->toBe(0);
     });
 
-    it('converts with the first account of the currency when the account the proforma chose was removed from the settings', function (): void {
+    it('prints the bank snapshot of the proforma when its account was removed, although another account of the currency is left', function (): void {
         Queue::fake();
         [$first, $second] = InvoiceFixtures::configureAccounts(
             InvoiceFixtures::account('Example CZK A', 'CZK', '11'),
@@ -505,11 +505,12 @@ describe('the payment method of the converted invoice (Phase 14): edges', functi
 
         $invoice = app(ConvertProforma::class)->handle($this->admin, $proforma);
 
-        expect($invoice->bank_snapshot)->toEqual(app(InvoiceSnapshot::class)->bankAccount($first))
-            ->and(convertAdminRow($invoice)->bank_account_id)->toBe($first->id);
+        expect($invoice->bank_snapshot)->toEqual(app(InvoiceSnapshot::class)->bankAccount($second))
+            ->and($invoice->bank_snapshot)->not->toEqual(app(InvoiceSnapshot::class)->bankAccount($first))
+            ->and(convertAdminRow($invoice)->bank_account_id)->toBe($second->id);
     });
 
-    it('refuses the conversion with bank_missing and writes nothing when no account of the currency is left', function (): void {
+    it('converts with the bank snapshot of the proforma when its account was removed and no account of the currency is left', function (): void {
         Queue::fake();
         [, , $eur] = InvoiceFixtures::configureAccounts(
             InvoiceFixtures::account('Example CZK A', 'CZK', '11'),
@@ -520,20 +521,18 @@ describe('the payment method of the converted invoice (Phase 14): edges', functi
 
         $proforma = convertPaymentProforma($client, DocumentPaymentMethod::Transfer);
         convertPay($proforma, '3900', '2026-10-04');
+        $printed = Invoice::query()->whereKey($proforma->id)->firstOrFail()->bank_snapshot;
+        $proformaAccount = convertAdminRow($proforma)->bank_account_id;
         InvoiceFixtures::configureAccounts($eur);
-        $sequences = convertSequences();
 
-        try {
-            app(ConvertProforma::class)->handle($this->admin, $proforma);
-            $this->fail('The conversion had to be refused.');
-        } catch (ValidationException $exception) {
-            expect($exception->errors())->toHaveKey('bank_missing');
-        }
+        $invoice = app(ConvertProforma::class)->handle($this->admin, $proforma);
 
-        expect(Invoice::query()->whereNotNull('proforma_id')->count())->toBe(0)
-            ->and(convertSequences())->toBe($sequences)
-            ->and(InvoicePayment::query()->count())->toBe(1)
-            ->and(Transaction::query()->count())->toBe(0);
+        expect($printed)->toBeArray()
+            ->and($proformaAccount)->toBeString()
+            ->and($invoice->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and($invoice->proforma_id)->toBe($proforma->id)
+            ->and($invoice->bank_snapshot)->toEqual($printed)
+            ->and(convertAdminRow($invoice)->bank_account_id)->toBe($proformaAccount);
     });
 
     it('converts an online proforma while online payments are off in the settings: online, switch off, no token, no link', function (): void {

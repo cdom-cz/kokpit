@@ -17,7 +17,6 @@ use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
 use App\Domain\Payments\Support\PaymentLinks;
-use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\TimeTracking\Billing\EntryBilling;
 use App\Domain\TimeTracking\Models\TimeEntry;
@@ -77,7 +76,9 @@ final readonly class ConvertProforma
             $draft = $this->createDraft($locked);
             $this->copyLines($locked, $draft);
 
-            $issued = $this->issuer->issue($draft->refresh(), IssueContext::now($actor));
+            $snapshot = $locked->payment_method === DocumentPaymentMethod::Online ? null : $locked->bank_snapshot;
+
+            $issued = $this->issuer->issue($draft->refresh(), new IssueContext($actor, IssueContext::today(), null, $snapshot));
 
             $this->repointEntries($locked, $issued);
 
@@ -152,19 +153,15 @@ final readonly class ConvertProforma
     }
 
     /**
-     * The id of the bank account the proforma chose, when the settings still hold it, else null: the issue then takes
-     * the first account of the currency, so a paid proforma never becomes unconvertible because its account was
-     * removed (ruling R-14-09-1). The Admin cannot pick an account inside the atomic conversion.
+     * The id of the bank account the proforma chose, as stored (null when it names none). Not filtered through the
+     * settings: an id that is no longer configured is no account for the draft and is never re-picked, the invoice
+     * prints the snapshot of the proforma instead (WR-02, ruling R-14-14-4).
      */
     private function inheritedAccount(Invoice $proforma): ?string
     {
         $id = InvoiceAdmin::query()->where('invoice_id', $proforma->id)->value('bank_account_id');
 
-        if (! is_string($id) || $id === '') {
-            return null;
-        }
-
-        return app(BankAccountSettings::class)->find($id) === null ? null : $id;
+        return is_string($id) && $id !== '' ? $id : null;
     }
 
     /**

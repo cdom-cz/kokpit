@@ -25,11 +25,13 @@ final readonly class IssueContext
      * @param  User  $actor  the Admin issuing the document
      * @param  string  $today  the current Prague calendar day, `Y-m-d`
      * @param  array{rate: string, unit_amount: int, rate_date: string}|null  $exchangeSnapshot  the CNB trio to copy
+     * @param  array<string, mixed>|null  $bankSnapshot  the bank details to copy
      */
     public function __construct(
         public User $actor,
         public string $today,
         public ?array $exchangeSnapshot = null,
+        public ?array $bankSnapshot = null,
     ) {}
 
     /**

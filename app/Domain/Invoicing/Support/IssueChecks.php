@@ -50,9 +50,10 @@ final readonly class IssueChecks
      *
      * @param  string  $today  the current Prague calendar day, `Y-m-d`
      * @param  array{rate: string, unit_amount: int, rate_date: string}|null  $exchangeSnapshot  a CNB trio the document will copy, so no list is needed
+     * @param  array<string, mixed>|null  $bankSnapshot  bank details the document will copy, so no account is needed
      * @return list<array{key: string, message: string}>
      */
-    public function blockers(Invoice $draft, string $today, ?array $exchangeSnapshot = null): array
+    public function blockers(Invoice $draft, string $today, ?array $exchangeSnapshot = null, ?array $bankSnapshot = null): array
     {
         $blockers = [];
         $add = static function (string $key, array $replace = []) use (&$blockers): void {
@@ -79,7 +80,7 @@ final readonly class IssueChecks
             $add('vat_payer_unsupported');
         }
 
-        if (! $creditNote && $draft->payment_method !== DocumentPaymentMethod::Online && DocumentPayment::account($draft) === null) {
+        if (! $creditNote && $draft->payment_method !== DocumentPaymentMethod::Online && $bankSnapshot === null && DocumentPayment::account($draft) === null) {
             $add('bank_missing');
         }
 
@@ -128,12 +129,13 @@ final readonly class IssueChecks
 
     /**
      * @param  array{rate: string, unit_amount: int, rate_date: string}|null  $exchangeSnapshot
+     * @param  array<string, mixed>|null  $bankSnapshot
      *
      * @throws ValidationException keyed by the key of every blocker, a key with the message of each of its blockers
      */
-    public function assertIssuable(Invoice $draft, string $today, ?array $exchangeSnapshot = null): void
+    public function assertIssuable(Invoice $draft, string $today, ?array $exchangeSnapshot = null, ?array $bankSnapshot = null): void
     {
-        $blockers = $this->blockers($draft, $today, $exchangeSnapshot);
+        $blockers = $this->blockers($draft, $today, $exchangeSnapshot, $bankSnapshot);
 
         if ($blockers === []) {
             return;
