@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 14
 current_phase_name: Switchable payment method and independent invoice currency
 status: executing
-stopped_at: Phase 14 context gathered
-last_updated: "2026-10-23T09:01:07.794Z"
+stopped_at: Completed 14-01-PLAN.md
+last_updated: "2026-10-23T09:16:12.055Z"
 last_activity: 2026-10-23
-last_activity_desc: Phase 10.1 complete, transitioned to Phase 8
-state_head: d2b9aefe5c748cd22fac98aea81fb5e1746cc191
+last_activity_desc: Phase 14 execution started
+state_head: 700374cec3b74cd4bd5b621d360fb69d41985e6a
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 272
-  completed_plans: 261
+  completed_plans: 262
   percent: 44
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 10.1 — Invoices stay fully editable until sent, with a manual unlock (INSERTED)
+**Current focus:** Phase 14 — Switchable payment method and independent invoice currency
 
 ## Current Position
 
-Phase: 14 (Switchable payment method and independent invoice currency) — READY TO EXECUTE
-Plan: 27
+Phase: 14 (Switchable payment method and independent invoice currency) — EXECUTING
+Plan: 2 of 11
 Status: Ready to execute
-Last activity: 2026-10-23 — Phase 10.1 complete, transitioned to Phase 8
+Last activity: 2026-10-23 — Phase 14 execution started
 
 Progress: [████░░░░░░] 44%
 
@@ -321,6 +321,7 @@ Progress: [████░░░░░░] 44%
 | Phase 10.1 P08 | 60 min | 3 tasks | 10 files |
 | Phase 10.1 P09 | 75min | 3 tasks | 15 files |
 | Phase 10.1 P10 | 110 min | 3 tasks | 13 files |
+| Phase 14 P01 | 25 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -801,6 +802,8 @@ Recent decisions affecting current work:
 - [Phase 10.1]: 10.1-09: an issued document that cannot take time is refused under the field document; an add, release or fixed amount that changes nothing skips the finisher
 - [Phase 10.1]: 10.1-09: the issued editor keeps the linked time tab as its only relation manager so the Přidat nový čas button has a dialog to open
 - [Phase 10.1]: 10.1-10: the edit-versus-queue mutation twin is judged on the total the queue first read as well as on commit order, because the foreign key from invoice_emails to invoices already serialises the commits
+- [Phase 14]: R-14-01-1: bank account id lives in the settings payload (toStoredArray) and never in the document snapshot shape (toArray)
+- [Phase 14]: R-14-01-5 amended: account-id settings migration writes via SettingsRepository because migrator->update() runs the list cast on stdClass items
 
 ### Pending Todos
 
@@ -864,6 +867,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T07:50:14.474Z
-Stopped at: Phase 14 context gathered
-Resume file: .planning/phases/14-online-payment-method-and-invoice-currency/14-CONTEXT.md
+Last session: 2026-10-23T09:16:10.631Z
+Stopped at: Completed 14-01-PLAN.md
+Resume file: None
