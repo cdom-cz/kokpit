@@ -1554,6 +1554,13 @@ return [
     'password_reset' => [
         'sent' => 'Odkaz pro obnovení hesla je na cestě',
         'sent_body' => 'Pokud k zadané adrese existuje aktivní účet, poslali jsme na ni e-mail s odkazem pro nastavení nového hesla.',
+        'mail' => [
+            'subject' => 'Obnovení hesla',
+            'intro' => 'obdrželi jsme žádost o obnovení hesla k vašemu účtu.',
+            'action' => 'Nastavit nové heslo',
+            'expiry' => 'Odkaz platí :count minutu.|Odkaz platí :count minuty.|Odkaz platí :count minut.',
+            'outro' => 'Pokud jste o obnovení nežádali, nic nedělejte: vaše heslo zůstává beze změny.',
+        ],
     ],
 
     'alerts' => [

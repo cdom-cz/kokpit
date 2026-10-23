@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\Clients\Actions;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Identity\Notifications\ResetPasswordNotification;
 use App\Domain\Identity\RoleName;
 use DomainException;
-use Filament\Auth\Notifications\ResetPassword as ResetPasswordNotification;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Events\PasswordResetLinkSent;
 use Illuminate\Contracts\Auth\CanResetPassword;
@@ -17,8 +17,8 @@ use SensitiveParameter;
 /**
  * Mails a Partner a password reset link on behalf of the Admin (US-02, D-04).
  *
- * It goes through the panel's own password broker, with the same notification and
- * the same signed URL that Filament's "forgot password" page produces, so the
+ * It goes through the panel's own password broker, with Kokpit's own reset notification
+ * (Filament's with Kokpit's texts) and the same signed URL that Filament's "forgot password" page produces, so the
  * link opens the panel's reset page. An account that cannot sign in (deactivated,
  * or a Partner of an archived client) receives nothing and no token is stored: the
  * check runs before the broker and again inside its callback.

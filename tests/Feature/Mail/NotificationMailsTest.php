@@ -3,9 +3,17 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Actions\InvitePartner;
+use App\Domain\Clients\Actions\SendPartnerPasswordReset;
 use App\Domain\Clients\Models\Client;
+use App\Domain\Identity\Notifications\ResetPasswordNotification;
 use Dom\HTMLDocument;
+use Filament\Auth\Notifications\ResetPassword as FilamentResetPassword;
+use Filament\Facades\Filament;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\URL;
 use Symfony\Component\Mime\Email;
 use Tests\Support\Canary;
 use Tests\Support\InvoiceFixtures;
@@ -144,5 +152,54 @@ describe('the invitation', function (): void {
             ->and($text)->toContain($clientName)
             ->and($text)->not->toMatch('/\\\\[\[\]*_]/')
             ->and($text)->toContain("S pozdravem\nExample Supplier s.r.o.");
+    });
+});
+
+describe('the password reset', function (): void {
+    it('goes out as Kokpit\'s e-mail on the shared layout with the reset link and the reviewed Czech text', function (): void {
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $client = Client::factory()->create();
+        $partner = Canary::partnerFor($client->id);
+
+        app(SendPartnerPasswordReset::class)->handle($partner);
+
+        $messages = MailFixtures::to($partner->email);
+
+        expect($messages)->toHaveCount(1);
+
+        $email = $messages[0];
+        $dom = notifMailDom($email);
+        $visible = notifMailVisible($dom);
+        $buttons = $dom->querySelectorAll('a.button');
+        $text = (string) $email->getTextBody();
+        $minutes = (int) config('auth.passwords.'.config('auth.defaults.passwords').'.expire');
+
+        expect($email->getSubject())->toBe('Obnovení hesla')
+            ->and($visible)->toContain('Dobrý den,')
+            ->and($visible)->toContain('obdrželi jsme žádost o obnovení hesla k vašemu účtu.')
+            ->and($visible)->toContain('Odkaz platí '.$minutes.' minut.')
+            ->and($visible)->toContain('Pokud jste o obnovení nežádali, nic nedělejte: vaše heslo zůstává beze změny.')
+            ->and($visible)->not->toContain('Tato zpráva vám byla doručena')
+            ->and($visible)->not->toContain('zprávu smažte')
+            ->and($visible)->not->toContain('S pozdravem')
+            ->and($dom->querySelector('td.header')?->textContent)->toContain('Example Supplier s.r.o.')
+            ->and($buttons)->toHaveCount(1)
+            ->and(trim((string) $buttons[0]?->textContent))->toBe('Nastavit nové heslo');
+
+        $request = Request::create((string) $buttons[0]?->getAttribute('href'));
+
+        expect(URL::hasValidSignature($request))->toBeTrue()
+            ->and(Route::getRoutes()->match($request)->getName())->toBe('filament.admin.auth.password-reset.reset')
+            ->and($request->query('email'))->toBe($partner->email)
+            ->and($text)->toContain('Nastavit nové heslo: ')
+            ->and($text)->toContain('Odkaz platí '.$minutes.' minut.')
+            ->and($text)->not->toContain('Tato zpráva vám byla doručena');
+    });
+
+    it('is Kokpit\'s subclass of the Filament notification and stays queued', function (): void {
+        $notification = app(ResetPasswordNotification::class, ['token' => 'example-token']);
+
+        expect($notification)->toBeInstanceOf(FilamentResetPassword::class)
+            ->and($notification)->toBeInstanceOf(ShouldQueue::class);
     });
 });
