@@ -14,6 +14,7 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Pdf\InvoicePdf;
+use App\Domain\Invoicing\Support\IssuedDocumentRules;
 use App\Domain\Payments\Enums\PaymentLinkDeactivation;
 use App\Domain\Payments\Enums\PaymentLinkState;
 use App\Domain\Payments\Jobs\CreatePaymentLink;
@@ -492,6 +493,20 @@ describe('a list or an account that is missing', function (): void {
         $errors = iccRefusal($invoice, ['currency' => 'CZK']);
 
         expect($errors['currency'][0])->toContain('USD')->toContain('13. 10. 2026')
+            ->and(iccState($invoice))->toBe($before);
+    });
+
+    it('offers a currency only CNB publishes and refuses it for the missing account', function (): void {
+        // USD is in the list because CNB publishes it, so the list message is gone; the missing account is the current
+        // boundary, which plan 14-09 replaces (D-05, D-07).
+        $invoice = iccIssued(InvoiceFixtures::client(), 'CZK', lists: ['USD' => '22.500']);
+        $before = iccState($invoice);
+
+        $errors = iccRefusal($invoice, ['currency' => 'USD']);
+
+        expect(IssuedDocumentRules::currencyChoices($invoice))->toContain('USD')
+            ->and($errors['currency'][0])->not->toBe(__('invoices.errors.currency'))
+            ->and($errors['currency'][0])->toBe('Pro měnu USD není nastaven bankovní účet. Přidejte ho v Nastavení.')
             ->and(iccState($invoice))->toBe($before);
     });
 

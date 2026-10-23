@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Invoicing\Support\InvoiceCurrencies;
+use App\Domain\Invoicing\Support\IssuedDocumentRules;
 use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Shared\Auth\PartnerContext;
 use Tests\Support\Canary;
@@ -59,5 +60,17 @@ describe('the union list', function (): void {
         InvoiceFixtures::cnbRate('ZZZ', '2026-10-13', '1.000');
 
         expect(InvoiceCurrencies::choices(null, 'xxx'))->toContain('USD')->not->toContain('ZZZ')->not->toContain('XXX');
+    });
+});
+
+describe('the issued editor', function (): void {
+    it('offers the same list as the shared service', function (): void {
+        InvoiceFixtures::configureSupplier();
+        InvoiceFixtures::cnbRate('USD', '2026-10-14', '22.500');
+        $client = InvoiceFixtures::client();
+        $invoice = InvoiceFixtures::issued($client);
+
+        expect(IssuedDocumentRules::currencyChoices($invoice))->toBe(InvoiceCurrencies::choices($client, $invoice->currency))
+            ->toContain('USD');
     });
 });

@@ -14,9 +14,7 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
-use App\Domain\Settings\Banking\BankAccount;
 use App\Domain\Settings\Numbering\InvalidNumberPattern;
-use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\NumberingSettings;
 use App\Domain\Shared\Money\Money;
 use Carbon\CarbonImmutable;
@@ -86,24 +84,15 @@ final class IssuedDocumentRules
     }
 
     /**
-     * The currencies the editor offers for the document, sorted: those of the supplier's bank accounts, the currency of
-     * the client and the one the document has now. The write path accepts nothing else (T-10.1-31).
+     * The currencies the editor offers for the document (D-07, D-09): the union list of {@see InvoiceCurrencies} (CNB,
+     * bank accounts, the client, the document itself and CZK), the same one the create-draft modal and the draft editor
+     * use. The write path accepts nothing else (T-10.1-31).
      *
      * @return list<string>
      */
     public static function currencyChoices(Invoice $invoice): array
     {
-        $codes = array_map(static fn (BankAccount $account): string => $account->currency, app(BankAccountSettings::class)->accounts);
-        $codes[] = $invoice->currency;
-
-        if ($invoice->client !== null) {
-            $codes[] = $invoice->client->currency;
-        }
-
-        $codes = array_values(array_unique($codes));
-        sort($codes);
-
-        return $codes;
+        return InvoiceCurrencies::choices($invoice->client, $invoice->currency);
     }
 
     /**
