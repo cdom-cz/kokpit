@@ -149,6 +149,24 @@ describe('the tracer: from the detail to a corrected invoice', function (): void
             ->assertSee(Money::ofMinor(150000, 'CZK')->format('cs'));
     });
 
+    it('offers the due date, the language and the customer lines for editing while the currency stays read-only', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+
+        iedEditor($issued)
+            ->assertSee('Odběratel a dodavatel')
+            ->assertFormFieldExists('due_date', fn ($field): bool => ! $field->isDisabled())
+            ->assertFormFieldExists('language', fn ($field): bool => ! $field->isDisabled())
+            ->assertFormFieldExists('customer.name', fn ($field): bool => ! $field->isDisabled())
+            ->assertFormFieldExists('currency', fn ($field): bool => $field->isDisabled())
+            ->assertFormSet(['customer.name' => iedRow($issued)->customer_snapshot['name']]);
+    });
+
+    it('does not show the parties section on a draft', function (): void {
+        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+
+        iedEditor($draft)->assertDontSee('Odběratel a dodavatel');
+    });
+
     it('edits the printed note of an open proforma', function (): void {
         $proforma = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Advance', '1', '800.00')], InvoiceKind::Proforma);
 

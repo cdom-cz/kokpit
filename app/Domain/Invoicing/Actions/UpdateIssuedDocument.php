@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Invoicing\Actions;
 
+use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
@@ -15,8 +16,10 @@ use App\Domain\Invoicing\Support\InvoiceQuantity;
 use App\Domain\Invoicing\Support\IssuedDocumentRules;
 use App\Domain\Invoicing\Support\IssuedEditFinisher;
 use App\Domain\Invoicing\Support\ItemListWriter;
+use App\Domain\Invoicing\Support\SnapshotInput;
 use App\Domain\Invoicing\Support\TimeLineConversion;
 use App\Domain\Shared\Money\Money;
+use App\Domain\TimeTracking\Support\PragueDay;
 use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -34,6 +37,9 @@ use OverflowException;
  * - `items`: the whole list of lines, the contract of {@see UpdateDraft} (`id?`, `description`, `quantity`, `unit`,
  *   `unit_price`, `confirm_zero_price?`, see {@see InvoiceItemInput});
  * - `note`: the printed note, at most 500 characters, blank clears it;
+ * - `due_date`: a Prague `Y-m-d`, never null for an issued document and not before the issue date (D-06, R-10.1-07-1);
+ * - `language`: `cs` or `en`;
+ * - `customer`: the lines of the customer snapshot, checked by {@see SnapshotInput::customer()} (A9);
  * - `internal_note`: saved through {@see UpdateInternalNote}. It prints nowhere, so a save that carries neither
  *   `items` nor `note` does not replace the PDF.
  *
@@ -85,6 +91,8 @@ final readonly class UpdateIssuedDocument
 
             $before = InvoiceAudit::snapshot($locked);
 
+            $header = $this->header($locked, $data);
+
             $note = array_key_exists('note', $data) ? $this->note($data['note']) : $locked->note;
             $currency = $locked->currency;
 
@@ -106,12 +114,13 @@ final readonly class UpdateIssuedDocument
                 $this->internalNote->handle($actor, $locked, is_string($data['internal_note']) ? $data['internal_note'] : null);
             }
 
-            if (! array_key_exists('items', $data) && ! array_key_exists('note', $data)) {
+            if (! array_key_exists('items', $data) && ! array_key_exists('note', $data) && $header === []) {
                 return $locked->refresh();
             }
 
             $locked->fill(['note' => $note]);
             $locked->forceFill([
+                ...$header,
                 'subtotal_minor' => $totals['subtotal']->minor,
                 'vat_minor' => $totals['vat']->minor,
                 'total_minor' => $totals['total']->minor,
@@ -130,6 +139,85 @@ final readonly class UpdateIssuedDocument
 
             return $locked->refresh();
         });
+    }
+
+    /**
+     * The header columns of the data that change: only the keys that are present and differ from the stored value,
+     * checked, as the columns they are written to. The number, the kind, the VAT mode and the appearance are never
+     * among them (D-08).
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     *
+     * @throws ValidationException `due_date`, `language`, `customer.<field>`
+     */
+    private function header(Invoice $locked, array $data): array
+    {
+        $values = [];
+
+        if (array_key_exists('due_date', $data)) {
+            $due = $this->requiredDay($data['due_date'], 'due_date');
+
+            if ($due !== $locked->due_date?->format('Y-m-d')) {
+                $values['due_date'] = $due;
+            }
+        }
+
+        $issueDate = $locked->issue_date?->format('Y-m-d');
+        $dueDate = $values['due_date'] ?? $locked->due_date?->format('Y-m-d');
+
+        if ($values !== [] && $issueDate !== null && $dueDate !== null && $dueDate < $issueDate) {
+            throw ValidationException::withMessages(['due_date' => __('invoices.errors.due_before_issue')]);
+        }
+
+        if (array_key_exists('language', $data)) {
+            $language = $this->language($data['language']);
+
+            if ($language !== $locked->language) {
+                $values['language'] = $language;
+            }
+        }
+
+        if (array_key_exists('customer', $data)) {
+            $values['customer_snapshot'] = SnapshotInput::customer($this->lines($data['customer'], 'customer'), $locked->customer_snapshot ?? []);
+        }
+
+        return $values;
+    }
+
+    /**
+     * The lines of a party as an array, whatever else the data holds.
+     *
+     * @return array<array-key, mixed>
+     */
+    private function lines(mixed $value, string $key): array
+    {
+        if (! is_array($value)) {
+            throw new InvalidArgumentException("The {$key} of a document is a list of lines.");
+        }
+
+        return $value;
+    }
+
+    /**
+     * A Prague calendar day; an issued document has all its dates, so blank is as wrong as nonsense.
+     *
+     * @throws ValidationException
+     */
+    private function requiredDay(mixed $value, string $key): string
+    {
+        return PragueDay::day(is_string($value) ? trim($value) : $value)
+            ?? throw ValidationException::withMessages([$key => __('invoices.errors.date_invalid')]);
+    }
+
+    /**
+     * @throws ValidationException
+     */
+    private function language(mixed $value): InvoiceLanguage
+    {
+        $language = $value instanceof InvoiceLanguage ? $value : (is_string($value) ? InvoiceLanguage::tryFrom($value) : null);
+
+        return $language ?? throw ValidationException::withMessages(['language' => __('invoices.errors.language')]);
     }
 
     /**

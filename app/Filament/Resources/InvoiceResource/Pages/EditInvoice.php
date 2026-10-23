@@ -56,6 +56,7 @@ use Filament\Resources\Pages\EditRecord;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
@@ -224,6 +225,7 @@ final class EditInvoice extends EditRecord
             ->columns(1)
             ->components([
                 $this->documentSection(),
+                $this->partiesSection(),
                 $this->itemsSection(),
                 $this->summarySection(),
             ]);
@@ -589,7 +591,27 @@ final class EditInvoice extends EditRecord
             // A disabled switch shows off whatever is stored; it is not dehydrated, so the stored value stays.
             'card_payment_enabled' => app(CardPaymentSwitch::class)->available() && $this->storedCardPayment(),
             'items' => $items,
+            ...($this->issuedMode() ? ['customer' => $this->partyState($invoice->customer_snapshot, self::CUSTOMER_FIELDS)] : []),
         ];
+    }
+
+    /**
+     * The lines of a party snapshot as the form shows them: the listed fields, text or null.
+     *
+     * @param  array<string, mixed>|null  $snapshot
+     * @param  list<string>  $fields
+     * @return array<string, string|null>
+     */
+    private function partyState(?array $snapshot, array $fields): array
+    {
+        $state = [];
+
+        foreach ($fields as $field) {
+            $value = $snapshot[$field] ?? null;
+            $state[$field] = is_scalar($value) ? (string) $value : null;
+        }
+
+        return $state;
     }
 
     /**
@@ -640,13 +662,14 @@ final class EditInvoice extends EditRecord
     }
 
     /**
-     * The values {@see UpdateIssuedDocument} takes: the lines and the two notes, nothing else. The number, the kind,
-     * the currency, the language, the dates and the card switch are not read from the form at all (T-10.1-24). A
+     * The values {@see UpdateIssuedDocument} takes: the lines, the two notes and the header the editor offers (the due
+     * date, the language, the customer lines). The number, the kind, the currency and the card switch are not read from
+     * the form at all (T-10.1-24). A
      * credited line whose fields did not travel (a disabled field is not part of the state) takes them from the stored
      * line; the Action compares them with the stored line again.
      *
      * @param  array<string, mixed>  $data
-     * @return array{items: list<array<string, mixed>>, note: mixed, internal_note: mixed}
+     * @return array<string, mixed>
      */
     private function issuedValues(array $data): array
     {
@@ -682,11 +705,19 @@ final class EditInvoice extends EditRecord
             $items[] = $row;
         }
 
-        return [
+        $values = [
             'items' => $items,
             'note' => $data['note'] ?? null,
             'internal_note' => $data['internal_note'] ?? null,
+            'due_date' => $data['due_date'] ?? null,
+            'language' => $data['language'] ?? null,
         ];
+
+        if (is_array($data['customer'] ?? null)) {
+            $values['customer'] = $data['customer'];
+        }
+
+        return $values;
     }
 
     /**
@@ -811,8 +842,8 @@ final class EditInvoice extends EditRecord
 
     private function documentSection(): Section
     {
-        // An issued document keeps its number, kind, currency, language and dates read-only here (D-08); the plans of
-        // the currency and the dates open them later.
+        // An issued document keeps its number, kind and currency read-only here (D-08); the due date and the language
+        // are editable, the issue date and the currency follow in later steps of the phase.
         $issued = $this->issuedMode();
 
         return Section::make(__('invoices.draft.sections.document'))
@@ -854,7 +885,6 @@ final class EditInvoice extends EditRecord
                     ->label(__('invoices.draft.fields.language'))
                     ->options(InvoiceLanguage::class)
                     ->native(false)
-                    ->disabled($issued)
                     ->required(),
                 Group::make([
                     DatePicker::make('issue_date')
@@ -869,7 +899,7 @@ final class EditInvoice extends EditRecord
                 Group::make([
                     DatePicker::make('due_date')
                         ->label(__('invoices.draft.fields.due_date'))
-                        ->disabled($issued),
+                        ->required($issued),
                     Hidden::make('due_date_default'),
                 ]),
                 // IN-08: the taxable-supply date exists on a VAT payer's document only; in the non-payer mode the
@@ -903,6 +933,39 @@ final class EditInvoice extends EditRecord
                     ->rows(3)
                     ->columnSpanFull(),
             ]);
+    }
+
+    /** The customer lines the editor offers, in the order of the form. */
+    private const array CUSTOMER_FIELDS = ['name', 'street', 'city', 'postal_code', 'country', 'company_id', 'vat_id'];
+
+    /**
+     * "Odběratel a dodavatel" of an issued document (D-06, A9): the lines printed on this document, free fields of its
+     * own snapshot. Nothing is written until "Uložit změny".
+     */
+    private function partiesSection(): Section
+    {
+        return Section::make(__('invoices.edit_issued.parties'))
+            ->visible($this->issuedMode())
+            ->columns(['default' => 1, 'lg' => 2])
+            ->schema([
+                Fieldset::make(__('invoices.edit_issued.customer'))
+                    ->columns(1)
+                    ->schema($this->partyFields('customer', self::CUSTOMER_FIELDS)),
+            ]);
+    }
+
+    /**
+     * The text inputs of one party, under the state path `<party>.<field>`.
+     *
+     * @param  list<string>  $fields
+     * @return list<TextInput>
+     */
+    private function partyFields(string $party, array $fields): array
+    {
+        return array_map(
+            static fn (string $field): TextInput => TextInput::make("{$party}.{$field}")->label(__('invoices.edit_issued.party_fields.'.$field)),
+            $fields,
+        );
     }
 
     private function itemsSection(): Section

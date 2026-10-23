@@ -42,6 +42,12 @@ return [
         'issue_date_future' => 'Datum vystavení nesmí být později než dnes.',
         'issue_date_before_latest' => 'Datum vystavení nesmí být dříve než :date, kdy byl vystaven poslední doklad této řady.',
         'pattern_invalid' => 'Číselná řada pro :kind není platná. Opravte ji v Nastavení.',
+
+        // The customer and supplier lines of an open issued document (plan 10.1-07).
+        'party_required' => 'Vyplňte název.',
+        'party_max' => 'Zadejte nejvýše :max znaků.',
+        'party_country' => 'Zadejte kód země ze dvou velkých písmen, například CZ.',
+        'party_format' => 'Hodnota nemá platný formát.',
         'entries_changed' => 'Některé připojené záznamy času se mezitím změnily. Zkontrolujte koncept a vystavte ho znovu.',
 
         // Time added to a draft.
@@ -397,6 +403,22 @@ return [
         'saved' => 'Změny jsou uložené. PDF bylo vytvořeno znovu, doklad nebyl odeslán.',
         'number_hint' => 'Číslo a druh dokladu se nemění.',
         'credited_hint' => 'Dobropisovaná položka: měnit lze jen text.',
+        'parties' => 'Odběratel a dodavatel',
+        'customer' => 'Odběratel',
+        'supplier' => 'Dodavatel',
+        'party_fields' => [
+            'name' => 'Název',
+            'street' => 'Ulice',
+            'city' => 'Město',
+            'postal_code' => 'PSČ',
+            'country' => 'Země (kód)',
+            'company_id' => 'IČO',
+            'vat_id' => 'DIČ',
+            'email' => 'E-mail',
+            'phone' => 'Telefon',
+            'website' => 'Web',
+            'registration_note' => 'Zápis v rejstříku',
+        ],
     ],
 
     // Surface E: the issued document page.
