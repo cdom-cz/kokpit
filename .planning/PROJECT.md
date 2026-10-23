@@ -80,6 +80,8 @@ Tracked time turns into an issued, payable invoice in one pass, with no unbilled
 | Local development on DDEV | Reproducible environment for contributors of a public repo | — Pending |
 | PostgreSQL 18, Redis for queue/cache/sessions, RustFS as S3-compatible storage | Stack chosen by owner; replaces the brief's open choice (DB vs Redis queue, S3 provider) | — Pending |
 | The send-driven lock replaces status-driven immutability: an issued invoice or proforma is locked only by a successful e-mail send and Admin can unlock it with a reason (Phase 10.1, D-01, D-12) | An issued document may need correction before the customer has it; the database still enforces the lock once sent | — Pending |
+| Payment method per document (transfer or online) independent of currency and bank account; bank accounts have stable ids and several may share a currency (Phase 14, D-01, D-04; overrides Phase 3 D-04) | Online invoices must not print bank details; the account is a choice, the currency only preselects it | — Pending |
+| Card switch editable on an open issued transfer document, forced on for online, frozen by the lock; pay token set once (Phase 14, OA-1; amends Phase 11 D-06) | The method can change until the document is sent; the printed pay URL must keep working | — Pending |
 | Assumptions kept: Partner sees visible-project tasks, creates/comments but cannot change status/priority; fixed task statuses; project key frozen after first task; invoice number `{YYYY}{NNNN}` | Brief's open questions 1-5 | — Pending |
 
 ## Evolution

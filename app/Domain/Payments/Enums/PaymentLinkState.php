@@ -11,7 +11,7 @@ use Filament\Support\Contracts\HasLabel;
  *
  * Pending is a row whose Stripe link is not yet created, active one that offers the payment, failed one whose
  * creation did not succeed and deactivated one that no longer offers it. Failed and deactivated are final; a new
- * link is a new row. "Vypnuto" (switched off) is not a state: the link section derives it from the frozen switch.
+ * link is a new row. "Vypnuto" (switched off) is not a state: the link section derives it from the stored card switch.
  */
 enum PaymentLinkState: string implements HasLabel
 {

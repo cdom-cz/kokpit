@@ -8,7 +8,9 @@ use Illuminate\Support\Str;
 
 /**
  * The bearer token of the stable pay URL (D-01): 32 random letters and digits from the CSPRNG, about 190 bits. It is
- * generated once at issue and frozen with the document; it is never logged and never derived from anything else.
+ * generated when the document first offers card payment (at issue, or later on an open issued document) and set once: it never
+ * changes, not even when the card switch is turned off and on again (Phase 14, D-10, OA-1). It is never logged and never derived from
+ * anything else.
  */
 final readonly class PayToken
 {

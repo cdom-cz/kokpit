@@ -975,7 +975,7 @@ final class ViewInvoice extends ViewRecord
                     ->label(__('invoices.detail.fields.payment_method'))
                     ->state(static fn (Invoice $record): ?string => $record->payment_method?->getLabel())
                     ->visible(static fn (Invoice $record): bool => $record->kind !== InvoiceKind::CreditNote),
-                // The switch frozen at issue (PA-03; UI-SPEC Surface D): read only, no credit note has one.
+                // The stored card switch (PA-03; UI-SPEC Surface D; editable while an issued transfer document is open, frozen by the lock, Phase 14 OA-1): read only here, no credit note has one.
                 TextEntry::make('card_payment')
                     ->label(__('payment_links.frozen.label'))
                     ->state(fn (): string => __($this->linkStatus()['switch'] ? 'payment_links.frozen.yes' : 'payment_links.frozen.no'))

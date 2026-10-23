@@ -361,7 +361,7 @@ final class InvoiceTable
 
     /**
      * "Platební odkaz": the state of the card link as a filter, built on the newest link of the document and the
-     * frozen switch. The SQL fragments ignore the Partner scope, so the filter exists for the Admin only and refuses
+     * stored card switch (editable while the document is open, frozen by the lock). The SQL fragments ignore the Partner scope, so the filter exists for the Admin only and refuses
      * to narrow anything else (T-11-44).
      *
      * @return list<SelectFilter>
