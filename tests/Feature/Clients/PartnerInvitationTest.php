@@ -11,6 +11,7 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Notifications\PartnerInvitation;
 use App\Domain\Identity\Models\User;
+use App\Domain\Notifications\Mail\MailBrand;
 use App\Domain\Shared\Auth\PartnerContext;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -363,7 +364,7 @@ it('builds the mail from scalars only, in Czech', function (): void {
     $notification = new PartnerInvitation('Example Invitee', 'Example Client', $url, '1. 1. 2030 12:00');
     $mail = $notification->toMail(new AnonymousNotifiable);
 
-    expect($mail->subject)->toBe(__('kokpit.invitations.mail.subject'))
+    expect($mail->subject)->toBe('Pozvánka od '.MailBrand::current()->name)
         ->and($mail->greeting)->toBe('Dobrý den, Example Invitee,')
         ->and($mail->actionUrl)->toBe($url)
         ->and($mail->actionText)->toBe('Přijmout pozvánku')

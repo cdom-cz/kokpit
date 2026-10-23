@@ -1484,12 +1484,12 @@ return [
             'empty_description' => 'Pozvěte partnera klienta tlačítkem Pozvat partnera nahoře.',
         ],
         'mail' => [
-            'subject' => 'Pozvánka do aplikace Kokpit',
+            'subject' => 'Pozvánka od :supplier',
             'greeting' => 'Dobrý den, :name,',
-            'intro' => 'byli jste pozváni k vytvoření účtu v aplikaci Kokpit pro klienta :client.',
+            'intro' => 'zveme vás k vytvoření účtu, ve kterém uvidíte projekty a úkoly klienta :client.',
             'action' => 'Přijmout pozvánku',
             'expiry' => 'Odkaz platí do :date.',
-            'outro' => 'Pokud jste pozvánku nečekali, tento e-mail ignorujte.',
+            'outro' => 'Pokud jste pozvánku nečekali, můžete tento e-mail ignorovat.',
         ],
         'accept' => [
             'title' => 'Pozvánka',
