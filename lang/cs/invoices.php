@@ -768,7 +768,7 @@ return [
         'draft_field' => 'Koncept faktury',
         'open_draft' => 'Otevřít koncept',
         'skipped_reserved' => '{1} Přeskočen :count záznam připojený ke konceptu faktury. Odpojte ho v konceptu.|[2,4] Přeskočeny :count záznamy připojené ke konceptu faktury. Odpojte je v konceptu.|[5,*] Přeskočeno :count záznamů připojených ke konceptu faktury. Odpojte je v konceptu.',
-        'unlock_refusal' => 'Záznam patří k vystavené faktuře :number a nelze ho odemknout. Vystavte dobropis.',
+        'unlock_refusal' => 'Záznam patří k vystavené faktuře :number. Uvolnit ho lze na faktuře, dokud není odeslaná, nebo dobropisem.',
     ],
 
     // Surface N: the Partner view. The Partner state labels are in enums.php (invoice_status_partner).

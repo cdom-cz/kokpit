@@ -895,7 +895,7 @@ it('refuses to unlock an entry billed by an issued invoice, naming it, and leave
 
     expect(app(CancelEntriesBilling::class)->preview($ids))->toBe(['eligible' => 0, 'eligible_seconds' => 0])
         ->and(fn () => app(CancelEntriesBilling::class)->handle($admin, $ids))
-        ->toThrow(DomainException::class, 'Záznam patří k vystavené faktuře '.$number.' a nelze ho odemknout. Vystavte dobropis.');
+        ->toThrow(DomainException::class, 'Záznam patří k vystavené faktuře '.$number.'. Uvolnit ho lze na faktuře, dokud není odeslaná, nebo dobropisem.');
 
     $stored = lockReload($byInvoice);
 

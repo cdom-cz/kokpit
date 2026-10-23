@@ -1644,7 +1644,7 @@ return [
             'nothing_to_bill' => 'V označených záznamech není nic k vyfakturování.',
             'nothing_to_unbill' => 'V označených záznamech není nic, co by šlo odemknout.',
             'reserved' => 'Záznam je připojen ke konceptu faktury. Odpojte ho v konceptu.',
-            'invoice_locked' => 'Záznam patří k vystavené faktuře :number a nelze ho odemknout. Vystavte dobropis.',
+            'invoice_locked' => 'Záznam patří k vystavené faktuře :number. Uvolnit ho lze na faktuře, dokud není odeslaná, nebo dobropisem.',
         ],
         'rate_source' => [
             'task' => 'úkol',

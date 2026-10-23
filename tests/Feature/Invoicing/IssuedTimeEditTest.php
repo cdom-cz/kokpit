@@ -23,11 +23,13 @@ use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
+use App\Domain\TimeTracking\Actions\CancelEntriesBilling;
 use App\Domain\TimeTracking\Enums\BillingState;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEntriesRelationManager;
+use App\Filament\Resources\TimeEntryResource;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Testing\TestAction;
 use Filament\Notifications\Notification;
@@ -559,5 +561,36 @@ describe('the issued editor', function (): void {
         expect(iteLines($invoice))->toHaveCount(2)
             ->and(iteLines($invoice)[1]->description)->toBe('Example fixed part')
             ->and(iteRow($invoice)->total_minor)->toBe(100000 + 25000);
+    });
+});
+
+describe('the time entry screen and the invoice that bills the time', function (): void {
+    it('points the Admin at the invoice, then shows the released entry as unbilled and editable', function (): void {
+        $client = InvoiceFixtures::client();
+        $project = iteProject($client);
+        $entry = iteEntry($project, '2026-09-10 08:00:00', '2026-09-10 09:00:00');
+        $invoice = iteIssued($client, [$project]);
+        $number = (string) iteRow($invoice)->number;
+        $expected = 'Záznam patří k vystavené faktuře '.$number.'. Uvolnit ho lze na faktuře, dokud není odeslaná, nebo dobropisem.';
+
+        // The screen of the entry still refuses to unbill invoice-billed time, and says where it can be released.
+        expect(fn () => app(CancelEntriesBilling::class)->handle($this->admin, [$entry->id]))->toThrow(DomainException::class, $expected)
+            ->and(TimeEntryResource::canEdit(iteEntryFresh($entry)))->toBeFalse();
+
+        // The same text for a locked invoice.
+        $locked = InvoiceFixtures::lock($invoice);
+
+        expect(iteRow($locked)->lock_state->value)->toBe('locked')
+            ->and(fn () => app(CancelEntriesBilling::class)->handle($this->admin, [$entry->id]))->toThrow(DomainException::class, $expected);
+
+        // Unlocked and released on the invoice, the entry is free and editable on the time entry screen.
+        app(UnlockInvoice::class)->handle($this->admin, $locked, 'Example reason to release the time');
+        app(ReleaseEntries::class)->handle($this->admin, $invoice, [$entry->id]);
+
+        $fresh = iteEntryFresh($entry);
+
+        expect($fresh->billing_state)->toBe(BillingState::Unbilled)
+            ->and($fresh->invoice_id)->toBeNull()
+            ->and(TimeEntryResource::canEdit($fresh))->toBeTrue();
     });
 });
