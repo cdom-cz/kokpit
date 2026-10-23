@@ -126,7 +126,7 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 - [x] **IN-01**: Invoices, proformas and credit notes with separate number series, number allocated only on issue
 - [x] **IN-02**: Draft created from unbilled billable time (client, period, projects; grouping per project or task; fixed sums added) plus manual items; items editable; entries reserved so two drafts cannot bill the same time
-- [x] **IN-03**: Issue freezes number, kind and the issue snapshots (supplier, customer, bank, rate, amounts); an issued invoice or proforma stays editable until a successful e-mail send locks it, a credit note is locked at issue, and number and kind never change, enforced in the database
+- [ ] **IN-03**: Issue freezes number, kind and the issue snapshots (supplier, customer, bank, rate, amounts); an issued invoice or proforma stays editable until a successful e-mail send locks it, a credit note is locked at issue, and number and kind never change, enforced in the database
 - [x] **IN-04**: PDF generated at issue from snapshots only, stored in documents, with SPAYD QR for CZK bank transfer, in the client's invoice language; sent by queued e-mail with optional work report
 - [x] **IN-05**: Manual payment (transfer, cash) recorded in a payments table; warning if already paid; overdue status derived; overdue overview
 - [x] **IN-06**: Proforma converts to invoice with a link after payment
@@ -134,11 +134,11 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **IN-08**: Non-VAT-payer mode is the default and fully tested; data model prepared for VAT payer
 - [x] **IN-09**: Partner sees own issued invoices and proformas (list, detail, PDF, pay button) read-only, never drafts, internal notes, linked time or rates
 - [x] **IN-10**: Cancelling or deleting a draft, or storno, returns linked entries to unbilled
-- [x] **IN-11**: An issued invoice or proforma is locked only by a successfully sent document e-mail; queued, pending or failed e-mails, payments, credit notes and storno never lock it
-- [x] **IN-12**: Admin unlocks a locked invoice or proforma with a mandatory reason; the unlock is audited and the document stays editable until the next successful send locks it again
-- [x] **IN-13**: While unlocked, Admin edits items, dates, customer and supplier snapshots, bank account, currency, language and linked time of an issued invoice or proforma; totals are recomputed with the single rounding rule, and totals below what was paid or credited warn instead of blocking
-- [x] **IN-14**: Saving an edit regenerates and replaces the stored PDF with its QR code and refreshes the card payment link when amount or currency change; nothing is sent automatically
-- [x] **IN-15**: Every change to an issued document after its first send, every lock and every unlock is audited with who, when, the values before and after and the unlock reason
+- [ ] **IN-11**: An issued invoice or proforma is locked only by a successfully sent document e-mail; queued, pending or failed e-mails, payments, credit notes and storno never lock it
+- [ ] **IN-12**: Admin unlocks a locked invoice or proforma with a mandatory reason; the unlock is audited and the document stays editable until the next successful send locks it again
+- [ ] **IN-13**: While unlocked, Admin edits items, dates, customer and supplier snapshots, bank account, currency, language and linked time of an issued invoice or proforma; totals are recomputed with the single rounding rule, and totals below what was paid or credited warn instead of blocking
+- [ ] **IN-14**: Saving an edit regenerates and replaces the stored PDF with its QR code and refreshes the card payment link when amount or currency change; nothing is sent automatically
+- [ ] **IN-15**: Every change to an issued document after its first send, every lock and every unlock is audited with who, when, the values before and after and the unlock reason
 
 ### Payments (Stripe)
 
@@ -281,7 +281,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FI-03 | Phase 10 | Complete |
 | IN-01 | Phase 10 | Complete |
 | IN-02 | Phase 10 | Complete |
-| IN-03 | Phase 10.1 | Complete |
+| IN-03 | Phase 10.1 | Gaps Found |
 | IN-04 | Phase 10 | Complete |
 | IN-05 | Phase 10 | Complete |
 | IN-06 | Phase 10 | Complete |
@@ -289,11 +289,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | IN-08 | Phase 10 | Complete |
 | IN-09 | Phase 10 | Complete |
 | IN-10 | Phase 10 | Complete |
-| IN-11 | Phase 10.1 | Complete |
-| IN-12 | Phase 10.1 | Complete |
-| IN-13 | Phase 10.1 | Complete |
-| IN-14 | Phase 10.1 | Complete |
-| IN-15 | Phase 10.1 | Complete |
+| IN-11 | Phase 10.1 | Gaps Found |
+| IN-12 | Phase 10.1 | Gaps Found |
+| IN-13 | Phase 10.1 | Gaps Found |
+| IN-14 | Phase 10.1 | Gaps Found |
+| IN-15 | Phase 10.1 | Gaps Found |
 | PA-01 | Phase 11 | Complete |
 | PA-02 | Phase 11 | Complete |
 | PA-03 | Phase 11 | Complete |
