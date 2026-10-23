@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 14
 current_phase_name: Switchable payment method and independent invoice currency
 status: executing
-stopped_at: Completed 14-09-PLAN.md
-last_updated: "2026-10-23T11:54:22.808Z"
+stopped_at: Completed 14-10-PLAN.md
+last_updated: "2026-10-23T12:31:44.966Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 14 execution started
-state_head: 94724c712f1fcb4749ebf0d62b5164e68d0fadaf
+state_head: d423a20e04b6308a179ec91c8a4d436975bc7a3c
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 272
-  completed_plans: 270
+  completed_plans: 271
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 14 (Switchable payment method and independent invoice currency) — EXECUTING
-Plan: 10 of 11
+Plan: 11 of 11
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 14 execution started
 
@@ -330,6 +330,7 @@ Progress: [████░░░░░░] 44%
 | Phase 14 P07 | 40min | 3 tasks | 7 files |
 | Phase 14 P08 | 31 min | 2 tasks | 5 files |
 | Phase 14 P09 | 29 min | 3 tasks | 6 files |
+| Phase 14 P10 | 40 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -827,6 +828,8 @@ Recent decisions affecting current work:
 - [Phase 14]: R-14-09-1: a converted proforma inherits payment_method and, when still configured, bank_account_id; the card switch is on for online and off for transfer
 - [Phase 14]: R-14-09-2: PaymentLinks::reconcile runs after the last carried payment in the conversion transaction, so a fully paid converted invoice has no live link
 - [Phase 14]: R-14-09-3: InvoiceAudit::snapshot gains payment_method and card_payment; the account id and the pay token never enter the history
+- [Phase 14]: Plan 14-10: the issued editor sends an account only when the Admin changed it, so a removed or legacy account keeps its printed snapshot on an unrelated save
+- [Phase 14]: Plan 14-10: BankAccountSettings::forCurrency() and InvoiceSnapshot::bank() are deleted; tests/Arch/BankAccountByIdTest.php confines firstForCurrency( to the settings class and DocumentPayment
 
 ### Pending Todos
 
@@ -890,6 +893,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T11:54:21.307Z
-Stopped at: Completed 14-09-PLAN.md
+Last session: 2026-10-23T12:31:43.395Z
+Stopped at: Completed 14-10-PLAN.md
 Resume file: None
