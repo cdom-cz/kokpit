@@ -904,7 +904,17 @@ Plans:
 **Goal:** The invoice currency can be changed freely, independent of the payment method (bank transfer or online), the selected bank account, or whether payment is online. The payment method can be switched on the invoice between bank transfer and online (Stripe): bank transfer shows the bank payment details, online shows no bank details, only what is needed to pay via Stripe. When the chosen currency matches a preconfigured bank account, that account is preselected; the account can also be chosen separately and independently of the currency. The chosen currency carries through to the PDF and the Stripe payment.
 **Requirements**: P14-01, P14-02, P14-03, P14-04, P14-05, P14-06, P14-07, P14-08, P14-09
 **Depends on:** Phase 13
-**Plans:** 0 plans
+**Plans:** 11 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 14 to break down)
+- [ ] 14-01-PLAN.md — Bank accounts get stable UUID v7 ids; several accounts per currency; Repeater id round trip (Wave 1)
+- [ ] 14-02-PLAN.md — `invoices.payment_method` with guard, checks and backfill; open card switch and set-once token; account id on `invoice_admin` (Wave 1)
+- [ ] 14-03-PLAN.md — One union currency list (CNB + accounts + client + current + CZK) for every editor (Wave 1)
+- [ ] 14-04-PLAN.md — Draft method and account, preselection, online availability, issue without bank snapshot for online (Wave 2)
+- [ ] 14-05-PLAN.md — PDF payment box by method; pay URL gated on switch AND token (Wave 2)
+- [ ] 14-06-PLAN.md — Admin and Partner detail show the method; no bank rows for online (Wave 2)
+- [ ] 14-07-PLAN.md — Open issued document: method, account, switch and currency changes with the Stripe link following (Wave 3)
+- [ ] 14-08-PLAN.md — Draft editor: method, account and card toggle; preselection on currency change (Wave 3)
+- [ ] 14-09-PLAN.md — Proforma conversion inherits method and account; link-job race; audit of method changes (Wave 4)
+- [ ] 14-10-PLAN.md — Issued editor fields; old currency-to-account lookups deleted; architecture test (Wave 5)
+- [ ] 14-11-PLAN.md — CONTRIBUTING and PROJECT.md hand-over, docblock sweep, development database migrated, full gate (Wave 6)
