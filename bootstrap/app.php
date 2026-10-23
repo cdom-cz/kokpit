@@ -48,6 +48,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // routes are not in the api group.
         $middleware->api(append: [LabelApiActivitySource::class]);
 
+        // Kokpit has no route named `login`; the framework default callback calls route('login') and turns every
+        // unauthenticated non-JSON request behind `auth` into a 500 ("Route [login] not defined"). The guest goes
+        // to the panel login instead; for api/* the shouldRenderJsonWhen rule below makes the handler answer a JSON 401.
+        $middleware->redirectGuestsTo(static fn (Request $request): string => route('filament.admin.auth.login'));
+
         // Sanctum 4 registers no route middleware aliases, so `abilities:` and `ability:` on the
         // /api/v1 routes would otherwise fail with "Target class [abilities] does not exist".
         $middleware->alias([
