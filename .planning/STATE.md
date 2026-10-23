@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 14
 current_phase_name: Switchable payment method and independent invoice currency
 status: executing
-stopped_at: Completed 14-01-PLAN.md
-last_updated: "2026-10-23T09:16:12.055Z"
+stopped_at: Completed 14-02-PLAN.md
+last_updated: "2026-10-23T09:34:02.883Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 14 execution started
-state_head: 700374cec3b74cd4bd5b621d360fb69d41985e6a
+state_head: 9ac3c6673d1c38b277e97b8e8f03c672d345be01
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 272
-  completed_plans: 262
+  completed_plans: 263
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 14 (Switchable payment method and independent invoice currency) — EXECUTING
-Plan: 2 of 11
+Plan: 3 of 11
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 14 execution started
 
@@ -322,6 +322,7 @@ Progress: [████░░░░░░] 44%
 | Phase 10.1 P09 | 75min | 3 tasks | 15 files |
 | Phase 10.1 P10 | 110 min | 3 tasks | 13 files |
 | Phase 14 P01 | 25 min | 2 tasks | 9 files |
+| Phase 14 P02 | 40min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -804,6 +805,9 @@ Recent decisions affecting current work:
 - [Phase 10.1]: 10.1-10: the edit-versus-queue mutation twin is judged on the total the queue first read as well as on commit order, because the foreign key from invoice_emails to invoices already serialises the commits
 - [Phase 14]: R-14-01-1: bank account id lives in the settings payload (toStoredArray) and never in the document snapshot shape (toArray)
 - [Phase 14]: R-14-01-5 amended: account-id settings migration writes via SettingsRepository because migrator->update() runs the list cast on stdClass items
+- [Phase 14]: R-14-02-2: payment_method is an open column of kokpit_guard_invoice_row() and defaults to transfer on insert (credit note stays NULL)
+- [Phase 14]: OA-7: invoices_issued_fields_check requires the bank snapshot for an issued transfer document and forbids it for an online one
+- [Phase 14]: OA-1: a first pay token and card switch changes are allowed on an open issued document, a set token never changes; pay token check is format-only
 
 ### Pending Todos
 
@@ -867,6 +871,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T09:16:10.631Z
-Stopped at: Completed 14-01-PLAN.md
+Last session: 2026-10-23T09:34:01.405Z
+Stopped at: Completed 14-02-PLAN.md
 Resume file: None
