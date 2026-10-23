@@ -5,10 +5,12 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Notifications\PartnerInvitation;
 use App\Domain\Notifications\Mail\MailBrand;
+use App\Domain\Notifications\Mail\MailText;
 use App\Domain\Operations\Alerts\AdminAlerter;
 use App\Domain\Operations\Alerts\OperationalAlert;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Tasks\Notifications\TaskCommentedNotification;
 use Dom\HTMLDocument;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification as BaseNotification;
@@ -324,5 +326,90 @@ describe('the brand reader whitelist and fallback', function (): void {
 
         expect(mailThemeText($document, 'td.header'))->toBe((string) config('app.name'))
             ->and(mailThemeFooterLines($document))->toBe([(string) config('app.name')]);
+    });
+});
+
+describe('the plain-text part', function (): void {
+    it('starts with the supplier name, carries the footer lines and no stock Laravel text', function (): void {
+        $text = (string) mailThemeInvitation()->getTextBody();
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $text)), static fn (string $line): bool => $line !== ''));
+
+        expect($text)->toStartWith('Example Supplier s.r.o.')
+            ->and($text)->toContain('Sample Street 10, 100 00 Sampletown')
+            ->and($text)->toContain('IČO '.mailThemeSupplier('company_id'))
+            ->and($text)->toContain((string) mailThemeSupplier('email'))
+            ->and($text)->toContain('https://www.example.com')
+            ->and($text)->toContain('Registered in the example register.')
+            ->and(mb_strtolower($text))->not->toContain('laravel')
+            ->and($text)->not->toContain('©')
+            ->and(mb_strtolower($text))->not->toContain('all rights reserved')
+            ->and(end($lines))->toBe('Registered in the example register.');
+    });
+
+    it('carries the footer labels of the locale of the e-mail', function (): void {
+        $english = (string) mailThemeInvitation('en')->getTextBody();
+        $czech = (string) mailThemeInvitation()->getTextBody();
+
+        expect($english)->toContain('Company ID '.mailThemeSupplier('company_id'))
+            ->and($english)->not->toContain('IČO')
+            ->and($czech)->toContain('IČO '.mailThemeSupplier('company_id'))
+            ->and($czech)->not->toContain('Company ID');
+    });
+
+    it('prints a footer line only when it has content and never a bank account', function (): void {
+        DB::table('settings')->where('group', 'supplier')->whereIn('name', ['street', 'city', 'postal_code', 'company_id', 'email', 'website', 'registration_note'])
+            ->update(['payload' => json_encode('')]);
+        app()->forgetScopedInstances();
+
+        $text = trim((string) mailThemeInvitation()->getTextBody());
+
+        expect($text)->toContain('Example Supplier s.r.o.')
+            ->and($text)->not->toContain('IČO')
+            ->and($text)->not->toContain('Example CZK account')
+            ->and($text)->not->toMatch('/\R{3,}/');
+    });
+
+    it('keeps the characters of a company name literal and entity-free', function (): void {
+        DB::table('settings')->where('group', 'supplier')->where('name', 'company_name')
+            ->update(['payload' => json_encode('Example *Star* & Co')]);
+        app()->forgetScopedInstances();
+
+        $text = (string) mailThemeInvitation()->getTextBody();
+
+        expect($text)->toStartWith('Example *Star* & Co')
+            ->and($text)->not->toContain('&amp;')
+            ->and($text)->not->toContain('\\');
+    });
+
+    it('shows a Markdown-escaped value without any escape backslash, in both parts', function (): void {
+        $title = 'Fix *bold* _under_ [link](x) back\\slash `code` #1 | a ~ b !';
+        $notification = new TaskCommentedNotification('ABC-1', $title, 'ABC', 'Jane Example', 'Excerpt *star* here', 'https://app.example.com/tasks/ABC-1', false);
+        $email = mailThemeNotify($notification->toMail(new stdClass));
+        $text = (string) $email->getTextBody();
+        $html = mailThemeDocument($email);
+
+        expect($text)->toContain($title)
+            ->and($text)->toContain('Excerpt *star* here')
+            ->and($text)->not->toContain('\\*')
+            ->and($text)->not->toContain('\\_')
+            ->and($text)->not->toContain('\\[')
+            ->and($html->querySelectorAll('td.content-cell em, td.content-cell strong, td.content-cell code, td.content-cell h2'))->toHaveCount(0)
+            ->and((string) $html->querySelector('td.content-cell')?->textContent)->toContain('Fix *bold* _under_ [link](x) back\\slash `code` #1 | a ~ b !');
+    });
+});
+
+describe('the Markdown escape', function (): void {
+    it('is reversed exactly by the plain-text unescape, apart from the collapsed whitespace', function (): void {
+        $original = "Every `char`: back\\slash *a* _b_ [c] (d) #e | f ~ g !h  <i> & \\*already\\*\n new line";
+        $escaped = MailText::escapeMarkdown($original);
+
+        expect($escaped)->not->toBe($original)
+            ->and(MailText::unescapeMarkdown($escaped))->toBe((string) preg_replace('/\s+/u', ' ', $original))
+            ->and(MailText::unescapeMarkdown('plain text'))->toBe('plain text')
+            ->and(MailText::unescapeMarkdown('a \\x stays'))->toBe('a \\x stays');
+    });
+
+    it('leaves angle brackets and ampersands alone', function (): void {
+        expect(MailText::escapeMarkdown('A < B & C > D'))->toBe('A < B & C > D');
     });
 });
