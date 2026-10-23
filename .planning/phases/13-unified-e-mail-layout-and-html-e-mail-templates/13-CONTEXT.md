@@ -29,6 +29,7 @@ E-mails that really leave the system today: the invoice e-mail (`InvoiceMail`, p
 
 ### Review of other e-mails
 - **D-07:** The partner invitation, password reset, task notifications and operational alerts move to the shared layout and their subjects, texts and CZ/EN translations are reviewed and corrected in the same pass.
+  - **Clarification (owner, 2026-10-23):** no English texts exist for these four e-mails and users have no locale. Review them in Czech only; English is required only for the new payment texts, the invoice button and the layout strings. No recipient-language mechanism is added in this phase.
 
 ### Claude's Discretion
 - Theme colours, typography and button style (consistent with the Filament panel look).
