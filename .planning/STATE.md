@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: "10.1"
 current_phase_name: Invoices stay fully editable until sent, with a manual unlock (INSERTED)
 status: executing
-stopped_at: Completed 10.1-06-PLAN.md
-last_updated: "2026-10-23T00:38:06.856Z"
+stopped_at: Completed 10.1-07-PLAN.md
+last_updated: "2026-10-23T01:00:53.173Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 10.1 execution started
-state_head: bae88773a3443740b068d89b5cdb991edce80849
+state_head: faf37fcb2daf9dfa544e0dc979d264095a115c2d
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 257
-  completed_plans: 253
+  completed_plans: 254
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10.1 (Invoices stay fully editable until sent, with a manual unlock (INSERTED)) — EXECUTING
-Plan: 9 of 12
+Plan: 10 of 12
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 10.1 execution started
 
@@ -316,6 +316,7 @@ Progress: [████░░░░░░] 44%
 | Phase 10.1 P12 | 35 min | 3 tasks | 7 files |
 | Phase 10.1 P05 | 25 min | 3 tasks | 5 files |
 | Phase 10.1 P06 | 75min | 3 tasks | 10 files |
+| Phase 10.1 P07 | 70 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -788,6 +789,8 @@ Recent decisions affecting current work:
 - [Phase 10.1]: 10.1-05: a new card link after an edit is opened only when no live link remains, the card switch is on, an amount is owed and the newest link was not switched off manually
 - [Phase 10.1]: 10.1-06: the issued editor mode is fixed at mount in a locked Livewire property, so a draft issued in another tab still meets the Action refusal
 - [Phase 10.1]: 10.1-06: credited rows are disabled but dehydrated, so a crafted change reaches UpdateIssuedDocument and comes back as a field error
+- [Phase 10.1]: 10.1-07: assertIssueDate() collects future, scope and order problems under issue_date; a missing neighbour leaves its bound open with a one-sided message
+- [Phase 10.1]: 10.1-07: customer name limit is 255 (client column), supplier name 200 (SupplierSettings); only changed party fields are validated; bank is refilled from settings only via reload_bank
 
 ### Pending Todos
 
@@ -850,6 +853,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T00:38:05.729Z
-Stopped at: Completed 10.1-06-PLAN.md
+Last session: 2026-10-23T01:00:52.033Z
+Stopped at: Completed 10.1-07-PLAN.md
 Resume file: None
