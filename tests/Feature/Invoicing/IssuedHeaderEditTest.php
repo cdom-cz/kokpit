@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
+use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Actions\UnlockInvoice;
 use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
 use App\Domain\Invoicing\Enums\InvoiceKind;
@@ -14,6 +15,7 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Pdf\InvoicePdf;
+use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Settings\Banking\BankAccount;
 use App\Domain\Settings\Banking\BankAccountFormat;
@@ -34,6 +36,7 @@ use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
+use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\FictionalIban;
 use Tests\Support\InvoiceFixtures;
@@ -70,6 +73,14 @@ function hedEditor(Invoice $invoice): Testable
 function hedRow(Invoice $invoice): Invoice
 {
     return app(PartnerContext::class)->runAsSystem(static fn (): Invoice => Invoice::query()->whereKey($invoice->id)->firstOrFail());
+}
+
+/**
+ * The Admin-only row of the document, read fresh.
+ */
+function hedAdmin(Invoice $invoice): InvoiceAdmin
+{
+    return app(PartnerContext::class)->runAsSystem(static fn (): InvoiceAdmin => InvoiceAdmin::query()->where('invoice_id', $invoice->id)->firstOrFail());
 }
 
 /**
@@ -748,7 +759,7 @@ describe('the bank account', function (): void {
             ->assertHasNoFormErrors();
 
         $row = hedRow($invoice);
-        $expected = app(PartnerContext::class)->runAsSystem(static fn (): array => app(BankAccountSettings::class)->forCurrency('CZK')?->toArray() ?? []);
+        $expected = app(PartnerContext::class)->runAsSystem(static fn (): array => app(BankAccountSettings::class)->firstForCurrency('CZK')?->toArray() ?? []);
 
         preg_match_all('#<img src="(data:image/png;base64,[^"]+)"#', app(InvoicePdf::class)->html($row), $images);
 
@@ -784,7 +795,7 @@ describe('the bank account', function (): void {
             ->toThrow(InvalidArgumentException::class);
     });
 
-    it('refuses a currency without an account with the existing message and writes nothing', function (): void {
+    it('refuses a refill when the settings hold no account of the currency, under bank_account_id, and writes nothing', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
         $old = hedRow($invoice)->bank_snapshot;
         hedCzkAccount(null);
@@ -793,7 +804,7 @@ describe('the bank account', function (): void {
             app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['reload_bank' => true, 'note' => 'Must not be written.']);
             $this->fail('A currency without an account should have been refused.');
         } catch (ValidationException $exception) {
-            expect($exception->errors()['bank'] ?? null)->toBe([__('invoices.errors.bank_missing', ['currency' => 'CZK'])]);
+            expect($exception->errors()['bank_account_id'] ?? null)->toBe([__('invoices.errors.bank_account_required')]);
         }
 
         expect(hedRow($invoice)->bank_snapshot)->toBe($old)
@@ -802,5 +813,178 @@ describe('the bank account', function (): void {
         hedEditor($invoice)
             ->callAction(TestAction::make('refillBank')->schemaComponent('bankActions', schema: 'form'))
             ->assertNotified(__('invoices.errors.bank_missing', ['currency' => 'CZK']));
+    });
+
+    it('is refilled from the chosen account when it is still configured, and from the first account of the currency when it was removed', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+        $accounts = InvoiceFixtures::configureAccounts(
+            InvoiceFixtures::account('First CZK', 'CZK', '12'),
+            InvoiceFixtures::account('Second CZK', 'CZK', '56'),
+        );
+
+        // The stored account is gone from the settings: the refill takes the first CZK account.
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['reload_bank' => true]);
+
+        expect(hedRow($invoice)->bank_snapshot)->toEqual($accounts[0]->toArray())
+            ->and(hedAdmin($invoice)->bank_account_id)->toBe($accounts[0]->id);
+
+        // The chosen account is the second one: the refill keeps it.
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['bank_account_id' => $accounts[1]->id]);
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['reload_bank' => true]);
+
+        expect(hedRow($invoice)->bank_snapshot)->toEqual($accounts[1]->toArray())
+            ->and(hedAdmin($invoice)->bank_account_id)->toBe($accounts[1]->id);
+    });
+});
+
+describe('the payment method and the card switch (Phase 14)', function (): void {
+    beforeEach(function (): void {
+        CardPaymentSetup::enable();
+        $this->accounts = InvoiceFixtures::configureAccounts(
+            InvoiceFixtures::account('First CZK', 'CZK', '12'),
+            InvoiceFixtures::account('Second CZK', 'CZK', '56'),
+            InvoiceFixtures::account('Example EUR', 'EUR', '34'),
+        );
+    });
+
+    /**
+     * An open issued transfer invoice of a client with online payment on.
+     */
+    function hedCardInvoice(bool $clientFlag = true): Invoice
+    {
+        return InvoiceFixtures::issued(CardPaymentSetup::client(['online_payment_enabled' => $clientFlag]), [InvoiceFixtures::item('Design', '1', '500.00')]);
+    }
+
+    /**
+     * What the update refused: the field errors, or null when it went through.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, list<string>>|null
+     */
+    function hedRefusal(Invoice $invoice, array $data): ?array
+    {
+        try {
+            app(UpdateIssuedDocument::class)->handle(test()->admin, $invoice, $data);
+        } catch (ValidationException $exception) {
+            return $exception->errors();
+        }
+
+        return null;
+    }
+
+    it('refuses the switch turned on while online payments are off in the settings, and writes nothing', function (): void {
+        $invoice = hedCardInvoice(false);
+        CardPaymentSetup::onlinePayments(false);
+        $before = hedRow($invoice)->updated_at;
+
+        $errors = hedRefusal($invoice, ['card_payment_enabled' => true, 'note' => 'Must not be written.']);
+
+        expect($errors['card_payment_enabled'] ?? null)->toBe([__('invoices.errors.card_payment_unavailable')])
+            ->and(hedAdmin($invoice)->card_payment_enabled)->toBeFalse()
+            ->and(hedRow($invoice)->note)->toBeNull()
+            ->and(hedRow($invoice)->updated_at->equalTo($before))->toBeTrue();
+    });
+
+    it('refuses the switch that is not a boolean', function (): void {
+        $invoice = hedCardInvoice();
+
+        expect(hedRefusal($invoice, ['card_payment_enabled' => 'yes'])['card_payment_enabled'] ?? null)->toBe([__('invoices.errors.card_payment_invalid')]);
+    });
+
+    it('refuses online while the client has online payment off, under payment_method, and writes nothing', function (): void {
+        $invoice = hedCardInvoice(false);
+
+        $errors = hedRefusal($invoice, ['payment_method' => 'online']);
+
+        expect($errors['payment_method'] ?? null)->toBe([__('invoices.errors.online_unavailable')])
+            ->and(hedRow($invoice)->payment_method->value)->toBe('transfer')
+            ->and(hedRow($invoice)->bank_snapshot)->not->toBeNull();
+    });
+
+    it('refuses a method that is neither transfer nor online', function (): void {
+        $invoice = hedCardInvoice();
+
+        expect(hedRefusal($invoice, ['payment_method' => 'cash'])['payment_method'] ?? null)->toBe([__('invoices.errors.payment_method_invalid')]);
+    });
+
+    it('changes the account to the second CZK account and to the EUR account: the snapshot of that account, nothing else, no link change', function (): void {
+        $invoice = hedCardInvoice();
+        $link = app(PartnerContext::class)->runAsSystem(static fn () => PaymentLink::query()->where('invoice_id', $invoice->id)->firstOrFail());
+        $before = hedRow($invoice);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['bank_account_id' => $this->accounts[1]->id]);
+
+        $row = hedRow($invoice);
+
+        expect($row->bank_snapshot)->toEqual($this->accounts[1]->toArray())
+            ->and(hedAdmin($invoice)->bank_account_id)->toBe($this->accounts[1]->id)
+            ->and($row->total_minor)->toBe($before->total_minor)
+            ->and($row->currency)->toBe('CZK')
+            ->and($row->customer_snapshot)->toEqual($before->customer_snapshot)
+            ->and(app(PartnerContext::class)->runAsSystem(static fn (): int => PaymentLink::query()->where('invoice_id', $invoice->id)->count()))->toBe(1)
+            ->and(app(PartnerContext::class)->runAsSystem(static fn () => PaymentLink::query()->whereKey($link->id)->firstOrFail()->isLive()))->toBeTrue();
+
+        // An account of another currency than the document is allowed: the account is chosen, not derived (D-05).
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['bank_account_id' => $this->accounts[2]->id]);
+
+        expect(hedRow($invoice)->bank_snapshot)->toEqual($this->accounts[2]->toArray())
+            ->and(hedRow($invoice)->currency)->toBe('CZK')
+            ->and(hedAdmin($invoice)->bank_account_id)->toBe($this->accounts[2]->id);
+    });
+
+    it('refuses an account sent as null on a transfer document, and an account the settings do not know', function (): void {
+        $invoice = hedCardInvoice();
+        $old = hedRow($invoice)->bank_snapshot;
+
+        expect(hedRefusal($invoice, ['bank_account_id' => null])['bank_account_id'] ?? null)->toBe([__('invoices.errors.bank_account_required')])
+            ->and(hedRefusal($invoice, ['bank_account_id' => '01900000-0000-7000-8000-000000000000'])['bank_account_id'] ?? null)->toBe([__('invoices.errors.bank_account_unknown')])
+            ->and(hedRefusal($invoice, ['bank_account_id' => 'not-an-id'])['bank_account_id'] ?? null)->toBe([__('invoices.errors.bank_account_unknown')])
+            ->and(hedRow($invoice)->bank_snapshot)->toBe($old);
+    });
+
+    it('accepts the method and the account of a document with a recorded payment, and still refuses its currency', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $invoice = hedCardInvoice();
+
+        app(RecordPayment::class)->handle($this->admin, $invoice, ['amount' => '100.00', 'paid_on' => '2026-10-14']);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['bank_account_id' => $this->accounts[1]->id, 'payment_method' => 'online']);
+
+        expect(hedRow($invoice)->payment_method->value)->toBe('online')
+            ->and(hedRow($invoice)->bank_snapshot)->toBeNull()
+            ->and(hedAdmin($invoice)->bank_account_id)->toBe($this->accounts[1]->id);
+
+        expect(hedRefusal($invoice, ['currency' => 'EUR'])['currency'] ?? null)->toBe([__('invoices.errors.currency_has_payments')])
+            ->and(hedRow($invoice)->currency)->toBe('CZK');
+    });
+
+    it('refuses the method, the account and the switch of a locked document under document, and accepts them after the unlock', function (): void {
+        $locked = InvoiceFixtures::lockedIssued(CardPaymentSetup::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+
+        foreach ([['payment_method' => 'online'], ['bank_account_id' => $this->accounts[1]->id], ['card_payment_enabled' => false]] as $data) {
+            expect(hedRefusal($locked, $data)['document'] ?? null)->not->toBeNull();
+        }
+
+        expect(hedRow($locked)->payment_method->value)->toBe('transfer')
+            ->and(hedAdmin($locked)->card_payment_enabled)->toBeTrue();
+
+        $open = hedSentAndUnlocked(InvoiceFixtures::issued(CardPaymentSetup::client(), [InvoiceFixtures::item('Design', '1', '500.00')]));
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $open, ['payment_method' => 'online']);
+
+        expect(hedRow($open)->payment_method->value)->toBe('online')
+            ->and(hedRow($open)->bank_snapshot)->toBeNull();
+    });
+
+    it('never takes the snapshot from the data when the method or the account changes', function (): void {
+        $invoice = hedCardInvoice();
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, [
+            'bank_account_id' => $this->accounts[1]->id,
+            'bank_snapshot' => ['iban' => FictionalIban::czech('78')],
+            'bank' => ['iban' => FictionalIban::czech('78')],
+        ]);
+
+        expect(hedRow($invoice)->bank_snapshot)->toEqual($this->accounts[1]->toArray());
     });
 });

@@ -17,10 +17,13 @@ use App\Domain\Payments\Actions\DeactivatePaymentLink;
 use App\Domain\Payments\Actions\RegeneratePaymentLink;
 use App\Domain\Payments\Enums\PaymentLinkDeactivation;
 use App\Domain\Payments\Enums\PaymentLinkState;
+use App\Domain\Payments\Enums\PayPageOutcome;
 use App\Domain\Payments\Jobs\DeactivatePaymentLinks;
 use App\Domain\Payments\Models\PaymentLink;
+use App\Domain\Payments\Queries\PayPageState;
 use App\Domain\Payments\Support\PaymentLinks;
 use App\Domain\Payments\Support\PayToken;
+use App\Domain\Payments\Support\PayUrl;
 use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Shared\Auth\PartnerContext;
 use Carbon\CarbonImmutable;
@@ -538,6 +541,18 @@ function lifecycleStoredPdf(Invoice $invoice): string
 }
 
 describe('a change of the payment method (Phase 14)', function (): void {
+    /**
+     * A card-on transfer invoice that was switched to online as the Admin, so it has a replaced and a live link.
+     */
+    function lifecycleOnline(): Invoice
+    {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+
+        app(UpdateIssuedDocument::class)->handle(test()->admin, $invoice, ['payment_method' => 'online']);
+
+        return $invoice;
+    }
+
     it('switches an open transfer invoice to online: no bank snapshot, the old link replaced, a new link on the same pay URL, the PDF replaced', function (): void {
         $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
         $old = lifecycleLive($invoice);
@@ -606,6 +621,94 @@ describe('a change of the payment method (Phase 14)', function (): void {
             ->and(lifecycleLinks($invoice))->toHaveCount(1)
             ->and($live)->not->toBeNull()
             ->and($live->amount_minor)->toBe(1_250_000);
+    });
+
+    it('goes back to transfer for a client with online payment on: the snapshot of the stored account, the switch on, the online link replaced and a new one opened', function (): void {
+        $invoice = lifecycleOnline();
+        $online = lifecycleLive($invoice);
+        $token = lifecycleAdminRow($invoice)->pay_token;
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'transfer']);
+
+        $row = lifecycleRow($invoice);
+        $expected = app(PartnerContext::class)->runAsSystem(static fn (): array => app(BankAccountSettings::class)->firstForCurrency('CZK')?->toArray() ?? []);
+        $links = lifecycleLinks($invoice);
+
+        expect($row->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and($row->bank_snapshot)->toEqual($expected)
+            ->and(lifecycleAdminRow($invoice)->card_payment_enabled)->toBeTrue()
+            ->and(lifecycleAdminRow($invoice)->pay_token)->toBe($token)
+            ->and($links)->toHaveCount(3)
+            ->and($links->firstWhere('id', $online->id)?->deactivation_reason)->toBe(PaymentLinkDeactivation::Replaced)
+            ->and($links->filter(static fn (PaymentLink $link): bool => $link->isLive()))->toHaveCount(1)
+            ->and(lifecycleLive($invoice)?->amount_minor)->toBe(1_250_000);
+    });
+
+    it('goes back to transfer for a client with online payment off: the switch off, the link replaced, no new link, no pay URL, the old URL answers "preparing"', function (): void {
+        $client = CardPaymentSetup::client();
+        $invoice = CardPaymentSetup::issued($client);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'online']);
+
+        $token = (string) lifecycleAdminRow($invoice)->pay_token;
+        app(PartnerContext::class)->runAsSystem(static fn () => $client->forceFill(['online_payment_enabled' => false])->save());
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'transfer']);
+
+        expect(lifecycleAdminRow($invoice)->card_payment_enabled)->toBeFalse()
+            ->and(lifecycleAdminRow($invoice)->pay_token)->toBe($token)
+            ->and(lifecycleLive($invoice))->toBeNull()
+            ->and(lifecycleReasons($invoice))->toBe(['replaced', 'replaced'])
+            ->and(PayUrl::forInvoice(lifecycleRow($invoice)))->toBeNull()
+            ->and(app(PayPageState::class)->resolve($token)['outcome'])->toBe(PayPageOutcome::Preparing)
+            ->and(lifecycleRow($invoice)->bank_snapshot)->not->toBeNull();
+    });
+
+    it('goes back to transfer with the switch sent off for a client whose flag is on: the switch off and no new link', function (): void {
+        $invoice = lifecycleOnline();
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'transfer', 'card_payment_enabled' => false]);
+
+        expect(lifecycleAdminRow($invoice)->card_payment_enabled)->toBeFalse()
+            ->and(lifecycleLive($invoice))->toBeNull()
+            ->and(lifecycleReasons($invoice))->toBe(['replaced', 'replaced']);
+    });
+
+    it('turns the switch of a transfer document off as manual and on again with a new link, although the newest link was manual', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $first = lifecycleLive($invoice);
+        $token = lifecycleAdminRow($invoice)->pay_token;
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['card_payment_enabled' => false]);
+
+        expect(lifecycleAdminRow($invoice)->card_payment_enabled)->toBeFalse()
+            ->and(lifecycleLive($invoice))->toBeNull()
+            ->and(lifecycleReasons($invoice))->toBe(['manual'])
+            ->and($this->stripe->deactivated())->toBe([$first->stripe_link_id])
+            ->and(PayUrl::forInvoice(lifecycleRow($invoice)))->toBeNull()
+            ->and(lifecycleRow($invoice)->payment_method)->toBe(DocumentPaymentMethod::Transfer);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['card_payment_enabled' => true]);
+
+        $live = lifecycleLive($invoice);
+
+        expect(lifecycleAdminRow($invoice)->card_payment_enabled)->toBeTrue()
+            ->and(lifecycleAdminRow($invoice)->pay_token)->toBe($token)
+            ->and(lifecycleLinks($invoice))->toHaveCount(2)
+            ->and($live)->not->toBeNull()
+            ->and($live->id)->not->toBe($first->id)
+            ->and($live->amount_minor)->toBe(1_250_000)
+            ->and(lifecycleReasons($invoice))->toBe(['manual', null]);
+    });
+
+    it('opens no link when the switch is sent unchanged', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $first = lifecycleLive($invoice);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['card_payment_enabled' => true, 'note' => 'Only a note.']);
+
+        expect(lifecycleLinks($invoice))->toHaveCount(1)
+            ->and(lifecycleLive($invoice)?->id)->toBe($first->id);
     });
 });
 
