@@ -41,6 +41,11 @@ return [
         'client_address_missing' => 'Klient nemá vyplněnou fakturační adresu.',
         'issue_date_future' => 'Datum vystavení nesmí být později než dnes.',
         'issue_date_before_latest' => 'Datum vystavení nesmí být dříve než :date, kdy byl vystaven poslední doklad této řady.',
+        'issue_date_scope' => 'Datum vystavení musí zůstat ve stejném období číselné řady jako původní datum.',
+        'issue_date_order' => 'Datum vystavení musí ležet mezi :previous a :next, daty sousedních dokladů řady.',
+        'issue_date_after_previous' => 'Datum vystavení nesmí být dříve než :previous, datum předchozího dokladu řady.',
+        'issue_date_before_next' => 'Datum vystavení nesmí být později než :next, datum následujícího dokladu řady.',
+        'taxable_supply_not_payer' => 'Datum zdanitelného plnění se u neplátce DPH neuvádí.',
         'pattern_invalid' => 'Číselná řada pro :kind není platná. Opravte ji v Nastavení.',
 
         // The customer and supplier lines of an open issued document (plan 10.1-07).
@@ -110,6 +115,7 @@ return [
     'warnings' => [
         'total_below_paid' => 'Celková částka je nižší než už zaplacená částka :amount.',
         'total_below_credited' => 'Celková částka je nižší než dobropisovaná částka :amount.',
+        'issue_date_rates_kept' => 'Kurz ČNB a převedené položky zůstávají z původního data vystavení.',
     ],
 
     // The fixed text of the income transaction a payment books (R-16-2).

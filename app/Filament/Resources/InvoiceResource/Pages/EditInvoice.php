@@ -125,6 +125,11 @@ final class EditInvoice extends EditRecord
     protected ?DraftEditorPreview $preview = null;
 
     /**
+     * The issue date the document had when the save began, `Y-m-d`, to say after the save that the rates stayed.
+     */
+    protected ?string $issueDateBefore = null;
+
+    /**
      * The credited line ids of an issued document, read once per request (see {@see self::creditedIds()}).
      *
      * @var array<string, true>|null
@@ -662,8 +667,8 @@ final class EditInvoice extends EditRecord
     }
 
     /**
-     * The values {@see UpdateIssuedDocument} takes: the lines, the two notes and the header the editor offers (the due
-     * date, the language, the customer lines). The number, the kind, the currency and the card switch are not read from
+     * The values {@see UpdateIssuedDocument} takes: the lines, the two notes and the header the editor offers (the
+     * dates, the language, the customer lines). The number, the kind, the currency and the card switch are not read from
      * the form at all (T-10.1-24). A
      * credited line whose fields did not travel (a disabled field is not part of the state) takes them from the stored
      * line; the Action compares them with the stored line again.
@@ -709,6 +714,7 @@ final class EditInvoice extends EditRecord
             'items' => $items,
             'note' => $data['note'] ?? null,
             'internal_note' => $data['internal_note'] ?? null,
+            'issue_date' => $data['issue_date'] ?? null,
             'due_date' => $data['due_date'] ?? null,
             'language' => $data['language'] ?? null,
         ];
@@ -760,6 +766,7 @@ final class EditInvoice extends EditRecord
      */
     private function updateIssued(User $actor, Invoice $record, array $data): Invoice
     {
+        $this->issueDateBefore = $record->issue_date?->format('Y-m-d');
         $keys = array_keys(is_array($this->data['items'] ?? null) ? $this->data['items'] : []);
 
         return $this->withFormErrors(function () use ($actor, $record, $data, $keys): Invoice {
@@ -810,6 +817,15 @@ final class EditInvoice extends EditRecord
                 ->persistent()
                 ->send();
         }
+
+        // A moved issue date keeps the CNB rate and the converted lines of the original date (A6).
+        if ($this->issueDateBefore !== $this->invoice()->issue_date?->format('Y-m-d') && IssuedDocumentRules::keepsIssueRates($this->invoice())) {
+            Notification::make()
+                ->warning()
+                ->title(__('invoices.warnings.issue_date_rates_kept'))
+                ->persistent()
+                ->send();
+        }
     }
 
     /**
@@ -842,8 +858,8 @@ final class EditInvoice extends EditRecord
 
     private function documentSection(): Section
     {
-        // An issued document keeps its number, kind and currency read-only here (D-08); the due date and the language
-        // are editable, the issue date and the currency follow in later steps of the phase.
+        // An issued document keeps its number, kind and currency read-only here (D-08); the dates and the language are
+        // editable, the currency follows in a later step of the phase.
         $issued = $this->issuedMode();
 
         return Section::make(__('invoices.draft.sections.document'))
@@ -889,7 +905,7 @@ final class EditInvoice extends EditRecord
                 Group::make([
                     DatePicker::make('issue_date')
                         ->label(__('invoices.draft.fields.issue_date'))
-                        ->disabled($issued)
+                        ->required($issued)
                         ->live()
                         ->afterStateUpdated(function (Get $get, Set $set): void {
                             $this->followIssueDate($get, $set);

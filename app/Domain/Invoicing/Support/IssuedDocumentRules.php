@@ -7,15 +7,22 @@ namespace App\Domain\Invoicing\Support;
 use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
+use App\Domain\Settings\Numbering\InvalidNumberPattern;
+use App\Domain\Settings\Settings\NumberingSettings;
 use App\Domain\Shared\Money\Money;
 use Carbon\CarbonImmutable;
+use DateTimeInterface;
+use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 /**
  * The one rule that says whether an issued document may be corrected (D-01, D-04; assumptions A1 and A3; R-10.1-04-2).
@@ -118,6 +125,67 @@ final class IssuedDocumentRules
     }
 
     /**
+     * Throws when the new issue date of the (locked) document would make its number contradict its series
+     * (assumption A5, R-10.1-07-2, research Pitfall 4). The number never changes (D-08), so the date may only move
+     * where the number still fits:
+     *
+     * - not after today (Prague);
+     * - inside the numbering period of the old date under the pattern the series has now: both days, taken at Prague
+     *   noon, give the same allocator scope key ({@see NumberPattern::scopeKey()});
+     * - between the issue dates of the previous and the next issued document of the same kind, neighbours ordered by
+     *   the instant they were issued; a missing neighbour leaves that bound open, and a bound itself is allowed.
+     *
+     * Every problem is collected under `issue_date`, so the Admin sees all of them at once.
+     *
+     * @param  string  $newDate  Prague `Y-m-d`
+     * @param  string  $today  the current Prague calendar day, `Y-m-d`
+     *
+     * @throws ValidationException `issue_date`
+     */
+    public static function assertIssueDate(Invoice $locked, string $newDate, string $today): void
+    {
+        $messages = [];
+
+        if ($newDate > $today) {
+            $messages[] = __('invoices.errors.issue_date_future');
+        }
+
+        $old = $locked->issue_date?->format('Y-m-d');
+
+        if ($old !== null) {
+            try {
+                $pattern = app(NumberingSettings::class)->patternFor($locked->kind->numberingKind());
+
+                if ($pattern->scopeKey(self::noonOf($old)) !== $pattern->scopeKey(self::noonOf($newDate))) {
+                    $messages[] = __('invoices.errors.issue_date_scope');
+                }
+            } catch (InvalidNumberPattern) {
+                $messages[] = __('invoices.errors.pattern_invalid', ['kind' => mb_strtolower($locked->kind->numberingKind()->getLabel())]);
+            }
+        }
+
+        $order = self::orderProblem($locked, $newDate);
+
+        if ($order !== null) {
+            $messages[] = $order;
+        }
+
+        if ($messages !== []) {
+            throw ValidationException::withMessages(['issue_date' => $messages]);
+        }
+    }
+
+    /**
+     * Whether the frozen exchange figures stay behind a moved issue date: a document not in CZK, or one with a line
+     * converted at issue, keeps the CNB rates of the original issue date (assumption A6).
+     */
+    public static function keepsIssueRates(Invoice $invoice): bool
+    {
+        return $invoice->currency !== 'CZK'
+            || InvoiceItemSource::query()->where('invoice_id', $invoice->id)->whereNotNull('conversion_snapshot')->exists();
+    }
+
+    /**
      * Throws when the (locked) document cannot be edited.
      *
      * @throws ValidationException `document` with the copy of the reason
@@ -129,6 +197,68 @@ final class IssuedDocumentRules
         if ($reason !== null) {
             throw ValidationException::withMessages(['document' => __('invoices.errors.'.$reason)]);
         }
+    }
+
+    /**
+     * The copy for a date outside the bounds the neighbours of the series set, or null when it lies inside them.
+     */
+    private static function orderProblem(Invoice $locked, string $newDate): ?string
+    {
+        if ($locked->issued_at === null) {
+            return null;
+        }
+
+        $previous = self::neighbourDay($locked, '<', 'desc');
+        $next = self::neighbourDay($locked, '>', 'asc');
+        $below = $previous !== null && $newDate < $previous;
+        $above = $next !== null && $newDate > $next;
+
+        if (! $below && ! $above) {
+            return null;
+        }
+
+        return match (true) {
+            $previous !== null && $next !== null => __('invoices.errors.issue_date_order', ['previous' => IssueChecks::czechDate($previous), 'next' => IssueChecks::czechDate($next)]),
+            $previous !== null => __('invoices.errors.issue_date_after_previous', ['previous' => IssueChecks::czechDate($previous)]),
+            default => __('invoices.errors.issue_date_before_next', ['next' => IssueChecks::czechDate((string) $next)]),
+        };
+    }
+
+    /**
+     * The issue date of the nearest issued document of the same kind on one side of this one in the order of issuing.
+     *
+     * @param  '<'|'>'  $operator
+     * @param  'asc'|'desc'  $direction
+     */
+    private static function neighbourDay(Invoice $locked, string $operator, string $direction): ?string
+    {
+        return self::dayOf(
+            Invoice::query()
+                ->where('kind', $locked->kind->value)
+                ->where('state', InvoiceState::Issued->value)
+                ->whereKeyNot($locked->id)
+                ->where('issued_at', $operator, $locked->issued_at)
+                ->orderBy('issued_at', $direction)
+                ->value('issue_date'),
+        );
+    }
+
+    private static function dayOf(mixed $value): ?string
+    {
+        return match (true) {
+            $value instanceof DateTimeInterface => $value->format('Y-m-d'),
+            is_string($value) => substr($value, 0, 10),
+            default => null,
+        };
+    }
+
+    /**
+     * Midday of a Prague calendar day: the instant the numbering reads its year or month from, as the issue does.
+     */
+    private static function noonOf(string $day): CarbonImmutable
+    {
+        return CarbonImmutable::createFromFormat('!Y-m-d H:i', $day.' 12:00', FilamentTimezone::get())
+            ?? throw new InvalidArgumentException('Not a calendar day: '.$day);
     }
 
     /**

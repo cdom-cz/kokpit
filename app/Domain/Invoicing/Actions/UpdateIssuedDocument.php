@@ -6,6 +6,7 @@ namespace App\Domain\Invoicing\Actions;
 
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Issuing\IssueContext;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
@@ -18,6 +19,7 @@ use App\Domain\Invoicing\Support\IssuedEditFinisher;
 use App\Domain\Invoicing\Support\ItemListWriter;
 use App\Domain\Invoicing\Support\SnapshotInput;
 use App\Domain\Invoicing\Support\TimeLineConversion;
+use App\Domain\Settings\VatMode;
 use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Support\PragueDay;
 use Closure;
@@ -37,7 +39,10 @@ use OverflowException;
  * - `items`: the whole list of lines, the contract of {@see UpdateDraft} (`id?`, `description`, `quantity`, `unit`,
  *   `unit_price`, `confirm_zero_price?`, see {@see InvoiceItemInput});
  * - `note`: the printed note, at most 500 characters, blank clears it;
- * - `due_date`: a Prague `Y-m-d`, never null for an issued document and not before the issue date (D-06, R-10.1-07-1);
+ * - `issue_date`, `due_date`: a Prague `Y-m-d`, never null for an issued document, the due date not before the issue
+ *   date; a new issue date must fit the series ({@see IssuedDocumentRules::assertIssueDate()}) and keeps the frozen
+ *   exchange rate and conversions (D-06, A5, A6, R-10.1-07-1);
+ * - `taxable_supply_date`: blank in the non-payer mode, where any day is refused (A14);
  * - `language`: `cs` or `en`;
  * - `customer`: the lines of the customer snapshot, checked by {@see SnapshotInput::customer()} (A9);
  * - `internal_note`: saved through {@see UpdateInternalNote}. It prints nowhere, so a save that carries neither
@@ -154,20 +159,36 @@ final readonly class UpdateIssuedDocument
     private function header(Invoice $locked, array $data): array
     {
         $values = [];
+        $issueDate = $locked->issue_date?->format('Y-m-d');
+        $dueDate = $locked->due_date?->format('Y-m-d');
 
-        if (array_key_exists('due_date', $data)) {
-            $due = $this->requiredDay($data['due_date'], 'due_date');
+        if (array_key_exists('issue_date', $data)) {
+            $day = $this->requiredDay($data['issue_date'], 'issue_date');
 
-            if ($due !== $locked->due_date?->format('Y-m-d')) {
-                $values['due_date'] = $due;
+            if ($day !== $issueDate) {
+                IssuedDocumentRules::assertIssueDate($locked, $day, IssueContext::today());
+
+                $values['issue_date'] = $day;
+                $issueDate = $day;
             }
         }
 
-        $issueDate = $locked->issue_date?->format('Y-m-d');
-        $dueDate = $values['due_date'] ?? $locked->due_date?->format('Y-m-d');
+        if (array_key_exists('due_date', $data)) {
+            $day = $this->requiredDay($data['due_date'], 'due_date');
 
-        if ($values !== [] && $issueDate !== null && $dueDate !== null && $dueDate < $issueDate) {
+            if ($day !== $dueDate) {
+                $values['due_date'] = $day;
+                $dueDate = $day;
+            }
+        }
+
+        // The pair is checked whenever one of the two moved, so a later issue date cannot overtake a kept due date.
+        if (($values['issue_date'] ?? $values['due_date'] ?? null) !== null && $issueDate !== null && $dueDate !== null && $dueDate < $issueDate) {
             throw ValidationException::withMessages(['due_date' => __('invoices.errors.due_before_issue')]);
+        }
+
+        if (array_key_exists('taxable_supply_date', $data)) {
+            $values = [...$values, ...$this->taxableSupplyDate($locked, $data['taxable_supply_date'])];
         }
 
         if (array_key_exists('language', $data)) {
@@ -183,6 +204,31 @@ final readonly class UpdateIssuedDocument
         }
 
         return $values;
+    }
+
+    /**
+     * The taxable supply date exists on a VAT payer's document only (IN-08, assumption A14): in the non-payer mode it
+     * stays empty, and only blank is accepted.
+     *
+     * @return array<string, string|null>
+     *
+     * @throws ValidationException `taxable_supply_date`
+     */
+    private function taxableSupplyDate(Invoice $locked, mixed $value): array
+    {
+        $blank = $value === null || (is_string($value) && trim($value) === '');
+
+        if ($locked->vat_mode !== VatMode::Payer) {
+            if (! $blank) {
+                throw ValidationException::withMessages(['taxable_supply_date' => __('invoices.errors.taxable_supply_not_payer')]);
+            }
+
+            return [];
+        }
+
+        $day = $blank ? null : $this->requiredDay($value, 'taxable_supply_date');
+
+        return $day === $locked->taxable_supply_date?->format('Y-m-d') ? [] : ['taxable_supply_date' => $day];
     }
 
     /**

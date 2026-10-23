@@ -149,11 +149,12 @@ describe('the tracer: from the detail to a corrected invoice', function (): void
             ->assertSee(Money::ofMinor(150000, 'CZK')->format('cs'));
     });
 
-    it('offers the due date, the language and the customer lines for editing while the currency stays read-only', function (): void {
+    it('offers the dates, the language and the customer lines for editing while the currency stays read-only', function (): void {
         $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
 
         iedEditor($issued)
             ->assertSee('Odběratel a dodavatel')
+            ->assertFormFieldExists('issue_date', fn ($field): bool => ! $field->isDisabled())
             ->assertFormFieldExists('due_date', fn ($field): bool => ! $field->isDisabled())
             ->assertFormFieldExists('language', fn ($field): bool => ! $field->isDisabled())
             ->assertFormFieldExists('customer.name', fn ($field): bool => ! $field->isDisabled())
