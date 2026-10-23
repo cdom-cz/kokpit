@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: "10.1"
 current_phase_name: Invoices stay fully editable until sent, with a manual unlock (INSERTED)
 status: executing
-stopped_at: Completed 10.1-07-PLAN.md
-last_updated: "2026-10-23T01:00:53.173Z"
+stopped_at: Completed 10.1-08-PLAN.md
+last_updated: "2026-10-23T01:23:33.540Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 10.1 execution started
-state_head: faf37fcb2daf9dfa544e0dc979d264095a115c2d
+state_head: d1162926a700223ac9678a48e87346ca40d48072
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 257
-  completed_plans: 254
+  completed_plans: 255
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 10.1 (Invoices stay fully editable until sent, with a manual unlock (INSERTED)) — EXECUTING
-Plan: 10 of 12
+Plan: 11 of 12
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 10.1 execution started
 
@@ -317,6 +317,7 @@ Progress: [████░░░░░░] 44%
 | Phase 10.1 P05 | 25 min | 3 tasks | 5 files |
 | Phase 10.1 P06 | 75min | 3 tasks | 10 files |
 | Phase 10.1 P07 | 70 min | 3 tasks | 7 files |
+| Phase 10.1 P08 | 60 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -791,6 +792,9 @@ Recent decisions affecting current work:
 - [Phase 10.1]: 10.1-06: credited rows are disabled but dehydrated, so a crafted change reaches UpdateIssuedDocument and comes back as a field error
 - [Phase 10.1]: 10.1-07: assertIssueDate() collects future, scope and order problems under issue_date; a missing neighbour leaves its bound open with a one-sided message
 - [Phase 10.1]: 10.1-07: customer name limit is 255 (client column), supplier name 200 (SupplierSettings); only changed party fields are validated; bank is refilled from settings only via reload_bank
+- [Phase 10.1]: 10.1-08: freezeAt() takes persistTotals (default true); a currency change leaves the row save to the Action so a never-sent document keeps one history row
+- [Phase 10.1]: 10.1-08: a currency change uses the CNB lists of the stored issue date (A6), the editor preview uses the same day; refusals of a currency change are all keyed under currency
+- [Phase 10.1]: 10.1-08: currency choices (bank account currencies, client currency, document currency) live in IssuedDocumentRules::currencyChoices(), shared by the editor and the Action
 
 ### Pending Todos
 
@@ -853,6 +857,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T01:00:52.033Z
-Stopped at: Completed 10.1-07-PLAN.md
+Last session: 2026-10-23T01:23:32.389Z
+Stopped at: Completed 10.1-08-PLAN.md
 Resume file: None
