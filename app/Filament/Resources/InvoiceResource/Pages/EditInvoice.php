@@ -1488,6 +1488,9 @@ final class EditInvoice extends EditRecord
                 $data = $this->data ?? [];
                 $data['currency'] = $currency;
                 $data['items'] = $this->repricedItems(is_array($data['items'] ?? null) ? $data['items'] : [], $currency);
+                // The account follows the confirmed currency like it follows an unconfirmed one (research Pitfall 10); in
+                // issued mode the field is hidden, so the state has no effect there.
+                $data['bank_account_id'] = DocumentPayment::preselect($currency);
                 $this->data = $data;
             });
     }
@@ -1600,6 +1603,8 @@ final class EditInvoice extends EditRecord
         }
 
         $set('items', $this->repricedItems($items, $currency));
+        // The account suggested by the currency (D-05): the first one of it, or none, which the field says out loud.
+        $set('bank_account_id', DocumentPayment::preselect($currency));
     }
 
     /**
@@ -1830,7 +1835,9 @@ final class EditInvoice extends EditRecord
     }
 
     /**
-     * The currencies of the supplier's bank accounts, the currency of the client and the one the draft has now.
+     * The union list of D-07, the same one the create-draft modal and the issued editor offer: every currency CNB has a
+     * rate for, the currency of every bank account, the one of the client, the one of the document and CZK. The list is
+     * independent of the bank account and of the payment method.
      *
      * @return array<string, string>
      */

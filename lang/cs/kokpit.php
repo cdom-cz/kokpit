@@ -1037,7 +1037,7 @@ return [
             'stage' => 'Stav slouží jen k přehledu a filtrování; nemění oprávnění ani fakturaci.',
             'hourly_rate' => 'Částka v měně klienta, s desetinnou čárkou a bez oddělovače tisíců, například 1500,50.',
             'payment_terms_days' => 'Počet dní od 0 do 365.',
-            'online_payment_enabled' => 'Zapnuto: u dokladů tohoto klienta se nabídne platba kartou. Nový koncept převezme tuto hodnotu a u dokladu ji lze přepsat.',
+            'online_payment_enabled' => 'Zapnuto: u dokladů tohoto klienta se nabídne platba kartou. Nový koncept převezme tuto hodnotu a u dokladu ji lze přepsat. Úhradu online jde na dokladu zvolit jen se zapnutou online platbou.',
             'tags' => 'Interní štítky klienta. Nesdílejí se s projekty a klient je nikdy nevidí.',
         ],
         'filters' => [

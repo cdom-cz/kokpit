@@ -476,7 +476,7 @@ describe('the settings and the client form', function (): void {
         $this->actingAs(Canary::admin());
 
         Livewire::test(CreateClient::class)
-            ->assertSee('Zapnuto: u dokladů tohoto klienta se nabídne platba kartou. Nový koncept převezme tuto hodnotu a u dokladu ji lze přepsat.');
+            ->assertSee('Zapnuto: u dokladů tohoto klienta se nabídne platba kartou. Nový koncept převezme tuto hodnotu a u dokladu ji lze přepsat. Úhradu online jde na dokladu zvolit jen se zapnutou online platbou.');
     });
 });
 
