@@ -288,6 +288,88 @@ describe('the payment method (Phase 14)', function (): void {
             ->and($text)->not->toContain('Online platební kartou')
             ->and(variantImages($html))->toHaveCount(1);
     });
+
+    it('prints every amount of an online EUR document in EUR, with the button and no bank detail', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.000');
+        $issued = InvoiceFixtures::issued(
+            InvoiceFixtures::client(['currency' => 'EUR', 'hourly_rate' => Money::ofMinor(0, 'EUR')]),
+            [InvoiceFixtures::item('Consulting', '2', '100.00')],
+        );
+        $online = variantOnline($issued, $token);
+
+        $html = app(InvoicePdf::class)->html($online);
+        $text = variantFlat($html);
+        $amount = variantMoney(20000, 'EUR', 'cs');
+
+        expect($online->currency)->toBe('EUR')
+            ->and(substr_count($text, $amount))->toBeGreaterThanOrEqual(3)
+            ->and($text)->not->toContain(variantMoney(20000, 'CZK', 'cs'))
+            ->and($text)->toContain('Zaplatit kartou')
+            ->and($text)->toContain(PayUrl::for($token))
+            ->and($text)->not->toContain('IBAN')
+            ->and($text)->not->toContain('Variabilní symbol')
+            ->and(variantImages($html))->toBe([]);
+    });
+
+    it('prints the English words of an online English document', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_language' => 'en']), [InvoiceFixtures::item('Consulting', '1', '1000.00')]);
+        $online = variantOnline($issued);
+
+        $text = variantFlat(app(InvoicePdf::class)->html($online));
+
+        expect($text)->toContain('Please pay '.variantMoney(100000, 'CZK', 'en').' online by card by')
+            ->and($text)->toContain('Online by card')
+            ->and($text)->toContain('Pay online by card:')
+            ->and($text)->not->toContain('Or pay online by card:')
+            ->and($text)->toContain('Pay by card')
+            ->and($text)->not->toContain('Variable symbol')
+            ->and($text)->not->toContain('Bank transfer');
+    });
+
+    it('prints an online proforma the same way', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Advance', '1', '5000.00', 'ks')], InvoiceKind::Proforma);
+        $online = variantOnline($issued);
+
+        $text = variantFlat(app(InvoicePdf::class)->html($online));
+
+        expect($text)->toContain('ZÁLOHOVÁ FAKTURA')
+            ->and($text)->toContain('Online platební kartou')
+            ->and($text)->toContain('Zaplatit kartou')
+            ->and($text)->not->toContain('Variabilní symbol');
+    });
+
+    it('prints the account rows and the QR of a CZK document paid to a Czech IBAN whatever the currency of the account itself', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Consulting', '1', '1000.00')]);
+        $snapshot = $issued->bank_snapshot;
+        $iban = (string) ($snapshot['iban'] ?? '');
+
+        // The snapshotted account is a CZK one; the same account stored as a EUR one prints the same box and QR.
+        app(PartnerContext::class)->runAsSystem(static function () use ($issued, $snapshot): void {
+            DB::update('update invoices set bank_snapshot = ? where id = ?', [json_encode([...$snapshot, 'currency' => 'EUR'], JSON_THROW_ON_ERROR), $issued->id]);
+        });
+
+        $html = app(InvoicePdf::class)->html(Invoice::query()->whereKey($issued->id)->firstOrFail());
+        $text = variantFlat($html);
+
+        expect($iban)->not->toBe('')
+            ->and($text)->toContain(trim(chunk_split($iban, 4, ' ')))
+            ->and($text)->toContain('Variabilní symbol')
+            ->and(variantImages($html))->toHaveCount(1);
+    });
+
+    it('prints no QR for a EUR document, though its Czech IBAN would be accepted for CZK', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.000');
+        $issued = InvoiceFixtures::issued(
+            InvoiceFixtures::client(['currency' => 'EUR', 'hourly_rate' => Money::ofMinor(0, 'EUR')]),
+            [InvoiceFixtures::item('Consulting', '2', '100.00')],
+        );
+
+        $html = app(InvoicePdf::class)->html($issued);
+
+        expect($issued->currency)->toBe('EUR')
+            ->and(variantFlat($html))->toContain('IBAN')
+            ->and(variantImages($html))->toBe([]);
+    });
 });
 
 describe('the optional blocks', function (): void {

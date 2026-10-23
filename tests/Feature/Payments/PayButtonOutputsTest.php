@@ -11,6 +11,7 @@ use App\Domain\Invoicing\Actions\RegeneratePdf;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Pdf\InvoicePdf;
+use App\Domain\Payments\Queries\PartnerPayButton;
 use App\Domain\Payments\Support\PayLinkBlock;
 use App\Domain\Payments\Support\PayUrl;
 use App\Domain\Settings\Banking\BankAccount;
@@ -357,5 +358,68 @@ describe('the e-mail dialog announces the pay link', function (): void {
         $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
 
         payOutDialog($invoice)->assertMountedActionModalDontSee('Do e-mailu se automaticky přidá odkaz');
+    });
+});
+
+/**
+ * The card switch of an open issued document moved by raw SQL as system (Phase 14, plan 14-02: the switch is writable
+ * while the document is open and the token it keeps never changes).
+ */
+function payOutSwitch(Invoice $invoice, bool $on): void
+{
+    app(PartnerContext::class)->runAsSystem(static function () use ($invoice, $on): void {
+        DB::update('update invoice_admin set card_payment_enabled = ? where invoice_id = ?', [$on ? 'true' : 'false', $invoice->id]);
+    });
+}
+
+describe('the button follows the switch (Phase 14)', function (): void {
+    it('offers no URL, no PDF button, no pay block and no Partner or Admin button once the switch is off, and the same ones when it is on again', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client(['invoice_email' => 'invoice@example.com']));
+        $url = PayUrl::forInvoice($invoice);
+        $token = (string) DB::table('invoice_admin')->where('invoice_id', $invoice->id)->value('pay_token');
+
+        expect($url)->toBe(PayUrl::for($token))
+            ->and(PartnerPayButton::urlFor($invoice))->toBe($url)
+            ->and(PayLinkBlock::applies($invoice))->toBeTrue();
+
+        payOutSwitch($invoice, false);
+        $off = Invoice::query()->whereKey($invoice->id)->firstOrFail();
+        $html = app(InvoicePdf::class)->html($off);
+
+        expect(DB::table('invoice_admin')->where('invoice_id', $invoice->id)->value('pay_token'))->toBe($token)
+            ->and(PayUrl::forInvoice($off))->toBeNull()
+            ->and($html)->not->toContain('Zaplatit kartou')
+            ->and($html)->not->toContain('/pay/')
+            ->and($html)->not->toContain('class="card-lead"')
+            ->and(PayLinkBlock::applies($off))->toBeFalse()
+            ->and(PayLinkBlock::forMail($off))->toBeNull()
+            ->and(PartnerPayButton::urlFor($off))->toBeNull();
+
+        Livewire::withQueryParams([])
+            ->test(ViewInvoice::class, ['record' => $off->getRouteKey()])
+            ->assertActionHidden('payByCard');
+
+        payOutDialog($off)->assertMountedActionModalDontSee('Do e-mailu se automaticky přidá odkaz');
+
+        payOutSwitch($invoice, true);
+        $on = Invoice::query()->whereKey($invoice->id)->firstOrFail();
+
+        expect(PayUrl::forInvoice($on))->toBe($url)
+            ->and(app(InvoicePdf::class)->html($on))->toContain('Zaplatit kartou')->toContain($url)
+            ->and(PayLinkBlock::applies($on))->toBeTrue()
+            ->and(PartnerPayButton::urlFor($on))->toBe($url);
+
+        Livewire::withQueryParams([])
+            ->test(ViewInvoice::class, ['record' => $on->getRouteKey()])
+            ->assertActionVisible('payByCard')
+            ->assertActionHasUrl('payByCard', $url);
+    });
+
+    it('sends the e-mail of a document whose switch is off without a pay block', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client(['invoice_email' => 'invoice@example.com']));
+        payOutSwitch($invoice, false);
+        $off = Invoice::query()->whereKey($invoice->id)->firstOrFail();
+
+        expect(payOutSend($off))->not->toContain('/pay/')->not->toContain('Doklad můžete zaplatit');
     });
 });

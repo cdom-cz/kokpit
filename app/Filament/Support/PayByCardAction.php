@@ -13,7 +13,8 @@ use Filament\Support\Icons\Heroicon;
 
 /**
  * The header action "Zaplatit kartou" of an issued document (PA-02; D-01, D-04, UI-SPEC Surface F, U-7, ruling
- * R11-12-2), shared by the Admin detail (gray) and the Partner detail (the accent, plan 11-15).
+ * R11-12-2), shared by the Admin detail (gray) and the Partner detail (the accent, plan 11-15). Since Phase 14 it
+ * shows only while the stable pay URL exists, that is the card switch of the document is on and it has a token.
  *
  * It opens the page the client opens: always the stable pay URL of the document, never a Stripe address, so the
  * button leaks nothing and keeps working when the link is regenerated. When it shows is decided by the visibility
@@ -31,13 +32,19 @@ final class PayByCardAction
      */
     public static function make(Closure $invoice, Closure $visible, string $color = 'gray', ?Closure $url = null): Action
     {
+        // A token outlives a card switch-off (Phase 14 D-03), so the default stable URL is also asked for before the
+        // action shows: an action without an address would be a dead button. A caller that passes its own reader (the
+        // Partner) has already folded the same gate into its visibility closure.
+        $defaultUrl = static fn (): ?string => PayUrl::forInvoice($invoice());
+        $show = $url === null ? static fn (): bool => $visible() && $defaultUrl() !== null : $visible;
+
         return Action::make('payByCard')
             ->label(__('payment_links.actions.pay_by_card'))
             ->icon(Heroicon::OutlinedCreditCard)
             ->color($color)
             ->tooltip(__('payment_links.actions.pay_by_card_tooltip'))
-            ->url($url ?? static fn (): ?string => PayUrl::forInvoice($invoice()))
+            ->url($url ?? $defaultUrl)
             ->openUrlInNewTab()
-            ->visible($visible);
+            ->visible($show);
     }
 }

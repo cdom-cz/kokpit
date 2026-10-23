@@ -14,9 +14,14 @@ use App\Domain\Invoicing\Queries\InvoiceBalances;
  * The block is a blank line, the lead line in the language of the document and the stable pay URL on its own line. It
  * is added at send time, after the text the Admin confirmed, so editing or clearing the text cannot remove it, and it
  * never waits for the Stripe link job and never contains a Stripe URL. It applies when the document is an issued
- * invoice or proforma issued with card payment on (it has a pay token), is not cancelled and still owes money, so a
+ * invoice or proforma that offers card payment now (switch on and a pay token), is not cancelled and still owes money, so a
  * resend of a paid or cancelled document carries none. The caller must be the Admin or a system run, as
  * {@see InvoiceBalances} requires.
+ *
+ * Phase 13 hand-over (Phase 14 owner answer OA-5): the block is added only while the document offers card payment now,
+ * that is its card switch is on and it has a pay token ({@see PayUrl::forInvoice()}); a token outlives a switch-off.
+ * The invoice e-mail Phase 13 rebuilds around the "Pay by card" button must keep `applies()` / `forMail()` as its one
+ * predicate and must not read `pay_token` itself.
  */
 final readonly class PayLinkBlock
 {
