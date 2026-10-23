@@ -535,6 +535,28 @@ describe('the payment method of the converted invoice (Phase 14): edges', functi
             ->and(convertAdminRow($invoice)->bank_account_id)->toBe($proformaAccount);
     });
 
+    it('converts a legacy proforma that names no account with the bank snapshot of the proforma when no account of the currency is left', function (): void {
+        Queue::fake();
+        [, $eur] = InvoiceFixtures::configureAccounts(
+            InvoiceFixtures::account('Example CZK A', 'CZK', '11'),
+            InvoiceFixtures::account('Example EUR A', 'EUR', '33'),
+        );
+        $client = InvoiceFixtures::client();
+
+        $proforma = convertPaymentProforma($client, DocumentPaymentMethod::Transfer);
+        convertPay($proforma, '3900', '2026-10-04');
+        // A proforma issued before Phase 14 names no account; an open issued document may have its account id cleared.
+        DB::table('invoice_admin')->where('invoice_id', $proforma->id)->update(['bank_account_id' => null]);
+        $printed = Invoice::query()->whereKey($proforma->id)->firstOrFail()->bank_snapshot;
+        InvoiceFixtures::configureAccounts($eur);
+
+        $invoice = app(ConvertProforma::class)->handle($this->admin, $proforma);
+
+        expect($printed)->toBeArray()
+            ->and($invoice->bank_snapshot)->toEqual($printed)
+            ->and(convertAdminRow($invoice)->bank_account_id)->toBeNull();
+    });
+
     it('converts an online proforma while online payments are off in the settings: online, switch off, no token, no link', function (): void {
         Queue::fake();
         CardPaymentSetup::enable();

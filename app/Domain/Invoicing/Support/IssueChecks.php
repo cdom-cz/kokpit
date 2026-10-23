@@ -28,7 +28,8 @@ use Illuminate\Validation\ValidationException;
  *
  * A transfer document needs a bank account to print (D-05, D-06): the account the draft chose, in any currency, or for a
  * draft that chose none the first account of its currency; a chosen account that was removed from the settings is a
- * `bank_missing` blocker, not silently replaced. An online document prints no bank details and needs no account, but it
+ * `bank_missing` blocker, not silently replaced. A draft with a bank snapshot to copy (a converted invoice, WR-02) is not
+ * `bank_missing`: it prints that snapshot. An online document prints no bank details and needs no account, but it
  * is paid by card: while the global setting is off, Stripe is not configured or the client's online-payment flag is off
  * it is an `online_unavailable` blocker (P14-09), so a document nobody can pay is never issued.
  *

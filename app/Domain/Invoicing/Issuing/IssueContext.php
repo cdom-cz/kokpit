@@ -13,6 +13,9 @@ use Filament\Support\Facades\FilamentTimezone;
  * for a document that must carry the exchange rate of another document (a credit note copies the rate of the
  * invoice it credits, plan 10-23), the CNB figures to copy instead of looking one up.
  *
+ * A converted invoice prints the bank details of its proforma, so the context also carries the bank snapshot to copy
+ * (WR-02): it is used only when the draft's own account cannot be resolved.
+ *
  * The acting Admin travels with the context (ruling R-20-4): the PDF of the document is stored through the hardened
  * upload path, which authorises the `attach` ability for the actor.
  *

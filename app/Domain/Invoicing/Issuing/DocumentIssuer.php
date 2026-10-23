@@ -160,7 +160,8 @@ final readonly class DocumentIssuer
     /**
      * The bank snapshot of the document: none for a credit note and none for an online document, which prints no bank
      * details (D-01, OA-7); for a transfer document the account the draft chose, copied from the settings (D-05, D-06).
-     * The account may have any currency and is not warned about.
+     * The account may have any currency and is not warned about. When the account cannot be resolved and the context
+     * hands over a bank snapshot (a converted invoice, WR-02), that snapshot is printed instead of another account.
      *
      * @param  array<string, mixed>|null  $inherited  the bank snapshot of the document this one copies (a converted
      *                                                invoice), printed when the draft's account cannot be resolved
@@ -249,7 +250,7 @@ final readonly class DocumentIssuer
      * The card switch and the pay token are finalised here too (D-01, D-03, D-06): the switch becomes the AND of the draft
      * switch (forced on for an online document), the global setting and a configured Stripe for an invoice or a
      * proforma, and a document with the switch on gets its token. A transfer draft whose row names no account records
-     * the account it prints, so every issued transfer document carries the id of its account (D-05). The order matters: both columns are frozen with the parent, so the child guard of
+     * the account it prints, so every issued transfer document carries the id of its account (D-05); a converted invoice that prints the snapshot of its proforma keeps the proforma's account id, or none. The order matters: both columns are frozen with the parent, so the child guard of
      * `invoice_admin` refuses the write once the state has flipped to issued.
      */
     private function writeAdminRow(Invoice $draft, string $issueDate, IssueContext $context): InvoiceAdmin
