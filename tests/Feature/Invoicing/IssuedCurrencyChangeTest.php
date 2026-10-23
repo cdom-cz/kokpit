@@ -15,6 +15,7 @@ use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Pdf\InvoicePdf;
 use App\Domain\Invoicing\Support\IssuedDocumentRules;
+use App\Domain\Payments\Actions\DeactivatePaymentLink;
 use App\Domain\Payments\Enums\PaymentLinkDeactivation;
 use App\Domain\Payments\Enums\PaymentLinkState;
 use App\Domain\Payments\Jobs\CreatePaymentLink;
@@ -215,7 +216,8 @@ describe('the tracer: a EUR invoice with a CZK-rated time line and a card link i
         [$timeAfter, $typedAfter] = iccLines($invoice);
         $row = iccRow($invoice);
         $admin = iccAdmin($invoice);
-        $czkAccount = iccSystem(static fn (): array => app(BankAccountSettings::class)->forCurrency('CZK')?->toArray() ?? []);
+        $czkAccount = iccSystem(static fn (): array => app(BankAccountSettings::class)->firstForCurrency('CZK')?->toArray() ?? []);
+        $czkAccountId = iccSystem(static fn (): ?string => app(BankAccountSettings::class)->firstForCurrency('CZK')?->id);
 
         // The time line is back at its exact CZK rate; the typed line keeps its figure.
         expect($row->currency)->toBe('CZK')
@@ -230,7 +232,8 @@ describe('the tracer: a EUR invoice with a CZK-rated time line and a card link i
             ->and($admin->exchange_unit_amount)->toBeNull()
             ->and($admin->exchange_rate_date)->toBeNull()
             ->and($admin->czk_total_minor)->toBeNull()
-            ->and($row->bank_snapshot)->toEqual($czkAccount);
+            ->and($row->bank_snapshot)->toEqual($czkAccount)
+            ->and($admin->bank_account_id)->toBe($czkAccountId);
 
         // The EUR link is switched off, a CZK link for the new total is pending, and Stripe waits for the queued job.
         $links = iccLinks($invoice);
@@ -496,21 +499,19 @@ describe('a list or an account that is missing', function (): void {
             ->and(iccState($invoice))->toBe($before);
     });
 
-    it('offers a currency only CNB publishes and refuses it for the missing account', function (): void {
-        // USD is in the list because CNB publishes it, so the list message is gone; the missing account is the current
-        // boundary, which plan 14-09 replaces (D-05, D-07).
+    it('offers a currency only CNB publishes and refuses a transfer document for the missing account, under bank_account_id', function (): void {
+        // USD is in the list because CNB publishes it; no account has the currency, and a transfer document needs one.
         $invoice = iccIssued(InvoiceFixtures::client(), 'CZK', lists: ['USD' => '22.500']);
         $before = iccState($invoice);
 
         $errors = iccRefusal($invoice, ['currency' => 'USD']);
 
         expect(IssuedDocumentRules::currencyChoices($invoice))->toContain('USD')
-            ->and($errors['currency'][0])->not->toBe(__('invoices.errors.currency'))
-            ->and($errors['currency'][0])->toBe('Doklad s úhradou převodem nemá vybraný bankovní účet. Vyberte ho na dokladu, nebo ho přidejte v Nastavení.')
+            ->and($errors)->toBe(['bank_account_id' => [__('invoices.errors.bank_account_required')]])
             ->and(iccState($invoice))->toBe($before);
     });
 
-    it('refuses bank_missing when the settings hold no account for the new currency', function (): void {
+    it('refuses a transfer document for the missing account of the currency of the client, under bank_account_id', function (): void {
         // The currency of the client is offered, so it is a choice; without an account it cannot be taken.
         $invoice = iccIssued(InvoiceFixtures::client(['currency' => 'USD']), 'CZK', lists: ['USD' => '22.500']);
         InvoiceFixtures::cnbRate('USD', '2026-10-13', '22.000');
@@ -518,7 +519,73 @@ describe('a list or an account that is missing', function (): void {
 
         $errors = iccRefusal($invoice, ['currency' => 'USD']);
 
-        expect($errors['currency'][0])->toBe('Doklad s úhradou převodem nemá vybraný bankovní účet. Vyberte ho na dokladu, nebo ho přidejte v Nastavení.')
+        expect($errors)->toBe(['bank_account_id' => [__('invoices.errors.bank_account_required')]])
+            ->and(iccState($invoice))->toBe($before);
+    });
+});
+
+describe('the account no longer depends on the currency (Phase 14)', function (): void {
+    it('takes the explicit account of another currency and stores the CNB figures of the issue date', function (): void {
+        $invoice = iccIssued(InvoiceFixtures::client(), 'CZK', lists: ['USD' => '22.500']);
+        $account = iccSystem(static fn (): array => app(BankAccountSettings::class)->firstForCurrency('CZK')?->toArray() ?? []);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['currency' => 'USD', 'bank_account_id' => InvoiceFixtures::accountId('Example CZK account')]);
+
+        $row = iccRow($invoice);
+        $admin = iccAdmin($invoice);
+
+        expect($row->currency)->toBe('USD')
+            ->and($row->bank_snapshot)->toEqual($account)
+            ->and($admin->bank_account_id)->toBe(InvoiceFixtures::accountId('Example CZK account'))
+            ->and((float) $admin->exchange_rate)->toBe(22.5)
+            ->and($admin->exchange_rate_date?->format('Y-m-d'))->toBe('2026-10-14')
+            ->and($admin->czk_total_minor)->not->toBeNull();
+    });
+
+    it('changes the currency of an online document with no account and no snapshot', function (): void {
+        $invoice = iccIssued(CardPaymentSetup::client(), 'CZK', lists: ['USD' => '22.500']);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'online']);
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['currency' => 'USD']);
+
+        $row = iccRow($invoice);
+        $links = iccLinks($invoice);
+
+        expect($row->currency)->toBe('USD')
+            ->and($row->bank_snapshot)->toBeNull()
+            ->and(iccAdmin($invoice)->bank_account_id)->toBeNull()
+            ->and(iccAdmin($invoice)->card_payment_enabled)->toBeTrue()
+            ->and($links)->toHaveCount(3)
+            ->and($links[1]->deactivation_reason)->toBe(PaymentLinkDeactivation::AmountChanged)
+            ->and($links[2]->currency)->toBe('USD')
+            ->and($links[2]->amount_minor)->toBe($row->total_minor);
+    });
+
+    it('opens the new link in the new currency although the newest link was switched off by hand', function (): void {
+        $invoice = iccIssued(CardPaymentSetup::client(), 'EUR');
+
+        app(DeactivatePaymentLink::class)->handle($this->admin, $invoice);
+
+        expect(iccLinks($invoice)[0]->deactivation_reason)->toBe(PaymentLinkDeactivation::Manual);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['currency' => 'CZK']);
+
+        $links = iccLinks($invoice);
+
+        expect($links)->toHaveCount(2)
+            ->and($links[0]->deactivation_reason)->toBe(PaymentLinkDeactivation::Manual)
+            ->and($links[1]->currency)->toBe('CZK')
+            ->and($links[1]->state)->toBe(PaymentLinkState::Active)
+            ->and($links[1]->amount_minor)->toBe(iccRow($invoice)->total_minor);
+    });
+
+    it('still refuses the currency of a document with a payment, whatever the account', function (): void {
+        $invoice = iccIssued(InvoiceFixtures::client(), 'CZK', lists: ['EUR' => '25.125']);
+        app(RecordPayment::class)->handle($this->admin, $invoice, ['amount' => '100.00', 'paid_on' => '2026-10-14']);
+        $before = iccState($invoice);
+
+        expect(iccRefusal($invoice, ['currency' => 'EUR', 'bank_account_id' => InvoiceFixtures::accountId('Example EUR account')]))
+            ->toBe(['currency' => [__('invoices.errors.currency_has_payments')]])
             ->and(iccState($invoice))->toBe($before);
     });
 });
