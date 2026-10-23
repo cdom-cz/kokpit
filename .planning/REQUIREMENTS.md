@@ -157,11 +157,11 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **P14-02**: `transfer` prints the bank box, variable symbol and QR (CZK with a CZ IBAN only); `online` prints none of them, only the pay button or link and the amount and due facts
 - [ ] **P14-03**: Several bank accounts may share a currency; each account has a stable id; a document stores the chosen account separately from its currency
 - [ ] **P14-04**: Setting or changing the currency preselects the first account of that currency; any account may be chosen instead; with no match nothing is preselected and issuing a `transfer` document is blocked
-- [ ] **P14-05**: The currency choices are the CNB currencies plus account currencies and the client currency (plus the current and CZK), without duplicates
+- [x] **P14-05**: The currency choices are the CNB currencies plus account currencies and the client currency (plus the current and CZK), without duplicates
 - [x] **P14-06**: Method, account and currency are editable on an open issued document and frozen once it is locked
 - [x] **P14-07**: A method or currency change deactivates the live Stripe link and, when card payment is still offered, queues a new one in the document currency; the pay URL stays the same
 - [x] **P14-08**: A currency change is refused once a payment is recorded; a method or account change is still allowed
-- [ ] **P14-09**: `online` requires card payment to be available (global setting on, Stripe configured, client flag on) and blocks issuing otherwise
+- [x] **P14-09**: `online` requires card payment to be available (global setting on, Stripe configured, client flag on) and blocks issuing otherwise
 
 ### Partner Audit
 
@@ -318,11 +318,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | P14-02 | Phase 14 | Complete |
 | P14-03 | Phase 14 | Pending |
 | P14-04 | Phase 14 | Pending |
-| P14-05 | Phase 14 | Pending |
+| P14-05 | Phase 14 | Complete |
 | P14-06 | Phase 14 | Complete |
 | P14-07 | Phase 14 | Complete |
 | P14-08 | Phase 14 | Complete |
-| P14-09 | Phase 14 | Pending |
+| P14-09 | Phase 14 | Complete |
 | AUD-01 | Phase 12 | Pending |
 | AUD-02 | Phase 12 | Pending |
 
