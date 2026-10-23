@@ -561,10 +561,12 @@ describe('the migration', function (): void {
     it('backfills credit notes and sent documents as locked and every other document as open, without touching updated_at', function () use ($oldModelDocument, $email): void {
         $migration = require base_path('database/migrations/2026_10_22_000100_add_lock_state_to_invoices.php');
         $paymentMethod = require base_path('database/migrations/2026_10_24_000200_add_payment_method_to_invoices.php');
+        $bankAccount = require base_path('database/migrations/2026_10_24_000300_add_bank_account_and_open_card_switch_to_invoice_admin.php');
         $clientId = InvoiceFixtures::client()->id;
         $userId = Canary::admin()->id;
 
-        // Phase 14 sits on top of the lock: its method column is rolled back first and put back last.
+        // Phase 14 sits on top of the lock: its migrations are rolled back first and put back last.
+        $bankAccount->down();
         $paymentMethod->down();
         $migration->down();
 
@@ -581,6 +583,7 @@ describe('the migration', function (): void {
 
         $migration->up();
         $paymentMethod->up();
+        $bankAccount->up();
 
         $locks = collect(DB::select('select id, lock_state, updated_at from invoices where id in (?, ?, ?, ?, ?)', [$sent, $failedOnly, $proforma, $credit, $draft]))->keyBy('id');
 
@@ -602,8 +605,10 @@ describe('the migration', function (): void {
     it('restores the frozen-at-issue model on down() and the lock on up()', function () use ($oldModelDocument): void {
         $migration = require base_path('database/migrations/2026_10_22_000100_add_lock_state_to_invoices.php');
         $paymentMethod = require base_path('database/migrations/2026_10_24_000200_add_payment_method_to_invoices.php');
+        $bankAccount = require base_path('database/migrations/2026_10_24_000300_add_bank_account_and_open_card_switch_to_invoice_admin.php');
         $clientId = InvoiceFixtures::client()->id;
 
+        $bankAccount->down();
         $paymentMethod->down();
         $migration->down();
 
@@ -622,6 +627,7 @@ describe('the migration', function (): void {
 
         $migration->up();
         $paymentMethod->up();
+        $bankAccount->up();
 
         expect(Schema::hasColumn('invoices', 'lock_state'))->toBeTrue()
             ->and($hasTrigger('invoices', 'invoices_frozen_guard'))->toBeFalse()
@@ -630,5 +636,129 @@ describe('the migration', function (): void {
             ->and(invoiceLockStored($issued))->toBe('open');
 
         RawSql::expectAllowed(fn () => DB::update("update invoices set note = 'later' where id = ?", [$issued]));
+    });
+});
+
+describe('the Phase 14 migrations (backfill, round trip, refusing down())', function (): void {
+    /**
+     * Writes one document in the shape of Phase 10.1 (the lock exists, the payment method does not) and returns its id.
+     */
+    $tenOneDocument = function (string $clientId, string $kind, bool $issue, bool $locked = false, ?string $credited = null): string {
+        static $sequence = 0;
+        $sequence++;
+
+        /** @var object{id: string} $row */
+        $row = DB::selectOne(
+            "insert into invoices (client_id, kind, state, currency, language, credited_invoice_id, created_at, updated_at) values (?, ?, 'draft', 'CZK', 'cs', ?, '2026-10-17 10:00:00+00', '2026-10-17 10:00:00+00') returning id",
+            [$clientId, $kind, $credited],
+        );
+
+        if ($issue) {
+            $creditNote = $kind === 'credit_note';
+            $number = '7'.str_pad((string) $sequence, 3, '0', STR_PAD_LEFT);
+
+            DB::update(
+                "update invoices set state = 'issued', number = ?, variable_symbol = ?, issue_date = '2026-10-17', due_date = ?, subtotal_minor = ?, total_minor = ?, supplier_snapshot = ?, customer_snapshot = ?, bank_snapshot = ?, appearance_snapshot = ?, issued_at = '2026-10-17 10:30:00+00', lock_state = ? where id = ?",
+                [
+                    $number,
+                    $creditNote ? null : $number,
+                    $creditNote ? null : '2026-10-31',
+                    $creditNote ? -100 : 100,
+                    $creditNote ? -100 : 100,
+                    json_encode(['name' => 'Example Supplier s.r.o.']),
+                    json_encode(['name' => 'Example Customer a.s.']),
+                    $creditNote ? null : json_encode(['account' => 'fictional']),
+                    json_encode(['accent' => '#336699']),
+                    $locked || $creditNote ? 'locked' : 'open',
+                    $row->id,
+                ],
+            );
+        }
+
+        return $row->id;
+    };
+
+    it('backfills every invoice and proforma as transfer, a credit note as null, without touching updated_at, locked rows included', function () use ($tenOneDocument): void {
+        $paymentMethod = require base_path('database/migrations/2026_10_24_000200_add_payment_method_to_invoices.php');
+        $bankAccount = require base_path('database/migrations/2026_10_24_000300_add_bank_account_and_open_card_switch_to_invoice_admin.php');
+        $clientId = InvoiceFixtures::client()->id;
+
+        $bankAccount->down();
+        $paymentMethod->down();
+
+        expect(Schema::hasColumn('invoices', 'payment_method'))->toBeFalse()
+            ->and(Schema::hasColumn('invoice_admin', 'bank_account_id'))->toBeFalse();
+
+        $open = $tenOneDocument($clientId, 'invoice', true);
+        $lockedProforma = $tenOneDocument($clientId, 'proforma', true, locked: true);
+        $credit = $tenOneDocument($clientId, 'credit_note', true, credited: $open);
+        $draft = $tenOneDocument($clientId, 'invoice', false);
+
+        $paymentMethod->up();
+        $bankAccount->up();
+
+        $rows = collect(DB::select('select id, payment_method, updated_at from invoices where id in (?, ?, ?, ?)', [$open, $lockedProforma, $credit, $draft]))->keyBy('id');
+
+        expect($rows[$open]->payment_method)->toBe('transfer')
+            ->and($rows[$lockedProforma]->payment_method)->toBe('transfer')
+            ->and($rows[$credit]->payment_method)->toBeNull()
+            ->and($rows[$draft]->payment_method)->toBe('transfer');
+
+        foreach ($rows as $row) {
+            expect(CarbonImmutable::parse($row->updated_at)->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-17 10:00:00');
+        }
+
+        // The row guard is back in force: the open document takes the method, the locked one refuses it.
+        RawSql::expectAllowed(fn () => DB::update("update invoices set payment_method = 'online', bank_snapshot = null where id = ?", [$open]));
+        RawSql::expectSqlState('KP001', fn () => DB::update("update invoices set payment_method = 'online', bank_snapshot = null where id = ?", [$lockedProforma]));
+    });
+
+    it('rolls both migrations back and forward again without leaving the old checks or the new column behind', function (): void {
+        $paymentMethod = require base_path('database/migrations/2026_10_24_000200_add_payment_method_to_invoices.php');
+        $bankAccount = require base_path('database/migrations/2026_10_24_000300_add_bank_account_and_open_card_switch_to_invoice_admin.php');
+
+        $constraint = static fn (string $name): ?string => DB::selectOne(
+            'select pg_get_constraintdef(oid) as definition from pg_constraint where conname = ?',
+            [$name],
+        )->definition ?? null;
+
+        $bankAccount->down();
+        $paymentMethod->down();
+
+        expect($constraint('invoices_payment_method_check'))->toBeNull()
+            ->and($constraint('invoices_issued_fields_check'))->toContain('bank_snapshot IS NOT NULL')
+            ->and($constraint('invoice_admin_pay_token_check'))->toContain('card_payment_enabled');
+
+        $paymentMethod->up();
+        $bankAccount->up();
+
+        expect($constraint('invoices_payment_method_check'))->not->toBeNull()
+            ->and($constraint('invoices_issued_fields_check'))->toContain('payment_method')
+            ->and($constraint('invoice_admin_pay_token_check'))->not->toContain('card_payment_enabled');
+    });
+
+    it('refuses to roll the method migration back while an online document exists, and changes nothing', function (): void {
+        $paymentMethod = require base_path('database/migrations/2026_10_24_000200_add_payment_method_to_invoices.php');
+        $clientId = InvoiceFixtures::client()->id;
+
+        DB::insert(
+            "insert into invoices (client_id, kind, state, currency, language, payment_method, created_at, updated_at) values (?, 'invoice', 'draft', 'CZK', 'cs', 'online', now(), now())",
+            [$clientId],
+        );
+
+        expect(fn () => $paymentMethod->down())->toThrow(RuntimeException::class)
+            ->and(Schema::hasColumn('invoices', 'payment_method'))->toBeTrue()
+            ->and((int) DB::selectOne("select count(*) as n from invoices where payment_method = 'online'")->n)->toBe(1);
+    });
+
+    it('refuses to roll the account migration back while a token has its switch off, and changes nothing', function (): void {
+        $bankAccount = require base_path('database/migrations/2026_10_24_000300_add_bank_account_and_open_card_switch_to_invoice_admin.php');
+        $invoice = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        DB::update('update invoice_admin set card_payment_enabled = false, pay_token = ? where invoice_id = ?', [str_repeat('k', 32), $invoice->id]);
+
+        expect(fn () => $bankAccount->down())->toThrow(RuntimeException::class)
+            ->and(Schema::hasColumn('invoice_admin', 'bank_account_id'))->toBeTrue()
+            ->and(DB::selectOne('select pay_token from invoice_admin where invoice_id = ?', [$invoice->id])->pay_token)->toBe(str_repeat('k', 32));
     });
 });

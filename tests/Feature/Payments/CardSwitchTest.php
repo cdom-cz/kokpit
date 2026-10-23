@@ -101,13 +101,25 @@ it('generates tokens of 32 letters and digits that differ and recognises a malfo
         ->and(PayToken::isWellFormed(str_repeat('a', 32)))->toBeTrue();
 });
 
-it('refuses every change of the switch and the token once the document is issued', function (): void {
+it('lets the switch move on an open issued document, never changes a set token, and freezes both once locked', function (): void {
     CardPaymentSetup::enable();
     $issued = CardPaymentSetup::issued(CardPaymentSetup::client());
+    $token = adminRowOf($issued)->pay_token;
+
+    // Open (OA-1): the switch moves in both directions and the token stays what it was printed as.
+    RawSql::expectAllowed(static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = false WHERE invoice_id = ?', [$issued->id]));
+    RawSql::expectAllowed(static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = true WHERE invoice_id = ?', [$issued->id]));
+    RawSql::expectSqlState('KP001', static fn (): int => DB::update('UPDATE invoice_admin SET pay_token = ? WHERE invoice_id = ?', [PayToken::generate(), $issued->id]));
+    RawSql::expectSqlState('KP001', static fn (): int => DB::update('UPDATE invoice_admin SET pay_token = NULL WHERE invoice_id = ?', [$issued->id]));
+
+    // Locked: the switch and the token are frozen with the document.
+    InvoiceFixtures::lock($issued);
 
     RawSql::expectSqlState('KP001', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = false WHERE invoice_id = ?', [$issued->id]));
     RawSql::expectSqlState('KP001', static fn (): int => DB::update('UPDATE invoice_admin SET pay_token = ? WHERE invoice_id = ?', [PayToken::generate(), $issued->id]));
     RawSql::expectSqlState('KP001', static fn (): int => DB::update('UPDATE invoice_admin SET pay_token = NULL WHERE invoice_id = ?', [$issued->id]));
+
+    expect(adminRowOf($issued)->pay_token)->toBe($token);
 });
 
 it('never writes the pay token or its owner row to the activity log', function (): void {
@@ -322,13 +334,15 @@ it('refuses a duplicate pay token with a unique violation', function (): void {
     ));
 });
 
-it('refuses a token that is malformed or that sits on a document with the switch off', function (): void {
+it('refuses a malformed token and accepts a well-formed token with the switch off', function (): void {
     CardPaymentSetup::enable();
     $draft = InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
 
     RawSql::expectSqlState('23514', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = true, pay_token = ? WHERE invoice_id = ?', [str_repeat('a', 31), $draft->id]));
     RawSql::expectSqlState('23514', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = true, pay_token = ? WHERE invoice_id = ?', [str_repeat('a', 31).'-', $draft->id]));
-    RawSql::expectSqlState('23514', static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = false, pay_token = ? WHERE invoice_id = ?', [PayToken::generate(), $draft->id]));
+
+    // A token outlives a switch-off (a printed pay URL keeps answering), so the check is about the format only.
+    RawSql::expectAllowed(static fn (): int => DB::update('UPDATE invoice_admin SET card_payment_enabled = false, pay_token = ? WHERE invoice_id = ?', [PayToken::generate(), $draft->id]));
 });
 
 /**
