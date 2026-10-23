@@ -181,3 +181,25 @@ it('keeps the aggregator needs list unchanged because RustFS lives inside the te
     expect(ciJobs()['ci-passed']['needs'] ?? null)
         ->toBe(['scan', 'workflow-lint', 'tests', 'static-analysis', 'dependencies']);
 });
+
+it('runs the Audit suite in its own step and in composer ci, never twice', function () {
+    $names = [];
+    $runs = [];
+    foreach ((array) (ciJobs()['tests']['steps'] ?? []) as $index => $step) {
+        if (is_array($step) && isset($step['name'])) {
+            $names[(string) $step['name']] = $index;
+            $runs[(string) $step['name']] = (string) ($step['run'] ?? '');
+        }
+    }
+
+    $composer = json_decode((string) file_get_contents(base_path('composer.json')), true);
+    $scripts = (array) ($composer['scripts'] ?? []);
+
+    expect($runs['Pest'] ?? null)->toBe('vendor/bin/pest --exclude-testsuite=Audit')
+        ->and($runs['Partner audit'] ?? null)->toBe('vendor/bin/pest --testsuite=Audit')
+        ->and($names['Partner audit'] ?? -1)->toBeGreaterThan($names['Boot the application from .env.example alone'] ?? PHP_INT_MAX)
+        ->and($names['Partner audit'] ?? -1)->toBeGreaterThan($names['Pest'] ?? PHP_INT_MAX)
+        ->and($scripts['test'] ?? null)->toBe('vendor/bin/pest --exclude-testsuite=Audit')
+        ->and($scripts['partner-audit'] ?? null)->toBe('vendor/bin/pest --testsuite=Audit')
+        ->and($scripts['ci'] ?? null)->toBe(['@test', '@partner-audit', '@lint', '@stan', '@check-licenses']);
+});

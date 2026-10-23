@@ -192,7 +192,12 @@ jobs:
           bash scripts/boot-from-env-example.sh
 
       - name: Pest
-        run: vendor/bin/pest
+        run: vendor/bin/pest --exclude-testsuite=Audit
+
+      # The Audit suite (D-10) runs on its own so its failure is visible by name; it uses the services and the
+      # boot of this job.
+      - name: Partner audit
+        run: vendor/bin/pest --testsuite=Audit
 
   # Formatting and static analysis. No database or services: Larastan boots the application from the committed
   # files only, so a fresh checkout without .env must analyse cleanly.

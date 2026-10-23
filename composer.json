@@ -65,12 +65,14 @@
         }
     },
     "scripts": {
-        "test": "vendor/bin/pest",
+        "test": "vendor/bin/pest --exclude-testsuite=Audit",
+        "partner-audit": "vendor/bin/pest --testsuite=Audit",
         "lint": "vendor/bin/pint --test",
         "stan": "vendor/bin/phpstan analyse --no-progress --memory-limit=1G",
         "check-licenses": "@composer licenses --locked --format=json | php scripts/check-licenses.php",
         "ci": [
             "@test",
+            "@partner-audit",
             "@lint",
             "@stan",
             "@check-licenses"
