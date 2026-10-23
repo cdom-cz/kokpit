@@ -335,17 +335,20 @@ describe('the Odeslání tab', function (): void {
         emailTab(emailInvoiceWithTime())->assertSee('Doklad zatím nebyl odeslán');
     });
 
-    it('reads a queued and a stale sending row, and a fresh sending one, by their wait', function (): void {
+    it('reads a queued and a sending row past the stale threshold as failed and offers the resend on both', function (): void {
         $invoice = emailInvoiceWithTime();
-        $queued = emailLogRow($invoice, InvoiceEmailState::Queued, '2026-10-14 09:00:00+00');
+        $queued = emailLogRow($invoice, InvoiceEmailState::Queued, '2026-10-14 09:45:00+00');
+        $staleQueued = emailLogRow($invoice, InvoiceEmailState::Queued, '2026-10-14 07:00:00+00', ['updated_at' => '2026-10-14 07:00:00+00']);
         $fresh = emailLogRow($invoice, InvoiceEmailState::Sending, '2026-10-14 09:30:00+00', ['updated_at' => '2026-10-14 09:59:00+00']);
         $stale = emailLogRow($invoice, InvoiceEmailState::Sending, '2026-10-14 07:00:00+00', ['updated_at' => '2026-10-14 07:00:00+00']);
 
         emailTab($invoice)
             ->assertTableColumnStateSet('state', InvoiceEmailState::Queued, $queued)
+            ->assertTableColumnStateSet('state', InvoiceEmailState::Failed, $staleQueued)
             ->assertTableColumnStateSet('state', InvoiceEmailState::Sending, $fresh)
             ->assertTableColumnStateSet('state', InvoiceEmailState::Failed, $stale)
             ->assertTableActionHidden('resendEmail', $queued)
+            ->assertTableActionVisible('resendEmail', $staleQueued)
             ->assertTableActionHidden('resendEmail', $fresh)
             ->assertTableActionVisible('resendEmail', $stale);
     });
