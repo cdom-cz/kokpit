@@ -21,6 +21,7 @@ use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Support\DraftPreview;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
+use App\Domain\Invoicing\Support\InvoiceSnapshot;
 use App\Domain\Invoicing\Support\IssueChecks;
 use App\Domain\Invoicing\Support\IssuedDocumentRules;
 use App\Domain\Payments\Support\CardPaymentSwitch;
@@ -38,6 +39,7 @@ use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\ExchangeRateResource;
 use App\Filament\Resources\InvoiceResource;
 use App\Filament\Support\DraftEditorPreview;
+use App\Filament\Support\InvoiceColumns;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Filament\Actions\Action;
@@ -596,7 +598,11 @@ final class EditInvoice extends EditRecord
             // A disabled switch shows off whatever is stored; it is not dehydrated, so the stored value stays.
             'card_payment_enabled' => app(CardPaymentSwitch::class)->available() && $this->storedCardPayment(),
             'items' => $items,
-            ...($this->issuedMode() ? ['customer' => $this->partyState($invoice->customer_snapshot, self::CUSTOMER_FIELDS)] : []),
+            ...($this->issuedMode() ? [
+                'customer' => $this->partyState($invoice->customer_snapshot, self::CUSTOMER_FIELDS),
+                'supplier' => $this->partyState($invoice->supplier_snapshot, self::SUPPLIER_FIELDS),
+                'reload_bank' => false,
+            ] : []),
         ];
     }
 
@@ -668,7 +674,7 @@ final class EditInvoice extends EditRecord
 
     /**
      * The values {@see UpdateIssuedDocument} takes: the lines, the two notes and the header the editor offers (the
-     * dates, the language, the customer lines). The number, the kind, the currency and the card switch are not read from
+     * dates, the language, the customer and supplier lines, the bank refill flag). The number, the kind, the currency and the card switch are not read from
      * the form at all (T-10.1-24). A
      * credited line whose fields did not travel (a disabled field is not part of the state) takes them from the stored
      * line; the Action compares them with the stored line again.
@@ -719,8 +725,15 @@ final class EditInvoice extends EditRecord
             'language' => $data['language'] ?? null,
         ];
 
-        if (is_array($data['customer'] ?? null)) {
-            $values['customer'] = $data['customer'];
+        foreach (['customer', 'supplier'] as $party) {
+            if (is_array($data[$party] ?? null)) {
+                $values[$party] = $data[$party];
+            }
+        }
+
+        // The account itself never travels: only the wish to take it again from the settings (T-10.1-28).
+        if (($data['reload_bank'] ?? false) === true) {
+            $values['reload_bank'] = true;
         }
 
         return $values;
@@ -777,6 +790,12 @@ final class EditInvoice extends EditRecord
 
                 if (isset($errors['document'])) {
                     Notification::make()->danger()->title(implode(' ', $errors['document']))->send();
+
+                    throw new Halt;
+                }
+
+                if (isset($errors['bank'])) {
+                    Notification::make()->danger()->title(implode(' ', $errors['bank']))->send();
 
                     throw new Halt;
                 }
@@ -954,9 +973,13 @@ final class EditInvoice extends EditRecord
     /** The customer lines the editor offers, in the order of the form. */
     private const array CUSTOMER_FIELDS = ['name', 'street', 'city', 'postal_code', 'country', 'company_id', 'vat_id'];
 
+    /** The supplier lines the editor offers; the VAT payer flag is not one of them (A9). */
+    private const array SUPPLIER_FIELDS = ['name', 'street', 'city', 'postal_code', 'country', 'company_id', 'vat_id', 'email', 'phone', 'website', 'registration_note'];
+
     /**
      * "Odběratel a dodavatel" of an issued document (D-06, A9): the lines printed on this document, free fields of its
-     * own snapshot. Nothing is written until "Uložit změny".
+     * own snapshots, each party with an action that fills the fields again from the card or the settings, and the bank
+     * account read-only with an action that takes it again from the settings. Nothing is written until "Uložit změny".
      */
     private function partiesSection(): Section
     {
@@ -966,8 +989,106 @@ final class EditInvoice extends EditRecord
             ->schema([
                 Fieldset::make(__('invoices.edit_issued.customer'))
                     ->columns(1)
-                    ->schema($this->partyFields('customer', self::CUSTOMER_FIELDS)),
+                    ->schema([
+                        ...$this->partyFields('customer', self::CUSTOMER_FIELDS),
+                        Actions::make([$this->refillCustomerAction()])->key('customerActions'),
+                    ]),
+                Fieldset::make(__('invoices.edit_issued.supplier'))
+                    ->columns(1)
+                    ->schema([
+                        ...$this->partyFields('supplier', self::SUPPLIER_FIELDS),
+                        Actions::make([$this->refillSupplierAction()])->key('supplierActions'),
+                    ]),
+                Group::make([
+                    Hidden::make('reload_bank')->default(false),
+                    TextEntry::make('issued_bank_account')
+                        ->label(__('invoices.draft.fields.bank_account'))
+                        ->state(fn (Get $get): HtmlString => $this->issuedBankState($get('reload_bank') === true))
+                        ->html(),
+                    Actions::make([$this->refillBankAction()])->key('bankActions'),
+                ])->columnSpanFull(),
             ]);
+    }
+
+    /**
+     * "Načíst z karty klienta": the customer fields take the client card as it is now. The form changes, the document
+     * does not, until the save.
+     */
+    private function refillCustomerAction(): Action
+    {
+        return Action::make('refillCustomer')
+            ->label(__('invoices.edit_issued.refill_customer'))
+            ->icon(Heroicon::OutlinedArrowPath)
+            ->color('gray')
+            ->action(function (): void {
+                $this->fillParty('customer', app(InvoiceSnapshot::class)->customer($this->client()), self::CUSTOMER_FIELDS);
+            });
+    }
+
+    /**
+     * "Načíst z nastavení dodavatele": the supplier fields take the supplier settings as they are now.
+     */
+    private function refillSupplierAction(): Action
+    {
+        return Action::make('refillSupplier')
+            ->label(__('invoices.edit_issued.refill_supplier'))
+            ->icon(Heroicon::OutlinedArrowPath)
+            ->color('gray')
+            ->action(function (): void {
+                $this->fillParty('supplier', app(InvoiceSnapshot::class)->supplier(), self::SUPPLIER_FIELDS);
+            });
+    }
+
+    /**
+     * "Načíst bankovní účet z nastavení": marks the account to be taken again from the settings for the currency of the
+     * document at the save. A currency without an account is refused here already, with the message of the issue.
+     */
+    private function refillBankAction(): Action
+    {
+        return Action::make('refillBank')
+            ->label(__('invoices.edit_issued.refill_bank'))
+            ->icon(Heroicon::OutlinedArrowPath)
+            ->color('gray')
+            ->action(function (): void {
+                $currency = $this->invoice()->currency;
+
+                if ($this->bankAccountFor($currency) === null) {
+                    Notification::make()->danger()->title(__('invoices.errors.bank_missing', ['currency' => $currency]))->send();
+
+                    return;
+                }
+
+                $data = $this->data ?? [];
+                $data['reload_bank'] = true;
+                $this->data = $data;
+            });
+    }
+
+    /**
+     * Replaces the fields of one party in the form by the given lines.
+     *
+     * @param  array<string, mixed>  $lines
+     * @param  list<string>  $fields
+     */
+    private function fillParty(string $party, array $lines, array $fields): void
+    {
+        $data = $this->data ?? [];
+        $data[$party] = $this->partyState($lines, $fields);
+        $this->data = $data;
+    }
+
+    /**
+     * The bank account of the document as it is stored, or, once the refill is marked, the account the save will take.
+     */
+    private function issuedBankState(bool $reload): HtmlString
+    {
+        if ($reload) {
+            return new HtmlString(e(__('invoices.edit_issued.bank_pending')).'<br>'.$this->bankAccountState($this->invoice()->currency));
+        }
+
+        $lines = InvoiceColumns::bankLines($this->invoice());
+
+        return new HtmlString($lines === [] ? e(__('invoices.navigation.empty_value')) : implode('<br>', array_map('e', $lines)));
     }
 
     /**

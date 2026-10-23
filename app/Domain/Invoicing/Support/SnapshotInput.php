@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Invoicing\Support;
 
 use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
+use App\Domain\Settings\Settings\SupplierSettings;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -46,6 +47,44 @@ final class SnapshotInput
     public static function customer(array $input, array $stored): array
     {
         return self::party('customer', self::CUSTOMER_RULES, $input, $stored);
+    }
+
+    /**
+     * The supplier lines of a document: `name` (`company_name` is accepted for it), `street`, `city`, `postal_code`,
+     * `country`, `company_id`, `vat_id`, `email`, `phone`, `website`, `registration_note`. The limits are
+     * {@see SupplierSettings::rules()}. The VAT payer flag is not a line of the form: it is copied from the stored
+     * snapshot whatever the input carries (A9).
+     *
+     * @param  array<array-key, mixed>  $input
+     * @param  array<array-key, mixed>  $stored  the supplier snapshot of the document
+     * @return array<array-key, mixed>
+     *
+     * @throws ValidationException
+     */
+    public static function supplier(array $input, array $stored): array
+    {
+        if (! array_key_exists('name', $input) && array_key_exists('company_name', $input)) {
+            $input['name'] = $input['company_name'];
+        }
+
+        $rules = SupplierSettings::rules();
+        $supplier = self::party('supplier', [
+            'name' => $rules['company_name'],
+            'street' => $rules['street'],
+            'city' => $rules['city'],
+            'postal_code' => $rules['postal_code'],
+            'country' => $rules['country'],
+            'company_id' => $rules['company_id'],
+            'vat_id' => $rules['vat_id'],
+            'email' => $rules['email'],
+            'phone' => $rules['phone'],
+            'website' => $rules['website'],
+            'registration_note' => $rules['registration_note'],
+        ], $input, $stored);
+
+        $supplier['vat_payer'] = $stored['vat_payer'] ?? false;
+
+        return $supplier;
     }
 
     /**

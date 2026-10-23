@@ -13,14 +13,20 @@ use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
+use App\Domain\Invoicing\Pdf\InvoicePdf;
 use App\Domain\Projects\Actions\CreateProject;
+use App\Domain\Settings\Banking\BankAccount;
+use App\Domain\Settings\Banking\BankAccountFormat;
+use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\NumberingSettings;
+use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\InvoiceResource\Pages\EditInvoice;
 use Carbon\CarbonImmutable;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -29,8 +35,10 @@ use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
+use Tests\Support\FictionalIban;
 use Tests\Support\InvoiceFixtures;
 use Tests\Support\PdfText;
+use Tests\Support\QrDecode;
 
 /*
  * The header of an open issued invoice or proforma in the editor (IN-13, IN-15; D-06, D-13; assumptions A5, A6, A9,
@@ -570,5 +578,229 @@ describe('the taxable supply date', function (): void {
         expect(hedRow($invoice)->taxable_supply_date)->toBeNull();
 
         hedEditor($invoice)->assertFormFieldHidden('taxable_supply_date');
+    });
+});
+
+describe('the supplier lines', function (): void {
+    it('stores a corrected supplier name, street and phone and keeps the VAT payer flag whatever the request carries', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+        $before = hedRow($invoice)->supplier_snapshot;
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, [
+            'supplier' => ['name' => 'Corrected Supplier s.r.o.', 'street' => 'Other Street 5', 'phone' => '+420 000 000 000', 'vat_payer' => true],
+        ]);
+
+        $after = hedRow($invoice)->supplier_snapshot;
+
+        expect($after['name'])->toBe('Corrected Supplier s.r.o.')
+            ->and($after['street'])->toBe('Other Street 5')
+            ->and($after['phone'])->toBe('+420 000 000 000')
+            ->and($after['vat_payer'])->toBeFalse()
+            ->and($after['vat_payer'])->toBe($before['vat_payer'])
+            ->and($after['company_id'])->toBe($before['company_id'])
+            ->and($after['email'])->toBe($before['email']);
+    });
+
+    it('takes company_name as the name', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['supplier' => ['company_name' => 'Aliased Supplier s.r.o.']]);
+
+        expect(hedRow($invoice)->supplier_snapshot['name'])->toBe('Aliased Supplier s.r.o.');
+    });
+
+    it('refuses a bad e-mail, a country of three letters and a customer name that is too long, each under its own field, and writes nothing', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+        $row = hedRow($invoice);
+
+        try {
+            app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, [
+                'note' => 'Must not be written.',
+                'customer' => ['name' => str_repeat('a', 256)],
+                'supplier' => ['email' => 'not-an-address', 'country' => 'CZE', 'company_id' => '12'],
+            ]);
+            $this->fail('The party lines should have been refused.');
+        } catch (ValidationException $exception) {
+            expect(array_keys($exception->errors()))->toEqualCanonicalizing(['customer.name', 'supplier.email', 'supplier.country', 'supplier.company_id']);
+        }
+
+        $after = hedRow($invoice);
+
+        expect($after->supplier_snapshot)->toBe($row->supplier_snapshot)
+            ->and($after->customer_snapshot)->toBe($row->customer_snapshot)
+            ->and($after->note)->toBe($row->note);
+    });
+
+    it('refuses a supplier name over the limit of the settings and a website that is not an address', function (string $field, string $value): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+
+        try {
+            app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['supplier' => [$field => $value]]);
+            $this->fail('The supplier line should have been refused.');
+        } catch (ValidationException $exception) {
+            expect($exception->errors())->toHaveKey("supplier.{$field}");
+        }
+    })->with([
+        'name of 201 characters' => ['name', str_repeat('a', 201)],
+        'website' => ['website', 'example'],
+        'vat id' => ['vat_id', 'not a vat id'],
+    ]);
+
+    it('lets a stored value that today\'s rules would refuse stay while something else is corrected', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+        app(PartnerContext::class)->runAsSystem(static function () use ($invoice): void {
+            $row = Invoice::query()->whereKey($invoice->id)->firstOrFail();
+            $snapshot = $row->supplier_snapshot;
+            $snapshot['phone'] = str_repeat('1', 60);
+            $row->forceFill(['supplier_snapshot' => $snapshot])->save();
+        });
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['supplier' => ['phone' => str_repeat('1', 60), 'street' => 'New Street 1']]);
+
+        expect(hedRow($invoice)->supplier_snapshot['street'])->toBe('New Street 1');
+    });
+
+    it('edits the supplier in the editor and prints it on the new PDF', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+
+        hedEditor($invoice)
+            ->assertFormSet(['supplier.name' => 'Example Supplier s.r.o.'])
+            ->set('data.supplier.name', 'Printed Supplier s.r.o.')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(hedPdfText())->toContain('Printed Supplier s.r.o.');
+    });
+});
+
+describe('the refill actions', function (): void {
+    it('fills the customer from the client card as it is now and stores it with the save', function (): void {
+        $client = InvoiceFixtures::client();
+        $invoice = InvoiceFixtures::issued($client, [InvoiceFixtures::item('Design', '1', '500.00')]);
+        app(PartnerContext::class)->runAsSystem(static function () use ($client): void {
+            $client->forceFill(['name' => 'Renamed On The Card', 'city' => 'Newtown', 'tax_number' => 'CZ12345678'])->save();
+        });
+
+        $editor = hedEditor($invoice)
+            ->callAction(TestAction::make('refillCustomer')->schemaComponent('customerActions', schema: 'form'))
+            ->assertFormSet(['customer.name' => 'Renamed On The Card', 'customer.city' => 'Newtown', 'customer.vat_id' => 'CZ12345678']);
+
+        // Nothing is written until the save.
+        expect(hedRow($invoice)->customer_snapshot['name'])->not->toBe('Renamed On The Card');
+
+        $editor->call('save')->assertHasNoFormErrors();
+
+        $stored = hedRow($invoice)->customer_snapshot;
+
+        expect($stored['name'])->toBe('Renamed On The Card')
+            ->and($stored['city'])->toBe('Newtown')
+            ->and($stored['vat_id'])->toBe('CZ12345678');
+    });
+
+    it('fills the supplier from the settings as they are now', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+        app(PartnerContext::class)->runAsSystem(static function (): void {
+            $supplier = app(SupplierSettings::class);
+            $supplier->company_name = 'Moved Supplier s.r.o.';
+            $supplier->city = 'Movedtown';
+            $supplier->save();
+        });
+        app()->forgetScopedInstances();
+
+        hedEditor($invoice)
+            ->callAction(TestAction::make('refillSupplier')->schemaComponent('supplierActions', schema: 'form'))
+            ->assertFormSet(['supplier.name' => 'Moved Supplier s.r.o.', 'supplier.city' => 'Movedtown'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $stored = hedRow($invoice)->supplier_snapshot;
+
+        expect($stored['name'])->toBe('Moved Supplier s.r.o.')
+            ->and($stored['city'])->toBe('Movedtown')
+            ->and($stored['vat_payer'])->toBeFalse();
+    });
+});
+
+describe('the bank account', function (): void {
+    /**
+     * Replaces the accounts of the settings by one CZK account with the fragment, as system.
+     */
+    function hedCzkAccount(?string $fragment): void
+    {
+        app(PartnerContext::class)->runAsSystem(static function () use ($fragment): void {
+            $banks = app(BankAccountSettings::class);
+            $banks->accounts = $fragment === null
+                ? [new BankAccount(BankAccountFormat::Europe2, 'Example EUR account', 'EUR', iban: FictionalIban::czech('34'))]
+                : [new BankAccount(BankAccountFormat::Europe2, 'Replacement CZK account', 'CZK', iban: FictionalIban::czech($fragment))];
+            $banks->save();
+        });
+        app()->forgetScopedInstances();
+    }
+
+    it('is refilled from the settings for the currency of the document, and the QR code of the new PDF names it', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+        $old = hedRow($invoice)->bank_snapshot;
+        hedCzkAccount('56');
+
+        hedEditor($invoice)
+            ->callAction(TestAction::make('refillBank')->schemaComponent('bankActions', schema: 'form'))
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $row = hedRow($invoice);
+        $expected = app(PartnerContext::class)->runAsSystem(static fn (): array => app(BankAccountSettings::class)->forCurrency('CZK')?->toArray() ?? []);
+
+        preg_match_all('#<img src="(data:image/png;base64,[^"]+)"#', app(InvoicePdf::class)->html($row), $images);
+
+        expect($row->bank_snapshot)->toEqual($expected)
+            ->and($row->bank_snapshot)->not->toBe($old)
+            ->and($images[1])->toHaveCount(1)
+            ->and(QrDecode::payload($images[1][0]))->toContain(FictionalIban::czech('56'));
+    });
+
+    it('keeps the stored account when the editor saves without the refill', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+        $old = hedRow($invoice)->bank_snapshot;
+        hedCzkAccount('56');
+
+        hedEditor($invoice)->set('data.note', 'Only a note.')->call('save')->assertHasNoFormErrors();
+
+        expect(hedRow($invoice)->bank_snapshot)->toBe($old);
+    });
+
+    it('is never taken from the data: a typed account is ignored and a refill needs a real boolean', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+        $old = hedRow($invoice)->bank_snapshot;
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, [
+            'bank_snapshot' => ['iban' => FictionalIban::czech('78')],
+            'bank' => ['iban' => FictionalIban::czech('78')],
+            'note' => 'Forged account ignored.',
+        ]);
+
+        expect(hedRow($invoice)->bank_snapshot)->toBe($old);
+
+        expect(fn () => app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['reload_bank' => 'yes']))
+            ->toThrow(InvalidArgumentException::class);
+    });
+
+    it('refuses a currency without an account with the existing message and writes nothing', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
+        $old = hedRow($invoice)->bank_snapshot;
+        hedCzkAccount(null);
+
+        try {
+            app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['reload_bank' => true, 'note' => 'Must not be written.']);
+            $this->fail('A currency without an account should have been refused.');
+        } catch (ValidationException $exception) {
+            expect($exception->errors()['bank'] ?? null)->toBe([__('invoices.errors.bank_missing', ['currency' => 'CZK'])]);
+        }
+
+        expect(hedRow($invoice)->bank_snapshot)->toBe($old)
+            ->and(hedRow($invoice)->note)->toBeNull();
+
+        hedEditor($invoice)
+            ->callAction(TestAction::make('refillBank')->schemaComponent('bankActions', schema: 'form'))
+            ->assertNotified(__('invoices.errors.bank_missing', ['currency' => 'CZK']));
     });
 });

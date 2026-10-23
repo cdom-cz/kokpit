@@ -412,6 +412,10 @@ return [
         'parties' => 'Odběratel a dodavatel',
         'customer' => 'Odběratel',
         'supplier' => 'Dodavatel',
+        'refill_customer' => 'Načíst z karty klienta',
+        'refill_supplier' => 'Načíst z nastavení dodavatele',
+        'refill_bank' => 'Načíst bankovní účet z nastavení',
+        'bank_pending' => 'Po uložení se použije účet z nastavení:',
         'party_fields' => [
             'name' => 'Název',
             'street' => 'Ulice',

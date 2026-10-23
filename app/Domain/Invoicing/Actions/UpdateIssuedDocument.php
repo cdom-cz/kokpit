@@ -14,6 +14,7 @@ use App\Domain\Invoicing\Support\DraftTotals;
 use App\Domain\Invoicing\Support\InvoiceAudit;
 use App\Domain\Invoicing\Support\InvoiceItemInput;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
+use App\Domain\Invoicing\Support\InvoiceSnapshot;
 use App\Domain\Invoicing\Support\IssuedDocumentRules;
 use App\Domain\Invoicing\Support\IssuedEditFinisher;
 use App\Domain\Invoicing\Support\ItemListWriter;
@@ -44,7 +45,10 @@ use OverflowException;
  *   exchange rate and conversions (D-06, A5, A6, R-10.1-07-1);
  * - `taxable_supply_date`: blank in the non-payer mode, where any day is refused (A14);
  * - `language`: `cs` or `en`;
- * - `customer`: the lines of the customer snapshot, checked by {@see SnapshotInput::customer()} (A9);
+ * - `customer`, `supplier`: the lines of the customer and supplier snapshots, checked by {@see SnapshotInput} (A9); the
+ *   VAT payer flag of the supplier is kept as stored;
+ * - `reload_bank` (a strict boolean): the bank snapshot is taken again from the settings for the currency of the
+ *   document, `bank_missing` under `bank` when there is none; a bank account is never taken from the data (D-06);
  * - `internal_note`: saved through {@see UpdateInternalNote}. It prints nowhere, so a save that carries neither
  *   `items` nor `note` does not replace the PDF.
  *
@@ -77,6 +81,7 @@ final readonly class UpdateIssuedDocument
         private UpdateInternalNote $internalNote,
         private ItemListWriter $writer,
         private IssuedEditFinisher $finisher,
+        private InvoiceSnapshot $snapshots,
     ) {}
 
     /**
@@ -199,8 +204,40 @@ final readonly class UpdateIssuedDocument
             }
         }
 
-        if (array_key_exists('customer', $data)) {
-            $values['customer_snapshot'] = SnapshotInput::customer($this->lines($data['customer'], 'customer'), $locked->customer_snapshot ?? []);
+        // Both parties are checked before anything is thrown, so the Admin sees every refused line at once.
+        $errors = [];
+
+        $parties = [
+            'customer' => [SnapshotInput::customer(...), $locked->customer_snapshot],
+            'supplier' => [SnapshotInput::supplier(...), $locked->supplier_snapshot],
+        ];
+
+        foreach ($parties as $party => [$check, $stored]) {
+            if (! array_key_exists($party, $data)) {
+                continue;
+            }
+
+            try {
+                $values["{$party}_snapshot"] = $check($this->lines($data[$party], $party), $stored ?? []);
+            } catch (ValidationException $exception) {
+                $errors = [...$errors, ...$exception->errors()];
+            }
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+
+        if (array_key_exists('reload_bank', $data)) {
+            if (! is_bool($data['reload_bank'])) {
+                throw new InvalidArgumentException('The bank refill flag of a document is a boolean.');
+            }
+
+            // The account is only ever taken from the settings, for the currency of the document, never from the data.
+            if ($data['reload_bank']) {
+                $values['bank_snapshot'] = $this->snapshots->bank($locked->currency)
+                    ?? throw ValidationException::withMessages(['bank' => __('invoices.errors.bank_missing', ['currency' => $locked->currency])]);
+            }
         }
 
         return $values;
