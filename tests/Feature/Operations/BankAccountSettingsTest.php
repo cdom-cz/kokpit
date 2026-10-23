@@ -483,8 +483,7 @@ it('finds the first account of a currency in list order and returns null for a c
     expect($fresh->firstForCurrency('EUR')?->label)->toBe('Example EUR A')
         ->and($fresh->firstForCurrency('eur')?->label)->toBe('Example EUR A')
         ->and($fresh->firstForCurrency('CZK')?->label)->toBe('Example CZK')
-        ->and($fresh->firstForCurrency('USD'))->toBeNull()
-        ->and($fresh->forCurrency('EUR')?->label)->toBe('Example EUR A');
+        ->and($fresh->firstForCurrency('USD'))->toBeNull();
 });
 
 it('finds an account by its id and returns null for an unknown id', function (): void {

@@ -8,7 +8,6 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Invoicing\Pdf\DocumentPalette;
 use App\Domain\Settings\Banking\BankAccount;
 use App\Domain\Settings\DocumentImage;
-use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Settings\VatMode;
@@ -68,18 +67,6 @@ final readonly class InvoiceSnapshot
             'company_id' => $client->company_number,
             'vat_id' => $client->tax_number,
         ];
-    }
-
-    /**
-     * The first bank account of the currency in its stored shape, or null when none exists. Kept only for the
-     * correction of an open issued document until plans 14-07 and 14-09 move it to the chosen account (plan 14-10
-     * deletes it); a new caller uses {@see InvoiceSnapshot::bankAccount()}.
-     *
-     * @return array<string, string|null>|null
-     */
-    public function bank(string $currency): ?array
-    {
-        return app(BankAccountSettings::class)->forCurrency($currency)?->toArray();
     }
 
     /**

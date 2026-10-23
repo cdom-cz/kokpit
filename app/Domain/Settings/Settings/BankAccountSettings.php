@@ -218,7 +218,8 @@ class BankAccountSettings extends ValidatedSettings
      * The first account of a currency in the order of the settings list
      * (compared upper case), or null when none exists. This is the
      * preselection rule of D-05: the currency only suggests an account, the
-     * document keeps the account it references by id.
+     * document keeps the account it references by id. The only application
+     * caller is DocumentPayment; tests/Arch/BankAccountByIdTest.php keeps it so.
      */
     public function firstForCurrency(string $currency): ?BankAccount
     {
@@ -231,17 +232,6 @@ class BankAccountSettings extends ValidatedSettings
         }
 
         return null;
-    }
-
-    /**
-     * A one-line delegate to firstForCurrency(), kept only for its present
-     * callers (IssueChecks, InvoiceSnapshot, EditInvoice). No new code may call
-     * it: plan 14-10 deletes it together with the architecture test
-     * tests/Arch/BankAccountByIdTest.php that keeps it deleted.
-     */
-    public function forCurrency(string $currency): ?BankAccount
-    {
-        return $this->firstForCurrency($currency);
     }
 
     /**
