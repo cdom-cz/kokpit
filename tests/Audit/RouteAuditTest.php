@@ -209,3 +209,83 @@ it('defect 2: closes the Filament export and import download routes with 404 for
         ->and(Schema::hasTable('exports'))->toBeFalse()
         ->and(Schema::hasTable('imports'))->toBeFalse();
 });
+
+/**
+ * Whether a response is a refusal (R-12-02-1): 401, 403, or a redirect to the panel login.
+ */
+function auditIsRefusal(TestResponse $response): bool
+{
+    $status = $response->getStatusCode();
+
+    if ($status === 401 || $status === 403) {
+        return true;
+    }
+
+    return $status >= 300 && $status < 400 && str_ends_with((string) $response->headers->get('Location'), '/admin/login');
+}
+
+/**
+ * The route with the key, from the inventory.
+ */
+function auditRouteByKey(string $key): Illuminate\Routing\Route
+{
+    foreach (RouteInventory::routes() as $route) {
+        if (RouteInventory::key($route) === $key) {
+            return $route;
+        }
+    }
+
+    throw new RuntimeException("No route with the key {$key}");
+}
+
+it('refuses an anonymous request to every non-public route with 401, 403 or the login redirect', function (): void {
+    $declared = [...array_keys(RouteRules::publicRoutes()), ...array_keys(RouteRules::closedRoutes())];
+    $offenders = [];
+    $requested = ['filament' => 0, 'api' => 0, 'horizon' => 0];
+
+    foreach (RouteInventory::routes() as $route) {
+        $key = RouteInventory::key($route);
+
+        if (in_array($key, $declared, true)) {
+            continue;
+        }
+
+        $label = "{$key} ".RouteInventory::method($route).' '.RouteInventory::path($route);
+
+        if (! RouteInventory::isAuthenticated($route)) {
+            $offenders[] = "{$label} has no auth middleware";
+        }
+
+        $response = auditRequest($route);
+
+        if (! auditIsRefusal($response)) {
+            $offenders[] = "{$label} answered {$response->getStatusCode()} {$response->headers->get('Location')}";
+        }
+
+        match (true) {
+            str_starts_with($key, 'filament.') => $requested['filament']++,
+            str_starts_with($key, 'api.') => $requested['api']++,
+            str_starts_with($key, 'horizon.') => $requested['horizon']++,
+            default => null,
+        };
+    }
+
+    expect($requested['filament'])->toBeGreaterThan(0)
+        ->and($requested['api'])->toBeGreaterThan(0)
+        ->and($requested['horizon'])->toBeGreaterThan(0)
+        ->and($offenders)->toBe([], implode("\n", $offenders));
+});
+
+it('answers the declared status on closed route {0}', function (string $key): void {
+    $route = auditRouteByKey($key);
+    $response = auditRequest($route);
+
+    expect($response->getStatusCode())->toBe(RouteRules::closedRoutes()[$key]['status'], "{$key} answered {$response->getStatusCode()}");
+})->with(array_map(static fn (string $key): array => [$key], array_keys(RouteRules::closedRoutes())));
+
+it('never answers 500 to an anonymous request on public route {0}', function (string $key): void {
+    $route = auditRouteByKey($key);
+    $response = auditRequest($route);
+
+    expect($response->getStatusCode())->not->toBe(500, "{$key} ".RouteInventory::method($route).' '.RouteInventory::path($route).' answered 500');
+})->with(array_map(static fn (string $key): array => [$key], array_keys(RouteRules::publicRoutes())));
