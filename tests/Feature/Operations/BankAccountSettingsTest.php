@@ -427,6 +427,24 @@ it('loads a stored payload without the hidden keys into bank accounts', function
         ->and($accounts[1]->accountNumber)->toBe('AB1234567');
 });
 
+it('reads a payload without ids twice and writes nothing', function (): void {
+    $this->actingAs(Canary::admin());
+    $payload = [
+        ['format' => 'europe_2', 'label' => 'Legacy EUR', 'currency' => 'EUR', 'iban' => fictionalIban('DE')],
+    ];
+    $stored = static fn (): mixed => json_decode((string) DB::table('settings')->where('group', 'bank')->where('name', 'accounts')->value('payload'), true, 512, JSON_THROW_ON_ERROR);
+    DB::table('settings')->where('group', 'bank')->where('name', 'accounts')->update(['payload' => json_encode($payload, JSON_THROW_ON_ERROR)]);
+    app()->forgetScopedInstances();
+
+    $first = app(BankAccountSettings::class)->accounts[0]->id;
+    app()->forgetScopedInstances();
+    $second = app(BankAccountSettings::class)->accounts[0]->id;
+
+    expect($first)->toBeNull()
+        ->and($second)->toBeNull()
+        ->and($stored())->toEqual($payload);
+});
+
 it('writes every key for every account and null for the fields the format hides', function (): void {
     $this->actingAs(Canary::admin());
 
@@ -448,23 +466,125 @@ it('writes every key for every account and null for the fields the format hides'
         ->and($stored[1]['bank_name'])->toBeNull();
 });
 
-it('finds the account of a currency and returns null for a currency without one', function (): void {
+it('finds the first account of a currency in list order and returns null for a currency without one', function (): void {
     $this->actingAs(Canary::admin());
 
     $settings = app(BankAccountSettings::class);
     $settings->fillFromFormState(['accounts' => [
         bankEurope1(),
-        ['format' => 'europe_2', 'label' => 'Example EUR', 'currency' => 'EUR', 'iban' => fictionalIban('DE')],
+        ['format' => 'europe_2', 'label' => 'Example EUR A', 'currency' => 'EUR', 'iban' => fictionalIban('DE')],
+        ['format' => 'europe_2', 'label' => 'Example EUR B', 'currency' => 'EUR', 'iban' => fictionalIban('DE', '5')],
     ]]);
     $settings->save();
     app()->forgetScopedInstances();
 
     $fresh = app(BankAccountSettings::class);
 
-    expect($fresh->forCurrency('EUR')?->label)->toBe('Example EUR')
-        ->and($fresh->forCurrency('eur')?->label)->toBe('Example EUR')
-        ->and($fresh->forCurrency('CZK')?->label)->toBe('Example CZK')
-        ->and($fresh->forCurrency('USD'))->toBeNull();
+    expect($fresh->firstForCurrency('EUR')?->label)->toBe('Example EUR A')
+        ->and($fresh->firstForCurrency('eur')?->label)->toBe('Example EUR A')
+        ->and($fresh->firstForCurrency('CZK')?->label)->toBe('Example CZK')
+        ->and($fresh->firstForCurrency('USD'))->toBeNull()
+        ->and($fresh->forCurrency('EUR')?->label)->toBe('Example EUR A');
+});
+
+it('finds an account by its id and returns null for an unknown id', function (): void {
+    $this->actingAs(Canary::admin());
+
+    $settings = app(BankAccountSettings::class);
+    $settings->fillFromFormState(['accounts' => [
+        ['format' => 'europe_2', 'label' => 'Example EUR A', 'currency' => 'EUR', 'iban' => fictionalIban('DE')],
+        ['format' => 'europe_2', 'label' => 'Example EUR B', 'currency' => 'EUR', 'iban' => fictionalIban('DE', '5')],
+    ]]);
+    $settings->save();
+    app()->forgetScopedInstances();
+
+    $fresh = app(BankAccountSettings::class);
+    $secondId = (string) $fresh->accounts[1]->id;
+
+    expect($fresh->find($secondId)?->label)->toBe('Example EUR B')
+        ->and($fresh->find('01933333-3333-7333-8333-333333333333'))->toBeNull()
+        ->and($fresh->find('not-a-uuid'))->toBeNull();
+});
+
+it('keeps the ids of the accounts through a reorder and a deletion of the Repeater', function (): void {
+    $this->actingAs(Canary::admin());
+    $eurA = ['format' => 'europe_2', 'label' => 'Example EUR A', 'currency' => 'EUR', 'iban' => fictionalIban('DE')];
+    $eurB = ['format' => 'europe_2', 'label' => 'Example EUR B', 'currency' => 'EUR', 'iban' => fictionalIban('DE', '5')];
+
+    Livewire::test(SettingsPage::class)->fillForm(bankFormState([$eurA, $eurB]))->call('save')->assertHasNoFormErrors();
+    app()->forgetScopedInstances();
+    [$idA, $idB] = array_map(fn (BankAccount $account): string => (string) $account->id, app(BankAccountSettings::class)->accounts);
+
+    // Reorder: the form state lists B before A.
+    app()->forgetScopedInstances();
+    $test = Livewire::test(SettingsPage::class);
+    [$a, $b] = array_values($test->get('data.bank.accounts'));
+    $test->fillForm(['bank' => ['accounts' => [$b, $a]]])->call('save')->assertHasNoFormErrors();
+    app()->forgetScopedInstances();
+
+    expect(array_map(fn (BankAccount $account): string => (string) $account->id, app(BankAccountSettings::class)->accounts))
+        ->toBe([$idB, $idA]);
+
+    // Deletion: the first account (B) is removed, A keeps its id.
+    app()->forgetScopedInstances();
+    $test = Livewire::test(SettingsPage::class);
+    [, $remaining] = array_values($test->get('data.bank.accounts'));
+    $test->fillForm(['bank' => ['accounts' => [$remaining]]])->call('save')->assertHasNoFormErrors();
+    app()->forgetScopedInstances();
+    $accounts = app(BankAccountSettings::class)->accounts;
+
+    expect($accounts)->toHaveCount(1)
+        ->and($accounts[0]->id)->toBe($idA);
+});
+
+/**
+ * Writes a raw payload straight into the settings table and runs the settings
+ * migration that numbers the accounts stored before Phase 14.
+ *
+ * @param  list<array<string, mixed>>  $stored
+ * @return list<array<string, mixed>>
+ */
+function runBankIdMigration(array $stored): array
+{
+    DB::table('settings')->where('group', 'bank')->where('name', 'accounts')
+        ->update(['payload' => json_encode($stored, JSON_THROW_ON_ERROR)]);
+
+    (require database_path('settings/2026_10_24_000100_add_ids_to_bank_accounts.php'))->up();
+
+    return json_decode((string) DB::table('settings')->where('group', 'bank')->where('name', 'accounts')->value('payload'), true, 512, JSON_THROW_ON_ERROR);
+}
+
+it('gives the legacy accounts distinct UUID v7 ids, keeps every other key and an existing id, and changes nothing on a second run', function (): void {
+    $keptId = '01933333-3333-7333-8333-333333333333';
+    $legacy = [
+        ['format' => 'europe_2', 'label' => 'Legacy EUR', 'currency' => 'EUR', 'iban' => fictionalIban('DE'), 'custom_key' => 'kept'],
+        ['format' => 'world', 'label' => 'Legacy USD', 'currency' => 'USD', 'account_number' => 'AB1234567'],
+        ['id' => $keptId, 'format' => 'europe_2', 'label' => 'Has id', 'currency' => 'EUR', 'iban' => fictionalIban('DE', '5')],
+    ];
+
+    $migrated = runBankIdMigration($legacy);
+
+    expect($migrated)->toHaveCount(3)
+        ->and(Str::isUuid($migrated[0]['id']))->toBeTrue()
+        ->and($migrated[0]['id'][14])->toBe('7')
+        ->and(Str::isUuid($migrated[1]['id']))->toBeTrue()
+        ->and($migrated[1]['id'][14])->toBe('7')
+        ->and($migrated[0]['id'])->not->toBe($migrated[1]['id'])
+        ->and($migrated[2]['id'])->toBe($keptId);
+
+    foreach ($migrated as $index => $account) {
+        $withoutId = $account;
+        unset($withoutId['id']);
+        $original = $legacy[$index];
+        unset($original['id']);
+
+        expect($withoutId)->toEqual($original);
+    }
+
+    (require database_path('settings/2026_10_24_000100_add_ids_to_bank_accounts.php'))->up();
+
+    expect(json_decode((string) DB::table('settings')->where('group', 'bank')->where('name', 'accounts')->value('payload'), true, 512, JSON_THROW_ON_ERROR))
+        ->toEqual($migrated);
 });
 
 it('saves three accounts of different formats together and shows them in order', function (): void {

@@ -199,10 +199,28 @@ class BankAccountSettings extends ValidatedSettings
     }
 
     /**
-     * The account of a currency (compared upper case), or null when none exists.
-     * Invoices use it to pick the account by the client's currency (D-04).
+     * The account with the given id, or null for an unknown id or an account
+     * that has none yet. The exact id match is the one way a document finds
+     * the account it was told to use (D-04).
      */
-    public function forCurrency(string $currency): ?BankAccount
+    public function find(string $id): ?BankAccount
+    {
+        foreach ($this->accounts as $account) {
+            if ($account->id !== null && $account->id === $id) {
+                return $account;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The first account of a currency in the order of the settings list
+     * (compared upper case), or null when none exists. This is the
+     * preselection rule of D-05: the currency only suggests an account, the
+     * document keeps the account it references by id.
+     */
+    public function firstForCurrency(string $currency): ?BankAccount
     {
         $currency = mb_strtoupper(trim($currency));
 
@@ -213,6 +231,17 @@ class BankAccountSettings extends ValidatedSettings
         }
 
         return null;
+    }
+
+    /**
+     * A one-line delegate to firstForCurrency(), kept only for its present
+     * callers (IssueChecks, InvoiceSnapshot, EditInvoice). No new code may call
+     * it: plan 14-10 deletes it together with the architecture test
+     * tests/Arch/BankAccountByIdTest.php that keeps it deleted.
+     */
+    public function forCurrency(string $currency): ?BankAccount
+    {
+        return $this->firstForCurrency($currency);
     }
 
     /**
