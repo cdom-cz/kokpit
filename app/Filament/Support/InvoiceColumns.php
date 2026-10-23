@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Support;
 
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceListTab;
 use App\Domain\Invoicing\Enums\InvoiceStatus;
@@ -152,6 +153,10 @@ final class InvoiceColumns
     {
         $empty = __('invoices.navigation.empty_value');
         $fields = 'invoices.partner.detail.fields.';
+        // D-01: an online document prints no bank account and no variable symbol, so its detail shows neither. The
+        // method is read from the Partner-readable `invoices` row only; the account id and the card switch live on the
+        // Admin-only row and never reach this page (D-05).
+        $notOnline = static fn (Invoice $record): bool => $record->payment_method !== DocumentPaymentMethod::Online;
 
         return [
             Callout::make(static fn (Invoice $record): string => self::overdueText($record))
@@ -180,7 +185,8 @@ final class InvoiceColumns
                         ->placeholder($empty),
                     TextEntry::make('variable_symbol')
                         ->label(__($fields.'variable_symbol'))
-                        ->placeholder($empty),
+                        ->placeholder($empty)
+                        ->visible($notOnline),
                     TextEntry::make('currency')
                         ->label(__($fields.'currency')),
                 ]),
@@ -193,15 +199,20 @@ final class InvoiceColumns
                 ->columns(2)
                 ->visible(static fn (Invoice $record): bool => $record->kind !== InvoiceKind::CreditNote)
                 ->schema([
+                    TextEntry::make('payment_method')
+                        ->label(__('invoices.detail.fields.payment_method'))
+                        ->state(static fn (Invoice $record): ?string => $record->payment_method?->getLabel()),
                     TextEntry::make('bank_account')
                         ->label(__($fields.'bank_account'))
                         ->state(static fn (Invoice $record): array => self::bankLines($record))
                         ->listWithLineBreaks()
-                        ->placeholder($empty),
+                        ->placeholder($empty)
+                        ->visible($notOnline),
                     TextEntry::make('payment_variable_symbol')
                         ->label(__($fields.'variable_symbol'))
                         ->state(static fn (Invoice $record): ?string => $record->variable_symbol)
-                        ->placeholder($empty),
+                        ->placeholder($empty)
+                        ->visible($notOnline),
                     TextEntry::make('amount_due')
                         ->label(__($fields.'amount_due'))
                         ->state(static fn (Invoice $record): string => $record->total()->format('cs')),
