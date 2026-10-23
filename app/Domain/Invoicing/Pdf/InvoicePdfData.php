@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Invoicing\Pdf;
 
 use App\Domain\Clients\Enums\InvoiceLanguage;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Payments\Support\PayUrl;
@@ -20,9 +21,11 @@ use UnexpectedValueException;
  * Everything the invoice template prints, read from the issued document and nothing else (D-21, D-23; ruling
  * R-15-4). The sources are the columns of the `invoices` row, the `invoice_items` rows and the four frozen
  * snapshots (supplier, customer, bank, appearance). It never reads the client, the supplier or invoicing
- * settings or the exchange rates, and from the Admin-only row only the frozen pay token of the card button (Phase 11
- * D-01), so a later change of any of them cannot alter a regenerated PDF, and the CNB rate, the CZK total, the
- * internal note and linked time cannot reach the page (UI-SPEC U-16).
+ * settings or the exchange rates, and from the Admin-only row only the card switch and the pay token of the card
+ * button (Phase 11 D-01, Phase 14 D-03) through {@see PayUrl::forInvoice()}, so a later change of any of them cannot
+ * alter a regenerated PDF, and the CNB rate, the CZK total, the internal note and linked time cannot reach the page
+ * (UI-SPEC U-16). The payment box follows `invoices.payment_method` (Phase 14 D-01): a transfer document prints its
+ * bank snapshot, an online one prints no bank detail at all.
  *
  * The logo and the signature come from {@see DocumentImage::dataUri()} with the path and SHA-256 of the
  * appearance snapshot, which throws when the stored object is missing or changed, so the regeneration is either
@@ -246,8 +249,14 @@ final readonly class InvoicePdfData
     }
 
     /**
-     * The payment box of an invoice or proforma, null when the bank snapshot is absent. The QR is printed only
-     * for a CZK document paid to a Czech IBAN, with the variable symbol and the due date at hand.
+     * The payment box of an invoice or proforma, by the payment method of the document (Phase 14, D-01).
+     *
+     * An online document prints only what is needed to pay by card: the online sentence with the amount and the due
+     * date, the payment method, and the amount due; it reads nothing of the bank snapshot, so no account, IBAN, BIC,
+     * variable symbol or QR can reach it. A transfer document (and a legacy one without a method) prints the bank box
+     * of its snapshot, null when the snapshot is absent. The QR is printed only for a document whose currency and IBAN
+     * SPAYD supports, with the variable symbol and the due date at hand, whatever the currency of the account itself
+     * (D-06). Every amount is in the currency of the document (D-08).
      *
      * @param  Closure(string, array<string, string>=): string  $t
      * @param  Closure(DateTimeInterface|null): string  $date
@@ -255,6 +264,22 @@ final readonly class InvoicePdfData
      */
     private static function payment(Invoice $issued, Closure $t, Closure $date): ?array
     {
+        if ($issued->payment_method === DocumentPaymentMethod::Online) {
+            $amount = $issued->total()->format($issued->language->value);
+
+            return [
+                'qrDataUri' => null,
+                'sentence' => self::sentence($t('online_sentence', [
+                    'amount' => "\u{1}".$amount."\u{1}",
+                    'due' => "\u{1}".$date($issued->due_date)."\u{1}",
+                ])),
+                'facts' => [
+                    ['key' => $t('payment_method'), 'value' => $t('online_payment')],
+                    ['key' => $t('amount_due'), 'value' => $amount],
+                ],
+            ];
+        }
+
         $bank = $issued->bank_snapshot;
 
         if ($bank === null) {
@@ -320,10 +345,13 @@ final readonly class InvoicePdfData
     }
 
     /**
-     * The "Pay by card" button of the payment box (D-01, D-05, D-06; ruling R11-05-1), null when the document was not
-     * issued with card payment on. It reads the frozen pay token of the Admin-only row and nothing else, never the
-     * live Stripe link or the payment state, so a PDF regenerated after the document is paid or the link replaced
-     * prints the same button and URL (R11-05-2, Phase 10 D-23). The URL is the stable Kokpit one, never a Stripe URL.
+     * The "Pay by card" button of the payment box (D-01, D-05, D-06; ruling R11-05-1), null when the document does not
+     * offer card payment now, that is when its card switch is off or it has no pay token (Phase 14 D-03, R-14-05-1).
+     * It reads the switch and the token of the Admin-only row through {@see PayUrl::forInvoice()} and nothing else,
+     * never the live Stripe link or the payment state, so a PDF regenerated after the document is paid or the link
+     * replaced prints the same button and URL (R11-05-2, Phase 10 D-23). The URL is the stable Kokpit one, never a
+     * Stripe URL. The lead sentence differs by method: an online document leads with the button itself, a transfer one
+     * offers the card as an alternative (R-14-05-2).
      *
      * @param  Closure(string, array<string, string>=): string  $t
      * @return array{lead: string, label: string, url: string}|null
@@ -336,7 +364,9 @@ final readonly class InvoicePdfData
             return null;
         }
 
-        return ['lead' => $t('card_lead'), 'label' => $t('card_button'), 'url' => $url];
+        $lead = $issued->payment_method === DocumentPaymentMethod::Online ? 'online_card_lead' : 'card_lead';
+
+        return ['lead' => $t($lead), 'label' => $t('card_button'), 'url' => $url];
     }
 
     /**
