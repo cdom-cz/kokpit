@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 13
 current_phase_name: Unified e-mail layout and HTML e-mail templates
 status: executing
-stopped_at: Completed 14-15-PLAN.md
-last_updated: "2026-10-23T19:40:28.082Z"
+stopped_at: Completed 13-01-PLAN.md
+last_updated: "2026-10-23T19:58:38.595Z"
 last_activity: 2026-10-23
-last_activity_desc: Phase 14 execution started
-state_head: 0ca7d0b7dff0f7aed81b01eaecacb471de59cdc6
+last_activity_desc: Phase 13 execution started
+state_head: 13350f926ff9b5d48e7d6532dc74cf16e49017ee
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 285
-  completed_plans: 276
+  completed_plans: 277
   percent: 44
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 14 — Switchable payment method and independent invoice currency
+**Current focus:** Phase 13 — Unified e-mail layout and HTML e-mail templates
 
 ## Current Position
 
-Phase: 13 (Unified e-mail layout and HTML e-mail templates) — READY TO EXECUTE
-Plan: 15 of 15
+Phase: 13 (Unified e-mail layout and HTML e-mail templates) — EXECUTING
+Plan: 2 of 9
 Status: Ready to execute
-Last activity: 2026-10-23 — Phase 14 execution started
+Last activity: 2026-10-23 — Phase 13 execution started
 
 Progress: [████░░░░░░] 44%
 
@@ -336,6 +336,7 @@ Progress: [████░░░░░░] 44%
 | Phase 14 P13 | 25 min | 2 tasks | 3 files |
 | Phase 14 P14-14 | 30 min | 2 tasks | 5 files |
 | Phase 14 P15 | 25 min | 2 tasks | 5 files |
+| Phase 13 P01 | 55min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -840,6 +841,8 @@ Recent decisions affecting current work:
 - [Phase 14]: R-14-12-1: the issued editor sends bank_account_id when it differs from the filled one or when the currency changes in the same save and an account is chosen; R-14-10-2 is narrowed, not reversed
 - [Phase 14]: R-14-13-2: online branch of issuedSwitch() uses onlineUnavailableReason() (client flag included) instead of CardPaymentSwitch::available()
 - [Phase 14]: R-14-14-4: a converted invoice inherits the proforma's stored account id unfiltered; when that account is no longer configured it prints the proforma's own bank snapshot (handed over through IssueContext), never another account
+- [Phase 13]: R-13-01-3: MailBrand is the single system-context reader of supplier branding for e-mail (whitelist, scoped binding, fallback to the app name on any Throwable)
+- [Phase 13]: R-13-01-1: only the customised mail views are published (layout, message, header, footer, kokpit.css, notifications/email); other components stay the framework fallback
 
 ### Pending Todos
 
@@ -903,6 +906,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T15:48:11.188Z
-Stopped at: Completed 14-15-PLAN.md
+Last session: 2026-10-23T19:58:36.113Z
+Stopped at: Completed 13-01-PLAN.md
 Resume file: None
