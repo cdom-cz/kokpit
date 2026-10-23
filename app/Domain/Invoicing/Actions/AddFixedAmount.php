@@ -10,9 +10,13 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Queries\InvoiceableEntries;
 use App\Domain\Invoicing\Support\DraftLines;
 use App\Domain\Invoicing\Support\EntryReservation;
+use App\Domain\Invoicing\Support\InvoiceAudit;
+use App\Domain\Invoicing\Support\IssuedDocumentRules;
+use App\Domain\Invoicing\Support\IssuedEditFinisher;
 use App\Domain\Projects\Enums\BillingType;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Money\Money;
+use App\Domain\TimeTracking\Billing\EntryBilling;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Support\TimerClock;
 use DomainException;
@@ -25,8 +29,10 @@ use InvalidArgumentException;
 use OverflowException;
 
 /**
- * Bills a fixed-price project with a fixed amount, whole or in part, "Přidat pevnou částku" (IN-02, D-07). The Admin
- * only.
+ * Bills a fixed-price project with a fixed amount, whole or in part, "Přidat pevnou částku" (IN-02, IN-13, D-05, D-07).
+ * The Admin only. The name stays; the lifecycle is decided on the locked document (R-10.1-09-1): a draft follows the
+ * path described below, an open issued document asks {@see IssuedDocumentRules::assertEditable()} and follows the issued
+ * path, anything else keeps the `not_draft` refusal.
  *
  * Data keys: `project_id` (a fixed-price project of the draft's client, archived ones allowed), `description`
  * (optional, defaults to the name of the project, at most 500 characters), `amount` (greater than zero, in the
@@ -39,6 +45,11 @@ use OverflowException;
  * with the same locked claim as {@see AddEntriesToDraft} and becomes billed, with no rate snapshot because the price
  * is fixed, when the draft is issued. Without it the hours stay unbilled and the Admin can bill the rest later. An
  * existing line is never touched (D-06).
+ *
+ * The issued path (R-10.1-09-4) appends the same line and, with `link_time`, claims the fixed-price entries and bills
+ * them at once (they are billed with no rate snapshot, because the price is fixed), then refreshes the totals and ends
+ * with {@see IssuedEditFinisher::finish()}: the CZK total, the card link, the PDF and, after the first send, the audit
+ * row. A fixed amount is a manual price, so it is never converted.
  *
  * {@see AddFixedAmount::context()} is what the modal shows before the Admin confirms: the agreed price, what issued
  * fixed-amount lines have billed so far, and how much time `link_time` would take along (ruling R-14-2).
@@ -53,30 +64,40 @@ final readonly class AddFixedAmount
         private InvoiceableEntries $entries,
         private EntryReservation $reservation,
         private DraftLines $lines,
+        private EntryBilling $billing,
+        private IssuedEditFinisher $finisher,
     ) {}
 
     /**
      * @param  array<string, mixed>  $data
      *
-     * @throws ValidationException `project_id`, `amount`, `description`, `items`
-     * @throws DomainException when the document is no longer a draft
+     * @throws ValidationException `project_id`, `amount`, `description`, `items`, `document` when an issued document
+     *                             cannot take a line
+     * @throws DomainException when the document is neither a draft nor an issued document
      */
     public function handle(User $actor, Invoice $draft, array $data): InvoiceItem
     {
         Gate::forUser($actor)->authorize('update', $draft);
 
-        return DB::transaction(function () use ($draft, $data): InvoiceItem {
+        return DB::transaction(function () use ($actor, $draft, $data): InvoiceItem {
             $locked = Invoice::query()->whereKey($draft->getKey())->lockForUpdate()->firstOrFail();
 
-            if (! $locked->isDraft()) {
+            if ($locked->isIssued()) {
+                IssuedDocumentRules::assertEditable($locked);
+            } elseif (! $locked->isDraft()) {
                 throw new DomainException(__('invoices.errors.not_draft'));
             }
 
             $project = $this->project($data['project_id'] ?? null, $locked);
             $amount = $this->amount($data['amount'] ?? null, $locked->currency);
             $description = $this->description($data['description'] ?? null, $project);
+            $linkTime = (bool) ($data['link_time'] ?? false);
 
-            if ((bool) ($data['link_time'] ?? false)) {
+            if ($locked->isIssued()) {
+                return $this->addToIssued($actor, $locked, $project, $amount, $description, $linkTime);
+            }
+
+            if ($linkTime) {
                 $this->reservation->claim($locked, $this->entries->fixedPriceProjectEntries($project->id, TimerClock::now()));
             }
 
@@ -85,6 +106,30 @@ final readonly class AddFixedAmount
 
             return $item;
         });
+    }
+
+    /**
+     * The issued path: the line, the fixed-price time claimed and billed at once with `link_time`, the totals and the
+     * finisher, all under the lock the caller holds.
+     */
+    private function addToIssued(User $actor, Invoice $locked, Project $project, Money $amount, string $description, bool $linkTime): InvoiceItem
+    {
+        $before = InvoiceAudit::snapshot($locked);
+        $now = TimerClock::now();
+
+        if ($linkTime) {
+            $claimed = $this->reservation->claim($locked, $this->entries->fixedPriceProjectEntries($project->id, $now));
+
+            // Reserving and billing are two statements, as the link guard requires.
+            $this->billing->bill($claimed, $now);
+        }
+
+        $item = $this->lines->appendFixedAmount($locked, $project->id, $description, $amount, self::UNIT);
+        $this->lines->refreshTotals($locked, InvoiceAudit::everSent($locked));
+
+        $this->finisher->finish($actor, $locked, $before);
+
+        return $item;
     }
 
     /**

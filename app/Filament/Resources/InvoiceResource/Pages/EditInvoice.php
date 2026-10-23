@@ -38,6 +38,7 @@ use App\Filament\Pages\SettingsPage;
 use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\ExchangeRateResource;
 use App\Filament\Resources\InvoiceResource;
+use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEntriesRelationManager;
 use App\Filament\Support\DraftEditorPreview;
 use App\Filament\Support\InvoiceColumns;
 use Carbon\CarbonImmutable;
@@ -189,12 +190,17 @@ final class EditInvoice extends EditRecord
     }
 
     /**
-     * An issued document has no tabs under its editor: the payments, the e-mail log and the history live on the detail,
-     * and a payment recorded here would move the amounts under an open edit.
+     * An issued document has only the tab of its linked time under its editor: the payments, the e-mail log and the
+     * history live on the detail, and a payment recorded here would move the amounts under an open edit.
      */
     public function getRelationManagers(): array
     {
-        return $this->issuedMode() ? [] : parent::getRelationManagers();
+        if (! $this->issuedMode()) {
+            return parent::getRelationManagers();
+        }
+
+        // The time tab stays: "Přidat nový čas" of the editor opens its dialog (plan 10.1-09).
+        return array_values(array_filter(parent::getRelationManagers(), static fn (mixed $manager): bool => $manager === InvoiceEntriesRelationManager::class));
     }
 
     public function getTitle(): string
@@ -1219,11 +1225,11 @@ final class EditInvoice extends EditRecord
                 Text::make(__('invoices.errors.items_cap', ['max' => $max]))
                     ->color('gray')
                     ->visible(fn (): bool => count($this->lineStates()) >= $max),
-                // The buttons that add time or a fixed amount are for a draft; plan 10.1-09 opens them for an issued one.
+                // An open issued document takes new time and a fixed amount exactly as a draft does (D-07, R-10.1-09-5).
                 Actions::make([
                     $this->addFixedAmountAction(),
                     $this->addTimeAction(),
-                ])->key('itemActions')->visible(! $this->issuedMode()),
+                ])->key('itemActions'),
             ]);
     }
 
@@ -1286,7 +1292,14 @@ final class EditInvoice extends EditRecord
                 $this->preview = null;
                 $this->appendStoredLines();
 
-                Notification::make()->success()->title(__('invoices.draft.fixed_amount.toast'))->send();
+                $notification = Notification::make()->success()->title(__('invoices.draft.fixed_amount.toast'));
+
+                // An issued document also made its PDF again; nothing was sent (R-10.1-09-5).
+                if ($this->issuedMode()) {
+                    $notification->body(__('invoices.edit_issued.saved'));
+                }
+
+                $notification->send();
             });
     }
 

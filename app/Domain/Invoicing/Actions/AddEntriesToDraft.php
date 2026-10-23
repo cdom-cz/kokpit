@@ -184,7 +184,7 @@ final readonly class AddEntriesToDraft
             }
         }
 
-        return ['claimed' => $claimed->sortKeys()->values(), 'rows' => $rows];
+        return ['claimed' => $claimed->values(), 'rows' => $rows];
     }
 
     /**
