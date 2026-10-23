@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 13
 current_phase_name: Unified e-mail layout and HTML e-mail templates
 status: executing
-stopped_at: Completed 13-02-PLAN.md
-last_updated: "2026-10-23T20:06:59.927Z"
+stopped_at: Completed 13-03-PLAN.md
+last_updated: "2026-10-23T20:11:56.771Z"
 last_activity: 2026-10-23
 last_activity_desc: Phase 13 execution started
-state_head: 4c73061bcf5706a70924b10e77c82f10c93f2a37
+state_head: 227ab5f1554f5cf05cc38bfb3a035ecb59a81de5
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 285
-  completed_plans: 278
+  completed_plans: 279
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 13 (Unified e-mail layout and HTML e-mail templates) — EXECUTING
-Plan: 3 of 9
+Plan: 4 of 9
 Status: Ready to execute
 Last activity: 2026-10-23 — Phase 13 execution started
 
@@ -338,6 +338,7 @@ Progress: [████░░░░░░] 44%
 | Phase 14 P15 | 25 min | 2 tasks | 5 files |
 | Phase 13 P01 | 55min | 2 tasks | 13 files |
 | Phase 13 P02 | 25min | 2 tasks | 9 files |
+| Phase 13 P03 | 15min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -845,6 +846,7 @@ Recent decisions affecting current work:
 - [Phase 13]: R-13-01-3: MailBrand is the single system-context reader of supplier branding for e-mail (whitelist, scoped binding, fallback to the app name on any Throwable)
 - [Phase 13]: R-13-01-1: only the customised mail views are published (layout, message, header, footer, kokpit.css, notifications/email); other components stay the framework fallback
 - [Phase 13]: 13-02: no guard trigger on payment_confirmations; the confirmation mark lives in its own table, not on invoice_payments, invoices or invoice_emails
+- [Phase 13]: Selection not suppression: payment and invoicing tests read the mail transport by recipient and subject (Admin address for alerts), counts exact, nothing names the confirmation
 
 ### Pending Todos
 
@@ -908,6 +910,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T20:06:57.539Z
-Stopped at: Completed 13-02-PLAN.md
+Last session: 2026-10-23T20:11:54.410Z
+Stopped at: Completed 13-03-PLAN.md
 Resume file: None
