@@ -902,7 +902,7 @@ it('hands over to Phases 7, 10 and 12, carries no Phase 8, Phase 9 or Phase 11 n
     // (R-09-2 replaces the Phase 6 wording), the issue pipeline and its order, the guards and their limits, the payment
     // and income rules, the single rounding, the frozen appearance and the licence notes.
     foreach ([
-        'EntryBilling', 'R-09-2', 'DocumentIssuer', 'last write on the `invoices` row', 'accept no write at all', 'R-04-4', 'R-04-5', 'R-04-6',
+        'EntryBilling', 'R-09-2', 'DocumentIssuer', 'last write on the `invoices` row', 'a locked `invoices` row and its items and item sources accept no write', 'R-04-4', 'R-04-5', 'R-04-6',
         'R-06-1', 'R-06-6', 'amending D-13', 'DocumentOwnerType::Invoice', 'DocumentOwnerResolver', 'StoreGeneratedDocument', 'AttachDocuments',
         'archived-owner scopes', 'InvoicePdfController', 'files.invoice', 'DeletePayment', 'kokpit.payment_deletion', 'R-19-1', 'R-41-1 to R-41-5',
         'D-19 as amended on 2026-10-17', 'TransactionCategory::invoicePayments()', 'TransactionCzk', 'RecordPayment', 'only in its date and category',
@@ -993,6 +993,73 @@ it('only names Phase 10 classes, methods and tests in CONTRIBUTING.md that exist
         'tests/Isolation/InvoiceLeakTest.php', 'tests/Arch/PaymentDeletionPathTest.php',
     ] as $path) {
         expect($contributing)->toContain(basename($path, '.php'));
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$path} but the file does not exist");
+    }
+});
+
+it('hands the send-driven lock over to later phases: the Immutability rule and the Editable invoices bullet say who may lock, unlock and edit, and name only what exists', function () {
+    $contributing = repoFile('CONTRIBUTING.md');
+    $immutability = repoContributingBullet('Immutability.');
+    $bullet = repoContributingBullet('Editable invoices.');
+
+    // The superseded wording (an issued row accepts no write at all) is gone, rewritten and not relaxed (plan 10.1-10).
+    expect($contributing)->not->toContain('accept no write at all')
+        ->and($contributing)->not->toContain('accepts no write at all')
+        ->and($immutability)->toContain('issued documents once locked by a successful send')
+        ->and($immutability)->toContain('credit notes from their issue')
+        ->and($immutability)->toContain('billed time entries')
+        ->and($immutability)->toContain('always frozen')
+        ->and($immutability)->toContain('`Immutability`')
+        ->and($immutability)->toContain('KP001');
+
+    expect($bullet)->not->toBe('');
+
+    foreach ([
+        '`invoices.lock_state`', '`kokpit_guard_invoice_row()`', 'The only code that locks is `SendInvoiceEmail`', 'the only code that unlocks is `UnlockInvoice`',
+        '`kokpit.invoice_unlock`', '`UpdateIssuedDocument`', '`AddEntriesToDraft`', '`ReleaseEntries`', '`AddFixedAmount`', '`IssuedEditFinisher`',
+        '`PaymentLinks::reconcile()`', '`ReplaceIssuedPdf`', '`InvoiceAudit`', '`IssuedDocumentRules`', '`email_in_flight`', '`invoice_edited`',
+        '`kokpit_invoice_accepts_time_changes()`', '`payment_links_invoice_fk`', 'must not call the lock step',
+    ] as $phrase) {
+        expect($bullet)->toContain($phrase);
+    }
+
+    $classes = [
+        'SendInvoiceEmail' => 'App\Domain\Invoicing\Jobs\SendInvoiceEmail',
+        'UnlockInvoice' => 'App\Domain\Invoicing\Actions\UnlockInvoice',
+        'UpdateIssuedDocument' => 'App\Domain\Invoicing\Actions\UpdateIssuedDocument',
+        'AddEntriesToDraft' => 'App\Domain\Invoicing\Actions\AddEntriesToDraft',
+        'ReleaseEntries' => 'App\Domain\Invoicing\Actions\ReleaseEntries',
+        'AddFixedAmount' => 'App\Domain\Invoicing\Actions\AddFixedAmount',
+        'IssuedEditFinisher' => 'App\Domain\Invoicing\Support\IssuedEditFinisher',
+        'PaymentLinks' => 'App\Domain\Payments\Support\PaymentLinks',
+        'ReplaceIssuedPdf' => 'App\Domain\Invoicing\Actions\ReplaceIssuedPdf',
+        'InvoiceAudit' => 'App\Domain\Invoicing\Support\InvoiceAudit',
+        'IssuedDocumentRules' => 'App\Domain\Invoicing\Support\IssuedDocumentRules',
+    ];
+
+    foreach ($classes as $short => $class) {
+        expect($bullet)->toContain($short);
+        expect(class_exists($class))->toBeTrue("CONTRIBUTING.md names {$short} but {$class} does not exist");
+    }
+
+    // The database functions and the key the text names are in the migrations of the phase.
+    expect(repoFile('database/migrations/2026_10_22_000100_add_lock_state_to_invoices.php'))->toContain('kokpit_guard_invoice_row')
+        ->and(repoFile('database/migrations/2026_10_22_000200_follow_invoice_lock_in_time_entry_link.php'))->toContain('kokpit_invoice_accepts_time_changes')
+        ->and(repoFile('database/migrations/2026_10_22_000300_relax_payment_link_currency_key.php'))->toContain('payment_links_invoice_fk')
+        ->and(method_exists('App\Domain\Payments\Support\PaymentLinks', 'reconcile'))->toBeTrue();
+
+    // The one lock writer and the one unlock flag the text names.
+    expect(repoFile('app/Domain/Invoicing/Jobs/SendInvoiceEmail.php'))->toContain('InvoiceLockState::Locked')
+        ->and(repoFile('app/Domain/Invoicing/Actions/UnlockInvoice.php'))->toContain('kokpit.invoice_unlock');
+
+    // The enforcing tests the text names.
+    foreach ([
+        'tests/Feature/Schema/InvoiceLockGuardTest.php', 'tests/Arch/InvoiceUnlockPathTest.php', 'tests/Feature/Invoicing/UnlockInvoiceTest.php',
+        'tests/Feature/Invoicing/UpdateIssuedDocumentTest.php', 'tests/Feature/Invoicing/UpdateIssuedDocumentPdfLinkTest.php',
+        'tests/Feature/Invoicing/InvoiceEditAuditTest.php', 'tests/Feature/Invoicing/IssuedEditorTest.php', 'tests/Feature/Invoicing/IssuedTimeEditTest.php',
+        'tests/Concurrency/InvoiceEditSendConcurrencyTest.php', 'tests/Feature/Invoicing/EditableInvoiceJourneyTest.php',
+    ] as $path) {
+        expect($bullet)->toContain(basename($path, '.php'));
         expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$path} but the file does not exist");
     }
 });
