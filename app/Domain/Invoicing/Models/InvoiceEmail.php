@@ -17,8 +17,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * were sent and the state of the job, so the Admin sees what left the system and when.
  *
  * Admin-only: a Partner reads no row, not even for an e-mail about an invoice of the own client (IN-09, R-08-1).
- * The relation writes nothing to its parent: there is no `$touches`, an issued invoice refuses even an `updated_at`
- * write (R-04-6).
+ * The relation writes nothing to its parent: there is no `$touches`, because a locked invoice (one a successful send
+ * has locked, Phase 10.1) refuses even an `updated_at` write (R-04-6). Only the successful send of the e-mail moves the
+ * document from open to locked, and it does so in its own statement, not through this relation.
  *
  * Nothing is fillable: the send Action and the job set every column with `forceFill`. The model keeps no activity
  * history, the row is itself the log.

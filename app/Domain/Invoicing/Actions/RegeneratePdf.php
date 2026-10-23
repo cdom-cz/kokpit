@@ -28,10 +28,11 @@ use Throwable;
  * {@see InvoicePdf}, which reads the snapshot only (supplier, customer, lines, totals, language and the hash-verified
  * logo and signature objects), so the new file prints what the issued one printed, or the call fails.
  *
- * One transaction: the invoice row is locked for reading consistency and never written (the issued row accepts no
- * write, plan 10-04 R-04-6), the Admin-only row is locked, the PDF is rendered, stored through the hardened upload
- * path with the rollback cleanup of {@see StoreGeneratedDocument}, and linked on `invoice_admin`. Any failure rolls
- * everything back, removes a written object and surfaces as one fixed message, without a path or a snapshot value.
+ * One transaction: the invoice row is locked for reading consistency and never written (a locked document accepts no
+ * write, plan 10-04 R-04-6, and an open one is corrected only through {@see UpdateIssuedDocument}), the Admin-only
+ * row is locked, the PDF is rendered, stored through the hardened upload path with the rollback cleanup of
+ * {@see StoreGeneratedDocument}, and linked on `invoice_admin`. Any failure rolls everything back, removes a written
+ * object and surfaces as one fixed message, without a path or a snapshot value.
  */
 final readonly class RegeneratePdf
 {
