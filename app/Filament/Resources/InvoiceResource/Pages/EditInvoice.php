@@ -720,7 +720,10 @@ final class EditInvoice extends EditRecord
      * currency, the dates, the language, the customer and supplier lines, the bank refill flag) and, for an invoice or a
      * proforma, the payment method, the card switch and the bank account. The number and the kind are not read from the
      * form at all. The card switch is read from the form (owner answer OA-1, which reverses T-10.1-24) and the Action
-     * re-checks it, like the method and the account. A
+     * re-checks it, like the method and the account. The account travels when the Admin changed it, and also whenever
+     * the currency changes in the same save and an account is chosen, so a re-picked stored account is kept rather than
+     * replaced by the preselection of the new currency (CR-01, D-05, D-06); an unrelated save of a document whose account
+     * was removed still sends none (R-14-10-2, T-14-34). A
      * credited line whose fields did not travel (a disabled field is not part of the state) takes them from the stored
      * line; the Action compares them with the stored line again.
      *
@@ -798,8 +801,11 @@ final class EditInvoice extends EditRecord
                 $values['card_payment_enabled'] = (bool) $data['card_payment_enabled'];
             }
 
-            // The account travels only when the Admin changed it: a document whose stored account was removed, or a legacy
-            // one without an id, keeps its printed snapshot on an unrelated save (T-14-34, R-14-10-2).
+            // The account travels when the Admin changed it, and also when the currency changes in the same save and an
+            // account is chosen (CR-01, R-14-12-1): a currency change preselects the account of the new currency, so a
+            // re-picked stored account equals the filled one and would otherwise be dropped, letting the Action print the
+            // preselection instead. A document whose stored account was removed, or a legacy one without an id, still keeps
+            // its printed snapshot on an unrelated save (T-14-34, R-14-10-2).
             if (array_key_exists('bank_account_id', $data)) {
                 $account = self::text($data['bank_account_id']);
                 $currencyChanged = is_string($data['currency'] ?? null) && strtoupper($data['currency']) !== $invoice->currency;
