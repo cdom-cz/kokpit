@@ -11,6 +11,7 @@ use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Invoicing\Support\EntryReservation;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -35,8 +36,11 @@ use Illuminate\Validation\ValidationException;
  *
  * The document is read with the invoice row lock before the row is written, the same lock an edit of an issued document
  * takes (A8): an edit either finishes before the e-mail is queued or finds it queued and waits for it.
+ *
+ * Not final on purpose, like {@see EntryReservation}: the concurrency harness substitutes a twin that reads the document
+ * without the lock ({@see self::document()}), to show that the harness can fail. No application code extends it.
  */
-final readonly class QueueInvoiceEmail
+readonly class QueueInvoiceEmail
 {
     private const int RECIPIENT_MAX = 255;
 
@@ -86,7 +90,7 @@ final readonly class QueueInvoiceEmail
         return DB::transaction(function () use ($actor, $issued, $data): InvoiceEmail {
             // The invoice row lock of every edit of an issued document (A8, R-10.1-04-7): an edit and the queueing of
             // the document e-mail never interleave, so the e-mail is queued either before the edit or after it.
-            $document = Invoice::query()->whereKey($issued->getKey())->lockForUpdate()->firstOrFail();
+            $document = $this->document((string) $issued->getKey());
 
             if (! $document->isIssued()) {
                 throw ValidationException::withMessages(['invoice' => __('invoices.errors.email_not_issued')]);
@@ -112,6 +116,15 @@ final readonly class QueueInvoiceEmail
 
             return $row;
         });
+    }
+
+    /**
+     * The document as it is stored right now, read with the invoice row lock (A8). The only seam of the class: the
+     * concurrency harness overrides it with a read that takes no lock.
+     */
+    protected function document(string $id): Invoice
+    {
+        return Invoice::query()->whereKey($id)->lockForUpdate()->firstOrFail();
     }
 
     private function defaultSubject(Invoice $issued): string
