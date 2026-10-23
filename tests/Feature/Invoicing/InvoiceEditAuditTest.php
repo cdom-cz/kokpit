@@ -169,6 +169,71 @@ describe('the audit of an edit after the first send', function (): void {
             ->and(count(editAuditRows($invoice)))->toBe($rowsBefore + 1);
     });
 
+    it('writes no row for a refill that brings back the same account', function (): void {
+        $invoice = editAuditSentAndUnlocked();
+        $rowsBefore = count(editAuditRows($invoice));
+        $fingerprintBefore = InvoiceAudit::snapshot(editAuditRow($invoice))['bank_fingerprint'] ?? null;
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['reload_bank' => true]);
+
+        expect($fingerprintBefore)->toMatch('/^[0-9a-f]{12}$/')
+            ->and(InvoiceAudit::snapshot(editAuditRow($invoice))['bank_fingerprint'] ?? null)->toBe($fingerprintBefore)
+            ->and(editAuditRows($invoice, 'invoice_edited'))->toBe([])
+            ->and(count(editAuditRows($invoice)))->toBe($rowsBefore);
+    });
+
+    it('does not see the key order of the stored bank snapshot', function (): void {
+        $invoice = editAuditSentAndUnlocked();
+        $stored = editAuditRow($invoice)->bank_snapshot ?? [];
+        $reversed = array_reverse($stored, true);
+        $reversed['nested'] = ['b' => 2, 'a' => ['y' => 1, 'x' => 0]];
+        $stored['nested'] = ['a' => ['x' => 0, 'y' => 1], 'b' => 2];
+
+        $fingerprint = new ReflectionMethod(InvoiceAudit::class, 'bankFingerprint');
+
+        expect($stored)->not->toBe([])
+            ->and(array_keys($reversed))->not->toBe(array_keys($stored))
+            ->and($fingerprint->invoke(null, $reversed))->toBe($fingerprint->invoke(null, $stored))
+            ->and($fingerprint->invoke(null, $stored))->toMatch('/^[0-9a-f]{12}$/')
+            ->and($fingerprint->invoke(null, null))->toBeNull()
+            ->and($fingerprint->invoke(null, []))->toBeNull();
+    });
+
+    it('lists the bank fingerprint beside the currency when a sent document changes currency', function (): void {
+        $invoice = editAuditSentAndUnlocked();
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        $fingerprintBefore = InvoiceAudit::snapshot(editAuditRow($invoice))['bank_fingerprint'] ?? null;
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['currency' => 'EUR']);
+
+        $row = editAuditRow($invoice);
+        $edited = editAuditRows($invoice, 'invoice_edited');
+
+        expect($edited)->toHaveCount(1);
+
+        $changes = $edited[0]->attribute_changes?->all() ?? [];
+
+        expect($row->currency)->toBe('EUR')
+            ->and($row->bank_snapshot['currency'] ?? null)->toBe('EUR')
+            ->and(array_keys($changes['attributes'] ?? []))->toContain('currency', 'bank_fingerprint')
+            ->and($changes['old']['bank_fingerprint'] ?? null)->toBe($fingerprintBefore)
+            ->and($changes['attributes']['bank_fingerprint'] ?? null)->toBe(InvoiceAudit::snapshot($row)['bank_fingerprint'])
+            ->and($changes['attributes']['bank_fingerprint'] ?? null)->not->toBe($fingerprintBefore);
+    });
+
+    it('shows a Partner of the client no history row of a bank-only refill', function (): void {
+        $invoice = editAuditSentAndUnlocked();
+        editAuditCzkAccount('56');
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['reload_bank' => true]);
+
+        expect(editAuditRows($invoice, 'invoice_edited'))->toHaveCount(1);
+
+        $this->actingAs(Canary::partnerFor($invoice->client_id));
+
+        expect(editAuditRows($invoice))->toBe([])
+            ->and(Activity::query()->where('subject_type', 'invoice')->where('subject_id', $invoice->id)->count())->toBe(0);
+    });
+
     it('writes one invoice_edited row with the actor and only the changed values', function (): void {
         $invoice = editAuditSentAndUnlocked();
         [$first, $second] = editAuditLines($invoice);
