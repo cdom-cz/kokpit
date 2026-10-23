@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Identity\ApiAbility;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\Activity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
+use Tests\Support\ApiFixtures;
 use Tests\Support\AuditDeclaration;
 use Tests\Support\CanaryRecord;
 use Tests\Support\CanaryRegistry;
@@ -221,4 +224,26 @@ it('lets global search reach real data, so the search rows are not vacuous', fun
         ->and(implode("\n", $partnerResults[CanaryRecord::class]))->toContain($this->probe->canary('a'))
         ->and(implode("\n", $partnerResults[CanaryRecord::class]))->not->toContain($needleB)
         ->and(array_keys($partnerResults))->toBe([CanaryRecord::class]);
+});
+
+it('lets an Admin token read the canaries of both clients, so the API rows are not vacuous', function (): void {
+    $token = ApiFixtures::token($this->probe->admin(), ApiAbility::values());
+
+    Auth::forgetGuards();
+    $body = (string) $this->withToken($token)->getJson('/api/v1/time-entries?per_page=200')->assertOk()->getContent();
+
+    expect($body)->toContain($this->probe->canary('a'))
+        ->and($body)->toContain($this->probe->canary('b'));
+});
+
+it('lets the Admin read the activity rows of both clients, so the activity rows are not vacuous', function (): void {
+    $this->probe->actAs($this->probe->admin());
+
+    $rows = json_encode(Activity::query()->get()->map(static fn (Activity $row): array => $row->getAttributes())->all(), JSON_THROW_ON_ERROR);
+
+    foreach (['a', 'b'] as $side) {
+        foreach ($this->probe->needles(Activity::class, $side) as $needle) {
+            expect($rows)->toContain($needle);
+        }
+    }
 });

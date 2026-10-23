@@ -4,13 +4,31 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Clients\Models\Client;
+use App\Domain\Finance\Models\Transaction;
+use App\Domain\Finance\Models\TransactionCategory;
+use App\Domain\Identity\ApiAbility;
 use App\Domain\Identity\Models\User;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Activity;
+use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Filament\RelationManagers\ActivityHistoryRelationManager;
+use App\Filament\Resources\ActivityResource;
 use Filament\Facades\Filament;
 use Filament\GlobalSearch\GlobalSearchResult;
 use Filament\GlobalSearch\GlobalSearchResults;
+use FilesystemIterator;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Auth;
 use LogicException;
+use PHPUnit\Framework\Assert;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use ReflectionClass;
+use SplFileInfo;
 use Tests\Support\Filament\CanaryRecordResource;
 
 /**
@@ -32,14 +50,28 @@ final class ChannelProbe
      *
      * @var list<string>
      */
-    public const array DRIVEN = ['search'];
+    public const array DRIVEN = ['search', 'api', 'activity'];
 
     /**
      * The prefix every canary string starts with: a search for it reaches the rows of both clients.
      */
     private const string COMMON_PREFIX = 'CANARY';
 
-    /** @var array<string, array<class-string, list<string>>> memo of the per-test searches */
+    /**
+     * The model each path parameter of an api/v1 route stands for (the parameters that have a canary row).
+     *
+     * @var array<string, class-string>
+     */
+    private const array API_PARAMETER_MODELS = [
+        'timeEntry' => TimeEntry::class,
+        'client' => Client::class,
+        'project' => Project::class,
+        'task' => Task::class,
+        'transaction' => Transaction::class,
+        'category' => TransactionCategory::class,
+    ];
+
+    /** @var array<string, mixed> memo of the per-test results that do not depend on the entity */
     private array $memo = [];
 
     private function __construct(
@@ -121,6 +153,8 @@ final class ChannelProbe
 
         return match ($channel) {
             'search' => $this->searchBlob($model),
+            'api' => $this->apiBlob($model),
+            'activity' => $this->activityBlob(),
             default => throw new LogicException("The channel {$channel} has no driver in ChannelProbe yet; it is not in ChannelProbe::DRIVEN."),
         };
     }
@@ -163,7 +197,10 @@ final class ChannelProbe
         $key = 'search:'.$user->getKey().':'.$term;
 
         if (isset($this->memo[$key])) {
-            return $this->memo[$key];
+            /** @var array<class-string, list<string>> $memoised */
+            $memoised = $this->memo[$key];
+
+            return $memoised;
         }
 
         $this->actAs($user);
@@ -228,6 +265,168 @@ final class ChannelProbe
         }
 
         return $lines;
+    }
+
+    /**
+     * The REST API as Partner A: every route under api/v1/ is requested with a Partner token that carries every
+     * ability and, in a second pass, without a token; a route with a path parameter whose model has a canary row is
+     * requested once more with the real key of the client A row and of the client B row. Every answer must be
+     * 401 (the API is Admin-only), and every body goes into the blob. A route with a parameter of another model
+     * is not part of the blob of this entity, because the answers of a route belong to the model it serves.
+     *
+     * @param  class-string  $model
+     */
+    private function apiBlob(string $model): string
+    {
+        $test = test();
+        $token = ApiFixtures::token($this->partnerA, ApiAbility::values());
+        $keys = $this->apiRecordKeys();
+        $bodies = [];
+        $offenders = [];
+
+        foreach (RouteInventory::routes() as $route) {
+            if (! str_starts_with($route->uri(), 'api/v1/')) {
+                continue;
+            }
+
+            $parameters = $this->routeParameters($route);
+
+            if ($parameters === []) {
+                $paths = [RouteInventory::path($route)];
+            } elseif (count($parameters) === 1 && isset(self::API_PARAMETER_MODELS[$parameters[0]]) && isset($keys[$parameters[0]])) {
+                if (self::API_PARAMETER_MODELS[$parameters[0]] !== $model) {
+                    continue;
+                }
+
+                $paths = array_map(
+                    static fn (string $side): string => '/'.preg_replace('/\{[^}]+\}/', $keys[$parameters[0]][$side], $route->uri()),
+                    ['a', 'b'],
+                );
+            } else {
+                continue;
+            }
+
+            foreach ($paths as $path) {
+                foreach (['partner token', 'no token'] as $pass) {
+                    Auth::forgetGuards();
+                    $test->flushHeaders();
+
+                    $response = $pass === 'partner token'
+                        ? $test->withToken($token)->json(RouteInventory::method($route), $path)
+                        : $test->json(RouteInventory::method($route), $path);
+
+                    $bodies[] = (string) $response->getContent();
+
+                    if ($response->getStatusCode() !== 401) {
+                        $offenders[] = RouteInventory::method($route).' '.$path.' with '.$pass.' answered '.$response->getStatusCode().' instead of 401';
+                    }
+                }
+            }
+        }
+
+        $test->flushHeaders();
+        Auth::forgetGuards();
+
+        Assert::assertSame([], $offenders, "The API answered Partner A something other than 401:\n".implode("\n", $offenders));
+
+        return implode("\n", $bodies);
+    }
+
+    /**
+     * The path parameters of a route, in order.
+     *
+     * @return list<string>
+     */
+    private function routeParameters(LaravelRoute $route): array
+    {
+        return array_values($route->parameterNames());
+    }
+
+    /**
+     * The real key of the canary row of each side for the models the API addresses by a path parameter, found the
+     * way RouteWalkTest finds them (a time entry by description, a project by name, a task by title and
+     * reference, a transaction by counterparty, a category by name). The client key is the client id.
+     *
+     * @return array<string, array{a: string, b: string}>
+     */
+    private function apiRecordKeys(): array
+    {
+        $find = fn (string $side): array => app(PartnerContext::class)->runAsSystem(fn (): array => [
+            'timeEntry' => (string) TimeEntry::query()->where('description', $this->canary($side))->firstOrFail()->getKey(),
+            'client' => $this->clientId($side),
+            'project' => (string) Project::query()->where('name', $this->canary($side))->firstOrFail()->getKey(),
+            'task' => (string) Task::query()->where('title', $this->canary($side))->firstOrFail()->reference,
+            'transaction' => (string) Transaction::query()->where('counterparty', $this->canary($side))->firstOrFail()->getKey(),
+            'category' => (string) TransactionCategory::query()->where('name', $this->canary($side))->firstOrFail()->getKey(),
+        ]);
+        $a = $find('a');
+        $b = $find('b');
+        $keys = [];
+
+        foreach ($a as $parameter => $key) {
+            $keys[$parameter] = ['a' => $key, 'b' => $b[$parameter]];
+        }
+
+        return $keys;
+    }
+
+    /**
+     * The activity log as Partner A: the raw attributes of every row of the scoped Activity query (expected none);
+     * every concrete history relation manager under app/Filament must refuse Partner A on the client A canary row
+     * of its owning model; and the Activity resource index is requested, its body going into the blob. The log is
+     * the same for every entity, so the blob does not depend on the model.
+     */
+    private function activityBlob(): string
+    {
+        $test = test();
+        $rows = Activity::query()->get()->map(static fn (Activity $row): array => $row->getAttributes())->all();
+        $offenders = [];
+
+        foreach ($this->historyManagers() as $manager) {
+            $owner = PanelInventory::canaryRecord(PanelInventory::ownerModel($manager), $this->canaryA);
+
+            if ($manager::canViewForRecord($owner, PanelInventory::pageClassOf(PanelInventory::owningResource($manager)))) {
+                $offenders[] = "{$manager} admits Partner A on the client A canary row of ".$owner::class;
+            }
+        }
+
+        Assert::assertSame([], $offenders, "A history relation manager admitted Partner A:\n".implode("\n", $offenders));
+
+        $this->actAs($this->partnerA);
+        $response = $test->get(ActivityResource::getUrl('index'));
+
+        Assert::assertContains($response->getStatusCode(), [403, 404], 'The Activity resource index must refuse Partner A, answered '.$response->getStatusCode());
+
+        return json_encode($rows, JSON_THROW_ON_ERROR)."\n".(string) $response->getContent();
+    }
+
+    /**
+     * Every concrete subclass of ActivityHistoryRelationManager under app/Filament, found by scanning the directory
+     * (not only the ones a resource registers), sorted by class name.
+     *
+     * @return list<class-string<ActivityHistoryRelationManager>>
+     */
+    private function historyManagers(): array
+    {
+        $root = app_path('Filament');
+        $managers = [];
+
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS)) as $file) {
+            if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $relative = substr(str_replace(DIRECTORY_SEPARATOR, '/', $file->getPathname()), strlen(str_replace(DIRECTORY_SEPARATOR, '/', $root)) + 1, -4);
+            $class = 'App\\Filament\\'.str_replace('/', '\\', $relative);
+
+            if (class_exists($class) && is_subclass_of($class, ActivityHistoryRelationManager::class) && ! (new ReflectionClass($class))->isAbstract()) {
+                $managers[] = $class;
+            }
+        }
+
+        sort($managers, SORT_STRING);
+
+        return $managers;
     }
 
     private function text(string|Htmlable $value): string
