@@ -174,6 +174,28 @@ describe('the tracer: create a draft from last month and find it in the list', f
             ->and($draft->items()->count())->toBe(0);
     });
 
+    it('offers and creates a draft in a currency that only CNB publishes (D-07)', function (): void {
+        InvoiceFixtures::configureSupplier();
+        InvoiceFixtures::cnbRate('USD', '2026-10-13', '22.500');
+        $client = InvoiceFixtures::client();
+
+        Livewire::test(ListInvoices::class)
+            ->mountAction('createDraft')
+            ->setActionData(['client_id' => $client->id, 'kind' => 'invoice', 'source' => 'empty'])
+            ->assertSchemaComponentExists('currency', 'mountedActionSchema0', static fn ($field): bool => $field->getOptions() === ['CZK' => 'CZK', 'EUR' => 'EUR', 'USD' => 'USD']);
+
+        Livewire::test(ListInvoices::class)
+            ->callAction('createDraft', [
+                'client_id' => $client->id,
+                'kind' => 'invoice',
+                'source' => 'empty',
+                'currency' => 'USD',
+            ])
+            ->assertHasNoActionErrors();
+
+        expect(modalDraftOf($client)?->currency)->toBe('USD');
+    });
+
     it('shows the field error of the Action under the modal field', function (): void {
         $client = InvoiceFixtures::client();
 
