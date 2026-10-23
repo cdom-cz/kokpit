@@ -904,7 +904,7 @@ Plans:
 **Goal:** The invoice currency can be changed freely, independent of the payment method (bank transfer or online), the selected bank account, or whether payment is online. The payment method can be switched on the invoice between bank transfer and online (Stripe): bank transfer shows the bank payment details, online shows no bank details, only what is needed to pay via Stripe. When the chosen currency matches a preconfigured bank account, that account is preselected; the account can also be chosen separately and independently of the currency. The chosen currency carries through to the PDF and the Stripe payment.
 **Requirements**: P14-01, P14-02, P14-03, P14-04, P14-05, P14-06, P14-07, P14-08, P14-09
 **Depends on:** Phase 13
-**Plans:** 11/11 plans executed
+**Plans:** 11/15 plans executed
 
 Plans:
 **Wave 1**
@@ -929,3 +929,11 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 - [x] 14-11-PLAN.md — CONTRIBUTING and PROJECT.md hand-over, docblock sweep, development database migrated, full gate (Wave 6)
+
+**Gap closure, Wave 1** *(from 14-VERIFICATION.md)*
+- [ ] 14-12-PLAN.md — CR-01: the issued editor keeps a re-picked stored account through a currency change (gap closure, Wave 1)
+- [ ] 14-13-PLAN.md — WR-01: the card switch needs card payment to be available on every issued path that turns it on or keeps it on (gap closure, Wave 1)
+- [ ] 14-14-PLAN.md — WR-02: a paid proforma whose account was removed converts and the invoice prints the proforma's bank snapshot (gap closure, Wave 1)
+
+**Gap closure, Wave 2** *(blocked on gap closure Wave 1 completion)*
+- [ ] 14-15-PLAN.md — IN-01 and IN-02 doc fixes, CONTRIBUTING hand-over of the gap rules, full gate (gap closure, Wave 2)
