@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 12
 current_phase_name: Partner Audit
 status: executing
-stopped_at: Completed 12-04-PLAN.md
-last_updated: "2026-10-24T00:15:24.630Z"
+stopped_at: Completed 12-06-PLAN.md
+last_updated: "2026-10-24T00:30:17.996Z"
 last_activity: 2026-10-24
 last_activity_desc: Phase 12 execution started
-state_head: 59775cbd00c8e631f9236b10cd13ff65904055a3
+state_head: 30e64574a231cfba3c335291462834d3f036bfe7
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 294
-  completed_plans: 290
+  completed_plans: 291
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 12 (Partner Audit) — EXECUTING
-Plan: 6 of 9
+Plan: 7 of 9
 Status: Ready to execute
 Last activity: 2026-10-24 — Phase 12 execution started
 
@@ -350,6 +350,7 @@ Progress: [████░░░░░░] 44%
 | Phase 12 P03 | 40 min | 2 tasks | 3 files |
 | Phase 12 P05 | 20 min | 3 tasks | 3 files |
 | Phase 12 P04 | 45 min | 2 tasks | 2 files |
+| Phase 12 P06 | 13 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -879,6 +880,8 @@ Recent decisions affecting current work:
 - [Phase 12]: 12-05: the test-only CanaryRecordResource is asked for global search directly; an option no registered entity owns goes into every entity's blob so it fails loudly
 - [Phase 12]: 12-04: the Partner-visible task of another person is assigned to the Admin because tasks.assignee_id is NOT NULL
 - [Phase 12]: 12-04: field exceptions are keyed {surface}#{name}; amounts and payment instructions printed on the own issued documents are excused with reasons (IN-09, research A5)
+- [Phase 12]: 12-06: ui, downloads and exports output is attributed to the entity of the resource, file or PAGE_OWNERS entry that produced it; client B needles stay global, so attribution only narrows the client A check of a none cell
+- [Phase 12]: 12-06: the downloads driver also asserts the hidden twin of the own visible file is refused, because the canary needle cannot tell it from the visible file
 
 ### Pending Todos
 
@@ -942,6 +945,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-24T00:15:22.771Z
-Stopped at: Completed 12-04-PLAN.md
+Last session: 2026-10-24T00:30:16.100Z
+Stopped at: Completed 12-06-PLAN.md
 Resume file: None
