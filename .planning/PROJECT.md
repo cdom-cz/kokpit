@@ -88,6 +88,11 @@ Tracked time turns into an issued, payable invoice in one pass, with no unbilled
 | The invitation, password reset, task and alert e-mails are reviewed in Czech only; English is required only for the new payment texts, the invoice button and the layout strings; no recipient-language mechanism is added (Phase 13, D-07 clarification, owner-approved 2026-10-23, so the owner's decision and not an assumption) | The single admin and Czech clients; a language mechanism for other recipients is out of scope | — Pending |
 | Phase 13 planner assumptions for the owner to confirm or overrule: A-13-3 (a back-filled payment is confirmed too, and the record dialog says so beforehand), A-13-4 (an online-method document gets its own pre-filled body), A-13-5 (no pay-the-rest button in a partial confirmation), A-13-7 (the confirmation state shows in the Platby tab); A-13-1 and A-13-6 are in the payment confirmation row | Recorded so each can be overruled later without searching the plans | — Pending |
 | Assumptions kept: Partner sees visible-project tasks, creates/comments but cannot change status/priority; fixed task statuses; project key frozen after first task; invoice number `{YYYY}{NNNN}` | Brief's open questions 1-5 | — Pending |
+| The Partner permission matrix (screens, API endpoints, Livewire components, Partner actions per record state, Partner fields, entity by channel leaks) is a literal declaration in `tests/Support`, never derived from production code, and the owner approved it as implemented on 2026-10-24 with no amendment; DO-01 stays with phase 9 (Phase 12, D-02, 12-MATRIX-REVIEW.md) | The audit is only an independent check when the expectation is written by hand and reviewed by the owner | Approved 2026-10-24 |
+| A route in the public allowlist and in the closed list is keyed by its route name, else by `METHOD /uri` with the Livewire prefix written `livewire-{hash}`; adding a route means editing `RouteRules` in the same pull request (Phase 12, D-04, D-06, R-12-01-1) | Unnamed vendor routes (the Livewire assets) still need an explicit, reviewable key, and the declaration shows in the diff | Approved 2026-10-24 |
+| The Partner audit is an `Audit` Pest suite excluded from `composer test` and the main CI Pest step, run by `composer partner-audit`, by `composer ci` and by its own CI step `Partner audit` (Phase 12, D-10, R-12-01-4) | A failing audit names its own step in the pull request, and `composer ci` stays the one local gate | — Pending |
+| The unused Filament export and import download routes stay registered and are closed with 404 by explicit route binders, declared as closed routes, instead of creating their tables (Phase 12, R-12-02-3) | The application uses no export or import action, so the routes must answer the same to everyone and never 500 | Approved 2026-10-24 |
+| A guest without an `Accept` header is redirected to the panel login route, so an unauthenticated `/api/v1` request answers a JSON 401 instead of a 500 (Phase 12, R-12-02-2) | The missing `login` route made the guest redirect throw; the audit walk of every route exposed it | Approved 2026-10-24 |
 
 ## Evolution
 
@@ -107,4 +112,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-06 after initialization*
+*Last updated: 2026-10-24 after Phase 12 plan 12-09 (Partner audit hand-over)*
