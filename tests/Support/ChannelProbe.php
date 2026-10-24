@@ -5,10 +5,19 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Documents\Actions\StoreGeneratedDocument;
+use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Models\DocumentArchive;
+use App\Domain\Documents\Support\DocumentUrl;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\ApiAbility;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Support\InvoicePdfUrl;
+use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
@@ -28,6 +37,9 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Livewire\Livewire;
 use LogicException;
 use PHPUnit\Framework\Assert;
@@ -35,6 +47,8 @@ use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ReflectionClass;
 use SplFileInfo;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\Support\Filament\CanaryRecordResource;
 
 /**
@@ -52,11 +66,11 @@ use Tests\Support\Filament\CanaryRecordResource;
 final class ChannelProbe
 {
     /**
-     * The channels that have a driver here. Plans 12-06 and 12-07 add ui, downloads, exports and notifications.
+     * The channels that have a driver here. Plan 12-07 adds notifications.
      *
      * @var list<string>
      */
-    public const array DRIVEN = ['search', 'selects', 'api', 'activity'];
+    public const array DRIVEN = ['search', 'selects', 'api', 'activity', 'ui'];
 
     /**
      * The prefix every canary string starts with: a search for it reaches the rows of both clients.
@@ -75,6 +89,18 @@ final class ChannelProbe
         'task' => Task::class,
         'transaction' => Transaction::class,
         'category' => TransactionCategory::class,
+    ];
+
+    /**
+     * The entities a page of no resource shows a Partner, by route name. The Partner dashboard holds two table
+     * widgets (PartnerTasks and PartnerProjects), so it shows tasks and projects and nothing else. A page that is
+     * not listed here is attributed to every entity, so a new page that shows a canary fails every cell it does not
+     * belong to until it is listed on purpose.
+     *
+     * @var array<string, list<class-string>>
+     */
+    private const array PAGE_OWNERS = [
+        'filament.admin.pages.dashboard' => [Project::class, Task::class],
     ];
 
     /** @var array<string, mixed> memo of the per-test results that do not depend on the entity */
@@ -162,6 +188,7 @@ final class ChannelProbe
             'selects' => $this->selectsBlob($model),
             'api' => $this->apiBlob($model),
             'activity' => $this->activityBlob(),
+            'ui' => $this->uiBlob($model),
             default => throw new LogicException("The channel {$channel} has no driver in ChannelProbe yet; it is not in ChannelProbe::DRIVEN."),
         };
     }
@@ -629,6 +656,449 @@ final class ChannelProbe
 
             return $owners;
         });
+    }
+
+    /**
+     * Everything Partner A can open in the panel for one entity, as a single string: the bodies of every GET
+     * route of the admin panel and the rendered Partner list tables after a search for every needle. A response
+     * is attributed to the entities it belongs to (see compose()).
+     *
+     * @param  class-string  $model
+     */
+    private function uiBlob(string $model): string
+    {
+        return $this->compose($this->uiSegments(), $model);
+    }
+
+    /**
+     * Turns the attributed segments of a channel into the blob of one entity. Two entities can carry the same
+     * canary text (a project name, a task title and a client name are all the canary), so the text alone cannot
+     * say which entity a page shows; a response is attributed to the entities it belongs to (a resource page to the
+     * model of the resource, a file route to the model of the file, a page of no resource to every entity) and only
+     * the segments of the entity go into its blob. Two rules keep the attribution from hiding anything:
+     * a needle or the id of client B anywhere in any segment puts every segment into the blob, because client B has
+     * no legitimate trace in any response; and a needle of client A that differs from the canary text (a Stripe id,
+     * a Monday, an owner id: it identifies its entity wherever it appears) is added when it appears anywhere.
+     *
+     * @param  list<array{owners: list<class-string>|null, text: string}>  $segments
+     * @param  class-string  $model
+     */
+    private function compose(array $segments, string $model): string
+    {
+        $all = implode("\n", array_column($segments, 'text'));
+        $lines = [];
+
+        foreach ($segments as $segment) {
+            if ($segment['owners'] === null || in_array($model, $segment['owners'], true)) {
+                $lines[] = $segment['text'];
+            }
+        }
+
+        foreach ([...$this->needles($model, 'b'), $this->clientB] as $foreign) {
+            if (str_contains($all, $foreign)) {
+                $lines[] = $all;
+
+                break;
+            }
+        }
+
+        foreach ($this->needles($model, 'a') as $needle) {
+            if ($needle !== $this->canaryA && str_contains($all, $needle)) {
+                $lines[] = $needle;
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * The UI walk as Partner A, once per test: every GET route of the panel (record routes with the client B
+     * record and with the client A record, file routes with signed URLs for the files of both clients), then every
+     * list page whose resource Partner A can access, mounted with Livewire and searched for every needle. A status
+     * outside 200, 302, 403, 404 (never 419 or 500) fails with the route named, and so does a client B record
+     * route that is not refused.
+     *
+     * @return list<array{owners: list<class-string>|null, text: string}>
+     */
+    private function uiSegments(): array
+    {
+        if (isset($this->memo['ui'])) {
+            /** @var list<array{owners: list<class-string>|null, text: string}> $memoised */
+            $memoised = $this->memo['ui'];
+
+            return $memoised;
+        }
+
+        $test = test();
+        $this->storeInvoicePdfs();
+        $test->actingAs($this->partnerA);
+
+        $resources = $this->walkResourceMap();
+        $segments = [];
+        $offenders = [];
+
+        foreach ($this->walkRoutes() as $route) {
+            $record = $this->walkHasRecord($route);
+            $sides = $record || $this->walkIsFileRoute($route) ? ['b', 'a'] : ['a'];
+
+            foreach ($sides as $side) {
+                $url = $this->walkUrl($route, $record ? $this->walkRecordId($route, $resources, $side) : '', $side);
+                $response = $test->get($url);
+                $status = $response->getStatusCode();
+
+                if (! in_array($status, [200, 302, 403, 404], true)) {
+                    $offenders[] = "{$route->getName()} ({$side}) answered {$status}";
+                }
+
+                if ($side === 'b' && ($record || $this->walkIsFileRoute($route)) && ! in_array($status, [403, 404], true)) {
+                    $offenders[] = "{$route->getName()} did not refuse the client B record, it answered {$status}";
+                }
+
+                $segments[] = ['owners' => $this->walkOwners($route), 'text' => $this->describe($response)];
+            }
+        }
+
+        Assert::assertSame([], $offenders, "The panel answered Partner A unexpectedly:\n".implode("\n", $offenders));
+
+        $this->actAs($this->partnerA);
+        array_push($segments, ...$this->walkLists());
+
+        return $this->memo['ui'] = $segments;
+    }
+
+    /**
+     * Every list page whose resource Partner A can access, mounted with Livewire and searched for every needle of
+     * both sides and for the common prefix; the rendered table of each search goes into the segment of the model
+     * of the resource. The one echo of the search term (the active search badge, "Search: term") is removed from the
+     * HTML, otherwise every searched needle would read as a hit; a row that shows the term is not touched.
+     *
+     * @return list<array{owners: list<class-string>|null, text: string}>
+     */
+    private function walkLists(): array
+    {
+        $segments = [];
+        $terms = $this->searchTerms();
+        $indicator = __('filament-tables::table.fields.search.indicator').': ';
+
+        foreach (Filament::getPanel('admin')->getResources() as $resource) {
+            $pages = $resource::getPages();
+
+            if (! $resource::canAccess() || ! isset($pages['index'])) {
+                continue;
+            }
+
+            $component = Livewire::test($pages['index']->getPage());
+            $html = [$component->html(stripInitialData: true)];
+
+            foreach ($terms as $term) {
+                $component->searchTable($term);
+                $html[] = str_replace($indicator.$term, '', $component->html(stripInitialData: true));
+            }
+
+            $segments[] = ['owners' => $this->ownersOfModel($resource::getModel()), 'text' => implode("\n", $html)];
+        }
+
+        return $segments;
+    }
+
+    /**
+     * The entities a response of a route belongs to: the model of a resource route, the model of a file route, the
+     * entities listed in PAGE_OWNERS for a page of no resource; null (every entity) for any other page, so that a
+     * page cannot show a canary unattributed and pass.
+     *
+     * @return list<class-string>|null
+     */
+    private function walkOwners(LaravelRoute $route): ?array
+    {
+        $name = (string) $route->getName();
+
+        if ($name === DocumentUrl::ROUTE) {
+            return [Document::class];
+        }
+
+        if ($name === DocumentUrl::ARCHIVE_ROUTE) {
+            return [DocumentArchive::class];
+        }
+
+        if ($name === InvoicePdfUrl::ROUTE) {
+            return [Invoice::class, InvoiceItem::class];
+        }
+
+        $slug = $this->walkResourceSlug($route);
+
+        if ($slug === null) {
+            return self::PAGE_OWNERS[$name] ?? null;
+        }
+
+        foreach (Filament::getPanel('admin')->getResources() as $resource) {
+            if ($resource::getSlug() === $slug) {
+                return $this->ownersOfModel($resource::getModel());
+            }
+        }
+
+        throw new LogicException("The panel has no resource with the slug {$slug} (route {$name}).");
+    }
+
+    /**
+     * The attribution of a resource model: the model itself when it is a registered entity, else null (every
+     * entity), so a resource that shows an unregistered model is checked against every cell.
+     *
+     * @param  class-string  $model
+     * @return list<class-string>|null
+     */
+    private function ownersOfModel(string $model): ?array
+    {
+        return array_key_exists($model, CanaryRegistry::fixtures()) ? [$model] : null;
+    }
+
+    /**
+     * A response as text: the Content-Disposition header when there is one, and the body, streamed or sent as a
+     * file included.
+     */
+    private function describe(TestResponse $response): string
+    {
+        $base = $response->baseResponse;
+        $body = match (true) {
+            $base instanceof StreamedResponse => $response->streamedContent(),
+            $base instanceof BinaryFileResponse => (string) file_get_contents($base->getFile()->getPathname()),
+            default => (string) $response->getContent(),
+        };
+        $disposition = $response->headers->get('Content-Disposition');
+
+        return ($disposition === null ? '' : "Content-Disposition: {$disposition}\n").$body;
+    }
+
+    /**
+     * Every GET route of the admin panel except the guest-only authentication routes (login, which redirects a
+     * signed-in user, and the logout POST); copied from RouteWalkTest (D-08), sorted by route name.
+     *
+     * @return list<LaravelRoute>
+     */
+    private function walkRoutes(): array
+    {
+        $routes = [];
+
+        foreach (Route::getRoutes()->getRoutes() as $route) {
+            $name = $route->getName() ?? '';
+
+            if (! str_starts_with($name, 'filament.admin.') || ! in_array('GET', $route->methods(), true)) {
+                continue;
+            }
+
+            if (in_array($name, ['filament.admin.auth.login', 'filament.admin.auth.logout'], true)) {
+                continue;
+            }
+
+            $routes[] = $route;
+        }
+
+        usort($routes, static fn (LaravelRoute $a, LaravelRoute $b): int => strcmp((string) $a->getName(), (string) $b->getName()));
+
+        return $routes;
+    }
+
+    /**
+     * The URL of a walked route for the signed-in user. A route with a {record} parameter gets the given record id;
+     * the file route (a {document} parameter) gets the visible canary document of the side, the archive route (an
+     * {archive} parameter) the canary archive, the invoice PDF route (an {invoice} parameter) the issued canary
+     * invoice, all signed for the signed-in user, so that the walk reaches the controller. Any other parameter
+     * fails the walk, so a new kind of route is looked at on purpose.
+     */
+    public function walkUrl(LaravelRoute $route, string $recordId, string $side = 'a'): string
+    {
+        $parameters = [];
+
+        foreach ($route->parameterNames() as $parameter) {
+            if ($parameter === 'document' && $route->getName() === DocumentUrl::ROUTE) {
+                return DocumentUrl::download($this->walkDocument($side), $this->walkUser());
+            }
+
+            if ($parameter === 'archive' && $route->getName() === DocumentUrl::ARCHIVE_ROUTE) {
+                return DocumentUrl::archive($this->walkArchive($side), $this->walkUser());
+            }
+
+            if ($parameter === 'invoice' && $route->getName() === InvoicePdfUrl::ROUTE) {
+                return InvoicePdfUrl::download($this->walkInvoice($side), $this->walkUser());
+            }
+
+            if ($parameter !== 'record') {
+                throw new LogicException("The route walk does not know the parameter [{$parameter}] of route [{$route->getName()}]; teach it how to fill it.");
+            }
+
+            $parameters['record'] = $recordId;
+        }
+
+        return route((string) $route->getName(), $parameters);
+    }
+
+    private function walkUser(): User
+    {
+        $user = auth()->user();
+
+        if (! $user instanceof User) {
+            throw new LogicException('The route walk signs file routes for the signed-in user; sign in before walking.');
+        }
+
+        return $user;
+    }
+
+    private function walkIsFileRoute(LaravelRoute $route): bool
+    {
+        return in_array($route->getName(), [DocumentUrl::ROUTE, DocumentUrl::ARCHIVE_ROUTE, InvoicePdfUrl::ROUTE], true);
+    }
+
+    private function walkHasRecord(LaravelRoute $route): bool
+    {
+        return in_array('record', $route->parameterNames(), true);
+    }
+
+    /**
+     * The visible canary document of a side: the file the Document fixture attaches under the canary name (the
+     * hidden twin and the other files carry a suffix).
+     */
+    private function walkDocument(string $side, string $suffix = ''): Document
+    {
+        $name = $this->canary($side).$suffix.'.txt';
+
+        return app(PartnerContext::class)->runAsSystem(
+            static fn (): Document => Document::query()->where('name', $name)->firstOrFail(),
+        );
+    }
+
+    /**
+     * The issued canary invoice of a side: the one with a number, found by its printed note (the draft twin has none).
+     */
+    private function walkInvoice(string $side): Invoice
+    {
+        $canary = $this->canary($side);
+
+        return app(PartnerContext::class)->runAsSystem(
+            static fn (): Invoice => Invoice::query()->where('note', $canary)->whereNotNull('number')->firstOrFail(),
+        );
+    }
+
+    /**
+     * The canary ZIP archive of a side: the fixture row whose summary is the canary.
+     */
+    private function walkArchive(string $side): DocumentArchive
+    {
+        $canary = $this->canary($side);
+
+        return app(PartnerContext::class)->runAsSystem(
+            static fn (): DocumentArchive => DocumentArchive::query()->where('summary', $canary)->firstOrFail(),
+        );
+    }
+
+    /**
+     * Stores a fictional PDF for the issued canary invoice of each side and links it from the Admin-only row, the way
+     * issuing does, so that the invoice PDF route can be served; once per test. Returns the bytes by side.
+     *
+     * @return array<string, string>
+     */
+    public function storeInvoicePdfs(): array
+    {
+        if (isset($this->memo['pdfs'])) {
+            /** @var array<string, string> $memoised */
+            $memoised = $this->memo['pdfs'];
+
+            return $memoised;
+        }
+
+        $bytes = [];
+
+        foreach (['a', 'b'] as $side) {
+            $invoice = $this->walkInvoice($side);
+            $bytes[$side] = implode("\n", ['%PDF-1.4', '%fictional '.Str::random(8), '%%EOF', '']);
+
+            app(PartnerContext::class)->runAsSystem(function () use ($invoice, $side, $bytes): void {
+                $document = app(StoreGeneratedDocument::class)->handle($this->admin, $invoice, $bytes[$side], 'faktura-fictional.pdf');
+
+                InvoiceAdmin::query()->where('invoice_id', $invoice->getKey())->firstOrFail()
+                    ->forceFill(['pdf_document_id' => $document->getKey()])->save();
+            });
+        }
+
+        return $this->memo['pdfs'] = $bytes;
+    }
+
+    /**
+     * Every resource that has record routes: who may open its record routes and the record id to request for each
+     * side (client A is the signed-in Partner, client B the other client). The walk fails on a resource that is not
+     * listed, so a new resource is looked at on purpose; copied from RouteWalkTest (D-08).
+     *
+     * @return array<string, array{partner: bool, a: string, b: string}>
+     */
+    private function walkResourceMap(): array
+    {
+        $find = fn (string $side): array => app(PartnerContext::class)->runAsSystem(function () use ($side): array {
+            $canary = $this->canary($side);
+            $project = Project::query()->where('name', $canary)->firstOrFail();
+            $task = (string) Task::query()->where('title', $canary)->firstOrFail()->reference;
+            $invoice = (string) Invoice::query()->where('note', $canary)->whereNotNull('number')->firstOrFail()->getKey();
+
+            return [
+                'record' => (string) CanaryRecord::query()->where('secret', $canary)->withoutGlobalScopes()->firstOrFail()->getKey(),
+                'project' => (string) $project->getKey(),
+                'client' => (string) $project->client_id,
+                'task' => $task,
+                'entry' => (string) TimeEntry::query()->where('description', $canary)->firstOrFail()->getKey(),
+                'transaction' => (string) Transaction::query()->where('counterparty', $canary)->firstOrFail()->getKey(),
+                'invoice' => $invoice,
+                'card' => (string) CardPayment::query()->where('resolution_note', $canary)->firstOrFail()->getKey(),
+            ];
+        });
+        $a = $find('a');
+        $b = $find('b');
+        $row = static fn (bool $partner, string $key): array => ['partner' => $partner, 'a' => $a[$key], 'b' => $b[$key]];
+
+        return [
+            'canary-records' => $row(true, 'record'),
+            'my-projects' => $row(true, 'project'),
+            'projects' => $row(false, 'project'),
+            'clients' => $row(false, 'client'),
+            'tasks' => $row(false, 'task'),
+            'time-entries' => $row(false, 'entry'),
+            'transactions' => $row(false, 'transaction'),
+            'invoices' => $row(false, 'invoice'),
+            'card-payments' => $row(false, 'card'),
+            'my-invoices' => $row(true, 'invoice'),
+            'my-tasks' => $row(true, 'task'),
+        ];
+    }
+
+    /**
+     * The resource slug of a route name such as filament.admin.resources.my-projects.view, or null for a route that
+     * does not belong to a resource.
+     */
+    private function walkResourceSlug(LaravelRoute $route): ?string
+    {
+        $name = (string) $route->getName();
+        $prefix = 'filament.admin.resources.';
+
+        if (! str_starts_with($name, $prefix)) {
+            return null;
+        }
+
+        $rest = substr($name, strlen($prefix));
+
+        return substr($rest, 0, (int) strrpos($rest, '.'));
+    }
+
+    /**
+     * The record id to request on a record route for the given side ('a' or 'b'). An unknown resource throws, like an
+     * unknown route parameter does.
+     *
+     * @param  array<string, array{partner: bool, a: string, b: string}>  $resources
+     */
+    public function walkRecordId(LaravelRoute $route, array $resources, string $side): string
+    {
+        $slug = $this->walkResourceSlug($route);
+
+        if ($slug === null || ! isset($resources[$slug])) {
+            throw new LogicException("The route walk does not know the resource of route [{$route->getName()}]; teach walkResourceMap() who may open it and which record ids to request.");
+        }
+
+        return $resources[$slug][$side];
     }
 
     private function text(string|Htmlable $value): string

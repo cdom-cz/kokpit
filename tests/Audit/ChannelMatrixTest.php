@@ -8,6 +8,7 @@ use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\Activity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Auth;
 use Tests\Support\ApiFixtures;
 use Tests\Support\AuditDeclaration;
@@ -253,4 +254,23 @@ it('lets the Partner select offer the own visible project, so the select rows ar
 
     expect($blob)->toContain($this->probe->canary('a'))
         ->and($blob)->not->toContain($this->probe->canary('b'));
+});
+
+it('lets Partner A see the own canary on the own pages, so the UI rows are not vacuous', function (): void {
+    $project = $this->probe->blob('ui', Project::class);
+    $record = $this->probe->blob('ui', CanaryRecord::class);
+
+    expect($project)->toContain($this->probe->canary('a'))
+        ->and($project)->not->toContain($this->probe->canary('b'))
+        ->and($record)->toContain($this->probe->canary('a'))
+        ->and($record)->not->toContain($this->probe->canary('b'));
+});
+
+it('still refuses a route parameter and a resource it does not know, so a new kind of route is looked at on purpose', function (): void {
+    $unknownParameter = new LaravelRoute('GET', '/x/{unknown}', []);
+    $unknownResource = new LaravelRoute('GET', '/x/{record}', []);
+    $unknownResource->name('filament.admin.resources.unlisted.view');
+
+    expect(fn () => $this->probe->walkUrl($unknownParameter, 'x'))->toThrow(LogicException::class, 'does not know the parameter')
+        ->and(fn () => $this->probe->walkRecordId($unknownResource, [], 'a'))->toThrow(LogicException::class, 'does not know the resource');
 });
