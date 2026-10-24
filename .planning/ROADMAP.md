@@ -858,7 +858,7 @@ Plans:
   3. A route audit confirms every non-public route requires authentication, the public routes are an explicit allowlist, and an anonymous request to any other route is refused
   4. The audit suite runs in CI and fails the build when a new screen, route or endpoint is added without an explicit role rule
 
-**Plans:** 4/9 plans executed in 6 waves
+**Plans:** 5/9 plans executed in 6 waves
 
 Plans:
 **Wave 1**
@@ -870,7 +870,7 @@ Plans:
 - [x] 12-05-PLAN.md — Canary channel matrix over every entity; global search, API, activity log and selects channels
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 12-04-PLAN.md — Permission matrix for Partner actions per record state and Partner-visible fields
+- [x] 12-04-PLAN.md — Permission matrix for Partner actions per record state and Partner-visible fields
 - [ ] 12-06-PLAN.md — Canary channel matrix: UI pages, downloads and exports channels
 
 **Wave 4** *(blocked on Wave 3 completion)*
@@ -909,7 +909,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9. Documents and Finance | 28/28 | In Progress | - |
 | 10. Invoicing | 41/41 | In Progress | - |
 | 11. Stripe Payments | 20/20 | In Progress | - |
-| 12. Partner Audit | 4/9 | In Progress | - |
+| 12. Partner Audit | 5/9 | In Progress | - |
 
 ### Phase 13: Unified e-mail layout and HTML e-mail templates
 
