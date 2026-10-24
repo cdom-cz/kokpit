@@ -4,6 +4,43 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Clients\Models\Client;
+use App\Domain\Clients\Models\ClientInvitation;
+use App\Domain\Clients\Models\Contact;
+use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Models\DocumentArchive;
+use App\Domain\ExchangeRates\Models\ExchangeRate;
+use App\Domain\Finance\Models\Transaction;
+use App\Domain\Finance\Models\TransactionCategory;
+use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Models\InvoiceItemSource;
+use App\Domain\Invoicing\Models\InvoicePayment;
+use App\Domain\Invoicing\Models\PaymentConfirmation;
+use App\Domain\Payments\Models\CardPayment;
+use App\Domain\Payments\Models\PaymentLink;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Projects\Models\ProjectBilling;
+use App\Domain\Reports\Models\ReportExport;
+use App\Domain\Shared\Models\Activity;
+use App\Domain\Shared\Models\Media;
+use App\Domain\Shared\Models\SettingsProperty;
+use App\Domain\Shared\Models\Tag;
+use App\Domain\Shared\Models\WebhookCall;
+use App\Domain\Signal\Models\SignalDayOverride;
+use App\Domain\Signal\Models\SignalDeepWorkDay;
+use App\Domain\Signal\Models\SignalRecurringTask;
+use App\Domain\Signal\Models\SignalSetting;
+use App\Domain\Signal\Models\SignalTask;
+use App\Domain\Signal\Models\SignalWeeklyGoal;
+use App\Domain\Signal\Models\SignalWeeklyRecap;
+use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Models\TaskBilling;
+use App\Domain\Tasks\Models\TaskChecklistItem;
+use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Auth\EditProfile;
 use App\Filament\Finance\Widgets\FinanceCategoryTable;
 use App\Filament\Finance\Widgets\FinanceClientTable;
@@ -293,6 +330,236 @@ final class PartnerMatrix
     }
 
     /**
+     * The record states an ability row may name (R-12-04-1): the record of the own client that the Partner may see
+     * (own_visible), a second own visible record that differs in a way an ability cares about (own_visible_other:
+     * a task of the Admin in a closed status), a file the Partner uploaded (own_upload), an own record that is
+     * hidden from the Partner (own_hidden) and a record of the other client (foreign).
+     *
+     * @var list<string>
+     */
+    public const array STATES = ['own_visible', 'own_visible_other', 'own_upload', 'own_hidden', 'foreign'];
+
+    /**
+     * The abilities asked on a class (no record) and on a record.
+     *
+     * @var list<string>
+     */
+    public const array CLASS_ABILITIES = ['viewAny', 'create'];
+
+    /** @var list<string> */
+    public const array RECORD_ABILITIES = ['view', 'update', 'delete', 'comment', 'escalate', 'clearEscalation', 'editDescription', 'attach'];
+
+    /**
+     * What a Partner with a client may do with each entity a Partner can see (D-03, R-12-04-1). Per model class:
+     * 'class' answers the abilities asked without a record, 'records' answers each record ability per record state.
+     * The Admin may do everything. For `attach` the record is the task the file would hang on.
+     *
+     * @return array<class-string, array{class: array<string, bool>, records: array<string, array<string, bool>>}>
+     */
+    public static function partnerAbilities(): array
+    {
+        return [
+            Project::class => [
+                'class' => ['viewAny' => true, 'create' => false],
+                'records' => [
+                    'view' => ['own_visible' => true, 'own_hidden' => false, 'foreign' => false],
+                    'update' => ['own_visible' => false, 'own_hidden' => false, 'foreign' => false],
+                    'delete' => ['own_visible' => false, 'own_hidden' => false, 'foreign' => false],
+                ],
+            ],
+            Task::class => [
+                'class' => ['viewAny' => true, 'create' => true],
+                'records' => [
+                    'view' => ['own_visible' => true, 'own_visible_other' => true, 'own_hidden' => false, 'foreign' => false],
+                    'comment' => ['own_visible' => true, 'own_visible_other' => true, 'own_hidden' => false, 'foreign' => false],
+                    'escalate' => ['own_visible' => true, 'own_visible_other' => true, 'own_hidden' => false, 'foreign' => false],
+                    'editDescription' => ['own_visible' => true, 'own_visible_other' => false, 'own_hidden' => false, 'foreign' => false],
+                    'clearEscalation' => ['own_visible' => true, 'own_visible_other' => false, 'own_hidden' => false, 'foreign' => false],
+                    'update' => ['own_visible' => false, 'own_visible_other' => false, 'own_hidden' => false, 'foreign' => false],
+                    'delete' => ['own_visible' => false, 'own_visible_other' => false, 'own_hidden' => false, 'foreign' => false],
+                ],
+            ],
+            TaskComment::class => [
+                'class' => ['viewAny' => true, 'create' => true],
+                'records' => [
+                    'view' => ['own_visible' => true, 'own_hidden' => false, 'foreign' => false],
+                    'update' => ['own_visible' => false, 'own_hidden' => false, 'foreign' => false],
+                    'delete' => ['own_visible' => false, 'own_hidden' => false, 'foreign' => false],
+                ],
+            ],
+            Document::class => [
+                'class' => ['viewAny' => true, 'create' => false],
+                'records' => [
+                    'view' => ['own_visible' => true, 'own_upload' => true, 'own_hidden' => false, 'foreign' => false],
+                    'update' => ['own_visible' => false, 'own_upload' => false, 'own_hidden' => false, 'foreign' => false],
+                    'delete' => ['own_visible' => false, 'own_upload' => true, 'own_hidden' => false, 'foreign' => false],
+                    'attach' => ['own_visible' => true, 'own_visible_other' => false, 'foreign' => false],
+                ],
+            ],
+            Invoice::class => [
+                'class' => ['viewAny' => true, 'create' => false],
+                'records' => [
+                    'view' => ['own_visible' => true, 'own_hidden' => false, 'foreign' => false],
+                    'update' => ['own_visible' => false, 'own_hidden' => false, 'foreign' => false],
+                    'delete' => ['own_visible' => false, 'own_hidden' => false, 'foreign' => false],
+                ],
+            ],
+            InvoiceItem::class => [
+                'class' => ['viewAny' => true, 'create' => false],
+                'records' => [
+                    'view' => ['own_visible' => true, 'own_hidden' => false, 'foreign' => false],
+                    'update' => ['own_visible' => false, 'own_hidden' => false, 'foreign' => false],
+                    'delete' => ['own_visible' => false, 'own_hidden' => false, 'foreign' => false],
+                ],
+            ],
+            Tag::class => [
+                'class' => ['viewAny' => false, 'create' => false],
+                'records' => [
+                    'view' => ['own_visible' => false, 'foreign' => false],
+                    'update' => ['own_visible' => false, 'foreign' => false],
+                    'delete' => ['own_visible' => false, 'foreign' => false],
+                ],
+            ],
+            CanaryRecord::class => [
+                'class' => ['viewAny' => true, 'create' => false],
+                'records' => [
+                    'view' => ['own_visible' => true, 'foreign' => false],
+                    'update' => ['own_visible' => false, 'foreign' => false],
+                    'delete' => ['own_visible' => false, 'foreign' => false],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * partnerAbilities() flattened for a dataset (R-12-04-1): "Model ability state" => [model, ability, state], where
+     * the state of a class-level row is `class`. Plain arrays, so the dataset needs no booted application.
+     *
+     * @return array<string, array{0: class-string, 1: string, 2: string}>
+     */
+    public static function abilityRows(): array
+    {
+        $rows = [];
+
+        foreach (self::partnerAbilities() as $model => $abilities) {
+            $short = substr($model, (int) strrpos($model, '\\') + 1);
+
+            foreach (array_keys($abilities['class']) as $ability) {
+                $rows["{$short} {$ability} class"] = [$model, $ability, 'class'];
+            }
+
+            foreach ($abilities['records'] as $ability => $states) {
+                foreach (array_keys($states) as $state) {
+                    $rows["{$short} {$ability} {$state}"] = [$model, $ability, $state];
+                }
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Every other isolated entity of the canary registry: closed to a Partner on every action (D-03, D-07), each
+     * with the one-line reason it stays closed.
+     *
+     * @return array<class-string, string>
+     */
+    public static function adminOnlyModels(): array
+    {
+        return [
+            Client::class => 'Clients carry rates, terms and billing data.',
+            Contact::class => 'Personal data of the people of a client.',
+            ClientInvitation::class => 'An invitation holds the invitee address and a token hash.',
+            ProjectBilling::class => 'Rates, prices, estimate and the internal note of a project.',
+            TaskChecklistItem::class => 'The private working list of the Admin on a task.',
+            TaskBilling::class => 'Rates, prices and the internal note of a task.',
+            TimeEntry::class => 'Measured time is closed to a Partner.',
+            InvoiceAdmin::class => 'Internal note, conversion snapshot and PDF link of a billing document.',
+            InvoiceItemSource::class => 'Rates and seconds a printed line was generated from.',
+            InvoicePayment::class => 'Payments received for a billing document.',
+            PaymentLink::class => 'The card payment link of a document with its references.',
+            CardPayment::class => 'Card payment records and their provider references.',
+            InvoiceEmail::class => 'The send log of a document with recipients and bodies.',
+            PaymentConfirmation::class => 'The confirmation sent for a payment.',
+            ExchangeRate::class => 'Exchange rates feed the converted amounts.',
+            TransactionCategory::class => 'Categories of the finance module.',
+            Transaction::class => 'Income and expense are finance.',
+            DocumentArchive::class => 'ZIP archives bundle the files of every client.',
+            ReportExport::class => 'Report exports hold measured time and rates.',
+            SignalTask::class => 'Personal planner of the Admin.',
+            SignalRecurringTask::class => 'Personal planner of the Admin.',
+            SignalSetting::class => 'Personal planner of the Admin.',
+            SignalDeepWorkDay::class => 'Personal planner of the Admin.',
+            SignalDayOverride::class => 'Personal planner of the Admin.',
+            SignalWeeklyGoal::class => 'Personal planner of the Admin.',
+            SignalWeeklyRecap::class => 'Personal planner of the Admin.',
+            Media::class => 'Stored objects reach a Partner only through the document rows.',
+            Activity::class => 'The audit trail of who changed what.',
+            WebhookCall::class => 'Incoming webhook payloads from the payment provider.',
+            SettingsProperty::class => 'Operator settings: supplier data, bank accounts, numbering.',
+        ];
+    }
+
+    /**
+     * What is wrong with the ability declaration itself; empty when it is fine: an unknown state, an unknown
+     * ability, a value that is not a boolean, a model without the class and record abilities, an empty reason.
+     *
+     * @return list<string>
+     */
+    public static function abilityProblems(): array
+    {
+        $problems = [];
+
+        foreach (self::partnerAbilities() as $model => $abilities) {
+            foreach (self::CLASS_ABILITIES as $ability) {
+                if (! array_key_exists($ability, $abilities['class'])) {
+                    $problems[] = "{$model} declares no class ability {$ability}";
+                }
+            }
+
+            foreach (['view', 'update', 'delete'] as $ability) {
+                if (! array_key_exists($ability, $abilities['records'])) {
+                    $problems[] = "{$model} declares no record ability {$ability}";
+                }
+            }
+
+            foreach ($abilities['class'] as $ability => $allowed) {
+                if (! in_array($ability, self::CLASS_ABILITIES, true)) {
+                    $problems[] = "{$model} declares the unknown class ability {$ability}";
+                }
+
+                if (! is_bool($allowed)) {
+                    $problems[] = "{$model} {$ability} class must be a boolean";
+                }
+            }
+
+            foreach ($abilities['records'] as $ability => $states) {
+                if (! in_array($ability, self::RECORD_ABILITIES, true)) {
+                    $problems[] = "{$model} declares the unknown record ability {$ability}";
+                }
+
+                foreach ($states as $state => $allowed) {
+                    if (! in_array($state, self::STATES, true)) {
+                        $problems[] = "{$model} {$ability} declares the unknown state {$state}";
+                    }
+
+                    if (! is_bool($allowed)) {
+                        $problems[] = "{$model} {$ability} {$state} must be a boolean";
+                    }
+                }
+            }
+        }
+
+        foreach (self::adminOnlyModels() as $model => $reason) {
+            if (trim($reason) === '') {
+                $problems[] = "Admin-only {$model} has an empty reason";
+            }
+        }
+
+        return $problems;
+    }
+
+    /**
      * What is wrong with the declaration itself; empty when it is fine. A row needs its keys, boolean answers and
      * a reason that is not empty or whitespace.
      *
@@ -316,7 +583,7 @@ final class PartnerMatrix
             }
         }
 
-        return [...$problems, ...self::rowProblems('Horizon', self::horizon(), ['dashboard', 'prefix', 'admin', 'partner', 'reason'])];
+        return [...$problems, ...self::rowProblems('Horizon', self::horizon(), ['dashboard', 'prefix', 'admin', 'partner', 'reason']), ...self::abilityProblems()];
     }
 
     /**
