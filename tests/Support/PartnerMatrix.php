@@ -560,6 +560,174 @@ final class PartnerMatrix
     }
 
     /**
+     * The words of a name no Partner surface may carry (R-12-04-3): the finance words rate, price, estimate, billing,
+     * billable, internal, cnb, czk, exchange, payment, source, cost, budget and unbilled, and the measured-time words
+     * hours, duration, minute, seconds, tracked, measured, spent, worked, elapsed and time. One case-insensitive
+     * expression, matched as a substring against the whole name (relationship dots and camelCase included). The
+     * word time carries a lookbehind for `date` and a lookahead for `stamp` and `zone`, so tracked_time, total_time,
+     * time_entries, timeEntries and time_entries_sum_minutes match, while datetime, timestamp and timezone do not;
+     * created_at, updated_at, escalated_at, deadline and the *_date names contain no listed word and stay outside it.
+     */
+    public const string FORBIDDEN_FIELD_PATTERN = '/rate|price|estimate|billing|billable|internal|cnb|czk|exchange|payment|source|cost|budget|unbilled|hours|duration|minute|seconds|tracked|measured|spent|worked|elapsed|(?<!date)time(?!stamp|zone)/i';
+
+    /**
+     * The kinds of field surface a Partner screen can have (R-12-04-2): the columns of a table, the entries of a
+     * detail, the fields of a form, the filters of a table and, for a widget that reads rows without a Filament
+     * table, the columns it selects.
+     *
+     * @var list<string>
+     */
+    public const array SURFACE_KINDS = ['table', 'infolist', 'form', 'filters', 'rows'];
+
+    /**
+     * Every field a Partner sees in a table, detail, form or filter, per surface (D-03, R-12-04-2). The key is
+     * `{ShortClass}.{kind}` of a Partner Resource, relation manager, widget or the profile page, the value the
+     * names the Partner may see, taken from the draft field rules; the runtime names must equal it. Relation
+     * manager tables and forms are read on an own visible project or task.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function partnerFields(): array
+    {
+        return [
+            // "Moje projekty": name, key, status, priority, dates, description and tags of a project
+            'PartnerProjectResource.table' => ['name', 'key', 'status', 'priority', 'start_date', 'end_date', 'tags'],
+            'PartnerProjectResource.infolist' => ['name', 'key', 'status', 'description', 'start_date', 'end_date', 'priority', 'tags'],
+            'PartnerProjectResource.form' => [],
+            'PartnerProjectResource.filters' => [],
+
+            // "Moje úkoly": reference, title, project key, status, priority, dates, people, parent, description, escalation
+            'PartnerTaskResource.table' => ['reference', 'title', 'project.key', 'status', 'priority', 'due_date', 'assignee.name'],
+            'PartnerTaskResource.infolist' => ['reference', 'title', 'project.key', 'status', 'priority', 'start_date', 'due_date', 'assignee.name', 'requester.name', 'parent.reference', 'description', 'escalated_at'],
+            'PartnerTaskResource.form' => ['project_id', 'title', 'description', 'files'],
+            'PartnerTaskResource.filters' => [],
+
+            // "Faktury": what an own issued document prints and its derived state (IN-09)
+            'PartnerInvoiceResource.table' => ['number', 'kind', 'issue_date', 'due_date', 'total', 'remaining', 'status'],
+            'PartnerInvoiceResource.infolist' => [
+                'number', 'kind', 'issue_date', 'taxable_supply_date', 'due_date', 'variable_symbol', 'currency',
+                'supplier', 'customer',
+                'payment_method', 'bank_account', 'payment_variable_symbol', 'amount_due', 'payment_due_date',
+                'lines', 'description', 'quantity', 'unit_price', 'line_total',
+                'summary_total', 'summary_paid', 'summary_remaining',
+                'note', 'related_credit_note', 'related_invoice',
+            ],
+            'PartnerInvoiceResource.form' => [],
+            'PartnerInvoiceResource.filters' => ['kind', 'status'],
+
+            // Files of an own project and task: name, description, size and date
+            'PartnerProjectDocumentsRelationManager.table' => ['name', 'description', 'size_bytes', 'created_at'],
+            'PartnerProjectDocumentsRelationManager.filters' => [],
+            'PartnerProjectDocumentsRelationManager.form' => [],
+            'PartnerTaskDocumentsRelationManager.table' => ['name', 'description', 'size_bytes', 'created_at'],
+            'PartnerTaskDocumentsRelationManager.filters' => [],
+            'PartnerTaskDocumentsRelationManager.form' => [],
+
+            // Comments of an own task: the thread replaces the table, so the table has no column; the form adds a comment
+            'PartnerTaskCommentsRelationManager.table' => [],
+            'PartnerTaskCommentsRelationManager.filters' => [],
+            'PartnerTaskCommentsRelationManager.form' => ['body', 'files'],
+
+            // The Partner dashboard widgets
+            'PartnerProjects.table' => ['name', 'key', 'status', 'priority', 'end_date'],
+            'PartnerProjects.filters' => [],
+            // The row keys it selects with the name of the project and of the assignee; no time, estimate, billing or checklist column
+            'PartnerTasks.rows' => ['id', 'reference', 'title', 'status', 'due_date', 'project_id', 'assignee_id', 'project.id', 'project.name', 'assignee.id', 'assignee.name'],
+
+            // The profile page: the own name, e-mail, password and notification switches
+            'EditProfile.form' => [
+                'name', 'email', 'password', 'passwordConfirmation', 'currentPassword',
+                'notifications.comment.mail', 'notifications.comment.database',
+                'notifications.escalation.mail', 'notifications.escalation.database',
+                'notifications.assignment_change.mail', 'notifications.assignment_change.database',
+            ],
+        ];
+    }
+
+    /**
+     * An allowed name that matches FORBIDDEN_FIELD_PATTERN and is allowed all the same, each with the reason
+     * (R-12-04-3). The key is `{surface}#{name}`. The amounts and payment instructions printed on the Partner's own
+     * issued documents are allowed by IN-09; this reading of "prices" (research A5) goes to the owner in plan 12-08.
+     *
+     * @return array<string, string>
+     */
+    public static function fieldExceptions(): array
+    {
+        return [
+            'PartnerInvoiceResource.infolist#unit_price' => 'The unit price of an item printed on the own issued document; the Partner reads the whole printed document (IN-09, research A5).',
+            'PartnerInvoiceResource.infolist#payment_method' => 'The payment method printed on the own issued document (transfer or online); a payment instruction, not a payment record (IN-09).',
+            'PartnerInvoiceResource.infolist#payment_variable_symbol' => 'The variable symbol printed in the payment instructions of the own issued document (IN-09).',
+            'PartnerInvoiceResource.infolist#payment_due_date' => 'The due date printed in the payment instructions of the own issued document (IN-09).',
+        ];
+    }
+
+    /**
+     * The Partner screens that need no field surface, with the reason: the Dashboard holds only the widgets, which
+     * are declared on their own, and the canary resource exists only for the isolation harness.
+     *
+     * @return array<class-string, string>
+     */
+    public static function fieldSurfaceExemptions(): array
+    {
+        return [
+            Dashboard::class => 'The Dashboard shows neutral text and the Partner widgets only; the widgets carry their own surfaces.',
+            CanaryRecordResource::class => 'Test-only canary resource of the isolation harness; it is no screen of the product.',
+        ];
+    }
+
+    /**
+     * What is wrong with the field declaration itself; empty when it is fine: a surface key that is not
+     * `{ShortClass}.{kind}`, a value that is not a list of non-empty strings, an exception without a reason or
+     * for no declared field, an exemption without a reason.
+     *
+     * @return list<string>
+     */
+    public static function fieldProblems(): array
+    {
+        $problems = [];
+
+        foreach (self::partnerFields() as $surface => $names) {
+            $parts = explode('.', $surface);
+
+            if (count($parts) !== 2 || $parts[0] === '' || ! in_array($parts[1], self::SURFACE_KINDS, true)) {
+                $problems[] = "Field surface {$surface} must be {ShortClass}.{kind} with a kind of ".implode(', ', self::SURFACE_KINDS);
+            }
+
+            foreach ($names as $name) {
+                if (! is_string($name) || trim($name) === '') {
+                    $problems[] = "Field surface {$surface} declares an empty name";
+                }
+            }
+
+            if (count($names) !== count(array_unique($names))) {
+                $problems[] = "Field surface {$surface} declares a name twice";
+            }
+        }
+
+        foreach (self::fieldExceptions() as $key => $reason) {
+            [$surface, $name] = array_pad(explode('#', $key, 2), 2, '');
+
+            if (! in_array($name, self::partnerFields()[$surface] ?? [], true)) {
+                $problems[] = "Field exception {$key} names a field that is not declared";
+            } elseif (preg_match(self::FORBIDDEN_FIELD_PATTERN, $name) !== 1) {
+                $problems[] = "Field exception {$key} excuses a name the pattern does not match";
+            }
+
+            if (trim($reason) === '') {
+                $problems[] = "Field exception {$key} has an empty reason";
+            }
+        }
+
+        foreach (self::fieldSurfaceExemptions() as $class => $reason) {
+            if (trim($reason) === '') {
+                $problems[] = "Field surface exemption {$class} has an empty reason";
+            }
+        }
+
+        return $problems;
+    }
+
+    /**
      * What is wrong with the declaration itself; empty when it is fine. A row needs its keys, boolean answers and
      * a reason that is not empty or whitespace.
      *
@@ -583,7 +751,7 @@ final class PartnerMatrix
             }
         }
 
-        return [...$problems, ...self::rowProblems('Horizon', self::horizon(), ['dashboard', 'prefix', 'admin', 'partner', 'reason']), ...self::abilityProblems()];
+        return [...$problems, ...self::rowProblems('Horizon', self::horizon(), ['dashboard', 'prefix', 'admin', 'partner', 'reason']), ...self::abilityProblems(), ...self::fieldProblems()];
     }
 
     /**

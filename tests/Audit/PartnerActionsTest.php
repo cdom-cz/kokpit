@@ -16,14 +16,26 @@ use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskComment;
+use App\Filament\Auth\EditProfile;
+use App\Filament\Pages\Dashboard;
+use App\Filament\Partner\Resources\PartnerTaskResource;
+use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerTaskCommentsRelationManager;
+use App\Filament\Widgets\PartnerTasks;
 use Filament\Facades\Filament;
+use Filament\Infolists\Components\Entry;
+use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
+use Filament\Widgets\TableWidget;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
+use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\CanaryRecord;
 use Tests\Support\CanaryRegistry;
 use Tests\Support\DocumentFixtures;
+use Tests\Support\PanelInventory;
 use Tests\Support\PartnerMatrix;
 
 /*
@@ -189,6 +201,203 @@ function auditActionsScene(User $admin, User $partnerA, string $clientA, string 
     return $scene;
 }
 
+/**
+ * The names a declaration holds that match the forbidden pattern and carry no written exception, one line each
+ * (`{surface}#{name}`); empty when every such name is excused. Pure over its arguments, so the self-test can feed it
+ * planted names (per D-03, measured time is forbidden everywhere).
+ *
+ * @param  array<string, list<string>>  $fields  surface => allowed names
+ * @param  array<string, string>  $exceptions  `{surface}#{name}` => reason
+ * @return list<string>
+ */
+function auditActionsForbiddenNames(array $fields, array $exceptions): array
+{
+    $offenders = [];
+
+    foreach ($fields as $surface => $names) {
+        foreach ($names as $name) {
+            if (preg_match(PartnerMatrix::FORBIDDEN_FIELD_PATTERN, $name) === 1 && trim($exceptions["{$surface}#{$name}"] ?? '') === '') {
+                $offenders[] = "{$surface}#{$name}";
+            }
+        }
+    }
+
+    return $offenders;
+}
+
+/**
+ * The names sorted and without repeats, so two lists compare equal whatever their order (a repeatable entry names
+ * the same field once per item).
+ *
+ * @param  list<string>  $names
+ * @return list<string>
+ */
+function auditActionsCanonical(array $names): array
+{
+    $names = array_values(array_unique($names));
+    sort($names, SORT_STRING);
+
+    return $names;
+}
+
+/**
+ * The class a surface key names: the one PartnerMatrix::panelClasses() row whose short class name is the first part
+ * of the key.
+ *
+ * @return class-string
+ */
+function auditActionsSurfaceClass(string $surface): string
+{
+    $short = explode('.', $surface)[0];
+    $matches = array_values(array_filter(
+        array_keys(PartnerMatrix::panelClasses()),
+        static fn (string $class): bool => substr($class, (int) strrpos($class, '\\') + 1) === $short,
+    ));
+
+    if (count($matches) !== 1) {
+        throw new LogicException("Field surface {$surface} names {$short}, which is not exactly one panel class.");
+    }
+
+    return $matches[0];
+}
+
+/**
+ * The names of the entries of an infolist schema: the named entries among its flat components, hidden ones
+ * included.
+ *
+ * @return list<string>
+ */
+function auditActionsEntryNames(Schema $schema): array
+{
+    $names = [];
+
+    foreach ($schema->getFlatComponents(withActions: false, withHidden: true) as $component) {
+        if ($component instanceof Entry) {
+            $names[] = $component->getName();
+        }
+    }
+
+    return $names;
+}
+
+/**
+ * The names of the fields of a form schema, hidden ones included.
+ *
+ * @return list<string>
+ */
+function auditActionsFieldNames(Schema $schema): array
+{
+    return array_values(array_map(
+        static fn ($field): string => $field->getName(),
+        $schema->getFlatFields(withHidden: true),
+    ));
+}
+
+/**
+ * The record of the scene the Partner opens a screen on, read again through the Partner-scoped query as Partner A,
+ * the way a request reads it.
+ *
+ * @param  array<class-string, array<string, Model>>  $scene
+ * @param  class-string<Model>  $model
+ */
+function auditActionsOwnRecord(array $scene, string $model): Model
+{
+    return $model::query()->whereKey($scene[$model]['own_visible']->getKey())->firstOrFail();
+}
+
+/**
+ * The Partner screens that have no field surface and no exemption, one class per line; empty when every screen has
+ * at least one surface. Pure over its arguments, so the self-test can feed it a planted screen.
+ *
+ * @param  list<class-string>  $screens  the Partner screens that need a surface
+ * @param  list<string>  $surfaces  the declared surface keys
+ * @param  list<class-string>  $exempt  the screens exempt by declaration
+ * @return list<class-string>
+ */
+function auditActionsSurfaceGaps(array $screens, array $surfaces, array $exempt): array
+{
+    return array_values(array_filter($screens, static function (string $class) use ($surfaces, $exempt): bool {
+        $short = substr($class, (int) strrpos($class, '\\') + 1);
+
+        return ! in_array($class, $exempt, true)
+            && array_filter($surfaces, static fn (string $surface): bool => str_starts_with($surface, $short.'.')) === [];
+    }));
+}
+
+/**
+ * The names the runtime shows Partner A on one surface (R-12-04-2): table columns, filters, infolist entries and
+ * form fields of a Resource on its list page; of a relation manager mounted on an own visible project or task (the
+ * inline comment form where the manager has one); of a table widget; the columns the Partner tasks widget selects;
+ * the form of the profile page.
+ *
+ * @param  array<class-string, array<string, Model>>  $scene
+ * @return list<string>
+ */
+function auditActionsRuntimeFields(string $surface, array $scene, User $partner): array
+{
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+    auditActionsActAs($partner);
+
+    $kind = explode('.', $surface)[1];
+    $class = auditActionsSurfaceClass($surface);
+
+    if (is_subclass_of($class, Resource::class)) {
+        $page = Livewire::test($class::getPages()['index']->getPage())->instance();
+        $record = auditActionsOwnRecord($scene, $class::getModel());
+
+        return match ($kind) {
+            'table' => array_map('strval', array_keys($page->getTable()->getColumns())),
+            'filters' => array_map('strval', array_keys($page->getTable()->getFilters(withHidden: true))),
+            'infolist' => auditActionsEntryNames($class::infolist(Schema::make($page)->record($record))),
+            'form' => auditActionsFieldNames($class::form(Schema::make($page))),
+            default => throw new LogicException("{$surface} is not a surface of a Resource."),
+        };
+    }
+
+    if (is_subclass_of($class, RelationManager::class)) {
+        $owner = auditActionsOwnRecord($scene, PanelInventory::ownerModel($class));
+        $manager = Livewire::test($class, ['ownerRecord' => $owner, 'pageClass' => PanelInventory::pageClassOf(PanelInventory::owningResource($class))])->instance();
+
+        return match ($kind) {
+            'table' => array_map('strval', array_keys($manager->getTable()->getColumns())),
+            'filters' => array_map('strval', array_keys($manager->getTable()->getFilters(withHidden: true))),
+            'form' => auditActionsFieldNames(method_exists($manager, 'commentForm') ? $manager->commentForm : $manager->form(Schema::make($manager))),
+            default => throw new LogicException("{$surface} is not a surface of a relation manager."),
+        };
+    }
+
+    if ($class === PartnerTasks::class) {
+        $row = Livewire::test($class)->instance()->tasks()->first() ?? throw new LogicException('The Partner tasks widget shows no row to read the selected columns from.');
+        $names = array_keys($row->getAttributes());
+
+        foreach ($row->getRelations() as $relation => $related) {
+            foreach (array_keys($related instanceof Model ? $related->getAttributes() : []) as $attribute) {
+                $names[] = "{$relation}.{$attribute}";
+            }
+        }
+
+        return array_map('strval', $names);
+    }
+
+    if (is_subclass_of($class, TableWidget::class)) {
+        $table = Livewire::test($class)->instance()->getTable();
+
+        return array_map('strval', match ($kind) {
+            'table' => array_keys($table->getColumns()),
+            'filters' => array_keys($table->getFilters(withHidden: true)),
+            default => throw new LogicException("{$surface} is not a surface of a table widget."),
+        });
+    }
+
+    if ($class === EditProfile::class) {
+        $schema = Livewire::test($class)->instance()->getSchema('form') ?? throw new LogicException('The profile page has no form schema.');
+
+        return auditActionsFieldNames($schema);
+    }
+
+    throw new LogicException("{$surface}: teach auditActionsRuntimeFields how to read {$class}.");
+}
+
 it('declares every isolated entity exactly once', function (): void {
     $partnerVisible = array_keys(PartnerMatrix::partnerAbilities());
     $adminOnly = array_keys(PartnerMatrix::adminOnlyModels());
@@ -218,6 +427,73 @@ it('reports an entity without a declaration, a declaration without an entity and
 it('keeps every ability row well formed and every Admin-only entity reasoned', function (): void {
     expect(PartnerMatrix::abilityProblems())->toBe([])
         ->and(array_keys(PartnerMatrix::abilityRows()))->toContain('Task editDescription own_visible_other', 'Task clearEscalation own_visible_other', 'Document attach foreign');
+});
+
+it('never declares a rate, price, estimate, billing, internal, measured-time or finance field for a Partner without a written exception', function (): void {
+    expect(auditActionsForbiddenNames(PartnerMatrix::partnerFields(), PartnerMatrix::fieldExceptions()))->toBe([])
+        ->and(PartnerMatrix::fieldProblems())->toBe([]);
+});
+
+it('reports a planted rate, tracked time, measured seconds and time entry total as forbidden unless excused', function (): void {
+    $planted = ['Planted.table' => ['hourly_rate', 'tracked_time', 'measured_seconds', 'timeEntries_sum_minutes', 'spent_minutes', 'name']];
+
+    expect(auditActionsForbiddenNames($planted, []))->toBe([
+        'Planted.table#hourly_rate',
+        'Planted.table#tracked_time',
+        'Planted.table#measured_seconds',
+        'Planted.table#timeEntries_sum_minutes',
+        'Planted.table#spent_minutes',
+    ])->and(auditActionsForbiddenNames($planted, ['Planted.table#hourly_rate' => 'the printed hourly rate of an own document']))
+        ->not->toContain('Planted.table#hourly_rate')
+        ->and(auditActionsForbiddenNames($planted, ['Planted.table#hourly_rate' => '  ']))
+        ->toContain('Planted.table#hourly_rate');
+});
+
+it('keeps timestamp names outside the forbidden pattern', function (): void {
+    foreach (['created_at', 'updated_at', 'escalated_at', 'deadline', 'due_date', 'issue_date', 'datetime', 'timestamp'] as $name) {
+        expect(preg_match(PartnerMatrix::FORBIDDEN_FIELD_PATTERN, $name))->toBe(0, "{$name} must stay outside the forbidden pattern");
+    }
+
+    foreach (['time_entries', 'total_time', 'tracked_time', 'timeEntries', 'time_entries_sum_minutes', 'project.hourly_rate', 'estimate_hours'] as $name) {
+        expect(preg_match(PartnerMatrix::FORBIDDEN_FIELD_PATTERN, $name))->toBe(1, "{$name} must match the forbidden pattern");
+    }
+});
+
+it('declares the fields of every Partner surface', function (): void {
+    $exempt = array_keys(PartnerMatrix::fieldSurfaceExemptions());
+    $screens = [];
+
+    foreach (PartnerMatrix::panelClasses() as $class => $row) {
+        $isSurface = is_subclass_of($class, Resource::class)
+            || is_subclass_of($class, RelationManager::class)
+            || is_subclass_of($class, TableWidget::class)
+            || in_array($class, [PartnerTasks::class, EditProfile::class], true);
+
+        if ($row['partner'] && $isSurface) {
+            $screens[] = $class;
+        }
+    }
+
+    $missing = auditActionsSurfaceGaps($screens, array_keys(PartnerMatrix::partnerFields()), $exempt);
+
+    // Every declared surface belongs to a Partner screen, and every exemption names a Partner screen.
+    $orphans = array_values(array_filter(array_keys(PartnerMatrix::partnerFields()), static function (string $surface): bool {
+        try {
+            return PartnerMatrix::panelClasses()[auditActionsSurfaceClass($surface)]['partner'] !== true;
+        } catch (LogicException) {
+            return true;
+        }
+    }));
+
+    expect($screens)->toContain(PartnerTaskResource::class, PartnerTaskCommentsRelationManager::class, EditProfile::class)
+        ->and($missing)->toBe([], "Partner screens without a field surface:\n".implode("\n", $missing))
+        ->and($orphans)->toBe([], "Field surfaces of no Partner screen:\n".implode("\n", $orphans))
+        ->and(array_values(array_filter($exempt, static fn (string $class): bool => ! (PartnerMatrix::panelClasses()[$class]['partner'] ?? false))))->toBe([]);
+});
+
+it('reports a Partner screen without a field surface and leaves an exempt one alone', function (): void {
+    expect(auditActionsSurfaceGaps([PartnerTaskResource::class, Dashboard::class], ['PartnerProjectResource.table'], [Dashboard::class]))->toBe([PartnerTaskResource::class])
+        ->and(auditActionsSurfaceGaps([PartnerTaskResource::class], ['PartnerTaskResource.table'], []))->toBe([]);
 });
 
 describe('with the record states built', function (): void {
@@ -299,5 +575,19 @@ describe('with the record states built', function (): void {
     })->with(array_map(
         static fn (string $model): array => [$model],
         array_keys(PartnerMatrix::adminOnlyModels()),
+    ));
+    it('shows a Partner exactly the declared fields on {0}', function (string $surface): void {
+        $runtime = auditActionsCanonical(auditActionsRuntimeFields($surface, $this->scene, $this->partnerA));
+        $declared = auditActionsCanonical(PartnerMatrix::partnerFields()[$surface]);
+
+        expect($runtime)->toBe($declared, sprintf(
+            "%s shows a Partner\n  not declared: [%s]\n  declared but not shown: [%s]",
+            $surface,
+            implode(', ', array_diff($runtime, $declared)),
+            implode(', ', array_diff($declared, $runtime)),
+        ));
+    })->with(array_map(
+        static fn (string $surface): array => [$surface],
+        array_keys(PartnerMatrix::partnerFields()),
     ));
 });
