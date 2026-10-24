@@ -165,8 +165,8 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Partner Audit
 
-- [ ] **AUD-01**: Automated tests prove Partner never sees time, rates, prices, finance, internal comments or other clients' data in UI, search, selects, exports, notifications, activity log and API, for every entity
-- [ ] **AUD-02**: Route and screen audit confirms every non-public route is authenticated and every Resource, Page, Widget and API endpoint has an explicit role rule
+- [x] **AUD-01**: Automated tests prove Partner never sees time, rates, prices, finance, internal comments or other clients' data in UI, search, selects, exports, notifications, activity log and API, for every entity
+- [x] **AUD-02**: Route and screen audit confirms every non-public route is authenticated and every Resource, Page, Widget and API endpoint has an explicit role rule
 
 ## v2 Requirements
 
@@ -323,8 +323,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | P14-07 | Phase 14 | Complete |
 | P14-08 | Phase 14 | Complete |
 | P14-09 | Phase 14 | Complete |
-| AUD-01 | Phase 12 | Pending |
-| AUD-02 | Phase 12 | Pending |
+| AUD-01 | Phase 12 | Complete |
+| AUD-02 | Phase 12 | Complete |
 
 **Coverage:**
 - v1 requirements: 111 total
