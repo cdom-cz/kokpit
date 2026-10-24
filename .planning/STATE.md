@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 12
 current_phase_name: Partner Audit
 status: executing
-stopped_at: Completed 12-07-PLAN.md
-last_updated: "2026-10-24T00:41:38.281Z"
+stopped_at: Completed 12-08-PLAN.md
+last_updated: "2026-10-24T05:33:52.412Z"
 last_activity: 2026-10-24
 last_activity_desc: Phase 12 execution started
-state_head: 5518270fa9441dc99624679c6e5b1536354e0ebb
+state_head: bbeed9f9374e9d89b037eb4cfd458665ba4c98b4
 progress:
   total_phases: 16
   completed_phases: 7
   total_plans: 294
-  completed_plans: 292
+  completed_plans: 293
   percent: 44
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 ## Current Position
 
 Phase: 12 (Partner Audit) — EXECUTING
-Plan: 8 of 9
+Plan: 9 of 9
 Status: Ready to execute
 Last activity: 2026-10-24 — Phase 12 execution started
 
@@ -352,6 +352,7 @@ Progress: [████░░░░░░] 44%
 | Phase 12 P04 | 45 min | 2 tasks | 2 files |
 | Phase 12 P06 | 13 min | 2 tasks | 2 files |
 | Phase 12 P07 | 11 min | 2 tasks | 3 files |
+| Phase 12 P08 | 14 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -885,6 +886,7 @@ Recent decisions affecting current work:
 - [Phase 12]: 12-06: the downloads driver also asserts the hidden twin of the own visible file is refused, because the canary needle cannot tell it from the visible file
 - [Phase 12]: 12-07: retitle the client A canary task in the notifications event script so the 38 notification cells share one unattributed blob and a client A canary in a notification is a leak for every none cell
 - [Phase 12]: 12-07: every Notification and Mailable class under app/ must be declared in ChannelMatrix::notificationClasses() with an audience and a reason; an admin class reaching Partner A fails the build
+- [Phase 12]: 12-08: owner approved the Partner permission matrix as implemented (2026-10-24); no amendments, DO-01 stays out of scope
 
 ### Pending Todos
 
@@ -948,6 +950,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-24T00:41:36.375Z
-Stopped at: Completed 12-07-PLAN.md
+Last session: 2026-10-24T05:33:50.485Z
+Stopped at: Completed 12-08-PLAN.md
 Resume file: None
