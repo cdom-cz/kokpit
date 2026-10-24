@@ -86,6 +86,8 @@ use App\Domain\TimeTracking\Notifications\LongRunningTimerNotification;
  * fails ChannelMatrixTest until it is declared here with the audience it is written for and a reason (D-07).
  *
  * Pure data: nothing here calls application code, apart from the `::class` constants, which run nothing.
+ *
+ * Confirmed by the owner on 2026-10-24 in plan 12-08 (D-02); see .planning/phases/12-partner-audit/12-MATRIX-REVIEW.md.
  */
 final class ChannelMatrix
 {

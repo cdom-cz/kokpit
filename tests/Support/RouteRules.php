@@ -15,6 +15,8 @@ namespace Tests\Support;
  * Every entry carries a written reason. A public entry names the means that protects it instead of a
  * login (token, signature, guest-only, none, component); a closed entry names the status the route is
  * expected to answer, because a deliberately dead route is declared rather than silently skipped (R-12-01-3).
+ *
+ * Confirmed by the owner on 2026-10-24 in plan 12-08 (D-02); see .planning/phases/12-partner-audit/12-MATRIX-REVIEW.md.
  */
 final class RouteRules
 {

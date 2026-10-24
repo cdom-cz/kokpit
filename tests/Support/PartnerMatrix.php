@@ -148,6 +148,8 @@ use Tests\Support\Filament\CanaryRecordResource;
  * resource's model that belongs to that client; for a Partner relation manager that record is an own visible
  * project or task. Where a row says admin false for a Partner screen, the Admin is refused there because the Admin
  * has the Admin resource or widget for the same data.
+ *
+ * Confirmed by the owner on 2026-10-24 in plan 12-08 (D-02); see .planning/phases/12-partner-audit/12-MATRIX-REVIEW.md.
  */
 final class PartnerMatrix
 {
