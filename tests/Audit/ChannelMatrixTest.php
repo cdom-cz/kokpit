@@ -274,3 +274,31 @@ it('still refuses a route parameter and a resource it does not know, so a new ki
     expect(fn () => $this->probe->walkUrl($unknownParameter, 'x'))->toThrow(LogicException::class, 'does not know the parameter')
         ->and(fn () => $this->probe->walkRecordId($unknownResource, [], 'a'))->toThrow(LogicException::class, 'does not know the resource');
 });
+
+it('serves the Admin the files of both clients, so the download rows are not vacuous', function (): void {
+    $this->probe->storeInvoicePdfs();
+    $this->probe->storeArchives();
+    $this->probe->actAs($this->probe->admin());
+
+    $urls = $this->probe->downloadUrls($this->probe->admin());
+
+    foreach (['document a', 'document b', 'invoice a', 'invoice b', 'archive a', 'archive b'] as $label) {
+        $response = $this->get($urls[$label]);
+
+        expect($response->getStatusCode())->toBe(200, "{$label} answered {$response->getStatusCode()} for the Admin");
+    }
+
+    $own = $this->get($urls['document a']);
+
+    expect($own->headers->get('Content-Disposition'))->toContain($this->probe->canary('a'));
+});
+
+it('lets the Admin open the export pages, so the export rows are not vacuous', function (): void {
+    $this->probe->actAs($this->probe->admin());
+
+    foreach (['time report', 'report exports'] as $label) {
+        $response = $this->get($this->probe->exportUrls()[$label]);
+
+        expect($response->getStatusCode())->toBe(200, "{$label} answered {$response->getStatusCode()} for the Admin");
+    }
+});

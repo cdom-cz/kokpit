@@ -19,12 +19,18 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Reports\Models\ReportExport;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Filament\Pages\FinanceOverviewPage;
+use App\Filament\Pages\TimeReportPage;
+use App\Filament\Pages\TimesheetPage;
 use App\Filament\RelationManagers\ActivityHistoryRelationManager;
 use App\Filament\Resources\ActivityResource;
+use App\Filament\Resources\DocumentArchiveResource;
+use App\Filament\Resources\ReportExportResource;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\GlobalSearch\GlobalSearchResult;
@@ -38,6 +44,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Livewire\Livewire;
@@ -70,7 +77,7 @@ final class ChannelProbe
      *
      * @var list<string>
      */
-    public const array DRIVEN = ['search', 'selects', 'api', 'activity', 'ui'];
+    public const array DRIVEN = ['search', 'selects', 'api', 'activity', 'ui', 'downloads', 'exports'];
 
     /**
      * The prefix every canary string starts with: a search for it reaches the rows of both clients.
@@ -189,6 +196,8 @@ final class ChannelProbe
             'api' => $this->apiBlob($model),
             'activity' => $this->activityBlob(),
             'ui' => $this->uiBlob($model),
+            'downloads' => $this->compose($this->downloadSegments(), $model),
+            'exports' => $this->compose($this->exportSegments(), $model),
             default => throw new LogicException("The channel {$channel} has no driver in ChannelProbe yet; it is not in ChannelProbe::DRIVEN."),
         };
     }
@@ -1099,6 +1108,179 @@ final class ChannelProbe
         }
 
         return $resources[$slug][$side];
+    }
+
+    /**
+     * The file routes as Partner A, once per test: the signed document link of the client A visible file, of its
+     * hidden twin and of the client B visible file, the signed archive link of both canary archives, the signed
+     * invoice PDF link of both issued canary invoices (a fictional PDF is stored for each first), and the report
+     * export list mounted with Livewire. The own visible file and the own invoice PDF are served; everything else
+     * must be refused with 403 or 404, so the statuses are asserted here and the bodies and Content-Disposition
+     * headers go into the segments of the entity the file belongs to.
+     *
+     * @return list<array{owners: list<class-string>|null, text: string}>
+     */
+    private function downloadSegments(): array
+    {
+        if (isset($this->memo['downloads'])) {
+            /** @var list<array{owners: list<class-string>|null, text: string}> $memoised */
+            $memoised = $this->memo['downloads'];
+
+            return $memoised;
+        }
+
+        $test = test();
+        $this->storeInvoicePdfs();
+        $this->storeArchives();
+        $test->actingAs($this->partnerA);
+
+        $urls = $this->downloadUrls($this->partnerA);
+        $hidden = DocumentUrl::download($this->walkDocument('a', '-hidden'), $this->partnerA);
+        $requests = [
+            ['document a', $urls['document a'], [Document::class], true],
+            ['document a (hidden twin)', $hidden, [Document::class], false],
+            ['document b', $urls['document b'], [Document::class], false],
+            ['archive a', $urls['archive a'], [DocumentArchive::class], false],
+            ['archive b', $urls['archive b'], [DocumentArchive::class], false],
+            ['invoice pdf a', $urls['invoice a'], [Invoice::class, InvoiceItem::class], true],
+            ['invoice pdf b', $urls['invoice b'], [Invoice::class, InvoiceItem::class], false],
+        ];
+        $segments = [];
+        $offenders = [];
+
+        foreach ($requests as [$label, $url, $owners, $served]) {
+            $response = $test->get($url);
+            $status = $response->getStatusCode();
+
+            if ($served ? $status !== 200 : ! in_array($status, [403, 404], true)) {
+                $offenders[] = "{$label} answered {$status}, expected ".($served ? '200' : '403 or 404');
+            }
+
+            $segments[] = ['owners' => $owners, 'text' => $this->describe($response)];
+        }
+
+        $exports = Livewire::test(ReportExportResource::getPages()['index']->getPage());
+
+        try {
+            $exports->assertForbidden();
+        } catch (\Throwable $e) {
+            $offenders[] = 'the report export list (and so its download action) did not refuse Partner A: '.$e->getMessage();
+        }
+
+        $segments[] = ['owners' => [ReportExport::class], 'text' => 'report export list refused'];
+
+        Assert::assertSame([], $offenders, "A file route answered Partner A unexpectedly:\n".implode("\n", $offenders));
+
+        return $this->memo['downloads'] = $segments;
+    }
+
+    /**
+     * The signed URLs of the canary files for one user, keyed "{kind} {side}": the visible document, the canary
+     * archive and the issued invoice's PDF of each side. A control signs them for the Admin.
+     *
+     * @return array<string, string>
+     */
+    public function downloadUrls(User $user): array
+    {
+        $urls = [];
+
+        foreach (['a', 'b'] as $side) {
+            $urls["document {$side}"] = DocumentUrl::download($this->walkDocument($side), $user);
+            $urls["archive {$side}"] = DocumentUrl::archive($this->walkArchive($side), $user);
+            $urls["invoice {$side}"] = InvoicePdfUrl::download($this->walkInvoice($side), $user);
+        }
+
+        return $urls;
+    }
+
+    /**
+     * Writes bytes for the two canary archives, so that a refusal of the archive route comes from the owner scope
+     * and not from a missing file; once per test.
+     */
+    public function storeArchives(): void
+    {
+        if (isset($this->memo['archives'])) {
+            return;
+        }
+
+        foreach (['a', 'b'] as $side) {
+            Storage::disk()->put((string) $this->walkArchive($side)->path, 'Fictional archive bytes');
+        }
+
+        $this->memo['archives'] = true;
+    }
+
+    /**
+     * The export paths as Partner A, once per test: the URL of every page and resource that produces or lists an
+     * export (the time report, the report export list, the document archive list, the finance overview and the
+     * timesheet) must answer 403; TimeReportPage mounted with Livewire must be refused; the two closed Filament
+     * export and import download routes, requested with fresh ids, must answer their declared status (404, plan
+     * 12-02). Every answer goes into every blob: the answers are refusals, so no entity may show in any of them.
+     *
+     * @return list<array{owners: list<class-string>|null, text: string}>
+     */
+    private function exportSegments(): array
+    {
+        if (isset($this->memo['exports'])) {
+            /** @var list<array{owners: list<class-string>|null, text: string}> $memoised */
+            $memoised = $this->memo['exports'];
+
+            return $memoised;
+        }
+
+        $test = test();
+        $test->actingAs($this->partnerA);
+
+        $segments = [];
+        $offenders = [];
+
+        foreach ($this->exportUrls() as $label => $url) {
+            $response = $test->get($url);
+
+            if ($response->getStatusCode() !== 403) {
+                $offenders[] = "{$label} answered {$response->getStatusCode()}, expected 403";
+            }
+
+            $segments[] = ['owners' => null, 'text' => $this->describe($response)];
+        }
+
+        try {
+            Livewire::test(TimeReportPage::class)->assertForbidden();
+        } catch (\Throwable $e) {
+            $offenders[] = 'TimeReportPage mounted with Livewire did not refuse Partner A: '.$e->getMessage();
+        }
+
+        foreach (RouteRules::closedRoutes() as $key => $rule) {
+            $route = Route::getRoutes()->getByName($key)
+                ?? throw new LogicException("The closed route {$key} of RouteRules is not registered.");
+            $response = $test->get(RouteInventory::path($route));
+
+            if ($response->getStatusCode() !== $rule['status']) {
+                $offenders[] = "{$key} answered {$response->getStatusCode()}, expected {$rule['status']}";
+            }
+
+            $segments[] = ['owners' => null, 'text' => $this->describe($response)];
+        }
+
+        Assert::assertSame([], $offenders, "An export path answered Partner A unexpectedly:\n".implode("\n", $offenders));
+
+        return $this->memo['exports'] = $segments;
+    }
+
+    /**
+     * The URLs of the pages and resources that produce or list an export, keyed by a label.
+     *
+     * @return array<string, string>
+     */
+    public function exportUrls(): array
+    {
+        return [
+            'time report' => TimeReportPage::getUrl(),
+            'report exports' => ReportExportResource::getUrl('index'),
+            'document archives' => DocumentArchiveResource::getUrl('index'),
+            'finance overview' => FinanceOverviewPage::getUrl(),
+            'timesheet' => TimesheetPage::getUrl(),
+        ];
     }
 
     private function text(string|Htmlable $value): string
