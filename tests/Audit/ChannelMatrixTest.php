@@ -6,6 +6,10 @@ use App\Domain\Identity\ApiAbility;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\Activity;
+use App\Domain\Tasks\Models\Task;
+use App\Domain\Tasks\Notifications\TaskChangedNotification;
+use App\Domain\Tasks\Notifications\TaskCommentedNotification;
+use App\Domain\Tasks\Notifications\TaskEscalatedNotification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Routing\Route as LaravelRoute;
@@ -301,4 +305,22 @@ it('lets the Admin open the export pages, so the export rows are not vacuous', f
 
         expect($response->getStatusCode())->toBe(200, "{$label} answered {$response->getStatusCode()} for the Admin");
     }
+});
+
+it('reaches Partner A with the own task notifications, so the notification rows are not vacuous', function (): void {
+    $facts = $this->probe->notifyFacts();
+    $blob = $this->probe->blob('notifications', Task::class);
+    $types = array_values(array_unique(array_map(static fn ($row): string => $row->type, $this->probe->notifyBellRows())));
+    sort($types, SORT_STRING);
+
+    $expected = [TaskChangedNotification::class, TaskCommentedNotification::class, TaskEscalatedNotification::class];
+    sort($expected, SORT_STRING);
+
+    // Partner A holds a bell row of every task event that can reach a Partner, and a mail, naming the own task.
+    expect($types)->toBe($expected)
+        ->and($this->probe->notifyMailTexts())->not->toBeEmpty()
+        ->and($blob)->toContain($facts['reference'])
+        ->and($blob)->toContain($facts['title'])
+        ->and($blob)->not->toContain($this->probe->canary('a'))
+        ->and($blob)->not->toContain($this->probe->canary('b'));
 });

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Documents\Actions\AttachDocuments;
 use App\Domain\Documents\Actions\StoreGeneratedDocument;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Models\DocumentArchive;
@@ -18,10 +19,18 @@ use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
 use App\Domain\Payments\Models\CardPayment;
+use App\Domain\Projects\Enums\ProjectPriority;
+use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Reports\Models\ReportExport;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
+use App\Domain\Tasks\Actions\AddTaskComment;
+use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Actions\EscalateTask;
+use App\Domain\Tasks\Actions\MoveTask;
+use App\Domain\Tasks\Actions\UpdateTask;
+use App\Domain\Tasks\Board\BoardFilters;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Pages\FinanceOverviewPage;
@@ -35,14 +44,19 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\GlobalSearch\GlobalSearchResult;
 use Filament\GlobalSearch\GlobalSearchResults;
+use Filament\Notifications\Livewire\DatabaseNotifications;
 use Filament\Schemas\Schema;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Widgets\TableWidget;
 use FilesystemIterator;
+use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -56,6 +70,9 @@ use ReflectionClass;
 use SplFileInfo;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\Mailer\SentMessage;
+use Symfony\Component\Mime\Address;
+use Symfony\Component\Mime\Email;
 use Tests\Support\Filament\CanaryRecordResource;
 
 /**
@@ -73,11 +90,11 @@ use Tests\Support\Filament\CanaryRecordResource;
 final class ChannelProbe
 {
     /**
-     * The channels that have a driver here. Plan 12-07 adds notifications.
+     * The channels that have a driver here: all eight channels of ChannelMatrix::CHANNELS.
      *
      * @var list<string>
      */
-    public const array DRIVEN = ['search', 'selects', 'api', 'activity', 'ui', 'downloads', 'exports'];
+    public const array DRIVEN = ['search', 'selects', 'api', 'activity', 'ui', 'downloads', 'exports', 'notifications'];
 
     /**
      * The prefix every canary string starts with: a search for it reaches the rows of both clients.
@@ -198,6 +215,7 @@ final class ChannelProbe
             'ui' => $this->uiBlob($model),
             'downloads' => $this->compose($this->downloadSegments(), $model),
             'exports' => $this->compose($this->exportSegments(), $model),
+            'notifications' => $this->notifyBlob(),
             default => throw new LogicException("The channel {$channel} has no driver in ChannelProbe yet; it is not in ChannelProbe::DRIVEN."),
         };
     }
@@ -1281,6 +1299,203 @@ final class ChannelProbe
             'finance overview' => FinanceOverviewPage::getUrl(),
             'timesheet' => TimesheetPage::getUrl(),
         ];
+    }
+
+    /**
+     * The notifications as Partner A (R-12-07-1): everything Partner A holds after every event that can reach a
+     * Partner has run on the canary data, as one string: the type and the data of every bell row of Partner A and the
+     * subject, text and HTML of every mail sent to Partner A's address. The notifications of every entity share the
+     * one blob. The scene makes that sound: the event script gives the client A canary task a new title, so the
+     * canary text of client A is the text of the project, client, contact, comment, checklist item, billing note and
+     * every other row that carries it, and none of them has a reason to appear in a task notification. A client A
+     * canary in the blob is therefore a leak for every entity whose cell is none, and any client B needle is a leak
+     * for every entity.
+     */
+    private function notifyBlob(): string
+    {
+        $lines = [];
+
+        foreach ($this->notifyBellRows() as $row) {
+            $lines[] = $row->type."\n".json_encode($row->data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+        }
+
+        array_push($lines, ...$this->notifyMailTexts());
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * The facts of the event script a control needs: the reference and the new title of the client A canary task.
+     *
+     * @return array{reference: string, title: string}
+     */
+    public function notifyFacts(): array
+    {
+        $this->notifyEvents();
+
+        /** @var array{reference: string, title: string} $facts */
+        $facts = $this->memo['notify-facts'];
+
+        return $facts;
+    }
+
+    /**
+     * Runs the event script once per probe. Arrangement, as system: the client A canary task is given a new title
+     * (the canary text stays on every other row that carries it, so it cannot appear in a notification of the task
+     * without being a leak), Partner A creates a second client A task and so is its requester, a colleague Partner
+     * of client A exists; then the notifications table and the array mail transport are emptied. Events, copied from
+     * tests/Isolation/NotificationLeakTest.php (D-08): the Admin assigns the canary task to Partner A, answers
+     * visibly, writes an internal remark whose text is the canary of client A, changes status and priority and moves
+     * the task on the board; the colleague answers and escalates the task Partner A is assigned to; Partner A comments
+     * on, escalates and uploads a file to the own task; the Admin answers on and changes the client B canary task.
+     * The queue runs synchronously in the tests.
+     */
+    public function notifyEvents(): void
+    {
+        if (isset($this->memo['notify-facts'])) {
+            return;
+        }
+
+        $test = test();
+        $title = Canary::canary('title');
+
+        [$taskA, $taskB, $project] = app(PartnerContext::class)->runAsSystem(function () use ($title): array {
+            $taskA = Task::query()->where('title', $this->canaryA)->firstOrFail();
+            $taskA->forceFill(['title' => $title])->save();
+
+            return [
+                $taskA,
+                Task::query()->where('title', $this->canaryB)->firstOrFail(),
+                Project::query()->whereKey($taskA->project_id)->firstOrFail(),
+            ];
+        });
+
+        $this->memo['notify-facts'] = ['reference' => (string) $taskA->reference, 'title' => $title];
+
+        $test->actingAs($this->partnerA);
+        $own = app(CreateTask::class)->handle($this->partnerA, $project, ['title' => Canary::canary('own')]);
+        $colleague = Canary::partnerFor($this->clientA);
+
+        // Nobody had a reason to hold the setup notifications; start from an empty inbox and an empty mailbox.
+        DB::table('notifications')->delete();
+        Mail::getSymfonyTransport()->flush();
+
+        $update = fn (User $actor, Task $task, array $data): Task => app(UpdateTask::class)->handle($actor, $this->notifySeen($actor, $task), $data);
+        $comment = fn (User $actor, Task $task, string $body, bool $internal = false) => app(AddTaskComment::class)->handle($actor, $this->notifySeen($actor, $task), $body, internal: $internal);
+        $escalate = fn (User $actor, Task $task): Task => app(EscalateTask::class)->handle($actor, $this->notifySeen($actor, $task), '<p>Example reason of an escalation</p>');
+
+        // Admin: assignment of the canary task to Partner A, a visible answer, an internal remark, a status and
+        // priority change, a board move.
+        $update($this->admin, $taskA, ['assignee_id' => $this->partnerA->getKey()]);
+        $comment($this->admin, $taskA, '<p>'.Canary::canary('visible').'</p>');
+        $comment($this->admin, $taskA, '<p>'.$this->canaryA.'</p>', true);
+        $update($this->admin, $taskA, ['status' => ProjectStatus::InProgress->value, 'priority' => ProjectPriority::Urgent->value]);
+        $test->actingAs($this->admin);
+        app(MoveTask::class)->handle($this->admin, (string) $taskA->id, 0, ProjectStatus::InReview, BoardFilters::none());
+
+        // The colleague of client A: a comment and an escalation of the task assigned to Partner A.
+        $comment($colleague, $taskA, '<p>'.Canary::canary('colleague').'</p>');
+        $escalate($colleague, $taskA);
+
+        // Partner A: a comment, an escalation and an upload on the own task (the Admin is told).
+        $comment($this->partnerA, $own, '<p>'.Canary::canary('question').'</p>');
+        $escalate($this->partnerA, $own);
+
+        $test->actingAs($this->partnerA);
+        app(AttachDocuments::class)->handle($this->partnerA, $this->notifySeen($this->partnerA, $own), [
+            DocumentFixtures::upload($this->canaryA.'-upload.txt'),
+        ]);
+
+        // Client B: the Admin answers on and changes the canary task of client B.
+        $comment($this->admin, $taskB, '<p>'.Canary::canary('answerb').'</p>');
+        $update($this->admin, $taskB, ['status' => ProjectStatus::InProgress->value]);
+
+        $this->actAs($this->partnerA);
+    }
+
+    /**
+     * Partner A's bell: the rows the notification bell component shows Partner A after the event script. Every row
+     * must be Partner A's own and the bell must show every stored row of Partner A.
+     *
+     * @return list<DatabaseNotification>
+     */
+    public function notifyBellRows(): array
+    {
+        $this->notifyEvents();
+
+        if (isset($this->memo['notify-bell'])) {
+            /** @var list<DatabaseNotification> $memoised */
+            $memoised = $this->memo['notify-bell'];
+
+            return $memoised;
+        }
+
+        $this->actAs($this->partnerA);
+
+        $page = Livewire::test(DatabaseNotifications::class)->instance()->getNotifications();
+
+        /** @var list<DatabaseNotification> $bell */
+        $bell = $page instanceof Paginator ? $page->items() : $page->all();
+        $own = (string) $this->partnerA->getKey();
+        $foreign = array_values(array_filter(
+            array_map(static fn (DatabaseNotification $row): string => (string) $row->notifiable_id, $bell),
+            static fn (string $id): bool => $id !== $own,
+        ));
+        $stored = DatabaseNotification::query()->where('notifiable_id', $own)->count();
+
+        Assert::assertSame([], $foreign, "The bell of Partner A showed rows of another notifiable:\n".implode("\n", $foreign));
+        Assert::assertCount($stored, $bell, 'The bell of Partner A must show every stored row of Partner A and no other.');
+
+        return $this->memo['notify-bell'] = $bell;
+    }
+
+    /**
+     * The subject, text and HTML of every mail sent to Partner A's address, decoded the way
+     * tests/Isolation/NotificationLeakTest.php does (the raw message is quoted-printable wrapped, which could split a
+     * value across lines).
+     *
+     * @return list<string>
+     */
+    public function notifyMailTexts(): array
+    {
+        $this->notifyEvents();
+
+        $texts = [];
+
+        foreach (Mail::getSymfonyTransport()->messages() as $message) {
+            if (! $message instanceof SentMessage) {
+                continue;
+            }
+
+            $addressed = false;
+
+            foreach ($message->getEnvelope()->getRecipients() as $address) {
+                if ($address instanceof Address && $address->getAddress() === $this->partnerA->email) {
+                    $addressed = true;
+                }
+            }
+
+            if (! $addressed) {
+                continue;
+            }
+
+            $original = $message->getOriginalMessage();
+            $texts[] = $original instanceof Email
+                ? implode("\n", [(string) $original->getSubject(), (string) $original->getTextBody(), (string) $original->getHtmlBody()])
+                : $message->toString();
+        }
+
+        return $texts;
+    }
+
+    /**
+     * The task as the signed-in user reads it, through the scoped query a page uses.
+     */
+    private function notifySeen(User $viewer, Task $task): Task
+    {
+        test()->actingAs($viewer);
+
+        return Task::query()->where('reference', $task->reference)->firstOrFail();
     }
 
     private function text(string|Htmlable $value): string
