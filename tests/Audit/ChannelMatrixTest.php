@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Documents\Notifications\PartnerUploadedFilesNotification;
 use App\Domain\Identity\ApiAbility;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerIsolated;
@@ -12,6 +13,8 @@ use App\Domain\Tasks\Notifications\TaskCommentedNotification;
 use App\Domain\Tasks\Notifications\TaskEscalatedNotification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Mail\Mailable;
+use Illuminate\Notifications\Notification;
 use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Auth;
 use Tests\Support\ApiFixtures;
@@ -120,6 +123,60 @@ function auditChannelLeaks(string $cell, string $blob, array $needlesA, array $n
     }
 
     return $leaks;
+}
+
+/**
+ * The concrete Notification and Mailable classes under app/, found by scanning the directory (like the app/Livewire
+ * scan of LivewireComponentContractTest), sorted by class name.
+ *
+ * @return list<class-string>
+ */
+function auditChannelNotificationClasses(): array
+{
+    $root = app_path();
+    $found = [];
+
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS)) as $file) {
+        if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php') {
+            continue;
+        }
+
+        $relative = substr(str_replace(DIRECTORY_SEPARATOR, '/', $file->getPathname()), strlen(str_replace(DIRECTORY_SEPARATOR, '/', $root)) + 1, -4);
+        $class = 'App\\'.str_replace('/', '\\', $relative);
+
+        if (class_exists($class) && (is_subclass_of($class, Notification::class) || is_subclass_of($class, Mailable::class)) && ! (new ReflectionClass($class))->isAbstract()) {
+            $found[] = $class;
+        }
+    }
+
+    sort($found, SORT_STRING);
+
+    return $found;
+}
+
+/**
+ * The notification classes without a declaration and the declarations without a class, one line each; empty when
+ * they match. Pure over its arguments, so the self-test can feed it a planted class.
+ *
+ * @param  list<string>  $found  the classes that exist
+ * @param  list<string>  $declared  the classes that are declared
+ * @return list<string>
+ */
+function auditChannelNotificationDifferences(array $found, array $declared): array
+{
+    $differences = [];
+
+    foreach (array_diff($found, $declared) as $class) {
+        $differences[] = "{$class} is a notification or mail class with no ChannelMatrix::notificationClasses() declaration";
+    }
+
+    foreach (array_diff($declared, $found) as $class) {
+        $differences[] = "ChannelMatrix::notificationClasses() declares {$class} but no such notification or mail class exists under app/";
+    }
+
+    sort($differences);
+
+    return $differences;
 }
 
 it('declares every CanaryRegistry entity and only those', function (): void {
@@ -323,4 +380,55 @@ it('reaches Partner A with the own task notifications, so the notification rows 
         ->and($blob)->toContain($facts['title'])
         ->and($blob)->not->toContain($this->probe->canary('a'))
         ->and($blob)->not->toContain($this->probe->canary('b'));
+});
+
+it('declares every notification and mail class and only existing ones', function (): void {
+    $found = auditChannelNotificationClasses();
+    $declared = array_keys(ChannelMatrix::notificationClasses());
+    sort($declared, SORT_STRING);
+
+    $differences = auditChannelNotificationDifferences($found, $declared);
+
+    expect($found)->not->toBeEmpty()
+        ->and($differences)->toBe([], "Notification classes and declarations differ:\n".implode("\n", $differences))
+        ->and($declared)->toBe($found)
+        ->and(ChannelMatrix::notificationProblemsIn(ChannelMatrix::notificationClasses()))->toBe([]);
+});
+
+it('reports an undeclared notification class', function (): void {
+    $planted = new class extends Notification {};
+    $declared = array_keys(ChannelMatrix::notificationClasses());
+
+    expect(auditChannelNotificationDifferences([...$declared, $planted::class], $declared))->toHaveCount(1)
+        ->and(auditChannelNotificationDifferences([...$declared, $planted::class], $declared)[0])->toContain($planted::class)
+        ->and(auditChannelNotificationDifferences($declared, [...$declared, $planted::class])[0])->toContain('no such notification or mail class')
+        ->and(auditChannelNotificationDifferences($declared, $declared))->toBe([])
+        ->and(ChannelMatrix::notificationProblemsIn(['App\\Planted' => ['audience' => 'everyone', 'reason' => ' ']]))->toBe([
+            'App\\Planted declares an unknown audience',
+            'App\\Planted declares no reason for its audience',
+        ])
+        ->and(ChannelMatrix::notificationProblemsIn(['App\\Planted' => ['audience' => 'admin', 'reason' => 'for the Admin']]))->toBe([]);
+});
+
+it('never sends Partner A a notification of an admin class', function (): void {
+    $classes = ChannelMatrix::notificationClasses();
+    $admin = array_keys(array_filter($classes, static fn (array $declaration): bool => $declaration['audience'] === 'admin'));
+    $reachable = array_keys(array_filter($classes, static fn (array $declaration): bool => in_array($declaration['audience'], ['partner', 'any-user'], true)));
+    $types = array_values(array_unique(array_map(static fn ($row): string => $row->type, $this->probe->notifyBellRows())));
+
+    // The upload of Partner A reached the Admin (an admin class), and none of it reached Partner A.
+    expect($admin)->toContain(PartnerUploadedFilesNotification::class)
+        ->and($types)->not->toBeEmpty()
+        ->and(array_values(array_intersect($types, $admin)))->toBe([], 'Partner A holds a notification of an admin class')
+        ->and(array_values(array_diff($types, $reachable)))->toBe([], 'Partner A holds a notification of a class that is not written for a Partner');
+});
+
+it('drives every channel of the matrix', function (): void {
+    $driven = ChannelProbe::DRIVEN;
+    $channels = ChannelMatrix::CHANNELS;
+    sort($driven, SORT_STRING);
+    sort($channels, SORT_STRING);
+
+    expect($driven)->toBe($channels)
+        ->and(count($channels))->toBe(8);
 });

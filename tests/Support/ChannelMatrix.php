@@ -7,11 +7,18 @@ namespace Tests\Support;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Clients\Models\Contact;
+use App\Domain\Clients\Notifications\PartnerInvitation;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Models\DocumentArchive;
+use App\Domain\Documents\Notifications\DocumentArchiveFailedNotification;
+use App\Domain\Documents\Notifications\DocumentArchiveReadyNotification;
+use App\Domain\Documents\Notifications\PartnerUploadedFilesNotification;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
+use App\Domain\Identity\Notifications\ResetPasswordNotification;
+use App\Domain\Invoicing\Mail\InvoiceMail;
+use App\Domain\Invoicing\Mail\PaymentConfirmationMail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
@@ -19,11 +26,16 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Models\PaymentConfirmation;
+use App\Domain\Invoicing\Notifications\InvoiceEmailFailedNotification;
+use App\Domain\Operations\Alerts\OperationalAlert;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Models\PaymentLink;
+use App\Domain\Payments\Notifications\CardPaymentMatchedNotification;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Projects\Models\ProjectBilling;
 use App\Domain\Reports\Models\ReportExport;
+use App\Domain\Reports\Notifications\ReportExportFailedNotification;
+use App\Domain\Reports\Notifications\ReportExportReadyNotification;
 use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Models\SettingsProperty;
@@ -40,7 +52,12 @@ use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskBilling;
 use App\Domain\Tasks\Models\TaskChecklistItem;
 use App\Domain\Tasks\Models\TaskComment;
+use App\Domain\Tasks\Notifications\TaskChangedNotification;
+use App\Domain\Tasks\Notifications\TaskCommentedNotification;
+use App\Domain\Tasks\Notifications\TaskCreatedNotification;
+use App\Domain\Tasks\Notifications\TaskEscalatedNotification;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Domain\TimeTracking\Notifications\LongRunningTimerNotification;
 
 /**
  * The entity x channel canary matrix (AUD-01; D-07, D-08, D-12; R-12-05-1).
@@ -64,6 +81,10 @@ use App\Domain\TimeTracking\Models\TimeEntry;
  * Drivers for the channels live in ChannelProbe; a channel without a driver yet is declared here all the same and
  * is walked as soon as ChannelProbe::DRIVEN lists it.
  *
+ * The same file declares the audience of every Notification and Mailable class under app/ (notificationClasses()),
+ * because a notification class is the other way data reaches a Partner without a page being opened: a new class
+ * fails ChannelMatrixTest until it is declared here with the audience it is written for and a reason (D-07).
+ *
  * Pure data: nothing here calls application code, apart from the `::class` constants, which run nothing.
  */
 final class ChannelMatrix
@@ -74,6 +95,16 @@ final class ChannelMatrix
      * @var list<string>
      */
     public const array CHANNELS = ['ui', 'search', 'selects', 'exports', 'notifications', 'activity', 'downloads', 'api'];
+
+    /**
+     * The audiences a notification or mail class can be written for: `partner` (sent to a Partner of the task's
+     * client, with the my-tasks link), `admin` (an operational or finance message for the Admin only, never a
+     * Partner), `client-mail` (a mail to a client address that is not a user account) and `any-user` (a message
+     * about the account itself, sent to whoever owns it, a Partner included).
+     *
+     * @var list<string>
+     */
+    public const array NOTIFICATION_AUDIENCES = ['partner', 'admin', 'client-mail', 'any-user'];
 
     private const string FOREIGN = 'foreign';
 
@@ -144,6 +175,73 @@ final class ChannelMatrix
     }
 
     /**
+     * Every concrete Notification and Mailable class under app/ with the audience it is written for and the reason
+     * for it. ChannelMatrixTest discovers the classes by scanning app/ and requires this list to match both ways.
+     * A class declared `admin` must never reach a Partner: the notifications driver fails when Partner A holds a
+     * notification of one.
+     *
+     * @return array<class-string, array{audience: string, reason: string}>
+     */
+    public static function notificationClasses(): array
+    {
+        $partner = static fn (string $reason): array => ['audience' => 'partner', 'reason' => $reason];
+        $admin = static fn (string $reason): array => ['audience' => 'admin', 'reason' => $reason];
+        $clientMail = static fn (string $reason): array => ['audience' => 'client-mail', 'reason' => $reason];
+        $anyUser = static fn (string $reason): array => ['audience' => 'any-user', 'reason' => $reason];
+
+        $task = 'sent through TaskNotifier to the Admin and to the Partner requester or assignee, with the my-tasks link for a Partner';
+
+        return [
+            TaskCreatedNotification::class => $partner($task),
+            TaskCommentedNotification::class => $partner($task),
+            TaskChangedNotification::class => $partner($task),
+            TaskEscalatedNotification::class => $partner($task),
+            ResetPasswordNotification::class => $anyUser('password reset of any user, a Partner included; carries only the reset link'),
+            PartnerInvitation::class => $clientMail('sent to the invited address before an account exists; carries only the signed invitation link'),
+            InvoiceMail::class => $clientMail("sent to the client's invoice e-mail address; carries the client's own issued document"),
+            PaymentConfirmationMail::class => $clientMail("sent to the client's invoice e-mail address; carries the client's own payment confirmation"),
+            PartnerUploadedFilesNotification::class => $admin('tells the Admin that a Partner uploaded files, with a count and no file name'),
+            DocumentArchiveReadyNotification::class => $admin('tells the Admin that a document archive is ready'),
+            DocumentArchiveFailedNotification::class => $admin('tells the Admin that building a document archive failed'),
+            ReportExportReadyNotification::class => $admin('tells the Admin that a report export is ready; reports are measured time and finance'),
+            ReportExportFailedNotification::class => $admin('tells the Admin that a report export failed'),
+            InvoiceEmailFailedNotification::class => $admin('tells the Admin that sending an invoice e-mail failed; invoices are finance'),
+            CardPaymentMatchedNotification::class => $admin('tells the Admin that a card payment was matched; payments are finance'),
+            LongRunningTimerNotification::class => $admin('tells the Admin that a timer runs long; measured time is closed to a Partner'),
+            OperationalAlert::class => $admin('operational alert for the Admin'),
+        ];
+    }
+
+    /**
+     * What is wrong with the given notification declarations: an unknown audience and an empty reason. Empty when
+     * they are fine. Pure over its argument, so the self-tests can feed it planted declarations.
+     *
+     * @param  array<string, array<string, mixed>>  $classes
+     * @return list<string>
+     */
+    public static function notificationProblemsIn(array $classes): array
+    {
+        $problems = [];
+
+        foreach ($classes as $class => $declaration) {
+            $audience = $declaration['audience'] ?? null;
+            $reason = $declaration['reason'] ?? null;
+
+            if (! is_string($audience) || ! in_array($audience, self::NOTIFICATION_AUDIENCES, true)) {
+                $problems[] = "{$class} declares an unknown audience";
+            }
+
+            if (! is_string($reason) || trim($reason) === '') {
+                $problems[] = "{$class} declares no reason for its audience";
+            }
+        }
+
+        sort($problems);
+
+        return $problems;
+    }
+
+    /**
      * The applicable cells of the given channels, keyed "{ShortModel} x {channel}", each as [model, channel]
      * (plain arrays, so a Pest dataset can spread them into two arguments).
      *
@@ -203,13 +301,13 @@ final class ChannelMatrix
     }
 
     /**
-     * What is wrong with the declared rows; empty when they are fine.
+     * What is wrong with the declared rows and the declared notification classes; empty when they are fine.
      *
      * @return list<string>
      */
     public static function problems(): array
     {
-        return self::problemsIn(self::entities());
+        return [...self::problemsIn(self::entities()), ...self::notificationProblemsIn(self::notificationClasses())];
     }
 
     private static function cellProblem(mixed $cell): ?string
