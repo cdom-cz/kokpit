@@ -4,10 +4,10 @@ current_phase: 12
 current_phase_name: Partner Audit
 status: verifying
 stopped_at: Completed 12-09-PLAN.md
-last_updated: "2026-10-24T05:56:38.073Z"
+last_updated: "2026-10-25T18:45:41.030Z"
 last_activity: 2026-10-24
 last_activity_desc: Phase 12 execution started
-state_head: e2c1ce2ee643a63f036c2d241c75847360d836a9
+state_head: 96507ce19a4cc9a68371d93664bc90af1f9225cd
 progress:
   total_phases: 16
   completed_phases: 7
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 Phase: 12 (Partner Audit) — EXECUTING
 Plan: 9 of 9
 Status: Phase complete — ready for verification
-Last activity: 2026-10-24 — Phase 12 execution started
+Last activity: 2026-10-25 - Completed quick task 261025-oc2: Optimize the test suite (prune non-essential tests, shard CI)
 
 Progress: [████░░░░░░] 44%
 
@@ -932,6 +932,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261018-mic | Add an external identifier column to transactions for passing advanced identifiers (like time_entries.external), exposed via the API | 2026-10-18 | 8dc3ebb | [261018-mic-add-an-external-identifier-column-to-tra](./quick/261018-mic-add-an-external-identifier-column-to-tra/) |
 | 261018-rvf | Allow changing a task's status directly in its view, not only in the task detail | 2026-10-18 | 9701c56 | [261018-rvf-allow-changing-a-task-s-status-directly-](./quick/261018-rvf-allow-changing-a-task-s-status-directly-/) |
 | 261022-sgn | Improve global search to match client, project and task names, and project and task codes, with as-you-type suggestions in the current style | 2026-10-22 | 30823f6 | [261022-sgn-improve-global-search-to-match-client-pr](./quick/261022-sgn-improve-global-search-to-match-client-pr/) |
+| 261025-oc2 | Optimize the test suite: prune non-essential tests and shard CI (30m timeout fix) | 2026-10-25 | 96507ce | [261025-oc2-optimize-the-test-suite-keep-only-functi](./quick/261025-oc2-optimize-the-test-suite-keep-only-functi/) |
 
 ### Roadmap Evolution
 
