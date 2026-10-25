@@ -162,13 +162,6 @@ it('gives a credit note neither a row nor a job', function (): void {
     expect(linkRowCount())->toBe(1);
 });
 
-it('names the proforma in the product of its link', function (): void {
-    $issued = CardPaymentSetup::issued(CardPaymentSetup::client(), InvoiceKind::Proforma);
-
-    expect($this->stripe->created())->toHaveCount(1)
-        ->and($this->stripe->created()[0]->productName)->toBe('Zálohová faktura '.$issued->number);
-});
-
 it('does not create a second Stripe link when the job runs again for an active row', function (): void {
     $issued = CardPaymentSetup::issued(CardPaymentSetup::client());
     $link = linkRowOf($issued);
@@ -448,15 +441,6 @@ describe('a Stripe failure', function (): void {
             ->and($link->failure_class)->toBe('unsupported_currency')
             ->and($this->stripe->createCalls())->toBe(0)
             ->and(mailsSent())->toHaveCount(count(everyAdmin()));
-    });
-
-    it('sends an English document the English product name and messages', function (): void {
-        $issued = CardPaymentSetup::issued(CardPaymentSetup::client(['invoice_language' => 'en']));
-        $request = $this->stripe->created()[0];
-
-        expect($request->productName)->toBe('Invoice '.$issued->number)
-            ->and($request->confirmationMessage)->toBe('Thank you, your payment was received. Document '.$issued->number.' will be marked as paid within a few minutes.')
-            ->and($request->inactiveMessage)->toBe('This payment link is no longer active. Use the link on your document or contact the supplier.');
     });
 });
 

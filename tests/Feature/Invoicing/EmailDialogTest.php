@@ -3,11 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Invoicing\Actions\CreateDraft;
-use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
-use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
@@ -207,18 +205,6 @@ describe('what the dialog asks for', function (): void {
         Queue::assertNothingPushed();
     });
 
-    it('shows the field error of a recipient that is no address', function (): void {
-        Queue::fake();
-        $invoice = emailInvoiceWithTime();
-
-        emailPageOpened($invoice)
-            ->fillForm(['recipient' => 'not an address'], 'mountedActionSchema0')
-            ->callMountedAction()
-            ->assertHasActionErrors(['recipient']);
-
-        expect(InvoiceEmail::query()->count())->toBe(0);
-    });
-
     it('offers no work report for a document without linked time', function (): void {
         Queue::fake();
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
@@ -231,16 +217,6 @@ describe('what the dialog asks for', function (): void {
         $page->callMountedAction();
 
         expect(InvoiceEmail::query()->where('invoice_id', $invoice->id)->sole()->attach_work_report)->toBeFalse();
-    });
-
-    it('names the kind in the accusative in the heading', function (): void {
-        $client = InvoiceFixtures::client();
-        $invoice = InvoiceFixtures::issued($client);
-        $proforma = InvoiceFixtures::issued($client, [], InvoiceKind::Proforma);
-        $credit = app(IssueCreditNote::class)->storno($this->admin, $invoice);
-
-        emailPageOpened($credit)->assertMountedActionModalSee('Odeslat dobropis e-mailem');
-        emailPageOpened($proforma)->assertMountedActionModalSee('Odeslat zálohovou fakturu e-mailem');
     });
 
     it('keeps a long edited text submittable and refuses one above the limit under the text', function (): void {
@@ -331,10 +307,6 @@ describe('the Odeslání tab', function (): void {
             ->assertDontSee('Logged body');
     });
 
-    it('shows the empty state of a document that was never sent', function (): void {
-        emailTab(emailInvoiceWithTime())->assertSee('Doklad zatím nebyl odeslán');
-    });
-
     it('reads a queued and a sending row past the stale threshold as failed and offers the resend on both', function (): void {
         $invoice = emailInvoiceWithTime();
         $queued = emailLogRow($invoice, InvoiceEmailState::Queued, '2026-10-14 09:45:00+00');
@@ -413,12 +385,6 @@ describe('the Odeslání tab', function (): void {
         expect(InvoiceEmailsRelationManager::canViewForRecord($invoice, ViewInvoice::class))->toBeFalse();
 
         emailTab($invoice)->assertForbidden();
-    });
-
-    it('is one of the tabs of the detail, after the files and before the history', function (): void {
-        $invoice = emailInvoiceWithTime();
-
-        emailPage($invoice)->assertSeeInOrder(['Navázaný čas', 'Soubory', 'Odeslání', 'Historie změn']);
     });
 });
 

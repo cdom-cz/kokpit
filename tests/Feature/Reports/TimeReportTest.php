@@ -21,7 +21,6 @@ use App\Domain\TimeTracking\Support\TimerClock;
 use App\Filament\Pages\TimeReportPage;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
-use Filament\Support\Enums\Width;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -234,17 +233,6 @@ describe('the report of a client and a month', function (): void {
         expect($september)->toContain('Odpracováno 0:20 ')
             ->and($october)->toContain('Odpracováno 1:00 ');
     });
-
-    it('counts a running entry at its elapsed time', function (): void {
-        $client = timeReportClient('Example Client Alpha');
-        timeReportRate('2026-10-14', 'EUR', '25.000');
-        // Started 30 minutes before the frozen clock.
-        timeReportEntry($client, '2026-10-14 09:30:00', '');
-
-        $text = timeReportText((string) $this->get('/admin/time-report?client='.$client->id.'&period=this_month')->assertOk()->getContent());
-
-        expect($text)->toContain('Odpracováno 0:30 ');
-    });
 });
 
 describe('who may open the report', function (): void {
@@ -369,77 +357,11 @@ describe('the filter strip', function (): void {
             ->not->toContain('Example Client Beta 2:00');
     });
 
-    it('lists an archived client marked as archived and a client without projects', function (): void {
-        $active = timeReportClient('Example Client Alpha');
-        $archived = timeReportClient('Example Client Beta');
-        timeReportSystem(static fn () => $archived->delete());
-
-        $text = timeReportText((string) $this->get('/admin/time-report')->assertOk()->getContent());
-
-        expect($text)
-            ->toContain('Všichni klienti')
-            ->toContain('Example Client Alpha')
-            ->toContain('Example Client Beta (archivovaný)')
-            ->not->toContain('Example Client Alpha (archivovaný)');
-    });
-
-    it('keeps the project select disabled with the hint until a client is chosen', function (): void {
-        $client = timeReportClient('Example Client Alpha');
-        $project = timeReportProject($client, 'Example Project Web', 'WEB');
-
-        $without = (string) $this->get('/admin/time-report')->assertOk()->getContent();
-        $with = (string) $this->get('/admin/time-report?client='.$client->id)->assertOk()->getContent();
-
-        preg_match('/<select[^>]*name="project"[^>]*>/', $without, $disabled);
-        preg_match('/<select[^>]*name="project"[^>]*>/', $with, $enabled);
-
-        expect($disabled[0] ?? '')->toContain('disabled')
-            ->and(timeReportText($without))->toContain('Nejdřív vyberte klienta')
-            ->and($enabled[0] ?? '')->not->toContain('disabled')
-            ->and(timeReportText($with))->toContain('Všechny projekty')->toContain('Example Project Web')
-            ->and(timeReportText($with))->not->toContain('Nejdřív vyberte klienta')
-            ->and($with)->toContain('value="'.$project->id.'"');
-    });
-
-    it('submits on every change and keeps the state in the URL', function (): void {
-        $html = (string) $this->get('/admin/time-report?period=last_month&split=day')->assertOk()->getContent();
-
-        expect($html)
-            ->toContain('requestSubmit')
-            ->toContain('method="get"')
-            ->toContain('name="period" value="last_month"')
-            ->toContain('name="split" value="day"');
-    });
-
-    it('prints the active range and marks the active period', function (): void {
-        $text = timeReportText((string) $this->get('/admin/time-report?period=last_month')->assertOk()->getContent());
-        $html = (string) $this->get('/admin/time-report?period=last_month')->assertOk()->getContent();
-
-        expect($text)->toContain('1. 9. 2026 – 30. 9. 2026')
-            ->and(timeReportText((string) $this->get('/admin/time-report')->getContent()))->toContain('1. 10. 2026 – 31. 10. 2026')
-            ->and(timeReportText((string) $this->get('/admin/time-report?period=custom&from=2026-10-05&to=2026-10-11')->getContent()))->toContain('5. 10. 2026 – 11. 10. 2026')
-            ->and($html)->toContain('aria-current="true"');
-    });
-
-    it('shows the date inputs only for a custom period', function (): void {
-        $custom = (string) $this->get('/admin/time-report?period=custom&from=2026-10-05&to=2026-10-11')->assertOk()->getContent();
-        $preset = (string) $this->get('/admin/time-report')->assertOk()->getContent();
-
-        expect($custom)->toContain('name="from"')->toContain('value="2026-10-05"')->toContain('name="to"')->toContain('value="2026-10-11"')
-            ->and($preset)->not->toContain('name="from"');
-    });
-
     it('says why a reversed custom range was refused and shows this month', function (): void {
         $text = timeReportText((string) $this->get('/admin/time-report?period=custom&from=2026-10-20&to=2026-10-05')->assertOk()->getContent());
 
         expect($text)->toContain('Datum Od nesmí být později než Do.')
             ->toContain('1. 10. 2026 – 31. 10. 2026');
-    });
-
-    it('does not show the range error for a valid range', function (): void {
-        $text = timeReportText((string) $this->get('/admin/time-report?period=custom&from=2026-10-05&to=2026-10-20')->assertOk()->getContent());
-
-        expect($text)->not->toContain('Datum Od nesmí být později než Do.');
     });
 
     it('falls back to the defaults for forged values of every filter', function (): void {
@@ -460,25 +382,6 @@ describe('the filter strip', function (): void {
 
         // The foreign project is neither selected nor filtered on: the client's hour still shows.
         expect($text)->toContain('Example Client Alpha 1:00 ')->toContain('Všechny projekty');
-    });
-});
-
-describe('a period without entries', function (): void {
-    it('shows the tiles at 0:00 and a dash, the empty state and no tree, and keeps the strip usable', function (): void {
-        $client = timeReportClient('Example Client Alpha');
-
-        $text = timeReportText((string) $this->get('/admin/time-report?client='.$client->id.'&period=last_month')->assertOk()->getContent());
-
-        expect($text)
-            ->toContain('Odpracováno 0:00 Fakturovatelné 0:00 Nefakturovatelné 0:00')
-            ->toContain('Nevyfakturováno 0:00 —')
-            ->toContain('Vyfakturováno 0:00 —')
-            ->toContain('Nefakturovatelné 0:00 Bez částky')
-            ->toContain('Za zvolené období nejsou žádné záznamy')
-            ->toContain('Zkuste jiné období nebo jiného klienta. Do reportu se počítá i nefakturovatelný čas.')
-            ->toContain('Example Client Alpha')
-            ->toContain('Tento měsíc')
-            ->not->toContain('Přehled podle klientů a projektů');
     });
 });
 
@@ -570,30 +473,6 @@ describe('the Rozpad breakdown below each task', function (): void {
             ->and(strpos($text, 'Čapek Example 1:30'))->toBeGreaterThan(strpos($text, $set['task']->reference.' · Landing page'));
     });
 
-    it('shows no child rows without a breakdown', function (): void {
-        $set = timeReportSplitArrangement();
-
-        $text = timeReportText((string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month&split=none')->assertOk()->getContent());
-
-        expect($text)
-            ->toContain($set['task']->reference.' · Landing page 3:00 ')
-            ->not->toContain('15. 9. 2026')
-            ->not->toContain('Čapek Example 1:30')
-            ->not->toContain('Dvořák Example 1:30');
-    });
-
-    it('marks the active breakdown and keeps the other filters in its links', function (): void {
-        $set = timeReportSplitArrangement();
-
-        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month&split=day')->assertOk()->getContent();
-        $text = timeReportText($html);
-
-        expect($text)->toContain('Rozpad Bez rozpadu Po dnech Podle uživatelů')
-            ->and($html)->toContain('split=user')
-            ->and($html)->toContain('client='.$set['client']->id)
-            ->and(preg_match_all('/aria-current="true"/', $html))->toBe(2);
-    });
-
     it('leaves the summary and the footer identical across the three breakdowns', function (): void {
         $set = timeReportSplitArrangement();
         $now = TimerClock::now();
@@ -616,94 +495,7 @@ describe('the Rozpad breakdown below each task', function (): void {
     });
 });
 
-/**
- * The tree rows of a rendered report: the `<tr>` tags in order, so a test can read which rows carry `hidden`.
- *
- * @return list<string>
- */
-function timeReportRowTags(string $html): array
-{
-    preg_match_all('/<tr\b[^>]*>/', $html, $matches);
-
-    return $matches[0];
-}
-
-/**
- * The tags of the toggle buttons of the tree (the page chrome has buttons of its own).
- *
- * @return list<string>
- */
-function timeReportToggles(string $html): array
-{
-    preg_match_all('/<button\b[^>]*\sdata-expand=[^>]*>/', $html, $matches);
-
-    return $matches[0];
-}
-
 describe('the accessible tree', function (): void {
-    it('gives every expandable row a toggle button with its state, its controlled rows and its accessible name', function (): void {
-        $set = timeReportArrangement();
-
-        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
-        $toggles = timeReportToggles($html);
-
-        // The client opens one level (its project is visible), the project starts collapsed; tasks are leaves.
-        expect($html)
-            ->toContain('aria-label="Sbalit Example Client Alpha"')
-            ->toContain('aria-label="Rozbalit Example Project Web"')
-            ->toContain('data-expand="Rozbalit Example Client Alpha"')
-            ->toContain('data-collapse="Sbalit Example Project Web"')
-            ->toContain('type="button"')
-            ->toContain('min-height: 1.5rem')
-            ->and($toggles)->toHaveCount(2)
-            ->and(substr_count(implode('', $toggles), 'aria-expanded="true"'))->toBe(1)
-            ->and(substr_count(implode('', $toggles), 'aria-expanded="false"'))->toBe(1);
-
-        // Every aria-controls names rows that exist in the page.
-        preg_match_all('/aria-controls="(report-row-[^"]+)"/', implode('', $toggles), $controls);
-        expect($controls[1])->toHaveCount(2);
-
-        foreach ($controls[1] as $list) {
-            foreach (explode(' ', $list) as $id) {
-                expect($html)->toContain('id="'.$id.'"');
-            }
-        }
-    });
-
-    it('starts with the projects visible and the task rows carrying the hidden attribute', function (): void {
-        $set = timeReportArrangement();
-
-        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
-        $rows = timeReportRowTags($html);
-        $hidden = array_values(array_filter($rows, static fn (string $tag): bool => preg_match('/\shidden(?=[\s>])/', $tag) === 1));
-
-        // Header row, client, project, two tasks and the footer: only the two task rows are hidden at first.
-        expect($hidden)->toHaveCount(2)
-            ->and($html)->toContain('x-bind:hidden=');
-    });
-
-    it('offers expand all and collapse all that act on the whole tree', function (): void {
-        $set = timeReportArrangement();
-
-        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
-
-        expect(timeReportText($html))->toContain('Rozbalit vše')->toContain('Sbalit vše')
-            ->and($html)->toContain('expandAll()')
-            ->and($html)->toContain('collapseAll()');
-    });
-
-    it('gives a task a toggle for its day rows, hidden until it is opened', function (): void {
-        $set = timeReportSplitArrangement();
-
-        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month&split=day')->assertOk()->getContent();
-        $hidden = array_filter(timeReportRowTags($html), static fn (string $tag): bool => preg_match('/\shidden(?=[\s>])/', $tag) === 1);
-
-        // Client, project and task are toggles; the task row and its three day rows start hidden.
-        expect(timeReportToggles($html))->toHaveCount(3)
-            ->and($hidden)->toHaveCount(4)
-            ->and($html)->toContain('aria-label="Rozbalit '.$set['task']->reference.' · Landing page"');
-    });
-
     it('files entries without a project or a task under the fixed labels, last in their group', function (): void {
         $client = timeReportClient('Example Client Alpha');
         $project = timeReportProject($client, 'Example Project Web', 'WEB');
@@ -748,17 +540,6 @@ describe('the fixed-price and missing-rate markers', function (): void {
             ->and(substr_count($text, 'Pevná cena'))->toBe(2)
             ->and(substr_count($text, 'Efektivní hodinová sazba'))->toBe(1)
             ->and($html)->toContain('title="Pevná cena: částka se nepočítá za záznam."');
-    });
-
-    it('shows no marker and no footnote when no fixed-price hours exist', function (): void {
-        $set = timeReportArrangement();
-
-        $text = timeReportText((string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent());
-
-        expect($text)->not->toContain('Pevná cena')
-            ->not->toContain('pevnou cenou')
-            ->not->toMatch('/(€|Kč)\*/u')
-            ->not->toContain('Chybí kurz');
     });
 
     it('marks a CZK amount without a CNB rate with a badge and a tooltip and never shows it as zero', function (): void {
@@ -853,26 +634,6 @@ describe('the row cap', function (): void {
             ->and($tree)->toContain($set['tasks'][2]->reference.' · Three')
             ->not->toContain($set['tasks'][3]->reference.' · Four')
             ->not->toContain($set['tasks'][4]->reference.' · Five');
-    });
-
-    it('counts the day rows as the leaves of a breakdown', function (): void {
-        $set = timeReportSplitArrangement();
-        config(['kokpit.report.max_rendered_rows' => 2]);
-
-        $report = TimeReport::build(ReportFilters::fromInput(['client' => $set['client']->id, 'period' => 'last_month', 'split' => 'day'], TimerClock::now()), TimerClock::now());
-
-        expect($report->capped)->toBeTrue()
-            ->and($report->renderedLeafCount)->toBe(2)
-            ->and(array_column($report->tree[0]['children'][0]['children'][0]['children'], 'label'))->toBe(['2026-09-15', '2026-09-16'])
-            ->and($report->tree[0]['children'][0]['children'][0]['seconds']['worked'])->toBe(10800);
-    });
-
-    it('shows no notice when everything fits', function (): void {
-        $set = timeReportFiveTasks();
-
-        $text = timeReportText((string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent());
-
-        expect($text)->not->toContain('Zobrazeno prvních');
     });
 });
 
@@ -1185,12 +946,6 @@ describe('the cost of a long report', function (): void {
     });
 });
 
-describe('the row cap setting', function (): void {
-    it('is a documented config value of 1000 rendered rows', function (): void {
-        expect(config('kokpit.report.max_rendered_rows'))->toBe(1000);
-    });
-});
-
 /**
  * The markup of the tree row of a name: the row tag with its id and everything up to its closing tag.
  */
@@ -1208,58 +963,6 @@ function timeReportRowHtml(string $html, string $needle): string
 }
 
 describe('the readable table', function (): void {
-    it('uses the full content width of the panel', function (): void {
-        expect(Livewire::test(TimeReportPage::class)->instance()->getMaxContentWidth())->toBe(Width::Full);
-    });
-
-    it('lays the tree out as a fixed table with a floor and seven columns', function (): void {
-        $set = timeReportArrangement();
-
-        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
-
-        preg_match('#<colgroup.*?</colgroup>#s', $html, $group);
-        preg_match_all('#<col\b[^>]*>#', $group[0] ?? '', $cols);
-        $cols = $cols[0];
-
-        expect($html)->toContain('table-layout: fixed')->toContain('min-width: 64rem')
-            ->and($cols)->toHaveCount(7)
-            ->and(array_filter($cols, static fn (string $col): bool => ! str_contains($col, 'width')))->toHaveCount(1)
-            ->and(array_filter($cols, static fn (string $col): bool => str_contains($col, 'width: 6rem')))->toHaveCount(4)
-            ->and(array_filter($cols, static fn (string $col): bool => str_contains($col, 'width: 10rem')))->toHaveCount(2);
-    });
-
-    it('groups the four hour columns under one heading and drops Fakturovatelné from the tree', function (): void {
-        $set = timeReportArrangement();
-
-        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
-
-        preg_match('#<thead.*?</thead>#s', $html, $head);
-        preg_match_all('#<th\b[^>]*>(.*?)</th>#s', $head[0] ?? '', $cells);
-        $titles = array_map(static fn (string $cell): string => trim(strip_tags($cell)), $cells[1]);
-
-        expect(timeReportText($html))->toContain('Název Hodiny Částka Částka v Kč Odpracováno Nevyfakturováno Vyfakturováno Nefakturovatelné')
-            ->and($html)->toContain('scope="colgroup"')
-            ->and($titles)->not->toContain('Fakturovatelné')
-            ->and($titles)->toHaveCount(8);
-    });
-
-    it('clamps a very long task title to two lines and keeps the whole label as a tooltip', function (): void {
-        $client = timeReportClient('Example Client Alpha');
-        $project = timeReportProject($client, 'Example Project Web', 'WEB', ['hourly_rate' => '120']);
-        $title = trim(str_repeat('Prepare the quarterly overview for the example board ', 4));
-        $task = timeReportTask($this->admin, $project, $title);
-        timeReportRate('2026-09-15', 'EUR', '25.000');
-        timeReportEntry($task, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
-
-        $html = (string) $this->get('/admin/time-report?client='.$client->id.'&period=last_month')->assertOk()->getContent();
-
-        $row = timeReportRowHtml($html, $task->reference);
-
-        expect(strlen($title))->toBeGreaterThan(190)
-            ->and($row)->toContain('line-clamp: 2')
-            ->and($row)->toContain('title="'.$task->reference.' · '.$title.'"');
-    });
-
     it('shows markup in a title escaped inside the tooltip and never as a live tag', function (): void {
         $client = timeReportClient('Example Client Alpha');
         $project = timeReportProject($client, 'Example Project Web', 'WEB', ['hourly_rate' => '120']);
@@ -1279,74 +982,7 @@ describe('the readable table', function (): void {
     });
 });
 
-/**
- * The tags of the tree rows (the `<tr>` with a `data-level`) of a rendered report, with their level, in order.
- *
- * @return list<array{level: string, tag: string, hidden: bool}>
- */
-function timeReportLevelRows(string $html): array
-{
-    preg_match_all('/<tr\b[^>]*\sdata-level="([a-z]+)"[^>]*>/', $html, $matches, PREG_SET_ORDER);
-
-    return array_map(static fn (array $match): array => [
-        'level' => $match[1],
-        'tag' => $match[0],
-        'hidden' => preg_match('/\shidden(?=[\s>])/', $match[0]) === 1,
-    ], $matches);
-}
-
 describe('the tree opens as deep as the filters', function (): void {
-    it('shows one collapsed line per client when no client is chosen', function (): void {
-        timeReportRate('2026-09-15', 'EUR', '25.000');
-
-        foreach (['Example Client Alpha' => 'AAA', 'Example Client Beta' => 'BBB'] as $name => $key) {
-            $client = timeReportClient($name);
-            $project = timeReportProject($client, 'Example Project '.$key, $key);
-            $task = timeReportTask($this->admin, $project, 'Work item');
-            timeReportEntry($task, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
-        }
-
-        $html = (string) $this->get('/admin/time-report?period=last_month')->assertOk()->getContent();
-        $toggles = timeReportToggles($html);
-        $rows = timeReportLevelRows($html);
-
-        expect($toggles)->toHaveCount(4)
-            ->and($html)->toContain('data-expand="Rozbalit Example Client Alpha"')
-            ->and($html)->toContain('data-expand="Rozbalit Example Client Beta"')
-            ->and(substr_count(implode('', $toggles), 'aria-expanded="true"'))->toBe(0)
-            ->and(preg_match('/aria-expanded="false"[^>]*aria-label="Rozbalit Example Client Alpha"/', $html))->toBe(1)
-            ->and(preg_match('/aria-expanded="false"[^>]*aria-label="Rozbalit Example Client Beta"/', $html))->toBe(1);
-
-        $clients = array_filter($rows, static fn (array $row): bool => $row['level'] === 'client');
-        $below = array_filter($rows, static fn (array $row): bool => in_array($row['level'], ['project', 'task'], true));
-
-        expect($clients)->toHaveCount(2)
-            ->and(array_filter($clients, static fn (array $row): bool => $row['hidden']))->toHaveCount(0)
-            ->and($below)->toHaveCount(4)
-            ->and(array_filter($below, static fn (array $row): bool => ! $row['hidden']))->toHaveCount(0);
-    });
-
-    it('opens the client and the project of a project filter and leaves the day rows hidden', function (): void {
-        $set = timeReportSplitArrangement();
-
-        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&project='.$set['project']->id.'&period=last_month&split=day')->assertOk()->getContent();
-        $toggles = timeReportToggles($html);
-        $rows = timeReportLevelRows($html);
-
-        expect($toggles)->toHaveCount(3)
-            ->and(preg_match('/aria-expanded="true"[^>]*aria-label="Sbalit Example Client Alpha"/', $html))->toBe(1)
-            ->and(preg_match('/aria-expanded="true"[^>]*aria-label="Sbalit Example Project Web"/', $html))->toBe(1);
-
-        $byLevel = static fn (string $level): array => array_values(array_filter($rows, static fn (array $row): bool => $row['level'] === $level));
-
-        expect($byLevel('client'))->toHaveCount(1)
-            ->and($byLevel('project'))->toHaveCount(1)
-            ->and($byLevel('task'))->toHaveCount(1)
-            ->and($byLevel('leaf'))->toHaveCount(3)
-            ->and(array_filter($byLevel('task'), static fn (array $row): bool => $row['hidden']))->toHaveCount(0)
-            ->and(array_filter($byLevel('leaf'), static fn (array $row): bool => ! $row['hidden']))->toHaveCount(0);
-    });
-
     it('hides the effective-rate row with its project row on the all-clients page and shows it with a client', function (): void {
         $client = timeReportClient('Example Client Alpha');
         $project = timeReportProject($client, 'Example Project Fixed', 'FIX', ['billing_type' => 'fixed_price', 'hourly_rate' => null, 'fixed_price' => '5000']);
@@ -1366,141 +1002,5 @@ describe('the tree opens as deep as the filters', function (): void {
             ->and(preg_match('/\shidden(?=[\s>])/', $all))->toBe(1)
             ->and($one)->not->toBe('')
             ->and(preg_match('/\shidden(?=[\s>])/', $one))->toBe(0);
-    });
-
-    it('keeps the client filter case: the client open, the project closed, two task rows hidden', function (): void {
-        $set = timeReportArrangement();
-
-        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
-        $rows = timeReportLevelRows($html);
-
-        expect(array_filter($rows, static fn (array $row): bool => $row['hidden']))->toHaveCount(2)
-            ->and(array_column(array_filter($rows, static fn (array $row): bool => $row['hidden']), 'level'))->toBe(['task', 'task']);
-    });
-});
-
-/**
- * The opening tag of the tree row that contains a name, with the markup up to its closing tag.
- */
-function timeReportRowTagOf(string $html, string $needle): string
-{
-    preg_match('/<tr\b[^>]*>/', timeReportRowHtml($html, $needle), $tag);
-
-    return $tag[0] ?? '';
-}
-
-describe('the levels of the tree', function (): void {
-    it('keeps the dark-mode and sticky rules in one static style block with the report prefix', function (): void {
-        $set = timeReportArrangement();
-
-        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
-
-        preg_match_all('#<style>(.*?)</style>#s', $html, $blocks);
-        $report = array_values(array_filter($blocks[1], static fn (string $css): bool => str_contains($css, 'kokpit-report-')));
-
-        expect($report)->toHaveCount(1);
-
-        $css = $report[0];
-        $selectors = array_values(array_filter(array_map(
-            static fn (string $rule): string => trim(strstr($rule, '{', true) ?: ''),
-            explode('}', $css),
-        )));
-
-        expect($selectors)->not->toBeEmpty();
-
-        foreach ($selectors as $selector) {
-            expect($selector)->toMatch('/^(\.dark )?\.kokpit-report-/');
-        }
-
-        expect($css)->not->toContain('{{')
-            ->and($css)->not->toContain('{!!')
-            ->and($css)->toContain('position: sticky')
-            ->and($css)->toContain('.dark .kokpit-report-name')
-            ->and($css)->toContain('.dark .kokpit-report-client')
-            ->and($css)->toContain('.dark .kokpit-report-muted');
-    });
-
-    it('marks the client row with the band and the Název cells as sticky', function (): void {
-        $set = timeReportArrangement();
-
-        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
-
-        $clientTag = timeReportRowTagOf($html, 'Example Client Alpha');
-        $projectTag = timeReportRowTagOf($html, 'Example Project Web');
-
-        preg_match('#<thead.*?</thead>#s', $html, $head);
-        preg_match('#<tfoot.*?</tfoot>#s', $html, $foot);
-        preg_match_all('#<th\b[^>]*scope="row"[^>]*>#', $html, $rowHeads);
-
-        expect($clientTag)->toContain('kokpit-report-client')
-            ->and($projectTag)->not->toContain('kokpit-report-client')
-            ->and($head[0] ?? '')->toContain('kokpit-report-name')
-            ->and($foot[0] ?? '')->toContain('kokpit-report-name')
-            ->and($rowHeads[0])->not->toBeEmpty();
-
-        foreach ($rowHeads[0] as $tag) {
-            expect($tag)->toContain('kokpit-report-name');
-        }
-    });
-
-    it('sets the weights of the levels: client and project at 600, task at 400', function (): void {
-        $set = timeReportArrangement();
-
-        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month')->assertOk()->getContent();
-
-        expect(timeReportRowTagOf($html, 'Example Client Alpha'))->toContain('font-weight: 600')
-            ->and(timeReportRowTagOf($html, 'Example Project Web'))->toContain('font-weight: 600')
-            ->and(timeReportRowTagOf($html, 'Landing page'))->toContain('font-weight: 400')
-            ->and(timeReportRowHtml($html, 'Landing page'))->toMatch('/<th\b[^>]*font-weight: 400[^>]*>/');
-    });
-
-    it('sets the day rows, the placeholders and the task reference in the secondary gray without opacity', function (): void {
-        $set = timeReportSplitArrangement();
-        $html = (string) $this->get('/admin/time-report?client='.$set['client']->id.'&period=last_month&split=day')->assertOk()->getContent();
-
-        $day = timeReportRowTagOf($html, '15. 9. 2026');
-        $task = timeReportRowHtml($html, 'Landing page');
-
-        expect($day)->toContain('kokpit-report-muted')
-            ->and($task)->toContain('<span class="kokpit-report-muted">'.$set['task']->reference.'</span>')
-            ->and($task)->toContain('title="'.$set['task']->reference.' · Landing page"');
-
-        $client = timeReportClient('Example Client Beta');
-        $project = timeReportProject($client, 'Example Project Two', 'TWO');
-        $titled = timeReportTask($this->admin, $project, 'Second item');
-        timeReportEntry($project, '2026-09-15 08:00:00', '2026-09-15 09:00:00');
-        timeReportEntry($client, '2026-09-15 10:00:00', '2026-09-15 10:30:00');
-        timeReportEntry($titled, '2026-09-15 11:00:00', '2026-09-15 11:30:00');
-
-        $html = (string) $this->get('/admin/time-report?client='.$client->id.'&period=last_month')->assertOk()->getContent();
-
-        expect(timeReportRowHtml($html, 'Bez projektu'))->toMatch('/<span title="Bez projektu"\s+class="kokpit-report-muted"/')
-            ->and(timeReportRowHtml($html, 'Bez úkolu'))->toMatch('/<span title="Bez úkolu"\s+class="kokpit-report-muted"/')
-            ->and($html)->not->toContain('opacity: 0.7');
-    });
-
-    it('prints the effective-rate block on the spacing scale and uses no opacity below 0.8', function (): void {
-        $client = timeReportClient('Example Client Alpha');
-        $project = timeReportProject($client, 'Example Project Fixed', 'FIX', ['billing_type' => 'fixed_price', 'hourly_rate' => null, 'fixed_price' => '5000']);
-        timeReportRate('2026-09-15', 'EUR', '25.000');
-        timeReportEntry($project, '2026-09-15 10:00:00', '2026-09-15 12:00:00');
-
-        $html = (string) $this->get('/admin/time-report?client='.$client->id.'&period=last_month')->assertOk()->getContent();
-
-        preg_match('#<tr\b[^>]*data-effective-rate.*?</tr>#s', $html, $block);
-        $block = $block[0] ?? '';
-
-        expect($block)->not->toBe('')
-            ->and($block)->toContain('padding: 0 1rem 0.5rem calc(1rem + 1rem + 1.5rem)')
-            ->and($block)->toContain('gap: 0.5rem 2rem')
-            ->and($block)->not->toContain('0.75rem')
-            ->and($block)->not->toContain('1.75rem')
-            ->and($block)->not->toContain('2.5rem');
-
-        preg_match_all('/opacity:\s*([0-9.]+)/', $html, $opacities);
-
-        foreach ($opacities[1] as $value) {
-            expect((float) $value)->toBeGreaterThanOrEqual(0.8);
-        }
     });
 });

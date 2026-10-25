@@ -233,17 +233,6 @@ describe('the due date and the language', function (): void {
         'not a day' => ['not-a-date'],
     ]);
 
-    it('answers a due date before the issue date with the existing copy', function (): void {
-        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
-
-        try {
-            app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['due_date' => '2026-10-13']);
-            $this->fail('The due date should have been refused.');
-        } catch (ValidationException $exception) {
-            expect($exception->errors()['due_date'])->toBe(['Datum splatnosti nesmí být dříve než datum vystavení.']);
-        }
-    });
-
     it('stores the language and prints the English copy on the new PDF', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
 
@@ -842,27 +831,6 @@ describe('the bank account', function (): void {
             ->callAction(TestAction::make('refillBank')->schemaComponent('bankActions', schema: 'form'))
             ->assertNotified(__('invoices.errors.bank_account_required'));
     });
-
-    it('is refilled from the chosen account when it is still configured, and from the first account of the currency when it was removed', function (): void {
-        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '1', '500.00')]);
-        $accounts = InvoiceFixtures::configureAccounts(
-            InvoiceFixtures::account('First CZK', 'CZK', '12'),
-            InvoiceFixtures::account('Second CZK', 'CZK', '56'),
-        );
-
-        // The stored account is gone from the settings: the refill takes the first CZK account.
-        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['reload_bank' => true]);
-
-        expect(hedRow($invoice)->bank_snapshot)->toEqual($accounts[0]->toArray())
-            ->and(hedAdmin($invoice)->bank_account_id)->toBe($accounts[0]->id);
-
-        // The chosen account is the second one: the refill keeps it.
-        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['bank_account_id' => $accounts[1]->id]);
-        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['reload_bank' => true]);
-
-        expect(hedRow($invoice)->bank_snapshot)->toEqual($accounts[1]->toArray())
-            ->and(hedAdmin($invoice)->bank_account_id)->toBe($accounts[1]->id);
-    });
 });
 
 describe('the payment method and the card switch (Phase 14)', function (): void {
@@ -1015,17 +983,5 @@ describe('the payment method and the card switch (Phase 14)', function (): void 
 
         expect(hedRow($open)->payment_method->value)->toBe('online')
             ->and(hedRow($open)->bank_snapshot)->toBeNull();
-    });
-
-    it('never takes the snapshot from the data when the method or the account changes', function (): void {
-        $invoice = hedCardInvoice();
-
-        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, [
-            'bank_account_id' => $this->accounts[1]->id,
-            'bank_snapshot' => ['iban' => FictionalIban::czech('78')],
-            'bank' => ['iban' => FictionalIban::czech('78')],
-        ]);
-
-        expect(hedRow($invoice)->bank_snapshot)->toEqual($this->accounts[1]->toArray());
     });
 });

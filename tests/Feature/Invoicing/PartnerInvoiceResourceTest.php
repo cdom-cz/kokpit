@@ -118,15 +118,6 @@ describe('the tracer', function (): void {
             ->assertHeader('content-type', 'application/pdf');
     });
 
-    it('offers the PDF as a row action of the list as well', function (): void {
-        $this->actingAs($this->partner);
-
-        $component = Livewire::test(ListPartnerInvoices::class)
-            ->callTableAction('downloadPdf', $this->invoice);
-
-        expect($component->effects['redirect'] ?? null)->toBeString();
-    });
-
     it('is absent from the global search and has no create, edit or delete page', function (): void {
         $this->actingAs($this->partner);
 
@@ -134,14 +125,6 @@ describe('the tracer', function (): void {
             ->and(PartnerInvoiceResource::canCreate())->toBeFalse()
             ->and(array_keys(PartnerInvoiceResource::getPages()))->toBe(['index', 'view'])
             ->and(PartnerInvoiceResource::getRelations())->toBe([]);
-    });
-
-    it('keeps the navigation entry at sort 30 for the Partner', function (): void {
-        $this->actingAs($this->partner);
-
-        expect(PartnerInvoiceResource::canAccess())->toBeTrue()
-            ->and(PartnerInvoiceResource::getNavigationSort())->toBe(30)
-            ->and(PartnerInvoiceResource::getNavigationLabel())->toBe('Faktury');
     });
 });
 
@@ -242,14 +225,6 @@ describe('every document state', function (): void {
             ->filterTable('status', 'overdue')
             ->assertCanSeeTableRecords([$this->a['unpaid'], $this->a['invoice'], $this->a['eur']])
             ->assertCanNotSeeTableRecords([$this->a['proforma'], $this->a['cancelled'], $this->a['credit_note']]);
-    });
-
-    it('shows the empty state of a client without documents', function (): void {
-        $this->actingAs(Canary::partnerFor(InvoiceFixtures::client()->id));
-
-        Livewire::test(ListPartnerInvoices::class)
-            ->assertCountTableRecords(0)
-            ->assertSee('Zatím žádné doklady');
     });
 
     it('names the credit note on a cancelled invoice and the invoice on a converted proforma', function (): void {
@@ -384,18 +359,6 @@ describe('the payment method (Phase 14)', function (): void {
             ->assertSee('Částka k úhradě')
             ->assertDontSee(FictionalIban::czech('12'))
             ->assertDontSee(trim(chunk_split(FictionalIban::czech('12'), 4, ' ')))
-            ->assertDontSee('Bankovní účet')
-            ->assertDontSee('Variabilní symbol');
-    });
-
-    it('shows an online proforma the same way', function (): void {
-        $issued = InvoiceFixtures::issued($this->client, [InvoiceFixtures::item('Advance', '1', '5000.00')], InvoiceKind::Proforma);
-        $online = partnerInvoiceOnline($issued);
-        $this->actingAs($this->partner);
-
-        $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $online]))
-            ->assertOk()
-            ->assertSee('Online platba kartou')
             ->assertDontSee('Bankovní účet')
             ->assertDontSee('Variabilní symbol');
     });

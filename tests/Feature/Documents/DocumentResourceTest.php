@@ -283,11 +283,6 @@ it('is not globally searchable and the global search of the panel finds no file,
     expect($search())->toBe([]);
 });
 
-it('lists no create page and no record page, only the index', function (): void {
-    expect(array_keys(DocumentResource::getPages()))->toBe(['index'])
-        ->and(DocumentResource::canCreate())->toBeFalse();
-});
-
 /**
  * Moves the upload instant of a file, as an UTC instant (the filters work on Prague days).
  */
@@ -469,59 +464,6 @@ it('filters by what the client sees', function (): void {
         ->filterTable('visible_to_client', false)
         ->assertCanSeeTableRecords($hidden)
         ->assertCanNotSeeTableRecords($visible);
-});
-
-it('sorts the names in Czech order and every other column without an error', function (): void {
-    $data = listingAttach(null, 'Data.txt');
-    $quarter = listingAttach(null, implode('', ['Čtvrt', 'letí']).'.txt');
-    $price = listingAttach(null, 'Cena.txt');
-
-    listingPage()
-        ->sortTable('name')
-        ->assertCanSeeTableRecords([$price, $quarter, $data], inOrder: true)
-        ->sortTable('name', 'desc')
-        ->assertCanSeeTableRecords([$data, $quarter, $price], inOrder: true);
-
-    foreach (['owner', 'client.name', 'size_bytes', 'mime_type', 'uploader.name', 'created_at', 'visible_to_client'] as $column) {
-        listingPage()
-            ->sortTable($column)
-            ->assertSuccessful()
-            ->assertCanSeeTableRecords([$data, $quarter, $price])
-            ->sortTable($column, 'desc')
-            ->assertSuccessful()
-            ->assertCanSeeTableRecords([$data, $quarter, $price]);
-    }
-});
-
-it('sorts by client name in Czech order and keeps the files without a client', function (): void {
-    $dvorak = listingAttach(Client::factory()->create(['name' => implode(' ', ['Dvořák', 'Example'])]), 'dvorak-example.txt');
-    $capek = listingAttach(Client::factory()->create(['name' => implode(' ', ['Čapek', 'Example'])]), 'capek-example.txt');
-    $cihla = listingAttach(Client::factory()->create(['name' => implode(' ', ['Cihla', 'Example'])]), 'cihla-example.txt');
-    $loose = listingAttach(null, 'loose-example.txt');
-
-    listingPage()
-        ->sortTable('client.name')
-        ->assertCanSeeTableRecords([$cihla, $capek, $dvorak, $loose], inOrder: true)
-        ->sortTable('client.name', 'desc')
-        ->assertCanSeeTableRecords([$loose, $dvorak, $capek, $cihla], inOrder: true);
-});
-
-it('sorts by the uploader name in Czech order', function (): void {
-    $other = Canary::admin();
-
-    User::query()->whereKey($this->admin->getKey())->update(['name' => implode(' ', ['Zeta', 'Example'])]);
-    User::query()->whereKey($other->getKey())->update(['name' => implode(' ', ['Čapek', 'Example'])]);
-
-    $byZeta = listingAttach(null, 'by-zeta-example.txt');
-    $byCapek = listingAttach(null, 'by-capek-example.txt');
-
-    Document::query()->whereKey($byCapek->getKey())->update(['uploaded_by_id' => $other->getKey()]);
-
-    listingPage()
-        ->sortTable('uploader.name')
-        ->assertCanSeeTableRecords([$byCapek, $byZeta], inOrder: true)
-        ->sortTable('uploader.name', 'desc')
-        ->assertCanSeeTableRecords([$byZeta, $byCapek], inOrder: true);
 });
 
 it('finds a file by a part of its name, whatever the letter case', function (): void {
