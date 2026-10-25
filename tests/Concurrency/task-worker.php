@@ -14,9 +14,9 @@ declare(strict_types=1);
  * JSON summary line and exits 1 when any creation failed.
  *
  * <allocator> is bound to SequenceAllocator in the container before CreateTask
- * is resolved, so the mutation run can swap in the allocator without a row lock.
+ * is resolved.
  *
- * Optional, for the proof runs only:
+ * Optional:
  * - <board> `locked` (default) keeps the board advisory lock; `unlocked` swaps in
  *   a TaskBoard that skips it. The board lock serializes every creation by
  *   itself, so without this switch it would hide a missing counter lock.
@@ -26,9 +26,8 @@ declare(strict_types=1);
  * <mode> `create` (default) is the behaviour above. <mode> `move` moves the cards
  * named in <ids> (comma separated, <count> of them) one by one through MoveTask
  * into <status> at <index>, behind the same start barrier. <boardClass> is the
- * short name `TaskBoard` or `UnlockedTaskBoard` and is bound to TaskBoard in the
- * container, so the mutation run can swap in the board without its advisory
- * lock. The summary of a move run counts `moved` and `failed`.
+ * short name `TaskBoard`, the real board with its advisory lock. The summary of a
+ * move run counts `moved` and `failed`.
  *
  * Refuses to run unless the database name ends in `_test`.
  */
@@ -44,7 +43,6 @@ use App\Domain\Tasks\Board\TaskBoard;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
-use Tests\Support\UnlockedTaskBoard;
 
 require __DIR__.'/../../vendor/autoload.php';
 
@@ -104,10 +102,8 @@ if ($mode === 'move') {
         $fail('move mode expects boardClass status index ids after the mode');
     }
 
-    $boardClasses = ['TaskBoard' => TaskBoard::class, 'UnlockedTaskBoard' => UnlockedTaskBoard::class];
-
-    if (! isset($boardClasses[$argv[9]])) {
-        $fail('the board class must be TaskBoard or UnlockedTaskBoard');
+    if ($argv[9] !== 'TaskBoard') {
+        $fail('the board class must be TaskBoard');
     }
 
     $moveStatus = ProjectStatus::tryFrom($argv[10]) ?? $fail('the status must be a project status');
@@ -127,9 +123,6 @@ if ($mode === 'move') {
             $fail('every card id must be a uuid');
         }
     }
-
-    $boardClass = $boardClasses[$argv[9]];
-    $app->bind(TaskBoard::class, static fn (): TaskBoard => new $boardClass);
 }
 
 $app->bind(SequenceAllocator::class, static fn (): SequenceAllocator => new $allocatorClass);

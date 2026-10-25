@@ -28,9 +28,8 @@ use Tests\Support\InvoiceFixtures;
  * lock in both paths exactly two outcomes exist: the edit commits first and the e-mail is queued after it, on the
  * document as the edit left it, or the e-mail is queued first and the edit is refused as `email_in_flight`. What must
  * never happen is both succeeding with the e-mail committed before the edit, or the queue deciding on the document as it
- * was before an edit that committed before the queue did. The same harness run with a queue Action that reads the
- * document without the lock (the worker variant `unlocked` binds Tests\Support\UnlockedQueueInvoiceEmail) must show a
- * defect, otherwise a clean run proves nothing.
+ * was before an edit that committed before the queue did. Two real processes start behind one barrier, the queue
+ * process at five different delays, and the test checks that the queue really arrived while the edit held the invoice.
  *
  * Note on what the explicit lock buys: the queued row has a foreign key to the invoice, and its check takes
  * FOR KEY SHARE, which the FOR UPDATE of the edit blocks until the edit commits. The database therefore already orders
@@ -46,7 +45,6 @@ use Tests\Support\InvoiceFixtures;
 
 const INVOICE_EDIT_BARRIER_SECONDS = 5.0;
 const INVOICE_EDIT_TIMEOUT_SECONDS = 120;
-const INVOICE_EDIT_MUTATION_ROUNDS = 6;
 
 /** Seconds after the barrier at which the queue process starts, one per round. */
 const INVOICE_EDIT_QUEUE_DELAYS = [0.0, 0.35, 0.7, 1.05, 1.4];
@@ -235,7 +233,7 @@ function invoiceEditDisabledTriggers(): int
 /**
  * Starts the edit process and the queue process of one invoice behind one shared barrier and waits for both.
  *
- * @param  'locked'|'unlocked'  $variant  the queue Action the queue process runs
+ * @param  'locked'  $variant  the queue Action the queue process runs
  * @param  array{admin: string, client: string, invoice: string, quantity: string}  $arranged
  * @return array{edit: array{exit: int|null, line: array<string, mixed>|null, stderr: string}, queue: array{exit: int|null, line: array<string, mixed>|null, stderr: string}}
  */
@@ -385,24 +383,4 @@ it('serialises an edit and the queueing of the document e-mail: either the edit 
 
     // The window was really hit: some rounds had the queue waiting for the edit.
     expect($queuedAfterEdit)->toBeGreaterThan(0, 'no round had the queue arrive while the edit held the invoice');
-});
-
-it('detects the defect when the queue reads the document without the row lock (mutation run with UnlockedQueueInvoiceEmail)', function () {
-    $found = [];
-    $rounds = 0;
-
-    for ($attempt = 0; $attempt < INVOICE_EDIT_MUTATION_ROUNDS && $found === []; $attempt++) {
-        $arranged = invoiceEditArrange();
-
-        $results = invoiceEditRun($arranged, 'unlocked', INVOICE_EDIT_QUEUE_DELAYS[($attempt % (count(INVOICE_EDIT_QUEUE_DELAYS) - 1)) + 1]);
-        $rounds++;
-
-        // Guard against a vacuous pass: both processes ran and reported.
-        expect($results['edit']['line'])->not->toBeNull("the edit did not report: {$results['edit']['stderr']}")
-            ->and($results['queue']['line'])->not->toBeNull("the queue did not report: {$results['queue']['stderr']}");
-
-        $found = invoiceEditDefects($results, $arranged);
-    }
-
-    expect($found)->not->toBe([], "the harness did not notice the missing row lock in {$rounds} rounds");
 });

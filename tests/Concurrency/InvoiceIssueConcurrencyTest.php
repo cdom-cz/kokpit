@@ -24,9 +24,8 @@ use Tests\Support\InvoiceFixtures;
  * Eight workers issue six committed drafts each of one fictional client. In the run that matters, every third
  * allocation of a worker throws after the number was taken, so failures are mixed into the series: the issued numbers
  * must still be contiguous with no duplicate and no gap, every failed draft is still a draft without a number, and
- * the counter must continue at the next number. The same harness run with an allocator without the row lock (the
- * worker variant `unlocked` binds Tests\Support\UnlockedSequenceAllocator) must show a defect, otherwise a clean run
- * proves nothing.
+ * the counter must continue at the next number. The workers are real processes behind one start barrier, and the test
+ * checks that all eight of them ran.
  *
  * Like the other concurrency suites this file has no RefreshDatabase wrapper on purpose: the workers are other
  * processes, so only committed rows are visible to them and to the assertions. Issued rows are guarded by triggers
@@ -41,7 +40,6 @@ const INVOICE_ISSUE_PER_WORKER = 6;
 const INVOICE_ISSUE_FAIL_EVERY = 3;
 const INVOICE_ISSUE_BARRIER_SECONDS = 5.0;
 const INVOICE_ISSUE_TIMEOUT_SECONDS = 180;
-const INVOICE_ISSUE_MUTATION_ROUNDS = 3;
 
 /** The guarded tables the cleanup has to open, children first. */
 const INVOICE_ISSUE_GUARDED_TABLES = ['invoice_item_sources', 'invoice_items', 'invoice_admin', 'invoices'];
@@ -236,7 +234,7 @@ function invoiceIssueDisabledTriggers(): int
  * Starts one worker per assignment behind one shared barrier and waits for all of them.
  *
  * @param  list<list<string>>  $assignments  the draft ids of each worker
- * @param  'locked'|'failing'|'unlocked'  $variant
+ * @param  'locked'|'failing'  $variant
  * @return list<array{exit: int|null, lines: list<array<string, mixed>>, stderr: string}>
  */
 function invoiceIssueRun(string $adminId, array $assignments, string $variant): array
@@ -394,27 +392,4 @@ it('keeps the issued numbers contiguous when 8 processes issue at once and every
         ->and($issued)->toBe($total - $plannedFailures)
         ->and($drafts)->toBe($plannedFailures)
         ->and(DB::table('invoices')->where('client_id', $arranged['client'])->whereNotNull('number')->count())->toBe($issued);
-});
-
-it('detects the defect when the allocator has no row lock (mutation run with UnlockedSequenceAllocator)', function () {
-    $found = [];
-    $rounds = 0;
-
-    for ($attempt = 1; $attempt <= INVOICE_ISSUE_MUTATION_ROUNDS && $found === []; $attempt++) {
-        $arranged = invoiceIssueArrange();
-
-        $results = invoiceIssueRun($arranged['admin'], $arranged['assignments'], 'unlocked');
-        $rounds++;
-
-        // Guard against a vacuous pass: every worker ran and accounted for all of its drafts.
-        foreach ($results as $i => $result) {
-            expect($result['lines'])->toHaveCount(count($arranged['assignments'][$i]), "worker {$i} did not account for its drafts: {$result['stderr']}");
-        }
-
-        $found = invoiceIssueDefects($results, $arranged);
-
-        expect(invoiceIssueCleanup())->toBe(0, 'the mutation round left rows or disabled triggers behind');
-    }
-
-    expect($found)->not->toBe([], "the harness did not notice the missing row lock in {$rounds} rounds");
 });

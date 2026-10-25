@@ -12,12 +12,7 @@ declare(strict_types=1);
  * id the mode works on:
  * - `delete`     DeletePayment of the payment <targetId>;
  * - `convert`    ConvertProforma of the proforma <targetId>;
- * - `record`     RecordPayment of <amount> (major units, dated today) on the document <targetId>;
- * - `skip-lock`  test code only, the mutation twin of `delete`. It checks without any lock whether a carried copy of
- *                the proforma payment <targetId> exists (before the barrier), waits for the barrier, then waits until a
- *                converter has committed that copy, and only then sets the deletion flag and deletes the payment
- *                itself. The carried key of the database must refuse it (23503); the document lock of DeletePayment
- *                is what removes that race.
+ * - `record`     RecordPayment of <amount> (major units, dated today) on the document <targetId>.
  *
  * Prints one JSON line `{"mode": ..., "result": ..., "pid": ...}` where the result is `deleted`, `converted`,
  * `recorded`, `refused:<key>` for a typed ValidationException (<key> is the key under invoices.errors whose text it
@@ -63,8 +58,8 @@ $amount = $argv[5] ?? '';
 
 $uuid = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D';
 
-if (! in_array($mode, ['delete', 'convert', 'record', 'skip-lock'], true)) {
-    $fail('the mode must be delete, convert, record or skip-lock');
+if (! in_array($mode, ['delete', 'convert', 'record'], true)) {
+    $fail('the mode must be delete, convert or record');
 }
 
 if (preg_match($uuid, $adminId) !== 1 || preg_match($uuid, $targetId) !== 1) {
@@ -111,12 +106,6 @@ $sqlState = static function (QueryException $e): string {
     return (string) $e->getCode();
 };
 
-// The unlocked check of the mutation twin happens before the barrier, so the converter cannot have committed yet.
-$copyBefore = null;
-if ($mode === 'skip-lock') {
-    $copyBefore = InvoicePayment::query()->where('carried_from_payment_id', $targetId)->exists();
-}
-
 // The barrier timestamp is shared through the environment; the argument is the fallback.
 $barrierEnv = getenv('KOKPIT_BARRIER_AT');
 $barrierAt = (float) ($barrierEnv !== false && $barrierEnv !== '' ? $barrierEnv : $startAtArg);
@@ -145,32 +134,11 @@ try {
             $result = 'converted';
             break;
 
-        case 'record':
+        default: // record
             $invoice = Invoice::query()->findOrFail($targetId);
             $today = CarbonImmutable::now('Europe/Prague')->format('Y-m-d');
             $app->make(RecordPayment::class)->handle($admin, $invoice, ['amount' => $amount, 'paid_on' => $today]);
             $result = 'recorded';
-            break;
-
-        default:
-            if ($copyBefore !== false) {
-                throw new RuntimeException('skip-lock expects no carried copy before the barrier');
-            }
-
-            $deadline = microtime(true) + 60.0;
-            while (! InvoicePayment::query()->where('carried_from_payment_id', $targetId)->exists()) {
-                if (microtime(true) > $deadline) {
-                    throw new RuntimeException('skip-lock waited in vain for the conversion');
-                }
-
-                usleep(2000);
-            }
-
-            DB::transaction(static function () use ($targetId): void {
-                DB::select("select set_config('kokpit.payment_deletion', ?, true)", [$targetId]);
-                DB::table('invoice_payments')->where('id', $targetId)->delete();
-            });
-            $result = 'deleted';
     }
 } catch (ValidationException $e) {
     $result = 'refused:'.$errorKey($e);

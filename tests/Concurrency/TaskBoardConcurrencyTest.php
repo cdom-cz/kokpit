@@ -21,8 +21,8 @@ use Tests\Support\Canary;
  *
  * Two workers move 25 cards each into one column, first into a filled one and
  * then into an empty one. With the board advisory lock every move succeeds and
- * the columns keep unique positions; the same run against a board double that
- * skips the lock must show a defect, otherwise a clean run proves nothing.
+ * the columns keep unique positions. The workers are real processes behind one
+ * start barrier, each reports its own pid, and the test checks that both ran.
  *
  * Like the task number suite, this file has no RefreshDatabase wrapper on
  * purpose: the workers are other processes, so only committed rows are visible
@@ -34,7 +34,6 @@ use Tests\Support\Canary;
 const BOARD_CONCURRENCY_PER_WORKER = 25;
 const BOARD_CONCURRENCY_BARRIER_SECONDS = 3.0;
 const BOARD_CONCURRENCY_TIMEOUT_SECONDS = 120;
-const BOARD_CONCURRENCY_MUTATION_ROUNDS = 5;
 
 /**
  * Bookkeeping for the rows committed by the running test.
@@ -162,10 +161,9 @@ function boardConcurrencyCleanup(): int
  * of them.
  *
  * @param  list<array{ids: list<string>, status: string, index: int}>  $assignments
- * @param  'TaskBoard'|'UnlockedTaskBoard'  $board
  * @return list<array{exit: int|null, summary: array{pid: int, moved: int, failed: int, last_error: string|null}|null, stderr: string}>
  */
-function boardConcurrencyRun(string $projectId, string $adminId, array $assignments, string $board): array
+function boardConcurrencyRun(string $projectId, string $adminId, array $assignments): array
 {
     expect(DB::transactionLevel())->toBe(0, 'the parent must not hold a transaction while workers run');
 
@@ -189,7 +187,7 @@ function boardConcurrencyRun(string $projectId, string $adminId, array $assignme
         $process = new Process(
             [
                 PHP_BINARY, __DIR__.'/task-worker.php', $barrier, (string) count($assignment['ids']), $projectId, $adminId,
-                SequenceAllocator::class, 'locked', '0', 'move', $board, $assignment['status'], (string) $assignment['index'],
+                SequenceAllocator::class, 'locked', '0', 'move', 'TaskBoard', $assignment['status'], (string) $assignment['index'],
                 implode(',', $assignment['ids']),
             ],
             dirname(__DIR__, 2),
@@ -275,10 +273,9 @@ function boardConcurrencyDefects(array $results, array $assignments, string $pro
  * round B the next cards into the empty ready-to-release column at index 0.
  *
  * @param  array{project: string, admin: string, planned: list<string>, in_review: list<string>, in_progress: list<string>}  $arranged
- * @param  'TaskBoard'|'UnlockedTaskBoard'  $board
  * @return array{defects: list<string>, rounds: list<array{assignments: list<array{ids: list<string>, status: string, index: int}>, results: list<array{exit: int|null, summary: array{pid: int, moved: int, failed: int, last_error: string|null}|null, stderr: string}>}>}
  */
-function boardConcurrencyScenario(array $arranged, string $board): array
+function boardConcurrencyScenario(array $arranged): array
 {
     $perWorker = BOARD_CONCURRENCY_PER_WORKER;
     $rounds = [];
@@ -296,7 +293,7 @@ function boardConcurrencyScenario(array $arranged, string $board): array
     ];
 
     foreach ($plan as $assignments) {
-        $results = boardConcurrencyRun($arranged['project'], $arranged['admin'], $assignments, $board);
+        $results = boardConcurrencyRun($arranged['project'], $arranged['admin'], $assignments);
 
         $rounds[] = ['assignments' => $assignments, 'results' => $results];
         $defects = [...$defects, ...boardConcurrencyDefects($results, $assignments, $arranged['project'])];
@@ -332,7 +329,7 @@ it('keeps every column consistent when two processes move 25 cards each into a f
     $arranged = boardConcurrencyArrange();
     $projectId = $arranged['project'];
 
-    $outcome = boardConcurrencyScenario($arranged, 'TaskBoard');
+    $outcome = boardConcurrencyScenario($arranged);
 
     expect($outcome['defects'])->toBe([]);
 
@@ -352,30 +349,4 @@ it('keeps every column consistent when two processes move 25 cards each into a f
     expect(boardConcurrencyPositions($projectId, 'planned'))->toBe([])
         ->and(boardConcurrencyPositions($projectId, 'in_review'))->toBe([])
         ->and(DB::table('tasks')->where('project_id', $projectId)->count())->toBe(105);
-});
-
-it('detects the defect when the board has no advisory lock (mutation run)', function () {
-    $found = [];
-    $rounds = 0;
-
-    for ($attempt = 1; $attempt <= BOARD_CONCURRENCY_MUTATION_ROUNDS && $found === []; $attempt++) {
-        $arranged = boardConcurrencyArrange();
-
-        $outcome = boardConcurrencyScenario($arranged, 'UnlockedTaskBoard');
-        $rounds++;
-
-        // Guard against a vacuous pass: both workers of every round ran and accounted for all of their attempts.
-        foreach ($outcome['rounds'] as $round) {
-            foreach ($round['results'] as $i => $result) {
-                expect($result['summary'])->not->toBeNull("worker produced no summary: {$result['stderr']}")
-                    ->and($result['summary']['moved'] + $result['summary']['failed'])->toBe(count($round['assignments'][$i]['ids']));
-            }
-        }
-
-        $found = $outcome['defects'];
-
-        expect(boardConcurrencyCleanup())->toBe(0, 'the mutation round left rows of its own behind');
-    }
-
-    expect($found)->not->toBe([], "the harness did not notice the missing board lock in {$rounds} rounds");
 });

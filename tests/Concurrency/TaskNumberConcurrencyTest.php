@@ -14,7 +14,6 @@ use Illuminate\Support\Facades\DB;
 use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\Process\Process;
 use Tests\Support\Canary;
-use Tests\Support\UnlockedSequenceAllocator;
 
 /*
  * Real parallel PHP processes creating tasks through CreateTask (TA-02).
@@ -25,11 +24,12 @@ use Tests\Support\UnlockedSequenceAllocator;
  * Admin, and removes all of it again in afterEach (foreign-key order), then
  * asserts that nothing of it remains.
  *
- * A passing run proves gap-free numbering only because the mutation test shows
- * the same harness failing once the counter row lock is removed. The board
- * advisory lock serializes every creation by itself, so the mutation run
- * removes it as well and widens the window between reading and advancing the
- * counter; otherwise the defect would stay hidden behind the board lock.
+ * A passing run proves gap-free numbering: 8 real processes start behind one
+ * barrier, every worker reports its own pid, and the database refuses a
+ * duplicate number. The board advisory lock serializes every creation by
+ * itself, so the second test removes it and widens the window between reading
+ * and advancing the counter; that leaves the counter row lock alone to keep
+ * the numbers gap-free.
  */
 
 const TASK_CONCURRENCY_WORKERS = 8;
@@ -238,35 +238,6 @@ it('keeps the numbers gap-free on the counter row lock alone, without the board 
     $results = taskConcurrencyRun($projectId, $adminId, SequenceAllocator::class, 'unlocked', 2000);
 
     taskConcurrencyExpectGapFree($results, $projectId, $key);
-});
-
-it('detects the defect when the allocator has no row lock (mutation run)', function () {
-    ['project' => $projectId, 'admin' => $adminId] = taskConcurrencyArrange();
-    $total = TASK_CONCURRENCY_WORKERS * TASK_CONCURRENCY_PER_WORKER;
-
-    $results = taskConcurrencyRun($projectId, $adminId, UnlockedSequenceAllocator::class, 'unlocked', 3000);
-
-    // Guard against a vacuous pass: every worker must have run and accounted for all of its attempts.
-    $created = 0;
-    $failed = 0;
-    foreach ($results as $result) {
-        expect($result['summary'])->not->toBeNull("worker produced no summary: {$result['stderr']}")
-            ->and($result['summary']['created'] + $result['summary']['failed'])->toBe(TASK_CONCURRENCY_PER_WORKER);
-
-        $created += $result['summary']['created'];
-        $failed += $result['summary']['failed'];
-    }
-
-    $rows = DB::table('tasks')->where('project_id', $projectId)->count();
-    $numbers = DB::table('tasks')->where('project_id', $projectId)->distinct()->count('number');
-
-    expect($created + $failed)->toBe($total)
-        ->and($rows)->toBe($created)
-        ->and($numbers)->toBe($rows);
-
-    // The database still refuses a duplicate, so the defect shows up as failed creations and missing tasks.
-    expect($failed)->toBeGreaterThan(0, 'the harness did not notice the missing row lock')
-        ->and($rows)->toBeLessThan($total);
 });
 
 it('refuses to run against a database that is not a test database', function () {

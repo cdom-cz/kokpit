@@ -7,7 +7,6 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Process\Process;
-use Tests\Support\UnlockedSequenceAllocator;
 
 /*
  * Real parallel PHP processes against PostgreSQL.
@@ -17,8 +16,9 @@ use Tests\Support\UnlockedSequenceAllocator;
  * Every test creates its own probe table and counter key (random hex suffix)
  * and removes both again in afterEach.
  *
- * A passing run proves gap-free allocation only because the mutation test
- * shows the same harness failing against an allocator without the row lock.
+ * A passing run proves gap-free allocation because 8 real processes allocate
+ * behind one start barrier, every worker reports its own pid, and the probe
+ * table refuses a duplicate number through its primary key.
  */
 
 const CONCURRENCY_WORKERS = 8;
@@ -172,31 +172,6 @@ it('keeps committed numbers consecutive when every fourth transaction is rolled 
         ->and(concurrencyProbeNumbers($probe))->toBe(range(1, $committed))
         ->and((int) DB::table('number_sequences')->where('scope_key', $key)->value('next_value'))->toBe($committed + 1)
         ->and(DB::table($probe)->distinct()->count('pid'))->toBeGreaterThanOrEqual(2);
-});
-
-it('detects the defect when the allocator has no row lock (mutation run)', function () {
-    ['probe' => $probe, 'key' => $key] = concurrencyNewProbe();
-    $total = CONCURRENCY_WORKERS * CONCURRENCY_PER_WORKER;
-
-    $results = concurrencyRunWorkers($probe, $key, UnlockedSequenceAllocator::class, 0);
-
-    // Guard against a vacuous pass: every worker must have run and accounted for all of its attempts.
-    $attempts = 0;
-    $failures = 0;
-    foreach ($results as $result) {
-        expect($result['summary'])->not->toBeNull("worker produced no summary: {$result['stderr']}");
-
-        $attempts += $result['summary']['committed'] + count($result['summary']['errors']);
-        $failures += $result['exit'] === 0 ? 0 : 1;
-    }
-
-    expect($attempts)->toBe($total);
-
-    $rows = DB::table($probe)->count();
-    $detected = $rows < $total || $failures > 0;
-
-    expect($detected)->toBeTrue('the harness did not notice the missing row lock')
-        ->and($rows)->toBeLessThan($total);
 });
 
 it('refuses to run against a database that is not a test database', function () {

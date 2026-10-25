@@ -14,8 +14,7 @@ declare(strict_types=1);
  *
  * <variant> is bound to SequenceAllocator in the container before IssueDocument is resolved:
  * - `locked`   the real allocator;
- * - `failing`  the real allocator, but every third allocation throws after the number was taken;
- * - `unlocked` the allocator without the row lock (the mutation run).
+ * - `failing`  the real allocator, but every third allocation throws after the number was taken.
  *
  * Prints one JSON line per draft, `{"draft": id, "result": "issued", "number": ..., "pid": ...}` or
  * `{"draft": id, "result": "failed", "planned": bool, "error": ..., "pid": ...}`, and exits 1 when any failure was
@@ -29,7 +28,6 @@ use App\Domain\Shared\Sequences\SequenceAllocator;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FailingAfterAllocationSequenceAllocator;
-use Tests\Support\UnlockedSequenceAllocator;
 
 require __DIR__.'/../../vendor/autoload.php';
 
@@ -74,8 +72,7 @@ foreach ($draftIds as $draftId) {
 $allocator = match ($variant) {
     'locked' => new SequenceAllocator,
     'failing' => new FailingAfterAllocationSequenceAllocator(range(3, count($draftIds), 3)),
-    'unlocked' => new UnlockedSequenceAllocator,
-    default => $fail('the variant must be locked, failing or unlocked'),
+    default => $fail('the variant must be locked or failing'),
 };
 
 $app->instance(SequenceAllocator::class, $allocator);

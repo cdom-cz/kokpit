@@ -17,10 +17,7 @@ declare(strict_types=1);
  *                 (seconds as a decimal, default 0) so that it lands inside the edit transaction. The job itself is not
  *                 dispatched (Bus is faked): only the queued row is the subject.
  *
- * <variant> is bound to QueueInvoiceEmail in the container, for the role `queue` only:
- * - `locked`    the real Action;
- * - `unlocked`  Tests\Support\UnlockedQueueInvoiceEmail, which reads the document without the invoice row lock (the
- *               mutation run).
+ * <variant> `locked` is the real QueueInvoiceEmail Action, with its invoice row lock.
  *
  * Prints one JSON line, `{"role": ..., "result": "ok"|"refused"|"failed", "error": ..., "at": ..., "seen_total": ...,
  * "pid": ...}`, where `at` is `microtime(true)` taken right after the transaction returned, that is after its commit,
@@ -38,7 +35,6 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Tests\Support\UnlockedQueueInvoiceEmail;
 
 require __DIR__.'/../../vendor/autoload.php';
 
@@ -72,8 +68,8 @@ if (! in_array($role, ['edit', 'queue'], true)) {
     $fail('the role must be edit or queue');
 }
 
-if (! in_array($variant, ['locked', 'unlocked'], true)) {
-    $fail('the variant must be locked or unlocked');
+if ($variant !== 'locked') {
+    $fail('the variant must be locked');
 }
 
 if (preg_match($uuid, $adminId) !== 1 || preg_match($uuid, $invoiceId) !== 1) {
@@ -81,11 +77,6 @@ if (preg_match($uuid, $adminId) !== 1 || preg_match($uuid, $invoiceId) !== 1) {
 }
 
 if ($role === 'queue') {
-    // The twin differs from the real Action in the read of the document only.
-    if ($variant === 'unlocked') {
-        $app->singleton(QueueInvoiceEmail::class, static fn (): QueueInvoiceEmail => new UnlockedQueueInvoiceEmail);
-    }
-
     // The queue of the test environment is synchronous; the e-mail job must not run here.
     Bus::fake();
 }

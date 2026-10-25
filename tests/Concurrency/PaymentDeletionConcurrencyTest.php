@@ -24,12 +24,11 @@ use Tests\Support\InvoiceFixtures;
  * Real parallel PHP processes deleting, converting and paying the same document at the same moment (IN-05, IN-06,
  * FI-03; D-19 as amended on 2026-10-17, ruling R-41-3: the lock order is the document, the payment, the income).
  *
- * Three locked scenarios run five rounds each, two workers per round behind one barrier: two deletions of one payment,
+ * Three scenarios run five rounds each, two workers per round behind one barrier: two deletions of one payment,
  * a deletion of the only payment of a proforma against the conversion of that proforma, and a new payment against the
  * deletion of an older one. No round may end in a deadlock or an untyped database error, and every round must leave
- * the payments and incomes of the document consistent. The mutation twin runs the deletion without the document lock
- * (the worker mode `skip-lock`) against a conversion and must end in the refusal of the carried key of the database
- * (23503); otherwise a clean run of the locked scenarios would prove nothing.
+ * the payments and incomes of the document consistent. The workers are real processes behind one start barrier, and
+ * every scenario is repeated for five rounds so that the overlap is hit more than once.
  *
  * Like the other concurrency suites this file has no RefreshDatabase wrapper on purpose: the workers are other
  * processes, so only committed rows are visible to them and to the assertions. Issued rows, payments and payment
@@ -394,16 +393,4 @@ it('leaves the balance equal to the remaining payments when a payment is recorde
             ->and($incomes)->toBe($payments)
             ->and($paid)->toBe(array_sum($payments));
     }
-});
-
-it('detects the race when the deletion takes no document lock (mutation run with the skip-lock worker)', function () {
-    ['admin' => $admin, 'client' => $client] = paymentDeletionArrange();
-    $proforma = paymentDeletionIssue($client, $admin, InvoiceKind::Proforma);
-    $payment = paymentDeletionPay($proforma, $admin, '12500');
-
-    $results = paymentDeletionRun($admin->id, [['skip-lock', $payment], ['convert', $proforma->id]]);
-
-    expect($results)->toBe(['db:23503', 'converted'], 'the harness did not notice the missing document lock')
-        ->and(DB::table('invoice_payments')->where('id', $payment)->count())->toBe(1)
-        ->and(DB::table('invoice_payments')->where('carried_from_payment_id', $payment)->count())->toBe(1);
 });

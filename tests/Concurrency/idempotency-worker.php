@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * Child process of the idempotency concurrency test.
  *
- *   php tests/Concurrency/idempotency-worker.php <token> <key> <clientId> <storeClass> <barrierAt> [<rendezvousDir> <parties>]
+ *   php tests/Concurrency/idempotency-worker.php <token> <key> <clientId> <storeClass> <barrierAt>
  *
  * Boots the application, binds the idempotency store, waits for the shared start barrier so the workers'
  * requests truly overlap, then sends one `POST /api/v1/time-entries` through the real HTTP kernel with the
@@ -17,13 +17,9 @@ declare(strict_types=1);
  * `body` is the raw response content, so the test can compare replays byte for byte. Exits 0 when a response
  * came back (whatever its status) and 1 when the request itself blew up.
  *
- * <storeClass> is the short name `IdempotencyStore` or `UnclaimedIdempotencyStore` and is bound to
- * IdempotencyStore in the container before the request is handled. <barrierAt> is the shared start instant
- * (microtime as a decimal string); the environment variable KOKPIT_BARRIER_AT takes precedence.
- *
- * Optional, for the mutation run only: <rendezvousDir> and <parties> make the UnclaimedIdempotencyStore hold
- * every party inside claim() until all of them have arrived (see UnclaimedIdempotencyStore). They are refused
- * with the real store, which has no rendezvous.
+ * <storeClass> is the short name `IdempotencyStore`, the real store, and is bound to IdempotencyStore in the
+ * container before the request is handled. <barrierAt> is the shared start instant (microtime as a decimal
+ * string); the environment variable KOKPIT_BARRIER_AT takes precedence.
  *
  * Refuses to run unless the database name ends in `_test`.
  */
@@ -32,7 +28,6 @@ use App\Domain\Api\Idempotency\IdempotencyStore;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Tests\Support\UnclaimedIdempotencyStore;
 
 require __DIR__.'/../../vendor/autoload.php';
 
@@ -52,13 +47,11 @@ if ($connection !== 'pgsql' || ! str_ends_with($database, '_test')) {
     $fail('refusing to run: the database name must end in _test');
 }
 
-if ($argc !== 6 && $argc !== 8) {
-    $fail('expected 5 or 7 arguments: token key clientId storeClass barrierAt [rendezvousDir parties]');
+if ($argc !== 6) {
+    $fail('expected 5 arguments: token key clientId storeClass barrierAt');
 }
 
 [, $token, $key, $clientId, $storeName, $barrierArg] = $argv;
-$rendezvousDir = $argv[6] ?? null;
-$parties = (int) ($argv[7] ?? 0);
 
 if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D', $clientId) !== 1) {
     $fail('the client id must be a uuid');
@@ -68,23 +61,11 @@ if ($token === '' || $key === '') {
     $fail('the token and the key must not be empty');
 }
 
-if (! in_array($storeName, ['IdempotencyStore', 'UnclaimedIdempotencyStore'], true)) {
-    $fail('the store class must be IdempotencyStore or UnclaimedIdempotencyStore');
+if ($storeName !== 'IdempotencyStore') {
+    $fail('the store class must be IdempotencyStore');
 }
 
-if ($rendezvousDir !== null) {
-    if ($storeName !== 'UnclaimedIdempotencyStore') {
-        $fail('the rendezvous belongs to UnclaimedIdempotencyStore only: the real store has none');
-    }
-
-    if (! is_dir($rendezvousDir) || $parties < 2 || $parties > 64) {
-        $fail('the rendezvous needs an existing directory and between 2 and 64 parties');
-    }
-}
-
-$store = $storeName === 'UnclaimedIdempotencyStore'
-    ? new UnclaimedIdempotencyStore($rendezvousDir, $parties)
-    : new IdempotencyStore;
+$store = new IdempotencyStore;
 
 $app->instance(IdempotencyStore::class, $store);
 
