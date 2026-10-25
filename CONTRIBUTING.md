@@ -222,7 +222,7 @@ The workflow `Hygiene` runs on pushes to `main` and on pull requests, never on `
 
 - `scan`: the hygiene self-tests, `--all`, `--history` and gitleaks.
 - `workflow-lint`: actionlint and zizmor.
-- `tests`: Pest on PostgreSQL 18 and Redis services, after booting the application from `.env.example` alone (copy, `key:generate`, `migrate`, `kokpit:install`).
+- `tests`: Pest on PostgreSQL 18 and Redis services, after booting the application from `.env.example` alone (copy, `key:generate`, `migrate`, `kokpit:install`). Pest runs in four parallel shards of this job (`--shard`, by test class, balanced by the recorded class times in `tests/.pest/shards.json`, `fail-fast` off), and inside each shard the suites run from the cheapest to the most expensive: Unit and Arch, then Feature, then Isolation and Concurrency. The Partner audit runs in the first shard only. `tests/Feature/Repo/CiParityTest.php` keeps the shard matrix equal to the shard total and the steps equal to the suites of `phpunit.xml` except Audit; `composer test` and `composer ci` stay unsharded. After adding or removing many tests, refresh the class times with `ddev exec vendor/bin/pest --exclude-testsuite=Audit --update-shards` and commit `tests/.pest/shards.json`; a stale file only costs balance, never coverage.
 - `static-analysis`: Pint and Larastan level 8.
 - `dependencies`: `composer validate --strict`, `composer audit --locked` and the licence allowlist.
 - `CI Passed`: the aggregator and the only status check the organisation ruleset requires. It waits for every other job, and `scripts/tests/test-workflow.sh` fails when a job is missing from its `needs` list.

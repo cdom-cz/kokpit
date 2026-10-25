@@ -182,23 +182,125 @@ it('keeps the aggregator needs list unchanged because RustFS lives inside the te
         ->toBe(['scan', 'workflow-lint', 'tests', 'static-analysis', 'dependencies']);
 });
 
-it('runs the Audit suite in its own step and in composer ci, never twice', function () {
+/**
+ * The Pest steps of the tests job that run a shard, in workflow order: step name, step index and the parsed command.
+ *
+ * @return list<array{name: string, index: int, run: string, suites: list<string>, total: int|null}>
+ */
+function ciShardedPestSteps(): array
+{
+    $found = [];
+    foreach ((array) (ciJobs()['tests']['steps'] ?? []) as $index => $step) {
+        $run = is_array($step) ? (string) ($step['run'] ?? '') : '';
+
+        if (! str_starts_with($run, 'vendor/bin/pest') || ! str_contains($run, '--shard')) {
+            continue;
+        }
+
+        $matched = preg_match('~^vendor/bin/pest --testsuite=([A-Za-z,]+) --shard="\$\{PEST_SHARD\}/(\d+)"$~', $run, $parts) === 1;
+
+        $found[] = [
+            'name' => (string) $step['name'],
+            'index' => (int) $index,
+            'run' => $run,
+            'suites' => $matched ? explode(',', $parts[1]) : [],
+            'total' => $matched ? (int) $parts[2] : null,
+        ];
+    }
+
+    return $found;
+}
+
+/**
+ * The names of the test suites of phpunit.xml, in file order.
+ *
+ * @return list<string>
+ */
+function ciPhpunitSuites(): array
+{
+    $xml = simplexml_load_file(base_path('phpunit.xml'));
     $names = [];
-    $runs = [];
+
+    foreach ($xml->testsuites->testsuite ?? [] as $suite) {
+        $names[] = (string) $suite['name'];
+    }
+
+    return $names;
+}
+
+it('runs every suite except Audit in the sharded Pest steps, each exactly once, from the cheapest to the most expensive', function () {
+    $steps = ciShardedPestSteps();
+    $suites = array_merge(...array_column($steps, 'suites'));
+
+    // Each step is a single sharded command of the exact shape the matrix feeds through PEST_SHARD.
+    foreach ($steps as $step) {
+        expect($step['suites'])->not->toBe([], "step {$step['name']} must be: vendor/bin/pest --testsuite=<names> --shard=\"\${PEST_SHARD}/<total>\"")
+            ->and($step['total'])->toBe($steps[0]['total'], "step {$step['name']} shard total");
+    }
+
+    // Together the steps are the unsharded suite: every phpunit.xml suite but Audit, none twice, none left out.
+    $expected = array_values(array_diff(ciPhpunitSuites(), ['Audit']));
+    $actual = $suites;
+    sort($expected);
+    sort($actual);
+
+    expect($steps)->not->toBe([])
+        ->and($actual)->toBe($expected)
+        ->and(count($suites))->toBe(count(array_unique($suites)));
+
+    // Cheap first, so a cheap failure surfaces early: Unit and Arch, then Feature, then Isolation and Concurrency.
+    $rank = ['Unit' => 0, 'Arch' => 0, 'Feature' => 1, 'Isolation' => 2, 'Concurrency' => 2];
+    $ranks = array_map(static fn (string $suite): int => $rank[$suite] ?? PHP_INT_MAX, $suites);
+    $sorted = $ranks;
+    sort($sorted);
+
+    expect($ranks)->toBe($sorted, 'the sharded Pest steps must run Unit and Arch before Feature before Isolation and Concurrency')
+        ->and(max($ranks))->not->toBe(PHP_INT_MAX, 'a suite without a cost rank in this test was added to phpunit.xml');
+});
+
+it('keeps the shard matrix equal to the shard total of the Pest steps, so no part of the suite is left unrun', function () {
+    $job = ciJobs()['tests'] ?? [];
+    $total = ciShardedPestSteps()[0]['total'] ?? null;
+
+    expect($total)->toBeInt()->toBeGreaterThan(1)
+        ->and($job['strategy']['fail-fast'] ?? null)->toBeFalse()
+        ->and($job['strategy']['matrix']['shard'] ?? null)->toBe(range(1, (int) $total))
+        ->and($job['env']['PEST_SHARD'] ?? null)->toBe('${{ matrix.shard }}')
+        ->and((string) ($job['name'] ?? ''))->toContain('shard ${{ matrix.shard }}/'.$total);
+});
+
+it('keeps the recorded class times that balance the shards by time instead of by class count', function () {
+    $path = base_path('tests/.pest/shards.json');
+    $data = is_file($path) ? json_decode((string) file_get_contents($path), true) : null;
+
+    expect($data)->toBeArray()
+        ->and($data['timings'] ?? null)->toBeArray()->not->toBeEmpty()
+        ->and(array_key_exists('Tests\\Feature\\Repo\\CiParityTest', (array) $data['timings']))->toBeTrue();
+});
+
+it('runs the Partner audit exactly once, in the first shard and after the sharded steps, and keeps the composer scripts unsharded', function () {
+    $names = [];
+    $audits = [];
     foreach ((array) (ciJobs()['tests']['steps'] ?? []) as $index => $step) {
         if (is_array($step) && isset($step['name'])) {
             $names[(string) $step['name']] = $index;
-            $runs[(string) $step['name']] = (string) ($step['run'] ?? '');
+        }
+
+        if (is_array($step) && str_contains((string) ($step['run'] ?? ''), '--testsuite=Audit')) {
+            $audits[] = $step;
         }
     }
 
     $composer = json_decode((string) file_get_contents(base_path('composer.json')), true);
     $scripts = (array) ($composer['scripts'] ?? []);
+    $lastShardedStep = max(array_column(ciShardedPestSteps(), 'index'));
 
-    expect($runs['Pest'] ?? null)->toBe('vendor/bin/pest --exclude-testsuite=Audit')
-        ->and($runs['Partner audit'] ?? null)->toBe('vendor/bin/pest --testsuite=Audit')
+    expect($audits)->toHaveCount(1)
+        ->and($audits[0]['name'] ?? null)->toBe('Partner audit')
+        ->and($audits[0]['run'] ?? null)->toBe($scripts['partner-audit'] ?? null)
+        ->and($audits[0]['if'] ?? null)->toBe('matrix.shard == 1')
         ->and($names['Partner audit'] ?? -1)->toBeGreaterThan($names['Boot the application from .env.example alone'] ?? PHP_INT_MAX)
-        ->and($names['Partner audit'] ?? -1)->toBeGreaterThan($names['Pest'] ?? PHP_INT_MAX)
+        ->and($names['Partner audit'] ?? -1)->toBeGreaterThan($lastShardedStep)
         ->and($scripts['test'] ?? null)->toBe('vendor/bin/pest --exclude-testsuite=Audit')
         ->and($scripts['partner-audit'] ?? null)->toBe('vendor/bin/pest --testsuite=Audit')
         ->and($scripts['ci'] ?? null)->toBe(['@test', '@partner-audit', '@lint', '@stan', '@check-licenses']);
