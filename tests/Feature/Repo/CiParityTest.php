@@ -305,3 +305,8 @@ it('runs the Partner audit exactly once, in the first shard and after the sharde
         ->and($scripts['partner-audit'] ?? null)->toBe('vendor/bin/pest --testsuite=Audit')
         ->and($scripts['ci'] ?? null)->toBe(['@test', '@partner-audit', '@lint', '@stan', '@check-licenses']);
 });
+
+it('starts the test shards only after the cheap jobs have passed', function () {
+    expect(ciJobs()['tests']['needs'] ?? null)
+        ->toEqualCanonicalizing(['scan', 'workflow-lint', 'static-analysis', 'dependencies']);
+});

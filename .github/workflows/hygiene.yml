@@ -115,6 +115,9 @@ jobs:
   # in shard 1 only.
   tests:
     name: Tests (PostgreSQL 18, shard ${{ matrix.shard }}/4)
+    # The cheap jobs go first: a failed scan, lint, static analysis or dependency check stops the shards before they
+    # spend minutes on the suite.
+    needs: [scan, workflow-lint, static-analysis, dependencies]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
