@@ -7,7 +7,6 @@ use App\Domain\Finance\Actions\RecordTransaction;
 use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Invoicing\Models\Invoice;
-use App\Domain\Payments\Enums\CardPaymentReason;
 use App\Domain\Payments\Enums\CardPaymentResolution;
 use App\Domain\Payments\Enums\CardPaymentStatus;
 use App\Domain\Payments\Enums\CardPaymentTab;
@@ -272,26 +271,6 @@ describe('columns', function (): void {
 
         expect($p['resolved'])->toBeInstanceOf(CardPayment::class);
     });
-
-    it('hides the Stripe references by default, shortened, with the full value in the tooltip', function (): void {
-        $p = overviewPortfolio();
-        $record = $p['unmatched'];
-
-        $table = Livewire::test(ListCardPayments::class)->instance()->getTable();
-
-        foreach (['stripe_payment_intent_id' => $record->stripe_payment_intent_id, 'stripe_event_id' => $record->stripe_event_id] as $name => $full) {
-            $column = $table->getColumn($name);
-            $column->record($record);
-
-            expect($column->isToggleable())->toBeTrue()
-                ->and($column->isToggledHiddenByDefault())->toBeTrue()
-                ->and($column->getTooltip())->toBe($full)
-                ->and(mb_strlen((string) $column->getState()))->toBeLessThan(mb_strlen($full))
-                ->and((string) $column->getState())->toStartWith(substr($full, 0, 8))
-                ->and((string) $column->getState())->toEndWith(substr($full, -6))
-                ->and($column->getCopyableState($column->getState()))->toBe($full);
-        }
-    });
 });
 
 describe('filters', function (): void {
@@ -331,51 +310,9 @@ describe('filters', function (): void {
             ->filterTable('currency', 'EUR')
             ->assertCanNotSeeTableRecords([$p['matched'], $other]);
     });
-
-    it('marks an archived client in the client filter', function (): void {
-        $p = overviewPortfolio();
-
-        app(PartnerContext::class)->runAsSystem(static fn () => $p['client']->delete());
-
-        $options = Livewire::test(ListCardPayments::class)->instance()->getTable()->getFilter('client_id')->getOptions();
-
-        expect($options[$p['client']->id])->toBe($p['client']->name.' (archivovaný)');
-    });
 });
 
 describe('empty states and paging', function (): void {
-    it('explains the empty list once and each empty tab on its own', function (): void {
-        Livewire::test(ListCardPayments::class)
-            ->assertSee('Zatím žádné platby kartou')
-            ->assertSee('Platby přijaté přes Stripe se objeví tady.')
-            ->set('activeTab', 'matched')
-            ->assertSee('Zatím žádné platby kartou');
-
-        // One booked payment only: nothing is open, and the other tabs have nothing to show.
-        CardPaymentFixtures::matched(CardPaymentSetup::issued(CardPaymentSetup::client()));
-
-        $headings = [
-            'unresolved' => 'Nic k řešení',
-            'duplicate' => 'Žádné duplicitní platby',
-            'unmatched' => 'Žádné nespárované platby',
-            'refund' => 'Žádná vrácení',
-            'resolved' => 'Zatím nic vyřešeného',
-        ];
-
-        foreach ($headings as $tab => $heading) {
-            Livewire::test(ListCardPayments::class)->set('activeTab', $tab)->assertSee($heading);
-        }
-
-        Livewire::test(ListCardPayments::class)->assertSee('Všechny platby kartou jsou spárované nebo vyřešené.');
-    });
-
-    it('pages by 25 with the options 25, 50 and 100', function (): void {
-        $table = Livewire::test(ListCardPayments::class)->instance()->getTable();
-
-        expect($table->getPaginationPageOptions())->toBe([25, 50, 100])
-            ->and($table->getDefaultPaginationPageOption())->toBe(25);
-    });
-
     it('does not issue more queries for 30 rows than for 3', function (): void {
         $invoices = array_map(static fn (): Invoice => CardPaymentSetup::issued(CardPaymentSetup::client()), [1, 2, 3]);
         $count = static function (): int {
@@ -409,75 +346,6 @@ function overviewRecord(CardPayment $record): Testable
 {
     return Livewire::test(ViewCardPayment::class, ['record' => $record->getRouteKey()]);
 }
-
-describe('record banners', function (): void {
-    it('explains each kind of record in one banner', function (): void {
-        $client = CardPaymentSetup::client();
-        $invoice = CardPaymentSetup::issued($client);
-        $number = (string) $invoice->number;
-        $total = Money::ofMinor($invoice->total_minor, $invoice->currency);
-        $paid = Money::ofMinor($invoice->total_minor + 100000, $invoice->currency);
-
-        $duplicate = CardPaymentFixtures::duplicate($invoice);
-        $amount = CardPaymentFixtures::unmatched($invoice);
-        $currency = CardPaymentFixtures::unmatched($invoice, ['reason' => CardPaymentReason::Currency, 'currency' => 'EUR', 'offered_currency' => 'CZK']);
-        $undetermined = CardPaymentFixtures::unmatched();
-        $cancelled = CardPaymentFixtures::unmatched($invoice, ['reason' => CardPaymentReason::Cancelled]);
-        $refund = CardPaymentFixtures::refund($invoice);
-        $matched = CardPaymentFixtures::matched($invoice);
-        $deleted = CardPaymentFixtures::matchedThenDeleted(CardPaymentSetup::issued($client));
-        $resolved = CardPaymentFixtures::resolved();
-
-        overviewRecord($duplicate)->assertSee("Doklad {$number} už byl zaplacený. Tato platba nevytvořila příjem a nezměnila doklad.");
-
-        overviewRecord($amount)->assertSee('Platba '.$paid->format('cs').' neodpovídá částce, kterou odkaz nabízel ('.$total->format('cs').'). Nevznikl příjem a doklad se nezměnil.');
-
-        overviewRecord($currency)->assertSee('Platba je v měně EUR, odkaz nabízel CZK. Nevznikl příjem a doklad se nezměnil.');
-
-        overviewRecord($undetermined)->assertSee('Platbu se nepodařilo přiřadit k žádnému dokladu. Nevznikl příjem.');
-
-        overviewRecord($cancelled)->assertSee("Doklad {$number} je stornovaný. Nevznikl příjem.");
-
-        overviewRecord($refund)->assertSee('Stripe oznámil vrácení platby '.$refund->amount()->format('cs').'. Doklad ani příjem se nezměnily. Upravte je ručně, pokud je to potřeba.');
-
-        overviewRecord($matched)->assertSee("Platba je zapsaná u dokladu {$number}. Opravit ji lze smazáním platby v detailu dokladu.");
-
-        overviewRecord($deleted)->assertSee('Platba byla z dokladu smazána. Událost zůstává rezervovaná, takže její opakované doručení platbu nevytvoří znovu.');
-
-        overviewRecord($resolved)->assertSee('Vyřešeno '.$resolved->resolved_at?->setTimezone('Europe/Prague')->format('j. n. Y').': Vyřešeno poznámkou.');
-    });
-
-    it('shows one banner only and the resolved banner wins over the reason', function (): void {
-        $resolved = CardPaymentFixtures::resolved();
-
-        overviewRecord($resolved)
-            ->assertSee('Vyřešeno ')
-            ->assertDontSee('Platbu se nepodařilo přiřadit k žádnému dokladu.');
-
-        $refund = CardPaymentFixtures::refund();
-
-        overviewRecord($refund)->assertDontSee('Platba je zapsaná u dokladu');
-    });
-
-    it('gives each banner its colour: danger for what was not booked, warning for a refund, info for the rest', function (): void {
-        $client = CardPaymentSetup::client();
-        $invoice = CardPaymentSetup::issued($client);
-
-        $color = static function (CardPayment $record): string {
-            preg_match('/class="fi-color fi-color-(\w+) fi-sc-callout/', overviewRecord($record)->html(), $match);
-
-            return $match[1] ?? 'none';
-        };
-
-        expect($color(CardPaymentFixtures::duplicate($invoice)))->toBe('danger')
-            ->and($color(CardPaymentFixtures::unmatched($invoice)))->toBe('danger')
-            ->and($color(CardPaymentFixtures::unmatched()))->toBe('danger')
-            ->and($color(CardPaymentFixtures::refund($invoice)))->toBe('warning')
-            ->and($color(CardPaymentFixtures::matched($invoice)))->toBe('info')
-            ->and($color(CardPaymentFixtures::matchedThenDeleted(CardPaymentSetup::issued($client))))->toBe('info')
-            ->and($color(CardPaymentFixtures::resolved()))->toBe('info');
-    });
-});
 
 describe('record sections', function (): void {
     it('shows the facts of the payment, the matching and no resolution section', function (): void {

@@ -55,6 +55,7 @@ use App\Domain\Tasks\Policies\TaskCommentPolicy;
 use App\Domain\Tasks\Policies\TaskPolicy;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -73,6 +74,19 @@ final class AccessServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Kokpit uses no Filament export or import action. filament/actions still registers the download routes
+        // /filament/exports/{export}/download and /filament/imports/{import}/failed-rows/download, and implicit
+        // model binding would query the `exports` and `imports` tables, which do not exist (Filament's own
+        // migrations are not published: they create integer keys against the UUID v7 convention), so every
+        // request would answer 500. An explicit binder runs before implicit binding (Router::substituteBindings),
+        // so the unused routes answer 404 without touching the database.
+        Route::bind('export', static function (): never {
+            abort(404);
+        });
+        Route::bind('import', static function (): never {
+            abort(404);
+        });
+
         // The package models have no policy attribute of their own: Phase 2 closes
         // them to Partners. Later phases replace the registration deliberately.
         foreach ([Media::class, Tag::class, Activity::class, WebhookCall::class, SettingsProperty::class] as $model) {

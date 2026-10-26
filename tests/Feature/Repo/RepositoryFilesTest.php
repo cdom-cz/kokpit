@@ -148,7 +148,7 @@ it('only documents composer scripts that exist', function () {
     $scripts = array_keys((array) (repoComposer()['scripts'] ?? []));
 
     foreach (['README.md', 'CONTRIBUTING.md'] as $file) {
-        preg_match_all('/composer (test|lint|stan|check-licenses|licenses|ci)\b/', repoFile($file), $matches);
+        preg_match_all('/composer (test|partner-audit|lint|stan|check-licenses|licenses|ci)\b/', repoFile($file), $matches);
 
         foreach (array_unique($matches[1]) as $script) {
             // "composer licenses" is Composer's own command, not a project script, and must not be documented as one.
@@ -1183,6 +1183,46 @@ it('hands the card payments over to Phase 12: the Phase 11 bullet is gone and th
     expect($names[1])->toEqualCanonicalizing(['pay.show', 'webhooks.stripe'])
         ->and(Route::has('pay.show'))->toBeTrue()
         ->and(Route::has('webhooks.stripe'))->toBeTrue();
+});
+
+it('hands over the Partner audit: the Phase 12 bullet names only what exists', function () {
+    $bullet = repoContributingBullet('Phase 12.');
+
+    expect($bullet)->not->toBe('');
+
+    // What a later phase must find in the text: the suite, its command, the three declarations, the two Phase 11 routes
+    // and the two Admin-only tables (R-12-09-1).
+    foreach ([
+        'tests/Audit', 'composer partner-audit', 'RouteRules', 'PartnerMatrix', 'ChannelMatrix',
+        'pay.show', 'webhooks.stripe', 'payment_links', 'card_payments',
+    ] as $name) {
+        expect($bullet)->toContain($name);
+    }
+
+    // Every CamelCase name in backticks resolves to a class under app/ or tests/Support.
+    preg_match_all('/`([A-Z][A-Za-z0-9]+)`/', $bullet, $matches);
+
+    expect(count($matches[1]))->toBeGreaterThanOrEqual(6);
+
+    foreach ($matches[1] as $name) {
+        expect(repoClassesNamed($name))->not->toBe([], "CONTRIBUTING.md names {$name} but no such class exists");
+    }
+
+    // Every test file the text names exists, and so does the directory of the suite.
+    preg_match_all('#`(tests/[A-Za-z0-9_/]+\.php)`#', $bullet, $paths);
+
+    expect($paths[1])->not->toBe([]);
+
+    foreach ($paths[1] as $path) {
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$path} but the file does not exist");
+    }
+
+    expect(is_dir(base_path('tests/Audit')))->toBeTrue();
+
+    // The script the text names exists, and the Livewire endpoint is named as it is routed.
+    expect(array_keys((array) (repoComposer()['scripts'] ?? [])))->toContain('partner-audit')
+        ->and(repoFile('CONTRIBUTING.md'))->toContain('livewire-{hash}/update')
+        ->and(repoFile('CONTRIBUTING.md'))->not->toContain('`/livewire/update`');
 });
 
 it('only names Phase 11 classes, methods and tests in CONTRIBUTING.md that exist', function () {

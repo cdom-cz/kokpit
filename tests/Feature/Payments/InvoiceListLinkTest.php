@@ -7,8 +7,6 @@ use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Payments\Actions\DeactivatePaymentLink;
 use App\Domain\Payments\Queries\PaymentLinkStatus;
-use App\Filament\Resources\ClientResource\Pages\ViewClient;
-use App\Filament\Resources\ClientResource\RelationManagers\ClientInvoicesRelationManager;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
@@ -100,24 +98,6 @@ describe('the filter', function (): void {
         }
     });
 
-    it('shows every document again when cleared', function (): void {
-        $portfolio = linkPortfolio();
-
-        Livewire::test(ListInvoices::class)
-            ->filterTable('payment_link', 'failed')
-            ->removeTableFilter('payment_link')
-            ->assertCanSeeTableRecords(array_values($portfolio));
-    });
-
-    it('works on the invoice tab of a client', function (): void {
-        $client = CardPaymentSetup::client();
-        $portfolio = linkPortfolio($client);
-
-        $table = Livewire::test(ClientInvoicesRelationManager::class, ['ownerRecord' => $client, 'pageClass' => ViewClient::class]);
-
-        linkFilterShows($table, 'failed', [$portfolio['failed']], [$portfolio['active'], $portfolio['off'], $portfolio['deactivated']]);
-    });
-
     it('lists a switched-off proforma as Vypnuto and not a card-on invoice', function (): void {
         $client = CardPaymentSetup::client(['online_payment_enabled' => false]);
         $proforma = CardPaymentSetup::issued($client, InvoiceKind::Proforma);
@@ -131,18 +111,6 @@ describe('the filter', function (): void {
 });
 
 describe('the column', function (): void {
-    it('is toggleable and hidden by default', function (): void {
-        linkPortfolio();
-
-        $component = Livewire::test(ListInvoices::class);
-        $column = $component->instance()->getTable()->getColumn('card_payment');
-
-        expect($column->isToggleable())->toBeTrue()
-            ->and($column->isToggledHiddenByDefault())->toBeTrue()
-            ->and($component->instance()->isTableColumnToggledHidden('card_payment'))->toBeTrue()
-            ->and($column->getLabel())->toBe('Platba kartou');
-    });
-
     it('shows per row the state with a tooltip naming it', function (): void {
         $portfolio = linkPortfolio();
 

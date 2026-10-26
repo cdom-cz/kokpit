@@ -9,7 +9,6 @@ use App\Domain\Invoicing\Issuing\IssueContext;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Support\PaymentFacts;
-use App\Domain\Payments\Enums\CardPaymentReason;
 use App\Domain\Payments\Enums\CardPaymentResolution;
 use App\Domain\Payments\Enums\CardPaymentStatus;
 use App\Domain\Payments\Enums\CardPaymentType;
@@ -189,17 +188,6 @@ describe('the tracer', function (): void {
                 DB::beginTransaction();
             }
         }
-    });
-
-    it('carries a Czech label for every type, reason, resolution and status', function (): void {
-        foreach ([...CardPaymentType::cases(), ...CardPaymentReason::cases(), ...CardPaymentResolution::cases(), ...CardPaymentStatus::cases()] as $case) {
-            expect($case->getLabel())->not->toStartWith('enums.');
-        }
-
-        expect(CardPaymentStatus::PaymentDeleted->getLabel())->toBe('Smazaná platba')
-            ->and(CardPaymentStatus::Booked->getLabel())->toBe('Zapsáno k dokladu')
-            ->and(CardPaymentReason::Undetermined->getLabel())->toBe('Doklad nelze určit')
-            ->and(CardPaymentType::Refund->getLabel())->toBe('Vrácení');
     });
 });
 

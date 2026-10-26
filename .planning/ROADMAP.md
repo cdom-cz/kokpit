@@ -858,7 +858,29 @@ Plans:
   3. A route audit confirms every non-public route requires authentication, the public routes are an explicit allowlist, and an anonymous request to any other route is refused
   4. The audit suite runs in CI and fails the build when a new screen, route or endpoint is added without an explicit role rule
 
-**Plans**: TBD
+**Plans:** 9/9 plans executed in 6 waves
+
+Plans:
+**Wave 1**
+- [x] 12-01-PLAN.md — Audit suite, CI gate and route inventory: every route has an auth middleware or a RouteRules entry
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 12-02-PLAN.md — Anonymous refusal of every non-public route; unauthenticated API 500 and dead Filament export routes fixed
+- [x] 12-03-PLAN.md — Permission matrix for screens and endpoints: panel classes, API, Livewire, Horizon against Admin and Partner
+- [x] 12-05-PLAN.md — Canary channel matrix over every entity; global search, API, activity log and selects channels
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 12-04-PLAN.md — Permission matrix for Partner actions per record state and Partner-visible fields
+- [x] 12-06-PLAN.md — Canary channel matrix: UI pages, downloads and exports channels
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 12-07-PLAN.md — Canary channel matrix: notifications channel, notification audiences, every channel driven
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 12-08-PLAN.md — Owner sign-off of the Partner matrix, findings and open questions (blocking decision)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 12-09-PLAN.md — Hand-over in CONTRIBUTING, README and PROJECT.md; full gate
 
 ## Backlog
 
@@ -887,7 +909,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9. Documents and Finance | 28/28 | In Progress | - |
 | 10. Invoicing | 41/41 | In Progress | - |
 | 11. Stripe Payments | 20/20 | In Progress | - |
-| 12. Partner Audit | 0/0 | Not started | - |
+| 12. Partner Audit | 9/9 | In Progress | - |
 
 ### Phase 13: Unified e-mail layout and HTML e-mail templates
 

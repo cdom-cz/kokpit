@@ -13,11 +13,7 @@ declare(strict_types=1);
  * - `match`      ProcessStripeWebhook for the stored webhook row <target>, as the queue runs it;
  * - `store`      WebhookCall::storeStripeEvent() for the payload in the JSON file <target>;
  * - `manual`     RecordPayment of <amount> (major units, dated today, a bank transfer) on the invoice <target>, as the
- *                committed fictional Admin;
- * - `skip-lock`  test code only, the mutation twin of `match`: UnlockedCardPaymentMatcher for the stored row <target>.
- *                It reads the document without any lock (before the barrier), waits for the barrier, then waits until
- *                another worker has committed a matched record of the document, and only then books its own payment.
- *                The document lock of the real handler is what removes that race.
+ *                committed fictional Admin.
  *
  * Prints one JSON line `{"mode": ..., "result": ..., "pid": ...}` where the result is `matched`, `duplicate`,
  * `unmatched:<reason>`, `ignored` (the stored event was already processed), `processed` (processed with no record),
@@ -31,7 +27,6 @@ use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Payments\Jobs\ProcessStripeWebhook;
 use App\Domain\Payments\Models\CardPayment;
-use App\Domain\Payments\Stripe\StripeEvent;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\WebhookCall;
 use Carbon\CarbonImmutable;
@@ -42,7 +37,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Spatie\WebhookClient\WebhookConfigRepository;
 use Tests\Support\FakeStripeGateway;
-use Tests\Support\UnlockedCardPaymentMatcher;
 
 require __DIR__.'/../../vendor/autoload.php';
 
@@ -70,8 +64,8 @@ $amount = $argv[5] ?? '';
 
 $uuid = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D';
 
-if (! in_array($mode, ['match', 'store', 'manual', 'skip-lock'], true)) {
-    $fail('the mode must be match, store, manual or skip-lock');
+if (! in_array($mode, ['match', 'store', 'manual'], true)) {
+    $fail('the mode must be match, store or manual');
 }
 
 if (preg_match($uuid, $adminId) !== 1) {
@@ -169,7 +163,7 @@ DB::listen(static function (QueryExecuted $query) use (&$processedHere): void {
 $call = null;
 $payload = null;
 
-if ($mode === 'match' || $mode === 'skip-lock') {
+if ($mode === 'match') {
     $call = $system(static fn (): WebhookCall => WebhookCall::query()->findOrFail($target));
 }
 
@@ -200,19 +194,12 @@ try {
             $result = $inserted ? 'stored:new' : 'stored:existing';
             break;
 
-        case 'manual':
+        default: // manual
             $waitForBarrier();
             $invoice = $system(static fn (): Invoice => Invoice::query()->findOrFail($target));
             $today = CarbonImmutable::now('Europe/Prague')->format('Y-m-d');
             $app->make(RecordPayment::class)->handle($admin, $invoice, ['amount' => $amount, 'paid_on' => $today]);
             $result = 'recorded';
-            break;
-
-        default:
-            $matcher = $app->make(UnlockedCardPaymentMatcher::class);
-            $event = StripeEvent::fromPayload(is_array($call->payload) ? $call->payload : []);
-            $record = $system(static fn (): CardPayment => $matcher->handle($event, $waitForBarrier));
-            $result = $record->type->value;
     }
 } catch (ValidationException $e) {
     $result = 'refused:'.$errorKey($e);

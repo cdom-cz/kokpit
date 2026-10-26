@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 13
-current_phase_name: Unified e-mail layout and HTML e-mail templates
+current_phase: 12
+current_phase_name: Partner Audit
 status: verifying
-stopped_at: Phase 12 context gathered
-last_updated: "2026-10-23T22:11:37.837Z"
-last_activity: 2026-10-23
-last_activity_desc: Phase 13 execution started
-state_head: b516b2ff82f17f55080276f197181649d8d1c89b
+stopped_at: Completed 12-09-PLAN.md
+last_updated: "2026-10-25T18:45:41.030Z"
+last_activity: 2026-10-24
+last_activity_desc: Phase 12 execution started
+state_head: 96507ce19a4cc9a68371d93664bc90af1f9225cd
 progress:
   total_phases: 16
   completed_phases: 7
-  total_plans: 285
-  completed_plans: 285
+  total_plans: 294
+  completed_plans: 294
   percent: 44
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 13 — Unified e-mail layout and HTML e-mail templates
+**Current focus:** Phase 12 — Partner Audit
 
 ## Current Position
 
-Phase: 13 (Unified e-mail layout and HTML e-mail templates) — EXECUTING
+Phase: 12 (Partner Audit) — EXECUTING
 Plan: 9 of 9
 Status: Phase complete — ready for verification
-Last activity: 2026-10-23 — Phase 13 execution started
+Last activity: 2026-10-25 - Completed quick task 261025-oc2: Optimize the test suite (prune non-essential tests, shard CI)
 
 Progress: [████░░░░░░] 44%
 
@@ -345,6 +345,15 @@ Progress: [████░░░░░░] 44%
 | Phase 13 P07 | 25min | 3 tasks | 10 files |
 | Phase 13 P08 | 45min | 3 tasks | 11 files |
 | Phase 13 P09 | 45 min | 3 tasks | 4 files |
+| Phase 12 P01 | 25 min | 2 tasks | 8 files |
+| Phase 12 P02 | 20 min | 2 tasks | 3 files |
+| Phase 12 P03 | 40 min | 2 tasks | 3 files |
+| Phase 12 P05 | 20 min | 3 tasks | 3 files |
+| Phase 12 P04 | 45 min | 2 tasks | 2 files |
+| Phase 12 P06 | 13 min | 2 tasks | 2 files |
+| Phase 12 P07 | 11 min | 2 tasks | 3 files |
+| Phase 12 P08 | 14 min | 3 tasks | 4 files |
+| Phase 12 P09 | 25 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -864,6 +873,22 @@ Recent decisions affecting current work:
 - [Phase 13]: 13-07: the plain-text layout turns the layout's own <br> into line breaks before stripping tags, so a multi-line sign-off keeps its lines
 - [Phase 13]: 13-08: the Platby tab shows the confirmation state per payment and the record dialog names the invoice e-mail it will reach; the Markdown escape keeps no-break spaces of amounts
 - [Phase 13]: 13-09: CONTRIBUTING E-mail bullet guarded by RepositoryFilesTest; PROJECT.md records the Phase 13 decisions and assumptions A-13-1, A-13-3 to A-13-7 as Pending for the owner
+- [Phase 12]: 12-01: auth middleware recognised by exact class or class:parameter, not prefix (AuthenticateSession shares the Filament Authenticate prefix)
+- [Phase 12]: 12-01: composer test and CI Pest step exclude the Audit suite; composer partner-audit and CI step Partner audit run it alone
+- [Phase 12]: 12-02: redirectGuestsTo returns the panel login route (plain variant); the unused Filament export/import routes are closed by explicit 404 Route::bind closures, to be presented to the owner in 12-08
+- [Phase 12]: 12-03: resource pages that carry their own rule (ProjectBoard) count as governed classes in PanelInventory; plain list, create, edit and view pages stay governed by their Resource
+- [Phase 12]: 12-03: the PartnerMatrix literal guard fails on any mention of AccessRule, Audience, Policy, Gate or an access method name in the matrix file
+- [Phase 12]: 12-03: UnresolvedPayments is declared Admin yes; its visibility depends on an unresolved card payment existing, flagged for owner sign-off in 12-08
+- [Phase 12]: 12-05: search and select results are attributed to the entity that produced them (resource model, option key = row primary key), because several entities share the same canary text
+- [Phase 12]: 12-05: the test-only CanaryRecordResource is asked for global search directly; an option no registered entity owns goes into every entity's blob so it fails loudly
+- [Phase 12]: 12-04: the Partner-visible task of another person is assigned to the Admin because tasks.assignee_id is NOT NULL
+- [Phase 12]: 12-04: field exceptions are keyed {surface}#{name}; amounts and payment instructions printed on the own issued documents are excused with reasons (IN-09, research A5)
+- [Phase 12]: 12-06: ui, downloads and exports output is attributed to the entity of the resource, file or PAGE_OWNERS entry that produced it; client B needles stay global, so attribution only narrows the client A check of a none cell
+- [Phase 12]: 12-06: the downloads driver also asserts the hidden twin of the own visible file is refused, because the canary needle cannot tell it from the visible file
+- [Phase 12]: 12-07: retitle the client A canary task in the notifications event script so the 38 notification cells share one unattributed blob and a client A canary in a notification is a leak for every none cell
+- [Phase 12]: 12-07: every Notification and Mailable class under app/ must be declared in ChannelMatrix::notificationClasses() with an audience and a reason; an admin class reaching Partner A fails the build
+- [Phase 12]: 12-08: owner approved the Partner permission matrix as implemented (2026-10-24); no amendments, DO-01 stays out of scope
+- [Phase 12]: 12-09: the Phase 12 CONTRIBUTING bullet avoids a backticked Audit (the Card payments guard resolves backticked CamelCase names as classes); the suite is named by tests/Audit and 'the Audit suite'
 
 ### Pending Todos
 
@@ -907,6 +932,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261018-mic | Add an external identifier column to transactions for passing advanced identifiers (like time_entries.external), exposed via the API | 2026-10-18 | 8dc3ebb | [261018-mic-add-an-external-identifier-column-to-tra](./quick/261018-mic-add-an-external-identifier-column-to-tra/) |
 | 261018-rvf | Allow changing a task's status directly in its view, not only in the task detail | 2026-10-18 | 9701c56 | [261018-rvf-allow-changing-a-task-s-status-directly-](./quick/261018-rvf-allow-changing-a-task-s-status-directly-/) |
 | 261022-sgn | Improve global search to match client, project and task names, and project and task codes, with as-you-type suggestions in the current style | 2026-10-22 | 30823f6 | [261022-sgn-improve-global-search-to-match-client-pr](./quick/261022-sgn-improve-global-search-to-match-client-pr/) |
+| 261025-oc2 | Optimize the test suite: prune non-essential tests and shard CI (30m timeout fix) | 2026-10-25 | 96507ce | [261025-oc2-optimize-the-test-suite-keep-only-functi](./quick/261025-oc2-optimize-the-test-suite-keep-only-functi/) |
 
 ### Roadmap Evolution
 
@@ -927,6 +953,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-23T22:11:34.910Z
-Stopped at: Phase 12 context gathered
-Resume file: .planning/phases/12-partner-audit/12-CONTEXT.md
+Last session: 2026-10-24T05:56:35.828Z
+Stopped at: Completed 12-09-PLAN.md
+Resume file: None

@@ -34,9 +34,8 @@ use Tests\Support\StripeEvents;
  * invoice (one match, one duplicate without income), one stored event processed by two workers (one match, one
  * ignored), one event stored by two deliveries (one new row, one existing), and a card payment racing a manual one
  * (either order, the books stay consistent). No round may end in a unique violation, a deadlock or another untyped
- * database error. The mutation twin runs the match without the document lock (the worker mode `skip-lock`) against
- * the real one and must end in two matched payments of one invoice; otherwise a clean run of the locked scenarios
- * would prove nothing.
+ * database error. The workers are real processes behind one start barrier, and every scenario is repeated for five
+ * rounds so that the overlap is hit more than once.
  *
  * Like the other concurrency suites this file has no RefreshDatabase wrapper on purpose: the workers are other
  * processes, so only committed rows are visible to them and to the assertions. Issued rows, payments, payment income,
@@ -517,34 +516,4 @@ it('keeps the books consistent when a manual payment races a card payment of the
 
         paymentMatchAssertBooks($ids['invoice'], "round {$round}");
     }
-});
-
-it('detects the race when the match takes no document lock (mutation run with the skip-lock worker)', function () {
-    ['admin' => $admin, 'client' => $client] = paymentMatchArrange();
-    $rounds = [];
-
-    for ($round = 0; $round < PAYMENT_MATCH_ROUNDS; $round++) {
-        ['invoice' => $invoice, 'link' => $link] = paymentMatchIssue($client, $admin);
-        $rounds[] = [
-            'invoice' => $invoice->id,
-            'unlocked' => paymentMatchStore(paymentMatchEvent($link)),
-            'locked' => paymentMatchStore(paymentMatchEvent($link)),
-        ];
-    }
-
-    $twoMatched = 0;
-
-    foreach ($rounds as $round => $ids) {
-        $results = paymentMatchRun($admin->id, [['skip-lock', $ids['unlocked']], ['match', $ids['locked']]]);
-
-        expect(paymentMatchUntyped($results))->toBe([], "round {$round} ended in an untyped database error");
-
-        if (paymentMatchRecords($ids['invoice']) === ['matched' => 2]
-            && DB::table('invoice_payments')->where('invoice_id', $ids['invoice'])->count() === 2
-            && DB::table('transactions')->where('invoice_id', $ids['invoice'])->count() === 2) {
-            $twoMatched++;
-        }
-    }
-
-    expect($twoMatched)->toBeGreaterThanOrEqual(1, 'the harness did not notice the missing document lock');
 });

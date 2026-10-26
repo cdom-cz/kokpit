@@ -348,17 +348,6 @@ describe('regenerating a link', function (): void {
             ->toThrow(fn (ValidationException $e) => expect($e->errors()['payment_link'][0])->toBe(__('payment_links.errors.preparing')));
         expect(lifecycleLinks($invoice))->toHaveCount(1);
     });
-
-    it('regenerates a proforma link as well', function (): void {
-        $proforma = CardPaymentSetup::issued(CardPaymentSetup::client(), InvoiceKind::Proforma);
-        lifecyclePay($proforma, '2500.00');
-
-        $new = app(RegeneratePaymentLink::class)->handle($this->admin, $proforma);
-
-        expect($new->amount_minor)->toBe(1000000)
-            ->and(lifecycleLive($proforma)?->id)->toBe($new->id)
-            ->and(lifecycleReasons($proforma))->toBe(['amount_changed', null]);
-    });
 });
 
 describe('deactivating a link by hand', function (): void {

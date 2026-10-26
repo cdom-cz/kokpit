@@ -142,7 +142,7 @@ Run the PHP gates inside DDEV:
 
     ddev composer ci
 
-It runs the Pest suite (`composer test`), Pint (`composer lint`), Larastan level 8 (`composer stan`) and the licence allowlist (`composer check-licenses`). The shell self-tests of the repository hygiene tooling run on the host:
+It runs the Pest suites (`composer test`), the Partner audit (`composer partner-audit`, which proves that a Partner reaches no route, screen, endpoint, action, field or leak channel without a declared rule), Pint (`composer lint`), Larastan level 8 (`composer stan`) and the licence allowlist (`composer check-licenses`). The shell self-tests of the repository hygiene tooling run on the host:
 
     bash scripts/tests/run.sh
 

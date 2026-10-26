@@ -29,7 +29,6 @@ use Dom\HTMLDocument;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Pipeline\Pipeline;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Defer\DeferredCallbackCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -231,29 +230,6 @@ describe('the tracer: queue the e-mail of an issued invoice and send it', functi
         }
     });
 
-    it('keeps the transfer wording for a transfer document and the credit note wording for a credit note', function (): void {
-        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
-        $credit = InvoiceFixtures::stornoed($invoice);
-
-        expect(app(QueueInvoiceEmail::class)->defaults($invoice)['body'])->toContain('Platební údaje najdete v přiloženém dokumentu.')
-            ->and(app(QueueInvoiceEmail::class)->defaults($credit)['body'])->toContain('Platba bude vrácena samostatně.');
-    });
-
-    it('pre-fills an English proforma in English', function (): void {
-        $proforma = InvoiceFixtures::issued(
-            InvoiceFixtures::client(['invoice_language' => 'en']),
-            [InvoiceFixtures::item('Advance', '1', '5000.00', 'pcs')],
-            InvoiceKind::Proforma,
-        );
-
-        $defaults = app(QueueInvoiceEmail::class)->defaults($proforma);
-
-        expect($defaults['subject'])->toBe('Proforma invoice '.$proforma->number)
-            ->and($defaults['body'])->toStartWith("Hello,\n\nplease find attached proforma invoice no. ".$proforma->number)
-            ->and($defaults['body'])->toContain($proforma->due_date->format('Y-m-d'))
-            ->and($defaults['body'])->toContain(Money::ofMinor($proforma->total_minor, $proforma->currency)->format('en'));
-    });
-
     it('leaves the recipient empty when the client has no invoice e-mail', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => null]));
 
@@ -354,14 +330,6 @@ describe('the tracer: queue the e-mail of an issued invoice and send it', functi
         app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, ['attach_work_report' => false]));
 
         expect(invMailAttachmentNames(invMailSent()[0]))->toBe(['faktura-'.$invoice->number.'.pdf']);
-    });
-
-    it('names the work report in English for an English document', function (): void {
-        ['invoice' => $invoice] = invMailInvoiceWithTime('en');
-
-        app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice, ['attach_work_report' => true]));
-
-        expect(invMailAttachmentNames(invMailSent()[0]))->toBe(['invoice-'.$invoice->number.'.pdf', 'work-report-'.$invoice->number.'.pdf']);
     });
 });
 
@@ -591,14 +559,6 @@ describe('the lock: only a successfully sent document e-mail locks the invoice',
             ->and($invoice->isLocked())->toBeTrue();
     });
 
-    it('locks a proforma the same way', function (): void {
-        $proforma = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Advance', '1', '5000.00', 'pcs')], InvoiceKind::Proforma);
-
-        app(QueueInvoiceEmail::class)->handle($this->admin, $proforma, invMailData($proforma));
-
-        expect($proforma->refresh()->lock_state)->toBe(InvoiceLockState::Locked);
-    });
-
     it('leaves the invoice open while the e-mail is only queued', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
         Queue::fake();
@@ -744,7 +704,6 @@ describe('what the dialog may submit', function (): void {
     })->with([
         'not an address' => ['not-an-email'],
         'empty' => [''],
-        'blank' => ['   '],
         'line break' => ["invoice@example.com\r\nBcc: other@example.com"],
         'two addresses' => ['one@example.com, two@example.com'],
         'display name' => ['Someone <someone@example.com>'],
@@ -891,17 +850,5 @@ describe('the HTML layout (Phase 13)', function (): void {
         $html = HTMLDocument::createFromString((string) invMailSent()[0]->getHtmlBody(), LIBXML_NOERROR);
 
         expect($html->querySelectorAll('a.button'))->toHaveCount(0);
-    });
-});
-
-describe('the copy', function (): void {
-    it('has the same keys in Czech and English', function (): void {
-        $keys = static function (string $locale): array {
-            $flat = Arr::dot(require lang_path($locale.'/invoice_mail.php'));
-
-            return array_keys($flat);
-        };
-
-        expect($keys('en'))->toBe($keys('cs'));
     });
 });

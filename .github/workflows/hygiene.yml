@@ -106,12 +106,26 @@ jobs:
   # automated proof that a fresh clone installs; the real job environment wins over phpunit.xml and .env, and
   # the database name ends in _test because tests/TestCase.php refuses any other. The database credentials are
   # throwaway values of a service container that lives for this job only.
+  #
+  # The suite is split into 4 parallel shards (Pest --shard, by test class, balanced by the class times recorded in
+  # tests/.pest/shards.json; refresh them with `--update-shards`, see CONTRIBUTING.md). Inside each shard the work is ordered
+  # from the cheapest to the most expensive suites, so a cheap failure shows up early: Unit and Arch first, then
+  # Feature, then Isolation and Concurrency. The Pest steps together list every suite of phpunit.xml except Audit,
+  # and CiParityTest keeps the shard matrix equal to the shard total of the run commands. The Partner audit runs
+  # in shard 1 only.
   tests:
-    name: Tests (PostgreSQL 18)
+    name: Tests (PostgreSQL 18, shard ${{ matrix.shard }}/4)
+    # The cheap jobs go first: a failed scan, lint, static analysis or dependency check stops the shards before they
+    # spend minutes on the suite.
+    needs: [scan, workflow-lint, static-analysis, dependencies]
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     services:
       postgres:
         image: postgres:18
@@ -162,6 +176,8 @@ jobs:
       DB_PASSWORD: kokpit-ci-only
       REDIS_HOST: 127.0.0.1
       S3_ENDPOINT: http://127.0.0.1:9000
+      # Reaches the Pest commands as a shell variable, never as an expression inside a run command.
+      PEST_SHARD: ${{ matrix.shard }}
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -191,8 +207,20 @@ jobs:
           export KOKPIT_ADMIN_PASSWORD
           bash scripts/boot-from-env-example.sh
 
-      - name: Pest
-        run: vendor/bin/pest
+      - name: Pest (Unit, Arch)
+        run: vendor/bin/pest --testsuite=Unit,Arch --shard="${PEST_SHARD}/4"
+
+      - name: Pest (Feature)
+        run: vendor/bin/pest --testsuite=Feature --shard="${PEST_SHARD}/4"
+
+      - name: Pest (Isolation, Concurrency)
+        run: vendor/bin/pest --testsuite=Isolation,Concurrency --shard="${PEST_SHARD}/4"
+
+      # The Audit suite (D-10) runs on its own so its failure is visible by name; it uses the services and the
+      # boot of this job. It runs once, in shard 1, after the sharded Pest steps.
+      - name: Partner audit
+        if: matrix.shard == 1
+        run: vendor/bin/pest --testsuite=Audit
 
   # Formatting and static analysis. No database or services: Larastan boots the application from the committed
   # files only, so a fresh checkout without .env must analyse cleanly.

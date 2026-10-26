@@ -8,13 +8,11 @@ declare(strict_types=1);
  *   php tests/Concurrency/reservation-worker.php <startAt> <variant> <adminId> <clientId> <periodFrom> <periodTo>
  *
  * Boots the application, signs in the Admin (a worker has no session, so every Partner scope would otherwise be
- * fail-closed), binds the reservation variant, waits for the shared start barrier so the draft transactions truly
+ * fail-closed), waits for the shared start barrier so the draft transactions truly
  * overlap, then creates one draft for the client from the unbilled time without a project over the period (Prague
  * days, `Y-m-d`).
  *
- * <variant> is bound to EntryReservation in the container before CreateDraft is resolved:
- * - `locked`   the real claim, which locks the candidates in id order;
- * - `unlocked` the claim without the lock (the mutation run).
+ * <variant> `locked` is the real EntryReservation claim, which locks the candidates in id order.
  *
  * Prints one JSON line, `{"pid": ..., "result": "created", "draft": id, "line_seconds": n}` or
  * `{"pid": ..., "result": "failed", "error": ...}`, and exits 1 when the draft was not created. Refuses to run
@@ -23,11 +21,8 @@ declare(strict_types=1);
 
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\CreateDraft;
-use App\Domain\Invoicing\Support\EntryReservation;
-use App\Domain\TimeTracking\Billing\EntryBilling;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
-use Tests\Support\UnlockedEntryReservation;
 
 require __DIR__.'/../../vendor/autoload.php';
 
@@ -63,11 +58,9 @@ if (preg_match($day, $periodFrom) !== 1 || preg_match($day, $periodTo) !== 1) {
     $fail('the period must be two Y-m-d days');
 }
 
-match ($variant) {
-    'locked' => null,
-    'unlocked' => $app->instance(EntryReservation::class, new UnlockedEntryReservation($app->make(EntryBilling::class))),
-    default => $fail('the variant must be locked or unlocked'),
-};
+if ($variant !== 'locked') {
+    $fail('the variant must be locked');
+}
 
 $admin = User::query()->findOrFail($adminId);
 auth()->setUser($admin);

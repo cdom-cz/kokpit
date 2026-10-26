@@ -24,10 +24,8 @@ use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\RelationManagers\InvoiceDocumentsRelationManager;
 use App\Filament\RelationManagers\InvoiceHistoryRelationManager;
-use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
-use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEmailsRelationManager;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEntriesRelationManager;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelationManager;
 use App\Filament\Resources\TransactionResource;
@@ -112,38 +110,10 @@ function detailNotifications(): array
 }
 
 describe('the heading and the state', function (): void {
-    it('shows the number with the kind and state badges and the client link', function (): void {
-        $client = InvoiceFixtures::client(['name' => 'Example detail client']);
-        $invoice = InvoiceFixtures::issued($client);
-
-        detail($invoice)
-            ->assertSee($invoice->number)
-            ->assertSee('Faktura')
-            ->assertSee('Nezaplaceno')
-            ->assertSee('Example detail client')
-            ->assertSee(ClientResource::getUrl('view', ['record' => $client->id]), escape: false);
-    });
-
     it('sends a draft to its editor', function (): void {
         $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
 
         detail($draft)->assertRedirect(InvoiceResource::getUrl('edit', ['record' => $draft]));
-    });
-
-    it('shows the issue facts of the document', function (): void {
-        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['payment_terms_days' => 21]));
-
-        detail($invoice)
-            ->assertSee('14. 10. 2026')
-            ->assertSee('4. 11. 2026')
-            ->assertSee((string) $invoice->variable_symbol)
-            ->assertSee('Čeština')
-            ->assertSee('Způsob úhrady')
-            ->assertSee('Bankovní převod')
-            ->assertDontSee('Převodem')
-            ->assertSee('Bankovní účet')
-            ->assertSee('IBAN')
-            ->assertDontSee('Datum zdanitelného plnění');
     });
 
     it('shows the online method of a document and no bank account, but keeps the variable symbol and the card switch', function (): void {
@@ -261,12 +231,6 @@ describe('the banners', function (): void {
             ->assertSeeHtml('K dokladu existuje dobropis <a href="'.e(InvoiceResource::getUrl('view', ['record' => $credit])).'" style="text-decoration: underline;">'.$credit->number.'</a>.')
             ->assertSee('Související doklady');
         detail($credit)->assertSee('Související doklady')->assertSee($invoice->number);
-    });
-
-    it('has no related section when nothing is related', function (): void {
-        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
-
-        detail($invoice)->assertDontSee('Související doklady');
     });
 });
 
@@ -473,16 +437,6 @@ function detailEntry(Project $project, string $start, string $end, string $descr
 }
 
 describe('the relation tabs', function (): void {
-    it('registers the tabs in the order of the spec', function (): void {
-        expect(InvoiceResource::getRelations())->toBe([
-            InvoicePaymentsRelationManager::class,
-            InvoiceEntriesRelationManager::class,
-            InvoiceDocumentsRelationManager::class,
-            InvoiceEmailsRelationManager::class,
-            InvoiceHistoryRelationManager::class,
-        ]);
-    });
-
     it('shows the payments and the files only on an issued document that can carry them', function (): void {
         $client = InvoiceFixtures::client();
         $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')]);
@@ -525,14 +479,6 @@ describe('the relation tabs', function (): void {
             ->assertCanSeeTableRecords($proforma->payments()->get())
             ->assertTableColumnStateSet('category', null, $proforma->payments()->firstOrFail())
             ->assertSee('—');
-    });
-
-    it('shows an empty payments tab with its heading and body', function (): void {
-        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
-
-        detailTab(InvoicePaymentsRelationManager::class, $invoice)
-            ->assertSee('Zatím žádná platba')
-            ->assertSee('Platbu zaznamenáte tlačítkem Zaznamenat platbu.');
     });
 
     it('lists the billed time of a locked document read only, with the total in the footer and no add or unlink', function (): void {

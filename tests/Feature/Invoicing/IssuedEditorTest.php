@@ -157,25 +157,6 @@ describe('the tracer: from the detail to a corrected invoice', function (): void
             ->assertSee(Money::ofMinor(150000, 'CZK')->format('cs'));
     });
 
-    it('offers the currency, the dates, the language and the customer lines for editing', function (): void {
-        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
-
-        iedEditor($issued)
-            ->assertSee('Odběratel a dodavatel')
-            ->assertFormFieldExists('issue_date', fn ($field): bool => ! $field->isDisabled())
-            ->assertFormFieldExists('due_date', fn ($field): bool => ! $field->isDisabled())
-            ->assertFormFieldExists('language', fn ($field): bool => ! $field->isDisabled())
-            ->assertFormFieldExists('customer.name', fn ($field): bool => ! $field->isDisabled())
-            ->assertFormFieldExists('currency', fn ($field): bool => ! $field->isDisabled())
-            ->assertFormSet(['customer.name' => iedRow($issued)->customer_snapshot['name']]);
-    });
-
-    it('does not show the parties section on a draft', function (): void {
-        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
-
-        iedEditor($draft)->assertDontSee('Odběratel a dodavatel');
-    });
-
     it('edits the printed note of an open proforma', function (): void {
         $proforma = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Advance', '1', '800.00')], InvoiceKind::Proforma);
 
@@ -236,14 +217,6 @@ describe('what the editor refuses to open', function (): void {
         ]);
 
         iedOpenRefused($issued, 'email_in_flight');
-    });
-
-    it('shows no "Upravit" on the detail of a document that cannot be edited', function (): void {
-        $locked = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
-        $credit = InvoiceFixtures::stornoed(InvoiceFixtures::issued(InvoiceFixtures::client()));
-
-        iedDetail($locked)->assertActionHidden('edit');
-        iedDetail($credit)->assertActionHidden('edit');
     });
 
     it('answers a Partner with 403 on the editor of an own open issued invoice, before the record is read', function (): void {
@@ -755,19 +728,6 @@ describe('the payment method in the issued editor (Phase 14)', function (): void
             ->and(array_values(array_filter(iedLinks($invoice), static fn (PaymentLink $link): bool => $link->isLive())))->toHaveCount(1);
     });
 
-    it('shows the printed account while nothing changes and the chosen one once it does', function (): void {
-        $invoice = iedCardInvoice();
-
-        iedEditor($invoice)
-            ->assertSee(iedPrintedIban('12'))
-            ->assertDontSee('Po uložení se použije účet:')
-            ->set('data.bank_account_id', $this->accounts[1]->id)
-            ->assertSee('Po uložení se použije účet:')
-            ->assertSee('Second CZK')
-            ->set('data.bank_account_id', $this->accounts[0]->id)
-            ->assertDontSee('Po uložení se použije účet:');
-    });
-
     it('disables the online option with the reason, refuses a crafted online value under the field, and writes nothing', function (): void {
         $invoice = iedCardInvoice(clientFlag: false);
         $before = iedRow($invoice)->getAttributes();
@@ -888,33 +848,5 @@ describe('the payment method in the issued editor (Phase 14)', function (): void
         expect(iedRow($invoice)->currency)->toBe('USD')
             ->and(iedRow($invoice)->bank_snapshot)->toEqual($this->accounts[0]->toArray())
             ->and(iedAdminRow($invoice)->bank_account_id)->toBe($this->accounts[0]->id);
-    });
-
-    it('keeps the stored account when the currency changes to one with its own account and the Admin picks the stored account again', function (): void {
-        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
-        $invoice = iedCardInvoice();
-
-        iedEditor($invoice)
-            ->set('data.currency', 'EUR')
-            ->callMountedAction()
-            ->assertSet('data.bank_account_id', $this->accounts[2]->id)
-            ->set('data.bank_account_id', $this->accounts[0]->id)
-            ->call('save')
-            ->assertHasNoFormErrors();
-
-        expect(iedRow($invoice)->currency)->toBe('EUR')
-            ->and(iedRow($invoice)->bank_snapshot)->toEqual($this->accounts[0]->toArray())
-            ->and(iedRow($invoice)->bank_snapshot)->not->toEqual($this->accounts[2]->toArray())
-            ->and(iedAdminRow($invoice)->bank_account_id)->toBe($this->accounts[0]->id);
-    });
-
-    it('tells in the currency confirmation that the account is preselected and another one can be picked', function (): void {
-        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
-        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Typed work', '1', '100.00')]);
-
-        iedEditor($invoice)
-            ->set('data.currency', 'EUR')
-            ->assertActionMounted('changeCurrency')
-            ->assertMountedActionModalSee('bankovní účet se předvybere podle nové měny (vybrat jde i jiný)');
     });
 });

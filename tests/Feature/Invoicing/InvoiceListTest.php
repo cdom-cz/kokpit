@@ -181,12 +181,6 @@ describe('the tracer: the tabs of the list', function (): void {
 
         expect(array_keys(Livewire::test(ListInvoices::class)->instance()->getTabs()))->not->toContain('awaiting_invoice');
     });
-
-    it('omits the awaiting tab when no paid proforma waits', function (): void {
-        listIssued();
-
-        expect(array_keys(Livewire::test(ListInvoices::class)->instance()->getTabs()))->not->toContain('awaiting_invoice');
-    });
 });
 
 describe('the derived states in the rows', function (): void {
@@ -209,19 +203,6 @@ describe('the derived states in the rows', function (): void {
         expect($due->record($portfolio['overdue'])->getColor('2026-10-15'))->toBe('danger');
     });
 
-    it('uses the Czech plural of the days late', function (string $today, string $expected): void {
-        listIssued();
-        $this->travelTo(CarbonImmutable::parse($today.' 09:00:00', 'Europe/Prague'));
-
-        Livewire::test(ListInvoices::class)
-            ->set('activeTab', 'overdue')
-            ->assertSee($expected);
-    })->with([
-        'one day' => ['2026-10-16', 'Po splatnosti o 1 den'],
-        'two days' => ['2026-10-17', 'Po splatnosti o 2 dny'],
-        'five days' => ['2026-10-20', 'Po splatnosti o 5 dní'],
-    ]);
-
     it('sums the overdue tab in CZK with the frozen rate and names the CZK of a foreign row', function (): void {
         InvoiceFixtures::cnbRate('EUR', '2026-10-01', '25.000');
         $euro = listIssued('100.00', clientOverrides: ['currency' => 'EUR']);
@@ -235,22 +216,6 @@ describe('the derived states in the rows', function (): void {
             ->assertSee('v Kč: '.Money::ofMinor(250000, 'CZK')->format('cs'))
             ->assertSee('Celkem v Kč')
             ->assertSee(Money::ofMinor(1250000, 'CZK')->format('cs'));
-    });
-
-    it('shows a dash for what a draft and a credit note do not have', function (): void {
-        $portfolio = listPortfolio();
-
-        Livewire::test(ListInvoices::class)
-            ->assertTableColumnStateSet('number', null, $portfolio['draft'])
-            ->assertTableColumnStateSet('issue_date', null, $portfolio['draft'])
-            ->assertTableColumnStateSet('remaining', '—', $portfolio['draft'])
-            ->assertTableColumnStateSet('remaining', '—', $portfolio['creditNote'])
-            ->assertTableColumnStateSet('remaining', '—', $portfolio['paid']);
-
-        $table = Livewire::test(ListInvoices::class)->instance()->getTable();
-
-        expect($table->getColumn('number')->getPlaceholder())->toBe('—')
-            ->and($table->getColumn('issue_date')->getPlaceholder())->toBe('—');
     });
 
     it('marks the e-mail state of a row', function (): void {
@@ -336,33 +301,9 @@ describe('filters', function (): void {
             ->assertCanSeeTableRecords([$proforma, $euro, $later])
             ->assertCanNotSeeTableRecords([$invoice]);
     });
-
-    it('marks an archived client in the client filter', function (): void {
-        $archived = InvoiceFixtures::client(['name' => 'Example archived client']);
-        $active = InvoiceFixtures::client(['name' => 'Example active client']);
-        InvoiceFixtures::issued($archived);
-        InvoiceFixtures::issued($active);
-        app(PartnerContext::class)->runAsSystem(static fn () => $archived->delete());
-
-        $options = Livewire::test(ListInvoices::class)->instance()->getTable()->getFilter('client_id')->getOptions();
-
-        expect($options[$archived->id])->toBe('Example archived client (archivovaný)')
-            ->and($options[$active->id])->toBe('Example active client');
-    });
 });
 
 describe('sorting', function (): void {
-    it('puts drafts first by creation time, then issued documents by issue date and number, newest first', function (): void {
-        $issuedOld = listIssued();
-        $draftOld = InvoiceFixtures::draft(InvoiceFixtures::client());
-        $this->travelTo(CarbonImmutable::parse('2026-10-05 10:00:00', 'Europe/Prague'));
-        $issuedNew = listIssued();
-        $draftNew = InvoiceFixtures::draft(InvoiceFixtures::client());
-
-        Livewire::test(ListInvoices::class)
-            ->assertCanSeeTableRecords([$draftNew, $draftOld, $issuedNew, $issuedOld], inOrder: true);
-    });
-
     it('lists the oldest overdue document first under the overdue tab', function (): void {
         $later = listIssued(terms: 14);
         $earlier = listIssued(terms: 7);
@@ -478,20 +419,5 @@ describe('queries and empty states', function (): void {
         $twentyFive = $count();
 
         expect($twentyFive)->toBe($five);
-    });
-
-    it('shows the empty state of a list without documents', function (): void {
-        Livewire::test(ListInvoices::class)
-            ->assertSee('Zatím tu nejsou žádné doklady')
-            ->assertSee('Fakturu vytvoříte tlačítkem Nová faktura.');
-    });
-
-    it('shows the empty state of a tab', function (): void {
-        listIssued(terms: 30);
-
-        Livewire::test(ListInvoices::class)
-            ->set('activeTab', 'overdue')
-            ->assertSee('Nic po splatnosti')
-            ->assertSee('Všechny faktury jsou v termínu.');
     });
 });

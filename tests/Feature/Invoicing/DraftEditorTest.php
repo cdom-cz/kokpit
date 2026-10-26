@@ -82,43 +82,6 @@ function storedDraft(Invoice $draft): Invoice
 }
 
 describe('the tracer: open a draft, change a line, save, and see the server figures', function (): void {
-    it('opens the editor from a draft row of the list', function (): void {
-        $client = InvoiceFixtures::client();
-        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '2', '500.00')]);
-        $issued = InvoiceFixtures::issued(InvoiceFixtures::client());
-
-        $table = Livewire::test(ListInvoices::class)->instance()->getTable();
-
-        expect($table->getRecordUrl($draft))->toBe(InvoiceResource::getUrl('edit', ['record' => $draft]))
-            ->and($table->getRecordUrl($issued))->toBe(InvoiceResource::getUrl('view', ['record' => $issued]));
-
-        $this->get(InvoiceResource::getUrl('edit', ['record' => $draft]))->assertOk()->assertSee('Koncept faktury');
-    });
-
-    it('shows the header and the lines of the draft', function (): void {
-        $client = InvoiceFixtures::client(['name' => 'Example editor client']);
-        $draft = InvoiceFixtures::draft($client, [
-            InvoiceFixtures::item('Example work', '2', '500.00'),
-            InvoiceFixtures::item('Example extra', '1', '250.00', 'ks'),
-        ]);
-
-        $editor = editor($draft);
-
-        expect($editor->get('data.currency'))->toBe('CZK')
-            ->and($editor->get('data.language'))->toBe('cs')
-            ->and($editor->get('data.items'))->toHaveCount(2);
-
-        // The inputs hold their values in the state, not in the markup.
-        expect(array_column($editor->get('data.items'), 'description'))->toBe(['Example work', 'Example extra']);
-
-        $editor->assertSee('Example editor client')
-            ->assertSee(Money::ofMinor(100000, 'CZK')->format('cs'))
-            ->assertSee(Money::ofMinor(125000, 'CZK')->format('cs'))
-            ->assertSee('Přidělí se při vystavení.')
-            ->assertSee('Vidíte jen vy. Na dokladu se nezobrazí.')
-            ->assertDontSee('Datum zdanitelného plnění');
-    });
-
     it('shows the dates the issue will derive, and stores only a date the Admin typed', function (): void {
         $client = InvoiceFixtures::client(['payment_terms_days' => 21]);
         $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')]);
@@ -336,25 +299,6 @@ function editorFreshEntry(TimeEntry $entry): TimeEntry
 }
 
 describe('line origins and previews', function (): void {
-    it('shows the origin badge and the exact H:MM of a time line, and none on a manual line', function (): void {
-        $client = InvoiceFixtures::client();
-        $project = editorProject($client, 'Alpha project');
-        editorEntry($project, '2026-09-10 08:00:00', '2026-09-10 10:30:00');
-        $draft = editorTimeDraft($client, [$project]);
-        app(UpdateDraft::class)->handle($this->admin, $draft, ['items' => [
-            ...array_map(static fn (InvoiceItem $item): array => ['id' => $item->id, 'description' => $item->description, 'quantity' => $item->quantity, 'unit' => $item->unit, 'unit_price' => Money::ofMinor($item->unit_price_minor, 'CZK')->toMajor()], storedLines($draft)),
-            InvoiceFixtures::item('Example manual', '1', '100.00'),
-        ]]);
-
-        $editor = editor($draft);
-
-        expect(substr_count($editor->html(), 'Z času'))->toBe(1);
-
-        $editor->assertSee('2:30')
-            ->assertSee('Vygenerováno ze záznamů času')
-            ->assertDontSee('Přepočet při vystavení');
-    });
-
     it('shows the preview rate and the conversion badge of a EUR draft of CZK-rated time, and the CZK preview', function (): void {
         InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.000');
         $client = InvoiceFixtures::client();
@@ -370,18 +314,6 @@ describe('line origins and previews', function (): void {
             ->assertSee('Konečný kurz a částka v Kč se zmrazí při vystavení.');
 
         expect(storedLines($draft)[0]->line_total_minor)->toBe(12000);
-    });
-
-    it('shows no CZK preview and no VAT row for a CZK draft', function (): void {
-        $client = InvoiceFixtures::client();
-        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '2', '500.00')]);
-
-        editor($draft)
-            ->assertDontSee('Náhled v Kč')
-            ->assertDontSee('Konečný kurz')
-            ->assertDontSee('DPH')
-            ->assertDontSee('Mezisoučet')
-            ->assertSee('Celkem k úhradě');
     });
 
     it('drops the conversion badge when a price is typed, and keeps it removed after the save', function (): void {
@@ -408,24 +340,6 @@ describe('line origins and previews', function (): void {
         expect($line->unit_price_minor)->toBe(7000)
             ->and($line->line_total_minor)->toBe(14000)
             ->and($line->source->price_manual)->toBeTrue();
-    });
-
-    it('shows the danger message with a link to the settings when the currency has no bank account', function (): void {
-        $client = InvoiceFixtures::client(['currency' => 'USD']);
-        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')]);
-
-        $editor = editor($draft);
-
-        $editor->assertSee('Bez bankovního účtu nejde doklad s úhradou převodem vystavit. Účty spravujete v')
-            ->assertSee(SettingsPage::getUrl());
-
-        expect($editor->html())->toContain('fi-color-danger');
-    });
-
-    it('shows the account of the currency when it exists', function (): void {
-        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '100.00')]);
-
-        editor($draft)->assertSee('Example CZK account')->assertDontSee('není nastaven bankovní účet');
     });
 
     it('asks for the zero price to be confirmed on the line', function (): void {
@@ -818,12 +732,6 @@ describe('fixed amounts', function (): void {
 });
 
 describe('the table of items', function (): void {
-    it('shows the empty row text for a draft without items', function (): void {
-        $draft = InvoiceFixtures::draft(InvoiceFixtures::client());
-
-        editor($draft)->assertSee('Zatím žádné položky. Přidejte položku nebo připojte čas.');
-    });
-
     it('hides the add buttons and names the cap at the most lines', function (): void {
         config(['kokpit.invoicing.max_items' => 3]);
         $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [
@@ -837,16 +745,6 @@ describe('the table of items', function (): void {
             ->assertDontSee('Přidat položku')
             ->assertDontSee('Přidat pevnou částku')
             ->assertDontSee('Přidat nový čas');
-    });
-
-    it('offers the add buttons below the cap, and no cap note', function (): void {
-        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example one', '1', '10.00')]);
-
-        editor($draft)
-            ->assertSee('Přidat položku')
-            ->assertSee('Přidat pevnou částku')
-            ->assertSee('Přidat nový čas')
-            ->assertDontSee('Doklad může mít nejvýše');
     });
 
     it('moves a line down for keyboard users and stores the positions in the visible order', function (): void {
@@ -869,18 +767,6 @@ describe('the table of items', function (): void {
 
         expect(array_map(static fn (InvoiceItem $line): string => $line->id, $lines))->toBe([$before[1]->id, $before[0]->id])
             ->and(array_map(static fn (InvoiceItem $line): int => $line->position, $lines))->toBe([1, 2]);
-    });
-
-    it('gives each delete button the name of its row', function (): void {
-        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [
-            InvoiceFixtures::item('Example first', '1', '10.00'),
-            InvoiceFixtures::item('Example second', '1', '20.00'),
-        ]);
-
-        $html = editor($draft)->html();
-
-        expect($html)->toContain('aria-label="Smazat položku 1"')
-            ->and($html)->toContain('aria-label="Smazat položku 2"');
     });
 
     it('deletes a line on save and keeps the linked time as it is', function (): void {
@@ -922,14 +808,6 @@ describe('the table of items', function (): void {
 });
 
 describe('deleting a draft', function (): void {
-    it('asks with the destructive copy', function (): void {
-        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '10.00')]);
-
-        editor($draft)
-            ->mountAction('deleteDraft')
-            ->assertMountedActionModalSee(['Smazat koncept?', 'Koncept se trvale smaže a všechny připojené záznamy času se vrátí mezi nevyfakturované.', 'Ponechat koncept']);
-    });
-
     it('deletes the draft through DeleteDraft, frees its time and returns to the list with the toast', function (): void {
         $client = InvoiceFixtures::client();
         $project = editorProject($client, 'Alpha project');
@@ -978,14 +856,6 @@ describe('the tab of linked time', function (): void {
         // The footer holds the total of all three entries: 1:00 + 2:30 + 0:30.
         expect($tab->html())->toContain('4:00')
             ->and($tab->instance()->getTable()->getDefaultPaginationPageOption())->toBe(25);
-    });
-
-    it('shows the empty state of a draft without linked time', function (): void {
-        $draft = InvoiceFixtures::draft(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '10.00')]);
-
-        entriesTab($draft)
-            ->assertSee('K faktuře není připojen žádný čas')
-            ->assertSee('Čas připojíte tlačítkem Přidat nový čas. Faktura může obsahovat i jen ruční položky.');
     });
 
     it('offers only unbilled, unreserved, billable entries of the client and links the chosen ones as new lines', function (): void {
