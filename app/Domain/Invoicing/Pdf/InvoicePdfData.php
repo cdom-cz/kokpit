@@ -198,7 +198,8 @@ final readonly class InvoicePdfData
      *
      * An online document prints only what is needed to pay by card: the online sentence with the amount and the due
      * date, the payment method, and the amount due; it reads nothing of the bank snapshot, so no account, IBAN, BIC,
-     * variable symbol or QR can reach it. A transfer document (and a legacy one without a method) prints the bank box
+     * variable symbol or QR can reach it. A cash document (Phase 15, D-02) prints the same two facts under a cash
+     * sentence, "Please pay :amount in cash by :due.", and reads no bank snapshot either. A transfer document (and a legacy one without a method) prints the bank box
      * of its snapshot, null when the snapshot is absent. The QR is printed only for a document whose currency and IBAN
      * SPAYD supports, with the variable symbol and the due date at hand, whatever the currency of the account itself
      * (D-06). Every amount is in the currency of the document (D-08).
@@ -220,6 +221,22 @@ final readonly class InvoicePdfData
                 ])),
                 'facts' => [
                     ['key' => $t('payment_method'), 'value' => $t('online_payment')],
+                    ['key' => $t('amount_due'), 'value' => $amount],
+                ],
+            ];
+        }
+
+        if ($issued->payment_method === DocumentPaymentMethod::Cash) {
+            $amount = $issued->total()->format($issued->language->value);
+
+            return [
+                'qrDataUri' => null,
+                'sentence' => self::sentence($t('cash_sentence', [
+                    'amount' => "\u{1}".$amount."\u{1}",
+                    'due' => "\u{1}".$date($issued->due_date)."\u{1}",
+                ])),
+                'facts' => [
+                    ['key' => $t('payment_method'), 'value' => $t('cash_payment')],
                     ['key' => $t('amount_due'), 'value' => $amount],
                 ],
             ];
@@ -303,6 +320,13 @@ final readonly class InvoicePdfData
      */
     private static function cardPayment(Invoice $issued, Closure $t): ?array
     {
+        $method = $issued->payment_method;
+
+        // A cash document never offers a card (Phase 15, D-02): only a method that allows the card choice or forces it can.
+        if ($method !== null && ! $method->allowsCardChoice() && ! $method->forcesCardPayment()) {
+            return null;
+        }
+
         $url = PayUrl::forInvoice($issued);
 
         if ($url === null) {
