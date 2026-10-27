@@ -9,6 +9,7 @@ use App\Filament\Auth\EditProfile;
 use App\Filament\Pages\Auth\AcceptInvitation;
 use App\Filament\Pages\Auth\RequestPasswordReset;
 use App\Filament\Pages\Dashboard;
+use App\Http\Controllers\CashReceiptPdfController;
 use App\Http\Controllers\DocumentArchiveFileController;
 use App\Http\Controllers\DocumentFileController;
 use App\Http\Controllers\InvoicePdfController;
@@ -100,6 +101,12 @@ class AdminPanelProvider extends PanelProvider
                 Route::get('/files/invoices/{invoice}', InvoicePdfController::class)
                     ->middleware([SetNoReferrerPolicy::class, 'signed', 'throttle:document-files'])
                     ->name('files.invoice');
+
+                // The PDF of a cash receipt (Phase 15, D-13) has a route of its own: the path names the receipt, the
+                // controller authorises through the scoped receipt and reads the stored PDF as system.
+                Route::get('/files/cash-receipts/{cashReceipt}', CashReceiptPdfController::class)
+                    ->middleware([SetNoReferrerPolicy::class, 'signed', 'throttle:document-files'])
+                    ->name('files.cash-receipt');
             })
             ->spa()
             // A SPA navigation fetches the link and swaps it into the page, which would swallow a file

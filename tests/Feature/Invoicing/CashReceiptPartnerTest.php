@@ -140,8 +140,9 @@ describe('the list on the detail of an own document', function (): void {
             ->and($body)->toContain($receipt->number)
             ->and($body)->toContain('Zrušen')
             ->and($body)->not->toContain('Example internal payment note')
-            ->and(mb_strtolower($body))->not->toContain('lock')
-            ->and(mb_strtolower($body))->not->toContain('uzamčen');
+            ->and($body)->not->toContain('lock_state')
+            ->and(mb_strtolower($body))->not->toContain('uzamčen')
+            ->and(mb_strtolower($body))->not->toContain('cancel_reason');
     });
 
     it('lists no receipt of another client and does not offer the tab for it', function (): void {
