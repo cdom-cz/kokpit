@@ -209,15 +209,17 @@ describe('a refusal and a forged call', function (): void {
         expect(InvoicePayment::query()->whereKey($payment->id)->exists())->toBeTrue();
     });
 
-    it('shows the refusal naming the receipt as a danger notification and keeps the cash payment, its income and the receipt', function (): void {
+    it('disables the delete of a cash payment with a valid receipt, names the receipt, and keeps the cash payment, its income and the receipt', function (): void {
         Queue::fake();
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
         $payment = app(RecordPayment::class)->handle(Canary::admin(), $invoice, ['amount' => '1000.00', 'paid_on' => '2026-10-14', 'method' => 'cash']);
         $receipt = CashReceipt::query()->where('invoice_payment_id', $payment->id)->sole();
 
+        // A disabled action is not run (R-15-14-3); the refusal of the Action itself is proven in CashReceiptCancelTest.
         paymentDeletionTab($invoice)
-            ->callAction(TestAction::make('deletePayment')->table($payment))
-            ->assertNotified(__('cash_receipts.errors.payment_has_receipt', ['number' => $receipt->number]));
+            ->assertTableActionDisabled('deletePayment', $payment)
+            ->assertSee(__('cash_receipts.admin.delete_blocked', ['number' => $receipt->number]))
+            ->callAction(TestAction::make('deletePayment')->table($payment));
 
         expect(InvoicePayment::query()->whereKey($payment->id)->exists())->toBeTrue()
             ->and(Transaction::query()->where('invoice_payment_id', $payment->id)->exists())->toBeTrue()
