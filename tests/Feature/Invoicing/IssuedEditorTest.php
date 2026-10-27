@@ -756,6 +756,54 @@ describe('the payment method in the issued editor (Phase 14)', function (): void
             ->and(iedRow($invoice)->note)->toBe('Still online.');
     });
 
+    it('offers cash on an open transfer invoice: the bank line replaces the bank state, the switch is off and disabled, and the save stores cash (Phase 15; D-03, D-04, D-05)', function (): void {
+        $invoice = iedCardInvoice();
+        $printed = iedPrintedIban('12');
+
+        iedEditor($invoice)
+            ->assertFormFieldExists('payment_method', fn ($field): bool => ($field->getOptions()['cash'] ?? null) === 'Hotově' && ! $field->isOptionDisabled('cash', 'Hotově'))
+            ->assertSet('data.card_payment_enabled', true)
+            ->set('data.payment_method', 'cash')
+            ->assertSet('data.card_payment_enabled', false)
+            ->assertFormFieldIsDisabled('card_payment_enabled')
+            ->assertFormFieldIsHidden('bank_account_id')
+            ->assertSee('Doklad placený hotově neuvádí bankovní spojení.')
+            ->assertSee('Doklad placený hotově nelze platit kartou.')
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertRedirect(InvoiceResource::getUrl('view', ['record' => $invoice]));
+
+        expect(iedRow($invoice)->payment_method)->toBe(DocumentPaymentMethod::Cash)
+            ->and(iedRow($invoice)->bank_snapshot)->toBeNull()
+            ->and((bool) iedAdminRow($invoice)->card_payment_enabled)->toBeFalse()
+            ->and(array_values(array_filter(iedLinks($invoice), static fn (PaymentLink $link): bool => $link->isLive())))->toHaveCount(0);
+
+        iedDetail($invoice)->assertSee('Hotově')->assertDontSee($printed);
+    });
+
+    it('goes from cash back to transfer: the bank state names the account the save will print, the toggle follows the client flag', function (): void {
+        $invoice = iedCardInvoice();
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'cash']);
+
+        iedEditor($invoice)
+            ->assertSet('data.payment_method', 'cash')
+            ->assertSet('data.card_payment_enabled', false)
+            ->assertFormFieldIsDisabled('card_payment_enabled')
+            ->assertFormFieldIsHidden('bank_account_id')
+            ->assertSee('Doklad placený hotově neuvádí bankovní spojení.')
+            ->set('data.payment_method', 'transfer')
+            ->assertSet('data.card_payment_enabled', true)
+            ->assertFormFieldIsEnabled('card_payment_enabled')
+            ->assertFormFieldIsVisible('bank_account_id')
+            ->assertSee('Po uložení se použije účet:')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(iedRow($invoice)->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and(iedRow($invoice)->bank_snapshot)->toEqual($this->accounts[0]->toArray())
+            ->and((bool) iedAdminRow($invoice)->card_payment_enabled)->toBeTrue();
+    });
+
     it('locks the card toggle while card payment is unavailable and does not send it', function (): void {
         $invoice = iedCardInvoice(cardOn: false);
         CardPaymentSetup::onlinePayments(false);

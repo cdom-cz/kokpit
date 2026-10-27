@@ -622,6 +622,53 @@ describe('the payment method and the account (Phase 14)', function (): void {
             ->assertFormFieldIsDisabled('card_payment_enabled')
             ->assertFormFieldIsHidden('bank_account_id');
     });
+
+    it('lists cash as a method; choosing it hides the account, sets the toggle off and disables it, and saves a cash draft (Phase 15; D-03, D-04, D-05)', function (): void {
+        $draft = InvoiceFixtures::draft(CardPaymentSetup::client(), [InvoiceFixtures::item('Example work', '1', '12500.00')]);
+
+        $editor = editor($draft)
+            ->assertFormFieldExists('payment_method', fn ($field): bool => ($field->getOptions()['cash'] ?? null) === 'Hotově' && ! $field->isOptionDisabled('cash', 'Hotově'))
+            ->assertSet('data.card_payment_enabled', true)
+            ->set('data.payment_method', 'cash')
+            ->assertSet('data.card_payment_enabled', false)
+            ->assertFormFieldIsDisabled('card_payment_enabled')
+            ->assertFormFieldIsHidden('bank_account_id')
+            ->assertSee('Doklad placený hotově nelze platit kartou.')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(storedDraft($draft)->payment_method)->toBe(DocumentPaymentMethod::Cash)
+            ->and(methodAdminRow($draft)->card_payment_enabled)->toBeFalse();
+    });
+
+    it('sets the toggle to the client flag and preselects the account when a cash draft goes back to transfer', function (bool $flag): void {
+        $client = CardPaymentSetup::client(['online_payment_enabled' => $flag]);
+        $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')]);
+
+        editor($draft)
+            ->set('data.payment_method', 'cash')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        editor($draft)
+            ->assertSet('data.payment_method', 'cash')
+            ->assertSet('data.card_payment_enabled', false)
+            ->assertFormFieldIsDisabled('card_payment_enabled')
+            ->assertFormFieldIsHidden('bank_account_id')
+            ->set('data.payment_method', 'transfer')
+            ->assertSet('data.card_payment_enabled', $flag)
+            ->assertFormFieldIsEnabled('card_payment_enabled')
+            ->assertFormFieldIsVisible('bank_account_id')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect(storedDraft($draft)->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and(methodAdminRow($draft)->card_payment_enabled)->toBe($flag)
+            ->and(methodAdminRow($draft)->bank_account_id)->toBe($this->accounts[0]->id);
+    })->with([
+        'the client flag is on' => [true],
+        'the client flag is off' => [false],
+    ]);
 });
 
 describe('fixed amounts', function (): void {
