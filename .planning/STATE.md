@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 current_phase: 12
 current_phase_name: Partner Audit
 status: verifying
-stopped_at: Completed 12-09-PLAN.md
-last_updated: "2026-10-25T18:45:41.030Z"
-last_activity: 2026-10-24
+stopped_at: Phase 15 context gathered
+last_updated: "2026-10-27T14:36:05.270Z"
+last_activity: 2026-10-25
 last_activity_desc: Phase 12 execution started
-state_head: 96507ce19a4cc9a68371d93664bc90af1f9225cd
+state_head: 9cc4cc32ed0292bf8a7c549a2fcbe7b61d448424
 progress:
-  total_phases: 16
+  total_phases: 17
   completed_phases: 7
   total_plans: 294
   completed_plans: 294
-  percent: 44
+  percent: 41
 ---
 
 # Project State
@@ -32,7 +32,7 @@ Plan: 9 of 9
 Status: Phase complete — ready for verification
 Last activity: 2026-10-25 - Completed quick task 261025-oc2: Optimize the test suite (prune non-essential tests, shard CI)
 
-Progress: [████░░░░░░] 44%
+Progress: [████░░░░░░] 41%
 
 ## Performance Metrics
 
@@ -941,6 +941,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 - Phase 14 added: Online payment method and invoice currency: selectable online (Stripe) payment method that replaces bank payment details on the invoice, and selectable invoice currency reflected in the PDF and the Stripe payment
 - Phase 10.1 inserted after Phase 10: Invoices stay fully editable until sent, with a manual unlock (URGENT)
 - Phase 10.2 removed: the paid-invoice confirmation e-mail is delivered in Phase 13
+- Phase 15 added: Cash payment method for invoices and cash receipt documents: invoices payable in cash, plus a cash receipt document (PPD) issued for them; research first what it is and how to issue it
 - Phase 14 edited: edited fields: title, goal (payment method switchable between bank transfer and online; currency independent of method and bank account; account preselected by matching currency, separately selectable)
 
 ## Deferred Items
@@ -953,6 +954,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-24T05:56:35.828Z
-Stopped at: Completed 12-09-PLAN.md
-Resume file: None
+Last session: 2026-10-27T14:36:02.204Z
+Stopped at: Phase 15 context gathered
+Resume file: .planning/phases/15-cash-payment-method-for-invoices-and-cash-receipt-documents/15-CONTEXT.md
