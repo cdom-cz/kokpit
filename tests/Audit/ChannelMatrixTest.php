@@ -343,7 +343,7 @@ it('serves the Admin the files of both clients, so the download rows are not vac
 
     $urls = $this->probe->downloadUrls($this->probe->admin());
 
-    foreach (['document a', 'document b', 'invoice a', 'invoice b', 'archive a', 'archive b'] as $label) {
+    foreach (['document a', 'document b', 'invoice a', 'invoice b', 'cash receipt a', 'cash receipt b', 'archive a', 'archive b'] as $label) {
         $response = $this->get($urls[$label]);
 
         expect($response->getStatusCode())->toBe(200, "{$label} answered {$response->getStatusCode()} for the Admin");

@@ -8,8 +8,10 @@ use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\Documents\Support\DocumentUrl;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
+use App\Domain\Invoicing\Support\CashReceiptPdfUrl;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Projects\Models\Project;
@@ -90,8 +92,9 @@ function walkedRoutes(): array
  * (a {document} parameter) gets the visible canary document of the requested side ('a' or 'b'), and the archive
  * route (an {archive} parameter) gets the canary ZIP archive of that side, both signed for the signed-in user
  * through DocumentUrl, and the invoice PDF route (an {invoice} parameter) gets the issued canary invoice of that side
- * signed through InvoicePdfUrl, so that the walk reaches the controller instead of stopping at the signature check. Any
- * other parameter fails the walk so that a new kind of route is looked at on purpose.
+ * signed through InvoicePdfUrl, and the cash receipt PDF route (a {cashReceipt} parameter) gets the canary receipt of that
+ * side signed through CashReceiptPdfUrl, so that the walk reaches the controller instead of stopping at the signature
+ * check. Any other parameter fails the walk so that a new kind of route is looked at on purpose.
  */
 function walkedUrl(LaravelRoute $route, string $recordId, string $side = 'a'): string
 {
@@ -126,6 +129,16 @@ function walkedUrl(LaravelRoute $route, string $recordId, string $side = 'a'): s
             }
 
             return InvoicePdfUrl::download(walkedInvoice($side), $user);
+        }
+
+        if ($parameter === 'cashReceipt' && $route->getName() === CashReceiptPdfUrl::ROUTE) {
+            $user = auth()->user();
+
+            if (! $user instanceof User) {
+                throw new LogicException('The route walk signs the cash receipt PDF route for the signed-in user; sign in before walking.');
+            }
+
+            return CashReceiptPdfUrl::download(walkedCashReceipt($side), $user);
         }
 
         if ($parameter !== 'record') {
@@ -176,6 +189,37 @@ function walkedInvoicePdf(string $side): string
         $document = app(StoreGeneratedDocument::class)->handle(Canary::admin(), $invoice, $bytes, 'faktura-fictional.pdf');
 
         InvoiceAdmin::query()->where('invoice_id', $invoice->getKey())->firstOrFail()
+            ->forceFill(['pdf_document_id' => $document->getKey()])->save();
+    });
+
+    return $bytes;
+}
+
+/**
+ * The canary cash receipt of a side: the one of the canary payment, found by its printed purpose (the canary).
+ */
+function walkedCashReceipt(string $side): CashReceipt
+{
+    $canary = $side === 'a' ? test()->canaryA : test()->canaryB;
+
+    return app(PartnerContext::class)->runAsSystem(
+        static fn (): CashReceipt => CashReceipt::query()->where('purpose', $canary)->firstOrFail(),
+    );
+}
+
+/**
+ * Stores a fictional PDF for the canary cash receipt of a side and links it from the receipt, the way issuing does, so
+ * that the route can be served; returns the bytes.
+ */
+function walkedCashReceiptPdf(string $side): string
+{
+    $receipt = walkedCashReceipt($side);
+    $bytes = implode("\n", ['%PDF-1.4', '%fictional '.Str::random(8), '%%EOF', '']);
+
+    app(PartnerContext::class)->runAsSystem(static function () use ($receipt, $bytes): void {
+        $document = app(StoreGeneratedDocument::class)->handle(Canary::admin(), $receipt, $bytes, 'prijmovy-doklad-fictional.pdf');
+
+        CashReceipt::query()->whereKey($receipt->getKey())->firstOrFail()
             ->forceFill(['pdf_document_id' => $document->getKey()])->save();
     });
 
@@ -317,7 +361,8 @@ it('walks at least the dashboard, the canary list and the canary record route', 
         ->and($names)->toContain('filament.admin.resources.my-projects.view')
         ->and($names)->toContain('filament.admin.files.document')
         ->and($names)->toContain('filament.admin.files.archive')
-        ->and($names)->toContain('filament.admin.files.invoice');
+        ->and($names)->toContain('filament.admin.files.invoice')
+        ->and($names)->toContain('filament.admin.files.cash-receipt');
 });
 
 it('refuses a record route of a resource it does not know, so a new resource is looked at on purpose', function (): void {
@@ -568,6 +613,57 @@ it('answers a Partner without a client 403 or 404 on the invoice PDF route and s
 
     foreach (['a', 'b'] as $side) {
         $url = walkedUrl(Route::getRoutes()->getByName(InvoicePdfUrl::ROUTE), $this->recordA->id, $side);
+        $response = $this->get($url);
+        $body = (string) $response->getContent();
+
+        expect($response->getStatusCode())->toBeIn([403, 404])
+            ->and(str_contains($body, $this->canaryA))->toBeFalse()
+            ->and(str_contains($body, $this->canaryB))->toBeFalse();
+    }
+});
+
+it('refuses the cash receipt PDF route for the receipt of client B to Partner A with a 404 and no trace of client B', function (): void {
+    DocumentFixtures::fakeDisk();
+    walkedCashReceiptPdf('b');
+
+    $this->actingAs(Canary::partnerFor($this->clientA));
+
+    $url = walkedUrl(Route::getRoutes()->getByName(CashReceiptPdfUrl::ROUTE), $this->recordB->id, 'b');
+    $response = $this->get($url)->assertNotFound();
+    $body = (string) $response->getContent();
+
+    expect(str_contains($body, $this->canaryB))->toBeFalse()
+        ->and(str_contains($body, $this->clientB))->toBeFalse();
+});
+
+it('serves Partner A the cash receipt PDF route for the own receipt and the Admin for both clients, so the refusal comes from the scope', function (): void {
+    DocumentFixtures::fakeDisk();
+    $bytes = ['a' => walkedCashReceiptPdf('a'), 'b' => walkedCashReceiptPdf('b')];
+
+    $this->actingAs(Canary::partnerFor($this->clientA));
+
+    $own = $this->get(walkedUrl(Route::getRoutes()->getByName(CashReceiptPdfUrl::ROUTE), $this->recordA->id, 'a'))->assertOk();
+
+    expect($own->streamedContent())->toBe($bytes['a']);
+
+    $this->actingAs(Canary::admin());
+
+    foreach (['a', 'b'] as $side) {
+        $response = $this->get(walkedUrl(Route::getRoutes()->getByName(CashReceiptPdfUrl::ROUTE), $this->recordA->id, $side))->assertOk();
+
+        expect($response->streamedContent())->toBe($bytes[$side]);
+    }
+});
+
+it('answers a Partner without a client 403 or 404 on the cash receipt PDF route and shows nothing of either client', function (): void {
+    DocumentFixtures::fakeDisk();
+    walkedCashReceiptPdf('a');
+    walkedCashReceiptPdf('b');
+
+    $this->actingAs(Canary::partnerFor(null));
+
+    foreach (['a', 'b'] as $side) {
+        $url = walkedUrl(Route::getRoutes()->getByName(CashReceiptPdfUrl::ROUTE), $this->recordA->id, $side);
         $response = $this->get($url);
         $body = (string) $response->getContent();
 

@@ -12,6 +12,7 @@ use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Partner\Resources\PartnerInvoiceResource\Pages\ListPartnerInvoices;
 use App\Filament\Partner\Resources\PartnerInvoiceResource\Pages\ViewPartnerInvoice;
+use App\Filament\Partner\Resources\PartnerInvoiceResource\RelationManagers\PartnerCashReceiptsRelationManager;
 use App\Filament\Support\InvoiceColumns;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -25,7 +26,7 @@ use Filament\Tables\Table;
  * The query is the scoped `Invoice` model: a draft, an unissued document and another client's document do not exist
  * for a Partner, so a guessed, foreign or draft id is a 404 and never a 403. The table and the infolist are built only
  * from the Partner-safe builders of `InvoiceColumns`; there is no create, edit or delete page, no bulk action, no
- * export, no relation manager and no global search. The slug differs from the Admin document resource.
+ * export, no global search and one relation manager only, the read-only cash receipts of the document. The slug differs from the Admin document resource.
  */
 #[AccessRule(Audience::PartnerAllowed, reason: 'A Partner sees the issued documents of the own client read-only; only what the document prints and its derived state are shown.')]
 final class PartnerInvoiceResource extends Resource
@@ -105,11 +106,12 @@ final class PartnerInvoiceResource extends Resource
     }
 
     /**
-     * No relation: a Partner never reads payments, linked time, files or the e-mail log of a document.
+     * One relation manager, the read-only cash receipts of the document (Phase 15, D-13): a Partner never reads
+     * payments, linked time, files or the e-mail log of a document.
      */
     public static function getRelations(): array
     {
-        return [];
+        return [PartnerCashReceiptsRelationManager::class];
     }
 
     public static function getPages(): array

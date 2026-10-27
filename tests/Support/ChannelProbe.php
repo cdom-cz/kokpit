@@ -14,9 +14,11 @@ use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\ApiAbility;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Invoicing\Support\CashReceiptPdfUrl;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Projects\Enums\ProjectPriority;
@@ -851,6 +853,10 @@ final class ChannelProbe
             return [Invoice::class, InvoiceItem::class];
         }
 
+        if ($name === CashReceiptPdfUrl::ROUTE) {
+            return [CashReceipt::class];
+        }
+
         $slug = $this->walkResourceSlug($route);
 
         if ($slug === null) {
@@ -928,7 +934,7 @@ final class ChannelProbe
      * The URL of a walked route for the signed-in user. A route with a {record} parameter gets the given record id;
      * the file route (a {document} parameter) gets the visible canary document of the side, the archive route (an
      * {archive} parameter) the canary archive, the invoice PDF route (an {invoice} parameter) the issued canary
-     * invoice, all signed for the signed-in user, so that the walk reaches the controller. Any other parameter
+     * invoice, the cash receipt PDF route (a {cashReceipt} parameter) the canary receipt, all signed for the signed-in user, so that the walk reaches the controller. Any other parameter
      * fails the walk, so a new kind of route is looked at on purpose.
      */
     public function walkUrl(LaravelRoute $route, string $recordId, string $side = 'a'): string
@@ -946,6 +952,10 @@ final class ChannelProbe
 
             if ($parameter === 'invoice' && $route->getName() === InvoicePdfUrl::ROUTE) {
                 return InvoicePdfUrl::download($this->walkInvoice($side), $this->walkUser());
+            }
+
+            if ($parameter === 'cashReceipt' && $route->getName() === CashReceiptPdfUrl::ROUTE) {
+                return CashReceiptPdfUrl::download($this->walkCashReceipt($side), $this->walkUser());
             }
 
             if ($parameter !== 'record') {
@@ -971,7 +981,7 @@ final class ChannelProbe
 
     private function walkIsFileRoute(LaravelRoute $route): bool
     {
-        return in_array($route->getName(), [DocumentUrl::ROUTE, DocumentUrl::ARCHIVE_ROUTE, InvoicePdfUrl::ROUTE], true);
+        return in_array($route->getName(), [DocumentUrl::ROUTE, DocumentUrl::ARCHIVE_ROUTE, InvoicePdfUrl::ROUTE, CashReceiptPdfUrl::ROUTE], true);
     }
 
     private function walkHasRecord(LaravelRoute $route): bool
@@ -1005,6 +1015,18 @@ final class ChannelProbe
     }
 
     /**
+     * The canary cash receipt of a side: the one of the canary payment, found by its printed purpose (the canary).
+     */
+    private function walkCashReceipt(string $side): CashReceipt
+    {
+        $canary = $this->canary($side);
+
+        return app(PartnerContext::class)->runAsSystem(
+            static fn (): CashReceipt => CashReceipt::query()->where('purpose', $canary)->firstOrFail(),
+        );
+    }
+
+    /**
      * The canary ZIP archive of a side: the fixture row whose summary is the canary.
      */
     private function walkArchive(string $side): DocumentArchive
@@ -1018,7 +1040,8 @@ final class ChannelProbe
 
     /**
      * Stores a fictional PDF for the issued canary invoice of each side and links it from the Admin-only row, the way
-     * issuing does, so that the invoice PDF route can be served; once per test. Returns the bytes by side.
+     * issuing does, and one for the canary cash receipt of each side, so that the invoice and the receipt PDF routes
+     * can be served; once per test. Returns the bytes by side.
      *
      * @return array<string, string>
      */
@@ -1041,6 +1064,16 @@ final class ChannelProbe
                 $document = app(StoreGeneratedDocument::class)->handle($this->admin, $invoice, $bytes[$side], 'faktura-fictional.pdf');
 
                 InvoiceAdmin::query()->where('invoice_id', $invoice->getKey())->firstOrFail()
+                    ->forceFill(['pdf_document_id' => $document->getKey()])->save();
+            });
+
+            // The canary cash receipt gets its stored PDF as well, so the receipt PDF route can be served.
+            $receipt = $this->walkCashReceipt($side);
+
+            app(PartnerContext::class)->runAsSystem(function () use ($receipt, $side, $bytes): void {
+                $document = app(StoreGeneratedDocument::class)->handle($this->admin, $receipt, $bytes[$side], 'prijmovy-doklad-fictional.pdf');
+
+                CashReceipt::query()->whereKey($receipt->getKey())->firstOrFail()
                     ->forceFill(['pdf_document_id' => $document->getKey()])->save();
             });
         }
@@ -1162,6 +1195,8 @@ final class ChannelProbe
             ['archive b', $urls['archive b'], [DocumentArchive::class], false],
             ['invoice pdf a', $urls['invoice a'], [Invoice::class, InvoiceItem::class], true],
             ['invoice pdf b', $urls['invoice b'], [Invoice::class, InvoiceItem::class], false],
+            ['cash receipt pdf a', $urls['cash receipt a'], [CashReceipt::class], true],
+            ['cash receipt pdf b', $urls['cash receipt b'], [CashReceipt::class], false],
         ];
         $segments = [];
         $offenders = [];
@@ -1194,7 +1229,7 @@ final class ChannelProbe
 
     /**
      * The signed URLs of the canary files for one user, keyed "{kind} {side}": the visible document, the canary
-     * archive and the issued invoice's PDF of each side. A control signs them for the Admin.
+     * archive, the issued invoice's PDF and the canary cash receipt's PDF of each side. A control signs them for the Admin.
      *
      * @return array<string, string>
      */
@@ -1206,6 +1241,7 @@ final class ChannelProbe
             $urls["document {$side}"] = DocumentUrl::download($this->walkDocument($side), $user);
             $urls["archive {$side}"] = DocumentUrl::archive($this->walkArchive($side), $user);
             $urls["invoice {$side}"] = InvoicePdfUrl::download($this->walkInvoice($side), $user);
+            $urls["cash receipt {$side}"] = CashReceiptPdfUrl::download($this->walkCashReceipt($side), $user);
         }
 
         return $urls;
