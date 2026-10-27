@@ -394,16 +394,25 @@ Put it **before** the `$bank = $issued->bank_snapshot; if ($bank === null) retur
 | A9 | EET 2.0 will become law on the stated schedule and does not change PPD content | Legal Findings | Out of scope here; revisit if the President vetoes or scope text differs |
 | A10 | A confirmation whose client has no usable invoice e-mail (`skipped`) leaves the PPD open (never locked) | Pitfall 4 | Owner may expect a manual "mark as handed over" lock; not in D-12 |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All five questions are resolved for planning (2026-10-27). Each one names the adopted answer and the assumption id of `15-01-PLAN.md` that records it; "owner" marks an answer the owner gave, "adopted" marks the research recommendation taken as binding until the owner overrides it.
 
 1. **Cancelled PPD with a still-recorded payment.**
    - Known: D-08 lets the Admin cancel a PPD first and delete the payment second. Between the two steps a cash payment exists without a valid PPD, contradicting D-06's invariant.
    - Unclear: should the cancel action offer "cancel receipt and delete payment" as one step, or leave the intermediate state visible?
    - Recommendation: keep two steps as decided, show a warning badge "payment without a valid receipt" on the payment row, and add the combined action only if the owner asks.
+   - **RESOLVED (adopted, AS-7):** two steps as decided by D-08; the Platby tab shows the warning badge "payment without a valid receipt" (plan 15-14); no combined action.
 2. **Historic cash payments.** Recommendation: no backfill (A6). Confirm.
+   - **RESOLVED (owner, AS-2):** "Earlier cash payments do not exist." Nothing to backfill, and D-06 holds for every cash payment in the database; it is not narrowed (plans 15-02, 15-08).
 3. **Confirmation e-mail for a proforma payment.** `QueuePaymentConfirmation` already queues one for proforma payments (the docblock notes A-13-1 as the switch). A cash proforma payment therefore mails its PPD too. Confirm this is wanted (it follows from D-06 and D-12).
+   - **RESOLVED (adopted, AS-3):** a cash payment of a proforma issues a PPD and its confirmation mails it (plans 15-08, 15-10).
 4. **Cancelled PPD and the confirmation not yet sent** (grace window): recommended behaviour is to send the confirmation without attachment (Pitfall 4). Confirm.
+   - **RESOLVED (adopted, AS-1):** the confirmation is still sent, without attachment, and the cancelled PPD is not locked (plans 15-10, 15-12).
 5. **Admin "regenerate PDF" when the stored PPD PDF was deleted.** Mirror `RegeneratePdf` for PPDs or rely on edit-save. Recommendation: small `RegenerateCashReceiptPdf` reusing `CashReceiptPdf`.
+   - **RESOLVED (adopted, AS-12):** a small `RegenerateCashReceiptPdf` recreates a missing PDF from the receipt row in any state (plans 15-13, 15-14).
+
+Related owner answers of 2026-10-27 outside this list: the Admin detail keeps the stored variable symbol (AS-13); the 270,000 CZK same-day cash limit and the EET 2.0 scope are recorded only, with no product guard (AS-14, AS-15); the cancel and unlock reasons and printed edit texts go to the Admin-only activity log, a deliberate deviation from the "Cancel reason or purpose text leaking into the activity log" row of the Security Domain table (AS-16).
 
 ## Environment Availability
 

@@ -19,7 +19,7 @@ Already fixed in earlier phases (not re-opened): money is bigint minor units plu
 
 ### Cash as a payment method
 - **D-01:** `DocumentPaymentMethod` gets a third case `Cash` next to `Transfer` and `Online`; the `invoices.payment_method` column and its CHECK constraint are extended, not a new column. A credit note still carries no method. — **Reversibility:** costly — the column, the CHECK, the PDF, e-mail and detail templates and the Stripe link logic all branch on it.
-- **D-02:** A document with method `Cash` hides all payment details: no bank box, no bank account, no QR, no variable symbol, no "Pay by card" button, no bank snapshot (`bank_snapshot` NULL, like `online` under Phase 14 OA-7). It prints only the amount, the due date and what is needed to identify the document. (Owner, explicit: "hide the payment details on a cash invoice".)
+- **D-02:** A document with method `Cash` hides all payment details: no bank box, no bank account, no QR, no variable symbol, no "Pay by card" button, no bank snapshot (`bank_snapshot` NULL, like `online` under Phase 14 OA-7). It prints only the amount, the due date and what is needed to identify the document. (Owner, explicit: "hide the payment details on a cash invoice".) **Amended 2026-10-27 (owner confirmed, AS-13 in `15-01-PLAN.md`):** one Admin-only carve-out: the Admin detail of a cash document keeps showing the stored variable symbol as an internal reference, not as a payment instruction; the print, the PDF, the e-mail and the Partner detail never show it (planned in `15-04-PLAN.md`).
 - **D-03:** `Cash` excludes card payment: the card switch is off and locked, no Stripe link is created, and the public pay URL shows the existing information page. This differs from `Transfer`, which can still be paid by card.
 - **D-04:** `Cash` is chosen and changed like the other methods (Phase 14 D-09): in the draft and, while the document is open, on an issued invoice or proforma until a successful e-mail send locks it; afterwards only after an Admin unlock. Changing to `Cash` deactivates any active Stripe link (Phase 14 D-10). The default of a new draft stays `Transfer`.
 - **D-05:** Currency stays independent of the method, so a cash document may have any currency. No bank account is chosen or required for `Cash`.
@@ -37,6 +37,10 @@ Already fixed in earlier phases (not re-opened): money is bigint minor units plu
 - **D-11:** The PPD PDF is generated at issue from snapshots only (supplier, customer, amount, currency, payment date, purpose), in the client's invoice language, stored in documents like invoice PDFs, and regenerated on an edit. The legally required content comes from research.
 - **D-12:** The PPD PDF is attached to the payment confirmation e-mail of Phase 13 (`QueuePaymentConfirmation`); no separate e-mail and no separate send state. The confirmation e-mail is the delivery, and a successful send of it counts as the send that locks the PPD (D-10).
 - **D-13:** The Admin sees the PPD in the invoice detail next to the payment (PDF download, cancel action, edit while open). The Partner sees and downloads the PPDs of their own invoices only, read-only, never drafts or internal notes, and never time rates, enforced by Policy and scope, not only UI hiding.
+
+### Owner clarification (planning)
+- **2026-10-27, D-06 unchanged:** asked whether cash payments recorded before this phase need a PPD backfill, the owner answered: "Earlier cash payments do not exist." No backfill is needed, and D-06 holds for every cash payment in the database. Recorded as AS-2 (owner confirmed) in `15-01-PLAN.md`.
+- **2026-10-27, D-06 enforcement:** asked whether the database should force a PPD for every cash payment (a constraint trigger), the owner decided that D-06 stays enforced in the application only, by `RecordPayment`, with no database constraint trigger. The owner accepts that a cash payment written outside `RecordPayment` (raw SQL, console) would have no PPD. Recorded in AS-2 (`15-01-PLAN.md`), R-15-02-6 (`15-02-PLAN.md`), T-15-17 (`15-08-PLAN.md`) and the hand-over of `15-14-PLAN.md`.
 
 ### Claude's Discretion
 Enum case and column names, the table shape of the PPD (own table or reuse of the invoice table with a new kind; the planner decides after research), the default numbering pattern, the migration of the CHECK constraint, the exact wording (cs/en), the layout of the PPD PDF, the form for the cancel reason, and how the cancelled state is shown.
@@ -97,7 +101,9 @@ No external specs; the legal source for the PPD is to be found by research.
 <deferred>
 ## Deferred Ideas
 
-None — discussion stayed within phase scope.
+None from the discussion, which stayed within phase scope. Added during planning (owner answer of 2026-10-27):
+
+- Legal cash limits as product guards: the 270,000 CZK same-day cash limit between one payer and one payee (Act 254/2004) and EET 2.0 sales recording (planned from 1 Jan 2027; whether a cash payment of an invoice received in person is in scope is not settled). Kokpit adds no warning, refusal or recording in this phase; both are recorded only, as AS-14 and AS-15 in `15-01-PLAN.md`, so the owner sees them, and a later phase decides if the law requires more.
 
 ### Reviewed Todos (not folded)
 - "Redesign unreadable time report layout" — matched on keywords only; unrelated to cash payments.

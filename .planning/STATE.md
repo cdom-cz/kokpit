@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 12
-current_phase_name: Partner Audit
-status: verifying
+current_phase: 15
+current_phase_name: Cash payment method for invoices and cash receipt documents
+status: executing
 stopped_at: Phase 15 context gathered
-last_updated: "2026-10-27T14:36:05.270Z"
+last_updated: "2026-10-27T16:28:19.296Z"
 last_activity: 2026-10-25
 last_activity_desc: Phase 12 execution started
-state_head: 9cc4cc32ed0292bf8a7c549a2fcbe7b61d448424
+state_head: 4b0b123131a0bed28e0fca4f4903a5d806077c88
 progress:
-  total_phases: 17
+  total_phases: 18
   completed_phases: 7
-  total_plans: 294
+  total_plans: 308
   completed_plans: 294
-  percent: 41
+  percent: 39
 ---
 
 # Project State
@@ -27,12 +27,12 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 
 ## Current Position
 
-Phase: 12 (Partner Audit) — EXECUTING
+Phase: 15 (Cash payment method for invoices and cash receipt documents) — READY TO EXECUTE
 Plan: 9 of 9
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Last activity: 2026-10-25 - Completed quick task 261025-oc2: Optimize the test suite (prune non-essential tests, shard CI)
 
-Progress: [████░░░░░░] 41%
+Progress: [████░░░░░░] 39%
 
 ## Performance Metrics
 
@@ -941,6 +941,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 - Phase 14 added: Online payment method and invoice currency: selectable online (Stripe) payment method that replaces bank payment details on the invoice, and selectable invoice currency reflected in the PDF and the Stripe payment
 - Phase 10.1 inserted after Phase 10: Invoices stay fully editable until sent, with a manual unlock (URGENT)
 - Phase 10.2 removed: the paid-invoice confirmation e-mail is delivered in Phase 13
+- Phase 16 added: Per-client e-mail sending toggle: a client setting that disables sending e-mails (invoices and related documents) for clients served exclusively by hand; enabled by default
 - Phase 15 added: Cash payment method for invoices and cash receipt documents: invoices payable in cash, plus a cash receipt document (PPD) issued for them; research first what it is and how to issue it
 - Phase 14 edited: edited fields: title, goal (payment method switchable between bank transfer and online; currency independent of method and bank account; account preselected by matching currency, separately selectable)
 

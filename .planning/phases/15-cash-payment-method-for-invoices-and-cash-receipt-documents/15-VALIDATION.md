@@ -47,7 +47,7 @@ created: "2026-10-27"
 | P15-08/09 | PDF built from snapshots; attached to the confirmation mail; client without e-mail sends nothing | feature | `ddev exec vendor/bin/pest tests/Feature/Invoicing/CashReceiptPdfTest.php` | ❌ W0 | ⬜ pending |
 | P15-10 | DeletePayment refuses until the PPD is cancelled; cancelled row survives; raw SQL delete of an active PPD payment fails | feature + schema | `ddev exec vendor/bin/pest tests/Feature/Invoicing/DeletePaymentActionTest.php` | extend | ⬜ pending |
 | P15-11 | Partner sees only own PPDs, foreign id is 404, no payment or rate leakage | isolation | `ddev exec vendor/bin/pest tests/Isolation` | extend | ⬜ pending |
-| P15-12 | Cancel with reason, STORNO PDF, audit rows, no reason text in the activity log | feature + arch | `ddev exec vendor/bin/pest tests/Feature/Invoicing/CashReceiptCancelTest.php tests/Arch/ActivityAllowlistTest.php` | ❌ W0 | ⬜ pending |
+| P15-12 | Cancel with reason, STORNO PDF, audit rows; the reason is written only to the Admin-only activity log (AS-16, owner confirmed) and never reaches the Partner-readable row or a Partner screen; the cancelled receipt stays listed for the Partner without the reason | feature + isolation | `ddev exec vendor/bin/pest tests/Feature/Invoicing/CashReceiptCancelTest.php tests/Feature/Invoicing/CashReceiptPdfTest.php tests/Feature/Invoicing/CashReceiptPartnerTest.php` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -59,8 +59,8 @@ created: "2026-10-27"
 - [ ] `tests/Feature/Invoicing/CashReceiptIssueTest.php`, `CashReceiptLockTest.php`, `CashReceiptPdfTest.php`, `CashReceiptCancelTest.php`
 - [ ] `tests/Concurrency/CashReceiptNumberingConcurrencyTest.php` (pattern of `InvoiceIssueConcurrencyTest`)
 - [ ] `tests/Arch/CashReceiptUnlockPathTest.php` (the unlock literal stays out of other files)
-- [ ] Cash payment fixtures in `tests/Support/InvoiceFixtures.php` (fictional data only)
-- [ ] Update enumerating tests: `ModelDeclarationTest`, `ActivityAllowlistTest`, `MorphMapTest`, `PartnerSafeColumnsTest`, `RouteWalkTest`, `InvoiceEnumsTest`, `NumberingPageTest`
+- [ ] Cash payments in tests are recorded through `RecordPayment` or written with `forceFill` like the canary rows (fictional data only); no new shared fixture file
+- [ ] Update enumerating tests: `ModelDeclarationTest`, `CanaryRegistryTest`, `PartnerSafeColumnsTest`, `RouteWalkTest`, `NumberingPageTest`, `DocumentOwnerDeletionTest`, `DocumentsRelationManagerTest` (no plan extends `ActivityAllowlistTest`: `CashReceipt` does not log through model events, so its expected list stays unchanged and it runs as is)
 
 ---
 
