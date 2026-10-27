@@ -66,7 +66,7 @@ final readonly class IssueCashReceipt
             throw new LogicException('Only an issued document has a number to print on its receipt.');
         }
 
-        $language = Client::query()->withTrashed()->whereKey($locked->client_id)->first()?->invoice_language ?? $locked->language;
+        $language = Client::query()->withTrashed()->whereKey($locked->client_id)->value('invoice_language') ?? $locked->language;
         $issueDay = IssueContext::today();
 
         $receipt = new CashReceipt;

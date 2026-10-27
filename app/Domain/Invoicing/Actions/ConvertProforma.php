@@ -159,10 +159,15 @@ final readonly class ConvertProforma
     /**
      * The id of the bank account the proforma chose, as stored (null when it names none). Not filtered through the
      * settings: an id that is no longer configured is no account for the draft and is never re-picked, the invoice
-     * prints the snapshot of the proforma instead (WR-02, ruling R-14-14-4).
+     * prints the snapshot of the proforma instead (WR-02, ruling R-14-14-4). A cash proforma hands on no account:
+     * the account its draft preselected is no choice of the Admin (Phase 15 D-05).
      */
     private function inheritedAccount(Invoice $proforma): ?string
     {
+        if ($proforma->payment_method === DocumentPaymentMethod::Cash) {
+            return null;
+        }
+
         $id = InvoiceAdmin::query()->where('invoice_id', $proforma->id)->value('bank_account_id');
 
         return is_string($id) && $id !== '' ? $id : null;

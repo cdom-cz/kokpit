@@ -158,7 +158,7 @@ final readonly class RecordPayment
 
         // D-06: a cash payment issues its numbered receipt in this transaction; the actor is never null here, because
         // only a card payment is recorded without a person.
-        if ($facts->method === PaymentMethod::Cash && $actor instanceof User) {
+        if ($facts->method === PaymentMethod::Cash) {
             $this->cashReceipts->handle($locked, $payment, $actor);
         }
 
