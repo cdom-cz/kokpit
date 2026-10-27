@@ -11,7 +11,6 @@ use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\RegeneratePdf;
 use App\Domain\Invoicing\Actions\UnlockInvoice;
 use App\Domain\Invoicing\Actions\UpdateInternalNote;
-use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceStatus;
 use App\Domain\Invoicing\Models\Invoice;
@@ -952,6 +951,7 @@ final class ViewInvoice extends ViewRecord
                     ->label(__('invoices.detail.fields.due_date'))
                     ->date('j. n. Y')
                     ->placeholder($empty),
+                // AS-13 (owner confirmed 2026-10-27): the Admin detail keeps the stored variable symbol of a cash document as an internal reference; print, PDF, e-mail and the Partner detail do not show it.
                 TextEntry::make('variable_symbol')
                     ->label(__('invoices.detail.fields.variable_symbol'))
                     ->placeholder($empty),
@@ -964,8 +964,8 @@ final class ViewInvoice extends ViewRecord
                     ->state(static fn (Invoice $record): array => InvoiceColumns::bankLines($record))
                     ->listWithLineBreaks()
                     ->placeholder($empty)
-                    // D-01: only a transfer document names an account; an online one prints none and a credit note has no method.
-                    ->visible(static fn (Invoice $record): bool => $record->kind !== InvoiceKind::CreditNote && $record->payment_method === DocumentPaymentMethod::Transfer),
+                    // Phase 14 D-01, Phase 15 D-02: only a method that prints bank details names an account (a transfer one); an online or a cash one prints none and a credit note has no method.
+                    ->visible(static fn (Invoice $record): bool => $record->kind !== InvoiceKind::CreditNote && $record->payment_method?->printsBankDetails() === true),
                 TextEntry::make('source_proforma')
                     ->label(__('invoices.detail.fields.source_proforma'))
                     ->state(static fn (Invoice $record): ?string => $record->proforma?->number)

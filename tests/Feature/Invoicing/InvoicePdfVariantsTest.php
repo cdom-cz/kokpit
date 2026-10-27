@@ -538,3 +538,88 @@ describe('regeneration', function (): void {
             ->and($text)->toContain('Line '.$lines);
     })->with([1, 25, 60]);
 });
+
+/**
+ * An issued, still open document switched to cash payment the way the database allows it (Phase 15, plan 15-01): the
+ * method is cash, the bank snapshot is gone and the card switch stays off with no pay token. Returns the document read
+ * again.
+ */
+function variantCash(Invoice $issued): Invoice
+{
+    app(PartnerContext::class)->runAsSystem(static function () use ($issued): void {
+        DB::update("update invoices set payment_method = 'cash', bank_snapshot = null where id = ?", [$issued->id]);
+        DB::update('update invoice_admin set card_payment_enabled = false, pay_token = null where invoice_id = ?', [$issued->id]);
+    });
+
+    return Invoice::query()->whereKey($issued->id)->firstOrFail();
+}
+
+describe('the cash payment method (Phase 15, D-02)', function (): void {
+    it('prints a cash CZK document with the amount, the due date and the cash label, and no bank detail, symbol, QR or card lead', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Consulting', '1', '1000.00')]);
+        $iban = (string) ($issued->bank_snapshot['iban'] ?? '');
+        $cash = variantCash($issued);
+
+        $html = app(InvoicePdf::class)->html($cash);
+        $text = variantFlat($html);
+
+        expect($cash->payment_method?->value)->toBe('cash')
+            ->and($text)->toContain('Prosíme o úhradu částky '.variantMoney(100000, 'CZK', 'cs').' v hotovosti do')
+            ->and($text)->toContain('Způsob úhrady')
+            ->and($text)->toContain('Hotově')
+            ->and($text)->toContain('K úhradě')
+            ->and($text)->not->toContain('IBAN')
+            ->and($text)->not->toContain('Číslo účtu')
+            ->and($text)->not->toContain('Variabilní symbol')
+            ->and($text)->not->toContain('Převodem')
+            ->and($text)->not->toContain('na účet')
+            ->and($text)->not->toContain('platební kartou')
+            ->and($text)->not->toContain('Zaplatit kartou')
+            ->and($text)->not->toContain('zaplaťte online')
+            ->and($text)->not->toContain('Zaplaťte online')
+            ->and($html)->not->toContain($iban)
+            ->and(variantImages($html))->toBe([]);
+    });
+
+    it('prints the English words of a cash English document', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_language' => 'en']), [InvoiceFixtures::item('Consulting', '1', '1000.00')]);
+        $cash = variantCash($issued);
+
+        $text = variantFlat(app(InvoicePdf::class)->html($cash));
+
+        expect($text)->toContain('Please pay '.variantMoney(100000, 'CZK', 'en').' in cash by')
+            ->and($text)->toContain('Payment method')
+            ->and($text)->toContain('Cash')
+            ->and($text)->not->toContain('Variable symbol')
+            ->and($text)->not->toContain('Bank transfer')
+            ->and($text)->not->toContain('Pay by card')
+            ->and($text)->not->toContain('pay online by card');
+    });
+
+    it('prints a cash proforma the same way', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Advance', '1', '5000.00', 'ks')], InvoiceKind::Proforma);
+        $cash = variantCash($issued);
+
+        $text = variantFlat(app(InvoicePdf::class)->html($cash));
+
+        expect($text)->toContain('ZÁLOHOVÁ FAKTURA')
+            ->and($text)->toContain('v hotovosti do')
+            ->and($text)->toContain('Hotově')
+            ->and($text)->not->toContain('Variabilní symbol')
+            ->and($text)->not->toContain('Zaplatit kartou');
+    });
+
+    it('reads the same cash words from the rendered PDF', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Consulting', '1', '1000.00')]);
+        $text = PdfText::flat(app(InvoicePdf::class)->render(variantCash($issued)));
+
+        if ($text === null) {
+            $this->markTestSkipped('Ghostscript (gs) is not installed, so the text is not read back from the PDF.');
+        }
+
+        expect($text)->toContain('v hotovosti do')
+            ->and($text)->toContain('Hotově')
+            ->and($text)->not->toContain('Variabilní symbol')
+            ->and($text)->not->toContain('IBAN');
+    });
+});

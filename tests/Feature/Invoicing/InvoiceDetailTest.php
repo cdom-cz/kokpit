@@ -135,6 +135,24 @@ describe('the heading and the state', function (): void {
             ->assertSee('Platba kartou');
     });
 
+    it('shows the cash method of a document and no bank account, but keeps the stored variable symbol as an internal reference (AS-13)', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        app(PartnerContext::class)->runAsSystem(static function () use ($invoice): void {
+            DB::update("update invoices set payment_method = 'cash', bank_snapshot = null where id = ?", [$invoice->id]);
+            DB::update('update invoice_admin set card_payment_enabled = false, pay_token = null where invoice_id = ?', [$invoice->id]);
+        });
+
+        detail($invoice)
+            ->assertSee('Způsob úhrady')
+            ->assertSee('Hotově')
+            ->assertDontSee('Bankovní převod')
+            ->assertDontSee('Bankovní účet')
+            ->assertDontSee('IBAN')
+            ->assertSee('Variabilní symbol')
+            ->assertSee((string) $invoice->variable_symbol);
+    });
+
     it('shows neither the method nor the bank account on a credit note', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
         $creditNote = app(IssueCreditNote::class)->storno($this->admin, $invoice);
