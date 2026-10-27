@@ -982,7 +982,7 @@ Plans:
 **Goal:** Invoices can be created with cash as the payment method, and a cash receipt document (Czech: pokladni prijmovy doklad, PPD) can be issued for such invoices. Research must first establish what a cash receipt document is and how it is issued (legal requirements, content, numbering).
 **Requirements**: P15-01, P15-02, P15-03, P15-04, P15-05, P15-06, P15-07, P15-08, P15-09, P15-10, P15-11, P15-12
 **Depends on:** Phase 14
-**Plans:** 8/14 plans executed
+**Plans:** 9/14 plans executed
 
 Plans:
 **Wave 1**
@@ -1000,7 +1000,7 @@ Plans:
 - [x] 15-08-PLAN.md — Receipt issued automatically in the cash payment transaction with its audit row; concurrency proof (Wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 15-09-PLAN.md — Receipt PDF (Accounting Act Sec. 11 content) built from the receipt row only and stored (Wave 4)
+- [x] 15-09-PLAN.md — Receipt PDF (Accounting Act Sec. 11 content) built from the receipt row only and stored (Wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 15-10-PLAN.md — Receipt attached to the payment confirmation; the successful send locks it (Wave 5)
