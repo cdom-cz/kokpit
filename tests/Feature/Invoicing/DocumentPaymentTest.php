@@ -471,7 +471,7 @@ describe('online needs card payment (D-03, P14-09)', function (): void {
         $errors = dpRefused(fn () => dpSave($draft, ['payment_method' => $value]));
 
         expect($errors)->toHaveKey('payment_method')
-            ->and($errors['payment_method'][0])->toBe('Zvolte úhradu převodem nebo online.')
+            ->and($errors['payment_method'][0])->toBe('Zvolte úhradu převodem, online nebo hotově.')
             ->and($draft->fresh()->payment_method)->toBe(DocumentPaymentMethod::Transfer);
     })->with(['card', '', 5, null]);
 

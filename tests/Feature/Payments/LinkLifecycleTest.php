@@ -20,6 +20,7 @@ use App\Domain\Payments\Actions\RegeneratePaymentLink;
 use App\Domain\Payments\Enums\PaymentLinkDeactivation;
 use App\Domain\Payments\Enums\PaymentLinkState;
 use App\Domain\Payments\Enums\PayPageOutcome;
+use App\Domain\Payments\Jobs\CreatePaymentLink;
 use App\Domain\Payments\Jobs\DeactivatePaymentLinks;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Payments\Queries\PayPageState;
@@ -760,6 +761,100 @@ describe('a change of the payment method (Phase 14)', function (): void {
 
         expect(lifecycleLinks($invoice))->toHaveCount(1)
             ->and(lifecycleLive($invoice)?->id)->toBe($first->id);
+    });
+});
+
+describe('a change to cash (Phase 15; D-03, D-04)', function (): void {
+    it('switches an open transfer invoice with an active link to cash: no bank snapshot, switch off, the link replaced at Stripe too, no new link, the pay token kept, the PDF without a bank box', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $old = lifecycleLive($invoice);
+        $token = lifecycleAdminRow($invoice)->pay_token;
+        $before = lifecycleStoredPdf($invoice);
+
+        expect($old)->not->toBeNull()
+            ->and(lifecycleRow($invoice)->bank_snapshot)->not->toBeNull();
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'cash']);
+
+        $links = lifecycleLinks($invoice);
+
+        expect(lifecycleRow($invoice)->payment_method)->toBe(DocumentPaymentMethod::Cash)
+            ->and(lifecycleRow($invoice)->bank_snapshot)->toBeNull()
+            ->and(lifecycleAdminRow($invoice)->card_payment_enabled)->toBeFalse()
+            ->and(lifecycleAdminRow($invoice)->pay_token)->toBe($token)
+            ->and($links)->toHaveCount(1)
+            ->and($links[0]->state)->toBe(PaymentLinkState::Deactivated)
+            ->and($links[0]->deactivation_reason)->toBe(PaymentLinkDeactivation::Replaced)
+            ->and($links[0]->remote_deactivated_at)->not->toBeNull()
+            ->and($this->stripe->deactivated())->toBe([$old->stripe_link_id])
+            ->and(lifecycleLive($invoice))->toBeNull()
+            ->and(PayUrl::forInvoice(lifecycleRow($invoice)))->toBeNull();
+
+        $after = lifecycleStoredPdf($invoice);
+        $text = PdfText::flat($after);
+
+        expect($after)->not->toBe($before);
+
+        if ($text !== null) {
+            expect($text)->toContain('v hotovosti')
+                ->and($text)->not->toContain('Zaplatit kartou')
+                ->and(str_replace(' ', '', $text))->not->toContain(lifecycleIbanFragment());
+        }
+    });
+
+    it('queues no new link when an open invoice is changed to cash', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+
+        Queue::fake();
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'cash']);
+
+        Queue::assertNotPushed(CreatePaymentLink::class);
+
+        expect(lifecycleLinks($invoice))->toHaveCount(1)
+            ->and(lifecycleLive($invoice))->toBeNull()
+            ->and(lifecycleReasons($invoice))->toBe(['replaced']);
+    });
+
+    it('switches an online invoice to cash: no snapshot, the switch off, the online link replaced, no new link', function (): void {
+        $invoice = lifecycleOnline();
+        $token = lifecycleAdminRow($invoice)->pay_token;
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'cash']);
+
+        expect(lifecycleRow($invoice)->payment_method)->toBe(DocumentPaymentMethod::Cash)
+            ->and(lifecycleRow($invoice)->bank_snapshot)->toBeNull()
+            ->and(lifecycleAdminRow($invoice)->card_payment_enabled)->toBeFalse()
+            ->and(lifecycleAdminRow($invoice)->pay_token)->toBe($token)
+            ->and(lifecycleLive($invoice))->toBeNull()
+            ->and(lifecycleReasons($invoice))->toBe(['replaced', 'replaced']);
+    });
+
+    it('keeps answering the pay URL of a document changed to cash with the information page', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $token = (string) lifecycleAdminRow($invoice)->pay_token;
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'cash']);
+
+        $state = app(PayPageState::class)->resolve($token);
+
+        expect($state['outcome'])->toBe(PayPageOutcome::Preparing)
+            ->and($state['url'])->toBeNull();
+
+        $this->get('/pay/'.$token)->assertOk();
+    });
+
+    it('opens a link again when the cash document goes back to transfer for a client with online payment on', function (): void {
+        $invoice = CardPaymentSetup::issued(CardPaymentSetup::client());
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'cash']);
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, ['payment_method' => 'transfer']);
+
+        expect(lifecycleRow($invoice)->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and(lifecycleRow($invoice)->bank_snapshot)->not->toBeNull()
+            ->and(lifecycleAdminRow($invoice)->card_payment_enabled)->toBeTrue()
+            ->and(lifecycleLive($invoice))->not->toBeNull()
+            ->and(lifecycleLive($invoice)?->amount_minor)->toBe(1_250_000);
     });
 });
 
