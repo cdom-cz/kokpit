@@ -382,7 +382,7 @@ it('lists the Soubory tab among the relations of the client resource', function 
 
 it('has Czech labels for the owner kinds', function (): void {
     expect(array_map(static fn (DocumentOwnerType $type): string => $type->getLabel(), DocumentOwnerType::cases()))
-        ->toBe(['Klient', 'Projekt', 'Úkol', 'Komentář', 'Transakce', 'Doklad']);
+        ->toBe(['Klient', 'Projekt', 'Úkol', 'Komentář', 'Transakce', 'Doklad', 'Příjmový doklad']);
 });
 
 it('lists every file of the client with the label and name of its owner', function (): void {
