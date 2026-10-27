@@ -277,7 +277,8 @@ describe('the unlock of a locked receipt (D-10)', function (): void {
             ->assertTableActionVisible('unlockCashReceipt', $payment)
             ->assertTableActionHidden('editCashReceipt', $payment)
             ->callAction(TestAction::make('unlockCashReceipt')->table($payment), ['reason' => 'Oprava'])
-            ->assertHasActionErrors(['reason']);
+            ->assertHasActionErrors(['reason'])
+            ->unmountAction();
 
         expect(cashReceiptAdminFresh($receipt)->lock_state)->toBe(CashReceiptLockState::Locked);
 
