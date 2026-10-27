@@ -12,6 +12,7 @@ use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Invoicing\Support\CashReceiptAudit;
 use App\Domain\Invoicing\Support\SnapshotInput;
 use Carbon\CarbonImmutable;
+use Carbon\Exceptions\InvalidFormatException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -157,9 +158,14 @@ final readonly class UpdateCashReceipt
     private function receivedOn(CashReceipt $locked, mixed $value): string
     {
         $text = is_string($value) ? trim($value) : '';
-        $day = $text === '' ? false : CarbonImmutable::createFromFormat('!Y-m-d', $text);
 
-        if ($day === false || $day->format('Y-m-d') !== $text || $text > $locked->issued_on->format('Y-m-d')) {
+        try {
+            $day = $text === '' ? null : CarbonImmutable::createFromFormat('!Y-m-d', $text);
+        } catch (InvalidFormatException) {
+            $day = null;
+        }
+
+        if ($day === null || $day->format('Y-m-d') !== $text || $text > $locked->issued_on->format('Y-m-d')) {
             throw ValidationException::withMessages(['received_on' => __('cash_receipts.errors.received_on_invalid')]);
         }
 
