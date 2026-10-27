@@ -8,6 +8,7 @@ use App\Domain\Documents\Actions\DeleteDocument;
 use App\Domain\Finance\Actions\DeleteTransaction;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
@@ -25,11 +26,14 @@ use Illuminate\Validation\ValidationException;
  *
  * Everything happens in one database transaction. The order is deliberate:
  *
- * 1. the document row is locked first, the lock order shared with {@see RecordPayment} and {@see ConvertProforma}
- *    (document, payment, income), so a deletion, a conversion and a new payment of one document serialise on that
- *    row; a row lock fires no UPDATE trigger, so the frozen guard of the issued document is not touched;
+ * 1. the document row is locked first, the lock order shared with {@see RecordPayment}, {@see ConvertProforma} and
+ *    {@see CancelCashReceipt} (document, payment, receipt, income), so a deletion, a conversion, a cancel and a new
+ *    payment of one document serialise on that row; a row lock fires no UPDATE trigger, so the frozen guard of the
+ *    issued document is not touched;
  * 2. the payment is read again under its own lock (gone: `payment_missing`), and a payment that is the source of a
  *    carried copy on an invoice is refused (`payment_delete_carried`), both before anything else is changed;
+ * 2b. a payment with a receipt that is not cancelled is refused (`payment_has_receipt`, Phase 15, D-08): the Admin
+ *    cancels the receipt first ({@see CancelCashReceipt}); the receipt and its PDF are never deleted here;
  * 3. the income is locked, then the transaction-local flag `kokpit.payment_deletion` names this very payment, the
  *    only thing the payment guard and the payment-income guard of plan 10-06 accept;
  * 4. the receipts of the income go through {@see DeleteDocument} (their stored objects are removed after the commit
@@ -53,7 +57,7 @@ final readonly class DeletePayment
     ) {}
 
     /**
-     * @throws ValidationException `payment_missing` or `payment_delete_carried`, both under `payment`
+     * @throws ValidationException `payment_missing`, `payment_delete_carried` or `payment_has_receipt`, all under `payment`
      */
     public function handle(User $actor, InvoicePayment $payment): void
     {
@@ -73,6 +77,17 @@ final readonly class DeletePayment
             if ($copy instanceof InvoicePayment) {
                 throw ValidationException::withMessages([
                     'payment' => __('invoices.errors.payment_delete_carried', ['number' => (string) Invoice::query()->whereKey($copy->invoice_id)->value('number')]),
+                ]);
+            }
+
+            // D-08: a payment whose cash receipt is valid is refused; the Admin cancels the receipt first. A cancelled
+            // receipt is left alone: the key from the receipt to the payment clears its link when the payment goes, and
+            // neither the receipt nor its PDF is deleted.
+            $receipt = CashReceipt::query()->where('invoice_payment_id', $locked->id)->lockForUpdate()->first();
+
+            if ($receipt instanceof CashReceipt && ! $receipt->isCancelled()) {
+                throw ValidationException::withMessages([
+                    'payment' => __('cash_receipts.errors.payment_has_receipt', ['number' => $receipt->number]),
                 ]);
             }
 

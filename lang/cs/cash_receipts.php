@@ -15,7 +15,7 @@ return [
         'already_cancelled' => 'Příjmový doklad už je stornovaný.',
         'locked' => 'Příjmový doklad je uzamčený odesláním. Pro úpravu ho nejdřív odemkněte.',
         'not_locked' => 'Příjmový doklad není uzamčený.',
-        'reason_length' => 'Důvod musí mít 3 až 500 znaků.',
+        'reason_length' => 'Důvod musí mít 10 až 500 znaků.',
         'sending' => 'Příjmový doklad se právě odesílá. Zkuste to za chvíli.',
         'purpose_invalid' => 'Účel platby musí mít 1 až 500 znaků.',
         'received_on_invalid' => 'Datum přijetí musí být platné datum, které není po dni vystavení.',
