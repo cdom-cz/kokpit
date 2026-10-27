@@ -5,7 +5,8 @@ recorded: 2026-10-27
 critical: 0
 warning: 4
 info: 3
-open: 7
+open: 6
+accepted: 1
 ---
 
 # Phase 15 code review disposition
@@ -16,7 +17,7 @@ isolation, the cash_receipts row guard, gap-free numbering, lock order, escaping
 
 | Id | Severity | Status | Summary |
 |----|----------|--------|---------|
-| WR-01 | warning | open | An unlocked receipt can never be re-sent or re-locked: only `SendPaymentConfirmation::markSent()` locks, there is one confirmation per payment, and no resend path exists. After an unlock and edit the corrected PDF never reaches the client and the receipt stays editable. Same dead end after an `attachment_missing` failure. Needs a product decision: a sanctioned resend or an explicit relock. |
+| WR-01 | warning | accepted (owner, 2026-10-27: keep as is; a resend or explicit lock is a possible follow-up) | An unlocked receipt can never be re-sent or re-locked: only `SendPaymentConfirmation::markSent()` locks, there is one confirmation per payment, and no resend path exists. After an unlock and edit the corrected PDF never reaches the client and the receipt stays editable. Same dead end after an `attachment_missing` failure. Needs a product decision: a sanctioned resend or an explicit relock. |
 | WR-02 | warning | open | `runReceiptAction()` in `InvoicePaymentsRelationManager` does not map `RuntimeException` / `DomainException` from the PDF render or store step; only the regenerate action does. A storage or render failure during cancel or edit surfaces as an unhandled Livewire error (the transaction rolls back, no data lost). |
 | WR-03 | warning | open | `CashReceiptPdfData` always prints "supplier is not a VAT payer" and ignores `vat_payer` in the snapshot. Latent while `IssueChecks` blocks VAT-payer issuing. |
 | WR-04 | warning | open | The regenerate action is visible only when `pdf_document_id` is null, but the action also covers a document row whose stored object is gone. In that case there is no UI repair, the download returns 404 and the confirmation fails permanently. |
