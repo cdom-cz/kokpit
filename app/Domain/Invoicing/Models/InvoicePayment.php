@@ -100,6 +100,17 @@ final class InvoicePayment extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * The cash receipt of the payment (Phase 15), read only: a payment of another method, a carried copy and a payment
+     * recorded before the receipts existed have none. The payment row itself stays immutable.
+     *
+     * @return HasOne<CashReceipt, $this>
+     */
+    public function cashReceipt(): HasOne
+    {
+        return $this->hasOne(CashReceipt::class, 'invoice_payment_id');
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

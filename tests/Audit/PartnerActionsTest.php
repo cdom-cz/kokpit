@@ -6,6 +6,7 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Actions\AttachDocuments;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Projects\Actions\CreateProject;
@@ -175,6 +176,7 @@ function auditActionsScene(User $admin, User $partnerA, string $clientA, string 
         $issuedA = $invoice($clientA, $canaryA, true);
         $draftA = $invoice($clientA, $canaryA, false);
         $issuedB = $invoice($clientB, $canaryB, true);
+        $receipt = static fn (string $client, string $canary): CashReceipt => CashReceipt::query()->where('client_id', $client)->where('purpose', $canary)->firstOrFail();
 
         $file = static fn (string $name): Document => Document::query()->where('name', $name)->firstOrFail();
         $tag = static fn (string $canary): Tag => Tag::query()->get()->first(static fn (Tag $candidate): bool => $candidate->name === $canary) ?? throw new LogicException("No project tag carries {$canary}.");
@@ -187,6 +189,7 @@ function auditActionsScene(User $admin, User $partnerA, string $clientA, string 
             Document::class => ['own_visible' => $file($canaryA.'.txt'), 'own_hidden' => $file($canaryA.'-hidden.txt'), 'foreign' => $file($canaryB.'.txt')],
             Invoice::class => ['own_visible' => $issuedA, 'own_hidden' => $draftA, 'foreign' => $issuedB],
             InvoiceItem::class => ['own_visible' => $item($issuedA), 'own_hidden' => $item($draftA), 'foreign' => $item($issuedB)],
+            CashReceipt::class => ['own_visible' => $receipt($clientA, $canaryA), 'foreign' => $receipt($clientB, $canaryB)],
             Tag::class => ['own_visible' => $tag($canaryA), 'foreign' => $tag($canaryB)],
             CanaryRecord::class => ['own_visible' => $canaryRecord($canaryA), 'foreign' => $canaryRecord($canaryB)],
         ];

@@ -19,6 +19,7 @@ use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Notifications\ResetPasswordNotification;
 use App\Domain\Invoicing\Mail\InvoiceMail;
 use App\Domain\Invoicing\Mail\PaymentConfirmationMail;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
@@ -156,6 +157,8 @@ final class ChannelMatrix
             CardPayment::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => self::NONE, 'downloads' => $downloadsNa, 'api' => self::NONE],
             InvoiceEmail::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
             PaymentConfirmation::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
+            // Closed on every driven channel until plan 15-11 opens the own receipts on the UI and download channels; the model writes no activity rows (explicit rows of the Actions only).
+            CashReceipt::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => self::NONE, 'api' => self::NONE],
             ExchangeRate::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
             TransactionCategory::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => self::NONE, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
             Transaction::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => self::NONE, 'notifications' => self::NONE, 'activity' => self::NONE, 'downloads' => $downloadsNa, 'api' => self::NONE],

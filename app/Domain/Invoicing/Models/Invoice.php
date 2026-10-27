@@ -257,6 +257,17 @@ final class Invoice extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * The cash receipts issued for the cash payments of the document, by issue day and number (Phase 15). A Partner
+     * reads those of the own issued document through the scope of the receipt.
+     *
+     * @return HasMany<CashReceipt, $this>
+     */
+    public function cashReceipts(): HasMany
+    {
+        return $this->hasMany(CashReceipt::class)->orderBy('issued_on')->orderBy('number');
+    }
+
+    /**
      * The e-mails sent for the document, latest first (D-22). Empty for a Partner.
      *
      * @return HasMany<InvoiceEmail, $this>
