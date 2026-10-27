@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Documents\Models\Document;
 use App\Domain\Invoicing\Actions\RecordPayment;
+use App\Domain\Invoicing\Actions\StoreCashReceiptPdf;
 use App\Domain\Invoicing\Enums\CashReceiptLockState;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\PaymentConfirmationState;
@@ -16,11 +17,14 @@ use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use Carbon\CarbonImmutable;
 use Dom\HTMLDocument;
+use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Pipeline\Pipeline;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mime\Email;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
@@ -228,5 +232,124 @@ describe('the receipt travels with the confirmation (D-12)', function (): void {
 
         expect(MailFixtures::to($address))->toHaveCount(1)
             ->and(cashReceiptDeliveryLockRows($receipt))->toBe(1);
+    });
+});
+
+describe('the edge cases of delivery', function (): void {
+    it('sends the confirmation without the receipt when the receipt was cancelled before it left, and leaves the receipt open (AS-1)', function (): void {
+        $address = exampleEmail('client-invoice');
+        [, , $confirmation, $receipt] = cashReceiptDeliveryPay($address);
+        cashReceiptDeliveryWrite($receipt, ['cancelled_at' => CarbonImmutable::parse('2026-10-14 09:35:00', 'Europe/Prague')]);
+
+        cashReceiptDeliveryRun($confirmation->id);
+
+        $messages = MailFixtures::to($address);
+        $stored = cashReceiptDeliveryReceipt($receipt);
+
+        expect($messages)->toHaveCount(1)
+            ->and($messages[0]->getAttachments())->toBe([])
+            ->and(cashReceiptDeliveryVisible($messages[0]))->not->toContain('V příloze')
+            ->and(cashReceiptDeliveryRow($confirmation->id)->state)->toBe(PaymentConfirmationState::Sent)
+            ->and($stored->lock_state)->toBe(CashReceiptLockState::Open)
+            ->and($stored->cancelled_at)->not->toBeNull()
+            ->and(cashReceiptDeliveryLockRows($receipt))->toBe(0);
+    });
+
+    it('fails the confirmation with attachment_missing when the stored PDF is gone, and sends nothing', function (): void {
+        $address = exampleEmail('client-invoice');
+        [, , $confirmation, $receipt] = cashReceiptDeliveryPay($address);
+        $media = Document::query()->findOrFail(cashReceiptDeliveryReceipt($receipt)->pdf_document_id)->getFirstMedia(Document::MEDIA_COLLECTION);
+        Storage::disk($media?->disk)->delete((string) $media?->getPathRelativeToRoot());
+
+        cashReceiptDeliveryRun($confirmation->id);
+
+        $row = cashReceiptDeliveryRow($confirmation->id);
+
+        expect(MailFixtures::sent())->toBe([])
+            ->and($row->state)->toBe(PaymentConfirmationState::Failed)
+            ->and($row->failure_code)->toBe('attachment_missing')
+            ->and(cashReceiptDeliveryReceipt($receipt)->lock_state)->toBe(CashReceiptLockState::Open)
+            ->and(cashReceiptDeliveryLockRows($receipt))->toBe(0);
+    });
+
+    it('queues no job and leaves the receipt open when the client has no invoice e-mail (AS-10)', function (): void {
+        [, , $confirmation, $receipt] = cashReceiptDeliveryPay(null);
+
+        Queue::assertNotPushed(SendPaymentConfirmation::class);
+
+        expect($confirmation->state)->toBe(PaymentConfirmationState::Skipped)
+            ->and(MailFixtures::sent())->toBe([])
+            ->and(cashReceiptDeliveryReceipt($receipt)->lock_state)->toBe(CashReceiptLockState::Open)
+            ->and(cashReceiptDeliveryLockRows($receipt))->toBe(0);
+    });
+
+    it('attaches the PDF the receipt has at send time, so an edit inside the grace window is what the client gets (D-11)', function (): void {
+        $address = exampleEmail('client-invoice');
+        [, , $confirmation, $receipt] = cashReceiptDeliveryPay($address);
+        $first = cashReceiptDeliveryStoredBytes($receipt);
+
+        cashReceiptDeliveryWrite($receipt, ['purpose' => 'Corrected purpose of the example payment']);
+        DB::transaction(static fn () => app(StoreCashReceiptPdf::class)->handle(test()->admin, cashReceiptDeliveryReceipt($receipt)));
+
+        $second = cashReceiptDeliveryStoredBytes($receipt);
+
+        cashReceiptDeliveryRun($confirmation->id);
+
+        $messages = MailFixtures::to($address);
+
+        expect($second)->not->toBe($first)
+            ->and($messages)->toHaveCount(1)
+            ->and($messages[0]->getAttachments()[0]->getBody())->toBe($second);
+    });
+
+    it('puts the row back to queued after a transport failure, keeps the receipt open, and the retry sends and locks', function (): void {
+        $address = exampleEmail('client-invoice');
+        [, , $confirmation, $receipt] = cashReceiptDeliveryPay($address);
+        $refuse = true;
+
+        Event::listen(MessageSending::class, static function () use (&$refuse, $address): void {
+            if ($refuse) {
+                throw new TransportException('550 mailbox <'.$address.'> rejected by relay');
+            }
+        });
+
+        expect(static fn () => cashReceiptDeliveryRun($confirmation->id))->toThrow(RuntimeException::class);
+
+        expect(cashReceiptDeliveryRow($confirmation->id)->state)->toBe(PaymentConfirmationState::Queued)
+            ->and(cashReceiptDeliveryReceipt($receipt)->lock_state)->toBe(CashReceiptLockState::Open)
+            ->and(cashReceiptDeliveryLockRows($receipt))->toBe(0);
+
+        $refuse = false;
+        Mail::getSymfonyTransport()->flush();
+
+        cashReceiptDeliveryRun($confirmation->id);
+
+        expect(MailFixtures::to($address))->toHaveCount(1)
+            ->and(cashReceiptDeliveryRow($confirmation->id)->state)->toBe(PaymentConfirmationState::Sent)
+            ->and(cashReceiptDeliveryReceipt($receipt)->lock_state)->toBe(CashReceiptLockState::Locked)
+            ->and(cashReceiptDeliveryLockRows($receipt))->toBe(1);
+    });
+
+    it('does not lock a receipt that is locked already and writes no second audit row', function (): void {
+        $address = exampleEmail('client-invoice');
+        [, , $confirmation, $receipt] = cashReceiptDeliveryPay($address);
+        cashReceiptDeliveryWrite($receipt, ['lock_state' => CashReceiptLockState::Locked]);
+
+        cashReceiptDeliveryRun($confirmation->id);
+
+        expect(MailFixtures::to($address))->toHaveCount(1)
+            ->and(cashReceiptDeliveryReceipt($receipt)->lock_state)->toBe(CashReceiptLockState::Locked)
+            ->and(cashReceiptDeliveryLockRows($receipt))->toBe(0);
+    });
+
+    it('records the user who recorded the payment as the causer of the lock', function (): void {
+        $address = exampleEmail('client-invoice');
+        [, , $confirmation, $receipt] = cashReceiptDeliveryPay($address);
+
+        cashReceiptDeliveryRun($confirmation->id);
+
+        $row = Activity::query()->where('subject_id', $receipt?->id)->where('event', 'cash_receipt_locked')->sole();
+
+        expect($row->causer_id)->toBe($this->admin->id);
     });
 });
