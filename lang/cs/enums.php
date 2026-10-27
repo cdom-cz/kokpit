@@ -19,6 +19,7 @@ return [
         'invoice' => 'Faktura',
         'proforma' => 'Zálohová faktura',
         'credit_note' => 'Dobropis',
+        'cash_receipt' => 'Příjmový pokladní doklad',
         'task' => 'Úkol',
     ],
 
