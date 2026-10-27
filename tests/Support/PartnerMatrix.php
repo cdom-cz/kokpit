@@ -12,6 +12,7 @@ use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
@@ -412,6 +413,14 @@ final class PartnerMatrix
                     'view' => ['own_visible' => true, 'own_hidden' => false, 'foreign' => false],
                     'update' => ['own_visible' => false, 'own_hidden' => false, 'foreign' => false],
                     'delete' => ['own_visible' => false, 'own_hidden' => false, 'foreign' => false],
+                ],
+            ],
+            CashReceipt::class => [
+                'class' => ['viewAny' => true, 'create' => false],
+                'records' => [
+                    'view' => ['own_visible' => true, 'foreign' => false],
+                    'update' => ['own_visible' => false, 'foreign' => false],
+                    'delete' => ['own_visible' => false, 'foreign' => false],
                 ],
             ],
             Tag::class => [
