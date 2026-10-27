@@ -982,13 +982,13 @@ Plans:
 **Goal:** Invoices can be created with cash as the payment method, and a cash receipt document (Czech: pokladni prijmovy doklad, PPD) can be issued for such invoices. Research must first establish what a cash receipt document is and how it is issued (legal requirements, content, numbering).
 **Requirements**: P15-01, P15-02, P15-03, P15-04, P15-05, P15-06, P15-07, P15-08, P15-09, P15-10, P15-11, P15-12
 **Depends on:** Phase 14
-**Plans:** 14 plans
+**Plans:** 3/14 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 15-01-PLAN.md — Cash as third document method: CHECKs, draft rule, issue without bank snapshot or pay token; P15 requirements and assumptions AS-1 to AS-16 (owner answers included) recorded (Wave 1)
-- [ ] 15-02-PLAN.md — Owner decision on the receipt table shape, then `cash_receipts` (frozen `document_number` included) with guard, D-08 FK/CHECK and Partner-safe pin (Wave 1, checkpoint)
-- [ ] 15-03-PLAN.md — Shared closed Dompdf engine and PDF parts extracted from the invoice PDF, options pinned by a test (Wave 1)
+- [x] 15-01-PLAN.md — Cash as third document method: CHECKs, draft rule, issue without bank snapshot or pay token; P15 requirements and assumptions AS-1 to AS-16 (owner answers included) recorded (Wave 1)
+- [x] 15-02-PLAN.md — Owner decision on the receipt table shape, then `cash_receipts` (frozen `document_number` included) with guard, D-08 FK/CHECK and Partner-safe pin (Wave 1, checkpoint)
+- [x] 15-03-PLAN.md — Shared closed Dompdf engine and PDF parts extracted from the invoice PDF, options pinned by a test (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 15-04-PLAN.md — Cash on paper and screen: PDF cash box, default e-mail text, Admin and Partner detail without bank details (Wave 2)
