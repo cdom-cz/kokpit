@@ -18,6 +18,7 @@ use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Policies\UserPolicy;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
@@ -25,6 +26,7 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Models\PaymentConfirmation;
+use App\Domain\Invoicing\Policies\CashReceiptPolicy;
 use App\Domain\Invoicing\Policies\InvoiceItemPolicy;
 use App\Domain\Invoicing\Policies\InvoicePolicy;
 use App\Domain\Payments\Models\CardPayment;
@@ -158,6 +160,9 @@ final class AccessServiceProvider extends ServiceProvider
         // Billing documents: a Partner views an issued document of the own client, nothing else (IN-09).
         Gate::policy(Invoice::class, InvoicePolicy::class);
         Gate::policy(InvoiceItem::class, InvoiceItemPolicy::class);
+
+        // A cash receipt (PPD): a Partner views the receipts of the own client, read-only; every write is denied (D-13).
+        Gate::policy(CashReceipt::class, CashReceiptPolicy::class);
 
         // The Admin-only half of a billing document (internal note, CNB snapshot, PDF link) and its payments are
         // closed to Partners, even for an issued invoice of the own client (IN-09, R-08-1).
