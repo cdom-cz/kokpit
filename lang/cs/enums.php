@@ -30,6 +30,7 @@ return [
         'task_comment' => 'Komentář',
         'transaction' => 'Transakce',
         'invoice' => 'Doklad',
+        'cash_receipt' => 'Příjmový doklad',
     ],
 
     // DocumentTypeGroup: the file-type groups of the central documents listing (plan 09-14).
