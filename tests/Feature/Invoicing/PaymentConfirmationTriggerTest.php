@@ -333,13 +333,13 @@ describe('the paths (Phase 13)', function (): void {
             ->and($locks)->toBe(0);
     });
 
-    it('keeps the job away from the lock state and the invoice audit', function (): void {
+    it('keeps the job away from the lock state and the audit of the invoice, and locks only the receipt (Phase 15)', function (): void {
         $source = (string) file_get_contents((string) (new ReflectionClass(SendPaymentConfirmation::class))->getFileName());
 
         expect($source)->not->toContain('InvoiceLockState')
             ->and($source)->not->toContain('InvoiceAudit')
-            ->and($source)->not->toContain('lock_state')
-            ->and($source)->not->toContain('lockForUpdate');
+            ->and(substr_count($source, 'lockForUpdate()'))->toBe(1)
+            ->and($source)->toContain('CashReceipt::query()->whereKey($receiptId)->lockForUpdate()');
     });
 });
 

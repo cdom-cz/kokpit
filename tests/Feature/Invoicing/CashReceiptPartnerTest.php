@@ -134,7 +134,12 @@ describe('the list on the detail of an own document', function (): void {
 
         $this->actingAs($this->partnerA);
 
-        $body = (string) $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $invoice]))->assertOk()->getContent();
+        $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $invoice]))->assertOk();
+
+        Livewire::test(ViewPartnerInvoice::class, ['record' => $invoice->getRouteKey()])
+            ->assertSeeLivewire(PartnerCashReceiptsRelationManager::class);
+
+        $body = (string) Livewire::test(PartnerCashReceiptsRelationManager::class, ['ownerRecord' => $invoice, 'pageClass' => ViewPartnerInvoice::class])->html();
 
         expect($body)->toContain('Příjmové doklady')
             ->and($body)->toContain($receipt->number)
