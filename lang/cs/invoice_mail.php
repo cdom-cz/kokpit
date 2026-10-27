@@ -24,6 +24,8 @@ return [
         'with_due_date' => "Dobrý den,\n\nv příloze posíláme :kind č. :number na částku :amount se splatností :due.\n\nPlatební údaje najdete v přiloženém dokumentu.\n\nS pozdravem\n:supplier",
         // A document of the online method prints no bank details, so this text does not point at them (A-13-4).
         'with_due_date_online' => "Dobrý den,\n\nv příloze posíláme :kind č. :number na částku :amount se splatností :due.\n\nDoklad je určen k úhradě online platební kartou.\n\nS pozdravem\n:supplier",
+        // A cash document prints no payment details either, so this text does not point at them (Phase 15, D-02).
+        'with_due_date_cash' => "Dobrý den,\n\nv příloze posíláme :kind č. :number na částku :amount se splatností :due.\n\nDoklad je určen k úhradě v hotovosti.\n\nS pozdravem\n:supplier",
         'credit_note' => "Dobrý den,\n\nv příloze posíláme :kind č. :number na částku :amount.\n\nPlatba bude vrácena samostatně.\n\nS pozdravem\n:supplier",
     ],
 

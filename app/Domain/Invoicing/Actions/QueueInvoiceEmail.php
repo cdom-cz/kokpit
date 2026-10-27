@@ -147,10 +147,12 @@ readonly class QueueInvoiceEmail
         ];
 
         // A credit note is not paid, so it has no due date; so does any document that carries none. A document of the
-        // online method prints no bank details (Phase 14), so its text must not point at them (A-13-4).
+        // online method prints no bank details (Phase 14), so its text must not point at them (A-13-4); neither does a
+        // cash document (Phase 15, D-02), whose text asks for payment in cash.
         $key = match (true) {
             $issued->kind === InvoiceKind::CreditNote || $issued->due_date === null => 'credit_note',
             $issued->payment_method === DocumentPaymentMethod::Online => 'with_due_date_online',
+            $issued->payment_method === DocumentPaymentMethod::Cash => 'with_due_date_cash',
             default => 'with_due_date',
         };
 

@@ -22,6 +22,7 @@ return [
     'body' => [
         'with_due_date' => "Hello,\n\nplease find attached :kind no. :number for :amount, due on :due.\n\nPayment details are in the attached document.\n\nKind regards\n:supplier",
         'with_due_date_online' => "Hello,\n\nplease find attached :kind no. :number for :amount, due on :due.\n\nThis document is to be paid online by card.\n\nKind regards\n:supplier",
+        'with_due_date_cash' => "Hello,\n\nplease find attached :kind no. :number for :amount, due on :due.\n\nThis document is to be paid in cash.\n\nKind regards\n:supplier",
         'credit_note' => "Hello,\n\nplease find attached :kind no. :number for :amount.\n\nAny refund will be made separately.\n\nKind regards\n:supplier",
     ],
 
