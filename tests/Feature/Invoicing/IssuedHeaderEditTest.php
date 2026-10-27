@@ -913,7 +913,7 @@ describe('the payment method and the card switch (Phase 14)', function (): void 
     it('refuses a method that is neither transfer nor online', function (): void {
         $invoice = hedCardInvoice();
 
-        expect(hedRefusal($invoice, ['payment_method' => 'cash'])['payment_method'] ?? null)->toBe([__('invoices.errors.payment_method_invalid')]);
+        expect(hedRefusal($invoice, ['payment_method' => 'card'])['payment_method'] ?? null)->toBe([__('invoices.errors.payment_method_invalid')]);
     });
 
     it('changes the account to the second CZK account and to the EUR account: the snapshot of that account, nothing else, no link change', function (): void {

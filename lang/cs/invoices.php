@@ -27,6 +27,7 @@ return [
         'bank_account_unknown' => 'Vybraný bankovní účet v Nastavení neexistuje.',
         'bank_account_required' => 'Doklad s úhradou převodem potřebuje bankovní účet. Vyberte ho.',
         'card_payment_unavailable' => 'Platbu kartou teď nelze zapnout: online platby jsou vypnuté nebo Stripe není nastavený.',
+        'card_payment_cash' => 'Doklad placený hotově nelze platit kartou.',
         'credit_note_no_payment' => 'Dobropis nemá způsob úhrady ani bankovní účet.',
 
         // The items of a draft.
