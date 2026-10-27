@@ -213,3 +213,81 @@ describe('tracer: the receipt of a cash payment is read by the Partner of its cl
             ->and((new CashReceipt)->getFillable())->toBe([]);
     });
 });
+
+describe('the invoice and the payment reach their receipts', function (): void {
+    it('lists the receipts of an invoice and gives the payment its receipt', function (): void {
+        $this->actingAs($this->adminUser);
+
+        $invoice = Invoice::query()->findOrFail($this->a['invoice']->id);
+        $payment = InvoicePayment::query()->findOrFail($this->a['payment']->id);
+
+        expect($invoice->cashReceipts->pluck('id')->all())->toBe([$this->a['receipt']->id])
+            ->and($payment->cashReceipt?->id)->toBe($this->a['receipt']->id)
+            ->and($invoice->cashReceipts->first()?->number)->toBe($this->a['receipt']->number);
+    });
+
+    it('orders the receipts of an invoice by issue day, then number', function (): void {
+        $second = cashReceiptModelSystem(function (): CashReceipt {
+            $payment = new InvoicePayment;
+            $payment->forceFill([
+                'invoice_id' => $this->a['invoice']->id,
+                'currency' => 'CZK',
+                'amount_minor' => 1500,
+                'paid_on' => '2026-10-18',
+                'method' => PaymentMethod::Cash,
+                'created_by' => $this->adminUser->id,
+            ])->save();
+
+            $receipt = new CashReceipt;
+            $receipt->forceFill([
+                'invoice_id' => $this->a['invoice']->id,
+                'client_id' => $this->clientA,
+                'invoice_payment_id' => $payment->id,
+                'number' => implode('', ['PPD', (string) random_int(100000, 999999)]),
+                'document_number' => $this->a['invoice']->number,
+                'issued_on' => '2026-10-18',
+                'received_on' => '2026-10-18',
+                'amount_minor' => 1500,
+                'currency' => 'CZK',
+                'purpose' => $this->canaryA,
+                'language' => 'cs',
+                'supplier_snapshot' => ['name' => 'Example supplier'],
+                'customer_snapshot' => ['name' => 'Example customer'],
+                'appearance_snapshot' => ['accent' => '#000000'],
+            ])->save();
+
+            return $receipt->refresh();
+        });
+
+        $this->actingAs($this->adminUser);
+
+        expect(Invoice::query()->findOrFail($this->a['invoice']->id)->cashReceipts->pluck('id')->all())
+            ->toBe([$second->id, $this->a['receipt']->id]);
+    });
+
+    it('touches neither the invoice nor the payment', function (): void {
+        $this->actingAs($this->adminUser);
+
+        $before = [$this->a['invoice']->updated_at?->toIso8601String(), $this->a['payment']->updated_at?->toIso8601String()];
+
+        Invoice::query()->findOrFail($this->a['invoice']->id)->cashReceipts()->get();
+        InvoicePayment::query()->findOrFail($this->a['payment']->id)->cashReceipt()->first();
+
+        expect([
+            Invoice::query()->findOrFail($this->a['invoice']->id)->updated_at?->toIso8601String(),
+            InvoicePayment::query()->findOrFail($this->a['payment']->id)->updated_at?->toIso8601String(),
+        ])->toBe($before)
+            ->and((new CashReceipt)->getTouchedRelations())->toBe([])
+            ->and((new Invoice)->getTouchedRelations())->toBe([])
+            ->and((new InvoicePayment)->getTouchedRelations())->toBe([]);
+    });
+
+    it('gives the Partner the receipts of the own invoice and none of its payments', function (): void {
+        $this->actingAs(Canary::partnerFor($this->clientA));
+
+        $invoice = Invoice::query()->findOrFail($this->a['invoice']->id);
+
+        expect($invoice->cashReceipts->pluck('id')->all())->toBe([$this->a['receipt']->id])
+            ->and($invoice->payments)->toHaveCount(0);
+    });
+});
