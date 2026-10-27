@@ -982,7 +982,7 @@ Plans:
 **Goal:** Invoices can be created with cash as the payment method, and a cash receipt document (Czech: pokladni prijmovy doklad, PPD) can be issued for such invoices. Research must first establish what a cash receipt document is and how it is issued (legal requirements, content, numbering).
 **Requirements**: P15-01, P15-02, P15-03, P15-04, P15-05, P15-06, P15-07, P15-08, P15-09, P15-10, P15-11, P15-12
 **Depends on:** Phase 14
-**Plans:** 11/14 plans executed
+**Plans:** 13/14 plans executed
 
 Plans:
 **Wave 1**
@@ -1007,8 +1007,8 @@ Plans:
 - [x] 15-11-PLAN.md — Signed download route and the Partner's read-only receipt list, declared in every audit matrix (Wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 15-12-PLAN.md — Storno with a recorded reason; payment deletion refused while the receipt is valid; receipt PDF protected (Wave 6)
-- [ ] 15-13-PLAN.md — Edit while open, Admin unlock with reason, regenerate a missing PDF, unlock-path architecture test (Wave 6)
+- [x] 15-12-PLAN.md — Storno with a recorded reason; payment deletion refused while the receipt is valid; receipt PDF protected (Wave 6)
+- [x] 15-13-PLAN.md — Edit while open, Admin unlock with reason, regenerate a missing PDF, unlock-path architecture test (Wave 6)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 15-14-PLAN.md — Platby tab receipt column and actions, hand-over in CONTRIBUTING, full gate (Wave 7)
