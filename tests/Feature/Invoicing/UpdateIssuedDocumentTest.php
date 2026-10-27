@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Invoicing\Actions\ConvertProforma;
 use App\Domain\Invoicing\Actions\CreateDraft;
@@ -9,7 +10,9 @@ use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Actions\RecordPayment;
+use App\Domain\Invoicing\Actions\UpdateDraft;
 use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceLockState;
@@ -22,6 +25,7 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Queries\ReceivablesReader;
 use App\Domain\Invoicing\Support\IssuedDocumentRules;
 use App\Domain\Projects\Actions\CreateProject;
+use App\Domain\Settings\Settings\BankAccountSettings;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Media;
 use App\Domain\Shared\Money\Money;
@@ -32,8 +36,10 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
+use Tests\Support\CardPaymentSetup;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\InvoiceFixtures;
+use Tests\Support\PdfText;
 
 /*
  * The write path of an open issued document (IN-13, IN-14; D-04, D-05, D-09, D-10): the items and the printed note are
@@ -642,5 +648,94 @@ describe('a total below what was paid or credited', function (): void {
 
         expect(issuedEditSystem(static fn (): array => IssuedDocumentRules::warnings(issuedEditRow($issued))))->toBe([])
             ->and(issuedEditSystem(static fn (): array => IssuedDocumentRules::warnings(issuedEditRow($draft))))->toBe([]);
+    });
+});
+
+/**
+ * An issued cash invoice through the real pipeline: a draft switched to cash, then issued (Phase 15).
+ */
+function issuedEditCash(Client $client, bool $locked = false): Invoice
+{
+    $admin = Canary::admin();
+    $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '12500.00')], actor: $admin);
+    $draft = app(UpdateDraft::class)->handle($admin, $draft, ['payment_method' => DocumentPaymentMethod::Cash->value]);
+    $issued = app(IssueDocument::class)->handle($admin, $draft);
+
+    return $locked ? InvoiceFixtures::lock($issued) : $issued;
+}
+
+/**
+ * The flat text of the stored PDF of the invoice, or null when Ghostscript is not installed.
+ */
+function issuedEditPdfText(Invoice $invoice): ?string
+{
+    $media = issuedEditSystem(static fn () => issuedEditPdf($invoice)?->getFirstMedia(Document::MEDIA_COLLECTION));
+
+    return PdfText::flat((string) Storage::disk($media->disk)->get($media->getPathRelativeToRoot()));
+}
+
+describe('a change of the method to and from cash (Phase 15; D-03, D-04)', function (): void {
+    it('changes an open transfer invoice to cash: no bank snapshot, the switch off, the PDF replaced with one that has the cash sentence and no account', function (): void {
+        $issued = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $oldPdf = issuedEditPdf($issued);
+
+        expect(issuedEditRow($issued)->bank_snapshot)->not->toBeNull();
+
+        app(UpdateIssuedDocument::class)->handle(Canary::admin(), $issued, ['payment_method' => 'cash']);
+
+        $row = issuedEditRow($issued);
+        $text = issuedEditPdfText($issued);
+
+        expect($row->payment_method)->toBe(DocumentPaymentMethod::Cash)
+            ->and($row->bank_snapshot)->toBeNull()
+            ->and(DB::table('invoice_admin')->where('invoice_id', $issued->id)->value('card_payment_enabled'))->toBeFalse()
+            ->and(issuedEditPdf($issued)?->id)->not->toBe($oldPdf?->id);
+
+        if ($text !== null) {
+            expect($text)->toContain('v hotovosti')
+                ->and($text)->not->toContain('Variabilní symbol')
+                ->and($text)->not->toContain('IBAN');
+        }
+    });
+
+    it('changes an open cash invoice back to transfer: the bank snapshot taken from the settings, the switch equal to the client flag', function (string $flag): void {
+        CardPaymentSetup::enable();
+        $on = $flag === 'on';
+        $issued = issuedEditCash(CardPaymentSetup::client(['online_payment_enabled' => $on]));
+
+        expect(issuedEditRow($issued)->bank_snapshot)->toBeNull();
+
+        app(UpdateIssuedDocument::class)->handle(Canary::admin(), $issued, ['payment_method' => 'transfer']);
+
+        $expected = issuedEditSystem(static fn (): array => app(BankAccountSettings::class)->firstForCurrency('CZK')?->toArray() ?? []);
+
+        expect(issuedEditRow($issued)->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and(issuedEditRow($issued)->bank_snapshot)->toEqual($expected)
+            ->and(DB::table('invoice_admin')->where('invoice_id', $issued->id)->value('card_payment_enabled'))->toBe($on);
+    })->with(['on', 'off']);
+
+    it('refuses a change to cash while the invoice is locked and writes nothing', function (): void {
+        $locked = InvoiceFixtures::lockedIssued(InvoiceFixtures::client());
+        $before = issuedEditState($locked);
+
+        expect(issuedEditRefusal($locked, ['payment_method' => 'cash']))->toBe(['document' => [__('invoices.errors.document_locked')]])
+            ->and(issuedEditState($locked))->toBe($before);
+    });
+
+    it('refuses a change from cash while the invoice is locked and writes nothing', function (): void {
+        $locked = issuedEditCash(InvoiceFixtures::client(), locked: true);
+        $before = issuedEditState($locked);
+
+        expect(issuedEditRefusal($locked, ['payment_method' => 'transfer']))->toBe(['document' => [__('invoices.errors.document_locked')]])
+            ->and(issuedEditState($locked))->toBe($before);
+    });
+
+    it('changes an open transfer proforma to cash like an invoice', function (): void {
+        $proforma = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Example advance', '1', '800.00')], InvoiceKind::Proforma);
+
+        app(UpdateIssuedDocument::class)->handle(Canary::admin(), $proforma, ['payment_method' => 'cash']);
+
+        expect(issuedEditRow($proforma)->payment_method)->toBe(DocumentPaymentMethod::Cash)
+            ->and(issuedEditRow($proforma)->bank_snapshot)->toBeNull();
     });
 });

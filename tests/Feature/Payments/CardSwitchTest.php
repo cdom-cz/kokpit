@@ -9,6 +9,8 @@ use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Actions\UpdateDraft;
+use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Payments\Support\PayToken;
@@ -508,3 +510,59 @@ it('blocks the issue of an online draft once card payment is unavailable, and le
 
     expect($saved->fresh()->isDraft())->toBeTrue();
 })->with(['settings_off', 'stripe_missing', 'client_off']);
+
+/**
+ * An issued cash invoice of the client through the real pipeline (Phase 15).
+ */
+function cashIssuedOf(Client $client): Invoice
+{
+    $admin = Canary::admin();
+    $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '12500.00')], actor: $admin);
+    $draft = app(UpdateDraft::class)->handle($admin, $draft, ['payment_method' => DocumentPaymentMethod::Cash->value]);
+
+    return app(IssueDocument::class)->handle($admin, $draft);
+}
+
+describe('cash excludes the card switch on an open issued document (Phase 15; D-03, T-15-04)', function (): void {
+    it('refuses the switch turned on together with a change to cash and writes nothing', function (): void {
+        CardPaymentSetup::enable();
+        $issued = CardPaymentSetup::issued(CardPaymentSetup::client());
+        $before = (array) adminRowOf($issued);
+
+        try {
+            app(UpdateIssuedDocument::class)->handle(Canary::admin(), $issued, ['payment_method' => 'cash', 'card_payment_enabled' => true]);
+            $this->fail('A cash document was given the card switch.');
+        } catch (ValidationException $e) {
+            expect($e->errors())->toBe(['card_payment_enabled' => [__('invoices.errors.card_payment_cash')]]);
+        }
+
+        expect((array) adminRowOf($issued))->toBe($before)
+            ->and(DB::table('invoices')->where('id', $issued->id)->value('payment_method'))->toBe('transfer');
+    });
+
+    it('refuses the switch turned on for a document that is already cash', function (): void {
+        CardPaymentSetup::enable();
+        $issued = cashIssuedOf(CardPaymentSetup::client());
+
+        try {
+            app(UpdateIssuedDocument::class)->handle(Canary::admin(), $issued, ['card_payment_enabled' => true]);
+            $this->fail('A cash document was given the card switch.');
+        } catch (ValidationException $e) {
+            expect($e->errors())->toHaveKey('card_payment_enabled');
+        }
+
+        expect(adminRowOf($issued)->card_payment_enabled)->toBeFalse()
+            ->and(adminRowOf($issued)->pay_token)->toBeNull();
+    });
+
+    it('keeps the switch of a cash document off and gives it no token although card payment is available and the client flag is on', function (): void {
+        CardPaymentSetup::enable();
+        $issued = cashIssuedOf(CardPaymentSetup::client());
+
+        app(UpdateIssuedDocument::class)->handle(Canary::admin(), $issued, ['note' => 'Unrelated change.']);
+
+        expect(adminRowOf($issued)->card_payment_enabled)->toBeFalse()
+            ->and(adminRowOf($issued)->pay_token)->toBeNull()
+            ->and(DB::table('invoices')->where('id', $issued->id)->value('payment_method'))->toBe('cash');
+    });
+});
