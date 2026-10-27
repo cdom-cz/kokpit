@@ -79,7 +79,8 @@ final readonly class ConvertProforma
             $draft = $this->createDraft($locked);
             $this->copyLines($locked, $draft);
 
-            $snapshot = $locked->payment_method === DocumentPaymentMethod::Online ? null : $locked->bank_snapshot;
+            // Online and cash print no bank details, so the invoice gets no snapshot (Phase 15 D-01, D-02).
+            $snapshot = ($locked->payment_method ?? DocumentPaymentMethod::Transfer)->printsBankDetails() ? $locked->bank_snapshot : null;
 
             $issued = $this->issuer->issue($draft->refresh(), new IssueContext($actor, IssueContext::today(), null, $snapshot));
 
@@ -149,7 +150,7 @@ final readonly class ConvertProforma
         $admin->forceFill([
             'invoice_id' => $draft->id,
             'bank_account_id' => $this->inheritedAccount($proforma),
-            'card_payment_enabled' => $method === DocumentPaymentMethod::Online,
+            'card_payment_enabled' => $method->forcesCardPayment(),
         ])->save();
 
         return $draft;
