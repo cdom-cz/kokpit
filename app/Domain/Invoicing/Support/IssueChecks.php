@@ -81,7 +81,7 @@ final readonly class IssueChecks
             $add('vat_payer_unsupported');
         }
 
-        if (! $creditNote && $draft->payment_method !== DocumentPaymentMethod::Online && $bankSnapshot === null && DocumentPayment::account($draft) === null) {
+        if (! $creditNote && ($draft->payment_method ?? DocumentPaymentMethod::Transfer)->printsBankDetails() && $bankSnapshot === null && DocumentPayment::account($draft) === null) {
             $add('bank_missing');
         }
 

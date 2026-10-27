@@ -672,6 +672,45 @@ describe('the payment method of a document (Phase 14; D-01, D-02, OA-7)', functi
     });
 });
 
+describe('cash as a payment method of a document (Phase 15; D-01, D-02)', function (): void {
+    it('accepts cash on an invoice or proforma draft and refuses any other new value', function (string $kind): void {
+        $id = invoiceTablesInsert(['kind' => $kind, 'payment_method' => 'cash']);
+
+        expect(DB::selectOne('select payment_method from invoices where id = ?', [$id])->payment_method)->toBe('cash');
+
+        RawSql::expectSqlState('23514', fn () => invoiceTablesInsert(['kind' => $kind, 'payment_method' => 'cheque']));
+        RawSql::expectAllowed(fn () => DB::update("update invoices set payment_method = 'cash' where id = ?", [invoiceTablesInsert(['kind' => $kind])]));
+    })->with(['invoice', 'proforma']);
+
+    it('refuses cash on a credit note', function (): void {
+        $clientId = invoiceTablesClient();
+        $invoice = invoiceTablesInsert(['client_id' => $clientId]);
+        $credit = invoiceTablesInsertCreditNote($invoice, $clientId);
+
+        RawSql::expectSqlState('23514', fn () => DB::update("update invoices set payment_method = 'cash' where id = ?", [$credit]));
+        RawSql::expectSqlState('23514', fn () => invoiceTablesInsertCreditNote($invoice, $clientId, ['payment_method' => 'cash']));
+    });
+
+    it('lets an issued cash invoice or proforma carry no bank snapshot and refuses one with a snapshot (D-02)', function (string $kind): void {
+        $id = invoiceTablesInsert(['kind' => $kind, 'payment_method' => 'cash']);
+
+        RawSql::expectSqlState('23514', fn () => invoiceTablesIssue($id));
+        RawSql::expectAllowed(fn () => invoiceTablesIssue($id, ['bank_snapshot' => null]));
+    })->with(['invoice', 'proforma']);
+
+    it('still requires the due date of an issued cash document', function (): void {
+        $id = invoiceTablesInsert(['payment_method' => 'cash']);
+
+        RawSql::expectSqlState('23514', fn () => invoiceTablesIssue($id, ['bank_snapshot' => null, 'due_date' => null]));
+    });
+
+    it('still requires the bank snapshot of an issued transfer document', function (): void {
+        $id = invoiceTablesInsert(['payment_method' => 'transfer']);
+
+        RawSql::expectSqlState('23514', fn () => invoiceTablesIssue($id, ['bank_snapshot' => null]));
+    });
+});
+
 /**
  * The arguments a trigger was created with, read from pg_trigger.tgargs (NUL-separated, each one terminated).
  *

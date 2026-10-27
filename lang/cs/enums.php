@@ -201,6 +201,7 @@ return [
     'document_payment_method' => [
         'transfer' => 'Bankovní převod',
         'online' => 'Online platba kartou',
+        'cash' => 'Hotově',
     ],
 
     'invoice_status' => [

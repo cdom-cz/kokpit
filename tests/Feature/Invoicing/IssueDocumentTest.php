@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Domain\Documents\Models\Document;
 use App\Domain\Invoicing\Actions\IssueDocument;
 use App\Domain\Invoicing\Actions\UpdateDraft;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceLockState;
 use App\Domain\Invoicing\Models\Invoice;
@@ -27,6 +29,7 @@ use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\FictionalIban;
 use Tests\Support\InvoiceFixtures;
+use Tests\Support\PdfText;
 use Tests\Support\RawSql;
 
 /*
@@ -520,6 +523,45 @@ it('stores the CNB rate, unit, list date and CZK total of a foreign-currency doc
     'one unit' => ['25.1250000000', 1],
     'one hundred units' => ['2512.5000000000', 100],
 ]);
+
+it('issues a cash invoice in EUR without a EUR account: no bank snapshot, no pay token, the card switch off, no bank data in the PDF (Phase 15; D-02, D-03, D-05)', function (): void {
+    $admin = Canary::admin();
+    $accounts = InvoiceFixtures::configureAccounts(InvoiceFixtures::account('Example CZK account', 'CZK', '11'));
+    InvoiceFixtures::cnbRate('EUR', '2026-10-13', '25.1250000000');
+    $client = InvoiceFixtures::client(['currency' => 'EUR']);
+
+    $draft = InvoiceFixtures::draft($client, [InvoiceFixtures::item('Example work', '1', '100.00')], actor: $admin);
+    $draft = app(UpdateDraft::class)->handle($admin, $draft, ['payment_method' => DocumentPaymentMethod::Cash->value]);
+
+    expect(array_column(app(IssueChecks::class)->blockers($draft->fresh(), '2026-10-14'), 'key'))->not->toContain('bank_missing');
+
+    $issued = app(IssueDocument::class)->handle($admin, $draft);
+    $row = issueRow($issued->id);
+    $stored = issueSystem(static fn (): InvoiceAdmin => InvoiceAdmin::query()->where('invoice_id', $issued->id)->firstOrFail());
+
+    expect($issued->currency)->toBe('EUR')
+        ->and($row['payment_method'])->toBe('cash')
+        ->and($row['bank_snapshot'])->toBeNull()
+        ->and($stored->card_payment_enabled)->toBeFalse()
+        ->and($stored->pay_token)->toBeNull()
+        ->and($stored->bank_account_id)->toBeNull();
+
+    $pdf = issueSystem(static function () use ($stored): string {
+        $media = Document::query()->whereKey($stored->pdf_document_id)->firstOrFail()->getFirstMedia(Document::MEDIA_COLLECTION);
+
+        return (string) Storage::disk($media->disk)->get($media->getPathRelativeToRoot());
+    });
+    $text = PdfText::flat($pdf);
+
+    if ($text === null) {
+        test()->markTestSkipped('Ghostscript is not installed.');
+    }
+
+    expect($text)->not->toContain('Variabilní symbol')
+        ->and($text)->not->toContain('IBAN')
+        ->and($text)->not->toContain('Číslo účtu')
+        ->and($text)->not->toContain(str_replace(' ', '', (string) $accounts[0]->iban));
+});
 
 it('stores no CNB figure and no CZK total for a CZK document', function (): void {
     $admin = Canary::admin();

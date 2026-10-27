@@ -27,6 +27,8 @@ use InvalidArgumentException;
  *   Admin's choice. `online` forces the switch on and needs card payment to be available (the global setting on,
  *   Stripe configured and the client flag on). Going back from `online` to `transfer` resets the switch to the client
  *   flag unless the Admin sends a value (OA-1).
+ * - Phase 15 D-03, D-05: a `cash` draft keeps the switch off (an explicit request to turn it on is refused) and needs
+ *   no bank account, whatever its currency; a stored account id is harmless and never printed.
  * - D-05, D-06: the account is chosen by id and independently of the currency. {@see DocumentPayment::preselect()} only
  *   suggests the first account of a currency in list order; an explicit account of any currency always wins and is
  *   never replaced. A stored account that was removed from the settings is not silently re-picked: the document then
@@ -181,8 +183,14 @@ final class DocumentPayment
             }
         }
 
+        // D-03: cash excludes card payment. The switch stays off, and an explicit request to turn it on is refused.
+        if ($method === DocumentPaymentMethod::Cash && $explicit === true) {
+            throw ValidationException::withMessages(['card_payment_enabled' => [__('invoices.errors.card_payment_cash')]]);
+        }
+
         $cardPayment = match (true) {
-            $method === DocumentPaymentMethod::Online => true,
+            $method === DocumentPaymentMethod::Cash => false,
+            $method->forcesCardPayment() => true,
             $explicit !== null => $explicit,
             $stored === DocumentPaymentMethod::Online => $lockedDraft->kind->carriesPayment() && $lockedDraft->client?->online_payment_enabled === true,
             default => $admin instanceof InvoiceAdmin && $admin->card_payment_enabled,
