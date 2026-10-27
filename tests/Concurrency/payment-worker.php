@@ -12,11 +12,12 @@ declare(strict_types=1);
  * id the mode works on:
  * - `delete`     DeletePayment of the payment <targetId>;
  * - `convert`    ConvertProforma of the proforma <targetId>;
- * - `record`     RecordPayment of <amount> (major units, dated today) on the document <targetId>.
+ * - `record`     RecordPayment of <amount> (major units, dated today) on the document <targetId>;
+ * - `record-cash` the same with the payment method cash, so the payment also issues its cash receipt (Phase 15).
  *
  * Prints one JSON line `{"mode": ..., "result": ..., "pid": ...}` where the result is `deleted`, `converted`,
- * `recorded`, `refused:<key>` for a typed ValidationException (<key> is the key under invoices.errors whose text it
- * carries) or `db:<sqlstate>` for a QueryException; anything else is `error:<class>` and exits 1. Refuses to run
+ * `recorded` (also for `record-cash`), `refused:<key>` for a typed ValidationException (<key> is the key under
+ * invoices.errors whose text it carries) or `db:<sqlstate>` for a QueryException; anything else is `error:<class>` and exits 1. Refuses to run
  * unless the database name ends in `_test`.
  */
 
@@ -58,16 +59,16 @@ $amount = $argv[5] ?? '';
 
 $uuid = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D';
 
-if (! in_array($mode, ['delete', 'convert', 'record'], true)) {
-    $fail('the mode must be delete, convert or record');
+if (! in_array($mode, ['delete', 'convert', 'record', 'record-cash'], true)) {
+    $fail('the mode must be delete, convert, record or record-cash');
 }
 
 if (preg_match($uuid, $adminId) !== 1 || preg_match($uuid, $targetId) !== 1) {
     $fail('the admin id and the target id must be uuids');
 }
 
-if ($mode === 'record' && preg_match('/^\d{1,6}$/D', $amount) !== 1) {
-    $fail('the record mode needs a whole amount of up to six digits');
+if (in_array($mode, ['record', 'record-cash'], true) && preg_match('/^\d{1,6}$/D', $amount) !== 1) {
+    $fail('the record modes need a whole amount of up to six digits');
 }
 
 $admin = User::query()->findOrFail($adminId);
@@ -134,10 +135,11 @@ try {
             $result = 'converted';
             break;
 
-        default: // record
+        default: // record, record-cash
             $invoice = Invoice::query()->findOrFail($targetId);
             $today = CarbonImmutable::now('Europe/Prague')->format('Y-m-d');
-            $app->make(RecordPayment::class)->handle($admin, $invoice, ['amount' => $amount, 'paid_on' => $today]);
+            $payment = ['amount' => $amount, 'paid_on' => $today] + ($mode === 'record-cash' ? ['method' => 'cash'] : []);
+            $app->make(RecordPayment::class)->handle($admin, $invoice, $payment);
             $result = 'recorded';
     }
 } catch (ValidationException $e) {
