@@ -23,5 +23,8 @@ return [
     // A partial payment: what is still owed.
     'remaining' => 'Zbývá doplatit :remaining.',
 
+    // A cash payment: the receipt is the attachment (Phase 15, D-12).
+    'receipt_attached' => 'V příloze posíláme příjmový pokladní doklad č. :number.',
+
     'thanks' => 'Děkujeme.',
 ];

@@ -59,12 +59,13 @@ use Throwable;
  * pay-link block of the text part both follow the stored body at send time, from one call of {@see PayLinkBlock::forHtml()}
  * (D-03; Phase 13 D-01); the log row keeps the confirmed text only.
  *
- * The successful send of a document e-mail is the only lock of the system (IN-11; D-01, D-02): the sent mark and the
+ * The successful send of a document e-mail is the only lock of an invoice or proforma (IN-11; D-01, D-02): the sent mark and the
  * lock of an issued invoice or proforma are written in one transaction that locks the invoice row first, the order of
  * every edit of the document (invoice, then children). A queued, sending or failed row, a payment, a credit note and
  * a storno lock nothing, and a document that is locked already is left exactly as it is, because a locked row refuses
  * even a timestamp-only write. No other e-mail kind may call this step: a later payment confirmation must never lock
- * the invoice it confirms.
+ * the invoice it confirms. The payment confirmation locks only the cash receipt it carries, a different row (Phase 15,
+ * D-12).
  *
  * The work report reads the supplier and client lines live, not from the snapshot of the document (R-24-4): the
  * figures in it are hours, and a changed address in the header is an accepted drift of an attachment that carries no

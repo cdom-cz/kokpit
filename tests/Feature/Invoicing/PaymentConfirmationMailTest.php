@@ -216,6 +216,53 @@ describe('the content', function (): void {
     });
 });
 
+/**
+ * Sends the confirmation with a receipt attached and returns the one message that left.
+ */
+function payMailSendWithReceipt(string $language): Email
+{
+    $address = exampleEmail('confirm-recipient');
+    $receipt = ['name' => 'receipt-example.pdf', 'data' => '%PDF-1.4 example', 'number' => 'PPD2026'.'0007'];
+
+    Mail::getSymfonyTransport()->flush();
+    Mail::to($address)->send(PaymentConfirmationMail::forPayment('INV-0042', Money::ofMinor(40000, 'CZK'), CarbonImmutable::parse('2026-10-14', 'Europe/Prague'), 60000, $language, $receipt));
+
+    $messages = MailFixtures::to($address);
+
+    expect($messages)->toHaveCount(1);
+
+    return $messages[0];
+}
+
+describe('the receipt of a cash payment (Phase 15, D-12)', function (): void {
+    it('names the receipt in Czech and carries it as the only attachment', function (): void {
+        $email = payMailSendWithReceipt('cs');
+        $attachments = $email->getAttachments();
+
+        expect(payMailVisible($email))->toContain('V příloze posíláme příjmový pokladní doklad č. PPD2026'.'0007.')
+            ->and((string) $email->getTextBody())->toContain('PPD2026'.'0007')
+            ->and($attachments)->toHaveCount(1)
+            ->and($attachments[0]->getFilename())->toBe('receipt-example.pdf')
+            ->and($attachments[0]->getMediaType().'/'.$attachments[0]->getMediaSubtype())->toBe('application/pdf')
+            ->and($attachments[0]->getBody())->toBe('%PDF-1.4 example');
+    });
+
+    it('names the receipt in English', function (): void {
+        $email = payMailSendWithReceipt('en');
+
+        expect(payMailVisible($email))->toContain('The cash receipt no. PPD2026'.'0007 is attached.')
+            ->and($email->getAttachments())->toHaveCount(1);
+    });
+
+    it('has no attachment and no receipt sentence without a receipt', function (): void {
+        $email = payMailSend('INV-0042', Money::ofMinor(40000, 'CZK'), 60000, 'cs');
+
+        expect($email->getAttachments())->toBe([])
+            ->and(payMailVisible($email))->not->toContain('V příloze')
+            ->and((string) $email->getTextBody())->not->toContain('příjmový');
+    });
+});
+
 describe('the copy', function (): void {
     it('has the same keys in Czech and English (lang/cs/payment_mail.php, lang/en/payment_mail.php)', function (): void {
         $keys = static fn (string $locale): array => array_keys(Arr::dot(require lang_path($locale.'/payment_mail.php')));

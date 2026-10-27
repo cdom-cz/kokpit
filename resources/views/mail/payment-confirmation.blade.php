@@ -17,6 +17,10 @@
 {{ __('payment_mail.remaining', ['remaining' => MailText::escapeMarkdown($remaining)]) }}
 @endif
 
+@if ($receiptNumber !== null)
+{{ __('payment_mail.receipt_attached', ['number' => MailText::escapeMarkdown($receiptNumber)]) }}
+
+@endif
 {{ __('payment_mail.thanks') }}
 
 {{ __('mail_layout.regards') }}<br>
