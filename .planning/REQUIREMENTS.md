@@ -165,18 +165,18 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Cash Payments and Cash Receipts
 
-- [ ] **P15-01**: A draft, invoice or proforma may have the payment method `cash` as a third value next to `transfer` and `online`; a credit note still has none; the default of a new draft stays `transfer`
-- [ ] **P15-02**: A cash document prints no bank box, account, QR, variable symbol or pay button, and stores no bank snapshot (enforced by a database check)
-- [ ] **P15-03**: Cash excludes card payment: the card switch is off and locked, no Stripe link exists, and the pay URL shows the information page
-- [ ] **P15-04**: The method is chosen in the draft and changed while the issued document is open; a change to cash deactivates the live Stripe link
-- [ ] **P15-05**: Every recorded cash payment (any document method, invoice or proforma) issues one cash receipt document (PPD) in the payment transaction; carried copies of a proforma payment issue none
-- [ ] **P15-06**: A PPD has its own gap-free number series with a configurable pattern; it carries no variable symbol and no QR
-- [ ] **P15-07**: A PPD is editable until the successful confirmation send locks it; Admin unlocks it with a recorded reason; number, kind, amount and currency never change
-- [ ] **P15-08**: The PPD PDF carries the content the Accounting Act requires of an accounting document, is built from snapshots in the client's language, is stored, and is regenerated when the PPD is edited
-- [ ] **P15-09**: The PPD PDF is attached to the payment confirmation e-mail, and the successful send locks the PPD
-- [ ] **P15-10**: A payment with a PPD cannot be deleted before the PPD is cancelled with a reason; the PPD number is never reused
-- [ ] **P15-11**: Admin sees, downloads, edits and cancels PPDs in the invoice detail; Partner sees and downloads the PPDs of the own non-draft documents read-only, enforced by policy and scope
-- [ ] **P15-12**: A cancelled PPD keeps its number and PDF, is marked cancelled and is audited
+- [x] **P15-01**: A draft, invoice or proforma may have the payment method `cash` as a third value next to `transfer` and `online`; a credit note still has none; the default of a new draft stays `transfer`
+- [x] **P15-02**: A cash document prints no bank box, account, QR, variable symbol or pay button, and stores no bank snapshot (enforced by a database check)
+- [x] **P15-03**: Cash excludes card payment: the card switch is off and locked, no Stripe link exists, and the pay URL shows the information page
+- [x] **P15-04**: The method is chosen in the draft and changed while the issued document is open; a change to cash deactivates the live Stripe link
+- [x] **P15-05**: Every recorded cash payment (any document method, invoice or proforma) issues one cash receipt document (PPD) in the payment transaction; carried copies of a proforma payment issue none
+- [x] **P15-06**: A PPD has its own gap-free number series with a configurable pattern; it carries no variable symbol and no QR
+- [x] **P15-07**: A PPD is editable until the successful confirmation send locks it; Admin unlocks it with a recorded reason; number, kind, amount and currency never change
+- [x] **P15-08**: The PPD PDF carries the content the Accounting Act requires of an accounting document, is built from snapshots in the client's language, is stored, and is regenerated when the PPD is edited
+- [x] **P15-09**: The PPD PDF is attached to the payment confirmation e-mail, and the successful send locks the PPD
+- [x] **P15-10**: A payment with a PPD cannot be deleted before the PPD is cancelled with a reason; the PPD number is never reused
+- [x] **P15-11**: Admin sees, downloads, edits and cancels PPDs in the invoice detail; Partner sees and downloads the PPDs of the own non-draft documents read-only, enforced by policy and scope
+- [x] **P15-12**: A cancelled PPD keeps its number and PDF, is marked cancelled and is audited
 
 ### Partner Audit
 
@@ -338,18 +338,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 | P14-07 | Phase 14 | Complete |
 | P14-08 | Phase 14 | Complete |
 | P14-09 | Phase 14 | Complete |
-| P15-01 | Phase 15 | Pending |
-| P15-02 | Phase 15 | Pending |
-| P15-03 | Phase 15 | Pending |
-| P15-04 | Phase 15 | Pending |
-| P15-05 | Phase 15 | Pending |
-| P15-06 | Phase 15 | Pending |
-| P15-07 | Phase 15 | Pending |
-| P15-08 | Phase 15 | Pending |
-| P15-09 | Phase 15 | Pending |
-| P15-10 | Phase 15 | Pending |
-| P15-11 | Phase 15 | Pending |
-| P15-12 | Phase 15 | Pending |
+| P15-01 | Phase 15 | Complete |
+| P15-02 | Phase 15 | Complete |
+| P15-03 | Phase 15 | Complete |
+| P15-04 | Phase 15 | Complete |
+| P15-05 | Phase 15 | Complete |
+| P15-06 | Phase 15 | Complete |
+| P15-07 | Phase 15 | Complete |
+| P15-08 | Phase 15 | Complete |
+| P15-09 | Phase 15 | Complete |
+| P15-10 | Phase 15 | Complete |
+| P15-11 | Phase 15 | Complete |
+| P15-12 | Phase 15 | Complete |
 | AUD-01 | Phase 12 | Complete |
 | AUD-02 | Phase 12 | Complete |
 

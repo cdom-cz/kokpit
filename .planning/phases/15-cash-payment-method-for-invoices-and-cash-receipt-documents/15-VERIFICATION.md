@@ -1,7 +1,7 @@
 ---
 phase: 15-cash-payment-method-for-invoices-and-cash-receipt-documents
 verified: 2026-10-27T12:00:00Z
-status: human_needed
+status: passed
 score: 13/13 must-haves verified
 covered_files:
   - .planning/phases/15-cash-payment-method-for-invoices-and-cash-receipt-documents/15-01-PLAN.md
@@ -66,7 +66,7 @@ human_verification:
 
 **Phase Goal:** Invoices can be created with cash as the payment method, and a cash receipt document (Czech: pokladni prijmovy doklad, PPD) can be issued for such invoices. Research must first establish what a cash receipt document is and how it is issued (legal requirements, content, numbering).
 **Verified:** 2026-10-27
-**Status:** human_needed
+**Status:** passed (the two human items were closed in 15-UAT.md on 2026-10-27)
 **Re-verification:** No - initial verification
 
 ## Goal Achievement
