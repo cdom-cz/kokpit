@@ -376,14 +376,24 @@ public static function lockedManually(Invoice $invoice, User $actor): void
 | A6 | Czech wording proposals ("Odesílat doklady e-mailem", "Uzamknout", "Doklad uzamčen ručně", state label "Přeskočeno") are placeholders for the planner | Patterns 5-7 | Cosmetic; CONTEXT leaves wording to discretion |
 | A7 | The lock button lives in the `open_for_edits` callout of the detail (and the Platby tab for the PPD), not in the list row | Pattern 7 | Cosmetic; D-02 does not require a list-row lock |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All questions below were answered by the owner at planning time (2026-10-27); the answers are final and are carried into the plans.
 
 1. **Should hand-locked documents count as handed over for the edit audit (A1)?**
    - What we know: IN-15 ties the edit audit to "after its first send"; `everSent()` reads sent e-mail rows only.
    - What's unclear: whether the owner considers a manual lock the equivalent of a send.
    - Recommendation: yes, extend `everSent()` (cheap, one EXISTS), and confirm in plan review.
+   - **RESOLVED (owner answer A1: yes):** `InvoiceAudit::everSent()` also counts an `invoice_locked_manually` row (plan 16-02, ruling R-16-02-4).
 2. **Indicator behavior for a failed latest row of a now-disabled client (A3).** Recommendation: ignore disabled clients in the indicator; confirm.
+   - **RESOLVED (owner answer A3: yes):** the unsent-e-mails indicator ignores the documents of clients with sending disabled (plan 16-03, ruling R-16-03-6).
 3. **Does the PPD manual lock need a list affordance?** D-02 names invoice, proforma and PPD only; the Platby tab is the PPD's only UI. Recommendation: Platby tab only.
+   - **RESOLVED (owner answer: Platby tab only):** the PPD lock action lives only in the receipt action group of the Platby tab (plan 16-04, ruling R-16-04-3).
+
+Further owner answers recorded at the same time:
+
+- **Assumption A2 — RESOLVED (yes):** the manual lock also refuses a cancelled invoice and a converted proforma, mirroring the unlock refusals (plan 16-02, ruling R-16-02-3).
+- **ViewClient heading (Pattern 6 note, "the planner should confirm the rest of the file") — RESOLVED:** the task that adds the client-detail badge reads all of `app/Filament/Resources/ClientResource/Pages/ViewClient.php` before adding the `getHeading()` override (plan 16-01, Task 2).
 
 ## Environment Availability
 
