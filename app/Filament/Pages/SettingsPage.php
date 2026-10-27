@@ -518,6 +518,7 @@ class SettingsPage extends Page
                     ...$this->patternInputs(DocumentKind::Invoice, 'invoice_pattern'),
                     ...$this->patternInputs(DocumentKind::Proforma, 'proforma_pattern'),
                     ...$this->patternInputs(DocumentKind::CreditNote, 'credit_note_pattern'),
+                    ...$this->patternInputs(DocumentKind::CashReceipt, 'cash_receipt_pattern'),
                     // Fixed: never taken from the request. The field is not dehydrated, and its rule still
                     // refuses a crafted payload with the Czech reason instead of dropping it silently.
                     TextInput::make('task_pattern')
