@@ -34,6 +34,10 @@ use LogicException;
  * typed or request value (T-13-11). An archived client keeps getting confirmations. The language is the client's invoice
  * language (D-05), not the language of the document.
  *
+ * The confirmation of a cash payment carries the cash receipt of that payment (Phase 15, D-12): the job attaches the
+ * stored PDF at send time, and the grace window is what lets an edit or a cancel of the receipt happen before it
+ * leaves. Nothing about the receipt is decided here; the row is queued exactly like any other.
+ *
  * A credit note is never paid (RecordPayment refuses it) and the carried copy of a proforma payment on the converted
  * invoice does not pass through the write core, so neither queues one. To stop confirming proforma payments (A-13-1),
  * return early for {@see InvoiceKind::Proforma} here.
