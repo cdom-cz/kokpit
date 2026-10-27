@@ -40,7 +40,8 @@ use InvalidArgumentException;
  *
  * - D-09, D-10, OA-1, OA-3, OA-7: an open issued document keeps the same choices editable until the lock
  *   ({@see DocumentPayment::forIssued()}). An issued `online` document carries no bank snapshot, an issued `transfer`
- *   document must carry one, and the pay token is set once and never replaced.
+ *   document must carry one, and the pay token is set once and never replaced. A `cash` document, like an online one,
+ *   carries no bank snapshot, and cash forces the switch off (Phase 15 D-03).
  *
  * Settings are read through `app(...)` at call time, never held, so a long-lived worker sees the current values. The
  * Admin-only row is read here, so every caller runs as the Admin or as system.
@@ -214,9 +215,11 @@ final class DocumentPayment
      * stays on, and turns on only while card payment is available to the document; for transfer the Admin's boolean,
      * else the client flag when the document was online, else the stored one; a value that turns the switch on, or
      * keeps it on after a change from online, needs card payment to be available: a derived value falls back to off,
-     * an explicit request is refused, WR-01); the snapshot (none for online; for transfer taken again
-     * from the settings when the document was online, the account or the currency changed, or the refill was asked
-     * for, otherwise the issued snapshot stays); the token (generated once when the switch is on and none exists).
+     * an explicit request is refused, WR-01); the snapshot (none for online and for cash, which print no bank details;
+     * for transfer taken again from the settings when the document did not print bank details before, the account or
+     * the currency changed, or the refill was asked for, otherwise the issued snapshot stays); the token (generated
+     * once when the switch is on and none exists). Cash keeps the switch off: an explicit `true` is refused
+     * (Phase 15; D-03, D-04, T-15-04).
      *
      * @param  array<string, mixed>  $data
      * @return array{payment_method: DocumentPaymentMethod, bank_account_id: ?string, card_payment_enabled: bool, pay_token: ?string, bank_snapshot?: array<string, string|null>|null, method_changed: bool, card_changed: bool, changed: bool}
@@ -243,9 +246,9 @@ final class DocumentPayment
         }
 
         $method = array_key_exists('payment_method', $data) ? self::method($data['payment_method']) : $storedMethod;
-        $online = $method === DocumentPaymentMethod::Online;
+        $noBank = ! $method->printsBankDetails();
 
-        if ($online && $storedMethod !== DocumentPaymentMethod::Online && self::onlineUnavailableReason($locked) !== null) {
+        if ($method === DocumentPaymentMethod::Online && $storedMethod !== DocumentPaymentMethod::Online && self::onlineUnavailableReason($locked) !== null) {
             throw ValidationException::withMessages(['payment_method' => [__('invoices.errors.online_unavailable')]]);
         }
 
@@ -271,12 +274,12 @@ final class DocumentPayment
             'changed' => false,
         ];
 
-        if ($online) {
+        if ($noBank) {
             if ($locked->bank_snapshot !== null) {
                 $result['bank_snapshot'] = null;
             }
         } else {
-            $retake = $storedMethod === DocumentPaymentMethod::Online || $accountId !== $storedAccount || $currencyChanged || $reload;
+            $retake = ! $storedMethod->printsBankDetails() || $accountId !== $storedAccount || $currencyChanged || $reload;
             $taken = self::issuedSnapshot($currency, $accountSent, $accountId, $retake);
 
             if ($taken !== null) {
@@ -303,9 +306,10 @@ final class DocumentPayment
 
     /**
      * The card switch of an open issued document after the correction (D-03, OA-1, WR-01). Every result that turns the
-     * switch on, or keeps it on after a change from online, needs card payment to be available: online keeps a stored
-     * switch and turns a stored-off one on only while {@see DocumentPayment::onlineUnavailableReason()} is null;
-     * transfer degrades a derived value to off and refuses an explicit `true`.
+     * switch on, or keeps it on after a change from online or cash, needs card payment to be available: online keeps a
+     * stored switch and turns a stored-off one on only while {@see DocumentPayment::onlineUnavailableReason()} is null;
+     * transfer degrades a derived value to off and refuses an explicit `true`; cash is always off and refuses an
+     * explicit `true` (Phase 15 D-03).
      *
      * @param  array<string, mixed>  $data
      *
@@ -323,20 +327,30 @@ final class DocumentPayment
             }
         }
 
+        // Phase 15 D-03: a method that neither lets the Admin choose nor forces card payment (cash) has the switch off,
+        // and a request to turn it on is refused.
+        if (! $method->allowsCardChoice() && ! $method->forcesCardPayment()) {
+            if ($explicit === true) {
+                throw ValidationException::withMessages(['card_payment_enabled' => [__('invoices.errors.card_payment_cash')]]);
+            }
+
+            return false;
+        }
+
         // Online keeps a switch that is on, and turns a stored-off one on only while card payment is available to the
         // document (WR-01, P14-09); a change from transfer to online is refused earlier while it is not.
-        if ($method === DocumentPaymentMethod::Online) {
+        if ($method->forcesCardPayment()) {
             return $storedSwitch || self::onlineUnavailableReason($locked) === null;
         }
 
         $switch = match (true) {
             $explicit !== null => $explicit,
-            $storedMethod === DocumentPaymentMethod::Online => $locked->kind->carriesPayment() && $locked->client?->online_payment_enabled === true,
+            ! $storedMethod->allowsCardChoice() => $locked->kind->carriesPayment() && $locked->client?->online_payment_enabled === true,
             default => $storedSwitch,
         };
 
-        // A switch that turns on, or stays on after a change from online, needs card payment to be available (WR-01).
-        if ($switch && (! $storedSwitch || $storedMethod === DocumentPaymentMethod::Online) && ! app(CardPaymentSwitch::class)->available()) {
+        // A switch that turns on, or stays on after a change from online or cash, needs card payment to be available (WR-01).
+        if ($switch && (! $storedSwitch || ! $storedMethod->allowsCardChoice()) && ! app(CardPaymentSwitch::class)->available()) {
             if ($explicit === true) {
                 throw ValidationException::withMessages(['card_payment_enabled' => [__('invoices.errors.card_payment_unavailable')]]);
             }
