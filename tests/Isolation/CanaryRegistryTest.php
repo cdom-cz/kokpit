@@ -10,6 +10,7 @@ use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
@@ -115,6 +116,7 @@ it('does not pass vacuously: the real isolated models and the canary model are a
     expect(partnerIsolatedModels())->toEqualCanonicalizing([
         Activity::class,
         CanaryRecord::class,
+        CashReceipt::class,
         Client::class,
         ClientInvitation::class,
         Contact::class,
