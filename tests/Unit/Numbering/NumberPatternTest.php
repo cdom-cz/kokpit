@@ -47,6 +47,8 @@ it('accepts the documented valid patterns', function (string $pattern, DocumentK
     'credit note with dots and underscore' => ['CN_{YY}.{N}', DocumentKind::CreditNote],
     'thirty-two characters exactly' => [str_repeat('A', 29).'{N}', DocumentKind::CreditNote],
     'task' => ['{KEY}-{N}', DocumentKind::Task],
+    'default cash receipt' => ['PPD{YYYY}{NNNN}', DocumentKind::CashReceipt],
+    'cash receipt with a dash and a slash' => ['PPD-{YYYY}/{NNNN}', DocumentKind::CashReceipt],
 ]);
 
 it('refuses a pattern with the named reason', function (string $pattern, DocumentKind $kind, string $reason): void {
@@ -75,6 +77,10 @@ it('refuses a pattern with the named reason', function (string $pattern, Documen
     'slash and letters in a proforma' => ['ZF-{YYYY}/{NNNN}', DocumentKind::Proforma, 'proforma_digits'],
     'too long minimal proforma' => ['{YYYY}{MM}{NNNNNNN}', DocumentKind::Proforma, 'proforma_length'],
     'credit note without a counter' => ['CN{YYYY}', DocumentKind::CreditNote, 'counter_count'],
+    'cash receipt without a counter' => ['PPD{YYYY}', DocumentKind::CashReceipt, 'counter_count'],
+    'cash receipt with a space' => ['PPD {YYYY}{NNNN}', DocumentKind::CashReceipt, 'literal'],
+    'the cash receipt default with letters in an invoice' => ['PPD{YYYY}{NNNN}', DocumentKind::Invoice, 'invoice_digits'],
+    'the cash receipt default with letters in a proforma' => ['PPD{YYYY}{NNNN}', DocumentKind::Proforma, 'proforma_digits'],
     'thirty-three characters' => [str_repeat('A', 30).'{N}', DocumentKind::Proforma, 'too_long'],
     'space' => ['ZF {YYYY}{N}', DocumentKind::CreditNote, 'literal'],
     'semicolon' => ['ZF;{YYYY}{N}', DocumentKind::CreditNote, 'literal'],
@@ -173,4 +179,27 @@ it('has no date scope key for a task, because its counter is per project', funct
 it('refuses a counter value below one', function (): void {
     expect(fn () => NumberPattern::parse('{NNNN}', DocumentKind::Invoice)->format(0, pragueNoon('2026-03-09')))
         ->toThrow(InvalidArgumentException::class);
+});
+
+it('gives the cash receipt its own default pattern and no variable symbol', function (): void {
+    expect(DocumentKind::CashReceipt->value)->toBe('cash_receipt')
+        ->and(DocumentKind::CashReceipt->defaultPattern())->toBe('PPD{YYYY}{NNNN}')
+        ->and(DocumentKind::CashReceipt->carriesVariableSymbol())->toBeFalse();
+});
+
+it('keeps the cash receipt counter in a scope of its own, per issue year in Prague', function (): void {
+    $parsed = NumberPattern::parse('PPD{YYYY}{NNNN}', DocumentKind::CashReceipt);
+    $invoice = NumberPattern::parse('{YYYY}{NNNN}', DocumentKind::Invoice);
+
+    expect($parsed->resetPeriod())->toBe(ResetPeriod::Yearly)
+        ->and($parsed->scopeKey(pragueNoon('2026-10-27')))->toBe('cash_receipt:2026')
+        ->and($parsed->scopeKey(pragueNoon('2026-10-27')))->not->toBe($invoice->scopeKey(pragueNoon('2026-10-27')));
+});
+
+it('writes the cash receipt number with letters and does not cap it at ten characters', function (): void {
+    $parsed = NumberPattern::parse('PPD{YYYY}{NNNN}', DocumentKind::CashReceipt);
+    $at = pragueNoon('2026-10-27');
+
+    expect($parsed->format(1, $at))->toBe('PPD2026'.'0001')
+        ->and($parsed->format(12345, $at))->toBe('PPD2026'.'12345');
 });

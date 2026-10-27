@@ -42,3 +42,7 @@ it('refuses a number that is not 1 to 10 digits instead of emitting a bad symbol
 it('has no variable symbol for a task number', function (): void {
     expect(fn () => VariableSymbol::fromNumber(DocumentKind::Task, 'ABC-1'))->toThrow(LogicException::class);
 });
+
+it('has no variable symbol for a cash receipt number', function (): void {
+    expect(fn () => VariableSymbol::fromNumber(DocumentKind::CashReceipt, 'PPD2026'.'0001'))->toThrow(LogicException::class);
+});

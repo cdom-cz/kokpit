@@ -371,6 +371,7 @@ return [
             'invoice_pattern' => 'Vzor čísla faktury',
             'proforma_pattern' => 'Vzor čísla zálohové faktury',
             'credit_note_pattern' => 'Vzor čísla dobropisu',
+            'cash_receipt_pattern' => 'Vzor čísla příjmového pokladního dokladu',
             'task_pattern' => 'Vzor čísla úkolu',
             'preview' => 'Další číslo: :number',
             'reset_warning' => 'Tento vzor mění období, ve kterém se čítač vynuluje. Číslování tohoto dokladu proto začne znovu od 1.',

@@ -195,6 +195,83 @@ it('keeps separate counters per document kind', function (): void {
         ->and(counterRows())->toBe([['credit_note:2026', 2], ['invoice:2026', 3], ['proforma:2026', 2]]);
 });
 
+it('numbers cash receipts PPD then the next free number inside a transaction, apart from the invoice counter', function (): void {
+    $at = new DateTimeImmutable('2026-10-27 12:00:00', new DateTimeZone('Europe/Prague'));
+    $numbering = app(DocumentNumbering::class);
+
+    $numbers = DB::transaction(fn (): array => [
+        $numbering->next(DocumentKind::CashReceipt, $at),
+        $numbering->next(DocumentKind::CashReceipt, $at),
+    ]);
+
+    expect($numbers)->toBe(['PPD2026'.'0001', 'PPD2026'.'0002'])
+        ->and(counterRows())->toBe([['cash_receipt:2026', 3]])
+        ->and($numbering->preview(DocumentKind::Invoice, null, $at))->toBe('2026'.'0001');
+});
+
+it('gives a rolled back cash receipt number back and takes it again next time', function (): void {
+    $at = new DateTimeImmutable('2026-10-27 12:00:00', new DateTimeZone('Europe/Prague'));
+    $numbering = app(DocumentNumbering::class);
+
+    try {
+        DB::transaction(function () use ($numbering, $at): void {
+            expect($numbering->next(DocumentKind::CashReceipt, $at))->toBe('PPD2026'.'0001');
+
+            throw new RuntimeException('rollback');
+        });
+    } catch (RuntimeException) {
+        // The allocation is undone with the transaction.
+    }
+
+    $next = DB::transaction(fn (): string => $numbering->next(DocumentKind::CashReceipt, $at));
+
+    expect($next)->toBe('PPD2026'.'0001')
+        ->and(counterRows())->toBe([['cash_receipt:2026', 2]]);
+});
+
+it('previews the next cash receipt number without taking one', function (): void {
+    $at = new DateTimeImmutable('2026-10-27 12:00:00', new DateTimeZone('Europe/Prague'));
+    $numbering = app(DocumentNumbering::class);
+
+    expect($numbering->preview(DocumentKind::CashReceipt, null, $at))->toBe('PPD2026'.'0001')
+        ->and($numbering->preview(DocumentKind::CashReceipt, null, $at))->toBe('PPD2026'.'0001')
+        ->and(counterRows())->toBe([]);
+});
+
+it('writes a saved cash receipt pattern into the next number', function (): void {
+    $numbering = numberingWith(['cash_receipt_pattern' => 'PPD-{YY}/{NNN}']);
+    $at = new DateTimeImmutable('2026-10-27 12:00:00', new DateTimeZone('Europe/Prague'));
+
+    $number = DB::transaction(fn (): string => $numbering->next(DocumentKind::CashReceipt, $at));
+
+    expect($number)->toBe('PPD-26/001');
+});
+
+/**
+ * Removes the cash receipt row and runs its settings migration, returning
+ * what is stored after.
+ */
+function runCashReceiptPatternMigration(): ?string
+{
+    (require database_path('settings/2026_10_27_000100_add_cash_receipt_pattern.php'))->up();
+
+    return storedPatterns()['cash_receipt_pattern'] ?? null;
+}
+
+it('adds the cash receipt pattern with its default where an installation lacks it, and only once', function (): void {
+    DB::table('settings')->where('group', 'numbering')->where('name', 'cash_receipt_pattern')->delete();
+    expect(storedPatterns())->not->toHaveKey('cash_receipt_pattern');
+
+    expect(runCashReceiptPatternMigration())->toBe('PPD{YYYY}{NNNN}')
+        ->and(runCashReceiptPatternMigration())->toBe('PPD{YYYY}{NNNN}');
+});
+
+it('keeps a cash receipt pattern the Admin already chose when the migration runs again', function (): void {
+    numberingWith(['cash_receipt_pattern' => 'PPD-{YYYY}/{NNNN}']);
+
+    expect(runCashReceiptPatternMigration())->toBe('PPD-{YYYY}/{NNNN}');
+});
+
 it('numbers the first proforma of a fresh install so that its variable symbol differs from the invoice one', function (): void {
     $at = utcInstant('2026-10-17 10:00:00');
     $numbering = app(DocumentNumbering::class);
@@ -386,6 +463,8 @@ it('refuses an invalid pattern written outside any form with the Czech reason an
     'invoice without a counter' => ['invoice_pattern', '{YYYY}', 'counter_count'],
     'invoice with letters' => ['invoice_pattern', 'INV{YYYY}{NNNN}', 'invoice_digits'],
     'credit note with a space' => ['credit_note_pattern', 'ZF {N}', 'literal'],
+    'cash receipt with an unknown token' => ['cash_receipt_pattern', 'PPD{XX}{NNNN}', 'unknown_token'],
+    'cash receipt without a counter' => ['cash_receipt_pattern', 'PPD{YYYY}', 'counter_count'],
     'proforma with a space' => ['proforma_pattern', '{YYYY} {N}', 'literal'],
     'proforma with letters' => ['proforma_pattern', 'ZF-{YYYY}/{NNNN}', 'proforma_digits'],
     'proforma longer than ten characters' => ['proforma_pattern', '{YYYY}{MM}{NNNNNNN}', 'proforma_length'],
@@ -403,6 +482,7 @@ it('stores valid patterns for every kind and reads them back as parsed patterns'
     $fresh = app(NumberingSettings::class);
 
     expect(storedPatterns())->toBe([
+        'cash_receipt_pattern' => 'PPD{YYYY}{NNNN}',
         'credit_note_pattern' => 'CN{YY}{MM}{NNN}',
         'invoice_pattern' => '{YYYY}{NNNN}',
         'proforma_pattern' => '{YY}{MM}9{NNNN}',
@@ -448,6 +528,7 @@ it('does not touch the invoice and credit note patterns when it moves the profor
     runProformaDefaultMigration('{YYYY}{NNNN}');
 
     expect(storedPatterns())->toBe([
+        'cash_receipt_pattern' => 'PPD{YYYY}{NNNN}',
         'credit_note_pattern' => '{YYYY}{NNNN}',
         'invoice_pattern' => '{YYYY}{NNNN}',
         'proforma_pattern' => '{YYYY}9{NNNN}',
