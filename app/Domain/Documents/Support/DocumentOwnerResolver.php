@@ -7,6 +7,7 @@ namespace App\Domain\Documents\Support;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Enums\DocumentOwnerType;
 use App\Domain\Finance\Models\Transaction;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -107,6 +108,21 @@ final class DocumentOwnerResolver
                     'client_id' => (string) $invoice->client_id,
                     'project_id' => null,
                     'shareable' => DocumentOwnerType::Invoice->isShareable(),
+                    'default_visible' => false,
+                ];
+            }
+
+            if ($owner instanceof CashReceipt) {
+                // The PDF of a cash receipt counts for the client of the receipt and no project; a receipt is finance
+                // data and never shared with a Partner (Phase 15, D-11, T-15-21).
+                $receipt = CashReceipt::query()->whereKey($owner->getKey())->sharedLock()->firstOrFail();
+
+                return [
+                    'owner_type' => DocumentOwnerType::CashReceipt->value,
+                    'owner_id' => (string) $receipt->getKey(),
+                    'client_id' => (string) $receipt->client_id,
+                    'project_id' => null,
+                    'shareable' => DocumentOwnerType::CashReceipt->isShareable(),
                     'default_visible' => false,
                 ];
             }
