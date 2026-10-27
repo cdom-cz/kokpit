@@ -103,7 +103,7 @@ final readonly class InvoicePdfData
         $date = static fn (?DateTimeInterface $day): string => $day === null ? '' : $day->format($language === InvoiceLanguage::Czech ? 'j. n. Y' : 'Y-m-d');
         $payer = $issued->vat_mode === VatMode::Payer;
 
-        $palette = DocumentPalette::fromAccent(self::text($appearance['accent'] ?? null));
+        $palette = DocumentPalette::fromAccent(PdfParts::text($appearance['accent'] ?? null));
         $images = app(DocumentImage::class);
         $payment = $kind->carriesPayment() ? self::payment($issued, $t, $date) : null;
 
@@ -112,9 +112,9 @@ final readonly class InvoicePdfData
             language: $language,
             header: ['heading' => $t('headings.'.$kind->value), 'number' => $number],
             palette: $palette,
-            logo: self::image($images, $appearance['logo'] ?? null, self::LOGO_MAX_WIDTH, self::LOGO_MAX_HEIGHT),
-            supplier: self::party($t('supplier'), $supplier, $t, $payer ? null : $t('not_vat_payer'), true),
-            customer: self::party($t('customer'), $customer, $t, null, false),
+            logo: PdfParts::image($images, $appearance['logo'] ?? null, self::LOGO_MAX_WIDTH, self::LOGO_MAX_HEIGHT),
+            supplier: PdfParts::party($t('supplier'), $supplier, $t, $payer ? null : $t('not_vat_payer'), true),
+            customer: PdfParts::party($t('customer'), $customer, $t, null, false),
             proformaNote: $kind === InvoiceKind::Proforma ? $t('proforma_note') : null,
             dates: self::dates($issued, $t, $date, $payer),
             columns: [
@@ -128,70 +128,15 @@ final readonly class InvoicePdfData
                 'label' => $t($kind === InvoiceKind::CreditNote ? 'credit_total_bar' : 'amount_due_bar'),
                 'amount' => $issued->total()->format($locale),
             ],
-            note: self::text($issued->note),
+            note: PdfParts::text($issued->note),
             payment: $payment,
             cardPayment: $payment === null ? null : self::cardPayment($issued, $t),
             creditNoteNotice: $kind === InvoiceKind::CreditNote ? $t('credit_note_no_payment') : null,
-            footer: self::footer(self::text($appearance['footer'] ?? null)),
-            signature: self::image($images, $appearance['signature'] ?? null, self::SIGNATURE_MAX_WIDTH, self::SIGNATURE_MAX_HEIGHT),
+            footer: PdfParts::footer(PdfParts::text($appearance['footer'] ?? null)),
+            signature: PdfParts::image($images, $appearance['signature'] ?? null, self::SIGNATURE_MAX_WIDTH, self::SIGNATURE_MAX_HEIGHT),
             pageTemplate: $t('page', ['n' => '{n}', 'total' => '{total}']),
             title: $t('headings.'.$kind->value).' '.$number,
         );
-    }
-
-    /**
-     * One party block of a snapshot: address lines, the company and VAT ids, and the notes.
-     *
-     * @param  array<string, mixed>  $snapshot
-     * @param  Closure(string, array<string, string>=): string  $t
-     * @return array{label: string, name: string, lines: list<string>, ids: list<array{key: string, value: string}>, notes: list<string>, vatNote: string|null}
-     */
-    private static function party(string $label, array $snapshot, Closure $t, ?string $vatNote, bool $withContact): array
-    {
-        $lines = [];
-
-        if (($street = self::text($snapshot['street'] ?? null)) !== null) {
-            $lines[] = $street;
-        }
-
-        $city = trim(implode(' ', array_filter([self::text($snapshot['postal_code'] ?? null), self::text($snapshot['city'] ?? null)])));
-
-        if ($city !== '') {
-            $lines[] = $city;
-        }
-
-        $country = self::text($snapshot['country'] ?? null);
-
-        if ($country !== null && $country !== 'CZ') {
-            $lines[] = $country;
-        }
-
-        $ids = [];
-
-        if (($companyId = self::text($snapshot['company_id'] ?? null)) !== null) {
-            $ids[] = ['key' => $t('company_id'), 'value' => $companyId];
-        }
-
-        if (($vatId = self::text($snapshot['vat_id'] ?? null)) !== null) {
-            $ids[] = ['key' => $t('vat_id'), 'value' => $vatId];
-        }
-
-        $notes = [];
-
-        foreach (['registration_note', ...($withContact ? ['email', 'phone', 'website'] : [])] as $key) {
-            if (($value = self::text($snapshot[$key] ?? null)) !== null) {
-                $notes[] = $value;
-            }
-        }
-
-        return [
-            'label' => $label,
-            'name' => self::text($snapshot['name'] ?? null) ?? '',
-            'lines' => $lines,
-            'ids' => $ids,
-            'notes' => $notes,
-            'vatNote' => $vatNote,
-        ];
     }
 
     /**
@@ -287,10 +232,10 @@ final readonly class InvoicePdfData
         }
 
         $locale = $issued->language->value;
-        $iban = self::text($bank['iban'] ?? null);
-        $accountNumber = self::text($bank['account_number'] ?? null);
-        $bankCode = self::text($bank['bank_code'] ?? null);
-        $bic = self::text($bank['bic'] ?? null);
+        $iban = PdfParts::text($bank['iban'] ?? null);
+        $accountNumber = PdfParts::text($bank['account_number'] ?? null);
+        $bankCode = PdfParts::text($bank['bank_code'] ?? null);
+        $bic = PdfParts::text($bank['bic'] ?? null);
         $variableSymbol = $issued->variable_symbol;
         $dueDate = $issued->due_date;
         $amount = $issued->total()->format($locale);
@@ -394,48 +339,5 @@ final readonly class InvoicePdfData
     private static function groupIban(string $iban): string
     {
         return trim(chunk_split(preg_replace('/\s+/', '', $iban) ?? $iban, 4, ' '));
-    }
-
-    /**
-     * @return list<string>
-     */
-    private static function footer(?string $footer): array
-    {
-        if ($footer === null) {
-            return [];
-        }
-
-        return array_values(array_filter(
-            array_map(trim(...), preg_split('/\R/u', $footer) ?: []),
-            static fn (string $line): bool => $line !== '',
-        ));
-    }
-
-    /**
-     * An image of the appearance snapshot as a data URI, sized to fit the box without upscaling.
-     *
-     * @return array{uri: string, width: float, height: float}|null
-     */
-    private static function image(DocumentImage $images, mixed $reference, int $maxWidth, int $maxHeight): ?array
-    {
-        if (! is_array($reference) || ! is_string($reference['path'] ?? null) || ! is_string($reference['sha256'] ?? null)) {
-            return null;
-        }
-
-        $uri = $images->dataUri($reference['path'], $reference['sha256']);
-        $size = getimagesizefromstring((string) base64_decode(substr($uri, strlen('data:image/png;base64,')), true));
-
-        if ($size === false || $size[0] < 1 || $size[1] < 1) {
-            throw new UnexpectedValueException('document image mismatch');
-        }
-
-        $scale = min(1.0, $maxWidth / $size[0], $maxHeight / $size[1]);
-
-        return ['uri' => $uri, 'width' => round($size[0] * $scale, 2), 'height' => round($size[1] * $scale, 2)];
-    }
-
-    private static function text(mixed $value): ?string
-    {
-        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 }
