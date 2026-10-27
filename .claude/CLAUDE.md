@@ -43,6 +43,14 @@ After any regeneration of the GSD-managed blocks in this file, rerun `scripts/ch
 
 If something sensitive was committed: stop, rotate or revoke it first, and tell the owner. Do not rewrite history on your own. The full procedure is in `CONTRIBUTING.md`.
 
+## Worktrees, Tests and Migrations
+
+Development is done in git worktrees. The final test run and the database migrations happen only after the work is merged into the HEAD branch (the branch the worktrees were merged into), not inside a worktree.
+
+- In a worktree: write code and tests, and run only cheap checks that need no shared state (formatting, static analysis where it works without the DB).
+- Do not run migrations from a worktree. They would change the shared development database and diverge between parallel worktrees.
+- After the merge into the HEAD branch: run the migrations there, then the full test suite and static analysis (in DDEV, see the memory note), and treat that result as the final verdict.
+
 <!-- GSD:skills-start source:skills/ -->
 
 ## Project Skills
