@@ -7,6 +7,9 @@ namespace App\Filament\Resources\InvoiceResource\RelationManagers;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\CancelCashReceipt;
 use App\Domain\Invoicing\Actions\DeletePayment;
+use App\Domain\Invoicing\Actions\RegenerateCashReceiptPdf;
+use App\Domain\Invoicing\Actions\UnlockCashReceipt;
+use App\Domain\Invoicing\Actions\UpdateCashReceipt;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\PaymentConfirmationState;
 use App\Domain\Invoicing\Enums\PaymentMethod;
@@ -15,6 +18,7 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Support\CashReceiptAudit;
 use App\Domain\Invoicing\Support\CashReceiptPdfUrl;
+use App\Domain\Invoicing\Support\SnapshotInput;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Concerns\EnforcesRelationManagerAccessRule;
@@ -22,11 +26,16 @@ use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\TransactionResource;
 use App\Filament\Support\RecordPaymentAction;
 use Closure;
+use DomainException;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -35,6 +44,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\On;
+use LogicException;
+use RuntimeException;
 
 /**
  * The "Platby" tab of an issued invoice or proforma (IN-05, FI-03; D-17, UI-SPEC Surface F): the payments, newest
@@ -181,7 +192,13 @@ final class InvoicePaymentsRelationManager extends RelationManager
                     ->visible(fn (): bool => RecordPaymentAction::available($this->invoice())),
             ])
             ->recordActions([
-                ActionGroup::make([$this->downloadReceiptAction(), $this->cancelReceiptAction()])
+                ActionGroup::make([
+                    $this->downloadReceiptAction(),
+                    $this->editReceiptAction(),
+                    $this->unlockReceiptAction(),
+                    $this->regenerateReceiptPdfAction(),
+                    $this->cancelReceiptAction(),
+                ])
                     ->label(__('cash_receipts.admin.group'))
                     ->icon(Heroicon::OutlinedDocumentText)
                     ->color('gray'),
@@ -348,6 +365,150 @@ final class InvoicePaymentsRelationManager extends RelationManager
                     $record,
                     static fn (User $actor, CashReceipt $receipt): mixed => app(CancelCashReceipt::class)->handle($actor, $receipt, $reason),
                     'cash_receipts.admin.cancel.done',
+                );
+            });
+    }
+
+    /**
+     * "Upravit" (D-10): the receipt date, the purpose and the printed customer and supplier lines of an open receipt,
+     * prefilled from the stored values, through {@see UpdateCashReceipt}, which judges every value again and renews the
+     * stored PDF. Offered only for an open receipt that is not cancelled.
+     */
+    private function editReceiptAction(): Action
+    {
+        return Action::make('editCashReceipt')
+            ->label(__('cash_receipts.admin.actions.edit'))
+            ->icon(Heroicon::OutlinedPencilSquare)
+            ->color('gray')
+            ->visible(fn (InvoicePayment $record): bool => $record->cashReceipt !== null && ! $record->cashReceipt->isCancelled() && ! $record->cashReceipt->isLocked())
+            ->modalHeading(fn (InvoicePayment $record): string => __('cash_receipts.admin.edit.heading', ['number' => (string) $record->cashReceipt?->number]))
+            ->modalSubmitActionLabel(__('cash_receipts.admin.edit.submit'))
+            ->fillForm(fn (InvoicePayment $record): array => $record->cashReceipt === null ? [] : $this->editDefaults($record->cashReceipt))
+            ->schema([
+                Grid::make(['default' => 1, 'md' => 2])->schema([
+                    DatePicker::make('received_on')
+                        ->label(__('cash_receipts.admin.edit.received_on'))
+                        ->native(false)
+                        ->displayFormat('j. n. Y')
+                        ->required(),
+                    Textarea::make('purpose')
+                        ->label(__('cash_receipts.admin.edit.purpose'))
+                        ->required()
+                        ->maxLength(500)
+                        ->rows(3),
+                ]),
+                ...$this->partyFields('customer'),
+                ...$this->partyFields('supplier'),
+            ])
+            ->action(function (InvoicePayment $record, array $data): void {
+                $this->runReceiptAction(
+                    $record,
+                    static fn (User $actor, CashReceipt $receipt): mixed => app(UpdateCashReceipt::class)->handle($actor, $receipt, $data),
+                    'cash_receipts.admin.edit.done',
+                );
+            });
+    }
+
+    /**
+     * The stored values the edit dialog starts from.
+     *
+     * @return array<string, mixed>
+     */
+    private function editDefaults(CashReceipt $receipt): array
+    {
+        $party = static function (array $snapshot): array {
+            $lines = [];
+
+            foreach (['name', 'street', 'city', 'postal_code', 'country', 'company_id', 'vat_id'] as $key) {
+                $value = $snapshot[$key] ?? null;
+                $lines[$key] = is_scalar($value) ? (string) $value : null;
+            }
+
+            return $lines;
+        };
+
+        return [
+            'received_on' => $receipt->received_on->format('Y-m-d'),
+            'purpose' => $receipt->purpose,
+            'customer' => $party($receipt->customer_snapshot),
+            'supplier' => $party($receipt->supplier_snapshot),
+        ];
+    }
+
+    /**
+     * The printed lines of one party in the edit dialog, under a heading; the limits are the ones of the snapshots
+     * ({@see SnapshotInput}), which judge the values again.
+     *
+     * @return list<Section>
+     */
+    private function partyFields(string $party): array
+    {
+        return [
+            Section::make(__('cash_receipts.admin.edit.'.$party))
+                ->collapsed()
+                ->schema([
+                    Grid::make(['default' => 1, 'md' => 2])->schema([
+                        TextInput::make($party.'.name')->label(__('cash_receipts.admin.edit.name'))->required()->maxLength(255),
+                        TextInput::make($party.'.street')->label(__('cash_receipts.admin.edit.street'))->maxLength(255),
+                        TextInput::make($party.'.city')->label(__('cash_receipts.admin.edit.city'))->maxLength(255),
+                        TextInput::make($party.'.postal_code')->label(__('cash_receipts.admin.edit.postal_code'))->maxLength(20),
+                        TextInput::make($party.'.country')->label(__('cash_receipts.admin.edit.country'))->required()->maxLength(2),
+                        TextInput::make($party.'.company_id')->label(__('cash_receipts.admin.edit.company_id'))->maxLength(32),
+                        TextInput::make($party.'.vat_id')->label(__('cash_receipts.admin.edit.vat_id'))->maxLength(32),
+                    ]),
+                ]),
+        ];
+    }
+
+    /**
+     * "Odemknout" (D-10, AS-16): the reason (10 to 500 characters, judged again by the Action) opens a receipt that the
+     * send locked, through {@see UnlockCashReceipt}. Offered only for a locked receipt that is not cancelled.
+     */
+    private function unlockReceiptAction(): Action
+    {
+        return Action::make('unlockCashReceipt')
+            ->label(__('cash_receipts.admin.actions.unlock'))
+            ->icon(Heroicon::OutlinedLockOpen)
+            ->color('warning')
+            ->visible(fn (InvoicePayment $record): bool => $record->cashReceipt !== null && ! $record->cashReceipt->isCancelled() && $record->cashReceipt->isLocked())
+            ->modalHeading(fn (InvoicePayment $record): string => __('cash_receipts.admin.unlock.heading', ['number' => (string) $record->cashReceipt?->number]))
+            ->modalDescription(__('cash_receipts.admin.unlock.description'))
+            ->modalSubmitActionLabel(__('cash_receipts.admin.unlock.submit'))
+            ->schema([$this->reasonField(__('cash_receipts.admin.unlock.reason'), UnlockCashReceipt::REASON_MIN, UnlockCashReceipt::REASON_MAX)])
+            ->action(function (InvoicePayment $record, array $data): void {
+                $reason = is_string($data['reason'] ?? null) ? $data['reason'] : '';
+
+                $this->runReceiptAction(
+                    $record,
+                    static fn (User $actor, CashReceipt $receipt): mixed => app(UnlockCashReceipt::class)->handle($actor, $receipt, $reason),
+                    'cash_receipts.admin.unlock.done',
+                );
+            });
+    }
+
+    /**
+     * "Vytvořit PDF znovu" (AS-12): creates the PDF of a receipt that has none from the row, through
+     * {@see RegenerateCashReceiptPdf}. Offered only while the receipt has no PDF; a failure of the storage or the render
+     * shows one fixed message.
+     */
+    private function regenerateReceiptPdfAction(): Action
+    {
+        return Action::make('regenerateCashReceiptPdf')
+            ->label(__('cash_receipts.admin.actions.regenerate'))
+            ->icon(Heroicon::OutlinedArrowPath)
+            ->color('gray')
+            ->visible(fn (InvoicePayment $record): bool => $record->cashReceipt !== null && $record->cashReceipt->pdf_document_id === null)
+            ->action(function (InvoicePayment $record): void {
+                $this->runReceiptAction(
+                    $record,
+                    static function (User $actor, CashReceipt $receipt): mixed {
+                        try {
+                            return app(RegenerateCashReceiptPdf::class)->handle($actor, $receipt);
+                        } catch (DomainException|LogicException|RuntimeException) {
+                            throw ValidationException::withMessages(['receipt' => __('cash_receipts.admin.regenerate.failed')]);
+                        }
+                    },
+                    'cash_receipts.admin.regenerate.done',
                 );
             });
     }
