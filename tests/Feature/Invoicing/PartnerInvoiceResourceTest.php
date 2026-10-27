@@ -13,6 +13,7 @@ use App\Domain\Shared\Money\Money;
 use App\Filament\Partner\Resources\PartnerInvoiceResource;
 use App\Filament\Partner\Resources\PartnerInvoiceResource\Pages\ListPartnerInvoices;
 use App\Filament\Partner\Resources\PartnerInvoiceResource\Pages\ViewPartnerInvoice;
+use App\Filament\Partner\Resources\PartnerInvoiceResource\RelationManagers\PartnerCashReceiptsRelationManager;
 use App\Filament\Support\InvoiceColumns;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
@@ -124,7 +125,7 @@ describe('the tracer', function (): void {
         expect(PartnerInvoiceResource::canGloballySearch())->toBeFalse()
             ->and(PartnerInvoiceResource::canCreate())->toBeFalse()
             ->and(array_keys(PartnerInvoiceResource::getPages()))->toBe(['index', 'view'])
-            ->and(PartnerInvoiceResource::getRelations())->toBe([]);
+            ->and(PartnerInvoiceResource::getRelations())->toBe([PartnerCashReceiptsRelationManager::class]);
     });
 });
 
