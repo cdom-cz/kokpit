@@ -982,7 +982,7 @@ Plans:
 **Goal:** Invoices can be created with cash as the payment method, and a cash receipt document (Czech: pokladni prijmovy doklad, PPD) can be issued for such invoices. Research must first establish what a cash receipt document is and how it is issued (legal requirements, content, numbering).
 **Requirements**: P15-01, P15-02, P15-03, P15-04, P15-05, P15-06, P15-07, P15-08, P15-09, P15-10, P15-11, P15-12
 **Depends on:** Phase 14
-**Plans:** 3/14 plans executed
+**Plans:** 6/14 plans executed
 
 Plans:
 **Wave 1**
@@ -991,9 +991,9 @@ Plans:
 - [x] 15-03-PLAN.md — Shared closed Dompdf engine and PDF parts extracted from the invoice PDF, options pinned by a test (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 15-04-PLAN.md — Cash on paper and screen: PDF cash box, default e-mail text, Admin and Partner detail without bank details (Wave 2)
-- [ ] 15-05-PLAN.md — Own gap-free `cash_receipt` number series and pattern setting (Wave 2)
-- [ ] 15-06-PLAN.md — Partner-isolated `CashReceipt` model, policy and relations, registered in every isolation and audit harness (Wave 2)
+- [x] 15-04-PLAN.md — Cash on paper and screen: PDF cash box, default e-mail text, Admin and Partner detail without bank details (Wave 2)
+- [x] 15-05-PLAN.md — Own gap-free `cash_receipt` number series and pattern setting (Wave 2)
+- [x] 15-06-PLAN.md — Partner-isolated `CashReceipt` model, policy and relations, registered in every isolation and audit harness (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 15-07-PLAN.md — Open issued document changed to and from cash: snapshot, card switch, Stripe link, pay URL, conversion, editors (Wave 3)
