@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Actions\StoreCashReceiptPdf;
@@ -351,5 +352,46 @@ describe('the edge cases of delivery', function (): void {
         $row = Activity::query()->where('subject_id', $receipt?->id)->where('event', 'cash_receipt_locked')->sole();
 
         expect($row->causer_id)->toBe($this->admin->id);
+    });
+});
+
+describe('the receipt of a payment whose client was switched off while it waited (Phase 16, D-06, D-07)', function (): void {
+    it('is not mailed and not locked: the confirmation is skipped and the receipt stays open for the manual lock', function (): void {
+        [$invoice, , $confirmation, $receipt] = cashReceiptDeliveryPay(exampleEmail('client-invoice'));
+        Mail::getSymfonyTransport()->flush();
+
+        app(PartnerContext::class)->runAsSystem(static fn (): int => Client::query()->whereKey($invoice->client_id)->update(['document_emails_enabled' => false]));
+        cashReceiptDeliveryRun($confirmation->id);
+
+        $row = cashReceiptDeliveryRow($confirmation->id);
+
+        expect($row->state)->toBe(PaymentConfirmationState::Skipped)
+            ->and($row->failure_code)->toBeNull()
+            ->and($row->sent_at)->toBeNull()
+            ->and(MailFixtures::sent())->toBe([])
+            ->and(cashReceiptDeliveryReceipt($receipt)->lock_state)->toBe(CashReceiptLockState::Open)
+            ->and(cashReceiptDeliveryLockRows($receipt))->toBe(0);
+    });
+
+    it('re-checks right before the transport call: a switch turned off while the payment and the receipt are read stops the send', function (): void {
+        [$invoice, , $confirmation, $receipt] = cashReceiptDeliveryPay(exampleEmail('client-invoice'));
+        Mail::getSymfonyTransport()->flush();
+        $flipped = 0;
+
+        // The job reads the payment between its two checks: the first sees the switch on, the second must see it off.
+        Event::listen('eloquent.retrieved: '.InvoicePayment::class, static function () use ($invoice, &$flipped): void {
+            if ($flipped === 0) {
+                $flipped++;
+                app(PartnerContext::class)->runAsSystem(static fn (): int => Client::query()->whereKey($invoice->client_id)->update(['document_emails_enabled' => false]));
+            }
+        });
+
+        cashReceiptDeliveryRun($confirmation->id);
+
+        expect($flipped)->toBe(1)
+            ->and(cashReceiptDeliveryRow($confirmation->id)->state)->toBe(PaymentConfirmationState::Skipped)
+            ->and(MailFixtures::sent())->toBe([])
+            ->and(cashReceiptDeliveryReceipt($receipt)->lock_state)->toBe(CashReceiptLockState::Open)
+            ->and(cashReceiptDeliveryLockRows($receipt))->toBe(0);
     });
 });
