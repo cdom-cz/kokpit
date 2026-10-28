@@ -55,7 +55,6 @@
         table.closing td { padding: 0; vertical-align: bottom; }
         table.closing td.signature { text-align: right; }
         .issuer { font-size: 8pt; line-height: 1.4; color: {{ $palette->muted }}; }
-        .footer { margin-top: 16pt; font-size: 8pt; line-height: 1.4; color: {{ $palette->muted }}; }
     </style>
 </head>
 <body>
@@ -155,13 +154,6 @@
         <tr>
             <td>
                 <div class="issuer">{{ $data->issuer }}</div>
-                @if ($data->footer !== [])
-                    <div class="footer">
-                        @foreach ($data->footer as $line)
-                            <div>{{ $line }}</div>
-                        @endforeach
-                    </div>
-                @endif
             </td>
             <td class="signature">
                 @if ($data->signature !== null)

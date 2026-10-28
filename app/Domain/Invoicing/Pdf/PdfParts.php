@@ -17,13 +17,15 @@ use UnexpectedValueException;
 final class PdfParts
 {
     /**
-     * One party block of a snapshot: address lines, the company and VAT ids, and the notes.
+     * One party block of a snapshot: address lines, the company and VAT ids, and the notes. The notes hold the
+     * registration note only: the e-mail, phone and website of a snapshot are never printed on a PDF, though they stay
+     * in the snapshot (user decision 2026-10-28).
      *
      * @param  array<string, mixed>  $snapshot
      * @param  Closure(string, array<string, string>=): string  $t
      * @return array{label: string, name: string, lines: list<string>, ids: list<array{key: string, value: string}>, notes: list<string>, vatNote: string|null}
      */
-    public static function party(string $label, array $snapshot, Closure $t, ?string $vatNote, bool $withContact): array
+    public static function party(string $label, array $snapshot, Closure $t, ?string $vatNote): array
     {
         $lines = [];
 
@@ -55,10 +57,8 @@ final class PdfParts
 
         $notes = [];
 
-        foreach (['registration_note', ...($withContact ? ['email', 'phone', 'website'] : [])] as $key) {
-            if (($value = self::text($snapshot[$key] ?? null)) !== null) {
-                $notes[] = $value;
-            }
+        if (($registrationNote = self::text($snapshot['registration_note'] ?? null)) !== null) {
+            $notes[] = $registrationNote;
         }
 
         return [

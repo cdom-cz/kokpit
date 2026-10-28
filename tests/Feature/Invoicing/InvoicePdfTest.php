@@ -9,6 +9,7 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Pdf\DocumentPalette;
 use App\Domain\Invoicing\Pdf\InvoicePageDecoration;
 use App\Domain\Invoicing\Pdf\InvoicePdf;
+use App\Domain\Invoicing\Pdf\InvoicePdfData;
 use App\Domain\Settings\DocumentImage;
 use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
@@ -106,6 +107,60 @@ it('prints the quantity alone for a line without a unit and the quantity with it
         ->and($lines[0]->printedQuantity('cs'))->toBe('3')
         ->and($lines[1]->printedQuantity('cs'))->toBe('2 h')
         ->and((new InvoiceItem)->forceFill(['quantity' => '1.5000', 'unit' => null])->printedQuantity('en'))->toBe('1.5');
+})->with([
+    'invoice' => [InvoiceKind::Invoice],
+    'proforma' => [InvoiceKind::Proforma],
+]);
+
+it('lays the payment facts out two to a row in a compact box', function (InvoiceKind $kind): void {
+    $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '1000.00')], $kind);
+
+    $facts = InvoicePdfData::fromInvoice($issued)->payment['facts'] ?? [];
+    $html = app(InvoicePdf::class)->html($issued);
+    $images = pdfImages($html);
+
+    expect(count($facts))->toBeGreaterThanOrEqual(4)
+        ->and(preg_match('#<table class="facts">(.*?)</table>#s', $html, $match))->toBe(1);
+
+    $table = $match[1];
+
+    expect(substr_count($table, '<tr'))->toBe(intdiv(count($facts) + 1, 2))
+        ->and(substr_count($table, '<tr'))->toBeLessThan(count($facts))
+        ->and($images)->toHaveCount(1)
+        ->and($html)->toContain('width: 72pt; height: 72pt')
+        ->and(QrDecode::payload($images[0]))->toStartWith('SPD*1.0*ACC:CZ');
+
+    foreach ($facts as $fact) {
+        expect($table)->toContain(e($fact['key']))
+            ->and($table)->toContain(e($fact['value']));
+    }
+})->with([
+    'invoice' => [InvoiceKind::Invoice],
+    'proforma' => [InvoiceKind::Proforma],
+]);
+
+it('prints no contact line of the supplier, but its name, address, ids and registration note', function (InvoiceKind $kind): void {
+    pdfSettings(function (): void {
+        $supplier = app(SupplierSettings::class);
+        $supplier->phone = implode(' ', ['+420', '000', '000', '000']);
+        $supplier->save();
+    });
+
+    $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '100.00')], $kind);
+    $snapshot = $issued->supplier_snapshot ?? [];
+    $html = app(InvoicePdf::class)->html($issued);
+
+    expect($snapshot['email'] ?? null)->not->toBeNull()
+        ->and($snapshot['phone'] ?? null)->not->toBeNull()
+        ->and($snapshot['website'] ?? null)->not->toBeNull()
+        ->and($html)->not->toContain((string) $snapshot['email'])
+        ->and($html)->not->toContain((string) $snapshot['phone'])
+        ->and($html)->not->toContain((string) $snapshot['website'])
+        ->and($html)->toContain('Example Supplier s.r.o.')
+        ->and($html)->toContain('Sample Street 10')
+        ->and($html)->toContain((string) $snapshot['company_id'])
+        ->and($html)->toContain('Registered in the example register.')
+        ->and($html)->toContain('Dodavatel není plátce DPH.');
 })->with([
     'invoice' => [InvoiceKind::Invoice],
     'proforma' => [InvoiceKind::Proforma],

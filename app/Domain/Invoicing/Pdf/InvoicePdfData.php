@@ -113,8 +113,8 @@ final readonly class InvoicePdfData
             header: ['heading' => $t('headings.'.$kind->value), 'number' => $number],
             palette: $palette,
             logo: PdfParts::image($images, $appearance['logo'] ?? null, self::LOGO_MAX_WIDTH, self::LOGO_MAX_HEIGHT),
-            supplier: PdfParts::party($t('supplier'), $supplier, $t, $payer ? null : $t('not_vat_payer'), true),
-            customer: PdfParts::party($t('customer'), $customer, $t, null, false),
+            supplier: PdfParts::party($t('supplier'), $supplier, $t, $payer ? null : $t('not_vat_payer')),
+            customer: PdfParts::party($t('customer'), $customer, $t, null),
             proformaNote: $kind === InvoiceKind::Proforma ? $t('proforma_note') : null,
             dates: self::dates($issued, $t, $date, $payer),
             columns: [

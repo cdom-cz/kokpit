@@ -60,18 +60,22 @@
         .bar-label { font-size: 8pt; font-weight: bold; letter-spacing: 1.2pt; }
         .bar-amount { font-size: 15pt; font-weight: bold; text-align: right; white-space: nowrap; }
         .printed-note { margin-top: 16pt; font-size: 8pt; line-height: 1.4; color: {{ $palette->muted }}; white-space: pre-line; }
-        table.payment { width: 100%; margin-top: 24pt; background-color: {{ $palette->tint }}; border-top: 2pt solid {{ $palette->accent }}; page-break-inside: avoid; }
-        table.payment td { vertical-align: top; padding: 16pt; }
-        table.payment td.qr { width: 96pt; padding-right: 0; }
-        .qr-box { width: 88pt; height: 88pt; padding: 4pt; background-color: #ffffff; }
+        table.payment { width: 100%; margin-top: 12pt; background-color: {{ $palette->tint }}; border-top: 2pt solid {{ $palette->accent }}; page-break-inside: avoid; }
+        table.payment td { vertical-align: top; padding: 10pt 12pt; }
+        table.payment td.qr { width: 72pt; padding-right: 0; }
+        .qr-box { width: 72pt; height: 72pt; background-color: #ffffff; }
+        table.facts { width: 100%; }
         table.facts td { padding: 0; font-size: 8pt; line-height: 1.4; }
-        table.facts td.key { width: 64pt; font-size: 8pt; }
-        .sentence { margin-bottom: 8pt; }
-        .card-lead { margin-top: 12pt; font-size: 8pt; line-height: 1.4; color: {{ $palette->ink }}; }
-        table.card-button { margin-top: 4pt; }
-        table.card-button td { background-color: {{ $palette->accent }}; border-radius: 4pt; padding: 8pt 16pt; }
-        table.card-button a { color: {{ $palette->onAccent }}; font-size: 9pt; font-weight: bold; text-decoration: none; }
-        .card-url { margin-top: 4pt; font-size: 8pt; line-height: 1.4; color: {{ $palette->muted }}; white-space: nowrap; }
+        table.facts td.key { width: 64pt; padding-right: 4pt; font-size: 8pt; }
+        table.facts td.value { white-space: nowrap; }
+        table.facts td.gap { padding-right: 12pt; }
+        .sentence { margin-bottom: 4pt; line-height: 1.4; }
+        table.card-row { margin-top: 6pt; }
+        table.card-row td { vertical-align: middle; padding: 0; }
+        table.card-row td.card-lead { font-size: 8pt; line-height: 1.4; color: {{ $palette->ink }}; white-space: nowrap; padding-right: 8pt; }
+        table.card-row td.card-button { background-color: {{ $palette->accent }}; border-radius: 3pt; padding: 4pt 12pt; }
+        table.card-row a { color: {{ $palette->onAccent }}; font-size: 9pt; font-weight: bold; text-decoration: none; }
+        .card-url { margin-top: 2pt; font-size: 7.5pt; line-height: 1.3; color: {{ $palette->muted }}; white-space: nowrap; }
         .credit-notice { margin-top: 24pt; }
         table.closing { width: 100%; }
         table.closing tr { page-break-inside: avoid; }
@@ -198,7 +202,7 @@
                 @if ($data->payment['qrDataUri'] !== null)
                     <td class="qr">
                         <div class="qr-box">
-                            <img src="{{ $data->payment['qrDataUri'] }}" alt="" style="width: 88pt; height: 88pt;">
+                            <img src="{{ $data->payment['qrDataUri'] }}" alt="" style="width: 72pt; height: 72pt;">
                         </div>
                     </td>
                 @endif
@@ -209,18 +213,23 @@
                         @endforeach
                     </div>
                     <table class="facts">
-                        @foreach ($data->payment['facts'] as $fact)
+                        @foreach (array_chunk($data->payment['facts'], 2) as $pair)
                             <tr>
-                                <td class="key">{{ $fact['key'] }}</td>
-                                <td>{{ $fact['value'] }}</td>
+                                @foreach ($pair as $fact)
+                                    <td class="key">{{ $fact['key'] }}</td>
+                                    <td @class(['value', 'gap' => $loop->first])>{{ $fact['value'] }}</td>
+                                @endforeach
+                                @if (count($pair) === 1)
+                                    <td colspan="2"></td>
+                                @endif
                             </tr>
                         @endforeach
                     </table>
                     @if ($data->cardPayment !== null)
-                        <div class="card-lead">{{ $data->cardPayment['lead'] }}</div>
-                        <table class="card-button">
+                        <table class="card-row">
                             <tr>
-                                <td><a href="{{ $data->cardPayment['url'] }}">{{ $data->cardPayment['label'] }}</a></td>
+                                <td class="card-lead">{{ $data->cardPayment['lead'] }}</td>
+                                <td class="card-button"><a href="{{ $data->cardPayment['url'] }}">{{ $data->cardPayment['label'] }}</a></td>
                             </tr>
                         </table>
                         <div class="card-url">{{ $data->cardPayment['url'] }}</div>
