@@ -10,10 +10,10 @@ declare(strict_types=1);
  *    to open. The literal may appear in no other application file and in no migration other than the one that creates
  *    the row guard; tests may use it to prove the guard.
  *
- * 2. The locked state is written only by the successful send of the payment confirmation (SendPaymentConfirmation) and
- *    named by the model that casts it (CashReceipt). There is no manual "mark as sent" anywhere: a new reader asks
- *    `CashReceipt::isLocked()`, a new writer is a decision of its own and has to extend the allowlist below with a
- *    reason.
+ * 2. The locked state is written by the successful send of the payment confirmation (SendPaymentConfirmation) and by
+ *    the Admin's manual lock (LockCashReceipt, Phase 16 D-02, the owner-approved second writer), and named by the model
+ *    that casts it (CashReceipt). A new reader asks `CashReceipt::isLocked()`, a new writer is a decision of its own
+ *    and has to extend the allowlist below with a reason.
  */
 
 const CASH_RECEIPT_UNLOCK_FLAG = 'kokpit.cash_receipt_unlock';
@@ -55,8 +55,9 @@ it('names the cash receipt unlock setting in no migration other than the one tha
     ]);
 });
 
-it('writes the locked state of a cash receipt only in the confirmation send job and the model that casts it', function (): void {
+it('writes the locked state of a cash receipt only in the confirmation send job, the manual lock and the model that casts it', function (): void {
     expect(cashReceiptLockFilesNaming(dirname(__DIR__, 2), 'app', CASH_RECEIPT_LOCKED_TOKEN))->toBe([
+        'app/Domain/Invoicing/Actions/LockCashReceipt.php',
         'app/Domain/Invoicing/Jobs/SendPaymentConfirmation.php',
         'app/Domain/Invoicing/Models/CashReceipt.php',
     ]);

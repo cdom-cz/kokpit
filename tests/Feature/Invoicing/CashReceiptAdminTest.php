@@ -17,6 +17,7 @@ use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Invoicing\Support\CashReceiptAudit;
 use App\Domain\Invoicing\Support\CashReceiptPdfUrl;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Activity;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelationManager;
 use Carbon\CarbonImmutable;
@@ -292,6 +293,63 @@ describe('the unlock of a locked receipt (D-10)', function (): void {
         $tab->assertTableActionVisible('editCashReceipt', $payment)
             ->assertTableActionHidden('unlockCashReceipt', $payment)
             ->assertSee('Otevřený');
+    });
+});
+
+describe('the manual lock of an open receipt (Phase 16, D-02, D-03)', function (): void {
+    it('locks an open receipt from the row, audits it once with the Admin, changes nothing else, and then offers the unlock', function (): void {
+        [$invoice, $payment, $receipt] = cashReceiptAdminPay();
+        $before = cashReceiptAdminFresh($receipt);
+
+        cashReceiptAdminTab($invoice)
+            ->assertTableActionVisible('lockCashReceipt', $payment)
+            ->assertTableActionHidden('unlockCashReceipt', $payment)
+            ->callAction(TestAction::make('lockCashReceipt')->table($payment))
+            ->assertHasNoActionErrors()
+            ->assertDispatched('invoice-payment-saved')
+            ->assertNotified(__('cash_receipts.admin.lock.done'))
+            ->assertTableActionHidden('lockCashReceipt', $payment)
+            ->assertTableActionHidden('editCashReceipt', $payment)
+            ->assertTableActionVisible('unlockCashReceipt', $payment)
+            ->assertSee('Uzamčený');
+
+        $row = cashReceiptAdminFresh($receipt);
+
+        expect($row->lock_state)->toBe(CashReceiptLockState::Locked)
+            ->and($row->number)->toBe($before->number)
+            ->and($row->amount_minor)->toBe($before->amount_minor)
+            ->and($row->currency)->toBe($before->currency)
+            ->and($row->supplier_snapshot)->toBe($before->supplier_snapshot)
+            ->and($row->customer_snapshot)->toBe($before->customer_snapshot);
+
+        $rows = Activity::query()
+            ->where('subject_type', 'cash_receipt')
+            ->where('subject_id', $receipt->id)
+            ->where('event', 'cash_receipt_locked_manually')
+            ->get();
+
+        expect($rows)->toHaveCount(1)
+            ->and($rows->first()?->causer_id)->toBe($this->admin->id)
+            ->and($rows->first()?->attribute_changes?->get('old'))->toMatchArray(['lock_state' => 'open'])
+            ->and($rows->first()?->attribute_changes?->get('attributes'))->toMatchArray(['lock_state' => 'locked']);
+    });
+
+    it('offers no lock on a cancelled receipt, on a carried copy, or on a payment by transfer', function (): void {
+        [$invoice, $payment] = cashReceiptAdminPay();
+
+        cashReceiptAdminTab($invoice)
+            ->callAction(TestAction::make('cancelCashReceipt')->table($payment), ['reason' => 'Chybně zadaná platba v hotovosti'])
+            ->assertTableActionHidden('lockCashReceipt', $payment);
+
+        [$proforma] = cashReceiptAdminPay(InvoiceKind::Proforma, 'default', '12500');
+        $carried = app(ConvertProforma::class)->handle($this->admin, $proforma);
+
+        cashReceiptAdminTab($carried)->assertTableActionHidden('lockCashReceipt', $carried->payments()->sole());
+
+        $transfer = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $transferPayment = app(RecordPayment::class)->handle($this->admin, $transfer, ['amount' => '1000.00', 'paid_on' => '2026-10-14']);
+
+        cashReceiptAdminTab($transfer)->assertTableActionHidden('lockCashReceipt', $transferPayment);
     });
 });
 

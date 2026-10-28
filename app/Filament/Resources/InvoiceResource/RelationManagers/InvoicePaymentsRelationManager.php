@@ -7,6 +7,7 @@ namespace App\Filament\Resources\InvoiceResource\RelationManagers;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\CancelCashReceipt;
 use App\Domain\Invoicing\Actions\DeletePayment;
+use App\Domain\Invoicing\Actions\LockCashReceipt;
 use App\Domain\Invoicing\Actions\RegenerateCashReceiptPdf;
 use App\Domain\Invoicing\Actions\UnlockCashReceipt;
 use App\Domain\Invoicing\Actions\UpdateCashReceipt;
@@ -195,6 +196,7 @@ final class InvoicePaymentsRelationManager extends RelationManager
                 ActionGroup::make([
                     $this->downloadReceiptAction(),
                     $this->editReceiptAction(),
+                    $this->lockReceiptAction(),
                     $this->unlockReceiptAction(),
                     $this->regenerateReceiptPdfAction(),
                     $this->cancelReceiptAction(),
@@ -458,6 +460,32 @@ final class InvoicePaymentsRelationManager extends RelationManager
                     ]),
                 ]),
         ];
+    }
+
+    /**
+     * "Uzamknout" (Phase 16, D-02, D-03): the Admin closes an open receipt by hand, with a confirmation and no reason,
+     * through {@see LockCashReceipt}; the way to close the receipt of a hand-served payment, whose confirmation is not
+     * sent. Offered only for a receipt that is neither cancelled nor locked. The page never names the lock state case:
+     * the Action is the one place that writes it.
+     */
+    private function lockReceiptAction(): Action
+    {
+        return Action::make('lockCashReceipt')
+            ->label(__('cash_receipts.admin.actions.lock'))
+            ->icon(Heroicon::OutlinedLockClosed)
+            ->color('gray')
+            ->visible(fn (InvoicePayment $record): bool => $record->cashReceipt !== null && ! $record->cashReceipt->isCancelled() && ! $record->cashReceipt->isLocked())
+            ->requiresConfirmation()
+            ->modalHeading(fn (InvoicePayment $record): string => __('cash_receipts.admin.lock.heading', ['number' => (string) $record->cashReceipt?->number]))
+            ->modalDescription(__('cash_receipts.admin.lock.description'))
+            ->modalSubmitActionLabel(__('cash_receipts.admin.lock.submit'))
+            ->action(function (InvoicePayment $record): void {
+                $this->runReceiptAction(
+                    $record,
+                    static fn (User $actor, CashReceipt $receipt): mixed => app(LockCashReceipt::class)->handle($actor, $receipt),
+                    'cash_receipts.admin.lock.done',
+                );
+            });
     }
 
     /**

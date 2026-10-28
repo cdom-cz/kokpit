@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Documents\Models\Document;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Actions\CancelCashReceipt;
+use App\Domain\Invoicing\Actions\LockCashReceipt;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Actions\UnlockCashReceipt;
 use App\Domain\Invoicing\Actions\UpdateCashReceipt;
@@ -25,6 +27,7 @@ use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
 use Tests\Support\DocumentFixtures;
 use Tests\Support\InvoiceFixtures;
+use Tests\Support\MailFixtures;
 use Tests\Support\PdfText;
 
 /*
@@ -263,5 +266,96 @@ describe('the Admin unlock (D-10)', function (): void {
             ->and(fn () => app(UnlockCashReceipt::class)->handle($partner, $receipt, 'Oprava jména plátce po odeslání'))->toThrow(AuthorizationException::class)
             ->and(fn () => app(UpdateCashReceipt::class)->handle($partner, $receipt, ['purpose' => 'Cizí úprava']))->toThrow(AuthorizationException::class)
             ->and(cashReceiptLockReceipt($receipt)->lock_state)->toBe(CashReceiptLockState::Locked);
+    });
+});
+
+describe('the manual lock (Phase 16, D-02, D-03)', function (): void {
+    it('refuses a cancelled receipt and a locked one without writing a history row', function (): void {
+        [$cancelled] = cashReceiptLockPay();
+        $this->actingAs($this->admin);
+        app(CancelCashReceipt::class)->handle($this->admin, $cancelled, 'Chybně zadaná platba v hotovosti');
+
+        $errors = cashReceiptLockErrors(fn () => app(LockCashReceipt::class)->handle($this->admin, $cancelled));
+
+        expect($errors)->toHaveKey('receipt')
+            ->and($errors['receipt'][0])->toBe(__('cash_receipts.errors.cancelled'))
+            ->and(cashReceiptLockReceipt($cancelled)->lock_state)->toBe(CashReceiptLockState::Open)
+            ->and(cashReceiptLockRows($cancelled, 'cash_receipt_locked_manually'))->toBe([]);
+
+        [$receipt] = cashReceiptLockPay();
+        $this->actingAs($this->admin);
+        app(LockCashReceipt::class)->handle($this->admin, $receipt);
+
+        $errors = cashReceiptLockErrors(fn () => app(LockCashReceipt::class)->handle($this->admin, $receipt));
+
+        expect($errors)->toHaveKey('receipt')
+            ->and($errors['receipt'][0])->toBe(__('cash_receipts.errors.already_locked'))
+            ->and(cashReceiptLockRows($receipt, 'cash_receipt_locked_manually'))->toHaveCount(1);
+    });
+
+    it('refuses a Partner and leaves the receipt open', function (): void {
+        [$receipt] = cashReceiptLockPay();
+        $partner = Canary::partnerFor($receipt->client_id);
+
+        expect(fn () => app(LockCashReceipt::class)->handle($partner, $receipt))->toThrow(AuthorizationException::class)
+            ->and(cashReceiptLockReceipt($receipt)->lock_state)->toBe(CashReceiptLockState::Open)
+            ->and(cashReceiptLockRows($receipt, 'cash_receipt_locked_manually'))->toBe([]);
+    });
+
+    it('refuses the edit after the lock, and the unlock needs a reason of ten characters before the edit succeeds again', function (): void {
+        [$receipt] = cashReceiptLockPay();
+        $this->actingAs($this->admin);
+
+        app(LockCashReceipt::class)->handle($this->admin, $receipt);
+
+        $errors = cashReceiptLockErrors(fn () => app(UpdateCashReceipt::class)->handle($this->admin, $receipt, ['purpose' => 'Úhrada v hotovosti na pobočce']));
+
+        expect($errors)->toHaveKey('receipt')
+            ->and($errors['receipt'][0])->toBe(__('cash_receipts.errors.locked'))
+            ->and(cashReceiptLockReceipt($receipt)->purpose)->toBe($receipt->purpose);
+
+        $errors = cashReceiptLockErrors(fn () => app(UnlockCashReceipt::class)->handle($this->admin, $receipt, '123456789'));
+
+        expect($errors)->toHaveKey('reason')
+            ->and(cashReceiptLockReceipt($receipt)->lock_state)->toBe(CashReceiptLockState::Locked);
+
+        app(UnlockCashReceipt::class)->handle($this->admin, $receipt, 'Oprava jména plátce po ručním uzamčení');
+
+        $edited = app(UpdateCashReceipt::class)->handle($this->admin, $receipt, ['purpose' => 'Úhrada v hotovosti na pobočce']);
+
+        expect(cashReceiptLockReceipt($receipt)->lock_state)->toBe(CashReceiptLockState::Open)
+            ->and($edited->purpose)->toBe('Úhrada v hotovosti na pobočce');
+    });
+
+    it('leaves a hand-locked receipt as it is when its queued confirmation is sent later: one lock row, the receipt attached', function (): void {
+        [$receipt, $confirmation] = cashReceiptLockPay();
+        $this->actingAs($this->admin);
+
+        app(LockCashReceipt::class)->handle($this->admin, $receipt);
+
+        cashReceiptLockSend($confirmation);
+
+        $attachments = array_map(static fn ($message): array => $message->getAttachments(), MailFixtures::sent());
+
+        expect(cashReceiptLockReceipt($receipt)->lock_state)->toBe(CashReceiptLockState::Locked)
+            ->and($attachments)->toHaveCount(1)
+            ->and($attachments[0])->toHaveCount(1)
+            ->and(cashReceiptLockRows($receipt, 'cash_receipt_locked'))->toBe([])
+            ->and(cashReceiptLockRows($receipt, 'cash_receipt_locked_manually'))->toHaveCount(1);
+    });
+
+    it('keeps the audit of the manual lock with the Admin and the move from open to locked, and labels the event', function (): void {
+        [$receipt] = cashReceiptLockPay();
+        $this->actingAs($this->admin);
+
+        app(LockCashReceipt::class)->handle($this->admin, $receipt);
+
+        $rows = cashReceiptLockRows($receipt, 'cash_receipt_locked_manually');
+
+        expect($rows)->toHaveCount(1)
+            ->and($rows[0]->causer_id)->toBe($this->admin->id)
+            ->and($rows[0]->attribute_changes?->get('old'))->toMatchArray(['lock_state' => 'open'])
+            ->and($rows[0]->attribute_changes?->get('attributes'))->toMatchArray(['lock_state' => 'locked'])
+            ->and(__('kokpit.activity.events.cash_receipt_locked_manually'))->toBe('Příjmový doklad uzamčen ručně');
     });
 });
