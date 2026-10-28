@@ -24,6 +24,11 @@ it('transliterates the message to upper-case ASCII and replaces an asterisk', fu
         ->and(Spayd::sanitiseMessage('Příliš žluťoučký kůň úpěl ďábelské ódy'))->toBe('PRILIS ZLUTOUCKY KUN UPEL DABELSKE ODY');
 });
 
+it('maps letters that do not decompose and drops other non-ASCII without iconv', function (): void {
+    expect(Spayd::sanitiseMessage('Straße Łódź Ærø'))->toBe('STRASSE LODZ AERO')
+        ->and(Spayd::sanitiseMessage('Faktura 🚀 7'))->toBe('FAKTURA 7');
+});
+
 it('cuts the message to 60 characters', function (): void {
     $cut = Spayd::sanitiseMessage(str_repeat('abcdefghij', 10));
 
