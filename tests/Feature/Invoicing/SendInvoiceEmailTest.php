@@ -526,6 +526,114 @@ describe('a queued e-mail older than the stale threshold', function (): void {
     });
 });
 
+/**
+ * Switches the document e-mails of a client on or off the way the Admin's save does, without the form (Phase 16).
+ */
+function invMailSwitch(Client $client, bool $enabled): void
+{
+    app(PartnerContext::class)->runAsSystem(static fn (): int => Client::query()->whereKey($client->id)->update(['document_emails_enabled' => $enabled]));
+}
+
+describe('the per-client switch (Phase 16): a queued e-mail of a client switched off is skipped, not sent', function (): void {
+    it('marks the row skipped, sends nothing, locks nothing and tells no one', function (): void {
+        $client = InvoiceFixtures::client();
+        $invoice = InvoiceFixtures::issued($client);
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        invMailSwitch($client, false);
+
+        invMailTry($row->id);
+
+        $stored = invMailRow($row->id);
+
+        expect($stored->state)->toBe(InvoiceEmailState::Skipped)
+            ->and($stored->attempts)->toBe(1)
+            ->and($stored->sent_at)->toBeNull()
+            ->and($stored->failure_code)->toBeNull()
+            ->and(invMailSent())->toBe([])
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Open)
+            ->and(invMailLockRows($invoice))->toBe([])
+            ->and(invMailBell($this->admin))->toBe([]);
+    });
+
+    it('does not revive a skipped row when the switch comes back on, and a rerun changes nothing', function (): void {
+        $client = InvoiceFixtures::client();
+        $invoice = InvoiceFixtures::issued($client);
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        invMailSwitch($client, false);
+        invMailTry($row->id);
+
+        invMailSwitch($client, true);
+        invMailTry($row->id);
+
+        $stored = invMailRow($row->id);
+
+        expect($stored->state)->toBe(InvoiceEmailState::Skipped)
+            ->and($stored->attempts)->toBe(1)
+            ->and(invMailSent())->toBe([])
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Open)
+            ->and(invMailBell($this->admin))->toBe([]);
+    });
+
+    it('ends a stale queued row of a switched-off client skipped, with no failure code and no bell', function (): void {
+        $client = InvoiceFixtures::client();
+        $invoice = InvoiceFixtures::issued($client);
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        invMailSwitch($client, false);
+        invMailAge($row->id, (int) config('kokpit.health.unsent_invoice_email_stale_after') + 60);
+
+        invMailTry($row->id);
+
+        $stored = invMailRow($row->id);
+
+        expect($stored->state)->toBe(InvoiceEmailState::Skipped)
+            ->and($stored->failure_code)->toBeNull()
+            ->and($stored->attempts)->toBe(0)
+            ->and(invMailSent())->toBe([])
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Open)
+            ->and(invMailBell($this->admin))->toBe([]);
+    });
+
+    it('still sends and locks for a client whose switch is on', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+
+        invMailTry($row->id);
+
+        expect(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Sent)
+            ->and(invMailSent())->toHaveCount(1)
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Locked);
+    });
+
+    it('re-checks right before the transport call: a switch turned off while the stored PDF is read stops the send', function (): void {
+        $client = InvoiceFixtures::client();
+        $invoice = InvoiceFixtures::issued($client);
+        Queue::fake();
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, invMailData($invoice));
+        $flipped = 0;
+
+        // The job reads the stored PDF between its two checks: the first sees the switch on, the second must see it off.
+        Event::listen('eloquent.retrieved: '.Document::class, static function () use ($client, &$flipped): void {
+            if ($flipped === 0) {
+                $flipped++;
+                invMailSwitch($client, false);
+            }
+        });
+
+        invMailTry($row->id);
+
+        expect($flipped)->toBe(1)
+            ->and(invMailRow($row->id)->state)->toBe(InvoiceEmailState::Skipped)
+            ->and(invMailSent())->toBe([])
+            ->and($invoice->refresh()->lock_state)->toBe(InvoiceLockState::Open)
+            ->and(invMailLockRows($invoice))->toBe([])
+            ->and(invMailBell($this->admin))->toBe([]);
+    });
+});
+
 describe('a resend', function (): void {
     it('is a new row; the first stays failed and the latest row decides', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => 'recipient@example.com']));

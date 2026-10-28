@@ -263,6 +263,7 @@ return [
         'sending' => 'Odesílá se',
         'sent' => 'Odesláno',
         'failed' => 'Odeslání selhalo',
+        'skipped' => 'Neodesláno (vypnuto u klienta)',
     ],
 
     'payment_confirmation_state' => [

@@ -409,6 +409,32 @@ describe('the Odeslání tab', function (): void {
         Queue::assertPushed(SendInvoiceEmail::class, static fn (SendInvoiceEmail $job): bool => $job->emailId === $new->id);
     });
 
+    it('renders a skipped row with its label and a gray badge and offers no resend (Phase 16)', function (): void {
+        $invoice = emailInvoiceWithTime();
+        $skipped = emailLogRow($invoice, InvoiceEmailState::Skipped, '2026-10-12 08:00:00+00');
+
+        emailTab($invoice)
+            ->assertCanSeeTableRecords([$skipped])
+            ->assertTableColumnStateSet('state', InvoiceEmailState::Skipped, $skipped)
+            ->assertTableColumnStateSet('note', '—', $skipped)
+            ->assertSee('Neodesláno (vypnuto u klienta)')
+            ->assertDontSee('Odeslání se nepodařilo. Zkuste ho zopakovat.')
+            ->assertTableActionHidden('resendEmail', $skipped);
+    });
+
+    it('offers no resend on a failed row of a client with document e-mails switched off (Phase 16)', function (): void {
+        $off = InvoiceFixtures::issued(InvoiceFixtures::client(['document_emails_enabled' => false]));
+        $on = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $offFailed = emailLogRow($off, InvoiceEmailState::Failed, '2026-10-12 08:00:00+00');
+        $onFailed = emailLogRow($on, InvoiceEmailState::Failed, '2026-10-12 08:00:00+00');
+        $onSkipped = emailLogRow($on, InvoiceEmailState::Skipped, '2026-10-13 08:00:00+00');
+
+        emailTab($off)->assertTableActionHidden('resendEmail', $offFailed);
+        emailTab($on)
+            ->assertTableActionVisible('resendEmail', $onFailed)
+            ->assertTableActionHidden('resendEmail', $onSkipped);
+    });
+
     it('does not borrow the values of a row of another document', function (): void {
         Queue::fake();
         $invoice = emailInvoiceWithTime();
@@ -467,6 +493,15 @@ describe('the E-mail column and Odeslat znovu in the list', function (): void {
             ->assertCanNotSeeTableRecords([$sent, $queued, $sending, $never]);
     });
 
+    it('reads a document whose latest row is skipped as not sent (Phase 16)', function (): void {
+        $skipped = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        emailLogRow($skipped, InvoiceEmailState::Skipped, '2026-10-02 08:00:00+00');
+
+        Livewire::test(ListInvoices::class)
+            ->assertTableColumnStateSet('email', 'none', $skipped);
+    });
+
     it('offers Odeslat znovu for failed and unsent issued documents only', function (): void {
         $sent = InvoiceFixtures::issued(InvoiceFixtures::client());
         $queued = InvoiceFixtures::issued(InvoiceFixtures::client());
@@ -485,6 +520,22 @@ describe('the E-mail column and Odeslat znovu in the list', function (): void {
             ->assertTableActionHidden('resendEmail', $sent)
             ->assertTableActionHidden('resendEmail', $queued)
             ->assertTableActionHidden('resendEmail', $draft);
+    });
+
+    it('hides Odeslat znovu in the list for a client with document e-mails switched off (Phase 16)', function (): void {
+        $offNever = InvoiceFixtures::issued(InvoiceFixtures::client(['document_emails_enabled' => false]));
+        $offFailed = InvoiceFixtures::issued(InvoiceFixtures::client(['document_emails_enabled' => false]));
+        $onNever = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $onFailed = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        emailLogRow($offFailed, InvoiceEmailState::Failed, '2026-10-02 08:00:00+00');
+        emailLogRow($onFailed, InvoiceEmailState::Failed, '2026-10-02 08:00:00+00');
+
+        Livewire::test(ListInvoices::class)
+            ->assertTableActionHidden('resendEmail', $offNever)
+            ->assertTableActionHidden('resendEmail', $offFailed)
+            ->assertTableActionVisible('resendEmail', $onNever)
+            ->assertTableActionVisible('resendEmail', $onFailed);
     });
 
     it('queues a new e-mail from the list row after the confirmation', function (): void {
