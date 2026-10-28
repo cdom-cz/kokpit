@@ -32,7 +32,8 @@ final class S3TestDisk
      */
     public static function use(string $bucket = self::BUCKET): void
     {
-        config(['filesystems.disks.s3.bucket' => $bucket]);
+        // .env.example (copied to .env in CI) sets the DDEV browser base; the suite signs and reads on the endpoint.
+        config(['filesystems.disks.s3.bucket' => $bucket, 'filesystems.disks.s3.temporary_url' => null]);
         Storage::forgetDisk('s3');
         Http::allowStrayRequests([rtrim((string) config('filesystems.disks.s3.endpoint'), '/').'/*']);
 

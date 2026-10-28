@@ -7,6 +7,7 @@ namespace Tests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Http;
+use Livewire\Livewire;
 use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
@@ -20,6 +21,10 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         Http::preventStrayRequests();
+
+        // Livewire keeps "a component rendered" in a static flag that outlives the application, so a page
+        // that renders no component would get Livewire assets injected after an earlier Livewire test.
+        Livewire::flushState();
     }
 
     /**
