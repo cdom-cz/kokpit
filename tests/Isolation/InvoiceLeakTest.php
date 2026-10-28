@@ -10,6 +10,8 @@ use App\Domain\Invoicing\Actions\CreateDraft;
 use App\Domain\Invoicing\Actions\DeletePayment;
 use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\IssueDocument;
+use App\Domain\Invoicing\Actions\LockCashReceipt;
+use App\Domain\Invoicing\Actions\LockInvoice;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Actions\UnlockInvoice;
@@ -18,6 +20,7 @@ use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Enums\InvoiceStatus;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
@@ -1002,5 +1005,114 @@ describe('the payment method (Phase 14)', function (): void {
 
         expect(invoiceLeakSurface((string) $pages['the detail']))->not->toContain('Bankovní účet')
             ->and(invoiceLeakSurface((string) $pages['the detail']))->not->toContain('Zaplatit kartou');
+    });
+});
+
+describe('a hand-served client (Phase 16)', function (): void {
+    /**
+     * Switches the document e-mails of client A off, issues two documents of the client, records a cash payment on each
+     * and, as the Admin, locks the first document and its receipt by hand. The second document and its receipt stay open.
+     *
+     * @return array{locked: Invoice, open: Invoice, lockedReceipt: CashReceipt, openReceipt: CashReceipt}
+     */
+    function invoiceLeakHandServed(): array
+    {
+        $admin = test()->admin;
+        $clientId = test()->clientA->id;
+
+        Queue::fake();
+        invoiceLeakSystem(static fn (): bool => Client::query()->whereKey($clientId)->update(['document_emails_enabled' => false]) > 0);
+        test()->actingAs($admin);
+
+        $client = Client::query()->findOrFail($clientId);
+        $locked = InvoiceFixtures::issued($client, [InvoiceFixtures::item('Hand locked work', '1', '2000.00')]);
+        $open = InvoiceFixtures::issued($client, [InvoiceFixtures::item('Hand open work', '1', '3000.00')]);
+
+        test()->actingAs($admin);
+
+        $lockedPayment = app(RecordPayment::class)->handle($admin, $locked, ['amount' => '100.00', 'paid_on' => '2026-10-14', 'method' => 'cash']);
+        $openPayment = app(RecordPayment::class)->handle($admin, $open, ['amount' => '100.00', 'paid_on' => '2026-10-14', 'method' => 'cash']);
+        $lockedReceipt = CashReceipt::query()->where('invoice_payment_id', $lockedPayment->id)->sole();
+        $openReceipt = CashReceipt::query()->where('invoice_payment_id', $openPayment->id)->sole();
+
+        app(LockInvoice::class)->handle($admin, $locked);
+        app(LockCashReceipt::class)->handle($admin, $lockedReceipt);
+
+        return ['locked' => $locked, 'open' => $open, 'lockedReceipt' => $lockedReceipt, 'openReceipt' => $openReceipt];
+    }
+
+    it('shows the Partner of the client the own hand-locked invoice with no gray note, no lock action and no manual lock row', function (): void {
+        $set = invoiceLeakHandServed();
+        $note = __('invoices.detail.banners.email_disabled');
+
+        // The Admin side of the pairing: the note, the unlock and both manual lock rows exist.
+        Livewire::test(ViewInvoice::class, ['record' => $set['locked']->getRouteKey()])
+            ->assertSee($note)
+            ->assertActionVisible(TestAction::make('unlock')->schemaComponent('locked', schema: 'infolist'));
+
+        expect(Activity::query()->where('subject_id', $set['locked']->id)->where('event', 'invoice_locked_manually')->count())->toBe(1)
+            ->and(Activity::query()->where('subject_id', $set['lockedReceipt']->id)->where('event', 'cash_receipt_locked_manually')->count())->toBe(1);
+
+        // The Partner of the client.
+        $this->actingAs($this->partnerA);
+
+        $hidden = [...invoiceLeakHidden(), $note, 'Uzamknout', 'Odemknout', 'Odesílání dokladů e-mailem', 'document_emails_enabled', 'invoice_locked_manually', 'cash_receipt_locked_manually'];
+
+        $list = (string) $this->get(PartnerInvoiceResource::getUrl())->assertOk()->getContent();
+        $detail = (string) $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $set['locked']]))
+            ->assertOk()
+            ->assertDontSee($note)
+            ->assertDontSee('Uzamknout')
+            ->assertDontSee('Odemknout')
+            ->getContent();
+        $openDetail = (string) $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $set['open']]))
+            ->assertOk()
+            ->assertDontSee($note)
+            ->assertDontSee('Uzamknout')
+            ->getContent();
+
+        invoiceLeakAssertClean($list, 'the list with a hand-served client', $hidden);
+        invoiceLeakAssertClean($detail, 'the detail of a hand-locked invoice', $hidden);
+        invoiceLeakAssertClean($openDetail, 'the detail of an open invoice of a hand-served client', $hidden);
+
+        // Neither manual lock row is visible to the Partner.
+        expect(Activity::query()->whereIn('event', ['invoice_locked_manually', 'cash_receipt_locked_manually'])->count())->toBe(0);
+
+        $this->get('/admin/activity')->assertForbidden();
+    });
+
+    it('refuses a Partner both manual locks in the domain and changes nothing', function (): void {
+        $set = invoiceLeakHandServed();
+        $partner = User::query()->whereKey($this->partnerA->id)->firstOrFail();
+        $this->actingAs($partner);
+
+        expect(fn (): mixed => app(LockInvoice::class)->handle($partner, $set['open']))->toThrow(AuthorizationException::class)
+            ->and(fn (): mixed => app(LockCashReceipt::class)->handle($partner, $set['openReceipt']))->toThrow(AuthorizationException::class);
+
+        $this->actingAs($this->admin);
+
+        expect(Invoice::query()->whereKey($set['open']->id)->firstOrFail()->isLocked())->toBeFalse()
+            ->and(CashReceipt::query()->whereKey($set['openReceipt']->id)->firstOrFail()->isLocked())->toBeFalse()
+            ->and(Activity::query()->where('subject_id', $set['open']->id)->where('event', 'invoice_locked_manually')->count())->toBe(0)
+            ->and(Activity::query()->where('subject_id', $set['openReceipt']->id)->where('event', 'cash_receipt_locked_manually')->count())->toBe(0);
+    });
+
+    it('refuses a Partner the Admin detail and the client edit page where the switch lives', function (): void {
+        $set = invoiceLeakHandServed();
+
+        // Admin positives: both pages open and the edit form holds the switch.
+        $this->actingAs($this->admin);
+        $this->get(ClientResource::getUrl('edit', ['record' => $this->clientA]))->assertOk();
+        Livewire::test(ViewInvoice::class, ['record' => $set['open']->getRouteKey()])->assertSuccessful();
+
+        $this->actingAs($this->partnerA);
+
+        $edit = $this->get(ClientResource::getUrl('edit', ['record' => $this->clientA]));
+        $edit->assertForbidden();
+
+        expect(invoiceLeakSurface((string) $edit->getContent()))->not->toContain('document_emails_enabled');
+
+        Livewire::test(ViewInvoice::class, ['record' => $set['open']->getRouteKey()])->assertForbidden();
+        Livewire::test(ViewInvoice::class, ['record' => $set['locked']->getRouteKey()])->assertForbidden();
     });
 });
