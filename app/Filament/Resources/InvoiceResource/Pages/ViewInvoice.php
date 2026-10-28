@@ -8,6 +8,7 @@ use App\Domain\ExchangeRates\RateFormat;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\ConvertProforma;
 use App\Domain\Invoicing\Actions\IssueCreditNote;
+use App\Domain\Invoicing\Actions\LockInvoice;
 use App\Domain\Invoicing\Actions\RegeneratePdf;
 use App\Domain\Invoicing\Actions\UnlockInvoice;
 use App\Domain\Invoicing\Actions\UpdateInternalNote;
@@ -17,6 +18,7 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Queries\ReceivablesReader;
+use App\Domain\Invoicing\Support\ClientDocumentEmails;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
 use App\Domain\Invoicing\Support\InvoiceQuantity;
 use App\Domain\Invoicing\Support\IssuedDocumentRules;
@@ -148,8 +150,9 @@ final class ViewInvoice extends ViewRecord
 
         // The issue, the storno, a partial credit note and the conversion send the Admin here with `send=1`; the e-mail
         // dialog opens at once (ruling R-29-1) through `wire:init` of the subheading. Closing it leaves the document
-        // unsent and the header action available.
-        if (request()->boolean('send') && $invoice->isIssued()) {
+        // unsent and the header action available. A client with the document e-mails switched off gets no dialog
+        // (Phase 16, D-04).
+        if (request()->boolean('send') && $invoice->isIssued() && ClientDocumentEmails::enabledFor((string) $invoice->client_id)) {
             $this->sendDialogPending = true;
         }
     }
@@ -216,7 +219,9 @@ final class ViewInvoice extends ViewRecord
     {
         abort_unless(InvoiceResource::canAccess(), 403);
 
-        if ($this->invoice()->isIssued()) {
+        $invoice = $this->invoice();
+
+        if ($invoice->isIssued() && ClientDocumentEmails::enabledFor((string) $invoice->client_id)) {
             $this->mountAction('sendEmail');
         }
     }
@@ -737,10 +742,16 @@ final class ViewInvoice extends ViewRecord
             ]))
                 ->danger()
                 ->visible(fn (): bool => $this->derived()['status'] === InvoiceStatus::Overdue),
+            // The client has the document e-mails switched off (Phase 16, D-04): no send action, and the note says why.
+            Callout::make(__('invoices.detail.banners.email_disabled'))
+                ->key('email_disabled')
+                ->color('gray')
+                ->visible(fn (): bool => $this->invoice()->isIssued() && ! ClientDocumentEmails::enabledFor((string) $this->invoice()->client_id)),
             Callout::make(__('invoices.detail.banners.open_for_edits'))
                 ->key('open_for_edits')
                 ->info()
-                ->visible(fn (): bool => $this->isEditableDocument() && ! $this->invoice()->isLocked()),
+                ->visible(fn (): bool => $this->isEditableDocument() && ! $this->invoice()->isLocked())
+                ->actions([$this->lockAction()]),
             Callout::make(__('invoices.detail.banners.locked'))
                 ->key('locked')
                 ->warning()
@@ -801,6 +812,54 @@ final class ViewInvoice extends ViewRecord
     {
         return $this->isSentDocument()
             && ! in_array($this->derived()['status'], [InvoiceStatus::Cancelled, InvoiceStatus::Converted], true);
+    }
+
+    /**
+     * "Uzamknout" (Phase 16, D-02, D-03): a confirmation without a reason, then {@see LockInvoice}. Offered on the open
+     * callout of an issued invoice or proforma that can still be corrected, for every client. A refused call (the
+     * document was locked or cancelled elsewhere in the meantime) shows the message as a notification, and the page
+     * then shows the state as it is now. The page asks `isLocked()` and never names the lock case.
+     */
+    private function lockAction(): Action
+    {
+        return Action::make('lock')
+            ->label(__('invoices.detail.actions.lock'))
+            ->icon(Heroicon::OutlinedLockClosed)
+            ->color('gray')
+            ->requiresConfirmation()
+            ->visible(fn (): bool => $this->isEditableDocument() && ! $this->invoice()->isLocked())
+            ->modalHeading(fn (): string => __('invoices.detail.lock.heading', ['number' => (string) $this->invoice()->number]))
+            ->modalDescription(__('invoices.detail.lock.description'))
+            ->modalSubmitActionLabel(__('invoices.detail.lock.submit'))
+            ->action(function (): void {
+                abort_unless(InvoiceResource::canAccess(), 403);
+
+                $actor = auth()->user();
+                assert($actor instanceof User);
+
+                try {
+                    app(LockInvoice::class)->handle($actor, $this->invoice());
+                } catch (AuthorizationException $exception) {
+                    throw $exception;
+                } catch (ValidationException $exception) {
+                    $this->invoice()->refresh();
+                    $this->reloadAdminHalf();
+
+                    Notification::make()
+                        ->danger()
+                        ->title(__('invoices.issue.failed_title'))
+                        ->body(implode(' ', array_merge(...array_values($exception->errors()))))
+                        ->persistent()
+                        ->send();
+
+                    return;
+                }
+
+                $this->invoice()->refresh();
+                $this->reloadAdminHalf();
+
+                Notification::make()->success()->title(__('invoices.detail.lock.done'))->send();
+            });
     }
 
     /**

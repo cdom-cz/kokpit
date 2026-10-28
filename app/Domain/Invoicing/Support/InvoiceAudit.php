@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Invoicing\Support;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Actions\LockInvoice;
 use App\Domain\Invoicing\Actions\UnlockInvoice;
 use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
@@ -22,6 +23,8 @@ use App\Domain\Invoicing\Models\InvoiceItem;
  *
  * - {@see self::locked()}: the successful send of the document e-mail locked the document ({@see SendInvoiceEmail});
  *   the sender is the causer;
+ * - {@see self::lockedManually()}: the Admin locked an open document by hand, with no e-mail ({@see LockInvoice},
+ *   Phase 16, D-02); the Admin is the causer;
  * - {@see self::unlocked()}: the Admin opened the document ({@see UnlockInvoice}); the reason is free text written to
  *   the log on purpose (D-13 overrides the rule that free text is never logged, assumption A12);
  * - {@see self::snapshot()}: the flat values of the document an edit can change, read before and after the edit: the
@@ -66,6 +69,23 @@ final readonly class InvoiceAudit
                 'old' => ['lock_state' => 'open'],
             ])
             ->log('invoice_locked');
+    }
+
+    /**
+     * The Admin locked an open issued document by hand (already judged by the Action). It is a row of its own event, so
+     * the history never shows a hand lock as a delivered e-mail; the Admin is the causer.
+     */
+    public static function lockedManually(Invoice $invoice, User $actor): void
+    {
+        activity(self::LOG)
+            ->performedOn($invoice)
+            ->causedBy($actor)
+            ->event('invoice_locked_manually')
+            ->withChanges([
+                'attributes' => ['lock_state' => 'locked'],
+                'old' => ['lock_state' => 'open'],
+            ])
+            ->log('invoice_locked_manually');
     }
 
     /**

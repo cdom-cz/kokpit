@@ -417,6 +417,7 @@ return [
             'deleted' => 'Smazáno',
             'description_changed' => 'Popis upraven',
             'invoice_locked' => 'Doklad uzamčen odesláním',
+            'invoice_locked_manually' => 'Doklad uzamčen ručně',
             'invoice_unlocked' => 'Doklad odemčen',
             'invoice_edited' => 'Doklad upraven po odeslání',
             'cash_receipt_issued' => 'Příjmový doklad vystaven',
