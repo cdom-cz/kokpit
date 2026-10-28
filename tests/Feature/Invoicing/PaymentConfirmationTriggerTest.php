@@ -9,6 +9,7 @@ use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\PaymentConfirmationState;
 use App\Domain\Invoicing\Jobs\SendPaymentConfirmation;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Models\PaymentConfirmation;
@@ -433,5 +434,69 @@ describe('the job (Phase 13)', function (): void {
         (new SendPaymentConfirmation('not-a-uuid'))->failed(new LogicException('x'));
 
         expect(MailFixtures::to($address))->toHaveCount(1);
+    });
+});
+
+describe('a client with document e-mails switched off (Phase 16, D-06)', function (): void {
+    it('records the payment and its income as always, writes the confirmation as skipped with the address kept and queues no job', function (): void {
+        $address = exampleEmail('client-invoice');
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => $address, 'document_emails_enabled' => false]));
+        Queue::fake();
+        Mail::getSymfonyTransport()->flush();
+
+        $payment = app(RecordPayment::class)->handle($this->admin, $invoice, ['amount' => '400.00', 'paid_on' => '2026-10-14']);
+        $row = payConfirmRow($payment);
+
+        Queue::assertNotPushed(SendPaymentConfirmation::class);
+
+        expect($payment->exists)->toBeTrue()
+            ->and($payment->transaction()->count())->toBe(1)
+            ->and($row?->state)->toBe(PaymentConfirmationState::Skipped)
+            ->and($row?->recipient)->toBe($address)
+            ->and($row?->sent_at)->toBeNull()
+            ->and($row?->failure_code)->toBeNull()
+            ->and($row?->attempts)->toBe(0)
+            ->and($row?->remaining_minor)->toBe($invoice->total_minor - 40000)
+            ->and(MailFixtures::sent())->toBe([]);
+    });
+
+    it('issues the cash receipt of a cash payment too and leaves it open', function (): void {
+        $address = exampleEmail('client-invoice');
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => $address, 'document_emails_enabled' => false]));
+        Queue::fake();
+
+        $payment = app(RecordPayment::class)->handle($this->admin, $invoice, ['amount' => '400.00', 'paid_on' => '2026-10-14', 'method' => 'cash']);
+        $receipt = CashReceipt::query()->where('invoice_payment_id', $payment->id)->first();
+
+        Queue::assertNotPushed(SendPaymentConfirmation::class);
+
+        expect($receipt)->not->toBeNull()
+            ->and($receipt?->isLocked())->toBeFalse()
+            ->and($receipt?->isCancelled())->toBeFalse()
+            ->and(payConfirmRow($payment)?->state)->toBe(PaymentConfirmationState::Skipped)
+            ->and(payConfirmRow($payment)?->recipient)->toBe($address);
+    });
+
+    it('also skips a client that has no usable e-mail and has the switch off, with no recipient', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => null, 'document_emails_enabled' => false]));
+        Queue::fake();
+
+        $payment = app(RecordPayment::class)->handle($this->admin, $invoice, ['amount' => '400.00', 'paid_on' => '2026-10-14']);
+
+        Queue::assertNotPushed(SendPaymentConfirmation::class);
+
+        expect(payConfirmRow($payment)?->state)->toBe(PaymentConfirmationState::Skipped)
+            ->and(payConfirmRow($payment)?->recipient)->toBeNull();
+    });
+
+    it('still queues the delayed job for a client with the switch on', function (): void {
+        $invoice = payConfirmInvoice(exampleEmail('client-invoice'));
+        Queue::fake();
+
+        $payment = app(RecordPayment::class)->handle($this->admin, $invoice, ['amount' => '400.00', 'paid_on' => '2026-10-14']);
+
+        Queue::assertPushed(SendPaymentConfirmation::class, 1);
+
+        expect(payConfirmRow($payment)?->state)->toBe(PaymentConfirmationState::Queued);
     });
 });
