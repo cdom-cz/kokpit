@@ -10,7 +10,9 @@ use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Pdf\CashReceiptPdf;
 use App\Domain\Invoicing\Pdf\CashReceiptPdfData;
+use App\Domain\Invoicing\Pdf\InvoicePdf;
 use App\Domain\Settings\DocumentImage;
+use App\Domain\Settings\Settings\InvoicingSettings;
 use App\Domain\Settings\Settings\SupplierSettings;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
@@ -170,6 +172,47 @@ it('prints the supplier signature as the signature record and nothing of a payme
         ->and($html)->not->toContain('<a ')
         ->and($html)->not->toContain('DPH %')
         ->and($html)->not->toContain('slovy');
+});
+
+it('prints neither the supplier contact lines nor the document footer, which stay in the snapshots', function (): void {
+    $phone = implode(' ', ['+420', '000', '000', '000']);
+    $footer = 'Example footer line of the receipt test.';
+
+    app(PartnerContext::class)->runAsSystem(static function () use ($phone, $footer): void {
+        $supplier = app(SupplierSettings::class);
+        $supplier->phone = $phone;
+        $supplier->save();
+
+        $invoicing = app(InvoicingSettings::class);
+        $invoicing->document_footer = $footer;
+        $invoicing->save();
+    });
+    app()->forgetScopedInstances();
+
+    [, $invoice, $receipt] = cashReceiptPdfPay();
+    $snapshot = $receipt->supplier_snapshot ?? [];
+    $email = (string) ($snapshot['email'] ?? '');
+    $website = (string) ($snapshot['website'] ?? '');
+
+    expect($email)->not->toBe('')
+        ->and($snapshot['phone'] ?? null)->toBe($phone)
+        ->and($website)->not->toBe('')
+        ->and($receipt->appearance_snapshot['footer'] ?? null)->toBe($footer);
+
+    $receiptHtml = app(CashReceiptPdf::class)->html($receipt);
+    $invoiceHtml = app(InvoicePdf::class)->html($invoice);
+
+    expect($receiptHtml)->not->toContain($email)
+        ->and($receiptHtml)->not->toContain($phone)
+        ->and($receiptHtml)->not->toContain($website)
+        ->and($receiptHtml)->not->toContain($footer)
+        ->and($receiptHtml)->not->toContain('class="footer"')
+        ->and($receiptHtml)->toContain('Example Supplier s.r.o.')
+        ->and($receiptHtml)->toContain('Registered in the example register.')
+        ->and($receiptHtml)->toContain('Dodavatel není plátce DPH.')
+        ->and($receiptHtml)->toContain($receipt->number)
+        ->and($invoiceHtml)->toContain($footer)
+        ->and($invoiceHtml)->not->toContain($email);
 });
 
 it('reads back the same facts from the extracted text of the stored PDF', function (): void {

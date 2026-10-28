@@ -26,7 +26,8 @@ use UnexpectedValueException;
  *
  * The logo and the signature come from {@see DocumentImage::dataUri()} with the path and SHA-256 of the appearance
  * snapshot, which throws when the stored object is missing or changed, so a regeneration is either equivalent to the
- * issued document or fails. All words are resolved here in the language of the receipt and Blade escapes each value.
+ * issued document or fails. The receipt prints neither the supplier's e-mail, phone and website nor the document footer
+ * of the appearance snapshot, though both stay in the snapshots (user decision 2026-10-28). All words are resolved here in the language of the receipt and Blade escapes each value.
  */
 final readonly class CashReceiptPdfData
 {
@@ -48,7 +49,6 @@ final readonly class CashReceiptPdfData
      * @param  array{label: string, value: string}  $document
      * @param  array{uri: string, width: float, height: float}|null  $logo
      * @param  array{uri: string, width: float, height: float}|null  $signature
-     * @param  list<string>  $footer
      */
     private function __construct(
         public InvoiceLanguage $language,
@@ -64,7 +64,6 @@ final readonly class CashReceiptPdfData
         public string $documentNumber,
         public string $issuer,
         public ?array $signature,
-        public array $footer,
         public ?string $cancelled,
         public string $pageTemplate,
         public string $title,
@@ -94,8 +93,8 @@ final readonly class CashReceiptPdfData
             header: ['heading' => $title, 'numberLabel' => $t('number'), 'number' => $receipt->number],
             palette: DocumentPalette::fromAccent(PdfParts::text($appearance['accent'] ?? null)),
             logo: PdfParts::image($images, $appearance['logo'] ?? null, self::LOGO_MAX_WIDTH, self::LOGO_MAX_HEIGHT),
-            receivedFrom: PdfParts::party($t('received_from'), $customer, $t, null, false),
-            receivedBy: PdfParts::party($t('received_by'), $supplier, $t, $t('not_vat_payer'), true),
+            receivedFrom: PdfParts::party($t('received_from'), $customer, $t, null),
+            receivedBy: PdfParts::party($t('received_by'), $supplier, $t, $t('not_vat_payer')),
             dates: [
                 ['label' => $t('issued_on'), 'value' => $date($receipt->issued_on)],
                 ['label' => $t('received_on'), 'value' => $date($receipt->received_on)],
@@ -106,7 +105,6 @@ final readonly class CashReceiptPdfData
             documentNumber: $receipt->document_number,
             issuer: $t('issuer', ['name' => $supplierName]),
             signature: PdfParts::image($images, $appearance['signature'] ?? null, self::SIGNATURE_MAX_WIDTH, self::SIGNATURE_MAX_HEIGHT),
-            footer: PdfParts::footer(PdfParts::text($appearance['footer'] ?? null)),
             cancelled: $receipt->cancelled_at === null
                 ? null
                 : $t('cancelled', ['date' => $date($receipt->cancelled_at->setTimezone(FilamentTimezone::get()))]),

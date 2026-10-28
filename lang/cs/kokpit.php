@@ -342,7 +342,7 @@ return [
                 'accent' => 'Barva dokladů',
                 'accent_hint' => 'Barva proužků, nadpisu a součtu na PDF. Ostatní barvy se odvodí automaticky.',
                 'footer' => 'Patička dokladů',
-                'footer_hint' => 'Zobrazí se pod platebními údaji, například údaj o zápisu v rejstříku.',
+                'footer_hint' => 'Tiskne se na konec faktur, zálohových faktur a dobropisů, například údaj o zápisu v rejstříku. Příjmový pokladní doklad ji netiskne.',
                 'sample_accent' => 'Barva',
                 'sample_accent_text' => 'Nadpis',
                 'sample_on_accent' => 'Součet',
