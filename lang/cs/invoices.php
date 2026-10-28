@@ -34,7 +34,7 @@ return [
         'item_unknown' => 'Položka nepatří k tomuto dokladu.',
         'item_description' => 'Zadejte popis položky (nejvýše 500 znaků).',
         'item_quantity' => 'Zadejte množství větší než nula s nejvýše čtyřmi desetinnými místy.',
-        'item_unit' => 'Zadejte jednotku (nejvýše 16 znaků).',
+        'item_unit' => 'Jednotka může mít nejvýše 16 znaků.',
         'item_price' => 'Zadejte jednotkovou cenu v měně dokladu.',
         'item_zero_price' => 'Jednotkovou cenu nula potvrďte u položky.',
         'items_cap' => 'Doklad může mít nejvýše :max položek.',

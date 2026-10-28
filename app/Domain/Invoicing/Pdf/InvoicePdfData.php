@@ -179,11 +179,10 @@ final readonly class InvoicePdfData
         $rows = [];
 
         foreach ($issued->items as $index => $item) {
-            $quantity = $item->quantity()->format($locale);
             $rows[] = [
                 'index' => $index + 1,
                 'description' => $item->description,
-                'quantity' => trim($quantity.' '.$item->unit),
+                'quantity' => $item->printedQuantity($locale),
                 'unitPrice' => Money::ofMinor($item->unit_price_minor, $issued->currency)->format($locale),
                 'total' => Money::ofMinor($item->line_total_minor, $issued->currency)->format($locale),
                 'vatRate' => $payer && $item->vat_rate !== null ? (string) $item->vat_rate : null,

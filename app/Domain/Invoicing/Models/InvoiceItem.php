@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use InvalidArgumentException;
 use LogicException;
 
 /**
@@ -37,7 +38,7 @@ use LogicException;
  * @property int $position
  * @property string $description
  * @property numeric-string $quantity
- * @property string $unit
+ * @property string|null $unit
  * @property int $unit_price_minor
  * @property int $line_total_minor
  * @property bool $price_converted
@@ -69,6 +70,19 @@ final class InvoiceItem extends KokpitModel implements PartnerIsolated
     public function quantity(): InvoiceQuantity
     {
         return InvoiceQuantity::fromDecimal($this->quantity);
+    }
+
+    /**
+     * The quantity as printed with its unit: "2 h", or the quantity alone ("3") for a line without a unit. The one
+     * place a line's quantity is shown with its unit (PDF, Admin detail, credit-note dialog, Partner detail).
+     *
+     * @throws InvalidArgumentException for a locale other than cs or en
+     */
+    public function printedQuantity(string $locale): string
+    {
+        $quantity = $this->quantity()->format($locale);
+
+        return $this->unit === null ? $quantity : $quantity.' '.$this->unit;
     }
 
     /**
