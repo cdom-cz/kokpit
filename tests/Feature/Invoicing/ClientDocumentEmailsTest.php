@@ -48,10 +48,12 @@ it('answers false for a client with the switch off and true for another', functi
 it('reads the switch fresh and never from a stale model', function (): void {
     $client = InvoiceFixtures::client(['document_emails_enabled' => false]);
 
+    $stale = $client->fresh();
+
     app(UpdateClient::class)->handle($client, clientDocEmailsUpdate($client, true));
 
-    // The in-memory model still carries the old value; the gate reads the database.
-    expect($client->document_emails_enabled)->toBeFalse()
+    // The separately loaded model still carries the old value; the gate reads the database.
+    expect($stale->document_emails_enabled)->toBeFalse()
         ->and(ClientDocumentEmails::enabledFor($client->id))->toBeTrue();
 
     app(UpdateClient::class)->handle($client, clientDocEmailsUpdate($client, false));
