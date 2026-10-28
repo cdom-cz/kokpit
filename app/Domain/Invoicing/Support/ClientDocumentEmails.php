@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Invoicing\Support;
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Invoicing\Actions\QueuePaymentConfirmation;
 use App\Domain\Invoicing\Models\Invoice;
 
 /**
@@ -21,7 +22,7 @@ use App\Domain\Invoicing\Models\Invoice;
  * with the column (an eager-loaded list relation, or the client a payment transaction has just read).
  *
  * Fail-closed: a row that cannot be read answers false, "do not send". That is the outcome
- * {@see \App\Domain\Invoicing\Actions\QueuePaymentConfirmation} already gives (a skipped row) when it cannot read
+ * {@see QueuePaymentConfirmation} already gives (a skipped row) when it cannot read
  * the client; the restrict foreign key of `invoices.client_id` makes a missing row impossible in practice.
  *
  * The class never enters the system context itself: its callers are Admin requests and `KokpitJob` jobs, which
