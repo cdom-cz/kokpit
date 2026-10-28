@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Invoicing\Actions\IssueCreditNote;
+use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Shared\Models\Activity;
@@ -12,6 +15,8 @@ use Carbon\CarbonImmutable;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -156,5 +161,95 @@ describe('the lock by hand from the open callout', function (): void {
         handServedDocPage($invoice)
             ->assertActionVisible(handServedDocUnlock())
             ->assertDontSee('Uzamknout');
+    });
+});
+
+/**
+ * The values of the dialog as an Admin submits them.
+ *
+ * @return array{recipient: string, subject: string, body: string, attach_work_report: bool}
+ */
+function handServedDocData(): array
+{
+    return [
+        'recipient' => exampleEmail('invoice'),
+        'subject' => 'Example document',
+        'body' => 'Example body',
+        'attach_work_report' => false,
+    ];
+}
+
+/**
+ * An issued document of the given kind for the client; the credit note is the storno of an issued invoice.
+ */
+function handServedDocOf(string $kind, Client $client): Invoice
+{
+    return match ($kind) {
+        'proforma' => InvoiceFixtures::issued($client, [], InvoiceKind::Proforma),
+        'credit note' => app(IssueCreditNote::class)->storno(test()->admin, InvoiceFixtures::issued($client)),
+        default => InvoiceFixtures::issued($client),
+    };
+}
+
+describe('the queueing of a document e-mail for a client with the e-mails off', function (): void {
+    it('refuses every kind under invoice, writes no row and dispatches no job', function (string $kind): void {
+        Queue::fake();
+        $document = handServedDocOf($kind, handServedDocClient());
+
+        try {
+            app(QueueInvoiceEmail::class)->handle($this->admin, $document, handServedDocData());
+            test()->fail('The queueing had to be refused.');
+        } catch (ValidationException $exception) {
+            expect($exception->errors())->toBe(['invoice' => [__('invoices.errors.email_client_disabled')]])
+                ->and($exception->errors()['invoice'][0])->toBe('Klient má odesílání dokladů e-mailem vypnuté.');
+        }
+
+        expect(InvoiceEmail::query()->where('invoice_id', $document->id)->count())->toBe(0)
+            ->and(DB::table('invoice_emails')->count())->toBe(0);
+
+        Queue::assertNothingPushed();
+    })->with(['invoice', 'proforma', 'credit note']);
+
+    it('queues as before for a client with the e-mails on', function (): void {
+        Queue::fake();
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        $row = app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, handServedDocData());
+
+        expect(InvoiceEmail::query()->where('invoice_id', $invoice->id)->count())->toBe(1);
+
+        Queue::assertPushed(SendInvoiceEmail::class, static fn (SendInvoiceEmail $job): bool => $job->emailId === $row->id);
+    });
+
+    it('judges the switch as it is now, not as the passed model carries it', function (): void {
+        Queue::fake();
+        $client = InvoiceFixtures::client();
+        $invoice = InvoiceFixtures::issued($client);
+
+        DB::table('clients')->where('id', $client->id)->update(['document_emails_enabled' => false]);
+
+        expect(fn () => app(QueueInvoiceEmail::class)->handle($this->admin, $invoice, handServedDocData()))->toThrow(ValidationException::class);
+
+        Queue::assertNothingPushed();
+    });
+});
+
+describe('the dialog after the issue', function (): void {
+    it('stays closed for a client with the e-mails off', function (): void {
+        $invoice = InvoiceFixtures::issued(handServedDocClient());
+
+        handServedDocPage($invoice, send: true)
+            ->assertDontSeeHtml('wire:init="openSendDialog"')
+            ->call('openSendDialog')
+            ->assertActionNotMounted('sendEmail');
+    });
+
+    it('still opens for a client with the e-mails on', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        handServedDocPage($invoice, send: true)
+            ->assertSeeHtml('wire:init="openSendDialog"')
+            ->call('openSendDialog')
+            ->assertActionMounted('sendEmail');
     });
 });

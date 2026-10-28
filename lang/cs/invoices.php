@@ -117,6 +117,7 @@ return [
         'email_subject' => 'Zadejte předmět (nejvýše 200 znaků).',
         'email_body' => 'Zadejte text e-mailu (nejvýše 5 000 znaků).',
         'email_not_issued' => 'E-mail lze odeslat jen u vystaveného dokladu.',
+        'email_client_disabled' => 'Klient má odesílání dokladů e-mailem vypnuté.',
 
         // The stored PDF.
         'pdf_unconfirmed' => 'PDF vystaveného dokladu lze smazat jen s výslovným potvrzením.',
