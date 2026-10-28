@@ -37,7 +37,7 @@ use LogicException;
  * @property int $position
  * @property string $description
  * @property numeric-string $quantity
- * @property string $unit
+ * @property string|null $unit
  * @property int $unit_price_minor
  * @property int $line_total_minor
  * @property bool $price_converted
