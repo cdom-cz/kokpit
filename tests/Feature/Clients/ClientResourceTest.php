@@ -7,6 +7,7 @@ use App\Domain\Clients\Actions\UpdateClient as UpdateClientAction;
 use App\Domain\Clients\Enums\ClientStage;
 use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Clients\Models\Client;
+use App\Domain\Shared\Models\Activity;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\ClientResource\Pages\CreateClient;
@@ -380,4 +381,45 @@ it('offers the four Czech stage labels and filters the list by stage', function 
         ->filterTable('stage', 'ended')
         ->assertCanSeeTableRecords([$ended])
         ->assertCanNotSeeTableRecords([$lead, $active, $paused]);
+});
+
+it('opens the edit form with the document e-mail switch on, switches it off and writes one history row (P16-01, P16-02)', function (): void {
+    $client = Client::factory()->create();
+    $adminId = auth()->id();
+
+    Livewire::test(EditClient::class, ['record' => $client->getRouteKey()])
+        ->assertFormSet(['document_emails_enabled' => true])
+        ->fillForm(['document_emails_enabled' => false])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($client->refresh()->document_emails_enabled)->toBeFalse();
+
+    $rows = Activity::query()->forSubject($client)->forEvent('updated')->get();
+
+    expect($rows)->toHaveCount(1);
+
+    $row = $rows->first();
+
+    expect($row?->attribute_changes->get('attributes'))->toBe(['document_emails_enabled' => false])
+        ->and($row?->attribute_changes->get('old'))->toBe(['document_emails_enabled' => true])
+        ->and($row?->causer_id)->toBe($adminId)
+        ->and(__('kokpit.activity.attributes.client.document_emails_enabled'))->toBe('Odesílání dokladů e-mailem');
+});
+
+it('opens the create form with the document e-mail switch on and stores true', function (): void {
+    Livewire::test(CreateClient::class)
+        ->assertFormSet(['document_emails_enabled' => true])
+        ->fillForm(clientForm(['name' => 'Example client switch default']))
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    expect(Client::query()->where('name', 'Example client switch default')->firstOrFail()->document_emails_enabled)->toBeTrue();
+});
+
+it('has no document e-mail column in the client list (D-05)', function (): void {
+    Client::factory()->create();
+
+    Livewire::test(ListClients::class)
+        ->assertTableColumnDoesNotExist('document_emails_enabled');
 });

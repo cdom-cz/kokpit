@@ -134,7 +134,7 @@ final class ClientInput
             throw ValidationException::withMessages($errors);
         }
 
-        return [
+        $attributes = [
             'name' => $name,
             'company_number' => $companyNumber,
             'tax_number' => self::text($data['tax_number'] ?? null),
@@ -150,6 +150,14 @@ final class ClientInput
             'invoice_language' => $language,
             'online_payment_enabled' => (bool) ($data['online_payment_enabled'] ?? false),
         ];
+
+        // Unlike the online-payment switch, a missing or null key never switches document e-mails off (Phase 16,
+        // D-01): the attribute is left out, so an update keeps the stored value and a create keeps the column default.
+        if (array_key_exists('document_emails_enabled', $data) && $data['document_emails_enabled'] !== null) {
+            $attributes['document_emails_enabled'] = (bool) $data['document_emails_enabled'];
+        }
+
+        return $attributes;
     }
 
     /**

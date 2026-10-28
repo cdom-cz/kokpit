@@ -474,6 +474,7 @@ return [
                 'invoice_email' => 'E-mail pro faktury',
                 'invoice_language' => 'Jazyk faktur',
                 'online_payment_enabled' => 'Online platba',
+                'document_emails_enabled' => 'Odesílání dokladů e-mailem',
             ],
             'contact' => [
                 'client_id' => 'Klient',
@@ -1065,6 +1066,7 @@ return [
             'primary_contact' => 'Hlavní kontakt',
             'invoice_language' => 'Jazyk faktur',
             'online_payment_enabled' => 'Online platba',
+            'document_emails_enabled' => 'Odesílat doklady e-mailem',
             'tags' => 'Štítky',
         ],
         'navigation_label' => 'Klienti',
@@ -1081,7 +1083,11 @@ return [
             'hourly_rate' => 'Částka v měně klienta, s desetinnou čárkou a bez oddělovače tisíců, například 1500,50.',
             'payment_terms_days' => 'Počet dní od 0 do 365.',
             'online_payment_enabled' => 'Zapnuto: u dokladů tohoto klienta se nabídne platba kartou. Nový koncept převezme tuto hodnotu a u dokladu ji lze přepsat. Úhradu online jde na dokladu zvolit jen se zapnutou online platbou.',
+            'document_emails_enabled' => 'Vypnuto: faktury, zálohové faktury, dobropisy a potvrzení o platbě s dokladem o přijetí hotovosti se tomuto klientovi neposílají e-mailem, předáte je ručně. Pozvánky, obnovení hesla a upozornění na úkoly uživatelů klienta odcházejí dál.',
             'tags' => 'Interní štítky klienta. Nesdílejí se s projekty a klient je nikdy nevidí.',
+        ],
+        'badges' => [
+            'document_emails_off' => 'E-maily s doklady vypnuté',
         ],
         'filters' => [
             'stage' => 'Stav',

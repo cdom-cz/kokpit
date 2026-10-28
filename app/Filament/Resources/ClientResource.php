@@ -309,6 +309,11 @@ final class ClientResource extends Resource
                         ->label(__('kokpit.clients.fields.invoice_email'))
                         ->email()
                         ->maxLength(255),
+                    Toggle::make('document_emails_enabled')
+                        ->label(__('kokpit.clients.fields.document_emails_enabled'))
+                        ->helperText(__('kokpit.clients.hints.document_emails_enabled'))
+                        ->default(true)
+                        ->columnSpanFull(),
                     Toggle::make('online_payment_enabled')
                         ->label(__('kokpit.clients.fields.online_payment_enabled'))
                         ->helperText(__('kokpit.clients.hints.online_payment_enabled'))
@@ -358,6 +363,9 @@ final class ClientResource extends Resource
                         ->suffix(' '.__('kokpit.clients.days')),
                     TextEntry::make('invoice_language')->label(__('kokpit.clients.fields.invoice_language')),
                     TextEntry::make('invoice_email')->label(__('kokpit.clients.fields.invoice_email'))->placeholder($empty),
+                    IconEntry::make('document_emails_enabled')
+                        ->label(__('kokpit.clients.fields.document_emails_enabled'))
+                        ->boolean(),
                     IconEntry::make('online_payment_enabled')
                         ->label(__('kokpit.clients.fields.online_payment_enabled'))
                         ->boolean(),
@@ -558,6 +566,8 @@ final class ClientResource extends Resource
             'invoice_email' => self::nullableString($data['invoice_email'] ?? null),
             'invoice_language' => self::string($data['invoice_language'] ?? null),
             'online_payment_enabled' => (bool) ($data['online_payment_enabled'] ?? false),
+            // A missing value is read as on: the form never switches document e-mails off by omission.
+            'document_emails_enabled' => (bool) ($data['document_emails_enabled'] ?? true),
         ];
     }
 
