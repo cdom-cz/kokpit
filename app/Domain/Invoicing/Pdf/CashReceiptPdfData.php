@@ -30,9 +30,9 @@ use UnexpectedValueException;
  */
 final readonly class CashReceiptPdfData
 {
-    private const int LOGO_MAX_WIDTH = 160;
+    private const int LOGO_MAX_WIDTH = 120;
 
-    private const int LOGO_MAX_HEIGHT = 40;
+    private const int LOGO_MAX_HEIGHT = 30;
 
     private const int SIGNATURE_MAX_WIDTH = 200;
 
