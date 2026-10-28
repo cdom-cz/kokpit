@@ -430,7 +430,8 @@ final class InvoiceTable
             InvoiceEmailState::Sent => 'sent',
             InvoiceEmailState::Queued, InvoiceEmailState::Sending => 'queued',
             InvoiceEmailState::Failed => 'failed',
-            null => 'none',
+            // A skipped row reads as not sent (Phase 16, D-08): the client's switch kept it back, it did not fail.
+            InvoiceEmailState::Skipped, null => 'none',
         };
     }
 

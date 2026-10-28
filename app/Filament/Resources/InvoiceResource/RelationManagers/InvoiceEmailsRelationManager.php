@@ -93,6 +93,7 @@ final class InvoiceEmailsRelationManager extends RelationManager
                         InvoiceEmailState::Sent => 'success',
                         InvoiceEmailState::Failed => 'danger',
                         InvoiceEmailState::Queued, InvoiceEmailState::Sending => 'info',
+                        InvoiceEmailState::Skipped => 'gray',
                     }),
                 TextColumn::make('note')
                     ->label(__('invoices.email.log.columns.note'))

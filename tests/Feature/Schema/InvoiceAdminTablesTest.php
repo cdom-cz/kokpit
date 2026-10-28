@@ -621,6 +621,16 @@ describe('invoice_emails', function (): void {
         RawSql::expectAllowed(fn () => adminTablesEmail($this, $invoice, ['state' => 'failed', 'failure_code' => 'smtp', 'attempts' => 3]));
     });
 
+    it('allows the skipped state of Phase 16 without a send time or a failure code', function (): void {
+        $invoice = adminTablesDocument($this->adminTablesClient);
+        adminTablesIssue($invoice);
+
+        RawSql::expectAllowed(fn () => adminTablesEmail($this, $invoice, ['state' => 'skipped']));
+        RawSql::expectSqlState('23514', fn () => adminTablesEmail($this, $invoice, ['state' => 'skipped', 'sent_at' => '2026-10-17 11:05:00+00']));
+        RawSql::expectSqlState('23514', fn () => adminTablesEmail($this, $invoice, ['state' => 'skipped', 'failure_code' => 'smtp']));
+        RawSql::expectSqlState('23514', fn () => adminTablesEmail($this, $invoice, ['state' => 'skipp']));
+    });
+
     it('moves its state and attempts freely, also for an issued document', function (): void {
         $invoice = adminTablesDocument($this->adminTablesClient);
         adminTablesIssue($invoice);
