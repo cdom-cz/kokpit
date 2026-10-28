@@ -4,10 +4,10 @@ current_phase: 8
 current_phase_name: Exchange Rates and Reports
 status: verifying
 stopped_at: Phase 16 complete, ready to verify Phase 8
-last_updated: "2026-10-28T11:14:45.601Z"
+last_updated: "2026-10-28T14:09:05.450Z"
 last_activity: 2026-10-28
 last_activity_desc: Phase 16 complete, transitioned to Phase 8
-state_head: 5c3da7d7c29d084a0b91592c16b82c28d15ff7f6
+state_head: 3220181a30e9956eb05a82b779979437122fa349
 progress:
   total_phases: 18
   completed_phases: 7
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 Phase: 8 — Exchange Rates and Reports
 Plan: 27
 Status: Phase complete — ready for verification
-Last activity: 2026-10-28 — Phase 16 complete, transitioned to Phase 8
+Last activity: 2026-10-28 - Completed quick task 261028-krr: Make the Unit field optional on invoice and proforma items
 
 Progress: [████░░░░░░] 39%
 
@@ -936,6 +936,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261022-sgn | Improve global search to match client, project and task names, and project and task codes, with as-you-type suggestions in the current style | 2026-10-22 | 30823f6 | [261022-sgn-improve-global-search-to-match-client-pr](./quick/261022-sgn-improve-global-search-to-match-client-pr/) |
 | 261025-oc2 | Optimize the test suite: prune non-essential tests and shard CI (30m timeout fix) | 2026-10-25 | 96507ce | [261025-oc2-optimize-the-test-suite-keep-only-functi](./quick/261025-oc2-optimize-the-test-suite-keep-only-functi/) |
 | 261028-kr9 | Fix SPAYD message sanitising failing on musl iconv in production | 2026-10-28 | 84cb780 | [261028-kr9-fix-spayd-message-sanitising-failing-on-iconv](./quick/261028-kr9-fix-spayd-message-sanitising-failing-on-iconv/) |
+| 261028-krr | Make the Unit field optional on invoice and proforma items | 2026-10-28 | 3220181 | [261028-krr-make-the-unit-field-optional-on-invoice-](./quick/261028-krr-make-the-unit-field-optional-on-invoice-/) |
 
 ### Roadmap Evolution
 
