@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Pdf\DocumentPalette;
 use App\Domain\Invoicing\Pdf\InvoicePageDecoration;
 use App\Domain\Invoicing\Pdf\InvoicePdf;
@@ -88,6 +90,26 @@ it('prints an issued CZK invoice with its parties, lines, total and a payment QR
         ->and(QrDecode::payload($images[0]))->toStartWith('SPD*1.0*ACC:CZ')
         ->and(QrDecode::payload($images[0]))->toContain('*AM:1250.50*');
 });
+
+it('prints the quantity alone for a line without a unit and the quantity with its unit otherwise', function (InvoiceKind $kind): void {
+    $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [
+        InvoiceFixtures::item('Example flat fee', '3', '100.00', ''),
+        InvoiceFixtures::item('Example consulting', '2', '500.00'),
+    ], $kind);
+
+    $html = app(InvoicePdf::class)->html($issued);
+    $lines = $issued->items->values();
+
+    expect($html)->toContain('<td class="quantity">3</td>')
+        ->and($html)->toContain('<td class="quantity">2 h</td>')
+        ->and($lines[0]->unit)->toBeNull()
+        ->and($lines[0]->printedQuantity('cs'))->toBe('3')
+        ->and($lines[1]->printedQuantity('cs'))->toBe('2 h')
+        ->and((new InvoiceItem)->forceFill(['quantity' => '1.5000', 'unit' => null])->printedQuantity('en'))->toBe('1.5');
+})->with([
+    'invoice' => [InvoiceKind::Invoice],
+    'proforma' => [InvoiceKind::Proforma],
+]);
 
 it('renders the PDF in Roboto without writing into the vendor directory', function (): void {
     $issued = InvoiceFixtures::issued(InvoiceFixtures::client());
