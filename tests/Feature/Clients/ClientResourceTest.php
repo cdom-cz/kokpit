@@ -13,6 +13,7 @@ use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\ClientResource\Pages\CreateClient;
 use App\Filament\Resources\ClientResource\Pages\EditClient;
 use App\Filament\Resources\ClientResource\Pages\ListClients;
+use App\Filament\Resources\ClientResource\Pages\ViewClient;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Illuminate\Support\Str;
@@ -415,6 +416,24 @@ it('opens the create form with the document e-mail switch on and stores true', f
         ->assertHasNoFormErrors();
 
     expect(Client::query()->where('name', 'Example client switch default')->firstOrFail()->document_emails_enabled)->toBeTrue();
+});
+
+it('shows the switch and a heading badge on the detail of a client with documents switched off (D-05)', function (): void {
+    $client = Client::factory()->withoutDocumentEmails()->create();
+
+    Livewire::test(ViewClient::class, ['record' => $client->getRouteKey()])
+        ->assertSee(__('kokpit.clients.badges.document_emails_off'))
+        ->assertSee(__('kokpit.clients.fields.document_emails_enabled'))
+        ->assertSee($client->name);
+});
+
+it('shows no badge on the detail of a client with documents switched on', function (): void {
+    $client = Client::factory()->create();
+
+    Livewire::test(ViewClient::class, ['record' => $client->getRouteKey()])
+        ->assertDontSee(__('kokpit.clients.badges.document_emails_off'))
+        ->assertSee(__('kokpit.clients.fields.document_emails_enabled'))
+        ->assertSee($client->name);
 });
 
 it('has no document e-mail column in the client list (D-05)', function (): void {

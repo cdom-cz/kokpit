@@ -56,6 +56,7 @@ use Illuminate\Support\Facades\DB;
  *     invoice_email?: string|null,
  *     invoice_language?: string,
  *     online_payment_enabled?: bool|null,
+ *     document_emails_enabled?: bool|null,
  * }
  */
 final class CreateClient
@@ -114,6 +115,11 @@ final class CreateClient
 
         if (! array_key_exists('online_payment_enabled', $data)) {
             $data['online_payment_enabled'] = app(PaymentSettings::class)->online_payments_enabled;
+        }
+
+        // Documents are e-mailed by default (Phase 16, D-01); only the Admin switches it off.
+        if (! array_key_exists('document_emails_enabled', $data) || $data['document_emails_enabled'] === null) {
+            $data['document_emails_enabled'] = true;
         }
 
         if (! array_key_exists('country', $data)) {
