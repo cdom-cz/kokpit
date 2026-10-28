@@ -8,6 +8,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Invoicing\Support\ClientDocumentEmails;
 use App\Domain\Payments\Support\PayLinkBlock;
 use App\Filament\Resources\InvoiceResource;
 use Closure;
@@ -42,7 +43,8 @@ use Livewire\Component;
 final class SendInvoiceEmailAction
 {
     /**
-     * "Odeslat e-mailem" in the header of the document detail.
+     * "Odeslat e-mailem" in the header of the document detail. Hidden for a client with the document e-mails switched
+     * off (Phase 16, D-04); the domain refuses the queueing as well ({@see QueueInvoiceEmail::handle()}).
      *
      * @param  Closure(): Invoice  $invoice  the document the page shows
      */
@@ -53,7 +55,11 @@ final class SendInvoiceEmailAction
                 ->label(__('invoices.email.actions.send'))
                 ->color('gray'),
             static fn (): array => [self::fresh($invoice()), null],
-        )->visible(static fn (): bool => self::fresh($invoice())->isIssued());
+        )->visible(static function () use ($invoice): bool {
+            $document = self::fresh($invoice());
+
+            return $document->isIssued() && ClientDocumentEmails::enabledFor((string) $document->client_id);
+        });
     }
 
     /**

@@ -9,10 +9,11 @@ declare(strict_types=1);
  *    The literal may appear in no other application file and in no migration other than the ones that create or
  *    re-create the row guard; tests may use it to prove the guard.
  *
- * 2. The locked state is written only by the successful send of a document e-mail (SendInvoiceEmail) and by the issue of
- *    a credit note (DocumentIssuer), and named by the model that casts it (Invoice). There is no manual "mark as sent"
- *    anywhere (D-02): a new reader asks `Invoice::isLocked()`, a new writer is a decision of its own and has to extend
- *    the allowlist below with a reason.
+ * 2. The locked state is written by the successful send of a document e-mail (SendInvoiceEmail), by the issue of a
+ *    credit note (DocumentIssuer) and by the Admin's manual lock (LockInvoice, Phase 16 D-02: the owner-approved second
+ *    way into the locked state, which writes no sent mark), and named by the model that casts it (Invoice). A new
+ *    reader asks `Invoice::isLocked()`, a new writer is a decision of its own and has to extend the allowlist below
+ *    with a reason.
  */
 
 const INVOICE_UNLOCK_FLAG = 'kokpit.invoice_unlock';
@@ -57,8 +58,9 @@ it('names the unlock setting in no migration other than the ones that create or 
     ]);
 });
 
-it('writes the locked state only in the send job, the issue of a credit note and the model that casts it', function (): void {
+it('writes the locked state only in the manual lock, the send job, the issue of a credit note and the model that casts it', function (): void {
     expect(invoiceLockFilesNaming(dirname(__DIR__, 2), 'app', INVOICE_LOCKED_TOKEN))->toBe([
+        'app/Domain/Invoicing/Actions/LockInvoice.php',
         'app/Domain/Invoicing/Issuing/DocumentIssuer.php',
         'app/Domain/Invoicing/Jobs/SendInvoiceEmail.php',
         'app/Domain/Invoicing/Models/Invoice.php',

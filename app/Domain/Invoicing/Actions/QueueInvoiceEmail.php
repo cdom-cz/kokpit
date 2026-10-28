@@ -12,6 +12,7 @@ use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Jobs\SendInvoiceEmail;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Invoicing\Support\ClientDocumentEmails;
 use App\Domain\Invoicing\Support\EntryReservation;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
@@ -34,6 +35,9 @@ use Illuminate\Validation\ValidationException;
  * injected through it), the subject is capped at 200 and the body at 5 000 characters, and control characters other
  * than a line break and a tab are dropped from both (a NUL byte would also be refused by the database). The body is
  * plain text. The work-report flag is kept only when the document still has linked time: a cancelled invoice has none.
+ *
+ * A document of a client with the document e-mails switched off is refused whatever its kind (Phase 16, D-06): no
+ * log row is written and no job is dispatched, whoever asks ({@see ClientDocumentEmails}).
  *
  * The document is read with the invoice row lock before the row is written, the same lock an edit of an issued document
  * takes (A8): an edit either finishes before the e-mail is queued or finds it queued and waits for it.
@@ -82,7 +86,7 @@ readonly class QueueInvoiceEmail
      * @param  array<string, mixed>  $data  `recipient`, `subject`, `body`, `attach_work_report`
      *
      * @throws AuthorizationException
-     * @throws ValidationException `invoice` for a draft; `recipient`, `subject` or `body` for a value that is refused
+     * @throws ValidationException `invoice` for a draft or a client with the document e-mails switched off; `recipient`, `subject` or `body` for a value that is refused
      */
     public function handle(User $actor, Invoice $issued, array $data): InvoiceEmail
     {
@@ -95,6 +99,10 @@ readonly class QueueInvoiceEmail
 
             if (! $document->isIssued()) {
                 throw ValidationException::withMessages(['invoice' => __('invoices.errors.email_not_issued')]);
+            }
+
+            if (! ClientDocumentEmails::enabledFor((string) $document->client_id)) {
+                throw ValidationException::withMessages(['invoice' => __('invoices.errors.email_client_disabled')]);
             }
 
             $recipient = $this->cleanRecipient($data['recipient'] ?? null);

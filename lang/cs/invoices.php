@@ -91,9 +91,12 @@ return [
         'cancelled_not_editable' => 'Stornovaný doklad upravit nelze.',
         'converted_not_editable' => 'Zálohovou fakturu, ze které už vznikla faktura, upravit nelze.',
 
+        // The manual lock of an open document (Phase 16, D-02, D-03).
+        'already_locked' => 'Doklad je už uzamčen.',
+
         // The correction of an open issued document (assumptions A1, A3, A4, A8).
         'not_issued' => 'Koncept se upravuje v editoru konceptu.',
-        'document_locked' => 'Doklad byl odeslán a je uzamčen. Nejprve ho odemkněte.',
+        'document_locked' => 'Doklad je uzamčen. Nejprve ho odemkněte.',
         'email_in_flight' => 'Doklad se právě odesílá e-mailem. Upravit ho půjde po dokončení odeslání.',
         'credited_line_frozen' => 'Položka je dobropisovaná: změnit lze jen její text.',
         'credited_line_delete' => 'Dobropisovanou položku nelze smazat.',
@@ -114,6 +117,7 @@ return [
         'email_subject' => 'Zadejte předmět (nejvýše 200 znaků).',
         'email_body' => 'Zadejte text e-mailu (nejvýše 5 000 znaků).',
         'email_not_issued' => 'E-mail lze odeslat jen u vystaveného dokladu.',
+        'email_client_disabled' => 'Klient má odesílání dokladů e-mailem vypnuté.',
 
         // The stored PDF.
         'pdf_unconfirmed' => 'PDF vystaveného dokladu lze smazat jen s výslovným potvrzením.',
@@ -511,8 +515,9 @@ return [
             'awaiting_invoice' => 'Záloha je zaplacená, ale faktura k ní zatím nebyla vystavena. Příjem se zaúčtuje až při vystavení faktury.',
             'cancelled_paid' => 'Faktura byla stornována, ale platba zůstává zaevidovaná. Vrácení peněz a výdaj zaznamenejte ručně.',
             'credit_exists' => 'K dokladu existuje dobropis :number.',
-            'open_for_edits' => 'Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.',
-            'locked' => 'Doklad byl odeslán e-mailem a je uzamčen. Upravit ho lze až po odemknutí s uvedením důvodu.',
+            'email_disabled' => 'Klient má odesílání dokladů e-mailem vypnuté. Doklad mu předejte jinak a uzamkněte ho ručně.',
+            'open_for_edits' => 'Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem nebo ručně uzamčen.',
+            'locked' => 'Doklad je uzamčen (odesláním e-mailem nebo ručně). Upravit ho lze až po odemknutí s uvedením důvodu.',
         ],
         'actions' => [
             'download' => 'Stáhnout PDF',
@@ -525,11 +530,18 @@ return [
             'edit_note' => 'Upravit poznámku',
             'open' => 'Otevřít doklad',
             'unlock' => 'Odemknout',
+            'lock' => 'Uzamknout',
             'edit' => 'Upravit',
+        ],
+        'lock' => [
+            'heading' => 'Uzamknout doklad :number?',
+            'description' => 'Doklad se uzamkne bez odeslání e-mailem, například když ho klient dostal osobně. Upravit ho pak půjde jen po odemknutí s uvedením důvodu.',
+            'submit' => 'Uzamknout',
+            'done' => 'Doklad je uzamčen',
         ],
         'unlock' => [
             'heading' => 'Odemknout doklad :number',
-            'description' => 'Doklad už zákazník dostal. Po odemknutí ho můžete upravit; po dalším úspěšném odeslání e-mailem se znovu uzamkne.',
+            'description' => 'Doklad už zákazník dostal. Po odemknutí ho můžete upravit; po dalším úspěšném odeslání e-mailem nebo ručním uzamčení se znovu uzamkne.',
             'reason' => 'Důvod odemknutí',
             'submit' => 'Odemknout',
             'done' => 'Doklad je odemčen',
