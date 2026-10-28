@@ -94,8 +94,8 @@ final readonly class CashReceiptPdfData
             header: ['heading' => $title, 'numberLabel' => $t('number'), 'number' => $receipt->number],
             palette: DocumentPalette::fromAccent(PdfParts::text($appearance['accent'] ?? null)),
             logo: PdfParts::image($images, $appearance['logo'] ?? null, self::LOGO_MAX_WIDTH, self::LOGO_MAX_HEIGHT),
-            receivedFrom: PdfParts::party($t('received_from'), $customer, $t, null, false),
-            receivedBy: PdfParts::party($t('received_by'), $supplier, $t, $t('not_vat_payer'), true),
+            receivedFrom: PdfParts::party($t('received_from'), $customer, $t, null),
+            receivedBy: PdfParts::party($t('received_by'), $supplier, $t, $t('not_vat_payer')),
             dates: [
                 ['label' => $t('issued_on'), 'value' => $date($receipt->issued_on)],
                 ['label' => $t('received_on'), 'value' => $date($receipt->received_on)],

@@ -139,6 +139,33 @@ it('lays the payment facts out two to a row in a compact box', function (Invoice
     'proforma' => [InvoiceKind::Proforma],
 ]);
 
+it('prints no contact line of the supplier, but its name, address, ids and registration note', function (InvoiceKind $kind): void {
+    pdfSettings(function (): void {
+        $supplier = app(SupplierSettings::class);
+        $supplier->phone = implode(' ', ['+420', '000', '000', '000']);
+        $supplier->save();
+    });
+
+    $issued = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '100.00')], $kind);
+    $snapshot = $issued->supplier_snapshot ?? [];
+    $html = app(InvoicePdf::class)->html($issued);
+
+    expect($snapshot['email'] ?? null)->not->toBeNull()
+        ->and($snapshot['phone'] ?? null)->not->toBeNull()
+        ->and($snapshot['website'] ?? null)->not->toBeNull()
+        ->and($html)->not->toContain((string) $snapshot['email'])
+        ->and($html)->not->toContain((string) $snapshot['phone'])
+        ->and($html)->not->toContain((string) $snapshot['website'])
+        ->and($html)->toContain('Example Supplier s.r.o.')
+        ->and($html)->toContain('Sample Street 10')
+        ->and($html)->toContain((string) $snapshot['company_id'])
+        ->and($html)->toContain('Registered in the example register.')
+        ->and($html)->toContain('Dodavatel není plátce DPH.');
+})->with([
+    'invoice' => [InvoiceKind::Invoice],
+    'proforma' => [InvoiceKind::Proforma],
+]);
+
 it('renders the PDF in Roboto without writing into the vendor directory', function (): void {
     $issued = InvoiceFixtures::issued(InvoiceFixtures::client());
     $before = vendorFonts();

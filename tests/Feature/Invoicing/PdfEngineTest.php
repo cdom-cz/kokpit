@@ -120,7 +120,7 @@ describe('the PDF parts', function (): void {
     });
 
     it('builds the party block of a snapshot without a country line for CZ', function (): void {
-        $party = PdfParts::party('Customer', pdfEngineSnapshot(), pdfEngineTranslator(), null, false);
+        $party = PdfParts::party('Customer', pdfEngineSnapshot(), pdfEngineTranslator(), null);
 
         expect($party['label'])->toBe('Customer')
             ->and($party['name'])->toBe('Example Client s.r.o.')
@@ -130,7 +130,7 @@ describe('the PDF parts', function (): void {
     });
 
     it('adds a country line for a foreign party and the VAT id when present', function (): void {
-        $party = PdfParts::party('Customer', pdfEngineSnapshot(['country' => 'SK', 'vat_id' => 'SK0000000000']), pdfEngineTranslator(), null, false);
+        $party = PdfParts::party('Customer', pdfEngineSnapshot(['country' => 'SK', 'vat_id' => 'SK0000000000']), pdfEngineTranslator(), null);
 
         expect($party['lines'])->toBe(['Example Street 1', '110 00 Example City', 'SK'])
             ->and($party['ids'])->toBe([
@@ -139,22 +139,21 @@ describe('the PDF parts', function (): void {
             ]);
     });
 
-    it('prints the contact notes only when asked', function (): void {
-        $without = PdfParts::party('Customer', pdfEngineSnapshot(), pdfEngineTranslator(), null, false);
-        $with = PdfParts::party('Supplier', pdfEngineSnapshot(), pdfEngineTranslator(), 'Not a VAT payer', true);
+    it('prints the registration note and never the contact lines of a snapshot', function (): void {
+        $snapshot = pdfEngineSnapshot();
+        $supplier = PdfParts::party('Supplier', $snapshot, pdfEngineTranslator(), 'Not a VAT payer');
+        $customer = PdfParts::party('Customer', $snapshot, pdfEngineTranslator(), null);
 
-        expect($without['notes'])->toBe(['Registered at the example court'])
-            ->and($with['notes'])->toBe([
-                'Registered at the example court',
-                exampleEmail('billing'),
-                '+420 000 000 000',
-                'https://example.com',
-            ])
-            ->and($with['vatNote'])->toBe('Not a VAT payer');
+        expect($snapshot['email'])->not->toBeNull()
+            ->and($snapshot['phone'])->not->toBeNull()
+            ->and($snapshot['website'])->not->toBeNull()
+            ->and($supplier['notes'])->toBe(['Registered at the example court'])
+            ->and($customer['notes'])->toBe(['Registered at the example court'])
+            ->and($supplier['vatNote'])->toBe('Not a VAT payer');
     });
 
     it('skips the missing parts of a sparse snapshot', function (): void {
-        $party = PdfParts::party('Customer', ['name' => '  Example Sparse  '], pdfEngineTranslator(), null, false);
+        $party = PdfParts::party('Customer', ['name' => '  Example Sparse  '], pdfEngineTranslator(), null);
 
         expect($party['name'])->toBe('Example Sparse')
             ->and($party['lines'])->toBe([])
