@@ -423,6 +423,7 @@ return [
             'cash_receipt_issued' => 'Příjmový doklad vystaven',
             'cash_receipt_edited' => 'Příjmový doklad upraven',
             'cash_receipt_locked' => 'Příjmový doklad uzamčen odesláním',
+            'cash_receipt_locked_manually' => 'Příjmový doklad uzamčen ručně',
             'cash_receipt_unlocked' => 'Příjmový doklad odemčen',
             'cash_receipt_cancelled' => 'Příjmový doklad stornován',
             'api_token' => [

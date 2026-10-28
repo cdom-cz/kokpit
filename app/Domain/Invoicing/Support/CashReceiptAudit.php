@@ -18,6 +18,7 @@ use App\Domain\Shared\Models\Activity;
  * - {@see self::edited()}: the Admin corrected the receipt date, the purpose or a printed party line, with the values
  *   before and after (the printed texts are logged on purpose, like {@see InvoiceAudit::edited()});
  * - {@see self::locked()}: the successful send of the receipt locked it;
+ * - {@see self::lockedManually()}: the Admin locked an open receipt by hand, without a send (Phase 16, D-02);
  * - {@see self::unlocked()}: the Admin opened a locked receipt with a reason;
  * - {@see self::cancelled()}: the Admin cancelled the receipt with a reason; {@see self::cancelReason()} reads it back.
  *
@@ -136,6 +137,23 @@ final readonly class CashReceiptAudit
                 'old' => ['lock_state' => 'open'],
             ])
             ->log('cash_receipt_locked');
+    }
+
+    /**
+     * The Admin locked an open receipt by hand, without a send (Phase 16, D-02). The Admin is the causer; there is no
+     * reason, so the payload is the move from open to locked only.
+     */
+    public static function lockedManually(CashReceipt $receipt, User $actor): void
+    {
+        activity(self::LOG)
+            ->performedOn($receipt)
+            ->causedBy($actor)
+            ->event('cash_receipt_locked_manually')
+            ->withChanges([
+                'attributes' => ['lock_state' => 'locked'],
+                'old' => ['lock_state' => 'open'],
+            ])
+            ->log('cash_receipt_locked_manually');
     }
 
     /**
