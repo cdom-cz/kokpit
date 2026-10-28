@@ -935,6 +935,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261018-rvf | Allow changing a task's status directly in its view, not only in the task detail | 2026-10-18 | 9701c56 | [261018-rvf-allow-changing-a-task-s-status-directly-](./quick/261018-rvf-allow-changing-a-task-s-status-directly-/) |
 | 261022-sgn | Improve global search to match client, project and task names, and project and task codes, with as-you-type suggestions in the current style | 2026-10-22 | 30823f6 | [261022-sgn-improve-global-search-to-match-client-pr](./quick/261022-sgn-improve-global-search-to-match-client-pr/) |
 | 261025-oc2 | Optimize the test suite: prune non-essential tests and shard CI (30m timeout fix) | 2026-10-25 | 96507ce | [261025-oc2-optimize-the-test-suite-keep-only-functi](./quick/261025-oc2-optimize-the-test-suite-keep-only-functi/) |
+| 261028-kr9 | Fix SPAYD message sanitising failing on musl iconv in production | 2026-10-28 | 84cb780 | [261028-kr9-fix-spayd-message-sanitising-failing-on-iconv](./quick/261028-kr9-fix-spayd-message-sanitising-failing-on-iconv/) |
 
 ### Roadmap Evolution
 
