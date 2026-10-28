@@ -16,6 +16,7 @@ use App\Domain\Invoicing\Enums\InvoiceStatus;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Queries\ReceivablesReader;
+use App\Domain\Invoicing\Support\ClientDocumentEmails;
 use App\Domain\Payments\Queries\PaymentLinkStatus;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Database\CzechCollation;
@@ -408,12 +409,15 @@ final class InvoiceTable
 
     /**
      * "Odeslat znovu" (IN-04; D-22; UI-SPEC Surface G): the e-mail dialog for an issued document whose latest send
-     * failed or that was never sent. A document that is queued or sent is not offered it, a draft cannot be sent.
+     * failed or that was never sent. A document that is queued or sent is not offered it, a draft cannot be sent, and
+     * neither can a document of a client whose document e-mails are switched off (Phase 16, D-04): the list eager-loads
+     * the client, so the switch is read without a query per row.
      */
     private static function resendEmailAction(): Action
     {
         return SendInvoiceEmailAction::forListRow()
-            ->visible(static fn (Invoice $record): bool => in_array(self::emailKey($record), ['failed', 'none'], true));
+            ->visible(static fn (Invoice $record): bool => in_array(self::emailKey($record), ['failed', 'none'], true)
+                && ClientDocumentEmails::allows($record->client));
     }
 
     /**
@@ -572,7 +576,8 @@ final class InvoiceTable
                         'sent' => $query->whereRaw(self::LATEST_EMAIL_SQL.' = ?', [InvoiceEmailState::Sent->value]),
                         'queued' => $query->whereRaw(self::LATEST_EMAIL_SQL.' IN (?, ?)', [InvoiceEmailState::Queued->value, InvoiceEmailState::Sending->value]),
                         'failed' => $query->whereRaw(self::LATEST_EMAIL_SQL.' = ?', [InvoiceEmailState::Failed->value]),
-                        'none' => $query->where('invoices.state', InvoiceState::Issued->value)->whereRaw(self::LATEST_EMAIL_SQL.' IS NULL'),
+                        // "Not sent" includes a latest row that was skipped by the client's switch (Phase 16, D-08).
+                        'none' => $query->where('invoices.state', InvoiceState::Issued->value)->whereRaw('('.self::LATEST_EMAIL_SQL.' IS NULL OR '.self::LATEST_EMAIL_SQL.' = ?)', [InvoiceEmailState::Skipped->value]),
                         default => $query,
                     };
                 }),
