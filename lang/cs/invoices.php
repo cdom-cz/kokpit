@@ -96,7 +96,7 @@ return [
 
         // The correction of an open issued document (assumptions A1, A3, A4, A8).
         'not_issued' => 'Koncept se upravuje v editoru konceptu.',
-        'document_locked' => 'Doklad byl odeslán a je uzamčen. Nejprve ho odemkněte.',
+        'document_locked' => 'Doklad je uzamčen. Nejprve ho odemkněte.',
         'email_in_flight' => 'Doklad se právě odesílá e-mailem. Upravit ho půjde po dokončení odeslání.',
         'credited_line_frozen' => 'Položka je dobropisovaná: změnit lze jen její text.',
         'credited_line_delete' => 'Dobropisovanou položku nelze smazat.',
@@ -516,8 +516,8 @@ return [
             'cancelled_paid' => 'Faktura byla stornována, ale platba zůstává zaevidovaná. Vrácení peněz a výdaj zaznamenejte ručně.',
             'credit_exists' => 'K dokladu existuje dobropis :number.',
             'email_disabled' => 'Klient má odesílání dokladů e-mailem vypnuté. Doklad mu předejte jinak a uzamkněte ho ručně.',
-            'open_for_edits' => 'Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.',
-            'locked' => 'Doklad byl odeslán e-mailem a je uzamčen. Upravit ho lze až po odemknutí s uvedením důvodu.',
+            'open_for_edits' => 'Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem nebo ručně uzamčen.',
+            'locked' => 'Doklad je uzamčen (odesláním e-mailem nebo ručně). Upravit ho lze až po odemknutí s uvedením důvodu.',
         ],
         'actions' => [
             'download' => 'Stáhnout PDF',
@@ -541,7 +541,7 @@ return [
         ],
         'unlock' => [
             'heading' => 'Odemknout doklad :number',
-            'description' => 'Doklad už zákazník dostal. Po odemknutí ho můžete upravit; po dalším úspěšném odeslání e-mailem se znovu uzamkne.',
+            'description' => 'Doklad už zákazník dostal. Po odemknutí ho můžete upravit; po dalším úspěšném odeslání e-mailem nebo ručním uzamčení se znovu uzamkne.',
             'reason' => 'Důvod odemknutí',
             'submit' => 'Odemknout',
             'done' => 'Doklad je odemčen',

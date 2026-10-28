@@ -14,6 +14,7 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Models\InvoiceItem;
+use App\Domain\Shared\Models\Activity;
 
 /**
  * The explicit audit rows of an issued document (IN-15; D-13, rulings R-10.1-02-2 and R-10.1-04-8). The lock state and
@@ -31,7 +32,8 @@ use App\Domain\Invoicing\Models\InvoiceItem;
  *   currency, the language, the dates, the printed note, the total, the payment method (`payment_method`), the card
  *   switch (`card_payment`, 1 or 0), the bank fingerprint, the printed customer and supplier lines, every item line and
  *   the number of linked time entries (Phase 14, D-09, ruling R-14-09-3);
- * - {@see self::everSent()}: whether the customer ever received the document, which decides whether an edit is audited;
+ * - {@see self::everSent()}: whether the customer ever received the document, by a successful e-mail or because the
+ *   Admin locked it by hand (Phase 16, owner answer A1), which decides whether an edit is audited;
  * - {@see self::edited()}: an edit after the first send ({@see UpdateIssuedDocument}), with the values before and after.
  *
  * Each writer writes exactly one row (or none), and the payload is a fixed allowlist of keys: no token, no e-mail
@@ -208,14 +210,22 @@ final readonly class InvoiceAudit
     }
 
     /**
-     * Whether a document e-mail of the document was ever sent successfully. A document that was only queued, was
-     * sending or failed never reached the customer, so correcting it is not a change to something the customer holds.
+     * Whether the customer ever received the document: a document e-mail was sent successfully, or the Admin locked
+     * the document by hand ({@see self::lockedManually()}), which says it was handed over another way (Phase 16, owner
+     * answer A1). A document that was only queued, was sending or failed never reached the customer, so correcting it
+     * is not a change to something the customer holds.
      */
     public static function everSent(Invoice $invoice): bool
     {
-        return InvoiceEmail::query()
+        $sent = InvoiceEmail::query()
             ->where('invoice_id', $invoice->id)
             ->where('state', InvoiceEmailState::Sent->value)
+            ->exists();
+
+        return $sent || Activity::query()
+            ->where('subject_type', 'invoice')
+            ->where('subject_id', $invoice->id)
+            ->where('event', 'invoice_locked_manually')
             ->exists();
     }
 
