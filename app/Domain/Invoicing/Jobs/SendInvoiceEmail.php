@@ -151,6 +151,8 @@ final class SendInvoiceEmail extends KokpitJob
      * Re-reads the client's switch "send documents by e-mail" and, when it is off, ends the claimed row `skipped`
      * (Phase 16, D-06, D-07, D-08). The conditional update from sending leaves a row that something else already moved
      * alone. The skip locks nothing, tells no one and never throws. True when the caller must stop.
+     *
+     * @phpstan-impure it reads the database fresh on every call
      */
     private function skippedBySwitch(InvoiceEmail $row): bool
     {

@@ -114,6 +114,7 @@ describe('the lock by hand from the open callout', function (): void {
 
     it('locks the invoice, shows the locked callout with the unlock and writes one row naming the Admin', function (): void {
         $invoice = InvoiceFixtures::issued(handServedDocClient());
+        $this->actingAs($this->admin);
         $before = (array) DB::table('invoices')->where('id', $invoice->id)->first();
 
         handServedDocPage($invoice)
