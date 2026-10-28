@@ -299,6 +299,7 @@ describe('the unlock of a locked receipt (D-10)', function (): void {
 describe('the manual lock of an open receipt (Phase 16, D-02, D-03)', function (): void {
     it('locks an open receipt from the row, audits it once with the Admin, changes nothing else, and then offers the unlock', function (): void {
         [$invoice, $payment, $receipt] = cashReceiptAdminPay();
+        $this->actingAs($this->admin);
         $before = cashReceiptAdminFresh($receipt);
 
         cashReceiptAdminTab($invoice)
