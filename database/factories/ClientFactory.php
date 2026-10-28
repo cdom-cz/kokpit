@@ -36,6 +36,15 @@ class ClientFactory extends Factory
             'payment_terms_days' => 14,
             'invoice_language' => 'cs',
             'online_payment_enabled' => false,
+            'document_emails_enabled' => true,
         ];
+    }
+
+    /**
+     * A client whose documents are handed over by hand: no document e-mail is sent (Phase 16, D-01).
+     */
+    public function withoutDocumentEmails(): static
+    {
+        return $this->state(['document_emails_enabled' => false]);
     }
 }

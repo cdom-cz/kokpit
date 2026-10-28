@@ -162,6 +162,14 @@ describe('clients', function (): void {
         }
     });
 
+    it('stores the document e-mail switch as true when the insert leaves it out and refuses NULL (Phase 16, D-01)', function (): void {
+        $id = insertClientRow();
+
+        expect(DB::table('clients')->where('id', $id)->value('document_emails_enabled'))->toBeTrue();
+
+        RawSql::expectSqlState('23502', fn () => insertClientRow(['document_emails_enabled' => null]));
+    });
+
     it('refuses two clients with the same company number in one country, also when the first is archived', function (): void {
         $number = fictionalCompanyNumber();
 
