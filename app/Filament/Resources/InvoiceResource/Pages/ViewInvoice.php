@@ -113,7 +113,7 @@ final class ViewInvoice extends ViewRecord
      * The lines of the invoice with what each can still be credited, read once per request for the credit dialog. Not
      * persisted by Livewire.
      *
-     * @var array<string, array{description: string, original: InvoiceQuantity, unit: string, left: InvoiceQuantity}>|null
+     * @var array<string, array{description: string, printed: string, left: InvoiceQuantity}>|null
      */
     private ?array $creditRows = null;
 
@@ -468,7 +468,7 @@ final class ViewInvoice extends ViewRecord
                             ->live()
                             ->disabled(fn (Get $get): bool => ! $this->creditRow($get)['left']->isPositive()),
                         Text::make(fn (Get $get): string => $this->creditRow($get)['description']),
-                        Text::make(fn (Get $get): string => $this->creditRow($get)['original']->format('cs').' '.$this->creditRow($get)['unit'])
+                        Text::make(fn (Get $get): string => $this->creditRow($get)['printed'])
                             ->color('gray')
                             ->extraAttributes(['style' => 'text-align: right; font-variant-numeric: tabular-nums;']),
                         TextInput::make('quantity')
@@ -594,7 +594,7 @@ final class ViewInvoice extends ViewRecord
     /**
      * The lines of the invoice in order with what each can still be credited, read once per request.
      *
-     * @return array<string, array{description: string, original: InvoiceQuantity, unit: string, left: InvoiceQuantity}>
+     * @return array<string, array{description: string, printed: string, left: InvoiceQuantity}>
      */
     private function creditRows(): array
     {
@@ -609,8 +609,7 @@ final class ViewInvoice extends ViewRecord
         foreach (InvoiceItem::query()->where('invoice_id', $invoice->id)->orderBy('position')->get() as $item) {
             $rows[$item->id] = [
                 'description' => $item->description,
-                'original' => $item->quantity(),
-                'unit' => $item->unit,
+                'printed' => $item->printedQuantity('cs'),
                 'left' => $left[$item->id] ?? InvoiceQuantity::fromDecimal('0'),
             ];
         }
@@ -622,7 +621,7 @@ final class ViewInvoice extends ViewRecord
      * The row a form component sits in, found by the id of the invoice line its repeater item carries. An id that is
      * no line of this invoice (a forged state) has nothing creditable.
      *
-     * @return array{description: string, original: InvoiceQuantity, unit: string, left: InvoiceQuantity}
+     * @return array{description: string, printed: string, left: InvoiceQuantity}
      */
     private function creditRow(Get $get): array
     {
@@ -630,8 +629,7 @@ final class ViewInvoice extends ViewRecord
 
         return (is_string($key) ? $this->creditRows()[$key] ?? null : null) ?? [
             'description' => '',
-            'original' => InvoiceQuantity::fromDecimal('0'),
-            'unit' => '',
+            'printed' => '',
             'left' => InvoiceQuantity::fromDecimal('0'),
         ];
     }
@@ -1227,7 +1225,7 @@ final class ViewInvoice extends ViewRecord
             $lines[] = [
                 'index' => (string) ($position + 1),
                 'description' => $item->description,
-                'quantity' => InvoiceQuantity::fromDecimal($item->quantity)->format('cs').' '.$item->unit,
+                'quantity' => $item->printedQuantity('cs'),
                 'unit_price' => Money::ofMinor($item->unit_price_minor, $invoice->currency)->format('cs'),
                 'line_total' => Money::ofMinor($item->line_total_minor, $invoice->currency)->format('cs'),
             ];

@@ -23,7 +23,8 @@ use OverflowException;
  * - description: 1 to 500 characters after trimming;
  * - quantity: at most four decimals, never zero; positive on an invoice or a proforma, negative on a credit note,
  *   whose lines take the quantity back (D-14);
- * - unit: 1 to 16 characters after trimming;
+ * - unit: optional; blank or absent means no unit (null, never an empty string), a given unit is trimmed and at most
+ *   16 characters;
  * - unit price: a non-negative amount with no more decimals than the currency has; zero only with
  *   `confirm_zero_price` true.
  *
@@ -39,7 +40,7 @@ final readonly class InvoiceItemInput
         public ?string $id,
         public string $description,
         public InvoiceQuantity $quantity,
-        public string $unit,
+        public ?string $unit,
         public Money $unitPrice,
     ) {}
 
@@ -88,6 +89,7 @@ final readonly class InvoiceItemInput
     {
         $description = self::description($line['description'] ?? null);
         $unit = self::unit($line['unit'] ?? null);
+        $unitValid = self::unitValid($line['unit'] ?? null);
         $quantity = self::quantity($line['quantity'] ?? null, $kind);
         $price = self::price($line['unit_price'] ?? null, $currency, self::flag($line['confirm_zero_price'] ?? null));
 
@@ -95,7 +97,7 @@ final readonly class InvoiceItemInput
             $problems['description'] = self::message('item_description');
         }
 
-        if ($unit === null) {
+        if (! $unitValid) {
             $problems['unit'] = self::message('item_unit');
         }
 
@@ -107,7 +109,7 @@ final readonly class InvoiceItemInput
             $problems['unit_price'] = self::priceProblem($line['unit_price'] ?? null, $currency, self::flag($line['confirm_zero_price'] ?? null));
         }
 
-        if ($problems !== [] || $description === null || $unit === null || ! $quantity instanceof InvoiceQuantity || ! $price instanceof Money) {
+        if ($problems !== [] || $description === null || ! $quantity instanceof InvoiceQuantity || ! $price instanceof Money) {
             return null;
         }
 
@@ -123,11 +125,32 @@ final readonly class InvoiceItemInput
         return $text !== '' && mb_strlen($text) <= self::DESCRIPTION_MAX_LENGTH ? $text : null;
     }
 
+    /**
+     * The trimmed unit, or null for no unit (absent, null or blank); also null for an invalid value, which
+     * {@see self::unitValid()} tells apart.
+     */
     private static function unit(mixed $value): ?string
     {
-        $text = is_string($value) ? trim($value) : '';
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $text = trim($value);
 
         return $text !== '' && mb_strlen($text) <= self::UNIT_MAX_LENGTH ? $text : null;
+    }
+
+    /**
+     * Whether the unit is acceptable: absent, null or blank (no unit), or a text of at most 16 characters after
+     * trimming. Anything else (a longer text, a number, an array) is refused.
+     */
+    private static function unitValid(mixed $value): bool
+    {
+        if ($value === null) {
+            return true;
+        }
+
+        return is_string($value) && mb_strlen(trim($value)) <= self::UNIT_MAX_LENGTH;
     }
 
     private static function quantity(mixed $value, InvoiceKind $kind): ?InvoiceQuantity

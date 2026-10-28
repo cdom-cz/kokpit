@@ -403,7 +403,14 @@ describe('the lines', function (): void {
         'position zero' => [['position' => 0]],
         'blank description' => [['description' => '   ']],
         'blank unit' => [['unit' => '']],
+        'whitespace unit' => [['unit' => '   ']],
     ]);
+
+    it('allows a line without a unit', function (): void {
+        $invoiceId = invoiceTablesInsert();
+
+        RawSql::expectAllowed(fn () => invoiceTablesInsertItem($invoiceId, ['position' => invoiceTablesPosition(), 'unit' => null]));
+    });
 
     it('refuses a second line on the same position of one document', function (): void {
         $invoiceId = invoiceTablesInsert();

@@ -202,7 +202,7 @@ it('refuses bad lines as field errors in Czech and stores nothing', function ():
         InvoiceFixtures::item(str_repeat('a', 501), '1', '10'),
         InvoiceFixtures::item('Zero quantity', '0', '10'),
         InvoiceFixtures::item('Long quantity', '1,23456', '10'),
-        InvoiceFixtures::item('No unit', '1', '10', ''),
+        InvoiceFixtures::item('Long unit', '1', '10', str_repeat('u', 17)),
         InvoiceFixtures::item('Three decimals', '1', '10,123'),
         InvoiceFixtures::item('Negative price', '1', '-5'),
         InvoiceFixtures::item('Not a number', 'abc', 'x'),
@@ -213,7 +213,7 @@ it('refuses bad lines as field errors in Czech and stores nothing', function ():
         'items.1.description' => ['Zadejte popis položky (nejvýše 500 znaků).'],
         'items.2.quantity' => ['Zadejte množství větší než nula s nejvýše čtyřmi desetinnými místy.'],
         'items.3.quantity' => ['Zadejte množství větší než nula s nejvýše čtyřmi desetinnými místy.'],
-        'items.4.unit' => ['Zadejte jednotku (nejvýše 16 znaků).'],
+        'items.4.unit' => ['Jednotka může mít nejvýše 16 znaků.'],
         'items.5.unit_price' => ['Zadejte jednotkovou cenu v měně dokladu.'],
         'items.6.unit_price' => ['Zadejte jednotkovou cenu v měně dokladu.'],
         'items.7.quantity' => ['Zadejte množství větší než nula s nejvýše čtyřmi desetinnými místy.'],
@@ -222,6 +222,28 @@ it('refuses bad lines as field errors in Czech and stores nothing', function ():
         ->and(draftLines($draft))->toBe([])
         ->and($draft->refresh()->total_minor)->toBe(0);
 });
+
+it('saves a line without a unit as NULL on an invoice and on a proforma', function (InvoiceKind $kind): void {
+    $admin = Canary::admin();
+    $draft = draftCreate($admin, InvoiceFixtures::client(['currency' => 'CZK']), ['kind' => $kind->value]);
+
+    $saved = draftSave($admin, $draft, ['items' => [
+        InvoiceFixtures::item('Example blank unit', '1', '10', ''),
+        InvoiceFixtures::item('Example whitespace unit', '1', '20', '   '),
+        [...InvoiceFixtures::item('Example null unit', '1', '30'), 'unit' => null],
+        ['description' => 'Example missing unit', 'quantity' => '1', 'unit_price' => '40'],
+        InvoiceFixtures::item('Example trimmed unit', '1', '50', ' h '),
+    ]]);
+
+    $lines = draftLines($saved);
+
+    expect($lines)->toHaveCount(5)
+        ->and(array_map(static fn (InvoiceItem $line): ?string => $line->unit, $lines))->toBe([null, null, null, null, 'h'])
+        ->and($saved->total_minor)->toBe(15000);
+})->with([
+    'invoice' => [InvoiceKind::Invoice],
+    'proforma' => [InvoiceKind::Proforma],
+]);
 
 it('needs the explicit confirmation for a zero unit price', function (): void {
     $admin = Canary::admin();

@@ -6,8 +6,8 @@ namespace App\Domain\Invoicing\Pdf;
 
 use App\Domain\Settings\Banking\Iban;
 use App\Domain\Shared\Money\Money;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
-use Normalizer;
 
 /**
  * The payload of a Czech payment QR code (SPAYD 1.0, qr-platba.cz): a header and
@@ -97,12 +97,8 @@ final class Spayd
      */
     public static function sanitiseMessage(string $message): string
     {
-        // Strip combining marks first: glibc iconv answers "?" for a diacritic under the C locale.
-        $decomposed = class_exists(Normalizer::class) ? Normalizer::normalize($message, Normalizer::FORM_KD) : false;
-        $stripped = preg_replace('/\p{M}+/u', '', $decomposed === false ? $message : $decomposed);
-
-        $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $stripped ?? '');
-        $upper = strtoupper($ascii === false ? '' : $ascii);
+        // No iconv //TRANSLIT: musl (Alpine) rejects the suffix and glibc answers "?" under the C locale.
+        $upper = strtoupper(Str::ascii($message));
 
         $safe = preg_replace('/[^A-Z0-9 $%+\-.\/:]+/', ' ', $upper) ?? '';
         $collapsed = trim((string) preg_replace('/ {2,}/', ' ', $safe));

@@ -10,7 +10,6 @@ use App\Domain\Invoicing\Enums\InvoiceStatus;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
 use App\Domain\Invoicing\Queries\ReceivablesReader;
-use App\Domain\Invoicing\Support\InvoiceQuantity;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Partner\Resources\PartnerInvoiceResource;
@@ -468,7 +467,7 @@ final class InvoiceColumns
         foreach ($invoice->items as $item) {
             $lines[] = [
                 'description' => $item->description,
-                'quantity' => InvoiceQuantity::fromDecimal($item->quantity)->format('cs').' '.$item->unit,
+                'quantity' => $item->printedQuantity('cs'),
                 'unit_price' => Money::ofMinor($item->unit_price_minor, $invoice->currency)->format('cs'),
                 'line_total' => Money::ofMinor($item->line_total_minor, $invoice->currency)->format('cs'),
             ];
