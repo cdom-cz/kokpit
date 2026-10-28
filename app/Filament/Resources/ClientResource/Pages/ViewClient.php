@@ -20,6 +20,9 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -40,6 +43,28 @@ final class ViewClient extends ViewRecord
         abort_unless(ClientResource::canAccess(), 403);
 
         parent::mount($record);
+    }
+
+    /**
+     * The client name, with a warning badge when the client's documents are not e-mailed (Phase 16, D-05).
+     * With the switch on the heading is the usual one.
+     */
+    public function getHeading(): string|Htmlable|null
+    {
+        $heading = parent::getHeading();
+
+        if ($this->clientRecord()->document_emails_enabled) {
+            return $heading;
+        }
+
+        $text = $heading instanceof Htmlable ? $heading->toHtml() : e((string) $heading);
+
+        $badge = Blade::render(
+            '<x-filament::badge color="warning" style="vertical-align: middle;">{{ $label }}</x-filament::badge>',
+            ['label' => __('kokpit.clients.badges.document_emails_off')],
+        );
+
+        return new HtmlString($text.' '.$badge);
     }
 
     /**

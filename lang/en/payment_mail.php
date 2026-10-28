@@ -22,5 +22,8 @@ return [
     // A partial payment: what is still owed.
     'remaining' => 'The remaining amount is :remaining.',
 
+    // A cash payment: the receipt is the attachment (Phase 15, D-12).
+    'receipt_attached' => 'The cash receipt no. :number is attached.',
+
     'thanks' => 'Thank you.',
 ];

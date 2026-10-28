@@ -14,6 +14,7 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Invoicing\Notifications\InvoiceEmailFailedNotification;
 use App\Domain\Invoicing\Pdf\InvoicePdf;
+use App\Domain\Invoicing\Support\ClientDocumentEmails;
 use App\Domain\Invoicing\Support\InvoiceAudit;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
@@ -59,18 +60,25 @@ use Throwable;
  * pay-link block of the text part both follow the stored body at send time, from one call of {@see PayLinkBlock::forHtml()}
  * (D-03; Phase 13 D-01); the log row keeps the confirmed text only.
  *
- * The successful send of a document e-mail is the only lock of the system (IN-11; D-01, D-02): the sent mark and the
+ * The successful send of a document e-mail is the only lock of an invoice or proforma (IN-11; D-01, D-02): the sent mark and the
  * lock of an issued invoice or proforma are written in one transaction that locks the invoice row first, the order of
  * every edit of the document (invoice, then children). A queued, sending or failed row, a payment, a credit note and
  * a storno lock nothing, and a document that is locked already is left exactly as it is, because a locked row refuses
  * even a timestamp-only write. No other e-mail kind may call this step: a later payment confirmation must never lock
- * the invoice it confirms.
+ * the invoice it confirms. The payment confirmation locks only the cash receipt it carries, a different row (Phase 15,
+ * D-12).
  *
  * The work report reads the supplier and client lines live, not from the snapshot of the document (R-24-4): the
  * figures in it are hours, and a changed address in the header is an accepted drift of an attachment that carries no
  * legal weight.
+ *
+ * The per-client switch "send documents by e-mail" (Phase 16, D-06, D-07) is read fresh twice: once right after the
+ * claim and once as the last statement before the transport call, so a switch turned off while the PDF and the work
+ * report were being read still stops the send. A row whose client is switched off at either read ends `skipped`:
+ * unsent, unlocked, with no failure code and no bell. The skip never throws (a throw would re-queue the row) and
+ * switching the client back on revives nothing.
  */
-#[Idempotent(how: 'identified by the e-mail row id; the row is claimed by a conditional update from queued to sending, so a row that is sending, sent or failed is skipped, and a rerun of a finished row sends nothing')]
+#[Idempotent(how: 'identified by the e-mail row id; the row is claimed by a conditional update from queued to sending, so a row that is sending, sent, failed or skipped is left alone; a claimed row of a client whose document e-mails are switched off ends skipped without a send; a rerun of a finished row sends nothing')]
 #[Timeout(120)]
 final class SendInvoiceEmail extends KokpitJob
 {
@@ -101,6 +109,10 @@ final class SendInvoiceEmail extends KokpitJob
         $row = InvoiceEmail::query()->findOrFail($this->emailId);
 
         try {
+            if ($this->skippedBySwitch($row)) {
+                return;
+            }
+
             $files = $this->files($row);
 
             if ($files === null) {
@@ -113,6 +125,10 @@ final class SendInvoiceEmail extends KokpitJob
 
             // One predicate for both parts: the button of the HTML part and the block of the text part come from this call.
             $link = PayLinkBlock::forHtml($invoice);
+
+            if ($this->skippedBySwitch($row)) {
+                return;
+            }
 
             Mail::to($row->recipient)->send(new InvoiceMail($row->subject, $row->body, $link, $files, $invoice->language->value));
 
@@ -132,12 +148,35 @@ final class SendInvoiceEmail extends KokpitJob
     }
 
     /**
+     * Re-reads the client's switch "send documents by e-mail" and, when it is off, ends the claimed row `skipped`
+     * (Phase 16, D-06, D-07, D-08). The conditional update from sending leaves a row that something else already moved
+     * alone. The skip locks nothing, tells no one and never throws. True when the caller must stop.
+     *
+     * @phpstan-impure it reads the database fresh on every call
+     */
+    private function skippedBySwitch(InvoiceEmail $row): bool
+    {
+        if (ClientDocumentEmails::enabledForInvoice($row->invoice_id)) {
+            return false;
+        }
+
+        InvoiceEmail::query()
+            ->whereKey($row->id)
+            ->where('state', InvoiceEmailState::Sending->value)
+            ->update(['state' => InvoiceEmailState::Skipped->value, 'updated_at' => now()]);
+
+        return true;
+    }
+
+    /**
      * Claims the row for this run, in one transaction that locks the invoice row first (the order of every writer:
      * invoice, then children; the edit holds the same lock while it asks whether an e-mail is in flight). A queued row
      * is taken only while its last move is younger than the stale threshold ({@see InvoiceEmail::staleBefore()}).
      * An older queued row is one the screens already read as failed and the Admin may have edited or resent the
      * document since, so it is given up here as failed with the class `stale` and the Admins are told once (D-10);
-     * it is never sent late. A row that is sending, sent, failed or gone is left alone. True when the row was claimed.
+     * it is never sent late. When the client's document e-mails are switched off, such a stale row ends `skipped`
+     * instead, with no failure code and no bell (Phase 16, D-07, D-08). A row that is sending, sent, failed, skipped or
+     * gone is left alone. True when the row was claimed.
      */
     private function claim(): bool
     {
@@ -148,7 +187,7 @@ final class SendInvoiceEmail extends KokpitJob
                 return false;
             }
 
-            Invoice::query()->whereKey($invoiceId)->lockForUpdate()->value('id');
+            $clientId = Invoice::query()->whereKey($invoiceId)->lockForUpdate()->value('client_id');
 
             $cutoff = InvoiceEmail::staleBefore();
 
@@ -164,6 +203,20 @@ final class SendInvoiceEmail extends KokpitJob
 
             if ($claimed === 1) {
                 return true;
+            }
+
+            // A stale row of a client whose switch is off was never going to be sent: skipped, not failed, no bell.
+            if (is_string($clientId) && ! ClientDocumentEmails::enabledFor($clientId)) {
+                InvoiceEmail::query()
+                    ->whereKey($this->emailId)
+                    ->where('state', InvoiceEmailState::Queued->value)
+                    ->where('updated_at', '<=', $cutoff)
+                    ->update([
+                        'state' => InvoiceEmailState::Skipped->value,
+                        'updated_at' => now(),
+                    ]);
+
+                return false;
             }
 
             $gaveUp = InvoiceEmail::query()

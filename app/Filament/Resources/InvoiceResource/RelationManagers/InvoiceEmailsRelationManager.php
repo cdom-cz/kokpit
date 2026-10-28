@@ -7,6 +7,7 @@ namespace App\Filament\Resources\InvoiceResource\RelationManagers;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
+use App\Domain\Invoicing\Support\ClientDocumentEmails;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Concerns\EnforcesRelationManagerAccessRule;
@@ -29,7 +30,9 @@ use Livewire\Attributes\On;
  * even select it. A row still `queued` or `sending` after the stale threshold of the System page belongs to a lost job
  * or a worker that died and reads as failed (ruling R-37-1, queued rows by plan 10.1-15), so the Admin can send again;
  * the job never sends such a row. "Odeslat znovu" is offered on failed rows only and opens
- * the shared dialog pre-filled with the values of that row; the send is a new row.
+ * the shared dialog pre-filled with the values of that row; the send is a new row. A client whose document e-mails are
+ * switched off gets no resend here (Phase 16, D-04), and a row the switch kept back (`skipped`) shows a gray badge and
+ * is never offered a resend: it was not sent and did not fail.
  */
 #[AccessRule(Audience::AdminOnly, reason: 'The send log holds recipients and bodies of e-mails with documents: a Partner never sees it, not even for the own invoice (IN-09).')]
 final class InvoiceEmailsRelationManager extends RelationManager
@@ -93,6 +96,7 @@ final class InvoiceEmailsRelationManager extends RelationManager
                         InvoiceEmailState::Sent => 'success',
                         InvoiceEmailState::Failed => 'danger',
                         InvoiceEmailState::Queued, InvoiceEmailState::Sending => 'info',
+                        InvoiceEmailState::Skipped => 'gray',
                     }),
                 TextColumn::make('note')
                     ->label(__('invoices.email.log.columns.note'))
@@ -105,7 +109,8 @@ final class InvoiceEmailsRelationManager extends RelationManager
             ->paginated(false)
             ->recordActions([
                 SendInvoiceEmailAction::forLogRow(fn (): Invoice => $this->invoice())
-                    ->visible(fn (InvoiceEmail $record): bool => $this->effectiveState($record) === InvoiceEmailState::Failed),
+                    ->visible(fn (InvoiceEmail $record): bool => $this->effectiveState($record) === InvoiceEmailState::Failed
+                        && ClientDocumentEmails::enabledFor((string) $this->invoice()->client_id)),
             ])
             ->emptyStateIcon(Heroicon::OutlinedEnvelope)
             ->emptyStateHeading(__('invoices.email.log.empty'));

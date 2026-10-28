@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Invoicing\Enums\InvoiceEmailState;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
@@ -221,4 +222,60 @@ it('never shows a recipient, a subject, an amount or a failure code in any grade
             ->and($text)->not->toContain('transport')
             ->and($text)->not->toContain('1000');
     }
+});
+
+describe('the per-client switch (Phase 16)', function (): void {
+    /**
+     * An issued document of a new client with the document e-mail switch set as given.
+     */
+    function unsentInvoiceOf(bool $enabled): Invoice
+    {
+        return InvoiceFixtures::issued(InvoiceFixtures::client(['document_emails_enabled' => $enabled]));
+    }
+
+    it('stays Ok for a latest skipped row, which is neither failed nor waiting', function (): void {
+        unsentLogged(unsentInvoice(), InvoiceEmailState::Skipped, 120);
+
+        $result = (new UnsentInvoiceEmailsIndicator)->check();
+
+        expect($result->status)->toBe(HealthStatus::Ok)
+            ->and($result->value)->toBe('0');
+    });
+
+    it('ignores a failed latest row of a client switched off, and counts the same row of an enabled client', function (): void {
+        unsentLogged(unsentInvoiceOf(false), InvoiceEmailState::Failed, 5);
+
+        expect((new UnsentInvoiceEmailsIndicator)->check()->status)->toBe(HealthStatus::Ok);
+
+        unsentLogged(unsentInvoiceOf(true), InvoiceEmailState::Failed, 5);
+
+        $result = (new UnsentInvoiceEmailsIndicator)->check();
+
+        expect($result->status)->toBe(HealthStatus::Error)
+            ->and($result->value)->toBe('1');
+    });
+
+    it('ignores a queued row past the warning threshold of a client switched off, and warns for an enabled one', function (): void {
+        unsentLogged(unsentInvoiceOf(false), InvoiceEmailState::Queued, 20);
+
+        expect((new UnsentInvoiceEmailsIndicator)->check()->status)->toBe(HealthStatus::Ok);
+
+        unsentLogged(unsentInvoiceOf(true), InvoiceEmailState::Queued, 20);
+
+        $result = (new UnsentInvoiceEmailsIndicator)->check();
+
+        expect($result->status)->toBe(HealthStatus::Warning)
+            ->and($result->value)->toBe('1');
+    });
+
+    it('still counts a failed latest row of an archived client whose switch is on', function (): void {
+        $invoice = unsentInvoiceOf(true);
+        unsentLogged($invoice, InvoiceEmailState::Failed, 5);
+        app(PartnerContext::class)->runAsSystem(static fn (): mixed => Client::query()->whereKey($invoice->client_id)->first()?->delete());
+
+        $result = (new UnsentInvoiceEmailsIndicator)->check();
+
+        expect($result->status)->toBe(HealthStatus::Error)
+            ->and($result->value)->toBe('1');
+    });
 });

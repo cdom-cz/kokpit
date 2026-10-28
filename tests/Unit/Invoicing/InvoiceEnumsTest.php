@@ -125,6 +125,7 @@ it('labels the e-mail states, with the claim state of the sending job', function
         ->and(InvoiceEmailState::Sending->getLabel())->toBe('Odesílá se')
         ->and(InvoiceEmailState::Sent->getLabel())->toBe('Odesláno')
         ->and(InvoiceEmailState::Failed->getLabel())->toBe('Odeslání selhalo')
+        ->and(InvoiceEmailState::Skipped->getLabel())->toBe('Neodesláno (vypnuto u klienta)')
         ->and(array_map(fn (InvoiceEmailState $state): string => $state->value, InvoiceEmailState::cases()))
-        ->toBe(['queued', 'sending', 'sent', 'failed']);
+        ->toBe(['queued', 'sending', 'sent', 'failed', 'skipped']);
 });

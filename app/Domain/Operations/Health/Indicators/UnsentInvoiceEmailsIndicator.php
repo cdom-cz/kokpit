@@ -24,6 +24,12 @@ use Carbon\CarbonImmutable;
  * A row that waits, queued or sending, for longer than kokpit.health.unsent_invoice_email_warning_after turns the slot
  * Warning; a failure outranks a wait, and the value is the count of the grade shown.
  *
+ * A latest row in `skipped` (the client's switch "send documents by e-mail" kept it back, Phase 16, D-08) is neither
+ * failed nor waiting, so it matches neither count and the slot stays Ok. The documents of clients with the switch off
+ * are left out altogether: a failed or waiting send from before the switch was turned off could never be cleared by
+ * a resend, because the resend is not offered to such a client (owner answer A3). An archived client with the switch
+ * on still counts.
+ *
  * The indicator reads states and timestamps only. It never selects a recipient, a subject, a body or a failure
  * code, so none of them can reach the System page (T-10-89); the detail is fixed Czech copy with a count.
  */
@@ -31,6 +37,9 @@ final readonly class UnsentInvoiceEmailsIndicator implements HealthIndicator
 {
     /** The latest row of each document: no later row of the same invoice exists (created_at, then id as the tie-break). */
     private const string LATEST_ROW_SQL = 'NOT EXISTS (SELECT 1 FROM invoice_emails AS later WHERE later.invoice_id = invoice_emails.invoice_id AND (later.created_at, later.id) > (invoice_emails.created_at, invoice_emails.id))';
+
+    /** Leaves out the documents of clients whose document e-mails are switched off (Phase 16, owner answer A3). */
+    private const string HAND_SERVED_SQL = 'NOT EXISTS (SELECT 1 FROM invoices AS doc JOIN clients AS doc_client ON doc_client.id = doc.client_id WHERE doc.id = invoice_emails.invoice_id AND doc_client.document_emails_enabled = false)';
 
     public function slot(): HealthSlot
     {
@@ -52,6 +61,7 @@ final readonly class UnsentInvoiceEmailsIndicator implements HealthIndicator
         $counts = app(PartnerContext::class)->runAsSystem(
             static fn (): object => (object) InvoiceEmail::query()
                 ->whereRaw(self::LATEST_ROW_SQL)
+                ->whereRaw(self::HAND_SERVED_SQL)
                 ->selectRaw(
                     'COUNT(*) FILTER (WHERE state = ? OR (state = ? AND updated_at <= ?)) AS failed, '
                     .'COUNT(*) FILTER (WHERE state IN (?, ?) AND updated_at <= ? AND NOT (state = ? AND updated_at <= ?)) AS waiting',

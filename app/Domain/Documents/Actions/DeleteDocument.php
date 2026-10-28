@@ -46,6 +46,10 @@ use Throwable;
  * that column is `ON DELETE SET NULL`, so the row delete clears the Admin-only link itself and the issued `invoices`
  * row takes no write (D-13, plan 10-04 R-04-6). Any other file an Admin uploaded to an invoice deletes as usual.
  *
+ * The stored PDF of a cash receipt (a file owned by a `cash_receipt`) is evidence and is refused the same way, in any
+ * lock state of the receipt, unless the flag is set (Phase 15, D-08, D-11): only the sanctioned replace of the receipt,
+ * `StoreCashReceiptPdf`, passes it.
+ *
  * The after-commit callback may run outside the system context, so it queries no model: it works on the media
  * instances read inside the transaction and on the disk only, and it never throws.
  */
@@ -66,6 +70,10 @@ final class DeleteDocument
         $this->context->runAsSystem(function () use ($document, $confirmedIssuedPdf): void {
             DB::transaction(function () use ($document, $confirmedIssuedPdf): void {
                 $locked = Document::query()->whereKey($document->getKey())->lockForUpdate()->firstOrFail();
+
+                if (! $confirmedIssuedPdf && $locked->owner_type === DocumentOwnerType::CashReceipt->value) {
+                    throw new DomainException(__('cash_receipts.errors.pdf_protected'));
+                }
 
                 if (! $confirmedIssuedPdf && $this->isLockedIssuedPdf($locked)) {
                     throw new DomainException(__('invoices.errors.pdf_unconfirmed'));

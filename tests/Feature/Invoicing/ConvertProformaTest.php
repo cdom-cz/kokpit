@@ -462,6 +462,45 @@ describe('the payment method of the converted invoice (Phase 14)', function (): 
     });
 });
 
+describe('the payment method of the converted invoice (Phase 15)', function (): void {
+    it('turns a cash proforma paid in full into a cash invoice with no bank snapshot, no account, the card switch off and no token', function (): void {
+        Queue::fake();
+        CardPaymentSetup::enable();
+        $client = CardPaymentSetup::client();
+
+        $proforma = convertPaymentProforma($client, DocumentPaymentMethod::Cash);
+        convertPay($proforma, '3900', '2026-10-04');
+
+        $invoice = app(ConvertProforma::class)->handle($this->admin, $proforma);
+        $row = convertAdminRow($invoice);
+
+        expect($proforma->payment_method)->toBe(DocumentPaymentMethod::Cash)
+            ->and($proforma->bank_snapshot)->toBeNull()
+            ->and($invoice->kind)->toBe(InvoiceKind::Invoice)
+            ->and($invoice->payment_method)->toBe(DocumentPaymentMethod::Cash)
+            ->and($invoice->bank_snapshot)->toBeNull()
+            ->and($row->card_payment_enabled)->toBeFalse()
+            ->and($row->pay_token)->toBeNull()
+            ->and($row->bank_account_id)->toBeNull()
+            ->and(convertSystem(static fn (): int => PaymentLink::query()->where('invoice_id', $invoice->id)->count()))->toBe(0);
+    });
+
+    it('still turns a transfer proforma into a transfer invoice with its bank snapshot', function (): void {
+        Queue::fake();
+        CardPaymentSetup::enable();
+
+        $proforma = convertPaymentProforma(CardPaymentSetup::client(), DocumentPaymentMethod::Transfer);
+        convertPay($proforma, '3900', '2026-10-04');
+
+        $invoice = app(ConvertProforma::class)->handle($this->admin, $proforma);
+
+        expect($invoice->payment_method)->toBe(DocumentPaymentMethod::Transfer)
+            ->and($invoice->bank_snapshot)->toEqual($proforma->bank_snapshot)
+            ->and($invoice->bank_snapshot)->not->toBeNull()
+            ->and(convertAdminRow($invoice)->card_payment_enabled)->toBeFalse();
+    });
+});
+
 describe('the payment method of the converted invoice (Phase 14): edges', function (): void {
     it('turns a transfer proforma with the second CZK account into a transfer invoice with that account and no card switch', function (): void {
         Queue::fake();

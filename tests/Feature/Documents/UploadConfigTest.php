@@ -108,13 +108,12 @@ it('changes nothing else of the published Livewire config', function (): void {
     expect($strip($published))->toBe($strip($vendor));
 });
 
-it('keeps DDEV uploads on the local disk while the suite pins the bucket', function (): void {
+it('keeps DDEV uploads on the bucket like production, with the suite pinning it too', function (): void {
     $env = (string) file_get_contents(base_path('.env.example'));
     $phpunit = (string) file_get_contents(base_path('phpunit.xml'));
 
-    // DDEV only: the RustFS endpoint resolves inside the DDEV network, so the browser cannot upload to it.
-    expect(preg_match('/^LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK=(.*)$/m', $env, $example))->toBe(1)
-        ->and($example[1])->toBe('local')
+    // DDEV reaches the bucket from the browser (S3_TEMPORARY_URL), so .env.example does not override the disk.
+    expect(preg_match('/^LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK=/m', $env))->toBe(0)
         // phpunit.xml wins over a developer's .env, so the suite always runs the production setting.
         ->and(preg_match('/<env name="LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK" value="([^"]*)"\/>/', $phpunit, $pinned))->toBe(1)
         ->and($pinned[1])->toBe('s3');

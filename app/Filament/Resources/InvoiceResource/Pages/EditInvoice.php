@@ -413,8 +413,8 @@ final class EditInvoice extends EditRecord
      */
     private function cardPaymentAtIssue(): bool
     {
-        // An online document always offers card payment (D-03); the switch it stores is forced on.
-        return app(CardPaymentSwitch::class)->effective($this->invoice()->kind, $this->storedMethod() === DocumentPaymentMethod::Online || $this->storedCardPayment());
+        // An online document always offers card payment (D-03); the switch it stores is forced on. A cash document stores it off.
+        return app(CardPaymentSwitch::class)->effective($this->invoice()->kind, $this->storedMethod()->forcesCardPayment() || $this->storedCardPayment());
     }
 
     /**
@@ -620,7 +620,7 @@ final class EditInvoice extends EditRecord
             // forced on for it (D-03). A draft shows a switch that cannot be edited now as off; an issued document shows
             // the value it stores (R-14-10-1).
             'card_payment_enabled' => match (true) {
-                $this->storedMethod() === DocumentPaymentMethod::Online && $invoice->kind->carriesPayment() => true,
+                $this->storedMethod()->forcesCardPayment() && $invoice->kind->carriesPayment() => true,
                 $this->issuedMode() => $this->storedCardPayment(),
                 default => app(CardPaymentSwitch::class)->available() && $this->storedCardPayment(),
             },
@@ -950,6 +950,19 @@ final class EditInvoice extends EditRecord
     }
 
     /**
+     * The helper of the card switch for the method in the form: online forces it on, cash locks it off (Phase 15 D-03),
+     * transfer shows the standing note or the reason the switch is disabled.
+     */
+    private function cardPaymentStateHelper(DocumentPaymentMethod $method): string
+    {
+        return match (true) {
+            $method->forcesCardPayment() => (string) __('invoices.draft.helpers.card_payment_online'),
+            ! $method->allowsCardChoice() => (string) __('invoices.draft.helpers.card_payment_cash'),
+            default => $this->cardPaymentHelper(),
+        };
+    }
+
+    /**
      * The helper of the method: the standing note, or why the online option cannot be chosen (D-03, P14-09).
      */
     private function paymentMethodHelper(): string
@@ -971,9 +984,18 @@ final class EditInvoice extends EditRecord
         return $this->storedMethod() === DocumentPaymentMethod::Online ? null : DocumentPayment::onlineUnavailableReason($this->invoice());
     }
 
-    private function isOnline(mixed $method): bool
+    /**
+     * The method of a form state: the enum, or the enum of its string value; transfer for anything else (a credit note
+     * has no method field, and an empty state shows the default). The editor asks the predicates of the enum about it
+     * instead of comparing methods (Phase 15).
+     */
+    private function methodOf(mixed $state): DocumentPaymentMethod
     {
-        return $method === DocumentPaymentMethod::Online->value || $method === DocumentPaymentMethod::Online;
+        if ($state instanceof DocumentPaymentMethod) {
+            return $state;
+        }
+
+        return (is_string($state) ? DocumentPaymentMethod::tryFrom($state) : null) ?? DocumentPaymentMethod::Transfer;
     }
 
     /**
@@ -999,7 +1021,8 @@ final class EditInvoice extends EditRecord
 
     /**
      * The account the document will print, chosen by hand from every configured account whatever its currency (D-05,
-     * D-06). Hidden for an online document, so an online save sends none and the Action keeps the stored one.
+     * D-06). Hidden for a document that prints no bank details (online, cash), so such a save sends none and the Action
+     * keeps the stored one (Phase 15 D-05).
      */
     private function bankAccountField(): Select
     {
@@ -1012,7 +1035,7 @@ final class EditInvoice extends EditRecord
             ->helperText(fn (Get $get): ?string => $this->accountHintShown($get) ? null : (string) __('invoices.draft.helpers.bank_account'))
             ->hint(fn (Get $get): ?Htmlable => $this->accountHintShown($get) ? $this->bankAccountMissingHint() : null)
             ->hintColor('danger')
-            ->visible(fn (Get $get): bool => $this->invoice()->kind->carriesPayment() && ! $this->isOnline($get('payment_method')));
+            ->visible(fn (Get $get): bool => $this->invoice()->kind->carriesPayment() && $this->methodOf($get('payment_method'))->printsBankDetails());
     }
 
     /**
@@ -1068,18 +1091,27 @@ final class EditInvoice extends EditRecord
     }
 
     /**
-     * The method changed in the form (OA-1, D-03): online turns the switch on; back to transfer sets it to the client
-     * flag (when card payment is available) and fills an empty account with the first account of the currency.
+     * The method changed in the form (OA-1, D-03; Phase 15 D-03, D-04): online turns the switch on, cash turns it off;
+     * back to transfer from either sets it to the client flag (when card payment is available) and fills an empty
+     * account with the first account of the currency.
      */
     private function methodChosen(Get $get, Set $set, mixed $state, mixed $old): void
     {
-        if ($this->isOnline($state)) {
+        $method = $this->methodOf($state);
+
+        if ($method->forcesCardPayment()) {
             $set('card_payment_enabled', true);
 
             return;
         }
 
-        if (! $this->isOnline($old)) {
+        if (! $method->allowsCardChoice()) {
+            $set('card_payment_enabled', false);
+
+            return;
+        }
+
+        if ($this->methodOf($old)->allowsCardChoice()) {
             return;
         }
 
@@ -1156,8 +1188,8 @@ final class EditInvoice extends EditRecord
                     ->visible(fn (): bool => $this->invoice()->vat_mode === VatMode::Payer),
                 Toggle::make('card_payment_enabled')
                     ->label(__('invoices.draft.fields.card_payment'))
-                    ->helperText(fn (Get $get): string => $this->isOnline($get('payment_method')) ? (string) __('invoices.draft.helpers.card_payment_online') : $this->cardPaymentHelper())
-                    ->disabled(fn (Get $get): bool => ! app(CardPaymentSwitch::class)->available() || $this->isOnline($get('payment_method')))
+                    ->helperText(fn (Get $get): string => $this->cardPaymentStateHelper($this->methodOf($get('payment_method'))))
+                    ->disabled(fn (Get $get): bool => ! app(CardPaymentSwitch::class)->available() || ! $this->methodOf($get('payment_method'))->allowsCardChoice())
                     ->visible(fn (): bool => $this->invoice()->kind->carriesPayment()),
                 TextEntry::make('variable_symbol')
                     ->label(__('invoices.draft.fields.variable_symbol'))
@@ -1215,7 +1247,7 @@ final class EditInvoice extends EditRecord
                         ->html(),
                     Actions::make([$this->refillBankAction()])
                         ->key('bankActions')
-                        ->visible(fn (Get $get): bool => ! $this->isOnline($get('payment_method'))),
+                        ->visible(fn (Get $get): bool => $this->methodOf($get('payment_method'))->printsBankDetails()),
                 ])->columnSpanFull()->visible(fn (): bool => $this->invoice()->kind->carriesPayment()),
             ]);
     }
@@ -1290,20 +1322,22 @@ final class EditInvoice extends EditRecord
 
     /**
      * What the section of the bank account shows (R-14-10-3, D-01): the printed account while nothing changes; the
-     * account the save will print when the chosen account differs from the stored one, the method moves from online to
-     * transfer, the currency changed or the refill is marked; and the line that an online document prints no bank
-     * details.
+     * account the save will print when the chosen account differs from the stored one, the method moves from online or
+     * cash to transfer, the currency changed or the refill is marked; and the line that an online or a cash document
+     * prints no bank details.
      */
     private function issuedBankState(Get $get): HtmlString
     {
-        if ($this->isOnline($get('payment_method'))) {
-            return new HtmlString(e(__('invoices.edit_issued.bank_online')));
+        $method = $this->methodOf($get('payment_method'));
+
+        if (! $method->printsBankDetails()) {
+            return new HtmlString(e(__($method === DocumentPaymentMethod::Cash ? 'invoices.edit_issued.bank_cash' : 'invoices.edit_issued.bank_online')));
         }
 
         $chosen = self::text($get('bank_account_id'));
         $currency = $this->currentCurrency();
         $changes = $get('reload_bank') === true
-            || $this->storedMethod() === DocumentPaymentMethod::Online
+            || ! $this->storedMethod()->printsBankDetails()
             || $currency !== $this->invoice()->currency
             || $chosen !== $this->filledAccountId();
 

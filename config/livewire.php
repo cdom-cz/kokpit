@@ -134,7 +134,7 @@ return [
         // D-18: production runs more than one web container, so a temporary upload must sit on the private
         // bucket that every container shares, not on the local disk of the one that received it. The default
         // is the s3 disk itself, not FILESYSTEM_DISK, so the suite and production take the same branch.
-        // DDEV overrides it with 'local' in .env.example (the browser cannot reach its bucket);
+        // DDEV takes the same branch: its bucket is reachable from the browser (S3_TEMPORARY_URL in .env.example);
         // ProductionConfigGuard refuses any disk without the s3 driver in production.
         'disk' => env('LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK', 's3'),
         // D-06: the same 10 MB limit for every upload. Mirrors kokpit.documents.max_size_kb (10240) and the

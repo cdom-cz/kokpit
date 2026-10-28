@@ -55,6 +55,14 @@ use LogicException;
  * Every payment recorded through that core also queues one confirmation e-mail to the client
  * ({@see QueuePaymentConfirmation}, Phase 13); the copy {@see RecordPayment::carry()} makes of a proforma payment on
  * the converted invoice queues none, because the client was told when the proforma was paid.
+ *
+ * Every cash payment recorded through that core also issues its cash receipt, in the same transaction
+ * ({@see IssueCashReceipt}, Phase 15, D-06): one receipt per payment, on an invoice or a proforma and whatever the
+ * payment method of the document is. A transfer or card payment issues none, and neither does the copy
+ * {@see RecordPayment::carry()} makes of a proforma payment on the converted invoice, because the receipt of the
+ * proforma payment stays the one receipt of that money (D-07). No cash payment exists before this phase (AS-2), so there
+ * is nothing to backfill, and this write path is the only enforcement of D-06: no database trigger forces a receipt
+ * (owner decision of 2026-10-27, R-15-02-6).
  */
 final readonly class RecordPayment
 {
@@ -64,6 +72,7 @@ final readonly class RecordPayment
         private ExchangeRateConverter $rates,
         private PaymentLinks $paymentLinks,
         private QueuePaymentConfirmation $confirmations,
+        private IssueCashReceipt $cashReceipts,
     ) {}
 
     /**
@@ -146,6 +155,12 @@ final readonly class RecordPayment
 
         // D-08: what is owed changed, so a live payment link that offers the old amount is deactivated in this transaction.
         $this->paymentLinks->reconcile($locked);
+
+        // D-06: a cash payment issues its numbered receipt in this transaction; the actor is never null here, because
+        // only a card payment is recorded without a person.
+        if ($facts->method === PaymentMethod::Cash) {
+            $this->cashReceipts->handle($locked, $payment, $actor);
+        }
 
         // D-05: every payment credited here queues one confirmation e-mail to the client, in this transaction.
         $this->confirmations->handle($locked, $payment);

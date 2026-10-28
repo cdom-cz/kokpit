@@ -60,6 +60,9 @@ return [
             'bucket' => env('S3_BUCKET'),
             'url' => env('S3_URL'),
             'endpoint' => env('S3_ENDPOINT'),
+            // Only for DDEV: presigned URLs are signed for S3_ENDPOINT and handed to the browser with this base,
+            // the Host stays the same so the signature holds. Unset in production.
+            'temporary_url' => env('S3_TEMPORARY_URL'),
             'use_path_style_endpoint' => env('S3_USE_PATH_STYLE_ENDPOINT', false),
             // A failed write must raise, not return false (research Pitfall 5): a silent
             // failure would lose documents and invoice PDFs without anyone noticing.

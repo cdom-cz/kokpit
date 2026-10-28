@@ -22,6 +22,7 @@ use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
 use App\Domain\Invoicing\Enums\PaymentConfirmationState;
 use App\Domain\Invoicing\Enums\PaymentMethod;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
@@ -402,6 +403,12 @@ final class CanaryRegistry
                 self::invoiceDocuments($clientId, $canary);
             },
 
+            // The cash receipt of the canary payment; the canary is its purpose (the printed text a Partner reads for the
+            // own client only).
+            CashReceipt::class => static function (string $clientId, string $canary): void {
+                self::invoiceDocuments($clientId, $canary);
+            },
+
             // A CNB rate row has no text and no client: the canary is the published day (the Monday of the
             // canary), under a fictional currency code, so two canaries never collide on the unique key of a
             // currency and day. A Partner reading any rate would be caught by that day.
@@ -705,10 +712,29 @@ final class CanaryRegistry
                 'currency' => 'CZK',
                 'amount_minor' => 4000,
                 'paid_on' => '2026-10-20',
-                'method' => PaymentMethod::Transfer,
+                // Cash, so that the one canary payment carries a receipt (the database guard of the receipt accepts only a
+                // cash payment); no count pins the method, so the payment is switched instead of a second one added.
+                'method' => PaymentMethod::Cash,
                 'created_by' => $owner,
             ]);
             $payment->save();
+
+            (new CashReceipt)->forceFill([
+                'invoice_id' => $issued->getKey(),
+                'client_id' => $clientId,
+                'invoice_payment_id' => $payment->getKey(),
+                'number' => implode('', ['PPD', (string) random_int(100000, 999999), (string) random_int(1000, 9999)]),
+                'document_number' => $issued->number,
+                'issued_on' => '2026-10-20',
+                'received_on' => '2026-10-20',
+                'amount_minor' => 4000,
+                'currency' => 'CZK',
+                'purpose' => $canary,
+                'language' => 'cs',
+                'supplier_snapshot' => ['name' => 'Example supplier'],
+                'customer_snapshot' => ['name' => 'Example customer'],
+                'appearance_snapshot' => ['accent' => '#000000'],
+            ])->save();
 
             (new PaymentConfirmation)->forceFill([
                 'invoice_payment_id' => $payment->getKey(),

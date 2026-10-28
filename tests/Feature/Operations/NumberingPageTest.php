@@ -194,6 +194,8 @@ it('refuses an invalid pattern of each document kind with its own reason', funct
     'proforma with a separator' => ['proforma_pattern', '{YYYY}-{NNNN}', 'proforma_digits'],
     'proforma longer than ten characters' => ['proforma_pattern', '{YYYY}{MM}{NNNNNNN}', 'proforma_length'],
     'credit note with an unknown token' => ['credit_note_pattern', 'CN{XX}{NNNN}', 'unknown_token'],
+    'cash receipt with an unknown token' => ['cash_receipt_pattern', 'PPD{XX}{NNNN}', 'unknown_token'],
+    'cash receipt without a counter' => ['cash_receipt_pattern', 'PPD{YYYY}', 'counter_count'],
     'invoice month without a year' => ['invoice_pattern', '{MM}{NNNN}', 'month_without_year'],
 ]);
 
@@ -224,6 +226,7 @@ it('warns for the proforma and the credit note pattern too, each against its own
 })->with([
     'proforma' => ['proforma_pattern', '{YYYY}{MM}{NNNN}'],
     'credit note' => ['credit_note_pattern', '{YYYY}{MM}-{NNNN}'],
+    'cash receipt' => ['cash_receipt_pattern', 'PPD{YYYY}{MM}-{NNNN}'],
 ]);
 
 it('shows an own preview under the proforma and the credit note pattern, read from their own counters', function (): void {
@@ -237,6 +240,47 @@ it('shows an own preview under the proforma and the credit note pattern, read fr
         ->assertSeeText(previewLine(pragueYear().'0001'));
 
     expect(sequenceSnapshot())->toBe($before);
+});
+
+it('shows the cash receipt pattern with the preview of its own counter and leaves the counters alone', function (): void {
+    takeNumbers('invoice:'.pragueYear(), 3);
+    takeNumbers('cash_receipt:'.pragueYear(), 2);
+    $before = sequenceSnapshot();
+
+    Livewire::test(SettingsPage::class)
+        ->assertSeeText(__('kokpit.settings.numbering.cash_receipt_pattern'))
+        ->assertSet('data.numbering.cash_receipt_pattern', 'PPD{YYYY}{NNNN}')
+        ->assertSeeText(previewLine('PPD'.pragueYear().'0003'));
+
+    expect(sequenceSnapshot())->toBe($before);
+});
+
+it('shows PPD and the first number of the year in the cash receipt preview on a fresh database', function (): void {
+    Livewire::test(SettingsPage::class)
+        ->assertSeeText(previewLine('PPD'.pragueYear().'0001'));
+});
+
+it('updates the cash receipt preview while its pattern is edited', function (): void {
+    Livewire::test(SettingsPage::class)
+        ->set('data.numbering.cash_receipt_pattern', 'PPD-{YY}/{NNN}')
+        ->assertSeeText(previewLine('PPD-'.now('Europe/Prague')->format('y').'/001'));
+});
+
+it('stores a saved cash receipt pattern and the next allocation follows it', function (): void {
+    Livewire::test(SettingsPage::class)
+        ->fillForm([
+            'supplier' => numberingPageSupplier(),
+            'numbering' => ['cash_receipt_pattern' => 'PPD-{YYYY}/{NNNN}'],
+        ])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    app()->forgetScopedInstances();
+
+    $number = DB::transaction(fn (): string => app(DocumentNumbering::class)->next(DocumentKind::CashReceipt, now()));
+
+    expect(app(NumberingSettings::class)->cash_receipt_pattern)->toBe('PPD-{YYYY}/{NNNN}')
+        ->and($number)->toBe('PPD-'.pragueYear().'/0001');
 });
 
 it('keeps the task pattern disabled and fixed to KEY-N with an explanation', function (): void {
@@ -270,7 +314,7 @@ it('names the allowed tokens in the help text', function (): void {
     $page->assertSeeText(__('kokpit.settings.numbering.title'));
 });
 
-it('saves all three document patterns together and leaves the counters alone', function (): void {
+it('saves all four document patterns together and leaves the counters alone', function (): void {
     takeNumbers('invoice:'.pragueYear(), 1);
     $counters = sequenceSnapshot();
 
@@ -281,12 +325,14 @@ it('saves all three document patterns together and leaves the counters alone', f
                 'invoice_pattern' => '{YYYY}{NNNNN}',
                 'proforma_pattern' => '{YY}{MM}9{NNN}',
                 'credit_note_pattern' => 'D{YYYY}/{NNNN}',
+                'cash_receipt_pattern' => 'PPD-{YYYY}/{NNNN}',
             ],
         ])
         ->call('save')
         ->assertHasNoFormErrors();
 
     expect(storedNumberingPatterns())->toBe([
+        'cash_receipt_pattern' => 'PPD-{YYYY}/{NNNN}',
         'credit_note_pattern' => 'D{YYYY}/{NNNN}',
         'invoice_pattern' => '{YYYY}{NNNNN}',
         'proforma_pattern' => '{YY}{MM}9{NNN}',

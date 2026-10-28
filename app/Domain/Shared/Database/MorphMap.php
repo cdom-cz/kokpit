@@ -18,6 +18,7 @@ use App\Domain\Identity\Models\Permission;
 use App\Domain\Identity\Models\PersonalAccessToken;
 use App\Domain\Identity\Models\Role;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
@@ -86,6 +87,7 @@ final class MorphMap
         'invoice_payment' => InvoicePayment::class,
         'invoice_email' => InvoiceEmail::class,
         'payment_confirmation' => PaymentConfirmation::class,
+        'cash_receipt' => CashReceipt::class,
         'payment_link' => PaymentLink::class,
         'card_payment' => CardPayment::class,
         'dashboard_widget_preference' => DashboardWidgetPreference::class,

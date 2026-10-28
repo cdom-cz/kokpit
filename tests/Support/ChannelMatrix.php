@@ -19,6 +19,7 @@ use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Notifications\ResetPasswordNotification;
 use App\Domain\Invoicing\Mail\InvoiceMail;
 use App\Domain\Invoicing\Mail\PaymentConfirmationMail;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
@@ -118,7 +119,7 @@ final class ChannelMatrix
      */
     private const string NA_ACTIVITY = 'writes no activity rows: not in AuditDeclaration::loggingModels()';
 
-    private const string NA_DOWNLOADS = 'no file is stored for or generated from this model; files leave only through the document, archive, invoice PDF and report export routes';
+    private const string NA_DOWNLOADS = 'no file is stored for or generated from this model; files leave only through the document, archive, invoice PDF, cash receipt PDF and report export routes';
 
     private const string NA_EXPORTS = 'no export reads this model';
 
@@ -156,6 +157,8 @@ final class ChannelMatrix
             CardPayment::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => self::NONE, 'downloads' => $downloadsNa, 'api' => self::NONE],
             InvoiceEmail::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
             PaymentConfirmation::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
+            // Open on the UI and download channels for the own client only (plan 15-11: the receipts tab of an own invoice and the signed PDF route); closed on every other channel. The model writes no activity rows (explicit rows of the Actions only).
+            CashReceipt::class => ['ui' => self::FOREIGN, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => self::FOREIGN, 'api' => self::NONE],
             ExchangeRate::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
             TransactionCategory::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => self::NONE, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
             Transaction::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => self::NONE, 'notifications' => self::NONE, 'activity' => self::NONE, 'downloads' => $downloadsNa, 'api' => self::NONE],

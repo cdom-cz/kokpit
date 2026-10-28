@@ -158,8 +158,8 @@ final readonly class DocumentIssuer
     }
 
     /**
-     * The bank snapshot of the document: none for a credit note and none for an online document, which prints no bank
-     * details (D-01, OA-7); for a transfer document the account the draft chose, copied from the settings (D-05, D-06).
+     * The bank snapshot of the document: none for a credit note and none for an online or a cash document, which print
+     * no bank details (D-01, OA-7; Phase 15 D-02); for a transfer document the account the draft chose, copied from the settings (D-05, D-06).
      * The account may have any currency and is not warned about. When the account cannot be resolved and the context
      * hands over a bank snapshot (a converted invoice, WR-02), that snapshot is printed instead of another account.
      *
@@ -171,7 +171,7 @@ final readonly class DocumentIssuer
      */
     private function bankSnapshot(Invoice $draft, ?array $inherited = null): ?array
     {
-        if ($draft->kind === InvoiceKind::CreditNote || $draft->payment_method === DocumentPaymentMethod::Online) {
+        if ($draft->kind === InvoiceKind::CreditNote || ! ($draft->payment_method ?? DocumentPaymentMethod::Transfer)->printsBankDetails()) {
             return null;
         }
 
@@ -273,10 +273,14 @@ final readonly class DocumentIssuer
             ]);
         }
 
-        $online = $draft->payment_method === DocumentPaymentMethod::Online;
-        $cardPayment = app(CardPaymentSwitch::class)->effective($draft->kind, $online || $admin->card_payment_enabled);
+        $method = $draft->payment_method ?? DocumentPaymentMethod::Transfer;
 
-        if ($draft->kind !== InvoiceKind::CreditNote && ! $online && $admin->bank_account_id === null) {
+        // Phase 15 D-03: a cash document never takes the card switch, whatever the stored row says.
+        $cardPayment = $method === DocumentPaymentMethod::Cash
+            ? false
+            : app(CardPaymentSwitch::class)->effective($draft->kind, $method->forcesCardPayment() || $admin->card_payment_enabled);
+
+        if ($draft->kind !== InvoiceKind::CreditNote && $method->printsBankDetails() && $admin->bank_account_id === null) {
             $admin->forceFill(['bank_account_id' => DocumentPayment::account($draft)?->id]);
         }
 

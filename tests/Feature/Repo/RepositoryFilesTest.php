@@ -5,8 +5,12 @@ declare(strict_types=1);
 use App\Domain\Audit\ActivitySourceLabel;
 use App\Domain\Clients\Models\ClientInvitation;
 use App\Domain\Invoicing\Actions\QueuePaymentConfirmation;
+use App\Domain\Invoicing\Enums\DocumentPaymentMethod;
+use App\Domain\Invoicing\Enums\InvoiceEmailState;
+use App\Domain\Invoicing\Support\CashReceiptPdfUrl;
 use App\Domain\Notifications\Mail\MailText;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Settings\Numbering\DocumentKind;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Database\CzechCollation;
 use App\Filament\Support\DocumentColumns;
@@ -1008,6 +1012,7 @@ it('hands the send-driven lock over to later phases: the Immutability rule and t
     expect($contributing)->not->toContain('accept no write at all')
         ->and($contributing)->not->toContain('accepts no write at all')
         ->and($immutability)->toContain('issued documents once locked by a successful send')
+        ->and($immutability)->toContain("or by the Admin's manual lock")
         ->and($immutability)->toContain('credit notes from their issue')
         ->and($immutability)->toContain('billed time entries')
         ->and($immutability)->toContain('always frozen')
@@ -1017,7 +1022,7 @@ it('hands the send-driven lock over to later phases: the Immutability rule and t
     expect($bullet)->not->toBe('');
 
     foreach ([
-        '`invoices.lock_state`', '`kokpit_guard_invoice_row()`', 'The only code that locks is `SendInvoiceEmail`', 'the only code that unlocks is `UnlockInvoice`',
+        '`invoices.lock_state`', '`kokpit_guard_invoice_row()`', 'The code that locks is `SendInvoiceEmail`', '`LockInvoice`', 'nothing but `SendInvoiceEmail` and `LockInvoice` may lock', 'the only code that unlocks is `UnlockInvoice`',
         '`kokpit.invoice_unlock`', '`UpdateIssuedDocument`', '`AddEntriesToDraft`', '`ReleaseEntries`', '`AddFixedAmount`', '`IssuedEditFinisher`',
         '`PaymentLinks::reconcile()`', '`ReplaceIssuedPdf`', '`InvoiceAudit`', '`IssuedDocumentRules`', '`email_in_flight`', '`invoice_edited`',
         '`kokpit_invoice_accepts_time_changes()`', '`payment_links_invoice_fk`', 'must not call the lock step',
@@ -1029,6 +1034,7 @@ it('hands the send-driven lock over to later phases: the Immutability rule and t
     $classes = [
         'SendInvoiceEmail' => 'App\Domain\Invoicing\Jobs\SendInvoiceEmail',
         'UnlockInvoice' => 'App\Domain\Invoicing\Actions\UnlockInvoice',
+        'LockInvoice' => 'App\Domain\Invoicing\Actions\LockInvoice',
         'UpdateIssuedDocument' => 'App\Domain\Invoicing\Actions\UpdateIssuedDocument',
         'AddEntriesToDraft' => 'App\Domain\Invoicing\Actions\AddEntriesToDraft',
         'ReleaseEntries' => 'App\Domain\Invoicing\Actions\ReleaseEntries',
@@ -1058,8 +1064,9 @@ it('hands the send-driven lock over to later phases: the Immutability rule and t
         ->and(method_exists('App\Domain\Invoicing\Models\InvoiceEmail', 'staleBefore'))->toBeTrue()
         ->and(repoFile('app/Domain/Invoicing/Support/InvoiceAudit.php'))->toContain('bank_fingerprint');
 
-    // The one lock writer and the one unlock flag the text names.
+    // The two lock writers and the one unlock flag the text names.
     expect(repoFile('app/Domain/Invoicing/Jobs/SendInvoiceEmail.php'))->toContain('InvoiceLockState::Locked')
+        ->and(repoFile('app/Domain/Invoicing/Actions/LockInvoice.php'))->toContain('InvoiceLockState::Locked')
         ->and(repoFile('app/Domain/Invoicing/Actions/UnlockInvoice.php'))->toContain('kokpit.invoice_unlock');
 
     // The enforcing tests the text names.
@@ -1318,6 +1325,156 @@ it('hands the payment method over to later phases: the Payment method and bank a
     // The Editable invoices bullet lists the new write-path fields, and the Phase 11 wording "frozen at issue" is gone everywhere.
     expect(repoContributingBullet('Editable invoices.'))->toContain('payment method, bank account and card switch')
         ->and(repoFile('CONTRIBUTING.md'))->not->toContain('is frozen at issue');
+});
+
+it('hands the cash receipts over: the Cash receipts bullet names only what exists', function () {
+    $bullet = repoContributingBullet('Cash receipts.');
+
+    expect($bullet)->not->toBe('');
+
+    // The mechanisms and decisions the text must keep naming (R-15-14-4).
+    foreach ([
+        'DocumentPaymentMethod', 'printsBankDetails()', 'allowsCardChoice()', 'forcesCardPayment()', '`cash_receipts`', 'kokpit_guard_cash_receipt_row()',
+        '`IssueCashReceipt`', '`RecordPayment::recordLocked()`', 'DocumentKind::CashReceipt', 'cash_receipt_pattern', '`StoreCashReceiptPdf`',
+        '`SendPaymentConfirmation`', '`CancelCashReceipt`', '`UpdateCashReceipt`', '`LockCashReceipt`', '`UnlockCashReceipt`', 'kokpit.cash_receipt_unlock',
+        '`CashReceiptUnlockPathTest`', '`RegenerateCashReceiptPdf`', '`CashReceiptPdfController`', 'files.cash-receipt',
+        '`PartnerCashReceiptsRelationManager`', '`CashReceiptAudit`', '`InvoicePaymentsRelationManager`',
+        // The owner's acceptance of 2026-10-27 (AS-2, R-15-02-6, T-15-17) and the legal facts the owner tracks (AS-14, AS-15).
+        '2026-10-27', 'in the application only', 'no database constraint trigger', 'AS-1 to AS-16', 'AS-14', 'AS-15', '270,000 CZK', 'EET 2.0',
+    ] as $name) {
+        expect($bullet)->toContain($name);
+    }
+
+    // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists. A test class is
+    // checked as a file below.
+    preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet, $matches, PREG_SET_ORDER);
+
+    expect(count($matches))->toBeGreaterThan(10);
+
+    foreach ($matches as $match) {
+        if (str_ends_with($match[1], 'Test')) {
+            continue;
+        }
+
+        $classes = repoClassesNamed($match[1]);
+
+        expect($classes)->not->toBe([], "CONTRIBUTING.md names {$match[1]} but no such class exists");
+
+        if (isset($match[2])) {
+            $exists = array_filter($classes, static fn (string $class): bool => method_exists($class, $match[2]));
+
+            expect($exists)->not->toBe([], "CONTRIBUTING.md names {$match[1]}::{$match[2]}() but no such method exists");
+        }
+    }
+
+    // The enum case, the predicates and the document kind the text names.
+    expect(DocumentPaymentMethod::Cash->value)->toBe('cash')
+        ->and(method_exists(DocumentPaymentMethod::class, 'printsBankDetails'))->toBeTrue()
+        ->and(method_exists(DocumentPaymentMethod::class, 'allowsCardChoice'))->toBeTrue()
+        ->and(method_exists(DocumentPaymentMethod::class, 'forcesCardPayment'))->toBeTrue()
+        ->and(DocumentKind::CashReceipt->value)->toBe('cash_receipt')
+        ->and(CashReceiptPdfUrl::ROUTE)->toBe('filament.admin.files.cash-receipt');
+
+    // The enforcing tests the text names exist, in the file the text implies.
+    $tests = [
+        'CashReceiptModelTest' => 'tests/Feature/Invoicing/CashReceiptModelTest.php',
+        'CashReceiptIssueTest' => 'tests/Feature/Invoicing/CashReceiptIssueTest.php',
+        'CashReceiptPdfTest' => 'tests/Feature/Invoicing/CashReceiptPdfTest.php',
+        'CashReceiptDeliveryTest' => 'tests/Feature/Invoicing/CashReceiptDeliveryTest.php',
+        'CashReceiptLockTest' => 'tests/Feature/Invoicing/CashReceiptLockTest.php',
+        'CashReceiptEditTest' => 'tests/Feature/Invoicing/CashReceiptEditTest.php',
+        'CashReceiptCancelTest' => 'tests/Feature/Invoicing/CashReceiptCancelTest.php',
+        'CashReceiptPartnerTest' => 'tests/Feature/Invoicing/CashReceiptPartnerTest.php',
+        'CashReceiptAdminTest' => 'tests/Feature/Invoicing/CashReceiptAdminTest.php',
+        'CashReceiptUnlockPathTest' => 'tests/Arch/CashReceiptUnlockPathTest.php',
+        'CashReceiptsTableTest' => 'tests/Feature/Schema/CashReceiptsTableTest.php',
+    ];
+
+    foreach ($tests as $name => $path) {
+        expect($bullet)->toContain($name);
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$name} but {$path} does not exist");
+    }
+
+    // The migration holds the guard function and the unlock setting the text names; the assumptions it cites are in the plan.
+    expect(repoFile('database/migrations/2026_10_27_000200_create_cash_receipts_table.php'))->toContain('kokpit_guard_cash_receipt_row')
+        ->and(repoFile('database/migrations/2026_10_27_000200_create_cash_receipts_table.php'))->toContain('kokpit.cash_receipt_unlock')
+        ->and(is_file(base_path('.planning/phases/15-cash-payment-method-for-invoices-and-cash-receipt-documents/15-01-PLAN.md')))->toBeTrue();
+
+    // The Payment method bullet says cash is the third method and prints no bank details, and points here.
+    expect(repoContributingBullet('Payment method and bank accounts.'))->toContain('`cash` as the third method')
+        ->and(repoContributingBullet('Payment method and bank accounts.'))->toContain('prints no bank details');
+});
+
+it('hands the per-client e-mail switch over: the Per-client e-mail switch bullet names only what exists', function () {
+    $bullet = repoContributingBullet('Per-client e-mail switch.');
+
+    expect($bullet)->not->toBe('');
+
+    // The mechanisms and decisions the text must keep naming (R-16-06-3).
+    foreach ([
+        'Phase 16', 'P16-01 to P16-11', '`clients.document_emails_enabled`', '`ClientDocumentEmails`', '`enabledFor()`', '`enabledForInvoice()`', '`allows()`',
+        'fresh on every call', 'fails closed', '`QueueInvoiceEmail`', '`SendInvoiceEmail`', '`SendPaymentConfirmation`', '`QueuePaymentConfirmation`',
+        '`InvoiceEmailState::Skipped`', '`payment_confirmations_recipient_check`', '`UnsentInvoiceEmailsIndicator`', '`SendInvoiceEmailAction`',
+        '`InvoiceTable`', '`InvoiceEmailsRelationManager`', '`ViewInvoice`', '`LockInvoice`', '`LockCashReceipt`', '`invoice_locked_manually`',
+        '`cash_receipt_locked_manually`', '`InvoiceAudit::everSent()`', '`InvoiceUnlockPathTest`', '`CashReceiptUnlockPathTest`',
+        '`InvitePartner`', '`SendPartnerPasswordReset`', '`TaskNotifier`', 'never revived', 'owner answer A1', 'owner answer A2', 'owner answer A3',
+    ] as $name) {
+        expect($bullet)->toContain($name);
+    }
+
+    // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists. A test class is
+    // checked as a file below.
+    preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet, $matches, PREG_SET_ORDER);
+
+    expect(count($matches))->toBeGreaterThan(15);
+
+    foreach ($matches as $match) {
+        if (str_ends_with($match[1], 'Test')) {
+            continue;
+        }
+
+        $classes = repoClassesNamed($match[1]);
+
+        expect($classes)->not->toBe([], "CONTRIBUTING.md names {$match[1]} but no such class exists");
+
+        if (isset($match[2])) {
+            $exists = array_filter($classes, static fn (string $class): bool => method_exists($class, $match[2]));
+
+            expect($exists)->not->toBe([], "CONTRIBUTING.md names {$match[1]}::{$match[2]}() but no such method exists");
+        }
+    }
+
+    // The methods of the gate and the enum case the text names.
+    foreach (['enabledFor', 'enabledForInvoice', 'allows'] as $method) {
+        expect(method_exists('App\Domain\Invoicing\Support\ClientDocumentEmails', $method))->toBeTrue("ClientDocumentEmails::{$method}() does not exist");
+    }
+
+    expect(InvoiceEmailState::Skipped->value)->toBe('skipped');
+
+    // The enforcing tests the text names exist, in the file the text implies.
+    $tests = [
+        'ClientDocumentEmailsTest' => 'tests/Feature/Invoicing/ClientDocumentEmailsTest.php',
+        'HandServedDocumentTest' => 'tests/Feature/Invoicing/HandServedDocumentTest.php',
+        'LockInvoiceTest' => 'tests/Feature/Invoicing/LockInvoiceTest.php',
+        'HandServedClientJourneyTest' => 'tests/Feature/Invoicing/HandServedClientJourneyTest.php',
+        'DocumentEmailsScopeTest' => 'tests/Feature/Clients/DocumentEmailsScopeTest.php',
+        'InvoiceUnlockPathTest' => 'tests/Arch/InvoiceUnlockPathTest.php',
+        'CashReceiptUnlockPathTest' => 'tests/Arch/CashReceiptUnlockPathTest.php',
+    ];
+
+    foreach ($tests as $name => $path) {
+        expect($bullet)->toContain($name);
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$name} but {$path} does not exist");
+    }
+
+    // The migration of the check the text names, and the two manual lock events the Actions write.
+    expect(repoFile('database/migrations/2026_10_28_000300_relax_payment_confirmation_recipient_check.php'))->toContain('payment_confirmations_recipient_check')
+        ->and(repoFile('database/migrations/2026_10_28_000100_add_document_emails_enabled_to_clients_table.php'))->toContain('document_emails_enabled')
+        ->and(repoFile('app/Domain/Invoicing/Support/InvoiceAudit.php'))->toContain('invoice_locked_manually')
+        ->and(repoFile('app/Domain/Invoicing/Support/CashReceiptAudit.php'))->toContain('cash_receipt_locked_manually');
+
+    // The older bullets point at the manual lock too, so no rule still says only the send locks.
+    expect(repoFile('CONTRIBUTING.md'))->not->toContain('only code that locks is');
 });
 
 it('hands the e-mail layout over: the E-mail bullet names only what exists', function () {

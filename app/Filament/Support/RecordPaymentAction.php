@@ -14,6 +14,7 @@ use App\Domain\Invoicing\Enums\InvoiceStatus;
 use App\Domain\Invoicing\Enums\PaymentMethod;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Queries\ReceivablesReader;
+use App\Domain\Invoicing\Support\ClientDocumentEmails;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\TransactionResource;
@@ -202,6 +203,10 @@ final class RecordPaymentAction
      */
     private static function confirmationHint(Invoice $invoice): string
     {
+        if (! ClientDocumentEmails::enabledFor((string) $invoice->client_id)) {
+            return __('invoices.payments.record.confirmation_hint_disabled');
+        }
+
         $email = QueuePaymentConfirmation::recipientFor($invoice);
 
         return $email === null

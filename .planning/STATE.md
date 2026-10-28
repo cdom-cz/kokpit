@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 12
-current_phase_name: Partner Audit
+current_phase: 8
+current_phase_name: Exchange Rates and Reports
 status: verifying
-stopped_at: Completed 12-09-PLAN.md
-last_updated: "2026-10-25T18:45:41.030Z"
-last_activity: 2026-10-24
-last_activity_desc: Phase 12 execution started
-state_head: 96507ce19a4cc9a68371d93664bc90af1f9225cd
+stopped_at: Phase 16 complete, ready to verify Phase 8
+last_updated: "2026-10-28T11:14:45.601Z"
+last_activity: 2026-10-28
+last_activity_desc: Phase 16 complete, transitioned to Phase 8
+state_head: 5c3da7d7c29d084a0b91592c16b82c28d15ff7f6
 progress:
-  total_phases: 16
+  total_phases: 18
   completed_phases: 7
-  total_plans: 294
-  completed_plans: 294
-  percent: 44
+  total_plans: 314
+  completed_plans: 314
+  percent: 39
 ---
 
 # Project State
@@ -23,21 +23,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 12 — Partner Audit
+**Current focus:** Phase 16 — Per-client e-mail sending toggle
 
 ## Current Position
 
-Phase: 12 (Partner Audit) — EXECUTING
-Plan: 9 of 9
+Phase: 8 — Exchange Rates and Reports
+Plan: 27
 Status: Phase complete — ready for verification
-Last activity: 2026-10-25 - Completed quick task 261025-oc2: Optimize the test suite (prune non-essential tests, shard CI)
+Last activity: 2026-10-28 — Phase 16 complete, transitioned to Phase 8
 
-Progress: [████░░░░░░] 44%
+Progress: [████░░░░░░] 39%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 145
+- Total plans completed: 165
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -54,6 +54,8 @@ Progress: [████░░░░░░] 44%
 | 07 | 20 | - | - |
 | 09.1 | 9 | - | - |
 | 10.1 | 16 | - | - |
+| 15 | 14 | - | - |
+| 16 | 6 | - | - |
 
 **Recent Trend:**
 - Last 5 plans: -
@@ -941,6 +943,8 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 - Phase 14 added: Online payment method and invoice currency: selectable online (Stripe) payment method that replaces bank payment details on the invoice, and selectable invoice currency reflected in the PDF and the Stripe payment
 - Phase 10.1 inserted after Phase 10: Invoices stay fully editable until sent, with a manual unlock (URGENT)
 - Phase 10.2 removed: the paid-invoice confirmation e-mail is delivered in Phase 13
+- Phase 16 added: Per-client e-mail sending toggle: a client setting that disables sending e-mails (invoices and related documents) for clients served exclusively by hand; enabled by default
+- Phase 15 added: Cash payment method for invoices and cash receipt documents: invoices payable in cash, plus a cash receipt document (PPD) issued for them; research first what it is and how to issue it
 - Phase 14 edited: edited fields: title, goal (payment method switchable between bank transfer and online; currency independent of method and bank account; account preselected by matching currency, separately selectable)
 
 ## Deferred Items
@@ -953,6 +957,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-24T05:56:35.828Z
-Stopped at: Completed 12-09-PLAN.md
-Resume file: None
+Last session: 2026-10-27T22:22:24.047Z
+Stopped at: Phase 16 complete, ready to verify Phase 8
+Resume file: .planning/phases/16-per-client-e-mail-sending-toggle/16-CONTEXT.md

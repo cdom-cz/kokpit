@@ -24,6 +24,8 @@ class NumberingSettings extends ValidatedSettings
 
     public string $credit_note_pattern;
 
+    public string $cash_receipt_pattern;
+
     public string $task_pattern;
 
     public static function group(): string
@@ -40,6 +42,7 @@ class NumberingSettings extends ValidatedSettings
             'invoice_pattern' => ['bail', 'required', 'string', new NumberPatternRule(DocumentKind::Invoice)],
             'proforma_pattern' => ['bail', 'required', 'string', new NumberPatternRule(DocumentKind::Proforma)],
             'credit_note_pattern' => ['bail', 'required', 'string', new NumberPatternRule(DocumentKind::CreditNote)],
+            'cash_receipt_pattern' => ['bail', 'required', 'string', new NumberPatternRule(DocumentKind::CashReceipt)],
             'task_pattern' => ['bail', 'required', 'string', new NumberPatternRule(DocumentKind::Task)],
         ];
     }
@@ -55,6 +58,7 @@ class NumberingSettings extends ValidatedSettings
             DocumentKind::Invoice => $this->invoice_pattern,
             DocumentKind::Proforma => $this->proforma_pattern,
             DocumentKind::CreditNote => $this->credit_note_pattern,
+            DocumentKind::CashReceipt => $this->cash_receipt_pattern,
             DocumentKind::Task => $this->task_pattern,
         }, $kind);
     }

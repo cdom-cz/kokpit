@@ -29,6 +29,8 @@ return [
     'credit_total_bar' => 'DOBROPIS CELKEM',
     'payment_sentence' => 'Prosíme o úhradu částky :amount na účet :account s variabilním symbolem :vs do :due.',
     'online_sentence' => 'Prosíme o úhradu částky :amount online platební kartou do :due.',
+    // A cash document prints no bank details, so this sentence names neither an account nor a variable symbol (Phase 15, D-02).
+    'cash_sentence' => 'Prosíme o úhradu částky :amount v hotovosti do :due.',
     'account' => 'Číslo účtu',
     'iban' => 'IBAN',
     'bic' => 'BIC',
@@ -36,6 +38,7 @@ return [
     'payment_method' => 'Způsob úhrady',
     'bank_transfer' => 'Převodem',
     'online_payment' => 'Online platební kartou',
+    'cash_payment' => 'Hotově',
     'amount_due' => 'K úhradě',
     'card_lead' => 'Nebo zaplaťte online kartou:',
     'online_card_lead' => 'Zaplaťte online kartou:',

@@ -223,3 +223,51 @@ it('has no invoices or invoice_items column whose name looks like a rate, an int
         expect($suspicious)->toBe([], "Admin-only attributes belong in invoice_admin, invoice_item_sources or another Admin-only table, not in the Partner-readable {$table} table.");
     }
 });
+
+/*
+ * The cash receipts table (PPD, Phase 15, plan 15-02; D-13) is readable by every Partner of the client for the client's
+ * own receipts. It holds what the receipt prints (the number of the paid document included, which is the number of the
+ * client's own document), its lock and cancel state and three opaque links (the invoice, `invoice_payment_id`,
+ * `pdf_document_id`). The payment link and the PDF link name Admin-only rows a Partner cannot read; they are reviewed on
+ * purpose and carry no figure of their own. The cancel reason, the unlock reason and the person who acted are free text
+ * or identities of the Admin and live only in the Admin-only activity log, never on this row.
+ */
+
+it('pins the Partner-safe column list of the cash_receipts table', function (): void {
+    expect(Schema::getColumnListing('cash_receipts'))->toBe([
+        'id',
+        'invoice_id',
+        'client_id',
+        'invoice_payment_id',
+        'number',
+        'document_number',
+        'issued_on',
+        'received_on',
+        'amount_minor',
+        'currency',
+        'purpose',
+        'language',
+        'supplier_snapshot',
+        'customer_snapshot',
+        'appearance_snapshot',
+        'lock_state',
+        'cancelled_at',
+        'pdf_document_id',
+        'created_at',
+        'updated_at',
+    ], 'The cash_receipts table is readable by Partners for their own receipts. It holds what the receipt prints (the paid document number included, which is the number of the client\'s own document), its lock and cancel state and three opaque links (the invoice, invoice_payment_id, pdf_document_id); the payment link names an Admin-only row a Partner cannot read and is reviewed on purpose. Reasons and causers live in the Admin-only activity log. Extend this list only after reviewing that every Partner may read the new column.');
+});
+
+it('has no cash_receipts column whose name looks like a rate, an internal note, a reason, a cost or a billing attribute, apart from the reviewed payment link', function (): void {
+    // `invoice_payment_id` is the one reviewed exception (Phase 15, pinned in the list above): an opaque id of an
+    // Admin-only row, no figure. Any other `payment` column still fails here.
+    $reviewed = ['invoice_payment_id'];
+
+    $suspicious = array_values(array_filter(
+        Schema::getColumnListing('cash_receipts'),
+        static fn (string $column): bool => ! in_array($column, $reviewed, true)
+            && preg_match('/hourly|internal|cnb|czk|exchange|payment|source|cost|budget|estimate|billing|reason|note|created_by|cancelled_by/i', $column) === 1,
+    ));
+
+    expect($suspicious)->toBe([], 'Admin-only attributes (a reason, a causer, an internal note) belong in the Admin-only activity log or an Admin-only table, not in the Partner-readable cash_receipts table.');
+});

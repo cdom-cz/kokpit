@@ -23,10 +23,11 @@ return [
         'note_length' => 'Poznámka na dokladu může mít nejvýše 500 znaků.',
         'internal_note_length' => 'Interní poznámka může mít nejvýše 2 000 znaků.',
         'card_payment_invalid' => 'Platbu kartou lze zapnout nebo vypnout jen u faktury a zálohové faktury.',
-        'payment_method_invalid' => 'Zvolte úhradu převodem nebo online.',
+        'payment_method_invalid' => 'Zvolte úhradu převodem, online nebo hotově.',
         'bank_account_unknown' => 'Vybraný bankovní účet v Nastavení neexistuje.',
         'bank_account_required' => 'Doklad s úhradou převodem potřebuje bankovní účet. Vyberte ho.',
         'card_payment_unavailable' => 'Platbu kartou teď nelze zapnout: online platby jsou vypnuté nebo Stripe není nastavený.',
+        'card_payment_cash' => 'Doklad placený hotově nelze platit kartou.',
         'credit_note_no_payment' => 'Dobropis nemá způsob úhrady ani bankovní účet.',
 
         // The items of a draft.
@@ -90,9 +91,12 @@ return [
         'cancelled_not_editable' => 'Stornovaný doklad upravit nelze.',
         'converted_not_editable' => 'Zálohovou fakturu, ze které už vznikla faktura, upravit nelze.',
 
+        // The manual lock of an open document (Phase 16, D-02, D-03).
+        'already_locked' => 'Doklad je už uzamčen.',
+
         // The correction of an open issued document (assumptions A1, A3, A4, A8).
         'not_issued' => 'Koncept se upravuje v editoru konceptu.',
-        'document_locked' => 'Doklad byl odeslán a je uzamčen. Nejprve ho odemkněte.',
+        'document_locked' => 'Doklad je uzamčen. Nejprve ho odemkněte.',
         'email_in_flight' => 'Doklad se právě odesílá e-mailem. Upravit ho půjde po dokončení odeslání.',
         'credited_line_frozen' => 'Položka je dobropisovaná: změnit lze jen její text.',
         'credited_line_delete' => 'Dobropisovanou položku nelze smazat.',
@@ -113,6 +117,7 @@ return [
         'email_subject' => 'Zadejte předmět (nejvýše 200 znaků).',
         'email_body' => 'Zadejte text e-mailu (nejvýše 5 000 znaků).',
         'email_not_issued' => 'E-mail lze odeslat jen u vystaveného dokladu.',
+        'email_client_disabled' => 'Klient má odesílání dokladů e-mailem vypnuté.',
 
         // The stored PDF.
         'pdf_unconfirmed' => 'PDF vystaveného dokladu lze smazat jen s výslovným potvrzením.',
@@ -282,6 +287,7 @@ return [
             'bank_account_missing' => 'Bez bankovního účtu nejde doklad s úhradou převodem vystavit. Účty spravujete v Nastavení.',
             'card_payment' => 'Na dokladu a v e-mailu se zobrazí tlačítko Zaplatit kartou. Do odeslání dokladu jde platbu kartou vypnout nebo zapnout.',
             'card_payment_online' => 'U online úhrady je platba kartou vždy zapnutá.',
+            'card_payment_cash' => 'Doklad placený hotově nelze platit kartou.',
             'card_payment_settings_off' => 'Online platby jsou vypnuté v Nastavení.',
             'card_payment_stripe_missing' => 'Stripe není nastavený. Doplňte klíče v prostředí aplikace.',
             'variable_symbol' => 'Přidělí se při vystavení.',
@@ -433,6 +439,7 @@ return [
         'refill_bank' => 'Načíst bankovní účet z nastavení',
         'bank_pending' => 'Po uložení se použije účet:',
         'bank_online' => 'Online úhrada: doklad bankovní údaje netiskne.',
+        'bank_cash' => 'Doklad placený hotově neuvádí bankovní spojení.',
         'currency_change' => [
             'heading' => 'Změnit měnu dokladu?',
             'body' => 'Kurz ČNB, položky z času a platební odkaz se převezmou znovu ke dni vystavení a bankovní účet se předvybere podle nové měny (vybrat jde i jiný). Ručně zadané jednotkové ceny a pevné částky se nepřepočítají. Zkontrolujte je po změně.',
@@ -508,8 +515,9 @@ return [
             'awaiting_invoice' => 'Záloha je zaplacená, ale faktura k ní zatím nebyla vystavena. Příjem se zaúčtuje až při vystavení faktury.',
             'cancelled_paid' => 'Faktura byla stornována, ale platba zůstává zaevidovaná. Vrácení peněz a výdaj zaznamenejte ručně.',
             'credit_exists' => 'K dokladu existuje dobropis :number.',
-            'open_for_edits' => 'Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.',
-            'locked' => 'Doklad byl odeslán e-mailem a je uzamčen. Upravit ho lze až po odemknutí s uvedením důvodu.',
+            'email_disabled' => 'Klient má odesílání dokladů e-mailem vypnuté. Doklad mu předejte jinak a uzamkněte ho ručně.',
+            'open_for_edits' => 'Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem nebo ručně uzamčen.',
+            'locked' => 'Doklad je uzamčen (odesláním e-mailem nebo ručně). Upravit ho lze až po odemknutí s uvedením důvodu.',
         ],
         'actions' => [
             'download' => 'Stáhnout PDF',
@@ -522,11 +530,18 @@ return [
             'edit_note' => 'Upravit poznámku',
             'open' => 'Otevřít doklad',
             'unlock' => 'Odemknout',
+            'lock' => 'Uzamknout',
             'edit' => 'Upravit',
+        ],
+        'lock' => [
+            'heading' => 'Uzamknout doklad :number?',
+            'description' => 'Doklad se uzamkne bez odeslání e-mailem, například když ho klient dostal osobně. Upravit ho pak půjde jen po odemknutí s uvedením důvodu.',
+            'submit' => 'Uzamknout',
+            'done' => 'Doklad je uzamčen',
         ],
         'unlock' => [
             'heading' => 'Odemknout doklad :number',
-            'description' => 'Doklad už zákazník dostal. Po odemknutí ho můžete upravit; po dalším úspěšném odeslání e-mailem se znovu uzamkne.',
+            'description' => 'Doklad už zákazník dostal. Po odemknutí ho můžete upravit; po dalším úspěšném odeslání e-mailem nebo ručním uzamčení se znovu uzamkne.',
             'reason' => 'Důvod odemknutí',
             'submit' => 'Odemknout',
             'done' => 'Doklad je odemčen',
@@ -579,6 +594,7 @@ return [
             'already_paid' => 'Faktura je již zaplacená.',
             'over_amount' => 'Zadaná částka je vyšší než zbývající částka (:remaining).',
             'confirmation_hint' => 'Klientovi odejde na :email potvrzení přijetí platby.',
+            'confirmation_hint_disabled' => 'Klient má odesílání dokladů e-mailem vypnuté, potvrzení platby se neodešle.',
             'confirmation_hint_none' => 'Klient nemá použitelný fakturační e-mail, potvrzení platby se neodešle.',
             'not_editable' => 'Uloženou platbu nelze upravit, jen smazat.',
             'submit' => 'Uložit platbu',

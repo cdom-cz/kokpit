@@ -12,6 +12,7 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Invoicing\Queries\InvoiceBalances;
+use App\Domain\Invoicing\Support\ClientDocumentEmails;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use LogicException;
@@ -30,9 +31,18 @@ use LogicException;
  * mails one confirmation (assumption A-13-6). A client without a usable invoice e-mail gets a `skipped` row and no job;
  * the payment is never blocked.
  *
+ * Phase 16 (D-06): a client with the switch "send documents by e-mail" off gets a `skipped` row as well, written
+ * directly, with the address it would have gone to kept and no job dispatched. The client is the one read fresh in the
+ * payment transaction, so the decision is the switch at the moment of the payment; the payment, its income and its cash
+ * receipt are recorded as always, and the receipt stays open for the Admin's manual lock.
+ *
  * The recipient is the invoice e-mail of the client of the document, read here in the payment transaction, never a
  * typed or request value (T-13-11). An archived client keeps getting confirmations. The language is the client's invoice
  * language (D-05), not the language of the document.
+ *
+ * The confirmation of a cash payment carries the cash receipt of that payment (Phase 15, D-12): the job attaches the
+ * stored PDF at send time, and the grace window is what lets an edit or a cancel of the receipt happen before it
+ * leaves. Nothing about the receipt is decided here; the row is queued exactly like any other.
  *
  * A credit note is never paid (RecordPayment refuses it) and the carried copy of a proforma payment on the converted
  * invoice does not pass through the write core, so neither queues one. To stop confirming proforma payments (A-13-1),
@@ -58,6 +68,7 @@ final readonly class QueuePaymentConfirmation
 
         $client = self::clientOf($locked);
         $recipient = self::cleanAddress($client?->invoice_email);
+        $enabled = ClientDocumentEmails::allows($client);
         $remaining = $this->balances->for([(string) $locked->getKey()])[(string) $locked->getKey()]['remaining'] ?? 0;
 
         $row = new PaymentConfirmation;
@@ -67,11 +78,11 @@ final readonly class QueuePaymentConfirmation
             'recipient' => $recipient,
             'language' => $client?->invoice_language->value ?? $locked->language->value,
             'remaining_minor' => max(0, $remaining),
-            'state' => $recipient === null ? PaymentConfirmationState::Skipped : PaymentConfirmationState::Queued,
+            'state' => $recipient === null || ! $enabled ? PaymentConfirmationState::Skipped : PaymentConfirmationState::Queued,
             'attempts' => 0,
         ])->save();
 
-        if ($recipient !== null) {
+        if ($recipient !== null && $enabled) {
             SendPaymentConfirmation::dispatch($row->id)->afterCommit()->delay(now()->addSeconds(self::GRACE_SECONDS));
         }
 

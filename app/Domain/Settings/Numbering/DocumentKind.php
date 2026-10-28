@@ -10,13 +10,16 @@ use Filament\Support\Contracts\HasLabel;
  * The numbered things and their counter series (D-05).
  *
  * Invoices, proformas and credit notes use a configurable token pattern with
- * one series each. A task number is fixed to KEY-N and counted per project.
+ * one series each. Cash receipts use a configurable pattern with their own
+ * yearly series (Phase 15, D-09). A task number is fixed to KEY-N and counted
+ * per project.
  */
 enum DocumentKind: string implements HasLabel
 {
     case Invoice = 'invoice';
     case Proforma = 'proforma';
     case CreditNote = 'credit_note';
+    case CashReceipt = 'cash_receipt';
     case Task = 'task';
 
     /**
@@ -31,13 +34,15 @@ enum DocumentKind: string implements HasLabel
     /**
      * The default pattern. A proforma gets a nine-digit number, so its variable
      * symbol can never equal the eight-digit invoice number of the default
-     * pattern (research Pitfall 13).
+     * pattern (research Pitfall 13). A cash receipt carries no variable symbol
+     * or QR, so its default may start with letters (D-09).
      */
     public function defaultPattern(): string
     {
         return match ($this) {
             self::Task => '{KEY}-{N}',
             self::Proforma => '{YYYY}9{NNNN}',
+            self::CashReceipt => 'PPD{YYYY}{NNNN}',
             default => '{YYYY}{NNNN}',
         };
     }

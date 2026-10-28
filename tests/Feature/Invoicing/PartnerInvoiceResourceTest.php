@@ -13,6 +13,7 @@ use App\Domain\Shared\Money\Money;
 use App\Filament\Partner\Resources\PartnerInvoiceResource;
 use App\Filament\Partner\Resources\PartnerInvoiceResource\Pages\ListPartnerInvoices;
 use App\Filament\Partner\Resources\PartnerInvoiceResource\Pages\ViewPartnerInvoice;
+use App\Filament\Partner\Resources\PartnerInvoiceResource\RelationManagers\PartnerCashReceiptsRelationManager;
 use App\Filament\Support\InvoiceColumns;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
@@ -124,7 +125,7 @@ describe('the tracer', function (): void {
         expect(PartnerInvoiceResource::canGloballySearch())->toBeFalse()
             ->and(PartnerInvoiceResource::canCreate())->toBeFalse()
             ->and(array_keys(PartnerInvoiceResource::getPages()))->toBe(['index', 'view'])
-            ->and(PartnerInvoiceResource::getRelations())->toBe([]);
+            ->and(PartnerInvoiceResource::getRelations())->toBe([PartnerCashReceiptsRelationManager::class]);
     });
 });
 
@@ -354,6 +355,30 @@ describe('the payment method (Phase 14)', function (): void {
             ->assertOk()
             ->assertSee('Způsob úhrady')
             ->assertSee('Online platba kartou')
+            ->assertDontSee('Bankovní převod')
+            ->assertSee(Money::ofMinor(1_000_000, 'CZK')->format('cs'))
+            ->assertSee('Částka k úhradě')
+            ->assertDontSee(FictionalIban::czech('12'))
+            ->assertDontSee(trim(chunk_split(FictionalIban::czech('12'), 4, ' ')))
+            ->assertDontSee('Bankovní účet')
+            ->assertDontSee('Variabilní symbol');
+    });
+
+    it('shows a cash invoice with its method and amount and without the account or either variable symbol (Phase 15, D-02)', function (): void {
+        $issued = InvoiceFixtures::issued($this->client, [InvoiceFixtures::item('Example work', '1', '10000.00')]);
+
+        app(PartnerContext::class)->runAsSystem(static function () use ($issued): void {
+            DB::update("update invoices set payment_method = 'cash', bank_snapshot = null where id = ?", [$issued->id]);
+            DB::update('update invoice_admin set card_payment_enabled = false, pay_token = null where invoice_id = ?', [$issued->id]);
+        });
+
+        $cash = Invoice::query()->whereKey($issued->id)->firstOrFail();
+        $this->actingAs($this->partner);
+
+        $this->get(PartnerInvoiceResource::getUrl('view', ['record' => $cash]))
+            ->assertOk()
+            ->assertSee('Způsob úhrady')
+            ->assertSee('Hotově')
             ->assertDontSee('Bankovní převod')
             ->assertSee(Money::ofMinor(1_000_000, 'CZK')->format('cs'))
             ->assertSee('Částka k úhradě')

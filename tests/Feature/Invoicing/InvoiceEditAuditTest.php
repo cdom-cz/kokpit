@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Invoicing\Actions\LockInvoice;
 use App\Domain\Invoicing\Actions\QueueInvoiceEmail;
 use App\Domain\Invoicing\Actions\UnlockInvoice;
 use App\Domain\Invoicing\Actions\UpdateIssuedDocument;
@@ -303,6 +304,36 @@ describe('the audit of an edit after the first send', function (): void {
         expect(InvoiceAudit::everSent($queued))->toBeFalse()
             ->and(InvoiceAudit::everSent($sent))->toBeTrue();
     });
+
+    it('counts a document locked by hand as handed over, though it was never e-mailed', function (): void {
+        $open = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $byHand = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        app(LockInvoice::class)->handle($this->admin, $byHand);
+
+        expect(InvoiceAudit::everSent($open))->toBeFalse()
+            ->and(InvoiceAudit::everSent($byHand))->toBeTrue()
+            ->and(editAuditRows($byHand, 'invoice_locked_manually'))->toHaveCount(1);
+    });
+
+    it('audits an edit after a manual lock and an unlock like an edit after a send', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Design', '2', '500.00')]);
+        [$line] = editAuditLines($invoice);
+
+        app(LockInvoice::class)->handle($this->admin, $invoice);
+        app(UnlockInvoice::class)->handle($this->admin, $invoice, 'Wrong example quantity on line one');
+
+        app(UpdateIssuedDocument::class)->handle($this->admin, $invoice, [
+            'items' => [editAuditPayload($line, ['quantity' => '3'])],
+        ]);
+
+        $edited = editAuditRows($invoice, 'invoice_edited');
+
+        expect($edited)->toHaveCount(1)
+            ->and($edited[0]->causer_id)->toBe($this->admin->id)
+            ->and($edited[0]->attribute_changes?->all()['old']['items.1.quantity'] ?? null)->toBe('2.0000')
+            ->and($edited[0]->attribute_changes?->all()['attributes']['items.1.quantity'] ?? null)->toBe('3.0000');
+    });
 });
 
 describe('what the audit row holds', function (): void {
@@ -517,9 +548,10 @@ describe('how the history tab reads an edit row', function (): void {
         expect(ActivityPresenter::changes($activity))->toBe('Celkem (v nejmenších jednotkách měny): 1 -> 3');
     });
 
-    it('has a Czech label for the three events of the lock', function (): void {
+    it('has a Czech label for the events of the lock', function (): void {
         expect(__('kokpit.activity.events.invoice_edited'))->toBe('Doklad upraven po odeslání')
             ->and(__('kokpit.activity.events.invoice_locked'))->toBe('Doklad uzamčen odesláním')
+            ->and(__('kokpit.activity.events.invoice_locked_manually'))->toBe('Doklad uzamčen ručně')
             ->and(__('kokpit.activity.events.invoice_unlocked'))->toBe('Doklad odemčen');
     });
 });

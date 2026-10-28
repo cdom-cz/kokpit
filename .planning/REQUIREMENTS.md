@@ -163,6 +163,35 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **P14-08**: A currency change is refused once a payment is recorded; a method or account change is still allowed
 - [x] **P14-09**: `online` requires card payment to be available (global setting on, Stripe configured, client flag on) and blocks issuing otherwise
 
+### Cash Payments and Cash Receipts
+
+- [x] **P15-01**: A draft, invoice or proforma may have the payment method `cash` as a third value next to `transfer` and `online`; a credit note still has none; the default of a new draft stays `transfer`
+- [x] **P15-02**: A cash document prints no bank box, account, QR, variable symbol or pay button, and stores no bank snapshot (enforced by a database check)
+- [x] **P15-03**: Cash excludes card payment: the card switch is off and locked, no Stripe link exists, and the pay URL shows the information page
+- [x] **P15-04**: The method is chosen in the draft and changed while the issued document is open; a change to cash deactivates the live Stripe link
+- [x] **P15-05**: Every recorded cash payment (any document method, invoice or proforma) issues one cash receipt document (PPD) in the payment transaction; carried copies of a proforma payment issue none
+- [x] **P15-06**: A PPD has its own gap-free number series with a configurable pattern; it carries no variable symbol and no QR
+- [x] **P15-07**: A PPD is editable until the successful confirmation send locks it; Admin unlocks it with a recorded reason; number, kind, amount and currency never change
+- [x] **P15-08**: The PPD PDF carries the content the Accounting Act requires of an accounting document, is built from snapshots in the client's language, is stored, and is regenerated when the PPD is edited
+- [x] **P15-09**: The PPD PDF is attached to the payment confirmation e-mail, and the successful send locks the PPD
+- [x] **P15-10**: A payment with a PPD cannot be deleted before the PPD is cancelled with a reason; the PPD number is never reused
+- [x] **P15-11**: Admin sees, downloads, edits and cancels PPDs in the invoice detail; Partner sees and downloads the PPDs of the own non-draft documents read-only, enforced by policy and scope
+- [x] **P15-12**: A cancelled PPD keeps its number and PDF, is marked cancelled and is audited
+
+### Per-Client E-mail Sending and Manual Lock
+
+- [x] **P16-01**: Every existing and every new client has the switch "send documents by e-mail" on by default; the Admin edits it in the client form and sees it in the client detail with a badge when it is off; it is not a column of the client list
+- [x] **P16-02**: A change of the switch is audited with who, when, the old and the new value
+- [x] **P16-03**: A document e-mail (invoice, proforma, credit note) to a client with the switch off is refused by the domain, and no e-mail log row is written
+- [x] **P16-04**: A payment of a client with the switch off gets its payment confirmation row as `skipped` and no send job is queued; the payment itself is never blocked
+- [x] **P16-05**: A document e-mail or payment confirmation still queued when the switch goes off is not sent: the job re-checks after its claim, marks the row `skipped` and locks nothing; switching on again revives no row
+- [x] **P16-06**: `skipped` rows count as neither failed nor unsent in the System page indicator, the failed-e-mail bell, the list rows and the detail, and the indicator ignores the documents of clients with the switch off
+- [x] **P16-07**: For a client with the switch off, "Odeslat e-mailem" and "Odeslat znovu" are hidden in the detail header, the list row and the Odeslání row, the detail shows a gray note, and the send dialog does not open after an issue
+- [x] **P16-08**: The Admin locks an issued, open invoice or proforma by hand for any client without a reason; the lock is refused for a draft, a credit note, a locked or cancelled document and a converted proforma; it is audited, number, kind and snapshots stay unchanged, and a later edit after an unlock is audited like one after a send
+- [x] **P16-09**: The Admin locks an open, uncancelled cash receipt (PPD) by hand with the same rules
+- [x] **P16-10**: Unlock stays Admin-only with a mandatory reason; the lock literals stay confined to named files (the architecture tests are extended on purpose); the database row guards are unchanged
+- [x] **P16-11**: System e-mails to the Partner users of the client (invitation, password reset, task notifications) are unaffected by the switch
+
 ### Partner Audit
 
 - [x] **AUD-01**: Automated tests prove Partner never sees time, rates, prices, finance, internal comments or other clients' data in UI, search, selects, exports, notifications, activity log and API, for every entity
@@ -323,12 +352,35 @@ Which phases cover which requirements. Updated during roadmap creation.
 | P14-07 | Phase 14 | Complete |
 | P14-08 | Phase 14 | Complete |
 | P14-09 | Phase 14 | Complete |
+| P15-01 | Phase 15 | Complete |
+| P15-02 | Phase 15 | Complete |
+| P15-03 | Phase 15 | Complete |
+| P15-04 | Phase 15 | Complete |
+| P15-05 | Phase 15 | Complete |
+| P15-06 | Phase 15 | Complete |
+| P15-07 | Phase 15 | Complete |
+| P15-08 | Phase 15 | Complete |
+| P15-09 | Phase 15 | Complete |
+| P15-10 | Phase 15 | Complete |
+| P15-11 | Phase 15 | Complete |
+| P15-12 | Phase 15 | Complete |
+| P16-01 | Phase 16 | Complete |
+| P16-02 | Phase 16 | Complete |
+| P16-03 | Phase 16 | Complete |
+| P16-04 | Phase 16 | Complete |
+| P16-05 | Phase 16 | Complete |
+| P16-06 | Phase 16 | Complete |
+| P16-07 | Phase 16 | Complete |
+| P16-08 | Phase 16 | Complete |
+| P16-09 | Phase 16 | Complete |
+| P16-10 | Phase 16 | Complete |
+| P16-11 | Phase 16 | Complete |
 | AUD-01 | Phase 12 | Complete |
 | AUD-02 | Phase 12 | Complete |
 
 **Coverage:**
-- v1 requirements: 111 total
-- Mapped to phases: 110
+- v1 requirements: 134 total
+- Mapped to phases: 133
 - Deferred to backlog: 1 (AP-03)
 - Unmapped: 0
 
@@ -336,4 +388,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-10-06*
-*Last updated: 2026-10-23 for Phase 10.1 (send-driven lock: IN-03 amended, IN-11 to IN-15 added; IN-15 amended: bank account audited by fingerprint, owner decision of 2026-10-23)*
+*Last updated: 2026-10-28 for Phase 16 (per-client e-mail sending switch and manual lock: P16-01 to P16-11 added)*

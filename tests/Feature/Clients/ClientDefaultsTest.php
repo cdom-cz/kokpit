@@ -249,3 +249,57 @@ it('keeps an edited client form on its stored values after the defaults changed'
         ->and($client->invoice_language)->toBe(InvoiceLanguage::English)
         ->and($client->online_payment_enabled)->toBeTrue();
 });
+
+/**
+ * A full update payload for a client that keeps every stored value; the switch key is added by the caller.
+ *
+ * @return array<string, mixed>
+ */
+function clientDocEmailsPayload(Client $client): array
+{
+    return [
+        'name' => $client->name,
+        'country' => $client->country,
+        'stage' => $client->stage->value,
+        'currency' => $client->currency,
+        'hourly_rate' => '0',
+        'payment_terms_days' => $client->payment_terms_days,
+        'invoice_language' => $client->invoice_language->value,
+    ];
+}
+
+it('sends documents by e-mail by default and keeps an explicit choice (Phase 16, D-01)', function (): void {
+    $missing = app(CreateClientAction::class)->handle(['name' => 'Example switch missing']);
+    $off = app(CreateClientAction::class)->handle(['name' => 'Example switch off', 'document_emails_enabled' => false]);
+    $null = app(CreateClientAction::class)->handle(['name' => 'Example switch null', 'document_emails_enabled' => null]);
+
+    expect($missing->document_emails_enabled)->toBeTrue()
+        ->and($off->document_emails_enabled)->toBeFalse()
+        ->and($null->document_emails_enabled)->toBeTrue();
+});
+
+it('never switches document e-mails off when an update omits the key or sends null', function (): void {
+    $client = Client::factory()->withoutDocumentEmails()->create();
+
+    $omitted = app(UpdateClientAction::class)->handle($client, clientDocEmailsPayload($client));
+
+    expect($omitted->document_emails_enabled)->toBeFalse();
+
+    $nulled = app(UpdateClientAction::class)->handle($omitted, [...clientDocEmailsPayload($omitted), 'document_emails_enabled' => null]);
+
+    expect($nulled->document_emails_enabled)->toBeFalse();
+
+    $on = app(UpdateClientAction::class)->handle($nulled, [...clientDocEmailsPayload($nulled), 'document_emails_enabled' => true]);
+
+    expect($on->document_emails_enabled)->toBeTrue();
+
+    // An update without the key keeps a switched-on client on as well.
+    $kept = app(UpdateClientAction::class)->handle($on, clientDocEmailsPayload($on));
+
+    expect($kept->document_emails_enabled)->toBeTrue();
+});
+
+it('stores the factory state of a client without document e-mails', function (): void {
+    expect(Client::factory()->withoutDocumentEmails()->create()->refresh()->document_emails_enabled)->toBeFalse()
+        ->and(Client::factory()->create()->refresh()->document_emails_enabled)->toBeTrue();
+});

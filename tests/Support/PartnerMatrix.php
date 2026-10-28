@@ -12,6 +12,7 @@ use App\Domain\Documents\Models\DocumentArchive;
 use App\Domain\ExchangeRates\Models\ExchangeRate;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceEmail;
@@ -61,6 +62,7 @@ use App\Filament\Pages\TaskBoardPage;
 use App\Filament\Pages\TimeReportPage;
 use App\Filament\Pages\TimesheetPage;
 use App\Filament\Partner\Resources\PartnerInvoiceResource;
+use App\Filament\Partner\Resources\PartnerInvoiceResource\RelationManagers\PartnerCashReceiptsRelationManager;
 use App\Filament\Partner\Resources\PartnerProjectResource;
 use App\Filament\Partner\Resources\PartnerProjectResource\RelationManagers\PartnerProjectDocumentsRelationManager;
 use App\Filament\Partner\Resources\PartnerTaskResource;
@@ -170,7 +172,8 @@ final class PartnerMatrix
             PartnerTaskResource::class => ['admin' => false, 'partner' => true, 'reason' => 'Tasks of the own client\'s visible projects; opens only for a Partner with a client.'],
             PartnerInvoiceResource::class => ['admin' => false, 'partner' => true, 'reason' => 'Issued documents of the own client, read-only; opens only for a Partner with a client.'],
 
-            // Partner relation managers: checked on an own visible project or task
+            // Partner relation managers: checked on an own visible project or task, or an own issued invoice
+            PartnerCashReceiptsRelationManager::class => ['admin' => false, 'partner' => true, 'reason' => 'Cash receipts of an own issued invoice or proforma, read-only; opens only for a Partner with a client.'],
             PartnerProjectDocumentsRelationManager::class => ['admin' => true, 'partner' => true, 'reason' => 'Shared files of an own visible project, read-only.'],
             PartnerTaskCommentsRelationManager::class => ['admin' => true, 'partner' => true, 'reason' => 'Non-internal comments of an own task and adding a comment.'],
             PartnerTaskDocumentsRelationManager::class => ['admin' => true, 'partner' => true, 'reason' => 'Shared files of an own task.'],
@@ -414,6 +417,14 @@ final class PartnerMatrix
                     'delete' => ['own_visible' => false, 'own_hidden' => false, 'foreign' => false],
                 ],
             ],
+            CashReceipt::class => [
+                'class' => ['viewAny' => true, 'create' => false],
+                'records' => [
+                    'view' => ['own_visible' => true, 'foreign' => false],
+                    'update' => ['own_visible' => false, 'foreign' => false],
+                    'delete' => ['own_visible' => false, 'foreign' => false],
+                ],
+            ],
             Tag::class => [
                 'class' => ['viewAny' => false, 'create' => false],
                 'records' => [
@@ -616,6 +627,11 @@ final class PartnerMatrix
             ],
             'PartnerInvoiceResource.form' => [],
             'PartnerInvoiceResource.filters' => ['kind', 'status'],
+
+            // Cash receipts of an own issued document: number, date received, the printed amount and whether cancelled (Phase 15, D-13)
+            'PartnerCashReceiptsRelationManager.table' => ['number', 'received_on', 'amount', 'state'],
+            'PartnerCashReceiptsRelationManager.filters' => [],
+            'PartnerCashReceiptsRelationManager.form' => [],
 
             // Files of an own project and task: name, description, size and date
             'PartnerProjectDocumentsRelationManager.table' => ['name', 'description', 'size_bytes', 'created_at'],

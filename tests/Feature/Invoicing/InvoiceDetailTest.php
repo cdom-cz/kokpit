@@ -135,6 +135,24 @@ describe('the heading and the state', function (): void {
             ->assertSee('Platba kartou');
     });
 
+    it('shows the cash method of a document and no bank account, but keeps the stored variable symbol as an internal reference (AS-13)', function (): void {
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        app(PartnerContext::class)->runAsSystem(static function () use ($invoice): void {
+            DB::update("update invoices set payment_method = 'cash', bank_snapshot = null where id = ?", [$invoice->id]);
+            DB::update('update invoice_admin set card_payment_enabled = false, pay_token = null where invoice_id = ?', [$invoice->id]);
+        });
+
+        detail($invoice)
+            ->assertSee('Způsob úhrady')
+            ->assertSee('Hotově')
+            ->assertDontSee('Bankovní převod')
+            ->assertDontSee('Bankovní účet')
+            ->assertDontSee('IBAN')
+            ->assertSee('Variabilní symbol')
+            ->assertSee((string) $invoice->variable_symbol);
+    });
+
     it('shows neither the method nor the bank account on a credit note', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
         $creditNote = app(IssueCreditNote::class)->storno($this->admin, $invoice);
@@ -585,8 +603,8 @@ describe('the lock of a sent document', function (): void {
 
         detail($invoice)
             ->assertSee('Uzamčeno')
-            ->assertSee('Doklad byl odeslán e-mailem a je uzamčen. Upravit ho lze až po odemknutí s uvedením důvodu.')
-            ->assertDontSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.')
+            ->assertSee('Doklad je uzamčen (odesláním e-mailem nebo ručně). Upravit ho lze až po odemknutí s uvedením důvodu.')
+            ->assertDontSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem nebo ručně uzamčen.')
             ->assertActionExists(TestAction::make('unlock')->schemaComponent('locked', schema: 'infolist'))
             ->assertActionVisible(TestAction::make('unlock')->schemaComponent('locked', schema: 'infolist'));
     });
@@ -607,8 +625,8 @@ describe('the lock of a sent document', function (): void {
             ->and($invoice->refresh()->lock_state->value)->toBe('open');
 
         $page
-            ->assertSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.')
-            ->assertDontSee('Doklad byl odeslán e-mailem a je uzamčen.')
+            ->assertSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem nebo ručně uzamčen.')
+            ->assertDontSee('Doklad je uzamčen (odesláním e-mailem nebo ručně).')
             ->assertDontSee('Odemknout');
     });
 
@@ -626,9 +644,9 @@ describe('the lock of a sent document', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
 
         detail($invoice)
-            ->assertSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.')
+            ->assertSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem nebo ručně uzamčen.')
             ->assertDontSee('Uzamčeno')
-            ->assertDontSee('Doklad byl odeslán e-mailem a je uzamčen.')
+            ->assertDontSee('Doklad je uzamčen (odesláním e-mailem nebo ručně).')
             ->assertDontSee('Odemknout');
     });
 
@@ -637,8 +655,8 @@ describe('the lock of a sent document', function (): void {
         $credit = app(IssueCreditNote::class)->storno($this->admin, $invoice);
 
         detail($credit)
-            ->assertDontSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem.')
-            ->assertDontSee('Doklad byl odeslán e-mailem a je uzamčen.')
+            ->assertDontSee('Doklad lze upravit, dokud nebude úspěšně odeslán e-mailem nebo ručně uzamčen.')
+            ->assertDontSee('Doklad je uzamčen (odesláním e-mailem nebo ručně).')
             ->assertDontSee('Odemknout');
     });
 });

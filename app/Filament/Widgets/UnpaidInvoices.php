@@ -59,6 +59,9 @@ final class UnpaidInvoices extends StatsOverviewWidget
     /** @var int|string|array<string, int|null> */
     protected int|string|array $columnSpan = 'full';
 
+    /** Two stats per row at every width, so the optional third one wraps instead of stretching the row to three. */
+    protected int|array|null $columns = 2;
+
     /**
      * The summary of the current render; read once, shared by the stats and the collapsed header.
      *

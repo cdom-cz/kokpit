@@ -21,53 +21,53 @@
     {
       "number": "4",
       "name": "Clients and Projects",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "5",
       "name": "Tasks and Kanban",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "6",
       "name": "Time Tracking",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "7",
       "name": "REST API",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "8",
       "name": "Exchange Rates and Reports",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "9",
       "name": "Documents and Finance",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "10",
       "name": "Invoicing",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "11",
       "name": "Stripe Payments",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "12",
       "name": "Partner Audit",
-      "status": "pending"
+      "status": "in_progress"
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 4)",
-    "reason": "Phase 4 of 12 — needs a plan"
+    "command": "/gsd-progress --next",
+    "label": "Advance to the next step (verify)",
+    "reason": "Phase 8 of 18 · 39% · ready to verify"
   },
-  "updated_at": "2026-10-08T06:04:59.921Z"
+  "updated_at": "2026-10-28T11:14:45.632Z"
 }

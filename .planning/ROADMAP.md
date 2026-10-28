@@ -976,3 +976,61 @@ Plans:
 
 **Gap closure, Wave 2** *(blocked on gap closure Wave 1 completion)*
 - [x] 14-15-PLAN.md — IN-01 and IN-02 doc fixes, CONTRIBUTING hand-over of the gap rules, full gate (gap closure, Wave 2)
+
+### Phase 15: Cash payment method for invoices and cash receipt documents
+
+**Goal:** Invoices can be created with cash as the payment method, and a cash receipt document (Czech: pokladni prijmovy doklad, PPD) can be issued for such invoices. Research must first establish what a cash receipt document is and how it is issued (legal requirements, content, numbering).
+**Requirements**: P15-01, P15-02, P15-03, P15-04, P15-05, P15-06, P15-07, P15-08, P15-09, P15-10, P15-11, P15-12
+**Depends on:** Phase 14
+**Plans:** 14/14 plans complete
+
+Plans:
+**Wave 1**
+- [x] 15-01-PLAN.md — Cash as third document method: CHECKs, draft rule, issue without bank snapshot or pay token; P15 requirements and assumptions AS-1 to AS-16 (owner answers included) recorded (Wave 1)
+- [x] 15-02-PLAN.md — Owner decision on the receipt table shape, then `cash_receipts` (frozen `document_number` included) with guard, D-08 FK/CHECK and Partner-safe pin (Wave 1, checkpoint)
+- [x] 15-03-PLAN.md — Shared closed Dompdf engine and PDF parts extracted from the invoice PDF, options pinned by a test (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 15-04-PLAN.md — Cash on paper and screen: PDF cash box, default e-mail text, Admin and Partner detail without bank details (Wave 2)
+- [x] 15-05-PLAN.md — Own gap-free `cash_receipt` number series and pattern setting (Wave 2)
+- [x] 15-06-PLAN.md — Partner-isolated `CashReceipt` model, policy and relations, registered in every isolation and audit harness (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 15-07-PLAN.md — Open issued document changed to and from cash: snapshot, card switch, Stripe link, pay URL, conversion, editors (Wave 3)
+- [x] 15-08-PLAN.md — Receipt issued automatically in the cash payment transaction with its audit row; concurrency proof (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 15-09-PLAN.md — Receipt PDF (Accounting Act Sec. 11 content) built from the receipt row only and stored (Wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 15-10-PLAN.md — Receipt attached to the payment confirmation; the successful send locks it (Wave 5)
+- [x] 15-11-PLAN.md — Signed download route and the Partner's read-only receipt list, declared in every audit matrix (Wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 15-12-PLAN.md — Storno with a recorded reason; payment deletion refused while the receipt is valid; receipt PDF protected (Wave 6)
+- [x] 15-13-PLAN.md — Edit while open, Admin unlock with reason, regenerate a missing PDF, unlock-path architecture test (Wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 15-14-PLAN.md — Platby tab receipt column and actions, hand-over in CONTRIBUTING, full gate (Wave 7)
+
+### Phase 16: Per-client e-mail sending toggle
+
+**Goal:** A client setting that disables sending e-mails (invoices and related documents) to that client, for clients served exclusively by hand; sending stays enabled by default
+**Requirements**: P16-01, P16-02, P16-03, P16-04, P16-05, P16-06, P16-07, P16-08, P16-09, P16-10, P16-11
+**Depends on:** Phase 15
+**Plans:** 6/6 plans complete
+
+Plans:
+**Wave 1**
+- [x] 16-01-PLAN.md — Client switch "Odesílat doklady e-mailem": column (default on), form, detail badge, audit, defaults, the fail-closed gate `ClientDocumentEmails`; P16 requirements registered (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 16-02-PLAN.md — Invoice detail of a hand-served client (no send action, gray note, no post-issue dialog, queue refused) and the manual invoice/proforma lock `LockInvoice` with its audit and arch allowlist (Wave 2)
+- [x] 16-03-PLAN.md — `skipped` document e-mail: job re-check after the claim, list/Odeslání tab read it as not sent and hide the resend, System indicator ignores skipped rows and hand-served clients (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 16-04-PLAN.md — Manual lock of a cash receipt (PPD) from the Platby tab, `LockCashReceipt`, audit and arch allowlist (Wave 3)
+- [x] 16-05-PLAN.md — Payment confirmation of a hand-served client: skipped row with no job, record-dialog hint, job re-check, relaxed recipient CHECK (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 16-06-PLAN.md — Hand-served journey, D-01 scope test (system e-mails unaffected), Partner isolation, CONTRIBUTING hand-over, full gate (Wave 4)

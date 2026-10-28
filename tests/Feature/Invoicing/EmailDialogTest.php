@@ -11,6 +11,7 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceEmail;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Money\Money;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Resources\InvoiceResource\Pages\ListInvoices;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
@@ -18,6 +19,7 @@ use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEmailsRelatio
 use Carbon\CarbonImmutable;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -183,6 +185,56 @@ describe('the dialog after the issue', function (): void {
         expect(InvoiceEmail::query()->count())->toBe(0);
 
         Queue::assertNothingPushed();
+    });
+});
+
+/**
+ * An issued, still open document switched to cash payment the way the database allows it (Phase 15, plan 15-01): the
+ * method is cash, the bank snapshot is gone and the card switch stays off with no pay token.
+ */
+function emailCashInvoice(Invoice $issued): Invoice
+{
+    app(PartnerContext::class)->runAsSystem(static function () use ($issued): void {
+        DB::update("update invoices set payment_method = 'cash', bank_snapshot = null where id = ?", [$issued->id]);
+        DB::update('update invoice_admin set card_payment_enabled = false, pay_token = null where invoice_id = ?', [$issued->id]);
+    });
+
+    return Invoice::query()->whereKey($issued->id)->firstOrFail();
+}
+
+describe('the default text of a cash document (Phase 15, D-02)', function (): void {
+    it('asks for payment in cash in Czech and points at no payment details', function (): void {
+        $cash = emailCashInvoice(InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Consulting', '1', '1000.00')]));
+
+        $body = app(QueueInvoiceEmail::class)->defaults($cash)['body'];
+
+        expect($body)->toContain('Doklad je určen k úhradě v hotovosti.')
+            ->and($body)->toContain((string) $cash->number)
+            ->and($body)->toContain(Money::ofMinor(100000, 'CZK')->format('cs'))
+            ->and($body)->toContain($cash->due_date?->format('j. n. Y') ?? 'missing')
+            ->and($body)->not->toContain('Platební údaje')
+            ->and($body)->not->toContain('kartou');
+    });
+
+    it('asks for payment in cash in English for an English document', function (): void {
+        $cash = emailCashInvoice(InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_language' => 'en']), [InvoiceFixtures::item('Consulting', '1', '1000.00')]));
+
+        $body = app(QueueInvoiceEmail::class)->defaults($cash)['body'];
+
+        expect($body)->toContain('This document is to be paid in cash.')
+            ->and($body)->toContain((string) $cash->number)
+            ->and($body)->toContain($cash->due_date?->format('Y-m-d') ?? 'missing')
+            ->and($body)->not->toContain('Payment details')
+            ->and($body)->not->toContain('by card');
+    });
+
+    it('keeps the transfer text for a transfer document', function (): void {
+        $transfer = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Consulting', '1', '1000.00')]);
+
+        $body = app(QueueInvoiceEmail::class)->defaults($transfer)['body'];
+
+        expect($body)->toContain('Platební údaje najdete v přiloženém dokumentu.')
+            ->and($body)->not->toContain('v hotovosti');
     });
 });
 
@@ -357,6 +409,32 @@ describe('the Odeslání tab', function (): void {
         Queue::assertPushed(SendInvoiceEmail::class, static fn (SendInvoiceEmail $job): bool => $job->emailId === $new->id);
     });
 
+    it('renders a skipped row with its label and a gray badge and offers no resend (Phase 16)', function (): void {
+        $invoice = emailInvoiceWithTime();
+        $skipped = emailLogRow($invoice, InvoiceEmailState::Skipped, '2026-10-12 08:00:00+00');
+
+        emailTab($invoice)
+            ->assertCanSeeTableRecords([$skipped])
+            ->assertTableColumnStateSet('state', InvoiceEmailState::Skipped, $skipped)
+            ->assertTableColumnStateSet('note', '—', $skipped)
+            ->assertSee('Neodesláno (vypnuto u klienta)')
+            ->assertDontSee('Odeslání se nepodařilo. Zkuste ho zopakovat.')
+            ->assertTableActionHidden('resendEmail', $skipped);
+    });
+
+    it('offers no resend on a failed row of a client with document e-mails switched off (Phase 16)', function (): void {
+        $off = InvoiceFixtures::issued(InvoiceFixtures::client(['document_emails_enabled' => false]));
+        $on = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $offFailed = emailLogRow($off, InvoiceEmailState::Failed, '2026-10-12 08:00:00+00');
+        $onFailed = emailLogRow($on, InvoiceEmailState::Failed, '2026-10-12 08:00:00+00');
+        $onSkipped = emailLogRow($on, InvoiceEmailState::Skipped, '2026-10-13 08:00:00+00');
+
+        emailTab($off)->assertTableActionHidden('resendEmail', $offFailed);
+        emailTab($on)
+            ->assertTableActionVisible('resendEmail', $onFailed)
+            ->assertTableActionHidden('resendEmail', $onSkipped);
+    });
+
     it('does not borrow the values of a row of another document', function (): void {
         Queue::fake();
         $invoice = emailInvoiceWithTime();
@@ -415,6 +493,15 @@ describe('the E-mail column and Odeslat znovu in the list', function (): void {
             ->assertCanNotSeeTableRecords([$sent, $queued, $sending, $never]);
     });
 
+    it('reads a document whose latest row is skipped as not sent (Phase 16)', function (): void {
+        $skipped = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        emailLogRow($skipped, InvoiceEmailState::Skipped, '2026-10-02 08:00:00+00');
+
+        Livewire::test(ListInvoices::class)
+            ->assertTableColumnStateSet('email', 'none', $skipped);
+    });
+
     it('offers Odeslat znovu for failed and unsent issued documents only', function (): void {
         $sent = InvoiceFixtures::issued(InvoiceFixtures::client());
         $queued = InvoiceFixtures::issued(InvoiceFixtures::client());
@@ -433,6 +520,22 @@ describe('the E-mail column and Odeslat znovu in the list', function (): void {
             ->assertTableActionHidden('resendEmail', $sent)
             ->assertTableActionHidden('resendEmail', $queued)
             ->assertTableActionHidden('resendEmail', $draft);
+    });
+
+    it('hides Odeslat znovu in the list for a client with document e-mails switched off (Phase 16)', function (): void {
+        $offNever = InvoiceFixtures::issued(InvoiceFixtures::client(['document_emails_enabled' => false]));
+        $offFailed = InvoiceFixtures::issued(InvoiceFixtures::client(['document_emails_enabled' => false]));
+        $onNever = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $onFailed = InvoiceFixtures::issued(InvoiceFixtures::client());
+
+        emailLogRow($offFailed, InvoiceEmailState::Failed, '2026-10-02 08:00:00+00');
+        emailLogRow($onFailed, InvoiceEmailState::Failed, '2026-10-02 08:00:00+00');
+
+        Livewire::test(ListInvoices::class)
+            ->assertTableActionHidden('resendEmail', $offNever)
+            ->assertTableActionHidden('resendEmail', $offFailed)
+            ->assertTableActionVisible('resendEmail', $onNever)
+            ->assertTableActionVisible('resendEmail', $onFailed);
     });
 
     it('queues a new e-mail from the list row after the confirmation', function (): void {

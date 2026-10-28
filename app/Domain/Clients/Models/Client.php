@@ -61,6 +61,7 @@ use Spatie\Tags\HasTags;
  * @property string|null $invoice_email
  * @property InvoiceLanguage $invoice_language
  * @property bool $online_payment_enabled
+ * @property bool $document_emails_enabled
  * @property CarbonInterface|null $deleted_at
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -80,6 +81,7 @@ use Spatie\Tags\HasTags;
     'invoice_email',
     'invoice_language',
     'online_payment_enabled',
+    'document_emails_enabled',
 ])]
 #[LoggedAttributes([
     'name',
@@ -97,6 +99,7 @@ use Spatie\Tags\HasTags;
     'invoice_email',
     'invoice_language',
     'online_payment_enabled',
+    'document_emails_enabled',
 ])]
 final class Client extends KokpitModel implements PartnerIsolated
 {
@@ -117,6 +120,7 @@ final class Client extends KokpitModel implements PartnerIsolated
             'invoice_language' => InvoiceLanguage::class,
             'hourly_rate' => MoneyCast::class,
             'online_payment_enabled' => 'boolean',
+            'document_emails_enabled' => 'boolean',
             'payment_terms_days' => 'integer',
         ];
     }

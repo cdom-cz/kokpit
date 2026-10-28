@@ -125,6 +125,73 @@ describe('the tracer: a draft becomes an online invoice (D-01, D-02, D-03, D-05)
     });
 });
 
+describe('cash as the third method of a draft (Phase 15; D-01, D-03, D-04, D-05)', function (): void {
+    beforeEach(function (): void {
+        CardPaymentSetup::enable();
+        InvoiceFixtures::configureAccounts(
+            InvoiceFixtures::account('Example CZK A', 'CZK', '11'),
+        );
+        InvoiceFixtures::cnbRate('EUR', '2026-10-13', '25.1250000000');
+    });
+
+    it('keeps transfer as the default method of a new draft', function (): void {
+        $draft = dpCreate(CardPaymentSetup::client());
+
+        expect($draft->payment_method)->toBe(DocumentPaymentMethod::Transfer);
+    });
+
+    it('accepts cash and keeps the card switch off, even for a client with online payment on', function (): void {
+        $draft = dpSave(dpCreate(CardPaymentSetup::client()), ['payment_method' => 'cash']);
+
+        expect($draft->payment_method)->toBe(DocumentPaymentMethod::Cash)
+            ->and(dpAdminRow($draft)->card_payment_enabled)->toBeFalse();
+    });
+
+    it('turns the card switch off when a transfer draft with the switch on becomes cash', function (): void {
+        $draft = dpSave(dpCreate(CardPaymentSetup::client()), ['card_payment_enabled' => true]);
+
+        expect(dpAdminRow($draft)->card_payment_enabled)->toBeTrue();
+
+        $draft = dpSave($draft, ['payment_method' => 'cash']);
+
+        expect(dpAdminRow($draft)->card_payment_enabled)->toBeFalse();
+    });
+
+    it('refuses an explicit request to switch card payment on for a cash draft and writes nothing', function (): void {
+        $draft = dpSave(dpCreate(CardPaymentSetup::client()), ['payment_method' => 'cash']);
+
+        $errors = dpRefused(fn () => dpSave($draft, ['card_payment_enabled' => true]));
+
+        expect($errors)->toHaveKey('card_payment_enabled')
+            ->and($errors['card_payment_enabled'][0])->toBe('Doklad placený hotově nelze platit kartou.')
+            ->and(dpAdminRow($draft)->card_payment_enabled)->toBeFalse();
+
+        $errors = dpRefused(fn () => dpSave($draft, ['payment_method' => 'cash', 'card_payment_enabled' => true]));
+
+        expect($errors)->toHaveKey('card_payment_enabled');
+    });
+
+    it('accepts an explicit switch off for a cash draft', function (): void {
+        $draft = dpSave(dpCreate(CardPaymentSetup::client()), ['payment_method' => 'cash', 'card_payment_enabled' => false]);
+
+        expect($draft->payment_method)->toBe(DocumentPaymentMethod::Cash)
+            ->and(dpAdminRow($draft)->card_payment_enabled)->toBeFalse();
+    });
+
+    it('needs no bank account for a cash draft whatever its currency', function (): void {
+        $draft = dpSave(dpCreate(InvoiceFixtures::client(['currency' => 'EUR'])), [
+            'items' => [InvoiceFixtures::item('Example work', '1', '100.00')],
+        ]);
+
+        expect(dpAdminRow($draft)->bank_account_id)->toBeNull()
+            ->and(dpBlockerKeys($draft))->toContain('bank_missing');
+
+        $draft = dpSave($draft, ['payment_method' => 'cash']);
+
+        expect(dpBlockerKeys($draft))->not->toContain('bank_missing');
+    });
+});
+
 /**
  * The keys of the blockers of the draft today.
  *
@@ -404,7 +471,7 @@ describe('online needs card payment (D-03, P14-09)', function (): void {
         $errors = dpRefused(fn () => dpSave($draft, ['payment_method' => $value]));
 
         expect($errors)->toHaveKey('payment_method')
-            ->and($errors['payment_method'][0])->toBe('Zvolte úhradu převodem nebo online.')
+            ->and($errors['payment_method'][0])->toBe('Zvolte úhradu převodem, online nebo hotově.')
             ->and($draft->fresh()->payment_method)->toBe(DocumentPaymentMethod::Transfer);
     })->with(['card', '', 5, null]);
 

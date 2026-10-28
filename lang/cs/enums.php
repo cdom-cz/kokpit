@@ -19,6 +19,7 @@ return [
         'invoice' => 'Faktura',
         'proforma' => 'Zálohová faktura',
         'credit_note' => 'Dobropis',
+        'cash_receipt' => 'Příjmový pokladní doklad',
         'task' => 'Úkol',
     ],
 
@@ -29,6 +30,7 @@ return [
         'task_comment' => 'Komentář',
         'transaction' => 'Transakce',
         'invoice' => 'Doklad',
+        'cash_receipt' => 'Příjmový doklad',
     ],
 
     // DocumentTypeGroup: the file-type groups of the central documents listing (plan 09-14).
@@ -201,6 +203,7 @@ return [
     'document_payment_method' => [
         'transfer' => 'Bankovní převod',
         'online' => 'Online platba kartou',
+        'cash' => 'Hotově',
     ],
 
     'invoice_status' => [
@@ -260,6 +263,7 @@ return [
         'sending' => 'Odesílá se',
         'sent' => 'Odesláno',
         'failed' => 'Odeslání selhalo',
+        'skipped' => 'Neodesláno (vypnuto u klienta)',
     ],
 
     'payment_confirmation_state' => [

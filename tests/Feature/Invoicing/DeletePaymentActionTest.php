@@ -8,6 +8,7 @@ use App\Domain\Invoicing\Actions\DeletePayment;
 use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
+use App\Domain\Invoicing\Models\CashReceipt;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -17,6 +18,7 @@ use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelat
 use Carbon\CarbonImmutable;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -205,6 +207,23 @@ describe('a refusal and a forged call', function (): void {
             ->assertNotified(__('invoices.errors.payment_missing'));
 
         expect(InvoicePayment::query()->whereKey($payment->id)->exists())->toBeTrue();
+    });
+
+    it('disables the delete of a cash payment with a valid receipt, names the receipt, and keeps the cash payment, its income and the receipt', function (): void {
+        Queue::fake();
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client());
+        $payment = app(RecordPayment::class)->handle(Canary::admin(), $invoice, ['amount' => '1000.00', 'paid_on' => '2026-10-14', 'method' => 'cash']);
+        $receipt = CashReceipt::query()->where('invoice_payment_id', $payment->id)->sole();
+
+        // A disabled action is not run (R-15-14-3); the refusal of the Action itself is proven in CashReceiptCancelTest.
+        paymentDeletionTab($invoice)
+            ->assertTableActionDisabled('deletePayment', $payment)
+            ->assertSee(__('cash_receipts.admin.delete_blocked', ['number' => $receipt->number]))
+            ->callAction(TestAction::make('deletePayment')->table($payment));
+
+        expect(InvoicePayment::query()->whereKey($payment->id)->exists())->toBeTrue()
+            ->and(Transaction::query()->where('invoice_payment_id', $payment->id)->exists())->toBeTrue()
+            ->and(CashReceipt::query()->whereKey($receipt->id)->value('invoice_payment_id'))->toBe($payment->id);
     });
 
     it('does not find a payment of another invoice through the host invoice', function (): void {

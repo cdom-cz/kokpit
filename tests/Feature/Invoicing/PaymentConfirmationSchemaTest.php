@@ -186,14 +186,21 @@ describe('the contract (Phase 13)', function (): void {
         RawSql::expectAllowed(static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['state' => 'failed', 'sent_at' => null, 'failure_code' => 'smtp'])));
     });
 
-    it('keeps the recipient null exactly when the row is skipped and never blank', function (): void {
+    it('lets a skipped row keep its recipient or have none, and refuses any other row without one and any blank one (Phase 16)', function (): void {
         [$invoice, $payment] = payConfirmSchemaPayment();
 
         $skipped = ['state' => 'skipped', 'sent_at' => null, 'attempts' => 0];
 
-        RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, [...$skipped, 'recipient' => exampleEmail('client-invoice')])));
         RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['state' => 'queued', 'sent_at' => null, 'recipient' => null])));
         RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['recipient' => '   '])));
+        RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, [...$skipped, 'recipient' => '   '])));
+        RawSql::expectSqlState('23514', static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, ['state' => 'queued', 'sent_at' => null, 'recipient' => '   '])));
+
+        RawSql::expectAllowed(static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, [...$skipped, 'recipient' => exampleEmail('client-invoice')])));
+
+        // One row per payment: the next shape goes in after the first one is taken out again.
+        DB::table('payment_confirmations')->where('invoice_payment_id', $payment->id)->delete();
+
         RawSql::expectAllowed(static fn () => payConfirmSchemaInsert(payConfirmSchemaRow($invoice, $payment, [...$skipped, 'recipient' => null])));
     });
 

@@ -303,6 +303,41 @@ describe('filters', function (): void {
     });
 });
 
+describe('the e-mail filter and a skipped send (Phase 16)', function (): void {
+    it('lists a document whose latest e-mail is skipped under "not sent" and not under "failed"', function (): void {
+        $skipped = listIssued();
+        $sent = listIssued();
+        $never = listIssued();
+
+        $log = static function (Invoice $invoice, InvoiceEmailState $state, string $created): void {
+            app(PartnerContext::class)->runAsSystem(static function () use ($invoice, $state, $created): void {
+                (new InvoiceEmail)->forceFill([
+                    'invoice_id' => $invoice->id,
+                    'recipient' => 'jane@'.implode('.', ['example', 'com']),
+                    'subject' => 'Example',
+                    'body' => 'Example body',
+                    'state' => $state,
+                    'sent_at' => $state === InvoiceEmailState::Sent ? CarbonImmutable::parse('2026-10-02 08:00:00', 'UTC') : null,
+                    'created_by' => Canary::admin()->getKey(),
+                    'created_at' => $created,
+                    'updated_at' => $created,
+                ])->save();
+            });
+        };
+
+        $log($skipped, InvoiceEmailState::Skipped, '2026-10-01 09:00:00+00');
+        $log($sent, InvoiceEmailState::Sent, '2026-10-01 09:00:00+00');
+
+        Livewire::test(ListInvoices::class)
+            ->filterTable('email', 'none')
+            ->assertCanSeeTableRecords([$skipped, $never])
+            ->assertCanNotSeeTableRecords([$sent])
+            ->resetTableFilters()
+            ->filterTable('email', 'failed')
+            ->assertCanNotSeeTableRecords([$skipped, $sent, $never]);
+    });
+});
+
 describe('sorting', function (): void {
     it('lists the oldest overdue document first under the overdue tab', function (): void {
         $later = listIssued(terms: 14);
