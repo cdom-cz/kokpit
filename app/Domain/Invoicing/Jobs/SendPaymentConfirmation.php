@@ -16,6 +16,7 @@ use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Invoicing\Pdf\CashReceiptPdf;
 use App\Domain\Invoicing\Support\CashReceiptAudit;
+use App\Domain\Invoicing\Support\ClientDocumentEmails;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -45,6 +46,12 @@ use Throwable;
  * confirmation that is skipped, failed or never sent leaves the receipt open (AS-10); a receipt whose stored PDF is
  * missing fails the confirmation with `attachment_missing`, so nothing is sent without its receipt.
  *
+ * The client's switch "send documents by e-mail" (Phase 16, D-06, D-07, D-08) is read fresh twice: right after the claim,
+ * and again as the last statement before the transport call, after the payment, the invoice and the receipt were read,
+ * so a switch turned off while the job works still stops the send. When it is off the row ends `skipped` (neither
+ * failed nor unsent, no failure code, no bell), nothing is sent and no receipt is locked; switching on again revives
+ * nothing, as only a queued row is claimed.
+ *
  * Failure classes: `transport` (the mail transport refused), `invalid_recipient` (the stored address no longer passes
  * the recipient rule, final at once), `attachment_missing` (the stored PDF of the receipt is gone, final at once),
  * `unexpected` (anything else). Only the class is stored; neither the row nor the
@@ -54,7 +61,7 @@ use Throwable;
  * Delivery is at-least-once, like the document e-mail: what can send twice is a run that fails after the transport
  * accepted the message, while the row is being marked sent.
  */
-#[Idempotent(how: 'identified by the confirmation row id, one per payment by a unique key; the row is claimed by a conditional update from queued to sending, so a row that is sending, sent, failed, skipped or gone is left alone and a rerun of a finished row sends nothing')]
+#[Idempotent(how: 'identified by the confirmation row id, one per payment by a unique key; the row is claimed by a conditional update from queued to sending, so a row that is sending, sent, failed, skipped or gone is left alone and a rerun of a finished row sends nothing; a claimed row of a client whose document e-mails are switched off ends skipped without a send')]
 final class SendPaymentConfirmation extends KokpitJob
 {
     public const string FAILURE_TRANSPORT = 'transport';
@@ -84,6 +91,10 @@ final class SendPaymentConfirmation extends KokpitJob
         $row = PaymentConfirmation::query()->findOrFail($this->confirmationId);
 
         try {
+            if ($this->skippedBySwitch($row)) {
+                return;
+            }
+
             $recipient = QueuePaymentConfirmation::cleanAddress($row->recipient);
 
             if ($recipient === null) {
@@ -110,6 +121,9 @@ final class SendPaymentConfirmation extends KokpitJob
                 }
             }
 
+            if ($this->skippedBySwitch($row)) {
+                return;
+            }
             Mail::to($recipient)->send(PaymentConfirmationMail::forPayment(
                 number: (string) $invoice->number,
                 amount: $payment->amount(),
@@ -132,6 +146,28 @@ final class SendPaymentConfirmation extends KokpitJob
             // as the previous exception, which only the failed_jobs record and the log hold.
             throw $e instanceof TransportExceptionInterface ? new RuntimeException(self::TRANSPORT_FAILED, 0, $e) : $e;
         }
+    }
+
+    /**
+     * Re-reads the client's switch "send documents by e-mail" and, when it is off, ends the claimed row `skipped`
+     * (Phase 16, D-06, D-07, D-08). The conditional update from sending leaves a row that something else already moved
+     * alone. The skip locks no receipt, tells no one and never throws; the row keeps its recipient. True when the caller
+     * must stop.
+     *
+     * @phpstan-impure it reads the database fresh on every call
+     */
+    private function skippedBySwitch(PaymentConfirmation $row): bool
+    {
+        if (ClientDocumentEmails::enabledForInvoice($row->invoice_id)) {
+            return false;
+        }
+
+        PaymentConfirmation::query()
+            ->whereKey($row->id)
+            ->where('state', PaymentConfirmationState::Sending->value)
+            ->update(['state' => PaymentConfirmationState::Skipped->value, 'updated_at' => now()]);
+
+        return true;
     }
 
     /**

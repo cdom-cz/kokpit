@@ -594,6 +594,7 @@ return [
             'already_paid' => 'Faktura je již zaplacená.',
             'over_amount' => 'Zadaná částka je vyšší než zbývající částka (:remaining).',
             'confirmation_hint' => 'Klientovi odejde na :email potvrzení přijetí platby.',
+            'confirmation_hint_disabled' => 'Klient má odesílání dokladů e-mailem vypnuté, potvrzení platby se neodešle.',
             'confirmation_hint_none' => 'Klient nemá použitelný fakturační e-mail, potvrzení platby se neodešle.',
             'not_editable' => 'Uloženou platbu nelze upravit, jen smazat.',
             'submit' => 'Uložit platbu',

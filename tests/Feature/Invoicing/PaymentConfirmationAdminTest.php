@@ -91,6 +91,25 @@ describe('the tracer: the dialog tells whom the client e-mail reaches, the tab s
         payAdminTab($invoice)->assertSee('Bez e-mailu');
     });
 
+    it('says that nothing is sent when the client has document e-mails switched off, and saves the payment anyway (Phase 16, D-06)', function (): void {
+        $address = exampleEmail('client-invoice');
+        $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => $address, 'document_emails_enabled' => false]));
+        Mail::getSymfonyTransport()->flush();
+
+        payAdminDialog($invoice)
+            ->assertMountedActionModalSee('Klient má odesílání dokladů e-mailem vypnuté, potvrzení platby se neodešle.')
+            ->assertMountedActionModalDontSee('Klientovi odejde na')
+            ->assertMountedActionModalDontSee('Klient nemá použitelný fakturační e-mail')
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertNotified('Platba byla uložena');
+
+        expect($invoice->payments()->count())->toBe(1)
+            ->and(MailFixtures::sent())->toBe([]);
+
+        payAdminTab($invoice)->assertSee('Bez e-mailu');
+    });
+
     it('treats an unusable stored address like none', function (): void {
         $invoice = InvoiceFixtures::issued(InvoiceFixtures::client(['invoice_email' => 'not an address']));
 
