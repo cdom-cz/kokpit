@@ -1,7 +1,7 @@
 ---
 phase: 16-per-client-e-mail-sending-toggle
 verified: 2026-10-28T12:00:00Z
-status: human_needed
+status: passed
 score: 11/11 must-haves verified
 covered_files:
   - ".planning/phases/16-per-client-e-mail-sending-toggle/16-01-PLAN.md"

@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 8
 current_phase_name: Exchange Rates and Reports
 status: verifying
-stopped_at: Phase 16 context gathered
-last_updated: "2026-10-27T22:22:28.833Z"
-last_activity: 2026-10-27
-last_activity_desc: Phase 15 complete, transitioned to Phase 8
-state_head: 55d6d70fa159a04f5ac10b5dfb1cd3432b9f65b7
+stopped_at: Phase 16 complete, ready to verify Phase 8
+last_updated: "2026-10-28T11:14:45.601Z"
+last_activity: 2026-10-28
+last_activity_desc: Phase 16 complete, transitioned to Phase 8
+state_head: 5c3da7d7c29d084a0b91592c16b82c28d15ff7f6
 progress:
   total_phases: 18
   completed_phases: 7
-  total_plans: 308
-  completed_plans: 308
+  total_plans: 314
+  completed_plans: 314
   percent: 39
 ---
 
@@ -23,21 +23,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 15 — Cash payment method for invoices and cash receipt documents
+**Current focus:** Phase 16 — Per-client e-mail sending toggle
 
 ## Current Position
 
 Phase: 8 — Exchange Rates and Reports
 Plan: 27
 Status: Phase complete — ready for verification
-Last activity: 2026-10-27 — Phase 15 complete, transitioned to Phase 8
+Last activity: 2026-10-28 — Phase 16 complete, transitioned to Phase 8
 
 Progress: [████░░░░░░] 39%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 159
+- Total plans completed: 165
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -55,6 +55,7 @@ Progress: [████░░░░░░] 39%
 | 09.1 | 9 | - | - |
 | 10.1 | 16 | - | - |
 | 15 | 14 | - | - |
+| 16 | 6 | - | - |
 
 **Recent Trend:**
 - Last 5 plans: -
@@ -957,5 +958,5 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-27T22:22:24.047Z
-Stopped at: Phase 16 context gathered
+Stopped at: Phase 16 complete, ready to verify Phase 8
 Resume file: .planning/phases/16-per-client-e-mail-sending-toggle/16-CONTEXT.md

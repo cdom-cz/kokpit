@@ -1018,19 +1018,19 @@ Plans:
 **Goal:** A client setting that disables sending e-mails (invoices and related documents) to that client, for clients served exclusively by hand; sending stays enabled by default
 **Requirements**: P16-01, P16-02, P16-03, P16-04, P16-05, P16-06, P16-07, P16-08, P16-09, P16-10, P16-11
 **Depends on:** Phase 15
-**Plans:** 6 plans
+**Plans:** 6/6 plans complete
 
 Plans:
 **Wave 1**
-- [ ] 16-01-PLAN.md — Client switch "Odesílat doklady e-mailem": column (default on), form, detail badge, audit, defaults, the fail-closed gate `ClientDocumentEmails`; P16 requirements registered (Wave 1)
+- [x] 16-01-PLAN.md — Client switch "Odesílat doklady e-mailem": column (default on), form, detail badge, audit, defaults, the fail-closed gate `ClientDocumentEmails`; P16 requirements registered (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 16-02-PLAN.md — Invoice detail of a hand-served client (no send action, gray note, no post-issue dialog, queue refused) and the manual invoice/proforma lock `LockInvoice` with its audit and arch allowlist (Wave 2)
-- [ ] 16-03-PLAN.md — `skipped` document e-mail: job re-check after the claim, list/Odeslání tab read it as not sent and hide the resend, System indicator ignores skipped rows and hand-served clients (Wave 2)
+- [x] 16-02-PLAN.md — Invoice detail of a hand-served client (no send action, gray note, no post-issue dialog, queue refused) and the manual invoice/proforma lock `LockInvoice` with its audit and arch allowlist (Wave 2)
+- [x] 16-03-PLAN.md — `skipped` document e-mail: job re-check after the claim, list/Odeslání tab read it as not sent and hide the resend, System indicator ignores skipped rows and hand-served clients (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 16-04-PLAN.md — Manual lock of a cash receipt (PPD) from the Platby tab, `LockCashReceipt`, audit and arch allowlist (Wave 3)
-- [ ] 16-05-PLAN.md — Payment confirmation of a hand-served client: skipped row with no job, record-dialog hint, job re-check, relaxed recipient CHECK (Wave 3)
+- [x] 16-04-PLAN.md — Manual lock of a cash receipt (PPD) from the Platby tab, `LockCashReceipt`, audit and arch allowlist (Wave 3)
+- [x] 16-05-PLAN.md — Payment confirmation of a hand-served client: skipped row with no job, record-dialog hint, job re-check, relaxed recipient CHECK (Wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 16-06-PLAN.md — Hand-served journey, D-01 scope test (system e-mails unaffected), Partner isolation, CONTRIBUTING hand-over, full gate (Wave 4)
+- [x] 16-06-PLAN.md — Hand-served journey, D-01 scope test (system e-mails unaffected), Partner isolation, CONTRIBUTING hand-over, full gate (Wave 4)

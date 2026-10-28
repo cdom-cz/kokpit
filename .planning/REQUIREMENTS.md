@@ -180,17 +180,17 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Per-Client E-mail Sending and Manual Lock
 
-- [ ] **P16-01**: Every existing and every new client has the switch "send documents by e-mail" on by default; the Admin edits it in the client form and sees it in the client detail with a badge when it is off; it is not a column of the client list
-- [ ] **P16-02**: A change of the switch is audited with who, when, the old and the new value
-- [ ] **P16-03**: A document e-mail (invoice, proforma, credit note) to a client with the switch off is refused by the domain, and no e-mail log row is written
-- [ ] **P16-04**: A payment of a client with the switch off gets its payment confirmation row as `skipped` and no send job is queued; the payment itself is never blocked
-- [ ] **P16-05**: A document e-mail or payment confirmation still queued when the switch goes off is not sent: the job re-checks after its claim, marks the row `skipped` and locks nothing; switching on again revives no row
-- [ ] **P16-06**: `skipped` rows count as neither failed nor unsent in the System page indicator, the failed-e-mail bell, the list rows and the detail, and the indicator ignores the documents of clients with the switch off
-- [ ] **P16-07**: For a client with the switch off, "Odeslat e-mailem" and "Odeslat znovu" are hidden in the detail header, the list row and the Odeslání row, the detail shows a gray note, and the send dialog does not open after an issue
-- [ ] **P16-08**: The Admin locks an issued, open invoice or proforma by hand for any client without a reason; the lock is refused for a draft, a credit note, a locked or cancelled document and a converted proforma; it is audited, number, kind and snapshots stay unchanged, and a later edit after an unlock is audited like one after a send
-- [ ] **P16-09**: The Admin locks an open, uncancelled cash receipt (PPD) by hand with the same rules
-- [ ] **P16-10**: Unlock stays Admin-only with a mandatory reason; the lock literals stay confined to named files (the architecture tests are extended on purpose); the database row guards are unchanged
-- [ ] **P16-11**: System e-mails to the Partner users of the client (invitation, password reset, task notifications) are unaffected by the switch
+- [x] **P16-01**: Every existing and every new client has the switch "send documents by e-mail" on by default; the Admin edits it in the client form and sees it in the client detail with a badge when it is off; it is not a column of the client list
+- [x] **P16-02**: A change of the switch is audited with who, when, the old and the new value
+- [x] **P16-03**: A document e-mail (invoice, proforma, credit note) to a client with the switch off is refused by the domain, and no e-mail log row is written
+- [x] **P16-04**: A payment of a client with the switch off gets its payment confirmation row as `skipped` and no send job is queued; the payment itself is never blocked
+- [x] **P16-05**: A document e-mail or payment confirmation still queued when the switch goes off is not sent: the job re-checks after its claim, marks the row `skipped` and locks nothing; switching on again revives no row
+- [x] **P16-06**: `skipped` rows count as neither failed nor unsent in the System page indicator, the failed-e-mail bell, the list rows and the detail, and the indicator ignores the documents of clients with the switch off
+- [x] **P16-07**: For a client with the switch off, "Odeslat e-mailem" and "Odeslat znovu" are hidden in the detail header, the list row and the Odeslání row, the detail shows a gray note, and the send dialog does not open after an issue
+- [x] **P16-08**: The Admin locks an issued, open invoice or proforma by hand for any client without a reason; the lock is refused for a draft, a credit note, a locked or cancelled document and a converted proforma; it is audited, number, kind and snapshots stay unchanged, and a later edit after an unlock is audited like one after a send
+- [x] **P16-09**: The Admin locks an open, uncancelled cash receipt (PPD) by hand with the same rules
+- [x] **P16-10**: Unlock stays Admin-only with a mandatory reason; the lock literals stay confined to named files (the architecture tests are extended on purpose); the database row guards are unchanged
+- [x] **P16-11**: System e-mails to the Partner users of the client (invitation, password reset, task notifications) are unaffected by the switch
 
 ### Partner Audit
 
@@ -364,17 +364,17 @@ Which phases cover which requirements. Updated during roadmap creation.
 | P15-10 | Phase 15 | Complete |
 | P15-11 | Phase 15 | Complete |
 | P15-12 | Phase 15 | Complete |
-| P16-01 | Phase 16 | Pending |
-| P16-02 | Phase 16 | Pending |
-| P16-03 | Phase 16 | Pending |
-| P16-04 | Phase 16 | Pending |
-| P16-05 | Phase 16 | Pending |
-| P16-06 | Phase 16 | Pending |
-| P16-07 | Phase 16 | Pending |
-| P16-08 | Phase 16 | Pending |
-| P16-09 | Phase 16 | Pending |
-| P16-10 | Phase 16 | Pending |
-| P16-11 | Phase 16 | Pending |
+| P16-01 | Phase 16 | Complete |
+| P16-02 | Phase 16 | Complete |
+| P16-03 | Phase 16 | Complete |
+| P16-04 | Phase 16 | Complete |
+| P16-05 | Phase 16 | Complete |
+| P16-06 | Phase 16 | Complete |
+| P16-07 | Phase 16 | Complete |
+| P16-08 | Phase 16 | Complete |
+| P16-09 | Phase 16 | Complete |
+| P16-10 | Phase 16 | Complete |
+| P16-11 | Phase 16 | Complete |
 | AUD-01 | Phase 12 | Complete |
 | AUD-02 | Phase 12 | Complete |
 
