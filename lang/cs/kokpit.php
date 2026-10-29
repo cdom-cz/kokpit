@@ -1673,6 +1673,10 @@ return [
             'worked' => 'Odpracováno',
             'unbilled' => 'Nevyfakturováno',
             'show_entries' => 'Zobrazit záznamy',
+            'add_time' => 'Přidat čas',
+            'add_time_heading' => 'Přidat čas k úkolu',
+            'context_locked' => 'Klient, projekt a úkol jsou dané úkolem.',
+            'save_failed' => 'Záznam se nepodařilo uložit',
         ],
         'fields' => [
             'client' => 'Klient',
