@@ -8,6 +8,7 @@ use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Actions\AttachDocuments;
 use App\Domain\Documents\Enums\DocumentTypeGroup;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Documents\Support\DocumentUrl;
 use App\Domain\Finance\Actions\RecordTransaction;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
@@ -670,6 +671,24 @@ it('offers a preview only for images and PDF', function (): void {
         ->assertActionVisible(TestAction::make('preview')->table($paper))
         ->assertActionHidden(TestAction::make('preview')->table($text))
         ->assertActionHidden(TestAction::make('preview')->table($archive));
+});
+
+it('opens a PDF of the central list in a new tab and gives an image no URL', function (): void {
+    $this->freezeTime();
+
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==');
+    $pdf = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n";
+
+    $image = listingAttach(null, 'picture-example.png', $png);
+    $paper = listingAttach(null, 'paper-example.pdf', $pdf);
+
+    $listing = listingPage()
+        ->assertActionExists(TestAction::make('preview')->table($paper), fn (Action $action): bool => $action->getUrl() === DocumentUrl::preview($paper, $this->admin)
+            && $action->shouldOpenUrlInNewTab())
+        ->assertActionExists(TestAction::make('preview')->table($image), static fn (Action $action): bool => $action->getUrl() === null);
+
+    expect(substr_count($listing->html(), 'signature='))->toBe(1)
+        ->and($listing->html())->toContain('target="_blank"');
 });
 
 it('deletes every file of a filter result across two pages after one confirmation, and no other file', function (): void {

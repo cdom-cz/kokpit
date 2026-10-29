@@ -9,6 +9,7 @@ use App\Domain\Documents\Actions\SetDocumentVisibility;
 use App\Domain\Documents\Enums\DocumentOwnerType;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Documents\Support\DocumentFileName;
+use App\Domain\Documents\Support\DocumentUrl;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -221,6 +222,35 @@ it('opens a PNG in a single-image lightbox whose link is minted for the Admin wh
         ->and($link['query']['mode'])->toBe('inline')
         ->and($link['query']['u'])->toBe($this->admin->id)
         ->and($link['query'])->toHaveKey('signature');
+});
+
+it('opens a PDF in a new tab from a link bound to the Admin and puts no signed link on any other row', function (): void {
+    $this->freezeTime();
+
+    $project = tabProject();
+    $pdf = app(AttachDocuments::class)
+        ->handle($this->admin, $project, [DocumentFixtures::upload('paper-example.pdf', "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n")])
+        ->firstOrFail();
+    app(AttachDocuments::class)->handle($this->admin, $project, [DocumentFixtures::upload('plain-example.txt')]);
+    $png = app(AttachDocuments::class)
+        ->handle($this->admin, $project, [DocumentFixtures::upload('picture-example.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='))])
+        ->firstOrFail();
+
+    $tab = projectDocumentsTab($project);
+
+    $tab->assertActionExists(TestAction::make('preview')->table($pdf), fn (Action $action): bool => $action->getUrl() === DocumentUrl::preview($pdf, $this->admin)
+        && $action->shouldOpenUrlInNewTab());
+    $tab->assertActionExists(TestAction::make('preview')->table($png), static fn (Action $action): bool => $action->getUrl() === null);
+
+    // Exactly one signed link in the tab (the PDF row), opened as a real link in a new tab; the PNG and the TXT carry none.
+    $html = $tab->html();
+
+    expect(substr_count($html, 'signature='))->toBe(1)
+        ->and($html)->toContain('target="_blank"')
+        ->and($html)->toContain(route('filament.admin.files.document', ['document' => $pdf->id], false));
+
+    // The PDF action opens no modal: the click is the link.
+    expect($tab->instance()->getMountedAction())->toBeNull();
 });
 
 it('renders no signed link and no bucket host into the tab', function (): void {
