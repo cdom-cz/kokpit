@@ -109,6 +109,8 @@ final class TaskColumns
             TextEntry::make('description')
                 ->label(__('kokpit.tasks.fields.description'))
                 ->formatStateUsing(static fn (?string $state): HtmlString => RichText::render($state))
+                // CSS only (the fi-prose class); the markup still comes from the one sanitiser (D-09).
+                ->prose()
                 ->placeholder(__('kokpit.tasks.empty_value'))
                 ->columnSpanFull(),
             TextEntry::make('escalated_at')

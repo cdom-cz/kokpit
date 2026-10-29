@@ -3,11 +3,18 @@
 declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
+use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Actions\CreateProject;
+use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Filament\Pages\TaskBoardPage;
+use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ViewPartnerTask;
+use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerTaskCommentsRelationManager;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
+use App\Filament\Resources\TaskResource\RelationManagers\TaskCommentsRelationManager;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -143,6 +150,43 @@ function richRenderExpectHarmless(string $page, string $prose): void
         ->not->toContain('href="/');
 }
 
+/**
+ * A client-visible project of a client with one Partner and a task in it, written as system
+ * with the given description. Returns the Partner (not yet signed in) and the task.
+ *
+ * @return array{0: User, 1: Task}
+ */
+function richRenderPartnerTask(string $description): array
+{
+    [$clientId] = Canary::twoClients();
+    $partner = Canary::partnerFor($clientId);
+
+    $task = app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $description): Task {
+        $project = app(CreateProject::class)->handle(Client::query()->findOrFail($clientId), [
+            'name' => 'Example partner rendering project',
+            'key' => 'PRN',
+            'billing_type' => 'hourly',
+            'client_visible' => true,
+        ]);
+
+        $task = app(CreateTask::class)->handle(test()->admin, $project, ['title' => 'Example partner rendered task']);
+
+        return app(UpdateTask::class)->handle(test()->admin, $task, ['description' => $description]);
+    });
+
+    return [$partner, $task];
+}
+
+/**
+ * The HTML the board preview of a task shows in its modal, mounted on the task board.
+ */
+function richRenderPreview(Task $task): string
+{
+    $component = Livewire::test(TaskBoardPage::class)->assertActionExists('preview')->mountAction('preview', ['task' => $task->id]);
+
+    return (string) $component->instance()->getMountedAction()?->getModalContent()?->render();
+}
+
 beforeEach(function (): void {
     Filament::setCurrentPanel(Filament::getPanel('admin'));
     $this->admin = Canary::admin();
@@ -166,4 +210,63 @@ it('renders a hostile description written around the Action harmlessly inside th
     $html = Livewire::test(ViewTask::class, ['record' => $task->reference])->assertSee('Benign words')->html();
 
     richRenderExpectHarmless(richRenderPage($html), richRenderProse($html));
+});
+
+it('shows the Partner a description with its formatting inside a fi-prose element', function (): void {
+    [$partner, $task] = richRenderPartnerTask(richRenderFormatted());
+
+    $this->actingAs($partner);
+
+    $html = Livewire::test(ViewPartnerTask::class, ['record' => $task->reference])->assertSee('Example heading')->html();
+
+    richRenderExpectFormatted(richRenderProse($html));
+});
+
+it('renders a hostile description written around the Action harmlessly on the Partner task page', function (): void {
+    [$partner, $task] = richRenderPartnerTask(richRenderFormatted());
+
+    app(PartnerContext::class)->runAsSystem(static fn (): int => Task::query()->whereKey($task->id)->update(['description' => richRenderForged()]));
+
+    $this->actingAs($partner);
+
+    $html = Livewire::test(ViewPartnerTask::class, ['record' => $task->reference])->assertSee('Benign words')->html();
+
+    richRenderExpectHarmless(richRenderPage($html), richRenderProse($html));
+});
+
+it('shows the board card preview a description with its formatting inside a fi-prose container', function (): void {
+    $task = richRenderTask(richRenderFormatted());
+
+    $html = richRenderPreview($task);
+
+    expect($html)->toContain('class="fi-prose"');
+
+    richRenderExpectFormatted(richRenderProse($html));
+});
+
+it('renders a hostile description written around the Action harmlessly in the board card preview', function (): void {
+    $task = richRenderTask(richRenderFormatted());
+
+    Task::query()->whereKey($task->id)->update(['description' => richRenderForged()]);
+
+    $html = richRenderPreview($task);
+
+    richRenderExpectHarmless(richRenderPage($html), richRenderProse($html));
+});
+
+it('keeps the formatting of a comment inside a fi-prose element in the Admin and the Partner thread', function (): void {
+    [$partner, $task] = richRenderPartnerTask(richRenderFormatted());
+
+    app(PartnerContext::class)->runAsSystem(static fn () => app(AddTaskComment::class)->handle(test()->admin, $task, '<ul><li>Example comment item</li></ul>'));
+
+    $adminThread = Livewire::test(TaskCommentsRelationManager::class, ['ownerRecord' => $task, 'pageClass' => ViewTask::class]);
+
+    expect(richRenderProse($adminThread->html()))->toContain('<ul><li>Example comment item</li></ul>');
+
+    $this->actingAs($partner);
+
+    $seen = Task::query()->where('reference', $task->reference)->firstOrFail();
+    $partnerThread = Livewire::test(PartnerTaskCommentsRelationManager::class, ['ownerRecord' => $seen, 'pageClass' => ViewPartnerTask::class]);
+
+    expect(richRenderProse($partnerThread->html()))->toContain('<ul><li>Example comment item</li></ul>');
 });
