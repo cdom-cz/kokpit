@@ -194,16 +194,16 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Task, Project and Search UX Refinements
 
-- [ ] **P17-01**: The checklist card of the task form spans the full width of the form
-- [ ] **P17-02**: Rich-text content (task descriptions, comments, any rich-text field) is rendered with its formatting in read-only output on every surface of both panels, through the one sanitiser (sanitized, whitelisted HTML); e-mails and PDFs are unchanged
-- [ ] **P17-03**: The Admin creates a task from the project view with the project pre-filled and locked; the action is not offered for a Done or archived project
-- [ ] **P17-04**: In the global search, tasks and projects that are not Done come first inside their category; the category order and the display are unchanged
-- [ ] **P17-05**: The Admin adds a time entry from the task view with client, project and task pre-filled and locked, under the existing time-entry rules
-- [ ] **P17-06**: A task can be hidden from the kanban boards (shown by default); only the boards hide it and only the Admin changes it
-- [ ] **P17-07**: The Signal add field offers unfinished tasks by type-ahead and a pick stores the text `{PROJECT}: {task name} [{task code}]` linked to the task; a cross clears the pick, and a linked signal shows the shared timer control and an open-task icon
-- [ ] **P17-08**: Image files open in a single-image lightbox and non-image files in a new tab in every file list of both panels
-- [ ] **P17-09**: The project pickers of task creation (Admin and Partner) offer only projects that are not Done
-- [ ] **P17-10**: The project status can be changed from the project view as it can on the task view
+- [x] **P17-01**: The checklist card of the task form spans the full width of the form
+- [x] **P17-02**: Rich-text content (task descriptions, comments, any rich-text field) is rendered with its formatting in read-only output on every surface of both panels, through the one sanitiser (sanitized, whitelisted HTML); e-mails and PDFs are unchanged
+- [x] **P17-03**: The Admin creates a task from the project view with the project pre-filled and locked; the action is not offered for a Done or archived project
+- [x] **P17-04**: In the global search, tasks and projects that are not Done come first inside their category; the category order and the display are unchanged
+- [x] **P17-05**: The Admin adds a time entry from the task view with client, project and task pre-filled and locked, under the existing time-entry rules
+- [x] **P17-06**: A task can be hidden from the kanban boards (shown by default); only the boards hide it and only the Admin changes it
+- [x] **P17-07**: The Signal add field offers unfinished tasks by type-ahead and a pick stores the text `{PROJECT}: {task name} [{task code}]` linked to the task; a cross clears the pick, and a linked signal shows the shared timer control and an open-task icon
+- [x] **P17-08**: Image files open in a single-image lightbox and non-image files in a new tab in every file list of both panels
+- [x] **P17-09**: The project pickers of task creation (Admin and Partner) offer only projects that are not Done
+- [x] **P17-10**: The project status can be changed from the project view as it can on the task view
 
 ### Partner Audit
 
@@ -388,16 +388,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | P16-09 | Phase 16 | Complete |
 | P16-10 | Phase 16 | Complete |
 | P16-11 | Phase 16 | Complete |
-| P17-01 | Phase 17 | Pending |
-| P17-02 | Phase 17 | Pending |
-| P17-03 | Phase 17 | Pending |
-| P17-04 | Phase 17 | Pending |
-| P17-05 | Phase 17 | Pending |
-| P17-06 | Phase 17 | Pending |
-| P17-07 | Phase 17 | Pending |
-| P17-08 | Phase 17 | Pending |
-| P17-09 | Phase 17 | Pending |
-| P17-10 | Phase 17 | Pending |
+| P17-01 | Phase 17 | Complete |
+| P17-02 | Phase 17 | Complete |
+| P17-03 | Phase 17 | Complete |
+| P17-04 | Phase 17 | Complete |
+| P17-05 | Phase 17 | Complete |
+| P17-06 | Phase 17 | Complete |
+| P17-07 | Phase 17 | Complete |
+| P17-08 | Phase 17 | Complete |
+| P17-09 | Phase 17 | Complete |
+| P17-10 | Phase 17 | Complete |
 | AUD-01 | Phase 12 | Complete |
 | AUD-02 | Phase 12 | Complete |
 

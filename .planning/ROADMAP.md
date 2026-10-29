@@ -1050,7 +1050,7 @@ Plans:
 - Projects: the status can be changed from the project view, similar to the task view.
 **Requirements**: P17-01, P17-02, P17-03, P17-04, P17-05, P17-06, P17-07, P17-08, P17-09, P17-10
 **Depends on:** Phase 16
-**Plans:** 8/8 plans executed
+**Plans:** 8/8 plans complete
 
 Plans:
 **Wave 1**
