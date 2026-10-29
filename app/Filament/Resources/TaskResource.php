@@ -290,6 +290,7 @@ final class TaskResource extends Resource
             // The private todo list of the Admin (TA-03). The repeater is bound to the Admin-only
             // relationship and keeps the order in `position`; a subtask has the same list (D-11).
             Section::make(__('kokpit.tasks.checklist.heading'))
+                ->columnSpanFull()
                 ->schema([
                     Repeater::make('checklistItems')
                         ->relationship()
