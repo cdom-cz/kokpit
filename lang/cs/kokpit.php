@@ -1292,6 +1292,7 @@ return [
             'estimate_hours' => 'Hodiny s nejvýše dvěma desetinnými místy, například 1,5.',
             'internal_note' => 'Vidí jen správce, nikdy klient.',
             'hidden_on_board' => 'Úkol se nezobrazí na kanbanové nástěnce. V seznamech, hledání a na detailu zůstává.',
+            'project_locked' => 'Projekt je daný detailem projektu.',
         ],
         'navigation_label' => 'Úkoly',
         'model_label' => 'Úkol',

@@ -568,38 +568,64 @@ final class TaskResource extends Resource
 
     /**
      * The quick creation modal (D-09): the project and the title, nothing else.
-     * It is a static builder so the boards reuse it. On success it opens the new
-     * task's edit page, where the description, people, dates and tags are filled
-     * in (D-09).
+     * It is a static builder so the boards and the project view reuse it. On
+     * success it opens the new task's edit page, where the description, people,
+     * dates and tags are filled in (D-09).
+     *
+     * Unlocked (the list and the boards), the project picker offers only projects
+     * that are not Done (D-11) and starts with the given project unless it is Done.
+     * Locked (the project view, D-07), the picker holds only the given project and
+     * is disabled; a disabled field is not submitted, so the project is read fresh
+     * from the record and the submitted data never decides it.
      */
-    public static function quickCreateAction(?Project $project = null): Action
+    public static function quickCreateAction(?Project $project = null, bool $lockProject = false): Action
     {
+        $lockedProject = $lockProject ? $project : null;
+
+        $projectField = Select::make('project_id')
+            ->label(__('kokpit.tasks.fields.project'))
+            ->searchable();
+
+        if ($lockedProject instanceof Project) {
+            $projectField
+                ->options([$lockedProject->getKey() => $lockedProject->key.' · '.$lockedProject->name])
+                ->default($lockedProject->getKey())
+                ->disabled()
+                ->dehydrated(false)
+                ->helperText(__('kokpit.tasks.hints.project_locked'));
+        } else {
+            $projectField
+                ->options(static fn (): array => self::projectOptions(openOnly: true))
+                ->default($project instanceof Project && $project->status !== ProjectStatus::Done ? $project->getKey() : null)
+                ->required();
+        }
+
         return Action::make('quickCreate')
             ->label(__('kokpit.tasks.actions.create'))
             ->icon(Heroicon::OutlinedPlus)
             ->modalHeading(__('kokpit.tasks.actions.create_heading'))
             ->modalSubmitActionLabel(__('kokpit.tasks.actions.create_submit'))
             ->schema([
-                Select::make('project_id')
-                    ->label(__('kokpit.tasks.fields.project'))
-                    ->options(static fn (): array => self::projectOptions())
-                    ->default($project?->getKey())
-                    ->searchable()
-                    ->required(),
+                $projectField,
                 TextInput::make('title')
                     ->label(__('kokpit.tasks.fields.title'))
                     ->required()
                     ->maxLength(255),
             ])
-            ->action(function (array $data, Action $action): void {
+            ->action(function (array $data, Action $action) use ($lockedProject): void {
                 abort_unless(self::canAccess(), 403);
 
                 $actor = auth()->user();
                 assert($actor instanceof User);
 
                 try {
-                    $projectId = is_string($data['project_id'] ?? null) ? $data['project_id'] : '';
-                    $chosen = $projectId === '' ? null : Project::query()->withTrashed()->find($projectId);
+                    if ($lockedProject instanceof Project) {
+                        // The locked project comes from the record, never from the (disabled) field.
+                        $chosen = Project::query()->withTrashed()->find($lockedProject->getKey());
+                    } else {
+                        $projectId = is_string($data['project_id'] ?? null) ? $data['project_id'] : '';
+                        $chosen = $projectId === '' ? null : Project::query()->withTrashed()->find($projectId);
+                    }
 
                     if (! $chosen instanceof Project) {
                         throw ValidationException::withMessages(['project_id' => __('kokpit.tasks.errors.project_unavailable')]);
@@ -607,6 +633,18 @@ final class TaskResource extends Resource
 
                     $task = app(CreateTask::class)->handle($actor, $chosen, ['title' => (string) ($data['title'] ?? '')]);
                 } catch (ValidationException $e) {
+                    // A disabled field cannot show an inline error, so a project refusal is a toast.
+                    if ($lockedProject instanceof Project && array_key_exists('project_id', $e->errors())) {
+                        Notification::make()
+                            ->danger()
+                            ->title((string) collect($e->errors())->flatten()->first())
+                            ->send();
+
+                        $action->halt();
+
+                        return;
+                    }
+
                     throw self::underModal($e);
                 }
 
@@ -760,15 +798,21 @@ final class TaskResource extends Resource
 
     /**
      * The projects a task may be created in, `KEY · name`, ordered by key. Archived
-     * projects and projects of archived clients are not offered.
+     * projects and projects of archived clients are not offered; with `$openOnly`
+     * (task creation, D-11) finished projects are left out too.
      *
      * @return array<string, string>
      */
-    private static function projectOptions(): array
+    private static function projectOptions(bool $openOnly = false): array
     {
         $options = [];
+        $query = Project::query()->selectable();
 
-        foreach (Project::query()->selectable()->orderBy('key')->orderBy('id')->get(['id', 'key', 'name']) as $project) {
+        if ($openOnly) {
+            $query->open();
+        }
+
+        foreach ($query->orderBy('key')->orderBy('id')->get(['id', 'key', 'name']) as $project) {
             $options[$project->id] = $project->key.' · '.$project->name;
         }
 
