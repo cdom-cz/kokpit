@@ -36,8 +36,8 @@
     <div>
         <div style="font-weight: 600; margin-bottom: 0.5rem;">{{ __('kokpit.tasks.fields.description') }}</div>
 
-        {{-- A rich text table can be wider than the panel, so the description scrolls sideways. --}}
-        <div style="overflow-x: auto; overflow-wrap: anywhere;">
+        {{-- A rich text table can be wider than the panel, so the description scrolls sideways; fi-prose gives lists, headings, quotes and tables their formatting. --}}
+        <div class="fi-prose" style="overflow-x: auto; overflow-wrap: anywhere;">
             @if (blank($description))
                 {{ $empty }}
             @else
