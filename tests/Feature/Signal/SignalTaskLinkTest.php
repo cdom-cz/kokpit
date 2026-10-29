@@ -452,7 +452,7 @@ it('offers the task page and a play button on a linked row, never a link on the 
         ->and($row)->toContain('aria-pressed="false"')
         ->and($row)->not->toContain(__('kokpit.time.timer.stop'))
         ->and($anchor[1] ?? '')->not->toContain('Example snapshot')
-        ->and(substr_count($row, '<a '))->toBe(1);
+        ->and(preg_match_all('/<a[\s>]/', $row))->toBe(1);
 
     $plainRow = sigLinkRow($html, $plain);
 

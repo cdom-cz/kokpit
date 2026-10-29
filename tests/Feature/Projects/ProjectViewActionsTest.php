@@ -5,11 +5,13 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Actions\UpdateProject;
+use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Resources\ProjectResource\Pages\ViewProject;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -63,26 +65,39 @@ it('creates a task from the project view with only a title and opens its edit pa
         ->and($task->project_id)->toBe($project->id);
 });
 
-it('ignores a project id sent with the locked modal', function (): void {
+it('never lets a project id sent with the locked modal decide the project', function (): void {
     $project = projViewProject();
     $other = projViewProject('PVB');
 
+    // A forged id is refused by the select's own option check; the action body never reads it either way.
     projViewPage($project)
         ->callAction('quickCreate', ['project_id' => $other->id, 'title' => 'Example forged task'])
-        ->assertRedirect('/admin/tasks/PVA-1/edit');
+        ->assertHasActionErrors(['project_id']);
 
-    expect(Task::query()->where('reference', 'PVA-1')->firstOrFail()->project_id)->toBe($project->id)
-        ->and(Task::query()->where('project_id', $other->id)->count())->toBe(0);
+    expect(Task::query()->count())->toBe(0);
+
+    projViewPage($project)
+        ->callAction('quickCreate', ['project_id' => $project->id, 'title' => 'Example honest task'])
+        ->assertHasNoActionErrors();
+
+    expect(Task::query()->where('project_id', $other->id)->count())->toBe(0)
+        ->and(Task::query()->where('project_id', $project->id)->count())->toBe(1);
 });
 
 it('shows the project disabled with the explanation in the locked modal', function (): void {
     $project = projViewProject();
 
-    $component = projViewPage($project)->mountAction('quickCreate');
-    $html = $component->instance()->getMountedAction()->getModalContent()->render();
+    expect(__('kokpit.tasks.hints.project_locked'))->toBe('Projekt je daný detailem projektu.');
 
-    expect($html)->toContain('Projekt je daný detailem projektu.')
-        ->and($html)->toContain('PVA · Example view project');
+    projViewPage($project)
+        ->mountAction('quickCreate')
+        ->assertSchemaStateSet(['project_id' => $project->id])
+        ->assertSchemaComponentExists(
+            'project_id',
+            'mountedActionSchema0',
+            static fn (Select $field): bool => $field->isDisabled()
+                && array_values($field->getOptions()) === ['PVA · Example view project'],
+        );
 });
 
 it('lists the header actions of the project view in order', function (): void {
@@ -111,7 +126,7 @@ it('changes the status from the project view with the effect of the edit form', 
     $component = projViewPage($project)
         ->assertActionVisible('changeStatus')
         ->mountAction('changeStatus')
-        ->assertSchemaStateSet(['status' => 'planned'])
+        ->assertSchemaStateSet(['status' => ProjectStatus::Planned])
         ->setActionData(['status' => 'done'])
         ->callMountedAction()
         ->assertHasNoActionErrors()
@@ -132,7 +147,7 @@ it('changes the status from the project view with the effect of the edit form', 
         ->and($changes?->get('old')['status'] ?? null)->toBe('planned')
         ->and($changes?->get('attributes')['status'] ?? null)->toBe('done');
 
-    $component->assertFormSet(['status' => 'done']);
+    $component->assertFormSet(['status' => ProjectStatus::Done]);
 });
 
 it('answers an empty status with an error under the field and changes nothing', function (): void {
