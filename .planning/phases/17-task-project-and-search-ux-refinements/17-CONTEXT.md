@@ -27,7 +27,7 @@ Not in this phase: new capabilities beyond the list above.
 ## Implementation Decisions
 
 ### Signal and task link
-- **D-01:** The pick inserts the text `{PROJECT}: {task code} {task name}` into the signal and stores a link to the task. The text is a snapshot taken at pick time; later renaming, completing or soft-deleting the task does not change the signal text. The link lives on (FK to the task); if the task is deleted the link is cleared silently and the signal stays plain text. A completed linked task no longer offers the timer control (the open-task icon stays while the task exists). — **Reversibility:** costly — introduces the first link between `SignalTask` and `Task`, which were deliberately separate ("the two never link"), plus a migration.
+- **D-01:** The pick inserts the text `{PROJECT}: {task name} [{task code}]` into the signal and stores a link to the task. The text is a snapshot taken at pick time; later renaming, completing or soft-deleting the task does not change the signal text. The link lives on (FK to the task); if the task is deleted the link is cleared silently and the signal stays plain text. A completed linked task no longer offers the timer control (the open-task icon stays while the task exists). — **Reversibility:** costly — introduces the first link between `SignalTask` and `Task`, which were deliberately separate ("the two never link"), plus a migration.
 - **D-02:** The timer control on a linked signal reuses the existing task timer toggle (`TaskTimerToggle` / `TaskResource::timerAction()`), so one shared running timer applies across all surfaces. No separate signal timer.
 - **D-03:** The type-ahead offers unfinished tasks (not archived, not soft-deleted, not in a terminal state), searched by task code, task name and project; tasks hidden from the kanban board are offered too. Result count is capped (about 10). Pick works inside the existing text field without switching modes; the cross icon clears the pick and returns to free text; with nothing picked, plain unlinked text is stored. In the listing the task name is not a link; the open-task icon is.
 
@@ -94,7 +94,7 @@ No external specs.
 <specifics>
 ## Specific Ideas
 
-Signal text format is exactly `{PROJECT}: {task code} {task name}`.
+Signal text format is exactly `{PROJECT}: {task name} [{task code}]`.
 
 </specifics>
 
@@ -109,3 +109,11 @@ None — discussion stayed within phase scope
 
 *Phase: 17-Task, project and search UX refinements*
 *Context gathered: 2026-10-29*
+
+## Plan-phase Clarifications (resolved after research)
+
+- **Signal text format (supersedes D-01 and Specific Ideas):** `{PROJECT}: {task name} [{task code}]`. `{PROJECT}` is the project name (the task code already carries the project key). Built server-side, truncated to 255 characters.
+- **D-11 scope:** the "not Completed" project restriction applies to the Partner create form as well as the Admin one. In this codebase the terminal state is `done` (label "Dokončeno"); there is no separate Cancelled state.
+- **Editing a linked signal:** keeps the task link; the title text can be changed freely.
+- **Non-image files:** open in a new window/tab by adding `target="_blank"` to the existing open behaviour (no new route, no `window.open`). Images use the single-image lightbox.
+- **Archived linked task in the signal listing:** open-task icon stays, timer control is hidden (research reading of D-01, not explicitly contested).
