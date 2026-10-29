@@ -12,11 +12,16 @@ use App\Domain\Signal\Models\SignalSetting;
 use App\Domain\Signal\Models\SignalTask;
 use App\Domain\Signal\Support\SignalCalendar;
 use App\Domain\Signal\Support\SignalRules;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Collection;
 
 /**
  * Reads of the signed-in user's planner for one day. Every query goes through the owner scope of the
  * models, so it can only ever return the own rows.
+ *
+ * The tasks of a day carry their linked Kokpit task (D-01), archived ones included, loaded in one
+ * query for the whole day: the row shows an open-task icon for an archived task too.
  */
 final class SignalDayReader
 {
@@ -28,6 +33,9 @@ final class SignalDayReader
     public function tasks(string $day): Collection
     {
         return SignalTask::query()
+            ->with(['task' => static fn (BelongsTo $query) => $query
+                ->withoutGlobalScopes([SoftDeletingScope::class])
+                ->select(['tasks.id', 'tasks.reference', 'tasks.status', 'tasks.deleted_at'])])
             ->where('for_date', $day)
             ->orderBy('created_at')
             ->orderBy('id')
