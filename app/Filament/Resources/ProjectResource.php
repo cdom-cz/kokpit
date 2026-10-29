@@ -158,13 +158,18 @@ final class ProjectResource extends Resource
 
     /**
      * Archived projects are not suggested. The client is loaded with its archive scope lifted, so the
-     * detail needs no query per row and the Partner scope stays on.
+     * detail needs no query per row and the Partner scope stays on. The projects that are not Done come
+     * first (D-10), each part ordered by key; the order is part of this base query, so it applies before
+     * Filament's limit of 50 results.
      */
     public static function getGlobalSearchEloquentQuery(): Builder
     {
         return parent::getGlobalSearchEloquentQuery()
             ->whereNull((new Project)->qualifyColumn('deleted_at'))
             ->with(['client' => static fn ($client) => $client->withoutGlobalScopes([SoftDeletingScope::class])])
+            // false sorts before true, so the rows that are not Done come first.
+            // @phpstan-ignore argument.type (the column is qualified by the model, the value is bound)
+            ->orderByRaw('('.(new Project)->qualifyColumn('status').' = ?) ASC', [ProjectStatus::Done->value])
             ->orderBy((new Project)->qualifyColumn('key'));
     }
 

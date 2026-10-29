@@ -188,11 +188,25 @@ final class TaskResource extends Resource
         ];
     }
 
+    /**
+     * Archived tasks are not suggested. The tasks still being worked on come first and the Done ones after
+     * them, the newest first in each part (D-10). The order is part of this base query, so it applies before
+     * Filament's limit of 50 results and Done matches can never push an active one out of the group.
+     */
     public static function getGlobalSearchEloquentQuery(): Builder
     {
-        return parent::getGlobalSearchEloquentQuery()->whereNull((new Task)->qualifyColumn('deleted_at'))->with([
-            'project' => static fn ($project) => $project->withoutGlobalScopes([SoftDeletingScope::class]),
-        ]);
+        $task = new Task;
+
+        return parent::getGlobalSearchEloquentQuery()
+            ->whereNull($task->qualifyColumn('deleted_at'))
+            ->with([
+                'project' => static fn ($project) => $project->withoutGlobalScopes([SoftDeletingScope::class]),
+            ])
+            // false sorts before true, so the rows that are not Done come first.
+            // @phpstan-ignore argument.type (the column is qualified by the model, the value is bound)
+            ->orderByRaw('('.$task->qualifyColumn('status').' = ?) ASC', [ProjectStatus::Done->value])
+            ->orderByDesc($task->qualifyColumn('created_at'))
+            ->orderByDesc($task->qualifyColumn('id'));
     }
 
     public static function form(Schema $schema): Schema
@@ -276,6 +290,7 @@ final class TaskResource extends Resource
             // The private todo list of the Admin (TA-03). The repeater is bound to the Admin-only
             // relationship and keeps the order in `position`; a subtask has the same list (D-11).
             Section::make(__('kokpit.tasks.checklist.heading'))
+                ->columnSpanFull()
                 ->schema([
                     Repeater::make('checklistItems')
                         ->relationship()

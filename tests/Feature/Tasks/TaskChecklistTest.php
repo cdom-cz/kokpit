@@ -14,6 +14,7 @@ use App\Filament\Resources\TaskResource\Pages\EditTask;
 use App\Filament\Resources\TaskResource\Pages\ListTasks;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use Filament\Facades\Filament;
+use Filament\Schemas\Components\Section;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -82,6 +83,19 @@ beforeEach(function (): void {
     Filament::setCurrentPanel(Filament::getPanel('admin'));
     $this->admin = Canary::admin();
     $this->actingAs($this->admin);
+});
+
+it('spans the checklist card over the full width of the task edit form', function (): void {
+    $task = taskChecklistTask(taskChecklistProject());
+
+    $form = Livewire::test(EditTask::class, ['record' => $task->reference])->instance()->form;
+    $section = $form->getComponent(
+        static fn (mixed $component): bool => $component instanceof Section
+            && (string) $component->getHeading() === (string) __('kokpit.tasks.checklist.heading'),
+    );
+
+    expect($section)->toBeInstanceOf(Section::class)
+        ->and($section->getColumnSpan('default'))->toBe('full');
 });
 
 it('adds, ticks and reorders checklist items on the edit page and keeps them after a reload', function (): void {
