@@ -13,8 +13,10 @@ use App\Domain\Signal\Actions\SetSignalDeepWork;
 use App\Domain\Signal\Actions\ToggleSignalTaskDone;
 use App\Domain\Signal\Actions\UpdateSignalTask;
 use App\Domain\Signal\Enums\SignalCategory;
+use App\Domain\Signal\Exceptions\SignalRuleViolation;
 use App\Domain\Signal\Models\SignalRecurringTask;
 use App\Domain\Signal\Models\SignalTask;
+use App\Domain\Signal\Queries\LinkableTasks;
 use App\Domain\Signal\Queries\SignalDayReader;
 use App\Domain\Signal\Support\SignalCalendar;
 use App\Domain\Signal\Support\SignalRules;
@@ -38,7 +40,12 @@ use Livewire\Component;
  * (the authority), the same pure rules decide here which controls are disabled. The public properties
  * are scalars, because they travel to the browser. Admin only (RequiresAdmin).
  *
+ * The add field doubles as a type-ahead over unfinished Kokpit tasks (D-03). `pickTask()` composes the
+ * snapshot text once on the server (D-01) and keeps it, with the task id, in locked properties the
+ * browser cannot change; `addTask()` then stores that text, never the field value.
+ *
  * @property-read array<string, mixed> $day
+ * @property-read list<array{id: string, reference: string, title: string, project: string}> $taskSuggestions
  */
 final class SignalDay extends Component
 {
@@ -53,6 +60,14 @@ final class SignalDay extends Component
     public string $heading = '';
 
     public string $newTitle = '';
+
+    /** The Kokpit task picked in the add field. Set only by pickTask(), never by the browser. */
+    #[Locked]
+    public ?string $pickedTaskId = null;
+
+    /** The snapshot text composed when the task was picked (D-01). Set only by pickTask(), never by the browser. */
+    #[Locked]
+    public ?string $pickedTaskLabel = null;
 
     public string $newCategory = 'main';
 
@@ -79,11 +94,56 @@ final class SignalDay extends Component
     public function addTask(): void
     {
         $category = SignalCategory::tryFrom($this->newCategory);
+        $linked = $this->pickedTaskId !== null;
+        // A picked task is stored with the pick-time snapshot; the field value never reaches a linked signal.
+        $title = $linked ? (string) $this->pickedTaskLabel : $this->newTitle;
 
-        if ($this->attempt(fn ($actor) => app(AddSignalTask::class)->handle($actor, $this->newTitle, $this->forDate, $category))) {
+        if ($this->attempt(fn ($actor) => app(AddSignalTask::class)->handle($actor, $title, $this->forDate, $category, $this->pickedTaskId))) {
             $this->newTitle = '';
+            $this->pickedTaskId = null;
+            $this->pickedTaskLabel = null;
+            unset($this->taskSuggestions);
             $this->changed();
+
+            return;
         }
+
+        // The picked task became unavailable: drop the link and keep the text as free text.
+        if ($linked && $this->pickedTaskId !== null && app(LinkableTasks::class)->find($this->pickedTaskId) === null) {
+            $this->pickedTaskId = null;
+            $this->pickedTaskLabel = null;
+        }
+    }
+
+    /**
+     * The unfinished tasks matching the typed text; none while a task is picked.
+     *
+     * @return list<array{id: string, reference: string, title: string, project: string}>
+     */
+    #[Computed]
+    public function taskSuggestions(): array
+    {
+        return $this->pickedTaskId !== null ? [] : app(LinkableTasks::class)->search($this->newTitle);
+    }
+
+    public function pickTask(string $id): void
+    {
+        $this->attempt(function () use ($id): void {
+            $task = app(LinkableTasks::class)->find($id) ?? throw SignalRuleViolation::because('task_unavailable');
+
+            $this->pickedTaskId = (string) $task->getKey();
+            $this->pickedTaskLabel = LinkableTasks::label($task);
+            $this->newTitle = $this->pickedTaskLabel;
+            unset($this->taskSuggestions);
+        });
+    }
+
+    public function clearPick(): void
+    {
+        $this->pickedTaskId = null;
+        $this->pickedTaskLabel = null;
+        $this->newTitle = '';
+        unset($this->taskSuggestions);
     }
 
     public function toggleDone(string $id, bool $done): void
