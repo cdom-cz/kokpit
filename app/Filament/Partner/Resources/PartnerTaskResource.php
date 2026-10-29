@@ -180,7 +180,8 @@ final class PartnerTaskResource extends Resource
     }
 
     /**
-     * The projects a Partner may raise a task in, `KEY · name`, ordered by key.
+     * The projects a Partner may raise a task in, `KEY · name`, ordered by key. Finished
+     * projects are not offered (D-11).
      *
      * @return array<string, string>
      */
@@ -188,7 +189,7 @@ final class PartnerTaskResource extends Resource
     {
         $options = [];
 
-        foreach (Project::query()->selectable()->orderBy('key')->orderBy('id')->get(['id', 'key', 'name']) as $project) {
+        foreach (Project::query()->selectable()->open()->orderBy('key')->orderBy('id')->get(['id', 'key', 'name']) as $project) {
             $options[$project->id] = $project->key.' · '.$project->name;
         }
 
