@@ -7,8 +7,10 @@ use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\AccessRules;
 use App\Domain\Shared\Auth\Audience;
+use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
+use App\Domain\Tasks\Models\Task;
 use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\ProjectResource;
 use App\Filament\Resources\TaskResource;
@@ -235,4 +237,49 @@ it('lists the active tasks before the Done ones inside the tasks group, newest f
         $one->reference.' · Example search task one',
     ])
         ->and(array_keys(gsCategories('Example')))->toBe(['Klienti', 'Projekty', 'Úkoly']);
+});
+
+it('lists a project that is not Done before a Done one, whatever their keys are', function (): void {
+    $client = Client::factory()->create(['name' => 'Example project order client']);
+    $done = gsProject($client, 'AAA', 'Example finished project');
+    gsProject($client, 'ZZZ', 'Example running project');
+    gsProject($client, 'BBB', 'Example second running project');
+
+    Project::query()->whereKey($done->id)->update(['status' => 'done']);
+
+    $categories = gsCategories('Example');
+
+    expect(array_column($categories['Projekty'], 'title'))->toBe([
+        'BBB · Example second running project',
+        'ZZZ · Example running project',
+        'AAA · Example finished project',
+    ])
+        ->and(array_column($categories['Projekty'], 'details'))->each->toHaveKeys([
+            (string) __('kokpit.projects.fields.client'),
+            (string) __('kokpit.projects.fields.status'),
+        ])
+        ->and($categories['Projekty'][2]['details'][(string) __('kokpit.projects.fields.status')])->toBe('Dokončeno')
+        ->and($categories['Projekty'][2]['url'])->toBe(ProjectResource::getUrl('view', ['record' => $done]));
+});
+
+it('keeps an active task in the result group when fifty Done tasks match as well', function (): void {
+    $project = gsProject(Client::factory()->create(['name' => 'Example limit client']), 'LIM', 'Example limit project');
+
+    // The active task is the oldest one: without the active-first key in the query it would be cut by the limit.
+    $active = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example limit active']);
+
+    $doneIds = [];
+    for ($i = 1; $i <= 50; $i++) {
+        $doneIds[] = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example limit done '.$i])->id;
+    }
+
+    app(PartnerContext::class)->runAsSystem(static fn (): int => Task::query()->whereKey($doneIds)->update([
+        'status' => 'done',
+        'completed_at' => now(),
+    ]));
+
+    $titles = array_column(gsCategories('Example limit')['Úkoly'], 'title');
+
+    expect($titles)->toHaveCount(50)
+        ->and($titles[0])->toBe($active->reference.' · Example limit active');
 });
