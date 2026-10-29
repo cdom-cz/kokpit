@@ -16,6 +16,8 @@ use App\Domain\Tasks\Board\TaskBoard;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Pages\TaskBoardPage;
 use App\Filament\Resources\ProjectResource\Pages\ProjectBoard;
+use App\Filament\Resources\TaskResource\Pages\EditTask;
+use App\Filament\Resources\TaskResource\Pages\ListTasks;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -783,6 +785,39 @@ it('presets the project of a project board in the quick create action and create
     expect($task->project_id)->toBe($project->id);
 
     $component->assertRedirect(url('/admin/tasks/'.$task->reference.'/edit'));
+});
+
+/*
+ * The hide-from-board flag (D-04): a hidden task leaves the global and the project board and stays in the list.
+ */
+
+it('takes a task off the global and the project board with the edit checkbox and puts it back', function (): void {
+    $project = taskBoardProject(key: 'HID');
+    $kept = taskBoardTask($project, 'Example kept card');
+    $card = taskBoardTask($project, 'Example hidden card');
+
+    Livewire::test(EditTask::class, ['record' => $card->reference])
+        ->assertSchemaStateSet(['hidden_on_board' => false])
+        ->fillForm(['hidden_on_board' => true])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($card->fresh()->hidden_on_board)->toBeTrue();
+
+    Livewire::test(TaskBoardPage::class)->assertSee('Example kept card')->assertDontSee('Example hidden card');
+    Livewire::test(ProjectBoard::class, ['record' => $project->id])->assertSee('Example kept card')->assertDontSee('Example hidden card');
+    Livewire::test(ListTasks::class)->assertCanSeeTableRecords([$kept, $card]);
+
+    Livewire::test(EditTask::class, ['record' => $card->reference])
+        ->assertSchemaStateSet(['hidden_on_board' => true])
+        ->fillForm(['hidden_on_board' => false])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($card->fresh()->hidden_on_board)->toBeFalse();
+
+    Livewire::test(TaskBoardPage::class)->assertSee('Example hidden card');
+    Livewire::test(ProjectBoard::class, ['record' => $project->id])->assertSee('Example hidden card');
 });
 
 /**
