@@ -4,10 +4,10 @@ current_phase: 17
 current_phase_name: Task, project and search UX refinements
 status: executing
 stopped_at: Phase 17 UI-SPEC approved
-last_updated: "2026-10-29T09:48:31.347Z"
+last_updated: "2026-10-29T12:27:13.801Z"
 last_activity: 2026-10-29
 last_activity_desc: Phase 17 execution started
-state_head: 7430d924fe5b099a45286a969d3480e362167b50
+state_head: e4516920aa68f6229f245db5110e3f7d62cbf1d8
 progress:
   total_phases: 19
   completed_phases: 7
@@ -938,6 +938,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261028-kr9 | Fix SPAYD message sanitising failing on musl iconv in production | 2026-10-28 | 84cb780 | [261028-kr9-fix-spayd-message-sanitising-failing-on-iconv](./quick/261028-kr9-fix-spayd-message-sanitising-failing-on-iconv/) |
 | 261028-krr | Make the Unit field optional on invoice and proforma items | 2026-10-28 | 3220181 | [261028-krr-make-the-unit-field-optional-on-invoice-](./quick/261028-krr-make-the-unit-field-optional-on-invoice-/) |
 | 261028-odp | Compact payment block on invoice/proforma PDF; no supplier contact lines on PDFs; no footer on cash receipt | 2026-10-28 | 6b25849 | [261028-odp-invoice-and-proforma-pdf-make-the-paymen](./quick/261028-odp-invoice-and-proforma-pdf-make-the-paymen/) |
+| 24 | Set the DDEV RustFS bucket CORS rule for browser uploads | 2026-10-29 | e451692 | — |
 
 ### Roadmap Evolution
 
