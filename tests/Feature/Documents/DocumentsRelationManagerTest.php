@@ -25,6 +25,7 @@ use App\Filament\Resources\ProjectResource;
 use App\Filament\Resources\ProjectResource\Pages\ViewProject;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use App\Filament\Support\DocumentColumns;
+use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Toggle;
@@ -178,6 +179,48 @@ it('shows a preview action only for a type the browser may render', function ():
     projectDocumentsTab($project)
         ->assertTableActionHidden('preview', $text)
         ->assertTableActionVisible('preview', $png);
+});
+
+/**
+ * The query string of the image link inside an open lightbox, read from the rendered HTML.
+ *
+ * @return array{path: string, query: array<string, string>}
+ */
+function tabLightboxLink(string $html): array
+{
+    expect(preg_match('/<img[^>]*\ssrc="([^"]+)"/', $html, $match))->toBe(1);
+
+    $src = html_entity_decode($match[1]);
+    parse_str((string) parse_url($src, PHP_URL_QUERY), $query);
+
+    /** @var array<string, string> $query */
+    return ['path' => (string) parse_url($src, PHP_URL_PATH), 'query' => $query];
+}
+
+it('opens a PNG in a single-image lightbox whose link is minted for the Admin when the modal renders', function (): void {
+    $project = tabProject();
+    $png = app(AttachDocuments::class)
+        ->handle($this->admin, $project, [DocumentFixtures::upload('picture-example.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='))])
+        ->firstOrFail();
+
+    $tab = projectDocumentsTab($project);
+
+    // Before the click the tab holds no signed link, and the image row has no URL (it opens the modal).
+    expect($tab->html())->not->toContain('signature=');
+
+    $tab->assertActionExists(TestAction::make('preview')->table($png), static fn (Action $action): bool => $action->getUrl() === null);
+
+    $tab->mountAction(TestAction::make('preview')->table($png));
+
+    $mounted = $tab->instance()->getMountedAction();
+    $link = tabLightboxLink($tab->html());
+
+    expect((string) $mounted?->getModalHeading())->toContain('picture-example.png')
+        ->and($mounted?->getModalSubmitAction())->toBeFalsy()
+        ->and($link['path'])->toBe(route('filament.admin.files.document', ['document' => $png->id], false))
+        ->and($link['query']['mode'])->toBe('inline')
+        ->and($link['query']['u'])->toBe($this->admin->id)
+        ->and($link['query'])->toHaveKey('signature');
 });
 
 it('renders no signed link and no bucket host into the tab', function (): void {

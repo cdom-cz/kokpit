@@ -29,12 +29,16 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Contracts\HasTable;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component;
 use RuntimeException;
@@ -56,9 +60,19 @@ use Throwable;
  * commit (or, when the disk refuses it then, through the queued RemoveDocumentObjects job). The rows are deleted
  * together or not at all; a refused object never undoes a delete the Admin confirmed.
  *
- * Download and preview authorize the file and mint the signed link at click time, then redirect to it. A
- * link is never rendered into the page, because a page that stays open longer than the link lives would
- * hold a dead one, and a copy of the page would hold a live one (D-10, T-09-18).
+ * Download authorizes the file and mints the signed link at click time, then redirects to it. The preview of
+ * an image does the same inside the lightbox: the link is minted when the modal renders, after the `view`
+ * check, and exists only while the modal is open. A link is otherwise never rendered into the page, because a
+ * page that stays open longer than the link lives would hold a dead one, and a copy of the page would hold a
+ * live one (D-10, T-09-18).
+ *
+ * The one exception, decided by the owner in Phase 17: the inline preview of a non-image file (a PDF) is a real
+ * link with `target="_blank"` that a list renders into its HTML, so the file opens in a new tab and no popup
+ * blocker intervenes. The link is bound to the viewing user (`u` under the signature), lives for
+ * `kokpit.documents.signed_url_ttl_seconds` and is guarded by the unchanged file route (authenticated, signed,
+ * Partner-scoped lookup, `view` policy). It is rendered only for files the viewer may see. The accepted
+ * consequence: a page left open longer than the lifetime holds an expired link that answers 403 in the new
+ * tab until the list renders again. Images, downloads and archives keep the click-time rule.
  */
 final class DocumentActions
 {
@@ -107,17 +121,61 @@ final class DocumentActions
             });
     }
 
+    /**
+     * "Zobrazit" (D-08). An image opens in a single-image lightbox: the signed link is minted when the modal
+     * renders, after the `view` check, and exists only inside the open modal. A PDF is a real link that opens
+     * in a new browser tab (`target="_blank"`), so no popup blocker applies; its link is minted when the row
+     * renders and is the one link a list puts into its HTML (see the class docblock).
+     */
     public static function preview(): Action
     {
-        return Action::make('preview')
+        return self::lightboxModal(Action::make('preview')
             ->label(__('documents.actions.preview'))
             ->icon(Heroicon::OutlinedEye)
             ->visible(static fn (Document $record): bool => DocumentDisposition::isInline($record))
-            ->action(static function (Document $record, Component $livewire): void {
+            ->url(
+                static fn (Document $record): ?string => DocumentDisposition::isInlineImage($record) ? null : DocumentUrl::preview($record, self::user()),
+                shouldOpenInNewTab: true,
+            )
+            ->modalHeading(static fn (Document $record): Htmlable => self::lightboxHeading($record->name))
+            ->modalContent(static function (Document $record): View {
                 Gate::forUser(self::user())->authorize('view', $record);
+                abort_unless(DocumentDisposition::isInlineImage($record), 404);
 
-                $livewire->redirect(DocumentUrl::preview($record, self::user()));
-            });
+                return self::lightboxView($record, self::user());
+            }));
+    }
+
+    /**
+     * The modal frame every lightbox shares (D-08): 5xl wide, no submit, one "Zavřít" button. ESC, the close X
+     * and a click on the backdrop close it (Filament defaults); there is no previous/next, zoom or thumbnail strip.
+     */
+    public static function lightboxModal(Action $action): Action
+    {
+        return $action
+            ->modalWidth(Width::FiveExtraLarge)
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel(__('documents.actions.close'));
+    }
+
+    /**
+     * The modal heading of a lightbox: the file name on one line, cut with an ellipsis when it is too long.
+     */
+    public static function lightboxHeading(string $name): Htmlable
+    {
+        return new HtmlString('<span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'.e($name).'</span>');
+    }
+
+    /**
+     * The lightbox body for an image the caller has already authorized: the link is minted here, bound to the
+     * viewing user, and lives only as long as the open modal.
+     */
+    public static function lightboxView(Document $document, User $viewer): View
+    {
+        return view('filament.documents.lightbox', [
+            'src' => DocumentUrl::preview($document, $viewer),
+            'name' => $document->name,
+        ]);
     }
 
     /**
