@@ -36,7 +36,7 @@
                                 </x-filament::button>
                             @elseif (isset($previewUrls[$document->id]))
                                 {{-- A PDF opens in a new tab from a real link bound to the viewer (the one link this thread renders). --}}
-                                <x-filament::button tag="a" href="{{ $previewUrls[$document->id] }}" target="_blank" rel="noopener noreferrer" color="gray" size="xs">
+                                <x-filament::button tag="a" :href="$previewUrls[$document->id]" target="_blank" rel="noopener noreferrer" color="gray" size="xs">
                                     {{ __('documents.comments.preview') }}
                                 </x-filament::button>
                             @endif

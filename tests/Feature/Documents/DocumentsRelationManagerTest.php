@@ -214,7 +214,7 @@ it('opens a PNG in a single-image lightbox whose link is minted for the Admin wh
     $tab->mountAction(TestAction::make('preview')->table($png));
 
     $mounted = $tab->instance()->getMountedAction();
-    $link = tabLightboxLink($tab->html());
+    $link = tabLightboxLink((string) $mounted?->getModalContent()?->render());
 
     expect((string) $mounted?->getModalHeading())->toContain('picture-example.png')
         ->and($mounted?->getModalSubmitAction())->toBeFalsy()

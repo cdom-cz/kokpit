@@ -653,7 +653,7 @@ describe('preview of a file (lightbox and new tab)', function (): void {
 
         $tab->mountAction(TestAction::make('preview')->table($shared));
 
-        $html = $tab->html();
+        $html = (string) $tab->instance()->getMountedAction()?->getModalContent()?->render();
 
         expect(preg_match('/<img[^>]*\ssrc="([^"]+)"/', $html, $match))->toBe(1);
 

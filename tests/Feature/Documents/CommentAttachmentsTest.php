@@ -380,7 +380,7 @@ it('opens a comment PNG in the lightbox minted for the Admin and gives a comment
 
     expect((string) $mounted?->getModalHeading())->toContain('picture-example.png')
         ->and($mounted?->getModalSubmitAction())->toBeFalsy()
-        ->and(caLinkQuery($thread->html(), $png->id))->toMatchArray(['mode' => 'inline', 'u' => $this->admin->id]);
+        ->and(caLinkQuery((string) $thread->instance()->getMountedAction()?->getModalContent()?->render(), $png->id))->toMatchArray(['mode' => 'inline', 'u' => $this->admin->id]);
 });
 
 it('gives a Partner the lightbox and the new-tab link only for visible files of the own task', function (): void {
@@ -406,7 +406,7 @@ it('gives a Partner the lightbox and the new-tab link only for visible files of 
 
     $thread->mountAction('previewCommentImage', ['document' => $png->id]);
 
-    expect(caLinkQuery($thread->html(), $png->id))->toMatchArray(['mode' => 'inline', 'u' => $this->partner->id]);
+    expect(caLinkQuery((string) $thread->instance()->getMountedAction()?->getModalContent()?->render(), $png->id))->toMatchArray(['mode' => 'inline', 'u' => $this->partner->id]);
 
     // The hidden and the internal file answer 404 even for a type that would qualify.
     foreach ([$secretPdf->id, $hiddenPdf->id] as $forged) {
