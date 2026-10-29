@@ -1,5 +1,5 @@
 {{-- The comments of a task one under another; bodies pass through RichText::render. No avatar by design. --}}
-{{-- Files are listed by name and size only: a button calls the component with the document id and the signed link is minted at click time (D-10). --}}
+{{-- Files are listed by name and size. A button calls the component with the document id and the signed link is minted at click time (D-10); the one exception is the new-tab link of a PDF. --}}
 <div style="display:flex;flex-direction:column;gap:0.75rem;">
     @forelse ($comments as $comment)
         <x-filament::section compact wire:key="task-comment-{{ $comment->id }}">
@@ -29,8 +29,14 @@
                                 {{ __('documents.comments.download') }}
                             </x-filament::button>
 
-                            @if (\App\Domain\Documents\Support\DocumentDisposition::isInline($document))
-                                <x-filament::button color="gray" size="xs" wire:click="previewCommentDocument('{{ $document->id }}')">
+                            @if (\App\Domain\Documents\Support\DocumentDisposition::isInlineImage($document))
+                                {{-- An image opens in the single-image lightbox (D-08); its link is minted when the modal renders. --}}
+                                <x-filament::button color="gray" size="xs" wire:click="mountAction('previewCommentImage', { document: '{{ $document->id }}' })">
+                                    {{ __('documents.comments.preview') }}
+                                </x-filament::button>
+                            @elseif (isset($previewUrls[$document->id]))
+                                {{-- A PDF opens in a new tab from a real link bound to the viewer (the one link this thread renders). --}}
+                                <x-filament::button tag="a" href="{{ $previewUrls[$document->id] }}" target="_blank" rel="noopener noreferrer" color="gray" size="xs">
                                     {{ __('documents.comments.preview') }}
                                 </x-filament::button>
                             @endif

@@ -37,6 +37,16 @@ final class DocumentDisposition
     }
 
     /**
+     * Whether the document is an image the lightbox may show (D-08): the image part of the inline allowlist,
+     * so exactly PNG, JPEG, GIF and WebP. SVG is not on the allowlist and never qualifies. The type is the one
+     * detected from the bytes at upload time.
+     */
+    public static function isInlineImage(Document $document): bool
+    {
+        return self::isInline($document) && str_starts_with($document->mime_type, 'image/');
+    }
+
+    /**
      * The name the browser saves the file under: the document name, plus `.<extension>` when the name does
      * not already end with it (a renamed document keeps its type).
      */

@@ -18,6 +18,7 @@ return [
         'not_shareable' => 'Tento soubor nelze sdílet s klientem.',
         'upload_unreadable' => 'Nahraný soubor se nepodařilo přečíst. Zkuste ho nahrát znovu.',
         'partner_not_allowed' => 'K tomuto úkolu nelze přidat soubory.',
+        'preview_failed' => 'Náhled se nepodařilo načíst. Zavřete okno a zkuste to znovu.',
     ],
 
     // The tab on a client, project, task or transaction (plan 09-05). The Partner tabs (plan 09-08) read the same keys.
@@ -46,6 +47,7 @@ return [
         'upload_unattached' => 'Nahrát nepřiřazené soubory',
         'download' => 'Stáhnout',
         'preview' => 'Zobrazit',
+        'close' => 'Zavřít',
         'rename' => 'Přejmenovat',
         'rename_submit' => 'Uložit',
         'show_to_client' => 'Zobrazit klientovi',
