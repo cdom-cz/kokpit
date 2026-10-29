@@ -1050,7 +1050,7 @@ Plans:
 - Projects: the status can be changed from the project view, similar to the task view.
 **Requirements**: P17-01, P17-02, P17-03, P17-04, P17-05, P17-06, P17-07, P17-08, P17-09, P17-10
 **Depends on:** Phase 16
-**Plans:** 7/8 plans executed
+**Plans:** 8/8 plans executed
 
 Plans:
 **Wave 1**
@@ -1067,4 +1067,4 @@ Plans:
 - [x] 17-07-PLAN.md — Project view: "Nový úkol" with the project locked, task-creation pickers without Done projects (Admin and Partner), "Změnit stav" (Wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 17-08-PLAN.md — "Přidat čas" from the task view with the context locked; CONTRIBUTING hand-over, the `DocumentUrl` docblock and the full gate (Wave 4)
+- [x] 17-08-PLAN.md — "Přidat čas" from the task view with the context locked; CONTRIBUTING hand-over, the `DocumentUrl` docblock and the full gate (Wave 4)
