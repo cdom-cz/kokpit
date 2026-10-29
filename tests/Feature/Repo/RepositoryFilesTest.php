@@ -1477,6 +1477,74 @@ it('hands the per-client e-mail switch over: the Per-client e-mail switch bullet
     expect(repoFile('CONTRIBUTING.md'))->not->toContain('only code that locks is');
 });
 
+it('hands Phase 17 over: the Phase 17 refinements bullet names only what exists', function () {
+    $bullet = repoContributingBullet('Phase 17 refinements.');
+
+    expect($bullet)->not->toBe('');
+
+    // The mechanisms the text must keep naming (R-17-08-5).
+    foreach ([
+        'Phase 17', 'P17-01 to P17-10', '`tasks.hidden_on_board`', '`signal_tasks.task_id`', 'SET NULL', '`LinkableTasks`',
+        '`LinkableTasks::search()`', '`LinkableTasks::find()`', '`LinkableTasks::label()`', '{PROJECT}: {task name} [{task code}]',
+        '`AddSignalTask`', '`SignalDay::toggleTaskTimer()`', '`TaskTimerToggle`', '`Project::scopeOpen()`',
+        '`TaskResource::quickCreateAction()`', '`TimeEntryResource::entryFields()`', '`DocumentDisposition::isInlineImage()`',
+        '`DocumentActions::preview()`', '`RichText::render()`', '`fi-prose`',
+        '`SignalTaskLinkTest`', '`TaskAddTimeTest`', '`ProjectViewActionsTest`', '`RichTextRenderingTest`',
+    ] as $name) {
+        expect($bullet)->toContain($name);
+    }
+
+    // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists.
+    preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet, $matches, PREG_SET_ORDER);
+
+    expect(count($matches))->toBeGreaterThan(15);
+
+    foreach ($matches as $match) {
+        if (str_ends_with($match[1], 'Test')) {
+            continue;
+        }
+
+        $classes = repoClassesNamed($match[1]);
+
+        expect($classes)->not->toBe([], "CONTRIBUTING.md names {$match[1]} but no such class exists");
+
+        if (isset($match[2])) {
+            $exists = array_filter($classes, static fn (string $class): bool => method_exists($class, $match[2]));
+
+            expect($exists)->not->toBe([], "CONTRIBUTING.md names {$match[1]}::{$match[2]}() but no such method exists");
+        }
+    }
+
+    // `Project::scopeOpen()` is the scope behind `->open()`; the method the text names exists under its real name.
+    expect(method_exists('App\Domain\Projects\Models\Project', 'scopeOpen'))->toBeTrue();
+
+    // The enforcing tests the text names exist, in the file the text implies.
+    $tests = [
+        'SignalTaskLinkTest' => 'tests/Feature/Signal/SignalTaskLinkTest.php',
+        'TaskAddTimeTest' => 'tests/Feature/TimeTracking/TaskAddTimeTest.php',
+        'ProjectViewActionsTest' => 'tests/Feature/Projects/ProjectViewActionsTest.php',
+        'RichTextRenderingTest' => 'tests/Feature/Tasks/RichTextRenderingTest.php',
+    ];
+
+    foreach ($tests as $name => $path) {
+        expect($bullet)->toContain($name);
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$name} but {$path} does not exist");
+    }
+
+    // The two migrations carry the column and the link the text names.
+    expect(repoFile('database/migrations/2026_10_29_000100_add_hidden_on_board_to_tasks_table.php'))->toContain('hidden_on_board')
+        ->and(repoFile('database/migrations/2026_10_29_000200_link_signal_tasks_to_tasks.php'))->toContain('task_id');
+
+    // The Board and Search sentences and the single PDF-link exception are in the file, and the absolute rule is gone.
+    $contributing = repoFile('CONTRIBUTING.md');
+
+    expect($contributing)->toContain('`TaskBoard::applyFilters()` drops the tasks with `tasks.hidden_on_board` set')
+        ->and($contributing)->toContain('Signed PDF link exception')
+        ->and($contributing)->not->toContain('never rendered into a page')
+        ->and(repoFile('app/Domain/Documents/Support/DocumentUrl.php'))->toContain('_blank')
+        ->and(repoFile('app/Domain/Documents/Support/DocumentUrl.php'))->not->toContain('never renders such a link');
+});
+
 it('hands the e-mail layout over: the E-mail bullet names only what exists', function () {
     $bullet = repoContributingBullet('E-mail.');
 

@@ -7,6 +7,7 @@ namespace App\Filament\Resources\TaskResource\Pages;
 use App\Domain\Identity\Models\User;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\EstimateHours;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Tasks\Actions\ClearEscalation;
@@ -17,6 +18,9 @@ use App\Domain\Tasks\Billing\EffectiveBilling;
 use App\Domain\Tasks\Billing\TaskBillingResolver;
 use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Actions\CreateTimeEntry;
+use App\Domain\TimeTracking\Billing\BillableDefault;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Domain\TimeTracking\Queries\TimeTotals;
 use App\Domain\TimeTracking\Support\DurationFormat;
 use App\Domain\TimeTracking\Support\TimerClock;
@@ -253,6 +257,8 @@ final class ViewTask extends ViewRecord
         return [
             // One click to start or stop tracking this task; hidden while it is archived (TI-01).
             TaskResource::timerAction()->record($this->getRecord()),
+            // Time worked on this task is recorded from here with the task's context locked (D-06).
+            $this->addTimeAction(),
             // An archived task is read-only until it is restored.
             EditAction::make()
                 ->hidden(fn (): bool => $this->getRecord() instanceof Task && $this->getRecord()->trashed()),
@@ -260,6 +266,103 @@ final class ViewTask extends ViewRecord
             TaskResource::restoreAction()->record($this->getRecord()),
             $this->clearEscalationAction(),
         ];
+    }
+
+    /**
+     * "Přidat čas" (D-06): the standard time-entry fields in a modal with the client, project and task
+     * taken from this task and locked, the start an hour ago and the end now. The write is the existing
+     * {@see CreateTimeEntry} Action with every rule it owns; nothing is added here. `model()` makes
+     * Filament hand the `?TimeEntry $record` closures of the shared fields a null record instead of the
+     * page's task. The action is not shown for an archived task or for anybody who may not create entries.
+     */
+    private function addTimeAction(): Action
+    {
+        return Action::make('addTime')
+            ->label(__('kokpit.time.task.add_time'))
+            ->icon(Heroicon::OutlinedClock)
+            ->color('gray')
+            ->model(TimeEntry::class)
+            ->modalHeading(__('kokpit.time.task.add_time_heading'))
+            ->modalSubmitActionLabel(__('kokpit.time.save'))
+            ->successNotificationTitle(__('kokpit.time.saved'))
+            ->visible(fn (): bool => $this->getRecord() instanceof Task
+                && ! $this->getRecord()->trashed()
+                && TimeEntryResource::canCreate())
+            ->schema(TimeEntryResource::entryFields(lockContext: true))
+            ->fillForm(function (): array {
+                $task = $this->getRecord();
+                assert($task instanceof Task);
+
+                $now = TimerClock::now();
+
+                return [
+                    'client_id' => $this->taskClientId($task),
+                    'project_id' => $task->project_id,
+                    'task_id' => $task->getKey(),
+                    'billable' => app(BillableDefault::class)->for($task),
+                    'started_at' => $now->subHour()->format('Y-m-d H:i:s'),
+                    'ended_at' => $now->format('Y-m-d H:i:s'),
+                ];
+            })
+            ->action(function (array $data, Action $action): void {
+                abort_unless(TaskResource::canAccess() && TimeEntryResource::canCreate(), 403);
+
+                $task = $this->getRecord();
+                assert($task instanceof Task);
+
+                $actor = auth()->user();
+                assert($actor instanceof User);
+
+                // The context is read from the task record after the form data, so nothing the browser
+                // sends (the disabled fields included) can change it.
+                $payload = TimeEntryResource::actionData([
+                    ...$data,
+                    'client_id' => $this->taskClientId($task),
+                    'project_id' => $task->project_id,
+                    'task_id' => $task->getKey(),
+                ]);
+
+                try {
+                    app(CreateTimeEntry::class)->handle($actor, $payload);
+                } catch (ValidationException $e) {
+                    // The locked fields cannot show an inline error, so a refusal of the context is a toast.
+                    if (array_intersect(array_keys($e->errors()), ['client_id', 'project_id', 'task_id']) !== []) {
+                        Notification::make()
+                            ->danger()
+                            ->title(__('kokpit.time.task.save_failed'))
+                            ->body((string) collect($e->errors())->flatten()->first())
+                            ->send();
+
+                        $action->halt();
+
+                        return;
+                    }
+
+                    $mapped = [];
+
+                    foreach ($e->errors() as $key => $messages) {
+                        $mapped["mountedActions.0.data.{$key}"] = $messages;
+                    }
+
+                    throw ValidationException::withMessages($mapped);
+                }
+
+                // The worked and unbilled figures of this response and the other time surfaces are current.
+                $this->timeTotals = null;
+                $this->dispatch('time-entry-saved');
+
+                $action->success();
+            });
+    }
+
+    /**
+     * The client of the task's project, archived or not.
+     */
+    private function taskClientId(Task $task): ?string
+    {
+        $clientId = Project::query()->withTrashed()->whereKey($task->project_id)->value('client_id');
+
+        return is_string($clientId) ? $clientId : null;
     }
 
     /**

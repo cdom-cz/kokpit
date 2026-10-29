@@ -14,8 +14,11 @@ use Illuminate\Support\Facades\URL;
  * signed, lives for `kokpit.documents.signed_url_ttl_seconds` and carries the id of the requesting user
  * under the signature, so a copy of it is useless to anybody else.
  *
- * A screen never renders such a link into its HTML: an action builds it at click time and redirects, because
- * a page that stays open longer than the lifetime would otherwise hold a dead link.
+ * An action builds the link at click time and redirects for downloads, archives and image previews, because a
+ * page that stays open longer than the lifetime would otherwise hold a dead link. The one exception is the
+ * inline preview of a non-image file (a PDF): its row renders a target _blank link bound to the viewing user
+ * (owner decision "Signed PDF link exception"), guarded by the unchanged route. A page left open past
+ * `kokpit.documents.signed_url_ttl_seconds` holds a link that answers 403 until the list renders again.
  */
 final class DocumentUrl
 {
