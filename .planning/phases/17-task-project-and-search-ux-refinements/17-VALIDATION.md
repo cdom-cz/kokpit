@@ -1,9 +1,9 @@
 ---
 phase: "17"
 slug: "task-project-and-search-ux-refinements"
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-10-29"
 ---
 
@@ -60,16 +60,16 @@ Plans of one wave share the DDEV test database, so their gates run one after ano
 
 | Ref | Behavior | Test Type | Automated Command | File Exists | Status |
 |-----|----------|-----------|-------------------|-------------|--------|
-| P17-1 | Checklist section spans full width | feature | `pest tests/Feature/Tasks/TaskChecklistTest.php` | existing, extend (17-05 Task 3) | ⬜ pending |
-| P17-2 | Description entries carry `fi-prose` | feature | `pest tests/Feature/Tasks/RichTextRenderingTest.php` | ❌ new (17-03 Task 1) | ⬜ pending |
-| P17-3 | New task from project view | Livewire | `pest tests/Feature/Projects/ProjectViewActionsTest.php` | ❌ W0 (17-07 Task 1) | ⬜ pending |
-| P17-4 | Active-first search ordering | feature | `pest tests/Feature/Search/GlobalSearchTest.php` | existing, extend | ⬜ pending |
-| P17-5 | Add time from task | Livewire | `pest tests/Feature/TimeTracking/TaskAddTimeTest.php` | ❌ W0 | ⬜ pending |
-| P17-6 | Hidden-on-board flag | feature + isolation | `pest tests/Feature/Tasks/TaskBoardTest.php tests/Isolation/PartnerSafeColumnsTest.php` | existing, extend | ⬜ pending |
-| P17-7 | Signal task link (text is the pick-time snapshot; a rename between pick and save does not change it) | Livewire + schema | `pest tests/Feature/Signal/SignalTaskLinkTest.php` | ❌ W0 | ⬜ pending |
-| P17-8 | Lightbox and new-window files | feature + isolation | `pest tests/Feature/Documents tests/Isolation/DocumentVisibilityTest.php` | existing, extend | ⬜ pending |
-| P17-9 | Project suggestions exclude Done | feature | `pest tests/Feature/Tasks/TaskResourceTest.php tests/Feature/Tasks/PartnerTaskResourceTest.php` | existing, extend | ⬜ pending |
-| P17-10 | Project status change from view | Livewire | `pest tests/Feature/Projects/ProjectViewActionsTest.php` | ❌ W0 (17-07 Task 1) | ⬜ pending |
+| P17-1 | Checklist section spans full width | feature | `pest tests/Feature/Tasks/TaskChecklistTest.php` | exists, extended (17-05 Task 3) | ✅ green |
+| P17-2 | Description entries carry `fi-prose` | feature | `pest tests/Feature/Tasks/RichTextRenderingTest.php` | exists (17-03 Task 1) | ✅ green |
+| P17-3 | New task from project view | Livewire | `pest tests/Feature/Projects/ProjectViewActionsTest.php` | exists (17-07 Task 1) | ✅ green |
+| P17-4 | Active-first search ordering | feature | `pest tests/Feature/Search/GlobalSearchTest.php` | exists, extended | ✅ green |
+| P17-5 | Add time from task | Livewire | `pest tests/Feature/TimeTracking/TaskAddTimeTest.php` | exists | ✅ green |
+| P17-6 | Hidden-on-board flag | feature + isolation | `pest tests/Feature/Tasks/TaskBoardTest.php tests/Isolation/PartnerSafeColumnsTest.php` | exists, extended | ✅ green |
+| P17-7 | Signal task link (text is the pick-time snapshot; a rename between pick and save does not change it) | Livewire + schema | `pest tests/Feature/Signal/SignalTaskLinkTest.php` | exists | ✅ green |
+| P17-8 | Lightbox and new-window files | feature + isolation | `pest tests/Feature/Documents tests/Isolation/DocumentVisibilityTest.php` | exists, extended | ✅ green |
+| P17-9 | Project suggestions exclude Done | feature | `pest tests/Feature/Tasks/TaskResourceTest.php tests/Feature/Tasks/PartnerTaskResourceTest.php` | exists, extended | ✅ green |
+| P17-10 | Project status change from view | Livewire | `pest tests/Feature/Projects/ProjectViewActionsTest.php` | exists (17-07 Task 1) | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -77,11 +77,11 @@ Plans of one wave share the DDEV test database, so their gates run one after ano
 
 ## Wave 0 Requirements
 
-- [ ] `tests/Feature/Signal/SignalTaskLinkTest.php` — P17-7
-- [ ] `tests/Feature/TimeTracking/TaskAddTimeTest.php` — P17-5
-- [ ] `tests/Feature/Projects/ProjectViewActionsTest.php` — P17-3, P17-10
-- [ ] `tests/Feature/Tasks/RichTextRenderingTest.php` — P17-2
-- [ ] Update pinned `tasks` column list in `tests/Isolation/PartnerSafeColumnsTest.php`
+- [x] `tests/Feature/Signal/SignalTaskLinkTest.php` — P17-7
+- [x] `tests/Feature/TimeTracking/TaskAddTimeTest.php` — P17-5
+- [x] `tests/Feature/Projects/ProjectViewActionsTest.php` — P17-3, P17-10
+- [x] `tests/Feature/Tasks/RichTextRenderingTest.php` — P17-2
+- [x] Update pinned `tasks` column list in `tests/Isolation/PartnerSafeColumnsTest.php`
 
 ---
 
@@ -98,11 +98,19 @@ Plans of one wave share the DDEV test database, so their gates run one after ano
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 180s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 180s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** validated 2026-10-29 (12 test groups, 497 tests, 3687 assertions green in DDEV)
+
+## Validation Audit 2026-10-29
+
+| Metric | Count |
+|---|---|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
