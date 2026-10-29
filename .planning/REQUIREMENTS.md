@@ -112,14 +112,14 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Documents
 
-- [ ] **DO-01**: Files uploaded to clients, projects, tasks, comments, invoices, transactions or unattached on S3; Partner sees only files on accessible projects/tasks, excluding internal-comment attachments, and only those flagged visible
-- [ ] **DO-02**: Admin central listing with filters, sorting, single and ZIP download (queued), bulk delete, storage totals overall and per client
-- [ ] **DO-03**: Downloads always go through the app with permission check and short-lived signed URL; deleting a record removes the S3 object; issued invoice PDFs need explicit confirmation to delete
+- [x] **DO-01**: Files uploaded to clients, projects, tasks, comments, invoices, transactions or unattached on S3; Partner sees only files on accessible projects/tasks, excluding internal-comment attachments, and only those flagged visible
+- [x] **DO-02**: Admin central listing with filters, sorting, single and ZIP download (queued), bulk delete, storage totals overall and per client
+- [x] **DO-03**: Downloads always go through the app with permission check and short-lived signed URL; deleting a record removes the S3 object; issued invoice PDFs need explicit confirmation to delete
 
 ### Finance
 
 - [x] **FI-01**: Income and expense transactions with hierarchical categories, currency, CZK amount, optional client/project/invoice, receipts as attachments
-- [ ] **FI-02**: Overview per month/year, per category and per client in CZK
+- [x] **FI-02**: Overview per month/year, per category and per client in CZK
 - [x] **FI-03**: Payment of an invoice creates an income transaction (automatically for Stripe; editable date and category for manual payment)
 
 ### Invoicing
@@ -327,11 +327,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RE-03 | Phase 8 | Complete |
 | RE-04 | Phase 8 | Complete |
 | RE-05 | Phase 8 | Complete |
-| DO-01 | Phase 9 | Gaps Found |
-| DO-02 | Phase 9 | Gaps Found |
-| DO-03 | Phase 9 | Gaps Found |
+| DO-01 | Phase 9 | Complete |
+| DO-02 | Phase 9 | Complete |
+| DO-03 | Phase 9 | Complete |
 | FI-01 | Phase 9 | Complete |
-| FI-02 | Phase 9 | Gaps Found |
+| FI-02 | Phase 9 | Complete |
 | FI-03 | Phase 10 | Complete |
 | IN-01 | Phase 10 | Complete |
 | IN-02 | Phase 10 | Complete |

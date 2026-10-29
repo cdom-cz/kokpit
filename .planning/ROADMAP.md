@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Time Tracking** - Always-visible timer, manual entries, exact durations, billed locking, timesheet and project time totals (completed 2026-10-14)
 - [x] **Phase 7: REST API** - Token-secured `/api/v1` for time entries (single and batch) and lookups with the same rules as the UI (completed 2026-10-14)
 - [x] **Phase 8: Exchange Rates and Reports** - Daily CNB rates, time and billing reports in client currency and CZK, exports, work report PDF and dashboard (completed 2026-10-29)
-- [ ] **Phase 9: Documents and Finance** - Files on private S3 with Partner visibility rules, central document listing, and income/expense overview in CZK
+- [x] **Phase 9: Documents and Finance** - Files on private S3 with Partner visibility rules, central document listing, and income/expense overview in CZK (completed 2026-10-29)
 - [ ] **Phase 10: Invoicing** - Bill-from-time drafts, numbered immutable invoices, proformas and credit notes, PDF with QR, e-mail, manual payment and Partner invoice view
 - [ ] **Phase 11: Stripe Payments** - Payment links, signed idempotent webhooks, automatic matching, and duplicate and unmatched payment handling
 - [ ] **Phase 12: Partner Audit** - Automated proof that the Partner view leaks nothing and that every route, screen and endpoint has an explicit role rule
@@ -566,7 +566,7 @@ Plans:
   4. Every download goes through the app with a permission check and a short-lived signed URL (no public bucket URL), and deleting a record also removes its stored object
   5. Admin records income and expense transactions with hierarchical categories, currency, CZK amount, optional client and project and receipts as attachments, and sees an overview per month and year, per category and per client in CZK
 
-**Plans:** 28/28 plans executed (4 gap-closure plans 09-25 to 09-28 from 09-VERIFICATION.md and 09-REVIEW.md in 3 gap waves)
+**Plans:** 28/28 plans complete (4 gap-closure plans 09-25 to 09-28 from 09-VERIFICATION.md and 09-REVIEW.md in 3 gap waves)
 **UI hint**: yes
 
 Plans:
@@ -906,7 +906,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
 | 8. Exchange Rates and Reports | 27/27 | Complete    | 2026-10-29 |
-| 9. Documents and Finance | 28/28 | In Progress | - |
+| 9. Documents and Finance | 28/28 | Complete    | 2026-10-29 |
 | 10. Invoicing | 41/41 | In Progress | - |
 | 11. Stripe Payments | 20/20 | In Progress | - |
 | 12. Partner Audit | 9/9 | In Progress | - |
