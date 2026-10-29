@@ -173,15 +173,29 @@
 
         @if ($day['can_edit'])
             <form wire:submit="addTask" style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
-                <x-filament::input.wrapper style="flex: 1 1 14rem;">
-                    <x-filament::input
-                        type="text"
-                        maxlength="{{ \App\Domain\Signal\Support\SignalRules::MAX_TITLE_LENGTH }}"
-                        wire:model="newTitle"
-                        placeholder="{{ __('kokpit.signal.day.new_placeholder') }}"
-                        aria-label="{{ __('kokpit.signal.day.new_placeholder') }}"
-                    />
-                </x-filament::input.wrapper>
+                <div style="position: relative; flex: 1 1 14rem;">
+                    <x-filament::input.wrapper>
+                        <x-filament::input
+                            type="text"
+                            maxlength="{{ \App\Domain\Signal\Support\SignalRules::MAX_TITLE_LENGTH }}"
+                            wire:model.live.debounce.250ms="newTitle"
+                            placeholder="{{ __('kokpit.signal.day.new_placeholder') }}"
+                            aria-label="{{ __('kokpit.signal.day.new_placeholder') }}"
+                        />
+                    </x-filament::input.wrapper>
+
+                    @if ($pickedTaskId === null && count($this->taskSuggestions) > 0)
+                        <div style="position: absolute; top: 100%; left: 0; right: 0; margin-top: 0.25rem; z-index: 20; max-height: 25rem; overflow-y: auto;">
+                            @foreach ($this->taskSuggestions as $suggestion)
+                                <button
+                                    type="button"
+                                    wire:key="suggestion-{{ $suggestion['id'] }}"
+                                    wire:click="pickTask('{{ $suggestion['id'] }}')"
+                                >{{ $suggestion['title'] }} {{ $suggestion['reference'] }} · {{ $suggestion['project'] }}</button>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
 
                 {{-- Planned ahead: pick the colour. Added during the day: always grey, no choice. --}}
                 @if (! $day['adds_extra'])

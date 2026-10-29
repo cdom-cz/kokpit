@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Tasks\Models\Task;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -118,6 +119,25 @@ it('nulls only the template link of a task when the template is deleted', functi
     $task = DB::table('signal_tasks')->first();
 
     expect($task->recurring_id)->toBeNull()->and($task->user_id)->toBe($this->userId);
+});
+
+it('refuses a task link that names no task', function (): void {
+    expect(signalSchemaState(fn () => signalSchemaTask($this->userId, ['task_id' => (string) Str::uuid7()])))->toBe('23503')
+        ->and(signalSchemaState(fn () => signalSchemaTask($this->userId, ['task_id' => null])))->toBeNull();
+});
+
+it('nulls only the task link of a planner task when the task is deleted for good', function (): void {
+    $task = Task::factory()->create();
+    signalSchemaTask($this->userId, ['task_id' => $task->id, 'title' => 'Example snapshot [ABC-1]']);
+
+    // A task is only archived by the application; a hard delete of a task without dependants clears the link.
+    DB::table('tasks')->where('id', $task->id)->delete();
+
+    $signal = DB::table('signal_tasks')->first();
+
+    expect($signal->task_id)->toBeNull()
+        ->and($signal->title)->toBe('Example snapshot [ABC-1]')
+        ->and($signal->user_id)->toBe($this->userId);
 });
 
 it('keeps the deep-work blocks of a day within 0 and the frozen plan, one row per user and day', function (): void {
