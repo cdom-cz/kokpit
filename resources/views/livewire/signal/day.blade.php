@@ -121,6 +121,32 @@
                                     </span>
                                 @endif
 
+                                {{-- A linked task (D-01, D-02, D-03): the shared timer and the way to the task. They do not depend on the day lock or the done state. --}}
+                                @if ($task['link'] !== null)
+                                    <div wire:sort:ignore style="display: flex; flex: 0 0 auto; gap: 0.25rem;">
+                                        @if ($task['link']['can_time'])
+                                            <x-filament::icon-button
+                                                :icon="$task['link']['running'] ? 'heroicon-m-stop' : 'heroicon-m-play'"
+                                                :color="$task['link']['running'] ? 'warning' : 'gray'"
+                                                size="sm"
+                                                wire:click="toggleTaskTimer('{{ $task['id'] }}')"
+                                                aria-pressed="{{ $task['link']['running'] ? 'true' : 'false' }}"
+                                                :label="$task['link']['running'] ? __('kokpit.time.timer.stop') : __('kokpit.time.timer.start')"
+                                                :tooltip="$task['link']['running'] ? __('kokpit.time.timer.stop') : __('kokpit.time.timer.start')"
+                                            />
+                                        @endif
+                                        <x-filament::icon-button
+                                            tag="a"
+                                            :href="$task['link']['url']"
+                                            icon="heroicon-m-arrow-top-right-on-square"
+                                            size="sm"
+                                            color="gray"
+                                            :label="__('kokpit.task_board.card.open')"
+                                            :tooltip="__('kokpit.task_board.card.open')"
+                                        />
+                                    </div>
+                                @endif
+
                                 @if ($day['can_edit'])
                                     <div wire:sort:ignore style="display: flex; gap: 0.25rem;">
                                         <x-filament::icon-button

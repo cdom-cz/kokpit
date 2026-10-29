@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
+use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Signal\Actions\AddSignalTask;
 use App\Domain\Signal\Enums\SignalCategory;
@@ -10,11 +12,18 @@ use App\Domain\Signal\Models\SignalTask;
 use App\Domain\Signal\Queries\LinkableTasks;
 use App\Domain\Signal\Support\SignalRules;
 use App\Domain\Tasks\Actions\ArchiveTask;
+use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Actions\StopTimer;
+use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Filament\Resources\TaskResource;
 use App\Livewire\Signal\SignalDay;
 use Carbon\CarbonImmutable;
+use Database\Factories\ProjectFactory;
 use Filament\Facades\Filament;
+use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
@@ -376,4 +385,296 @@ it('makes the field read-only after a pick, shows the clear control and no listb
     $component->call('clearPick');
 
     expect($component->html())->not->toContain('readonly')->not->toContain('clearPick');
+});
+
+/*
+ * The listing of a linked planner task (P17-07, D-01, D-02, D-03): the shared task timer and the icon that
+ * opens the task. The task title of the row stays plain text.
+ */
+
+/**
+ * A task of a fresh hourly project that a timer can be started on, written through the domain Actions.
+ */
+function sigLinkTimed(string $title = 'Example timed work'): Task
+{
+    $project = app(CreateProject::class)->handle(Client::factory()->create(), [
+        'name' => 'Example timer project',
+        'key' => ProjectFactory::randomKey(),
+        'billing_type' => 'hourly',
+    ]);
+
+    return app(CreateTask::class)->handle(test()->admin, $project, ['title' => $title]);
+}
+
+/**
+ * A signal of the day linked to the task, written the way AddSignalTask does it (the link is never mass-assigned).
+ *
+ * @param  array<string, mixed>  $state
+ */
+function sigLinkSignal(Task $task, string $date = '2026-10-12', array $state = []): SignalTask
+{
+    $signal = SignalTask::query()->create([
+        'title' => 'Example snapshot ['.$task->reference.']',
+        'for_date' => $date,
+        'category' => SignalCategory::Extra,
+        'position' => 0,
+    ]);
+
+    $signal->forceFill(['task_id' => $task->id, ...$state])->save();
+
+    return $signal;
+}
+
+/**
+ * The markup of one planner row of the rendered day.
+ */
+function sigLinkRow(string $html, SignalTask $signal): string
+{
+    preg_match('/<li\b[^>]*wire:key="task-'.preg_quote($signal->id, '/').'"[^>]*>.*?<\/li>/s', $html, $match);
+
+    return html_entity_decode($match[0] ?? '');
+}
+
+it('offers the task page and a play button on a linked row, never a link on the text', function (): void {
+    $task = sigLinkTimed();
+    $signal = sigLinkSignal($task);
+    $plain = SignalTask::query()->create(['title' => 'Example plain text', 'for_date' => '2026-10-12', 'category' => SignalCategory::Extra, 'position' => 1]);
+
+    $html = Livewire::test(SignalDay::class, ['forDate' => '2026-10-12'])->html();
+    $row = sigLinkRow($html, $signal);
+
+    preg_match('/<a\b[^>]*>(.*?)<\/a>/s', $row, $anchor);
+
+    expect($row)->toContain('href="'.TaskResource::getUrl('view', ['record' => $task]).'"')
+        ->and($row)->toContain(__('kokpit.task_board.card.open'))
+        ->and($row)->toContain("toggleTaskTimer('{$signal->id}')")
+        ->and($row)->toContain(__('kokpit.time.timer.start'))
+        ->and($row)->toContain('aria-pressed="false"')
+        ->and($row)->not->toContain(__('kokpit.time.timer.stop'))
+        ->and($anchor[1] ?? '')->not->toContain('Example snapshot')
+        ->and(substr_count($row, '<a '))->toBe(1);
+
+    $plainRow = sigLinkRow($html, $plain);
+
+    expect($plainRow)->not->toContain('toggleTaskTimer')
+        ->and($plainRow)->not->toContain(__('kokpit.task_board.card.open'))
+        ->and($plainRow)->not->toContain('<a ');
+});
+
+it('starts and stops the shared timer of the linked task from the row', function (): void {
+    $task = sigLinkTimed();
+    $signal = sigLinkSignal($task);
+
+    $component = Livewire::test(SignalDay::class, ['forDate' => '2026-10-12'])
+        ->call('toggleTaskTimer', $signal->id)
+        ->assertDispatched('timer-started')
+        ->assertNotified(__('kokpit.time.timer.started'));
+
+    $entry = TimeEntry::query()->whereNull('ended_at')->sole();
+
+    expect($entry->task_id)->toBe($task->id)
+        ->and($entry->user_id)->toBe($this->admin->id);
+
+    $row = sigLinkRow($component->html(), $signal);
+
+    expect($row)->toContain(__('kokpit.time.timer.stop'))
+        ->and($row)->toContain('aria-pressed="true"')
+        ->and($row)->not->toContain(__('kokpit.time.timer.start'));
+
+    $component->call('toggleTaskTimer', $signal->id)
+        ->assertDispatched('timer-stopped')
+        ->assertNotified(__('kokpit.time.timer.stopped'));
+
+    expect(TimeEntry::query()->whereNull('ended_at')->count())->toBe(0)
+        ->and(sigLinkRow($component->html(), $signal))->toContain(__('kokpit.time.timer.start'));
+});
+
+it('hides the timer but keeps the open-task icon for a completed or archived task and shows neither for a deleted one', function (): void {
+    $done = sigLinkTimed('Example finished work');
+    $archived = sigLinkTimed('Example archived work');
+    $deleted = sigLinkTimed('Example deleted work');
+    $doneSignal = sigLinkSignal($done);
+    $archivedSignal = sigLinkSignal($archived);
+    $deletedSignal = sigLinkSignal($deleted);
+
+    app(UpdateTask::class)->handle($this->admin, $done, ['status' => 'done']);
+    app(ArchiveTask::class)->handle($this->admin, $archived);
+    $deleted->forceDelete();
+
+    $html = Livewire::test(SignalDay::class, ['forDate' => '2026-10-12'])->html();
+
+    foreach ([[$doneSignal, $done], [$archivedSignal, $archived]] as [$signal, $task]) {
+        $row = sigLinkRow($html, $signal);
+
+        expect($row)->toContain('href="'.TaskResource::getUrl('view', ['record' => $task]).'"')
+            ->and($row)->toContain(__('kokpit.task_board.card.open'))
+            ->and($row)->not->toContain('toggleTaskTimer')
+            ->and($row)->not->toContain(__('kokpit.time.timer.start'));
+    }
+
+    $deletedRow = sigLinkRow($html, $deletedSignal);
+
+    expect($deletedSignal->refresh()->task_id)->toBeNull()
+        ->and($deletedRow)->not->toContain('toggleTaskTimer')
+        ->and($deletedRow)->not->toContain(__('kokpit.task_board.card.open'))
+        ->and($deletedRow)->not->toContain('<a ');
+});
+
+it('shows both controls on a locked past day and on a done signal, while edit and delete stay absent on the locked day', function (): void {
+    $lockedSignal = sigLinkSignal(sigLinkTimed('Example past work'), '2026-10-09');
+    $doneSignal = sigLinkSignal(sigLinkTimed('Example ticked work'), '2026-10-12', ['is_done' => true, 'completed_at' => now()]);
+
+    $locked = sigLinkRow(Livewire::test(SignalDay::class, ['forDate' => '2026-10-09'])->html(), $lockedSignal);
+
+    expect($locked)->toContain('toggleTaskTimer')
+        ->and($locked)->toContain(__('kokpit.task_board.card.open'))
+        ->and($locked)->not->toContain(__('kokpit.signal.day.edit'))
+        ->and($locked)->not->toContain(__('kokpit.signal.day.delete'));
+
+    $done = sigLinkRow(Livewire::test(SignalDay::class, ['forDate' => '2026-10-12'])->html(), $doneSignal);
+
+    expect($done)->toContain('toggleTaskTimer')
+        ->and($done)->toContain(__('kokpit.task_board.card.open'))
+        ->and($done)->toContain('line-through')
+        ->and($done)->toContain('style="display: flex; flex: 0 0 auto; gap: 0.25rem;"');
+});
+
+it('lets the row start the timer on the locked past day', function (): void {
+    $task = sigLinkTimed();
+    $signal = sigLinkSignal($task, '2026-10-09');
+
+    Livewire::test(SignalDay::class, ['forDate' => '2026-10-09'])
+        ->call('toggleTaskTimer', $signal->id)
+        ->assertDispatched('timer-started');
+
+    expect(TimeEntry::query()->whereNull('ended_at')->sole()->task_id)->toBe($task->id);
+});
+
+it('stops and keeps the timer running elsewhere with the same toast as the timer bar', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-12 08:00:00', 'UTC'));
+    $other = sigLinkTimed('Example other work');
+    $old = TimeEntry::factory()->forTask($other)->create([
+        'user_id' => $this->admin->id,
+        'started_at' => CarbonImmutable::parse('2026-10-12 06:30:00', 'UTC'),
+        'ended_at' => null,
+    ]);
+    $task = sigLinkTimed();
+    $signal = sigLinkSignal($task);
+
+    Livewire::test(SignalDay::class, ['forDate' => '2026-10-12'])
+        ->call('toggleTaskTimer', $signal->id)
+        ->assertDispatched('timer-started')
+        ->assertNotified(
+            Notification::make()
+                ->success()
+                ->title(__('kokpit.time.timer.started'))
+                ->body('Předchozí záznam (1:30) byl zastaven a uložen.'),
+        );
+
+    $this->travelBack();
+
+    expect($old->refresh()->ended_at)->not->toBeNull()
+        ->and($old->duration_seconds)->toBe(5400)
+        ->and(TimeEntry::query()->whereNull('ended_at')->sole()->task_id)->toBe($task->id);
+});
+
+it('refuses a start on a completed or archived task from a stale row and starts nothing', function (): void {
+    $done = sigLinkTimed('Example finished work');
+    $archived = sigLinkTimed('Example archived work');
+    $doneSignal = sigLinkSignal($done);
+    $archivedSignal = sigLinkSignal($archived);
+
+    app(UpdateTask::class)->handle($this->admin, $done, ['status' => 'done']);
+    app(ArchiveTask::class)->handle($this->admin, $archived);
+
+    foreach ([$doneSignal, $archivedSignal] as $signal) {
+        Livewire::test(SignalDay::class, ['forDate' => '2026-10-12'])
+            ->call('toggleTaskTimer', $signal->id)
+            ->assertNotified(__('kokpit.signal.errors.task_unavailable'))
+            ->assertNotDispatched('timer-started');
+    }
+
+    expect(TimeEntry::query()->count())->toBe(0);
+});
+
+it('stops the running timer of a task that was completed meanwhile', function (): void {
+    $task = sigLinkTimed();
+    $signal = sigLinkSignal($task);
+
+    app(UpdateTask::class)->handle($this->admin, $task, ['status' => 'done']);
+    TimeEntry::factory()->forTask($task)->running()->create(['user_id' => $this->admin->id]);
+
+    Livewire::test(SignalDay::class, ['forDate' => '2026-10-12'])
+        ->call('toggleTaskTimer', $signal->id)
+        ->assertDispatched('timer-stopped');
+
+    expect(TimeEntry::query()->whereNull('ended_at')->count())->toBe(0);
+});
+
+it('re-reads the day on every timer event so that the cards and the top bar agree', function (): void {
+    foreach (['timer-started', 'timer-stopped', 'time-entry-saved', 'time-entry-deleted'] as $event) {
+        $task = sigLinkTimed("Example {$event} work");
+        $signal = sigLinkSignal($task, '2026-10-13');
+        $component = Livewire::test(SignalDay::class, ['forDate' => '2026-10-13']);
+
+        expect(sigLinkRow($component->html(), $signal))->toContain(__('kokpit.time.timer.start'));
+
+        TimeEntry::factory()->forTask($task)->running()->create(['user_id' => $this->admin->id]);
+        $component->dispatch($event);
+
+        expect(sigLinkRow($component->html(), $signal))->toContain(__('kokpit.time.timer.stop'))
+            ->and(sigLinkRow($component->html(), $signal))->toContain('aria-pressed="true"');
+
+        app(StopTimer::class)->handle($this->admin);
+        $component->dispatch($event);
+
+        expect(sigLinkRow($component->html(), $signal))->toContain(__('kokpit.time.timer.start'));
+    }
+});
+
+it('loads the linked tasks of a day in one query however many are linked', function (): void {
+    $queries = static function (int $linked): int {
+        $date = $linked === 1 ? '2026-10-13' : '2026-10-14';
+        $prefix = $linked === 1 ? 'QA' : 'QB';
+
+        foreach (range(1, $linked) as $i) {
+            sigLinkSignal(sigLinkTask(sigLinkProject($prefix.chr(64 + $i), "Example Query {$prefix} {$i}"), "Example query work {$i}"), $date);
+        }
+
+        $component = Livewire::test(SignalDay::class, ['forDate' => $date]);
+        $component->call('timerChanged');
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $component->call('timerChanged');
+        $count = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        return $count;
+    };
+
+    expect($queries(10))->toBe($queries(1));
+});
+
+it('refuses a forged or unknown signal id and starts nothing', function (): void {
+    $plain = SignalTask::query()->create(['title' => 'Example plain text', 'for_date' => '2026-10-12', 'category' => SignalCategory::Extra, 'position' => 0]);
+
+    foreach (['not-a-uuid', (string) Str::uuid7(), $plain->id] as $id) {
+        Livewire::test(SignalDay::class, ['forDate' => '2026-10-12'])
+            ->call('toggleTaskTimer', $id)
+            ->assertNotified(__('kokpit.signal.errors.not_found'))
+            ->assertNotDispatched('timer-started');
+    }
+
+    expect(TimeEntry::query()->count())->toBe(0);
+});
+
+it('does not start a timer through a row of another day', function (): void {
+    $signal = sigLinkSignal(sigLinkTimed(), '2026-10-13');
+
+    Livewire::test(SignalDay::class, ['forDate' => '2026-10-12'])
+        ->call('toggleTaskTimer', $signal->id)
+        ->assertNotified(__('kokpit.signal.errors.not_found'));
+
+    expect(TimeEntry::query()->count())->toBe(0);
 });

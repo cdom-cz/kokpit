@@ -16,6 +16,8 @@ use App\Domain\Signal\Models\SignalSetting;
 use App\Domain\Signal\Models\SignalTask;
 use App\Domain\Signal\Models\SignalWeeklyGoal;
 use App\Domain\Signal\Models\SignalWeeklyRecap;
+use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Livewire\Signal\SignalDay;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
@@ -139,6 +141,24 @@ it('does not render the data of another Admin in the day component', function ()
     $this->actingAs($this->adminB);
 
     Livewire::test(SignalDay::class, ['forDate' => '2026-10-13'])->assertDontSee($this->rowsA['task']->title);
+});
+
+it('does not start a timer through the linked row of another Admin', function (): void {
+    $task = app(PartnerContext::class)->runAsSystem(static fn (): Task => Task::factory()->create());
+    $signal = $this->rowsA['task'];
+
+    app(PartnerContext::class)->runAsSystem(static fn (): bool => $signal->forceFill(['task_id' => $task->id])->save());
+
+    $this->actingAs($this->adminB);
+
+    Livewire::test(SignalDay::class, ['forDate' => '2026-10-13'])
+        ->call('toggleTaskTimer', $signal->id)
+        ->assertNotified(__('kokpit.signal.errors.not_found'))
+        ->assertNotDispatched('timer-started');
+
+    $entries = app(PartnerContext::class)->runAsSystem(static fn (): int => TimeEntry::query()->count());
+
+    expect($entries)->toBe(0);
 });
 
 it('refuses to create a row for nobody', function (): void {
