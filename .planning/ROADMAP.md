@@ -1034,3 +1034,23 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 16-06-PLAN.md — Hand-served journey, D-01 scope test (system e-mails unaffected), Partner isolation, CONTRIBUTING hand-over, full gate (Wave 4)
+
+### Phase 17: Task, project and search UX refinements
+
+**Goal:** A batch of UX refinements across tasks, projects, search, signals and files:
+- Task create/edit form: the "Checklist" card spans the full width.
+- Rich-text content (descriptions, comments, any rich-text field) is rendered with its formatting in read-only output.
+- A task can be created directly from the project detail.
+- Search results ordering: within each category, active (not completed) tasks and projects come first; the current order of categories and the display stay as they are.
+- Time entries can be added directly from a task.
+- A task can be flagged to be hidden from the kanban board; by default every task is shown.
+- Signal: the task can be picked from the system via type-ahead over unfinished tasks inside the existing text field, without switching modes. A picked task inserts the text `{PROJECT}: {task code} {task name}` and is linked; a cross icon in the input clears the pick so free text can be typed again; if nothing is picked, plain unlinked text is stored. In the signal listing, a linked task shows a timer control and an open-task icon (the name itself is not a link).
+- Files: image previews open in a single-image modal/lightbox (no navigation between images); non-image files open in a new window.
+- Task creation: the project suggestions offer only projects not in the "Completed" state (if not already so).
+- Projects: the status can be changed from the project view, similar to the task view.
+**Requirements**: TBD
+**Depends on:** Phase 16
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 17 to break down)

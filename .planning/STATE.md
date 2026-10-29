@@ -946,6 +946,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 - Phase 14 added: Online payment method and invoice currency: selectable online (Stripe) payment method that replaces bank payment details on the invoice, and selectable invoice currency reflected in the PDF and the Stripe payment
 - Phase 10.1 inserted after Phase 10: Invoices stay fully editable until sent, with a manual unlock (URGENT)
 - Phase 10.2 removed: the paid-invoice confirmation e-mail is delivered in Phase 13
+- Phase 17 added: Task, project and search UX refinements: checklist full width, rich-text rendering, task creation from project detail, active-first search ordering, time entries on a task, hide task from kanban, task picker in signals, image preview modal for files, project status change from view
 - Phase 16 added: Per-client e-mail sending toggle: a client setting that disables sending e-mails (invoices and related documents) for clients served exclusively by hand; enabled by default
 - Phase 15 added: Cash payment method for invoices and cash receipt documents: invoices payable in cash, plus a cash receipt document (PPD) issued for them; research first what it is and how to issue it
 - Phase 14 edited: edited fields: title, goal (payment method switchable between bank transfer and online; currency independent of method and bank account; account preselected by matching currency, separately selectable)
