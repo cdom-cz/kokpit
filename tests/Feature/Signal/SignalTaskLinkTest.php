@@ -326,3 +326,54 @@ it('refuses a pick on a locked past day', function (): void {
 
     expect(SignalTask::query()->count())->toBe(0);
 });
+
+it('renders the add field as an accessible combobox with the new placeholder', function (): void {
+    $html = Livewire::test(SignalDay::class, ['forDate' => '2026-10-12'])->html();
+
+    expect($html)->toContain('role="combobox"')
+        ->and($html)->toContain('aria-controls="signal-suggestions-2026-10-12"')
+        ->and($html)->toContain('aria-autocomplete="list"')
+        ->and($html)->toContain(__('kokpit.signal.day.new_placeholder'))
+        ->and($html)->not->toContain('role="listbox"')
+        ->and($html)->not->toContain('readonly')
+        ->and(substr_count($html, 'maxlength="255"'))->toBe(1);
+});
+
+it('renders a listbox with one option per suggestion once two characters match, and nothing for a miss', function (): void {
+    $project = sigLinkProject();
+    $login = sigLinkTask($project, 'Example login fix');
+    sigLinkTask($project, 'Example login other');
+
+    $component = Livewire::test(SignalDay::class, ['forDate' => '2026-10-12'])->set('newTitle', 'login');
+    $html = $component->html();
+
+    expect($html)->toContain('role="listbox"')
+        ->and($html)->toContain('id="signal-suggestions-2026-10-12"')
+        ->and(substr_count($html, 'role="option"'))->toBe(2)
+        ->and($html)->toContain("pickTask('{$login->id}')")
+        ->and($html)->toContain('signal-suggestion-2026-10-12-1');
+
+    $component->set('newTitle', 'l');
+    expect($component->html())->not->toContain('role="listbox"');
+
+    $component->set('newTitle', 'no match at all');
+    expect($component->html())->not->toContain('role="listbox"')->not->toContain(__('kokpit.signal.errors.task_unavailable'));
+});
+
+it('makes the field read-only after a pick, shows the clear control and no listbox', function (): void {
+    $task = sigLinkTask(sigLinkProject(), 'Example login fix');
+
+    $component = Livewire::test(SignalDay::class, ['forDate' => '2026-10-12'])
+        ->set('newTitle', 'login')
+        ->call('pickTask', $task->id);
+    $html = $component->html();
+
+    expect($html)->toContain('readonly')
+        ->and($html)->toContain(__('kokpit.signal.day.clear_pick'))
+        ->and($html)->toContain('clearPick')
+        ->and($html)->not->toContain('role="listbox"');
+
+    $component->call('clearPick');
+
+    expect($component->html())->not->toContain('readonly')->not->toContain('clearPick');
+});

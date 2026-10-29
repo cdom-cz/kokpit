@@ -173,26 +173,97 @@
 
         @if ($day['can_edit'])
             <form wire:submit="addTask" style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
-                <div style="position: relative; flex: 1 1 14rem;">
-                    <x-filament::input.wrapper>
+                {{--
+                    Type-ahead over unfinished Kokpit tasks (D-03). Alpine only keeps the open flag and the active
+                    row; the suggestions, the pick and the stored text are the server's (pickTask / addTask).
+                    Enter picks the active row, otherwise it submits the form as free text.
+                --}}
+                @php($listId = 'signal-suggestions-'.$forDate)
+                @php($showList = $pickedTaskId === null && count($this->taskSuggestions) > 0)
+                <div
+                    x-data="{ open: true, active: -1, options() { return this.$root.querySelectorAll('[role=option]'); } }"
+                    x-on:click.outside="open = false"
+                    style="position: relative; flex: 1 1 14rem;"
+                >
+                    <x-filament::input.wrapper
+                        :prefix-icon="$pickedTaskId !== null ? 'heroicon-m-link' : null"
+                        :inline-prefix="true"
+                    >
                         <x-filament::input
                             type="text"
                             maxlength="{{ \App\Domain\Signal\Support\SignalRules::MAX_TITLE_LENGTH }}"
                             wire:model.live.debounce.250ms="newTitle"
                             placeholder="{{ __('kokpit.signal.day.new_placeholder') }}"
                             aria-label="{{ __('kokpit.signal.day.new_placeholder') }}"
+                            autocomplete="off"
+                            role="combobox"
+                            aria-autocomplete="list"
+                            :aria-controls="$listId"
+                            :readonly="$pickedTaskId !== null"
+                            x-bind:aria-expanded="open && {{ $showList ? 'true' : 'false' }} ? 'true' : 'false'"
+                            x-bind:aria-activedescendant="open && active >= 0 ? 'signal-suggestion-{{ $forDate }}-' + active : null"
+                            style="padding-inline-end: 2.25rem;"
+                            x-on:input="open = true; active = -1"
+                            x-on:keydown.arrow-down.prevent="if (options().length) { open = true; active = (active + 1) % options().length; options()[active].scrollIntoView({ block: 'nearest' }); }"
+                            x-on:keydown.arrow-up.prevent="if (options().length) { open = true; active = active <= 0 ? options().length - 1 : active - 1; options()[active].scrollIntoView({ block: 'nearest' }); }"
+                            x-on:keydown.enter="if (open && active >= 0 && options()[active]) { $event.preventDefault(); options()[active].click(); }"
+                            x-on:keydown.escape="open = false; active = -1"
+                            x-on:keydown.tab="open = false"
                         />
                     </x-filament::input.wrapper>
 
-                    @if ($pickedTaskId === null && count($this->taskSuggestions) > 0)
-                        <div style="position: absolute; top: 100%; left: 0; right: 0; margin-top: 0.25rem; z-index: 20; max-height: 25rem; overflow-y: auto;">
-                            @foreach ($this->taskSuggestions as $suggestion)
-                                <button
-                                    type="button"
-                                    wire:key="suggestion-{{ $suggestion['id'] }}"
-                                    wire:click="pickTask('{{ $suggestion['id'] }}')"
-                                >{{ $suggestion['title'] }} {{ $suggestion['reference'] }} · {{ $suggestion['project'] }}</button>
-                            @endforeach
+                    {{-- The suffix sits over the right edge of the field: the spinner while searching, the cross once picked. --}}
+                    <div style="position: absolute; top: 0; bottom: 0; right: 0.375rem; display: flex; align-items: center;">
+                        @if ($pickedTaskId === null)
+                            <x-filament::loading-indicator
+                                wire:loading
+                                wire:target="newTitle"
+                                style="width: 1rem; height: 1rem; margin-right: 0.375rem;"
+                            />
+                        @else
+                            <x-filament::icon-button
+                                icon="heroicon-m-x-mark"
+                                size="sm"
+                                color="gray"
+                                :label="__('kokpit.signal.day.clear_pick')"
+                                :tooltip="__('kokpit.signal.day.clear_pick')"
+                                wire:click="clearPick"
+                                x-on:click="open = true; active = -1; $nextTick(() => $root.querySelector('input').focus())"
+                            />
+                        @endif
+                    </div>
+
+                    @if ($showList)
+                        <div
+                            x-show="open"
+                            id="{{ $listId }}"
+                            role="listbox"
+                            class="fi-dropdown-panel"
+                            style="position: absolute; top: 100%; left: 0; width: 100%; margin-top: 0.25rem; z-index: 20; max-height: 25rem; overflow-y: auto; border-radius: 0.5rem; border: 1px solid rgba(127, 127, 127, 0.25);"
+                        >
+                            <div class="fi-dropdown-list">
+                                @foreach ($this->taskSuggestions as $suggestion)
+                                    <button
+                                        type="button"
+                                        role="option"
+                                        id="signal-suggestion-{{ $forDate }}-{{ $loop->index }}"
+                                        wire:key="suggestion-{{ $suggestion['id'] }}"
+                                        wire:click="pickTask('{{ $suggestion['id'] }}')"
+                                        x-on:mouseenter="active = {{ $loop->index }}"
+                                        x-on:click="open = false; active = -1"
+                                        x-bind:aria-selected="active === {{ $loop->index }} ? 'true' : 'false'"
+                                        x-bind:style="active === {{ $loop->index }} ? 'background: rgba(127, 127, 127, 0.15);' : ''"
+                                        class="fi-dropdown-list-item"
+                                        style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0.125rem; width: 100%; min-height: 2.5rem; padding: 0.25rem 0.5rem; text-align: left;"
+                                    >
+                                        <span style="display: block; max-width: 100%; font-size: 0.875rem; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ $suggestion['title'] }}</span>
+                                        <span style="display: block; max-width: 100%; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                            <span style="font-weight: 600;">{{ $suggestion['reference'] }}</span>
+                                            <span style="opacity: 0.7;"> · {{ $suggestion['project'] }}</span>
+                                        </span>
+                                    </button>
+                                @endforeach
+                            </div>
                         </div>
                     @endif
                 </div>
