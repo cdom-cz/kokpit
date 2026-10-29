@@ -1398,6 +1398,7 @@ return [
             'fixed_price_required' => 'U pevné ceny zadejte částku.',
             'client_immutable' => 'Klienta projektu nelze po vytvoření změnit.',
             'estimate_invalid' => 'Zadejte odhad v hodinách jako nezáporné číslo nejvýše se dvěma desetinnými místy, například 1,5.',
+            'status_invalid' => 'Vyberte platný stav projektu.',
         ],
         'fields' => [
             'name' => 'Název',
@@ -1444,10 +1445,12 @@ return [
             'restore' => 'Obnovit',
             'archive_heading' => 'Archivovat projekt?',
             'archive_description' => 'Archivovaný projekt zmizí ze seznamů a výběrů, ale zůstane v databázi a půjde ho obnovit.',
+            'change_status_heading' => 'Změnit stav projektu',
         ],
         'notifications' => [
             'archived' => 'Projekt byl archivován',
             'restored' => 'Projekt byl obnoven',
+            'status_changed' => 'Stav projektu byl změněn',
         ],
         'empty_heading' => 'Zatím tu nejsou žádné projekty',
         'empty_description' => 'Vytvořte první projekt pro některého z klientů.',
