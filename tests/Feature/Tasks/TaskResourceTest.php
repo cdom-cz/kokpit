@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Actions\CreateProject;
+use App\Domain\Projects\Actions\UpdateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Filament\Resources\ProjectResource\Pages\ProjectBoard;
 use App\Filament\Resources\TaskResource;
 use App\Filament\Resources\TaskResource\Pages\ListTasks;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
@@ -81,6 +83,41 @@ it('answers the project field when the project is archived', function (): void {
         ->assertHasActionErrors(['project_id']);
 
     expect(Task::query()->count())->toBe(0);
+});
+
+it('does not accept a Done project in the quick modal while the project filter still offers it', function (): void {
+    $active = taskResProject('ACT');
+    $done = taskResProject('DNE');
+    app(UpdateProject::class)->handle($done, ['status' => 'done']);
+
+    Livewire::test(ListTasks::class)
+        ->callAction('quickCreate', ['project_id' => $done->id, 'title' => 'Example done project task'])
+        ->assertHasActionErrors(['project_id']);
+
+    expect(Task::query()->count())->toBe(0);
+
+    Livewire::test(ListTasks::class)
+        ->callAction('quickCreate', ['project_id' => $active->id, 'title' => 'Example active project task'])
+        ->assertHasNoActionErrors()
+        ->assertRedirect('/admin/tasks/ACT-1/edit');
+
+    $filterOptions = Livewire::test(ListTasks::class)->instance()->getTable()->getFilter('project')?->getOptions() ?? [];
+
+    expect($filterOptions)->toHaveKeys([$active->id, $done->id]);
+});
+
+it('starts the quick modal of a project board with its project unless the project is Done', function (): void {
+    $active = taskResProject('BAC');
+    $done = taskResProject('BDN');
+    app(UpdateProject::class)->handle($done, ['status' => 'done']);
+
+    Livewire::test(ProjectBoard::class, ['record' => $active->id])
+        ->mountAction('quickCreate')
+        ->assertSchemaStateSet(['project_id' => $active->id]);
+
+    Livewire::test(ProjectBoard::class, ['record' => $done->id])
+        ->mountAction('quickCreate')
+        ->assertSchemaStateSet(['project_id' => null]);
 });
 
 it('requires a title in the quick modal', function (): void {

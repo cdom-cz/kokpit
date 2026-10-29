@@ -208,6 +208,23 @@ it('refuses a forged project id of client B or of a hidden own project with the 
     expect(PartnerTaskResource::projectOptions())->toBe([$this->projectA->id => $this->projectA->key.' · '.$this->projectA->name]);
 });
 
+it('does not offer a Done project on the Partner create form and refuses a forged Done project id', function (): void {
+    $done = partnerTaskResProject($this->clientA);
+    app(PartnerContext::class)->runAsSystem(static fn (): Project => app(UpdateProject::class)->handle($done, ['status' => 'done']));
+    $this->actingAs($this->partnerA);
+    $title = Canary::canary('done_project');
+
+    expect(PartnerTaskResource::projectOptions())->toBe([$this->projectA->id => $this->projectA->key.' · '.$this->projectA->name]);
+
+    Livewire::test(CreatePartnerTask::class)
+        ->fillForm(['title' => $title])
+        ->set('data.project_id', $done->id)
+        ->call('create')
+        ->assertHasFormErrors(['project_id']);
+
+    expect(app(PartnerContext::class)->runAsSystem(static fn (): int => Task::query()->where('title', $title)->count()))->toBe(0);
+});
+
 it('drops the tasks of a project from the Partner list and page on the next request once the project is not client-visible', function (): void {
     $project = app(PartnerContext::class)->runAsSystem(static fn (): Project => app(CreateProject::class)->handle(
         Client::query()->findOrFail(test()->clientA),

@@ -1292,6 +1292,7 @@ return [
             'estimate_hours' => 'Hodiny s nejvýše dvěma desetinnými místy, například 1,5.',
             'internal_note' => 'Vidí jen správce, nikdy klient.',
             'hidden_on_board' => 'Úkol se nezobrazí na kanbanové nástěnce. V seznamech, hledání a na detailu zůstává.',
+            'project_locked' => 'Projekt je daný detailem projektu.',
         ],
         'navigation_label' => 'Úkoly',
         'model_label' => 'Úkol',
@@ -1397,6 +1398,7 @@ return [
             'fixed_price_required' => 'U pevné ceny zadejte částku.',
             'client_immutable' => 'Klienta projektu nelze po vytvoření změnit.',
             'estimate_invalid' => 'Zadejte odhad v hodinách jako nezáporné číslo nejvýše se dvěma desetinnými místy, například 1,5.',
+            'status_invalid' => 'Vyberte platný stav projektu.',
         ],
         'fields' => [
             'name' => 'Název',
@@ -1443,10 +1445,12 @@ return [
             'restore' => 'Obnovit',
             'archive_heading' => 'Archivovat projekt?',
             'archive_description' => 'Archivovaný projekt zmizí ze seznamů a výběrů, ale zůstane v databázi a půjde ho obnovit.',
+            'change_status_heading' => 'Změnit stav projektu',
         ],
         'notifications' => [
             'archived' => 'Projekt byl archivován',
             'restored' => 'Projekt byl obnoven',
+            'status_changed' => 'Stav projektu byl změněn',
         ],
         'empty_heading' => 'Zatím tu nejsou žádné projekty',
         'empty_description' => 'Vytvořte první projekt pro některého z klientů.',
