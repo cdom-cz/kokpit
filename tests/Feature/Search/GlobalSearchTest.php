@@ -8,6 +8,7 @@ use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\AccessRules;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Tasks\Actions\CreateTask;
+use App\Domain\Tasks\Actions\UpdateTask;
 use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\ProjectResource;
 use App\Filament\Resources\TaskResource;
@@ -213,4 +214,25 @@ it('orders clients by name and projects by key inside their group', function ():
 
     expect(array_column($categories['Klienti'], 'title'))->toBe(['Example Alpha client', 'Example Beta client'])
         ->and(array_column($categories['Projekty'], 'title'))->toBe(['NWD · Example northwind project', 'OTH · Example other project']);
+});
+
+it('lists the active tasks before the Done ones inside the tasks group, newest first in each part', function (): void {
+    $project = gsProject(Client::factory()->create(['name' => 'Example task order client']), 'TOR', 'Example task order project');
+    $one = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example search task one']);
+    $two = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example search task two']);
+    $three = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example search task three']);
+    $four = app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example search task four']);
+
+    app(UpdateTask::class)->handle($this->admin, $one, ['status' => 'done']);
+    app(UpdateTask::class)->handle($this->admin, $three, ['status' => 'done']);
+
+    $categories = gsCategories('Example search task');
+
+    expect(array_column($categories['Úkoly'], 'title'))->toBe([
+        $four->reference.' · Example search task four',
+        $two->reference.' · Example search task two',
+        $three->reference.' · Example search task three',
+        $one->reference.' · Example search task one',
+    ])
+        ->and(array_keys(gsCategories('Example')))->toBe(['Klienti', 'Projekty', 'Úkoly']);
 });
