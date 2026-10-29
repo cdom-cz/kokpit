@@ -4,16 +4,16 @@ current_phase: "10.1"
 current_phase_name: Invoices stay fully editable until sent, with a manual unlock
 status: verifying
 stopped_at: Phase 10 complete, ready to verify Phase 10.1
-last_updated: "2026-10-29T17:04:26.151Z"
+last_updated: "2026-10-29T18:29:52.012Z"
 last_activity: 2026-10-29
 last_activity_desc: Phase 10 complete, transitioned to Phase 10.1
-state_head: 382193803d4b50f887ff7e8155584ab642062aca
+state_head: 090c367fd06afcf29f9bfd4131972b64c58fdd9a
 progress:
-  total_phases: 19
+  total_phases: 20
   completed_phases: 10
   total_plans: 322
   completed_plans: 322
-  percent: 53
+  percent: 50
 ---
 
 # Project State
@@ -32,7 +32,7 @@ Plan: 16
 Status: Phase complete — ready for verification
 Last activity: 2026-10-29 — Phase 10 complete, transitioned to Phase 10.1
 
-Progress: [█████░░░░░] 53%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -955,6 +955,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 - Phase 16 added: Per-client e-mail sending toggle: a client setting that disables sending e-mails (invoices and related documents) for clients served exclusively by hand; enabled by default
 - Phase 15 added: Cash payment method for invoices and cash receipt documents: invoices payable in cash, plus a cash receipt document (PPD) issued for them; research first what it is and how to issue it
 - Phase 14 edited: edited fields: title, goal (payment method switchable between bank transfer and online; currency independent of method and bank account; account preselected by matching currency, separately selectable)
+- Phase 17.1 inserted after Phase 17: Close gap: G1/G2 — release time on full partial credit and reject payments on converted proformas (URGENT)
 
 ## Deferred Items
 

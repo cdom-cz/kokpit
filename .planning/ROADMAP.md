@@ -1068,3 +1068,13 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 17-08-PLAN.md — "Přidat čas" from the task view with the context locked; CONTRIBUTING hand-over, the `DocumentUrl` docblock and the full gate (Wave 4)
+
+### Phase 17.1: Close gap: G1/G2 — release time on full partial credit and reject payments on converted proformas (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 17
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 17.1 to break down)
