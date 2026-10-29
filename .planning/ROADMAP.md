@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Tasks and Kanban** - Tasks and subtasks with per-project keys, comments, list filters, drag-and-drop boards and Partner task access (completed 2026-10-09)
 - [x] **Phase 6: Time Tracking** - Always-visible timer, manual entries, exact durations, billed locking, timesheet and project time totals (completed 2026-10-14)
 - [x] **Phase 7: REST API** - Token-secured `/api/v1` for time entries (single and batch) and lookups with the same rules as the UI (completed 2026-10-14)
-- [ ] **Phase 8: Exchange Rates and Reports** - Daily CNB rates, time and billing reports in client currency and CZK, exports, work report PDF and dashboard
+- [x] **Phase 8: Exchange Rates and Reports** - Daily CNB rates, time and billing reports in client currency and CZK, exports, work report PDF and dashboard (completed 2026-10-29)
 - [ ] **Phase 9: Documents and Finance** - Files on private S3 with Partner visibility rules, central document listing, and income/expense overview in CZK
 - [ ] **Phase 10: Invoicing** - Bill-from-time drafts, numbered immutable invoices, proformas and credit notes, PDF with QR, e-mail, manual payment and Partner invoice view
 - [ ] **Phase 11: Stripe Payments** - Payment links, signed idempotent webhooks, automatic matching, and duplicate and unmatched payment handling
@@ -501,7 +501,7 @@ Plans:
   4. Admin requests a CSV or XLSX export that is built in the background and delivered by notification with spreadsheet-safe cells, and generates a multi-page PDF work report with correct Czech diacritics
   5. The dashboard shows today's and this week's hours, unbilled time per client and upcoming task deadlines
 
-**Plans:** 27/27 plans executed (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed; 5 gap-closure plans 08-23 to 08-27 from 08-VERIFICATION.md in 3 gap waves)
+**Plans:** 27/27 plans complete (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed; 5 gap-closure plans 08-23 to 08-27 from 08-VERIFICATION.md in 3 gap waves)
 **UI hint**: yes
 
 Plans:
@@ -905,7 +905,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
-| 8. Exchange Rates and Reports | 27/27 | In Progress | - |
+| 8. Exchange Rates and Reports | 27/27 | Complete    | 2026-10-29 |
 | 9. Documents and Finance | 28/28 | In Progress | - |
 | 10. Invoicing | 41/41 | In Progress | - |
 | 11. Stripe Payments | 20/20 | In Progress | - |
