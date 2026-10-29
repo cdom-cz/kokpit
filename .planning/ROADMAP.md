@@ -1050,13 +1050,13 @@ Plans:
 - Projects: the status can be changed from the project view, similar to the task view.
 **Requirements**: P17-01, P17-02, P17-03, P17-04, P17-05, P17-06, P17-07, P17-08, P17-09, P17-10
 **Depends on:** Phase 16
-**Plans:** 8 plans
+**Plans:** 3/8 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 17-01-PLAN.md — Hide-from-board flag (`tasks.hidden_on_board`, filtered only in `TaskBoard::applyFilters`, Admin-only writer, reviewed Partner-safe pin) (Wave 1)
-- [ ] 17-02-PLAN.md — Files: single-image lightbox for images and new-tab PDF preview in every list and under comments, both panels (Wave 1)
-- [ ] 17-03-PLAN.md — Rich text read-only with `fi-prose` on the Admin, Partner and board-preview surfaces through `RichText::render`; P17 requirements registered (Wave 1)
+- [x] 17-01-PLAN.md — Hide-from-board flag (`tasks.hidden_on_board`, filtered only in `TaskBoard::applyFilters`, Admin-only writer, reviewed Partner-safe pin) (Wave 1)
+- [x] 17-02-PLAN.md — Files: single-image lightbox for images and new-tab PDF preview in every list and under comments, both panels (Wave 1)
+- [x] 17-03-PLAN.md — Rich text read-only with `fi-prose` on the Admin, Partner and board-preview surfaces through `RichText::render`; P17 requirements registered (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 17-04-PLAN.md — Signal type-ahead pick of an unfinished task, snapshot text composed by the server at pick time and `signal_tasks.task_id` link (Wave 2)

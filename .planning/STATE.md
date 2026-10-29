@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 8
-current_phase_name: Exchange Rates and Reports
-status: verifying
+current_phase: 17
+current_phase_name: Task, project and search UX refinements
+status: executing
 stopped_at: Phase 17 UI-SPEC approved
-last_updated: "2026-10-29T07:58:55.268Z"
-last_activity: 2026-10-28
-last_activity_desc: Phase 16 complete, transitioned to Phase 8
-state_head: f58992afd57a5b219dd208dae8f507034f6c6d7c
+last_updated: "2026-10-29T09:48:31.347Z"
+last_activity: 2026-10-29
+last_activity_desc: Phase 17 execution started
+state_head: 7430d924fe5b099a45286a969d3480e362167b50
 progress:
   total_phases: 19
   completed_phases: 7
-  total_plans: 314
+  total_plans: 322
   completed_plans: 314
   percent: 37
 ---
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 16 — Per-client e-mail sending toggle
+**Current focus:** Phase 17 — Task, project and search UX refinements
 
 ## Current Position
 
-Phase: 8 — Exchange Rates and Reports
-Plan: 27
-Status: Phase complete — ready for verification
-Last activity: 2026-10-28 - Completed quick task 261028-odp: compact payment block on invoice PDF
+Phase: 17 (Task, project and search UX refinements) — EXECUTING
+Plan: 1 of 8
+Status: Executing Phase 17
+Last activity: 2026-10-29 — Phase 17 execution started
 
 Progress: [████░░░░░░] 37%
 
