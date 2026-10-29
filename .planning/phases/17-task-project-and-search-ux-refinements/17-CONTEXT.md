@@ -112,7 +112,7 @@ None — discussion stayed within phase scope
 
 ## Plan-phase Clarifications (resolved after research)
 
-- **Signal text format (supersedes D-01 and Specific Ideas):** `{PROJECT}: {task name} [{task code}]`. `{PROJECT}` is the project name (the task code already carries the project key). Built server-side, truncated to 255 characters.
+- **Signal text format (supersedes D-01 and Specific Ideas):** `{PROJECT}: {task name} [{task code}]`. `{PROJECT}` is the project name (the task code already carries the project key). Built server-side, truncated to 255 characters. Per D-01 ("a snapshot taken at pick time") the text is composed once when the task is picked and stored unchanged when the signal is saved; the save re-reads the task only to refuse one that became unavailable, never to rebuild the text (17-04 R-17-04-4, R-17-04-5).
 - **D-11 scope:** the "not Completed" project restriction applies to the Partner create form as well as the Admin one. In this codebase the terminal state is `done` (label "Dokončeno"); there is no separate Cancelled state.
 - **Editing a linked signal:** keeps the task link; the title text can be changed freely.
 - **Non-image files:** open in a new window/tab by adding `target="_blank"` to the existing open behaviour (no new route, no `window.open`). Images use the single-image lightbox.

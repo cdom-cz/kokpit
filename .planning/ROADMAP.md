@@ -1054,17 +1054,17 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 17-01-PLAN.md — Hide-from-board flag (`tasks.hidden_on_board`, filtered only in `TaskBoard::applyFilters`, Admin-only writer, reviewed Partner-safe pin) and the full-width checklist card (Wave 1)
+- [ ] 17-01-PLAN.md — Hide-from-board flag (`tasks.hidden_on_board`, filtered only in `TaskBoard::applyFilters`, Admin-only writer, reviewed Partner-safe pin) (Wave 1)
 - [ ] 17-02-PLAN.md — Files: single-image lightbox for images and new-tab PDF preview in every list and under comments, both panels (Wave 1)
 - [ ] 17-03-PLAN.md — Rich text read-only with `fi-prose` on the Admin, Partner and board-preview surfaces through `RichText::render`; P17 requirements registered (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 17-04-PLAN.md — Signal type-ahead pick of an unfinished task, server-built snapshot text and `signal_tasks.task_id` link (Wave 2)
-- [ ] 17-05-PLAN.md — Global search: active tasks and projects first inside their group, before the 50-row limit (Wave 2)
+- [ ] 17-04-PLAN.md — Signal type-ahead pick of an unfinished task, snapshot text composed by the server at pick time and `signal_tasks.task_id` link (Wave 2)
+- [ ] 17-05-PLAN.md — Global search: active tasks and projects first inside their group, before the 50-row limit; the full-width checklist card of the task form (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 17-06-PLAN.md — Signal listing: shared timer control and open-task icon on linked rows, states and page-wide sync (Wave 3)
 - [ ] 17-07-PLAN.md — Project view: "Nový úkol" with the project locked, task-creation pickers without Done projects (Admin and Partner), "Změnit stav" (Wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 17-08-PLAN.md — "Přidat čas" from the task view with the context locked; CONTRIBUTING hand-over and the full gate (Wave 4)
+- [ ] 17-08-PLAN.md — "Přidat čas" from the task view with the context locked; CONTRIBUTING hand-over, the `DocumentUrl` docblock and the full gate (Wave 4)
