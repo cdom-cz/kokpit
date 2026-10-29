@@ -109,7 +109,7 @@ final class SignalDay extends Component
         }
 
         // The picked task became unavailable: drop the link and keep the text as free text.
-        if ($linked && $this->pickedTaskId !== null && app(LinkableTasks::class)->find($this->pickedTaskId) === null) {
+        if ($linked && app(LinkableTasks::class)->find((string) $this->pickedTaskId) === null) {
             $this->pickedTaskId = null;
             $this->pickedTaskLabel = null;
         }

@@ -72,7 +72,7 @@ final class LinkableTasks
                 'id' => (string) $task->getKey(),
                 'reference' => $task->reference,
                 'title' => $task->title,
-                'project' => $task->project->name,
+                'project' => (string) $task->project?->name,
             ];
         }
 
@@ -100,7 +100,7 @@ final class LinkableTasks
     public static function label(Task $task): string
     {
         $max = SignalRules::MAX_TITLE_LENGTH;
-        $prefix = $task->project->name.': ';
+        $prefix = ((string) $task->project?->name).': ';
         $suffix = ' ['.$task->reference.']';
         $title = $task->title;
 
