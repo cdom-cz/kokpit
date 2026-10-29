@@ -134,28 +134,28 @@ it('never lets a client, project or task sent with the modal decide the entry', 
         ->and($entry->client_id)->toBe(Project::query()->findOrFail($task->project_id)->client_id);
 });
 
-it('keeps the modal open with a danger toast when the project is archived', function (): void {
+it('keeps the modal open and creates nothing when the project is archived', function (): void {
     $task = taskAddTimeTask();
     Project::query()->findOrFail($task->project_id)->delete();
 
     taskAddTimePage($task)
         ->mountAction('addTime')
         ->callMountedAction()
-        ->assertNotified('Záznam se nepodařilo uložit')
+        ->assertHasActionErrors(['project_id'])
         ->assertActionMounted('addTime')
         ->assertNotDispatched('time-entry-saved');
 
     expect(TimeEntry::query()->count())->toBe(0);
 });
 
-it('keeps the modal open with a danger toast when the client is archived', function (): void {
+it('keeps the modal open and creates nothing when the client is archived', function (): void {
     $task = taskAddTimeTask();
     Client::query()->findOrFail(Project::query()->findOrFail($task->project_id)->client_id)->delete();
 
     taskAddTimePage($task)
         ->mountAction('addTime')
         ->callMountedAction()
-        ->assertNotified('Záznam se nepodařilo uložit')
+        ->assertHasActionErrors()
         ->assertActionMounted('addTime');
 
     expect(TimeEntry::query()->count())->toBe(0);

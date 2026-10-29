@@ -64,6 +64,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\HtmlString;
 use Livewire\Component;
 use Throwable;
@@ -199,7 +200,7 @@ final class TimeEntryResource extends Resource
                     Select::make('task_id')
                         ->disabled($reserved || $lockContext)
                         ->label(__('kokpit.time.fields.task'))
-                        ->helperText($lockContext ? __('kokpit.time.task.context_locked') : null)
+                        ->helperText($lockContext ? Lang::string('kokpit.time.task.context_locked') : null)
                         ->options(static fn (?TimeEntry $record, Get $get): array => self::withCurrent(
                             app(EntryContextOptions::class)->tasks(self::id($get('client_id')), self::id($get('project_id'))),
                             $record?->task_id,
