@@ -1291,6 +1291,7 @@ return [
             'fixed_price' => 'Povinné u pevné ceny. Měna je měna klienta.',
             'estimate_hours' => 'Hodiny s nejvýše dvěma desetinnými místy, například 1,5.',
             'internal_note' => 'Vidí jen správce, nikdy klient.',
+            'hidden_on_board' => 'Úkol se nezobrazí na kanbanové nástěnce. V seznamech, hledání a na detailu zůstává.',
         ],
         'navigation_label' => 'Úkoly',
         'model_label' => 'Úkol',
@@ -1314,6 +1315,7 @@ return [
             'fixed_price' => 'Pevná cena',
             'estimate_hours' => 'Odhad v hodinách',
             'internal_note' => 'Interní poznámka k fakturaci',
+            'hidden_on_board' => 'Skrýt na nástěnce',
         ],
         'actions' => [
             'create' => 'Nový úkol',

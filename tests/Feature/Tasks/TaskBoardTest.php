@@ -16,6 +16,8 @@ use App\Domain\Tasks\Board\TaskBoard;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Pages\TaskBoardPage;
 use App\Filament\Resources\ProjectResource\Pages\ProjectBoard;
+use App\Filament\Resources\TaskResource\Pages\EditTask;
+use App\Filament\Resources\TaskResource\Pages\ListTasks;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -783,6 +785,97 @@ it('presets the project of a project board in the quick create action and create
     expect($task->project_id)->toBe($project->id);
 
     $component->assertRedirect(url('/admin/tasks/'.$task->reference.'/edit'));
+});
+
+/*
+ * The hide-from-board flag (D-04): a hidden task leaves the global and the project board and stays in the list.
+ */
+
+it('takes a task off the global and the project board with the edit checkbox and puts it back', function (): void {
+    $project = taskBoardProject(key: 'HID');
+    $kept = taskBoardTask($project, 'Example kept card');
+    $card = taskBoardTask($project, 'Example hidden card');
+
+    Livewire::test(EditTask::class, ['record' => $card->reference])
+        ->assertSchemaStateSet(['hidden_on_board' => false])
+        ->fillForm(['hidden_on_board' => true])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($card->fresh()->hidden_on_board)->toBeTrue();
+
+    Livewire::test(TaskBoardPage::class)->assertSee('Example kept card')->assertDontSee('Example hidden card');
+    Livewire::test(ProjectBoard::class, ['record' => $project->id])->assertSee('Example kept card')->assertDontSee('Example hidden card');
+    Livewire::test(ListTasks::class)->assertCanSeeTableRecords([$kept, $card]);
+
+    Livewire::test(EditTask::class, ['record' => $card->reference])
+        ->assertSchemaStateSet(['hidden_on_board' => true])
+        ->fillForm(['hidden_on_board' => false])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($card->fresh()->hidden_on_board)->toBeFalse();
+
+    Livewire::test(TaskBoardPage::class)->assertSee('Example hidden card');
+    Livewire::test(ProjectBoard::class, ['record' => $project->id])->assertSee('Example hidden card');
+});
+
+it('drops a card after the visible neighbour when a hidden card sits between the visible ones', function (): void {
+    $project = taskBoardProject(key: 'HDR');
+    taskBoardTask($project, 'Example card A');
+    taskBoardTask($project, 'Example card B hidden', 'planned', ['hidden_on_board' => true]);
+    taskBoardTask($project, 'Example card C');
+    $dropped = taskBoardTask($project, 'Example card D', 'in_progress');
+
+    // The Admin sees [A, C]; index 1 is the slot between them, and the hidden card keeps its place after A.
+    Livewire::test(TaskBoardPage::class)->call('moveCard', $dropped->id, 1, 'planned');
+
+    expect(taskBoardColumn('planned'))->toBe(['Example card A', 'Example card B hidden', 'Example card D', 'Example card C'])
+        ->and(taskBoardPositions('planned'))->toBe([0, 1, 2, 3]);
+
+    DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
+
+    Livewire::test(TaskBoardPage::class)->assertSeeInOrder(['Example card A', 'Example card D', 'Example card C'])->assertDontSee('Example card B hidden');
+});
+
+it('does not count a hidden done task in the Done column total', function (): void {
+    $project = taskBoardProject(key: 'HDD');
+    taskBoardTask($project, 'Example done shown', 'done', ['completed_at' => now()->subHour()]);
+    taskBoardTask($project, 'Example done hidden', 'done', ['completed_at' => now()->subHours(2), 'hidden_on_board' => true]);
+
+    $done = app(TaskBoard::class)->columns(BoardFilters::none())['done'];
+
+    expect($done['total'])->toBe(1)
+        ->and($done['shown'])->toBe(1);
+});
+
+it('renders a column whose only task is hidden exactly like a column without tasks', function (): void {
+    $project = taskBoardProject(key: 'HDE');
+    taskBoardTask($project, 'Example only hidden', 'in_review', ['hidden_on_board' => true]);
+
+    $columns = app(TaskBoard::class)->columns(BoardFilters::none());
+
+    expect(['cards' => $columns['in_review']['cards'], 'shown' => $columns['in_review']['shown'], 'total' => $columns['in_review']['total']])
+        ->toBe(['cards' => $columns['to_clarify']['cards'], 'shown' => $columns['to_clarify']['shown'], 'total' => $columns['to_clarify']['total']])
+        ->and($columns['in_review']['cards'])->toBe([]);
+
+    Livewire::test(TaskBoardPage::class)->assertDontSee('Example only hidden');
+});
+
+it('still finds a hidden task by its reference in the global search', function (): void {
+    $project = taskBoardProject(key: 'HDS');
+    $task = taskBoardTask($project, 'Example searchable hidden', 'planned', ['hidden_on_board' => true]);
+
+    $results = Filament::getCurrentOrDefaultPanel()->getGlobalSearchProvider()?->getResults($task->reference);
+    $titles = [];
+
+    foreach ($results?->getCategories() ?? [] as $items) {
+        foreach ($items as $item) {
+            $titles[] = (string) $item->title;
+        }
+    }
+
+    expect(implode(' ', $titles))->toContain('Example searchable hidden');
 });
 
 /**

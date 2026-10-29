@@ -10,6 +10,7 @@ use App\Domain\Tasks\Actions\ArchiveTask;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\RelationManagers\TaskHistoryRelationManager;
 use App\Filament\Resources\TaskResource;
 use App\Filament\Resources\TaskResource\Pages\EditTask;
@@ -661,4 +662,79 @@ it('gives a Partner no way to change a status on the task page', function (): vo
 
     expect($task->status)->toBe(ProjectStatus::Planned)
         ->and($task->completed_at)->toBeNull();
+});
+
+/*
+ * The hide-from-board flag (D-04, D-05): only the Admin writes it, a missing or null key never changes it,
+ * and it is a display preference that leaves no history row.
+ */
+
+it('opens the edit form of a new task with the hide-from-board checkbox off', function (): void {
+    $task = taskUpdTask(taskUpdProject());
+
+    expect($task->hidden_on_board)->toBeFalse();
+
+    Livewire::test(EditTask::class, ['record' => $task->reference])
+        ->assertSchemaStateSet(['hidden_on_board' => false]);
+});
+
+it('keeps a stored hidden flag when the key is missing or null and stores false when it is false', function (): void {
+    $task = taskUpdTask(taskUpdProject());
+    $action = app(UpdateTask::class);
+
+    $action->handle($this->admin, $task, ['hidden_on_board' => true]);
+    expect($task->refresh()->hidden_on_board)->toBeTrue();
+
+    $action->handle($this->admin, $task, ['title' => 'Example only a title']);
+    expect($task->refresh()->hidden_on_board)->toBeTrue();
+
+    $action->handle($this->admin, $task, ['hidden_on_board' => null]);
+    expect($task->refresh()->hidden_on_board)->toBeTrue();
+
+    $action->handle($this->admin, $task, ['hidden_on_board' => false]);
+    expect($task->refresh()->hidden_on_board)->toBeFalse();
+});
+
+it('maps an absent form key to null so the stored flag survives', function (): void {
+    expect(TaskResource::actionData(['title' => 'Example'])['hidden_on_board'])->toBeNull()
+        ->and(TaskResource::actionData(['title' => 'Example', 'hidden_on_board' => null])['hidden_on_board'])->toBeNull()
+        ->and(TaskResource::actionData(['title' => 'Example', 'hidden_on_board' => true])['hidden_on_board'])->toBeTrue()
+        ->and(TaskResource::actionData(['title' => 'Example', 'hidden_on_board' => false])['hidden_on_board'])->toBeFalse();
+});
+
+it('writes no history row when only the hidden flag changes', function (): void {
+    $task = taskUpdTask(taskUpdProject());
+    $before = $task->activitiesAsSubject()->count();
+
+    app(UpdateTask::class)->handle($this->admin, $task, ['hidden_on_board' => true]);
+
+    expect($task->refresh()->hidden_on_board)->toBeTrue()
+        ->and($task->activitiesAsSubject()->count())->toBe($before);
+});
+
+it('refuses a Partner the change of the hidden flag and ignores it on creation', function (): void {
+    $project = taskUpdProject(visible: true);
+    $task = taskUpdTask($project);
+    $partner = Canary::partnerFor($project->client_id);
+
+    $seen = Task::query()->where('reference', $task->reference)->firstOrFail();
+    expect(fn () => app(UpdateTask::class)->handle($partner, $seen, ['hidden_on_board' => true]))
+        ->toThrow(AuthorizationException::class);
+
+    expect($task->refresh()->hidden_on_board)->toBeFalse();
+
+    $created = app(CreateTask::class)->handle($partner, $project, ['title' => 'Example partner task', 'hidden_on_board' => true]);
+
+    expect($created->hidden_on_board)->toBeFalse();
+});
+
+it('still starts a timer from the task page of a hidden task', function (): void {
+    $task = taskUpdTask(taskUpdProject());
+    app(UpdateTask::class)->handle($this->admin, $task, ['hidden_on_board' => true]);
+
+    Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->callAction('toggleTimer')
+        ->assertDispatched('timer-started');
+
+    expect(TimeEntry::query()->whereNull('ended_at')->sole()->task_id)->toBe($task->id);
 });

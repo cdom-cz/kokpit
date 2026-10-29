@@ -102,7 +102,8 @@ class TaskBoard
 
     /**
      * The tasks the board shows: active tasks of selectable projects (not
-     * archived, client not archived), narrowed by the filters. One method for
+     * archived, client not archived) and not hidden from the board (D-04),
+     * narrowed by the filters. One method for
      * the rendered columns and for the neighbour recompute of a move, so a drop
      * is computed over exactly the cards the Admin sees.
      *
@@ -122,6 +123,9 @@ class TaskBoard
         }
 
         $query->whereIn('tasks.project_id', $projects);
+
+        // The one place that hides a task from the board (D-04): columns() and move() both come through here.
+        $query->where('tasks.hidden_on_board', false);
 
         if ($filters->assigneeId !== null) {
             $query->where('tasks.assignee_id', $filters->assigneeId);

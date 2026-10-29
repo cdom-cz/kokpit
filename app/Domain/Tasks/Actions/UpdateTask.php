@@ -55,6 +55,10 @@ use Illuminate\Validation\ValidationException;
  * differs after the save, TaskNotifier tells the Partner requester and assignee
  * once, inside the transaction (delivered after commit).
  *
+ * Board visibility (D-04): `hidden_on_board` is the only writer of the flag that
+ * takes a task off the kanban boards. It is written only when the key is present
+ * and not null, so a payload that omits it or sends null keeps the stored value.
+ *
  * Errors are ValidationExceptions keyed by the data key; the Admin form maps
  * them to its state paths.
  *
@@ -73,6 +77,7 @@ use Illuminate\Validation\ValidationException;
  *     fixed_price?: string|null,
  *     estimate_hours?: string|null,
  *     internal_note?: string|null,
+ *     hidden_on_board?: bool|null,
  * }
  */
 final class UpdateTask
@@ -110,6 +115,11 @@ final class UpdateTask
 
         if (array_key_exists('description', $data)) {
             $plain['description'] = TaskInput::description($data['description']);
+        }
+
+        // The column is NOT NULL: an absent or null key keeps the stored value (D-04).
+        if (array_key_exists('hidden_on_board', $data) && $data['hidden_on_board'] !== null) {
+            $plain['hidden_on_board'] = (bool) $data['hidden_on_board'];
         }
 
         $dates = [];

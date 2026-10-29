@@ -35,6 +35,7 @@ use Carbon\CarbonImmutable;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
@@ -239,6 +240,11 @@ final class TaskResource extends Resource
                         ->options(ProjectPriority::class)
                         ->required()
                         ->native(false),
+                    Checkbox::make('hidden_on_board')
+                        ->label(__('kokpit.tasks.fields.hidden_on_board'))
+                        ->helperText(__('kokpit.tasks.hints.hidden_on_board'))
+                        ->default(false)
+                        ->columnSpanFull(),
                 ]),
             Section::make(__('kokpit.tasks.sections.dates'))
                 ->columns(2)
@@ -659,6 +665,7 @@ final class TaskResource extends Resource
             'fixed_price' => self::text($data['fixed_price'] ?? null),
             'estimate_hours' => self::text($data['estimate_hours'] ?? null),
             'internal_note' => self::text($data['internal_note'] ?? null),
+            'hidden_on_board' => array_key_exists('hidden_on_board', $data) && $data['hidden_on_board'] !== null ? (bool) $data['hidden_on_board'] : null,
         ];
     }
 
