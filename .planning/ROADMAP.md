@@ -1050,7 +1050,7 @@ Plans:
 - Projects: the status can be changed from the project view, similar to the task view.
 **Requirements**: P17-01, P17-02, P17-03, P17-04, P17-05, P17-06, P17-07, P17-08, P17-09, P17-10
 **Depends on:** Phase 16
-**Plans:** 3/8 plans executed
+**Plans:** 5/8 plans executed
 
 Plans:
 **Wave 1**
@@ -1059,8 +1059,8 @@ Plans:
 - [x] 17-03-PLAN.md — Rich text read-only with `fi-prose` on the Admin, Partner and board-preview surfaces through `RichText::render`; P17 requirements registered (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 17-04-PLAN.md — Signal type-ahead pick of an unfinished task, snapshot text composed by the server at pick time and `signal_tasks.task_id` link (Wave 2)
-- [ ] 17-05-PLAN.md — Global search: active tasks and projects first inside their group, before the 50-row limit; the full-width checklist card of the task form (Wave 2)
+- [x] 17-04-PLAN.md — Signal type-ahead pick of an unfinished task, snapshot text composed by the server at pick time and `signal_tasks.task_id` link (Wave 2)
+- [x] 17-05-PLAN.md — Global search: active tasks and projects first inside their group, before the 50-row limit; the full-width checklist card of the task form (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 17-06-PLAN.md — Signal listing: shared timer control and open-task icon on linked rows, states and page-wide sync (Wave 3)
