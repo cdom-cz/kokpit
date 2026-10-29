@@ -26,6 +26,7 @@ use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ViewPartnerTask;
 use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerTaskCommentsRelationManager;
 use App\Filament\Partner\Resources\PartnerTaskResource\RelationManagers\PartnerTaskDocumentsRelationManager;
 use App\Filament\Support\DocumentColumns;
+use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -599,6 +600,72 @@ function documentVisibilityHandBuiltProvider(object $test, User $admin, string $
         }, $flagRule, $internalRule);
     };
 }
+
+/**
+ * Attaches a fictional file with the given bytes to the owner as the Admin, with the given visibility.
+ */
+function documentVisibilityBinaryFile(User $admin, object $owner, string $name, string $content, bool $visible): Document
+{
+    return documentVisibilitySystem(static fn (): Document => app(AttachDocuments::class)
+        ->handle($admin, $owner, [DocumentFixtures::upload($name, $content)], visibleToClient: $visible)
+        ->firstOrFail());
+}
+
+describe('preview of a file (lightbox and new tab)', function (): void {
+    it('gives a visible PDF a new-tab link bound to the Partner and the hidden twin no row and no link', function (): void {
+        $this->freezeTime();
+
+        $pdfBytes = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n";
+        $shared = documentVisibilityBinaryFile($this->admin, $this->projectA, 'shared-paper-example.pdf', $pdfBytes, true);
+        $hidden = documentVisibilityBinaryFile($this->admin, $this->projectA, 'hidden-paper-example.pdf', $pdfBytes, false);
+        $this->actingAs($this->partnerA);
+
+        $tab = documentVisibilityProjectTab($this->projectA);
+
+        $tab->assertActionExists(TestAction::make('preview')->table($shared), function (Action $action): bool {
+            $url = (string) $action->getUrl();
+            parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+
+            return $action->shouldOpenUrlInNewTab()
+                && ($query['u'] ?? null) === $this->partnerA->getKey()
+                && ($query['mode'] ?? null) === 'inline'
+                && URL::hasValidSignature(Request::create($url));
+        });
+
+        $html = $tab->html();
+
+        expect(substr_count($html, 'signature='))->toBe(1)
+            ->and($html)->toContain('target="_blank"')
+            ->and($html)->toContain($shared->getKey())
+            ->and($html)->not->toContain($hidden->getKey())
+            ->and($html)->not->toContain('hidden-paper-example.pdf');
+    });
+
+    it('mints the lightbox image of a visible PNG for the Partner, only when the modal is open', function (): void {
+        $pngBytes = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==');
+        $shared = documentVisibilityBinaryFile($this->admin, $this->projectA, 'shared-picture-example.png', $pngBytes, true);
+        documentVisibilityBinaryFile($this->admin, $this->projectA, 'hidden-picture-example.png', $pngBytes, false);
+        $this->actingAs($this->partnerA);
+
+        $tab = documentVisibilityProjectTab($this->projectA);
+
+        expect($tab->html())->not->toContain('signature=');
+
+        $tab->mountAction(TestAction::make('preview')->table($shared));
+
+        $html = (string) $tab->instance()->getMountedAction()?->getModalContent()?->render();
+
+        expect(preg_match('/<img[^>]*\ssrc="([^"]+)"/', $html, $match))->toBe(1);
+
+        $src = html_entity_decode($match[1]);
+        parse_str((string) parse_url($src, PHP_URL_QUERY), $query);
+
+        expect($query['u'] ?? null)->toBe($this->partnerA->getKey())
+            ->and($query['mode'] ?? null)->toBe('inline')
+            ->and($src)->toContain($shared->getKey())
+            ->and($html)->not->toContain('hidden-picture-example.png');
+    });
+});
 
 describe('mutation self-check', function (): void {
     it('reports no violation for the real scope and for the hand-built reference that keeps both rules', function (): void {

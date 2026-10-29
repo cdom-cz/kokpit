@@ -64,6 +64,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\HtmlString;
 use Livewire\Component;
 use Throwable;
@@ -147,17 +148,19 @@ final class TimeEntryResource extends Resource
      * end yet, so Konec is left out and the "Běží" badge stands in its place. With `$reserved` true the entry is
      * held by an invoice draft (R-10-1): the client, project, task, times and billable flag are disabled, so
      * they are not sent and the Action keeps the stored values; the description stays editable.
+     * With `$lockContext` true (the "Přidat čas" modal of the task view, D-06) only the client, project
+     * and task are disabled and explained: the caller takes them from its own record, never from the form.
      *
      * @return list<Section>
      */
-    public static function entryFields(bool $running = false, bool $reserved = false): array
+    public static function entryFields(bool $running = false, bool $reserved = false, bool $lockContext = false): array
     {
         return [
             Section::make(__('kokpit.time.sections.entry'))
                 ->columns(2)
                 ->schema([
                     Select::make('client_id')
-                        ->disabled($reserved)
+                        ->disabled($reserved || $lockContext)
                         ->label(__('kokpit.time.fields.client'))
                         ->options(static fn (?TimeEntry $record, Get $get): array => self::withCurrent(
                             app(EntryContextOptions::class)->clients(),
@@ -177,7 +180,7 @@ final class TimeEntryResource extends Resource
                         })
                         ->native(false),
                     Select::make('project_id')
-                        ->disabled($reserved)
+                        ->disabled($reserved || $lockContext)
                         ->label(__('kokpit.time.fields.project'))
                         ->options(static fn (?TimeEntry $record, Get $get): array => self::withCurrent(
                             app(EntryContextOptions::class)->projects(self::id($get('client_id'))),
@@ -195,8 +198,9 @@ final class TimeEntryResource extends Resource
                         })
                         ->native(false),
                     Select::make('task_id')
-                        ->disabled($reserved)
+                        ->disabled($reserved || $lockContext)
                         ->label(__('kokpit.time.fields.task'))
+                        ->helperText($lockContext ? Lang::string('kokpit.time.task.context_locked') : null)
                         ->options(static fn (?TimeEntry $record, Get $get): array => self::withCurrent(
                             app(EntryContextOptions::class)->tasks(self::id($get('client_id')), self::id($get('project_id'))),
                             $record?->task_id,

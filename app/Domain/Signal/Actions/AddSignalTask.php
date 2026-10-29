@@ -8,6 +8,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Signal\Enums\SignalCategory;
 use App\Domain\Signal\Exceptions\SignalRuleViolation;
 use App\Domain\Signal\Models\SignalTask;
+use App\Domain\Signal\Queries\LinkableTasks;
 use App\Domain\Signal\Queries\SignalDayReader;
 use App\Domain\Signal\Support\SignalCalendar;
 use App\Domain\Signal\Support\SignalLock;
@@ -21,6 +22,11 @@ use Illuminate\Support\Facades\DB;
  * ahead needs a plannable colour, and the colour must fit the day's limit after the active recurring
  * templates of that colour reserved their slots. The count and the insert run under a lock of the
  * user's day, so two parallel requests cannot both take the last slot. A locked past day refuses.
+ *
+ * A task may link to a Kokpit task (D-01). The caller supplies the snapshot text composed when the task
+ * was picked; this Action stores it unchanged and never composes or rebuilds it. Inside the transaction
+ * it re-reads the task through LinkableTasks::find() only to refuse one that is no longer linkable, and
+ * writes the link (the only writer of `task_id`).
  */
 final class AddSignalTask
 {
@@ -31,7 +37,7 @@ final class AddSignalTask
     /**
      * @throws SignalRuleViolation
      */
-    public function handle(User $actor, string $title, string $forDate, ?SignalCategory $chosen): SignalTask
+    public function handle(User $actor, string $title, string $forDate, ?SignalCategory $chosen, ?string $taskId = null): SignalTask
     {
         $this->authorizeActor($actor);
 
@@ -41,8 +47,12 @@ final class AddSignalTask
             throw SignalRuleViolation::because('invalid_date');
         }
 
-        return DB::transaction(function () use ($actor, $title, $forDate, $chosen): SignalTask {
+        return DB::transaction(function () use ($actor, $title, $forDate, $chosen, $taskId): SignalTask {
             SignalLock::take((string) $actor->getKey(), $forDate);
+
+            $task = $taskId === null
+                ? null
+                : (app(LinkableTasks::class)->find($taskId) ?? throw SignalRuleViolation::because('task_unavailable'));
 
             $today = SignalCalendar::today();
 
@@ -60,12 +70,20 @@ final class AddSignalTask
 
             $position = SignalTask::query()->where('for_date', $forDate)->where('category', $category->value)->max('position');
 
-            return SignalTask::query()->create([
+            $signal = new SignalTask([
                 'title' => $title,
                 'for_date' => $forDate,
                 'category' => $category,
                 'position' => $position === null ? 0 : ((int) $position) + 1,
             ]);
+
+            if ($task !== null) {
+                $signal->forceFill(['task_id' => $task->getKey()]);
+            }
+
+            $signal->save();
+
+            return $signal;
         });
     }
 

@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 8
-current_phase_name: Exchange Rates and Reports
+current_phase: "10.1"
+current_phase_name: Invoices stay fully editable until sent, with a manual unlock
 status: verifying
-stopped_at: Phase 16 complete, ready to verify Phase 8
-last_updated: "2026-10-28T16:51:32.910Z"
-last_activity: 2026-10-28
-last_activity_desc: Phase 16 complete, transitioned to Phase 8
-state_head: 6b25849193746214aa2baebdb2041d780309c027
+stopped_at: Phase 10 complete, ready to verify Phase 10.1
+last_updated: "2026-10-29T18:29:52.012Z"
+last_activity: 2026-10-29
+last_activity_desc: Phase 10 complete, transitioned to Phase 10.1
+state_head: 090c367fd06afcf29f9bfd4131972b64c58fdd9a
 progress:
-  total_phases: 18
-  completed_phases: 7
-  total_plans: 314
-  completed_plans: 314
-  percent: 39
+  total_phases: 20
+  completed_phases: 10
+  total_plans: 322
+  completed_plans: 322
+  percent: 50
 ---
 
 # Project State
@@ -23,21 +23,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 16 — Per-client e-mail sending toggle
+**Current focus:** Phase 17 — Task, project and search UX refinements
 
 ## Current Position
 
-Phase: 8 — Exchange Rates and Reports
-Plan: 27
+Phase: 10.1 — Invoices stay fully editable until sent, with a manual unlock
+Plan: 16
 Status: Phase complete — ready for verification
-Last activity: 2026-10-28 - Completed quick task 261028-odp: compact payment block on invoice PDF
+Last activity: 2026-10-29 — Phase 10 complete, transitioned to Phase 10.1
 
-Progress: [████░░░░░░] 39%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 165
+- Total plans completed: 269
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -56,6 +56,10 @@ Progress: [████░░░░░░] 39%
 | 10.1 | 16 | - | - |
 | 15 | 14 | - | - |
 | 16 | 6 | - | - |
+| 17 | 8 | - | - |
+| 08 | 27 | - | - |
+| 09 | 28 | - | - |
+| 10 | 41 | - | - |
 
 **Recent Trend:**
 - Last 5 plans: -
@@ -938,6 +942,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261028-kr9 | Fix SPAYD message sanitising failing on musl iconv in production | 2026-10-28 | 84cb780 | [261028-kr9-fix-spayd-message-sanitising-failing-on-iconv](./quick/261028-kr9-fix-spayd-message-sanitising-failing-on-iconv/) |
 | 261028-krr | Make the Unit field optional on invoice and proforma items | 2026-10-28 | 3220181 | [261028-krr-make-the-unit-field-optional-on-invoice-](./quick/261028-krr-make-the-unit-field-optional-on-invoice-/) |
 | 261028-odp | Compact payment block on invoice/proforma PDF; no supplier contact lines on PDFs; no footer on cash receipt | 2026-10-28 | 6b25849 | [261028-odp-invoice-and-proforma-pdf-make-the-paymen](./quick/261028-odp-invoice-and-proforma-pdf-make-the-paymen/) |
+| 24 | Set the DDEV RustFS bucket CORS rule for browser uploads | 2026-10-29 | e451692 | — |
 
 ### Roadmap Evolution
 
@@ -946,9 +951,11 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 - Phase 14 added: Online payment method and invoice currency: selectable online (Stripe) payment method that replaces bank payment details on the invoice, and selectable invoice currency reflected in the PDF and the Stripe payment
 - Phase 10.1 inserted after Phase 10: Invoices stay fully editable until sent, with a manual unlock (URGENT)
 - Phase 10.2 removed: the paid-invoice confirmation e-mail is delivered in Phase 13
+- Phase 17 added: Task, project and search UX refinements: checklist full width, rich-text rendering, task creation from project detail, active-first search ordering, time entries on a task, hide task from kanban, task picker in signals, image preview modal for files, project status change from view
 - Phase 16 added: Per-client e-mail sending toggle: a client setting that disables sending e-mails (invoices and related documents) for clients served exclusively by hand; enabled by default
 - Phase 15 added: Cash payment method for invoices and cash receipt documents: invoices payable in cash, plus a cash receipt document (PPD) issued for them; research first what it is and how to issue it
 - Phase 14 edited: edited fields: title, goal (payment method switchable between bank transfer and online; currency independent of method and bank account; account preselected by matching currency, separately selectable)
+- Phase 17.1 inserted after Phase 17: Close gap: G1/G2 — release time on full partial credit and reject payments on converted proformas (URGENT)
 
 ## Deferred Items
 
@@ -960,6 +967,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-27T22:22:24.047Z
-Stopped at: Phase 16 complete, ready to verify Phase 8
-Resume file: .planning/phases/16-per-client-e-mail-sending-toggle/16-CONTEXT.md
+Last session: 2026-10-29T07:58:52.034Z
+Stopped at: Phase 10 complete, ready to verify Phase 10.1
+Resume file: .planning/phases/17-task-project-and-search-ux-refinements/17-UI-SPEC.md

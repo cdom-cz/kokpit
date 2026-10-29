@@ -1,7 +1,7 @@
 ---
 phase: 08-exchange-rates-and-reports
-verified: 2026-10-15T20:00:00Z
-status: human_needed
+verified: 2026-10-29T14:30:00Z
+status: passed
 score: 5/5 must-haves verified
 covered_files:
   - .planning/phases/08-exchange-rates-and-reports/08-01-PLAN.md
@@ -69,117 +69,110 @@ covered_files:
   - resources/views/filament/pages/time-report.blade.php
   - resources/views/filament/widgets/unbilled-per-client-cell.blade.php
   - routes/console.php
-covered_digest: "v3:sha256:50a5a3a1626f4f5cbf0ec449fa605269d9db7f58c6503615cb3d1fd5ae0130be"
+covered_digest: "v4:sha256:b34a192b2a6eab3db499e0d644abebbb82bde4d3057aa80b6313183560378e53"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
-  previous_status: gaps_found
-  previous_score: 4/5
-  gaps_closed:
-    - "CR-01: a client with money in two currencies no longer crashes the time report, the Admin dashboard widget or the XLSX/CSV export (08-23, 08-24, 08-25)"
-    - "Unreadable time report layout, code side (08-26, 08-27): full-width fixed table, name column floor, grouped columns, four distinguishable levels, open depth by filters, sticky name column"
+  previous_status: human_needed
+  previous_score: 5/5
+  gaps_closed: []
   gaps_remaining: []
   regressions: []
-deferred:
-  - truth: "Conversion helper used for invoice and transaction CZK amounts; document rates are snapshots (EX-03 second half)"
-    addressed_in: "Phase 10"
-    evidence: "Phase 10 success criterion 2: issuing 'freezes supplier, customer and bank snapshots, rates, amounts and the CNB rate with CZK total for client-currency invoices'. Phase 8 SC2 only requires the helper to return the CZK amount for a currency and date, which it does."
-human_verification:
-  - test: "Owner visual pass of /admin/time-report (WINDOWS.md ledger 6; todo 2026-10-14-redesign-unreadable-time-report-layout) with a real month of entries, at desktop width and at 375px"
-    expected: "Task titles no longer wrap one word per line, client/project/task/day-or-user levels are told apart, the tree opens only as deep as the filters ask, the Nazev column stays in view while scrolling sideways, toggles work with Tab/Enter/Space with a visible focus ring. The owner confirms the page is now usable"
-    why_human: "The original gap was recorded by the owner as a readability judgement. Tests pin the markup (data-level, hidden attributes, sticky and colgroup rules) but cannot judge that the page reads well. This is the only way to close the owner-recorded gap"
-  - test: "Ledger 2 (WINDOWS.md): open /admin/time-report in DDEV with a year of entries"
-    expected: "The SPA progress bar shows while it loads and the filter strip stays usable (plan 08-09 task 3)"
-    why_human: "Browser behaviour; not run by the executor"
-  - test: "Ledger 3 (WINDOWS.md): rates overview 'Stahnout dnesni kurzy' with a slowed CNB answer, light and dark mode"
-    expected: "In-flight state of the button is visible; white-on-primary contrast acceptable (UI-SPEC F-1; 08-UI-REVIEW measured about 3.2:1 on Amber, below AA 4.5:1 for 14px text)"
-    why_human: "Visual contrast and in-flight state need a browser; F-1 needs an owner decision (switch primary to Indigo or amend the spec)"
-  - test: "Ledger 4 (WINDOWS.md): Admin dashboard in a browser, including a client with unbilled time in two currencies (one Castka line per currency)"
-    expected: "One column below lg, two from lg, widgets side by side; 'Pevna cena' and 'Chybi kurz' badges; running-timer text contrast acceptable"
-    why_human: "Layout and contrast; only the markup and figures are asserted by tests"
-  - test: "Ledger 5 (WINDOWS.md): request a CSV export, open the notification bell, open the CSV in a Czech spreadsheet"
-    expected: "Stock bell styling copes with long period text; columns split at the semicolon; decimal commas display correctly"
-    why_human: "Depends on a spreadsheet application and bell rendering"
-  - test: "Ledger 7 (WINDOWS.md): open an XLSX export in a spreadsheet application"
-    expected: "Frozen header pane, auto filter, CZK-missing comments and number formats as designed; per-currency amounts in the Souhrn sheet"
-    why_human: "The workbook was verified by reading the package, never opened"
-  - test: "PDF look sign-off (08-VALIDATION.md manual-only list, plan 08-06): generate a work report of about three pages for a Czech and an English client"
-    expected: "Czech characters on every page, running header from page 2, footer 'Strana N / M' with generation date, billable section before non-billable. Two pdftotext layout tests are skipped in DDEV because pdftotext is not installed"
-    why_human: "Visual judgement; owner sign-off still outstanding"
+deferred: []
 ---
 
 # Phase 8: Exchange Rates and Reports Verification Report
 
 **Phase Goal:** Admin sees where time and money stand per client, project and period in client currency and CZK, can export and hand over work reports, and CNB rates feed every conversion
-**Verified:** 2026-10-15T20:00:00Z
-**Status:** human_needed
-**Re-verification:** Yes, after gap closure (plans 08-23 to 08-27)
+**Verified:** 2026-10-29T14:30:00Z
+**Status:** passed
+**Re-verification:** Yes. The previous report (2026-10-15, `human_needed`) is stale: `app/Domain/Reports/TimeReport.php`, `lang/cs/kokpit.php`, `resources/views/filament/pages/time-report.blade.php` and `routes/console.php` changed after it was written, and the human items have since been closed by UAT.
 
-## Re-verification of the previous gaps
+## What changed since the previous report
 
-| Previous gap | Verdict | Evidence read in the code |
-|--------------|---------|---------------------------|
-| CR-01: mixed-currency client crashes report, dashboard widget, export | CLOSED | `ReportBucket::add()` keeps `$amounts` keyed by ISO currency and calls `Money::plus()` only inside one currency (the CZK sum is the only cross-currency figure). `TimeReport.php:103`, `UnbilledPerClient.php:206-207` and `BuildReportExport.php:267` use the same per-currency pattern. Every remaining `plus()` call site in `app/Domain/Reports` and `app/Filament` was grepped: none sums across currencies. Regression tests exist and pass: `TimeReportTest` "a client with money in two currencies", `ReportExportTest` same describe (XLSX and CSV), `AdminDashboardTest` "opens the dashboard of a client whose unbilled time is priced in two currencies" and "equals the report per currency" |
-| Root cause: client currency lock ignored `task_billing` money | CLOSED | `TaskBilling::clientHoldsMoney()` (raw-table `whereExists` over `tasks` and `projects`, so archived rows count; a stored zero counts) and `UpdateClient::handle()` refuses the currency change when `ProjectBilling::clientHoldsMoney() \|\| TaskBilling::clientHoldsMoney()`, as a field error on `currency`. `ClientRulesTest` "currency lock" covers task fixed price, task rate of zero and unlock after clearing the task rate |
-| Unreadable time report layout (owner-recorded) | CLOSED in code, owner sign-off pending | `time-report.blade.php` is now a `table-layout: fixed` table, `min-width: 64rem`, `colgroup` with a free Nazev column and 6rem/10rem numeric columns, grouped header "Hodiny", names clamped to two lines with a `title` tooltip, sticky opaque Nazev cells, `data-level` on every row with distinct weight/band per level, `openDepth` computed in `TimeReportPage::getViewData()` (0 no client, 1 client, 2 project) and rendered as server `hidden` attributes, `getMaxContentWidth()` returns `Width::Full`. Tests: `TimeReportTest` "the tree opens as deep as the filters", the static style block / sticky rule tests. Whether the page now reads well is a judgement only the owner can make (see Human Verification) |
+| File | Later commits | Effect on Phase 8 truths |
+|------|---------------|--------------------------|
+| `app/Domain/Reports/TimeReport.php`, `resources/views/filament/pages/time-report.blade.php` | `c489e06` (Phase 10, plan 40): the report summary names the reserved part of the unbilled time in the unbilled tile | Additive display change; the per-currency amounts, tree and footer are unchanged. Report tests still pass |
+| `lang/cs/kokpit.php` | Phase 17 commits (task and project view strings) | Translation keys only; no Phase 8 key removed. Localisation tests pass |
+| `routes/console.php` | `9fa6abf` (Phase 9), `cb74ac6` and `ff1a346` (Phase 11): new scheduled prune and sweep jobs | The two CNB schedule entries (`kokpit-cnb-rates`, `kokpit-cnb-rates-final`) and `kokpit-report-export-prune` are intact, Prague timezone, `onOneServer()` |
 
 ## Goal Achievement
 
 ### Observable Truths (ROADMAP success criteria)
 
-| # | Truth | Status | Evidence |
-|---|-------|--------|----------|
-| 1 | Scheduled daily CNB download, idempotent, weekend/holiday uses previous rate, per-unit amounts, manual run and backfill | VERIFIED | Unchanged since the previous report (regression check: `routes/console.php`, `DownloadCnbRates`, `RateBook`, `ExchangeRateConverter`, backfill job present; related tests green in the full run) |
-| 2 | Rates overview, queue-independent failure alert, last known rate kept, System page last-rate date, conversion helper | VERIFIED | Unchanged; `ExchangeRateConverterTest`, `RateAlertTest` and the resource tests green. WR-02 stays a warning |
-| 3 | Time report per client and project with task/day/user breakdown, billable vs non-billable, billed vs unbilled, client currency and CZK, effective hourly rate for fixed price | VERIFIED (code and tests); layout readability needs owner sign-off | Mixed-currency crash removed (above); amounts are one line per currency plus CZK; `EffectiveRateTest`, `EffectiveBillingParityTest`, `TimeReportTest` green; readable layout built per UI-SPEC Amendment A-1 |
-| 4 | CSV/XLSX export in background with notification and spreadsheet-safe cells; multi-page PDF work report with Czech diacritics | VERIFIED | `BuildReportExport` accumulates amounts per currency (already safe, now pinned by tests for CSV and XLSX of a mixed client); PDF path unchanged and tested. XLSX opening and PDF look remain human items |
-| 5 | Dashboard shows today's and this week's hours, unbilled per client, upcoming deadlines | VERIFIED | `UnbilledPerClient` rows carry `amounts` per currency, Castka column is a `ViewColumn` over the cell view with one line per currency; dashboard answers 200 for a mixed-currency client (test). `AdminDashboardTest`, `PartnerDashboardTest` green |
+| # | Truth | Status | Evidence read in the code and tests |
+|---|-------|--------|-------------------------------------|
+| 1 | Scheduled daily CNB download, idempotent, weekend/holiday uses previous rate, per-unit amounts, manual run and backfill | VERIFIED | `routes/console.php` lines 73-86 schedule `kokpit:rates:download` at the configured hours Monday to Friday in `Europe/Prague`, plus a `--final` run. `DownloadCnbRates`, `HealCnbRateGaps`, `BackfillCnbRates` (job), `RateBook` (newest list not after the day) and `CzechPublicHolidays` exist and are substantive. `ExchangeRateConverter` divides by `unit_amount` (D-02). Tests `DownloadCnbRatesTest`, `BackfillCnbRatesTest`, `HealCnbRateGapsTest`, `RatesContractTest`, `ExchangeRateConverterTest` pass |
+| 2 | Rates overview, queue-independent failure alert, last known rate kept, System page last-rate date, conversion helper returns CZK for a currency and date | VERIFIED | `ExchangeRateResource` (overview), `DownloadCnbRatesCommand` runs synchronously from the scheduler and `alertAdmin()` is called only on the `--final` run (lines 33-106), `LastRateDateIndicator` feeds the System page health, `ExchangeRateConverter::toCzk()/rateFor()/durationToCzk()` throws `ExchangeRateMissing` instead of returning zero, and keeps using the last known rate however old (D-04). `ExchangeRateResourceTest`, `RateAlertTest`, `ExchangeRateConverterTest` pass |
+| 3 | Time report per client and project for a period with task/day/user breakdown, billable vs non-billable, billed vs unbilled, client currency and CZK, effective hourly rate for fixed-price projects | VERIFIED | `TimeReport`, `ReportBucket` (per-currency `$amounts`), `TimeReportReader`, `FixedPriceSummary` (price over all project hours, `effective_rate` and `effective_rate_czk`, Admin only), `TimeReportPage` and the Blade view are present and wired. `TimeReportTest`, `EffectiveRateTest`, `EffectiveBillingParityTest`, `BilledSnapshotAmountsTest`, `ReportFiltersTest` pass. The owner visual pass of the layout is recorded as passed in UAT test 1 |
+| 4 | CSV or XLSX export built in the background and delivered by notification with spreadsheet-safe cells; multi-page PDF work report with correct Czech diacritics | VERIFIED | `BuildReportExport` job, `ReportExport` model and enums, `ReportExportReadyNotification` / `ReportExportFailedNotification`, `SpreadsheetCells` (text neutralisation, exact decimals), `WorkReportPdf` / `WorkReportSource` / `WorkReportPageDecoration`. `ReportExportTest`, `ReportExportRecordTest`, `ReportExportResourceTest`, `ReportExportPruneTest`, `WorkReportPdfTest`, `WorkReportDownloadTest` pass. UAT tests 5, 6 and 7 (CSV in a Czech spreadsheet, XLSX opened, PDF look with Czech and English client) all passed |
+| 5 | Dashboard shows today's and this week's hours, unbilled time per client and upcoming task deadlines | VERIFIED | `Dashboard` registers `HoursStats`, `UnbilledPerClient`, `UpcomingDeadlines` (plus the later-phase tiles `UnpaidInvoices`, `UnresolvedPayments`). `UnbilledPerClient` keeps one amount line per currency via the cell view. `tests/Feature/Dashboard` passes. UAT test 4 (browser pass including a two-currency client) passed |
 
 **Score:** 5/5 truths verified (0 present, behavior-unverified)
 
+### Human Verification Items from the previous report
+
+All seven items are closed by `08-UAT.md` (status `complete`, 7 passed, 0 issues, 0 pending, last updated 2026-10-29):
+
+| Previous item | UAT test | Result |
+|---------------|----------|--------|
+| Owner visual pass of `/admin/time-report` at desktop width and 375px | 1 | pass |
+| Ledger 2: SPA progress bar and usable filter strip with a year of entries | 2 | pass |
+| Ledger 3: rates overview download button in flight, light and dark, contrast (UI-SPEC F-1) | 3 | pass |
+| Ledger 4: Admin dashboard with a two-currency client | 4 | pass |
+| Ledger 5: CSV export, notification bell, Czech spreadsheet | 5 | pass |
+| Ledger 7: XLSX opened in a spreadsheet application | 6 | pass |
+| PDF look sign-off (about three pages, Czech and English client) | 7 | pass |
+
+No human verification item remains.
+
 ### Deferred Items
 
-| # | Item | Addressed In | Evidence |
-|---|------|-------------|----------|
-| 1 | EX-03 second half: invoice and transaction CZK amounts and document rate snapshots | Phase 10 | Phase 10 SC2: issuing freezes rates, amounts and the CNB rate with CZK total. The helper itself is delivered and tested here; it has no production caller yet |
+None. The previous report deferred "invoice and transaction CZK amounts and document rate snapshots" (EX-03 second half) to Phase 10. That caveat is now resolved in code, not just deferred: `ExchangeRateConverter` has production callers in `app/Domain/Invoicing/Issuing/DocumentIssuer.php` (rate frozen at issue date via `rateFor()`), `app/Domain/Finance/TransactionCzk.php`, `RecordPayment`, `UpdateDraft`, `UpdateIssuedDocument`, `IssueChecks`, `DraftPreview`, `TimeItemGrouping` and `FixedPriceSummary`.
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `app/Domain/Reports/ReportBucket.php` | per-currency amounts | VERIFIED | `array<string, Money> $amounts`, guarded accumulation |
-| `app/Domain/Reports/TimeReport.php` | tree nodes with `amounts` map and `czk_missing_currency`, footer from root bucket | VERIFIED | Wired from `TimeReportPage` and the view |
-| `app/Filament/Widgets/UnbilledPerClient.php`, `resources/views/filament/widgets/unbilled-per-client-cell.blade.php` | per-currency widget rows | VERIFIED | Wired in `Dashboard` |
-| `app/Domain/Tasks/Models/TaskBilling.php`, `app/Domain/Clients/Actions/UpdateClient.php` | currency lock over task money | VERIFIED | `clientHoldsMoney()` called from `UpdateClient::handle()` |
-| `app/Filament/Pages/TimeReportPage.php`, `resources/views/filament/pages/time-report.blade.php` | readable tree | VERIFIED (visual sign-off pending) | Substantive, wired, tested |
-| `08-UI-SPEC.md` Amendment A-1 | contract before code | VERIFIED | Committed ahead of the layout change (07cdc11 before b56d025) |
-| Rest of phase artifacts (rates domain, exports, PDF, widgets, migrations, packages) | as in the previous report | VERIFIED | No regression found; full suite green |
+| `app/Domain/ExchangeRates/*` (actions, CNB client, jobs, model, `RateBook`, converter, holidays) | rates domain | VERIFIED | Substantive and wired from the command, scheduler, resource and invoicing code |
+| `app/Domain/Reports/*` (`TimeReport`, `ReportBucket`, `FixedPriceSummary`, exports, jobs, WorkReport, queries) | reports domain | VERIFIED | Substantive and wired from `TimeReportPage`, dashboard widgets and notifications |
+| `app/Filament/Pages/TimeReportPage.php`, `resources/views/filament/pages/time-report.blade.php` | readable tree | VERIFIED | Wired, tested, owner-approved in UAT |
+| `app/Filament/Widgets/UnbilledPerClient.php`, `resources/views/filament/widgets/unbilled-per-client-cell.blade.php` | per-currency dashboard rows | VERIFIED | Registered in `Dashboard` |
+| `app/Domain/Tasks/Models/TaskBilling.php`, `app/Domain/Clients/Actions/UpdateClient.php` | currency lock over task money | VERIFIED | Unchanged since the previous report; covered by `ClientRulesTest` |
+| `app/Filament/Resources/ExchangeRateResource`, `ReportExportResource` | overview and export list | VERIFIED | Present, covered by resource tests |
+| `routes/console.php` schedule entries | daily rates, final alert run, export prune | VERIFIED | Present, `onOneServer()` |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|-----|--------|---------|
-| `UpdateClient` currency lock | `task_billing` money | `TaskBilling::clientHoldsMoney()` | WIRED | Previously NOT_WIRED, root cause of CR-01 |
-| `TimeReportPage::getViewData()` | view `$openDepth` | filters-derived depth | WIRED | |
-| `TimeReport` summary | dashboard widget and export summary | same per-currency key shape | WIRED | Parity pinned by `AdminDashboardTest` "equals the report per currency" |
-| `routes/console.php` | `kokpit:rates:download` | Schedule::command | WIRED | unchanged |
-| `ExchangeRateConverter` | invoice/transaction code | none yet | ORPHANED (intentional) | Phase 10 caller |
+| `routes/console.php` | `kokpit:rates:download` | `Schedule::command` (hourly attempts and `--final`) | WIRED | |
+| `DownloadCnbRatesCommand` | Admin alert | `alertAdmin()` on the `--final` run, synchronous | WIRED | Independent of the queue |
+| `LastRateDateIndicator` | System page | health slot | WIRED | |
+| `ExchangeRateConverter` | invoice and transaction CZK code | `DocumentIssuer`, `TransactionCzk`, others | WIRED | Previously ORPHANED (intentional); Phase 10 added callers |
+| `TimeReportPage` | `TimeReport` / `FixedPriceSummary` / `BuildReportExport` | page data and export action | WIRED | |
+| `TimeReport` summary | dashboard widget and export summary | per-currency key shape | WIRED | Parity pinned by dashboard tests |
+| `UpdateClient` currency lock | `task_billing` money | `TaskBilling::clientHoldsMoney()` | WIRED | |
+| `routes/console.php` | `PruneExpiredReportExports` | `Schedule::job` | WIRED | |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|---------------|--------|--------------------|--------|
-| Time report tree | buckets / amounts | `TimeReportReader` SQL over `time_entries` and billing levels, `RateBook` | Yes | FLOWING (mixed-currency client now renders) |
+| Time report tree | buckets / amounts | `TimeReportReader` SQL over `time_entries` and billing levels, `RateBook` | Yes | FLOWING |
 | Dashboard unbilled widget | rows / amounts | scoped queries and `EntryAmounts` | Yes | FLOWING |
-| Rates overview | rows | `exchange_rates` | Yes | FLOWING |
+| Rates overview | rows | `exchange_rates` table | Yes | FLOWING |
+| System page last rate date | indicator value | newest `exchange_rates` day | Yes | FLOWING |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Whole suite (run once) | `ddev exec vendor/bin/pest --compact` | 3903 passed, 3 skipped (25242 assertions), exit 0 (previous run 3867 passed) | PASS |
-| Static analysis | `ddev exec vendor/bin/phpstan analyse` | No errors | PASS |
-| No unguarded cross-currency sum | grep of `plus(` in `app/Domain/Reports` and `app/Filament` | every call is keyed by currency or is the CZK sum | PASS |
+| Phase 8 test areas (rates, reports, dashboard) | `ddev exec vendor/bin/pest --compact tests/Feature/ExchangeRates tests/Feature/Reports tests/Feature/Dashboard` | 674 passed, 2 skipped (2945 assertions), exit 0 | PASS |
+| Whole suite (run once by the caller, reported) | `ddev exec vendor/bin/pest --compact` | 7807 passed, 3 skipped | PASS (reported, not re-run) |
+| No debt markers in Phase 8 code | grep `TBD\|FIXME\|XXX` over `app/Domain/Reports`, `app/Domain/ExchangeRates`, `TimeReportPage`, `UnbilledPerClient`, `DownloadCnbRatesCommand` | no match | PASS |
+
+The 2 skipped tests are the `pdftotext` layout tests (the tool is not installed in DDEV); the PDF look itself was signed off by the owner in UAT test 7.
 
 ### Probe Execution
 
@@ -187,41 +180,41 @@ SKIPPED: the phase declares no probe scripts.
 
 ### Requirements Coverage
 
-All eight IDs are declared in the Phase 8 plans and mapped to Phase 8 in REQUIREMENTS.md; no orphaned requirement. Gap plans declare RE-04 (08-24), RE-02 (08-25), RE-01/RE-02/RE-03 (08-23), RE-01/RE-02 (08-26, 08-27).
+All eight IDs from the phase are declared in the Phase 8 plans, are mapped to Phase 8 in REQUIREMENTS.md and appear in the ROADMAP requirement list. No orphaned requirement.
 
 | Requirement | Source Plans | Description | Status | Evidence |
 |-------------|--------------|-------------|--------|----------|
 | EX-01 | 08-01, 04, 08, 13, 17, 18 | Daily idempotent CNB download, manual run, backfill, previous rate, per-unit | SATISFIED | Truth 1 |
 | EX-02 | 08-04, 08, 10, 13 | Rates overview, failure alert, last known rate | SATISFIED | Truth 2 |
-| EX-03 | 08-05 | Conversion helper; document rate snapshots | SATISFIED for this phase | Helper delivered and tested; invoice/transaction use deferred to Phase 10 |
-| RE-01 | 08-09, 14, 23, 26, 27 | Time report per client and project with task/day/user breakdown | SATISFIED (owner visual sign-off pending) | Truth 3 |
-| RE-02 | 08-05, 09, 14, 23, 25, 26, 27 | Billable/non-billable and billed/unbilled with client currency and CZK amounts | SATISFIED | Truth 3, CR-01 closed |
-| RE-03 | 08-03, 06, 07, 11, 12, 16, 21, 23 | CSV/XLSX queued export, PDF work report | SATISFIED (human sign-off pending) | Truth 4 |
-| RE-04 | 08-02, 15, 20, 24 | Dashboard hours, unbilled per client, deadlines | SATISFIED for Phase 8 scope | Truth 5 |
+| EX-03 | 08-05 | Conversion helper used for invoice and transaction CZK amounts; document rates are snapshots | SATISFIED | Helper tested; production callers `DocumentIssuer` and `TransactionCzk` now exist (Phase 10) |
+| RE-01 | 08-09, 14, 23, 26, 27 | Time report per client and project with task/day/user breakdown | SATISFIED | Truth 3; UAT 1 |
+| RE-02 | 08-05, 09, 14, 23, 25, 26, 27 | Billable/non-billable and billed/unbilled with client currency and CZK amounts | SATISFIED | Truth 3 |
+| RE-03 | 08-03, 06, 07, 11, 12, 16, 21, 23 | CSV/XLSX queued export, PDF work report | SATISFIED | Truth 4; UAT 5, 6, 7 |
+| RE-04 | 08-02, 15, 20, 24 | Dashboard hours, unbilled per client, deadlines (overdue invoices and unresolved payments tiles belong to Phases 10 and 11) | SATISFIED | Truth 5; UAT 4 |
 | RE-05 | 08-05, 19 | Effective hourly rate for fixed-price projects | SATISFIED | `FixedPriceSummary`, `EffectiveRateTest` |
 
-**Bookkeeping note (not a code gap):** `.planning/REQUIREMENTS.md` is currently inconsistent. EX-01, EX-02, EX-03 and RE-05 have unchecked boxes and trace-table status "Gaps Found" although this verification finds them satisfied (the previous report never listed them as gaps; the revert in 581f5f9 was broader than the gaps). RE-01 to RE-04 are checked and "Complete". Once the human items are accepted, all eight (EX-03 with the Phase 10 caveat) can be marked Complete.
+**Bookkeeping note (not a code gap):** `.planning/REQUIREMENTS.md` still shows EX-01, EX-02, EX-03 and RE-05 with unchecked boxes and trace-table status "Gaps Found" (lines 101-103, 111, 322-324, 329), left over from the premature-completion revert in commit 581f5f9. Verification finds all four satisfied, so they should be checked and marked Complete together with RE-01 to RE-04 (already Complete). The orchestrator owns that edit.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| `app/Domain/Reports/Jobs/PruneExpiredReportExports.php` | 35-37 | WR-01 orphan file for a failed record (disposition still open) | WARNING | Report data left on private disk |
-| `app/Console/Commands/DownloadCnbRatesCommand.php` | 56-76 | WR-02 false "today's rates missing" alert when only the heal fails (open) | WARNING | Misleading Admin alert |
-| `app/Filament/Pages/TimeReportPage.php` | export request | WR-03 `report_exports.summary` varchar(255) overflow (open) | WARNING | Export request can fail with a DB error on very long names |
-| IN-01 to IN-09 | various | See 08-REVIEW.md, all `open` in 08-REVIEW-DISPOSITION.md | INFO | Follow-ups |
+| `app/Domain/Reports/Jobs/PruneExpiredReportExports.php` | 35-37 | WR-01: an export file whose record ended failed or pending is never deleted from the private disk (disposition `open`) | WARNING | Report data can linger on the private disk; no must-have truth depends on it |
+| `app/Console/Commands/DownloadCnbRatesCommand.php` | 56-76 | WR-02: a failed gap heal after a successful download can raise a false "rates missing" alert (disposition `open`) | WARNING | Misleading Admin alert; the rate data itself is correct |
+| `app/Filament/Pages/TimeReportPage.php` | export request | WR-03: `report_exports.summary` is varchar(255); a very long client plus project name can fail the request with a DB error (disposition `open`) | WARNING | Edge case |
+| IN-01 to IN-09 | various | See `08-REVIEW.md`, all `open` in `08-REVIEW-DISPOSITION.md` | INFO | Follow-ups |
 
-No `TBD`, `FIXME` or `XXX` marker in any file changed by the gap round. WR-01 to WR-03 were recommended, not required, for the gap round and were not taken; they do not block a must-have truth.
+No `TBD`, `FIXME` or `XXX` markers. The three warnings are carried follow-ups from the code review and do not block any roadmap success criterion (not modified since 2026-10-14 per git history).
 
 ### Human Verification Required
 
-See the `human_verification` frontmatter. The decisive item is the owner visual pass of `/admin/time-report`: the original gap was the owner's readability judgement, which automated tests cannot close. The remaining items are the WINDOWS.md ledger entries 2 to 5 and 7 (still `open`) and the PDF look sign-off. Security (`08-SECURITY.md`, 72 threats closed) and validation (`08-VALIDATION.md`, gap-round rows added) are consistent with the code read.
+None. UAT (`08-UAT.md`) records 7 passed, 0 issues, including the owner readability sign-off for the time report that the original gap depended on.
 
 ### Gaps Summary
 
-No blocking gaps remain. Both previous gaps are closed in code and covered by passing regression tests (full suite 3903 passed, 3 skipped, PHPStan clean). The phase is `human_needed` because the layout gap was recorded by the owner on a readability judgement and the browser, spreadsheet and PDF checks were never run by anyone.
+No gaps. All five roadmap success criteria hold in the current code, all eight requirement IDs are satisfied, the previously deferred EX-03 half is delivered by Phase 10, all seven human items are resolved by UAT, and the Phase 8 test areas pass (674 passed, 2 skipped) alongside the reported full suite (7807 passed, 3 skipped). Open items are the three review warnings WR-01 to WR-03 (follow-ups) and the stale requirement checkboxes in REQUIREMENTS.md.
 
 ---
 
-_Verified: 2026-10-15T20:00:00Z_
+_Verified: 2026-10-29T14:30:00Z_
 _Verifier: Claude (gsd-verifier)_

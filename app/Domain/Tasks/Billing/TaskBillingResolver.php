@@ -47,6 +47,12 @@ final class TaskBillingResolver
             throw new AuthorizationException('The effective billing is available to the Admin only.');
         }
 
+        // A project relation already loaded through the soft-delete scope is null for an archived project;
+        // loadMissing would keep that null, so drop it and load the archived project below.
+        if ($task->relationLoaded('project') && $task->project === null) {
+            $task->unsetRelation('project');
+        }
+
         $task->loadMissing([
             'billing',
             'parent' => static fn ($query) => $query->withoutGlobalScopes([SoftDeletingScope::class]),

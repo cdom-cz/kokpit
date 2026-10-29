@@ -41,17 +41,17 @@
     {
       "number": "8",
       "name": "Exchange Rates and Reports",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "9",
       "name": "Documents and Finance",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "10",
       "name": "Invoicing",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "11",
@@ -67,7 +67,7 @@
   "next": {
     "command": "/gsd-progress --next",
     "label": "Advance to the next step (verify)",
-    "reason": "Phase 8 of 18 · 39% · ready to verify"
+    "reason": "Phase 12 of 19 · 53% · ready to verify"
   },
-  "updated_at": "2026-10-28T11:14:45.632Z"
+  "updated_at": "2026-10-29T17:04:26.175Z"
 }

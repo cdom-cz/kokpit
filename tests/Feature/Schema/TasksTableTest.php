@@ -278,3 +278,13 @@ it('pins the status and priority CHECK lists against the project enums (D-01)', 
     expect($listOf('tasks_status_check'))->toBe($statuses)->toBe($listOf('projects_status_check'))
         ->and($listOf('tasks_priority_check'))->toBe($priorities)->toBe($listOf('projects_priority_check'));
 });
+
+it('stores false for the hidden_on_board flag when a row omits the column', function (): void {
+    $id = tasksSchemaInsert();
+
+    expect(DB::table('tasks')->where('id', $id)->value('hidden_on_board'))->toBeFalse();
+});
+
+it('refuses a NULL hidden_on_board flag with SQLSTATE 23502', function (): void {
+    RawSql::expectSqlState('23502', fn () => tasksSchemaInsert(['hidden_on_board' => null]));
+});

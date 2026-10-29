@@ -30,9 +30,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Tasks and Kanban** - Tasks and subtasks with per-project keys, comments, list filters, drag-and-drop boards and Partner task access (completed 2026-10-09)
 - [x] **Phase 6: Time Tracking** - Always-visible timer, manual entries, exact durations, billed locking, timesheet and project time totals (completed 2026-10-14)
 - [x] **Phase 7: REST API** - Token-secured `/api/v1` for time entries (single and batch) and lookups with the same rules as the UI (completed 2026-10-14)
-- [ ] **Phase 8: Exchange Rates and Reports** - Daily CNB rates, time and billing reports in client currency and CZK, exports, work report PDF and dashboard
-- [ ] **Phase 9: Documents and Finance** - Files on private S3 with Partner visibility rules, central document listing, and income/expense overview in CZK
-- [ ] **Phase 10: Invoicing** - Bill-from-time drafts, numbered immutable invoices, proformas and credit notes, PDF with QR, e-mail, manual payment and Partner invoice view
+- [x] **Phase 8: Exchange Rates and Reports** - Daily CNB rates, time and billing reports in client currency and CZK, exports, work report PDF and dashboard (completed 2026-10-29)
+- [x] **Phase 9: Documents and Finance** - Files on private S3 with Partner visibility rules, central document listing, and income/expense overview in CZK (completed 2026-10-29)
+- [x] **Phase 10: Invoicing** - Bill-from-time drafts, numbered immutable invoices, proformas and credit notes, PDF with QR, e-mail, manual payment and Partner invoice view (completed 2026-10-29)
 - [ ] **Phase 11: Stripe Payments** - Payment links, signed idempotent webhooks, automatic matching, and duplicate and unmatched payment handling
 - [ ] **Phase 12: Partner Audit** - Automated proof that the Partner view leaks nothing and that every route, screen and endpoint has an explicit role rule
 
@@ -501,7 +501,7 @@ Plans:
   4. Admin requests a CSV or XLSX export that is built in the background and delivered by notification with spreadsheet-safe cells, and generates a multi-page PDF work report with correct Czech diacritics
   5. The dashboard shows today's and this week's hours, unbilled time per client and upcoming task deadlines
 
-**Plans:** 27/27 plans executed (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed; 5 gap-closure plans 08-23 to 08-27 from 08-VERIFICATION.md in 3 gap waves)
+**Plans:** 27/27 plans complete (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed; 5 gap-closure plans 08-23 to 08-27 from 08-VERIFICATION.md in 3 gap waves)
 **UI hint**: yes
 
 Plans:
@@ -566,7 +566,7 @@ Plans:
   4. Every download goes through the app with a permission check and a short-lived signed URL (no public bucket URL), and deleting a record also removes its stored object
   5. Admin records income and expense transactions with hierarchical categories, currency, CZK amount, optional client and project and receipts as attachments, and sees an overview per month and year, per category and per client in CZK
 
-**Plans:** 28/28 plans executed (4 gap-closure plans 09-25 to 09-28 from 09-VERIFICATION.md and 09-REVIEW.md in 3 gap waves)
+**Plans:** 28/28 plans complete (4 gap-closure plans 09-25 to 09-28 from 09-VERIFICATION.md and 09-REVIEW.md in 3 gap waves)
 **UI hint**: yes
 
 Plans:
@@ -669,7 +669,7 @@ Plans:
   4. Admin records a manual payment (transfer or cash) with a warning if already paid, which creates an income transaction with editable date and category; overdue status is derived and listed in an overdue overview and as a dashboard tile; a paid proforma converts to a linked invoice
   5. The client detail shows projects, unbilled time and amount, invoices, documents and client accounts, and a Partner sees only their own issued invoices and proformas (list, detail, PDF) read-only, never drafts, internal notes, linked time or rates
 
-**Plans:** 41/41 plans executed in 13 waves
+**Plans:** 41/41 plans complete in 13 waves
 **UI hint**: yes
 
 Plans:
@@ -905,9 +905,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
 | 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
 | 7. REST API | 20/20 | Complete    | 2026-10-14 |
-| 8. Exchange Rates and Reports | 27/27 | In Progress | - |
-| 9. Documents and Finance | 28/28 | In Progress | - |
-| 10. Invoicing | 41/41 | In Progress | - |
+| 8. Exchange Rates and Reports | 27/27 | Complete    | 2026-10-29 |
+| 9. Documents and Finance | 28/28 | Complete    | 2026-10-29 |
+| 10. Invoicing | 41/41 | Complete    | 2026-10-29 |
 | 11. Stripe Payments | 20/20 | In Progress | - |
 | 12. Partner Audit | 9/9 | In Progress | - |
 
@@ -1034,3 +1034,47 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 16-06-PLAN.md — Hand-served journey, D-01 scope test (system e-mails unaffected), Partner isolation, CONTRIBUTING hand-over, full gate (Wave 4)
+
+### Phase 17: Task, project and search UX refinements
+
+**Goal:** A batch of UX refinements across tasks, projects, search, signals and files:
+- Task create/edit form: the "Checklist" card spans the full width.
+- Rich-text content (descriptions, comments, any rich-text field) is rendered with its formatting in read-only output.
+- A task can be created directly from the project detail.
+- Search results ordering: within each category, active (not completed) tasks and projects come first; the current order of categories and the display stay as they are.
+- Time entries can be added directly from a task.
+- A task can be flagged to be hidden from the kanban board; by default every task is shown.
+- Signal: the task can be picked from the system via type-ahead over unfinished tasks inside the existing text field, without switching modes. A picked task inserts the text `{PROJECT}: {task name} [{task code}]` (`{PROJECT}` = project name; built server-side, truncated to 255 characters) and is linked; a cross icon in the input clears the pick so free text can be typed again; if nothing is picked, plain unlinked text is stored. In the signal listing, a linked task shows a timer control and an open-task icon (the name itself is not a link).
+- Files: image previews open in a single-image modal/lightbox (no navigation between images); non-image files open in a new window.
+- Task creation: the project suggestions offer only projects not in the "Completed" state (if not already so).
+- Projects: the status can be changed from the project view, similar to the task view.
+**Requirements**: P17-01, P17-02, P17-03, P17-04, P17-05, P17-06, P17-07, P17-08, P17-09, P17-10
+**Depends on:** Phase 16
+**Plans:** 8/8 plans complete
+
+Plans:
+**Wave 1**
+- [x] 17-01-PLAN.md — Hide-from-board flag (`tasks.hidden_on_board`, filtered only in `TaskBoard::applyFilters`, Admin-only writer, reviewed Partner-safe pin) (Wave 1)
+- [x] 17-02-PLAN.md — Files: single-image lightbox for images and new-tab PDF preview in every list and under comments, both panels (Wave 1)
+- [x] 17-03-PLAN.md — Rich text read-only with `fi-prose` on the Admin, Partner and board-preview surfaces through `RichText::render`; P17 requirements registered (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 17-04-PLAN.md — Signal type-ahead pick of an unfinished task, snapshot text composed by the server at pick time and `signal_tasks.task_id` link (Wave 2)
+- [x] 17-05-PLAN.md — Global search: active tasks and projects first inside their group, before the 50-row limit; the full-width checklist card of the task form (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 17-06-PLAN.md — Signal listing: shared timer control and open-task icon on linked rows, states and page-wide sync (Wave 3)
+- [x] 17-07-PLAN.md — Project view: "Nový úkol" with the project locked, task-creation pickers without Done projects (Admin and Partner), "Změnit stav" (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 17-08-PLAN.md — "Přidat čas" from the task view with the context locked; CONTRIBUTING hand-over, the `DocumentUrl` docblock and the full gate (Wave 4)
+
+### Phase 17.1: Close gap: G1/G2 — release time on full partial credit and reject payments on converted proformas (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 17
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 17.1 to break down)

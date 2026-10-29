@@ -136,6 +136,21 @@ final class Project extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * Projects that are not finished (D-10, D-11): the status is not Done. Done
+     * ("Dokončeno") is the only terminal state. Used only by the pickers of task
+     * creation and the visibility of the New task action; tracked time on a
+     * finished project stays legitimate, so no other picker applies it.
+     *
+     * @param  Builder<Project>  $query
+     */
+    public function scopeOpen(Builder $query): void
+    {
+        $table = $this->getTable();
+
+        $query->where("{$table}.status", '!=', ProjectStatus::Done->value);
+    }
+
+    /**
      * Keeps the tags of an archived project. The tags package calls this from
      * its `deleted` listener, which also fires for a soft delete, so an archive
      * would otherwise detach every tag and a restore would not bring them back.

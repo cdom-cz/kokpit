@@ -1,7 +1,7 @@
 ---
 phase: 09-documents-and-finance
-verified: 2026-10-16T16:00:00Z
-status: human_needed
+verified: 2026-10-29T16:00:00Z
+status: passed
 score: 5/5 must-haves verified
 covered_files:
   - .planning/phases/09-documents-and-finance/09-01-PLAN.md
@@ -77,38 +77,25 @@ covered_files:
   - tests/Feature/Documents/RemoveDocumentObjectsTest.php
   - tests/Feature/Finance/TransactionReceiptsTest.php
   - tests/Unit/Documents/ArchiveEntryNamesTest.php
-covered_digest: "v3:sha256:a9d7d4934fa07f5937cdb013e9599cc50522ce03ed4df958e5ead486d0aea0fe"
+covered_digest: "v4:sha256:792b5e8dc571d12bdfe1d63e587c9d3c71f2123a016140ece10dbf8e59c384e5"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
-  previous_status: gaps_found
-  previous_score: 4/5
-  gaps_closed:
-    - "CR-01: ArchiveEntryNames::unique() threw on a.pdf, a.pdf, a (2).pdf (plan 09-25)"
-    - "WR-01: stored objects destroyed inside the DB transaction (plans 09-27, 09-28)"
-    - "WR-02: prune and failed builds left an orphan archive ZIP (plan 09-26)"
+  previous_status: human_needed
+  previous_score: 5/5
+  gaps_closed: []
   gaps_remaining: []
   regressions: []
 gaps: []
 deferred: []
-human_verification:
-  - test: "DDEV browser pass (LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK=local in .env)"
-    expected: "As Admin: upload two files on a project's Soubory tab, preview the PDF, download the other, build a ZIP from the central listing (include two files that share a name) and download it from the bell link; archive the project, its files leave the default listing and show under the archived-owners filter, restore and they return. As a Partner of that client: see the shared project file, upload a file while creating a task, delete it, and never see the Admin's hidden file, an internal comment's file or the files of an archived project."
-    why_human: "Needs a real browser (Livewire upload, inline preview, bell link, Filament modals)"
-  - test: "Deploy rehearsal of the browser-to-bucket upload (D-18)"
-    expected: "With at least two web containers and LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK unset: the bucket CORS rule allows PUT from the instance origin only, a 10 MB file uploads straight to the bucket and a submit served by another container stores it as a document, the livewire-tmp/ object is gone after the store, the one-day expiry rule exists, and a download streams through the app with no 413 and no bucket URL"
-    why_human: "Needs the production-like bucket and several containers; the DDEV bucket is not browser-reachable"
-  - test: "Finance pass"
-    expected: "Record a EUR expense dated on a weekend, the CZK figure equals the Friday CNB list, switch it to a manual bank figure, and see the month and the year on the finance overview"
-    why_human: "Visual check of the overview and of the form behaviour in a browser; the rules themselves are covered by tests"
 ---
 
 # Phase 9: Documents and Finance Verification Report
 
 **Phase Goal:** Files live on private storage under Admin control with correct Partner visibility, and Admin can record income and expenses and see the money picture in CZK
-**Verified:** 2026-10-16
-**Status:** human_needed
-**Re-verification:** Yes, after gap closure plans 09-25 to 09-28 (previous status gaps_found, 4/5)
+**Verified:** 2026-10-29
+**Status:** passed
+**Re-verification:** Yes. The previous report (2026-10-16, human_needed) went stale because four covered files were changed by later phases (10, 15, 17). The three human checks are now recorded as passed in 09-UAT.md (3 passed, 0 issues, completed 2026-10-29).
 
 ## Goal Achievement
 
@@ -116,54 +103,52 @@ human_verification:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Admin uploads files to clients, projects, tasks, comments, transactions or leaves them unattached, including files offered by the project and task forms | VERIFIED (regression check) | Unchanged since the first verification; `AttachDocumentsTest`, `CommentAttachmentsTest`, `DocumentsRelationManagerTest` in the 523-test run are green |
-| 2 | Partner sees and downloads only visible files on accessible projects and tasks, never internal-comment attachments, never another client's files | VERIFIED (regression check) | `tests/Isolation/DocumentVisibilityTest.php` and `DocumentFinanceLeakTest.php` green, mutation self-checks included; the gap-closure plans touched no Partner scope |
-| 3 | Admin has a central listing with filters and sorting, downloads single files or a ZIP built in the background, bulk-deletes files, and sees storage totals overall and per client | VERIFIED | CR-01 closed: `ArchiveEntryNames::unique()` now sets a counter for every handed-out name (`$this->counts[$candidateKey] = 1`) and reads a missing counter as 1 (`?? 1`). Re-executed in DDEV with warnings turned into exceptions: `a.pdf, a.pdf, a (2).pdf` gives `a.pdf, a (2).pdf, a (2) (2).pdf`; `a (2).pdf, a.pdf, a.pdf, a.pdf` gives `a (2).pdf, a.pdf, a (3).pdf, a (4).pdf`; a mixed-case set of five names stays distinct case-insensitively. The queued ZIP of the CR-01 set is built in `DocumentArchiveTest.php`. Bulk delete (`DocumentActions` line 338) goes through `DeleteDocument` per file |
-| 4 | Every download goes through the app with a permission check and short-lived signed URL; deleting a record also removes its stored object | VERIFIED | `DocumentFileController` behind the signed, user-bound route. WR-01 closed: `DeleteDocument` deletes the document row and media rows in one locked DB transaction and removes objects in `DB::afterCommit()`, so an outer rollback (a later receipt, the transaction row) keeps row, media row and object. An object the disk refuses is reported and queued to `RemoveDocumentObjects` (3 tries, path-shape and media-row guards, then the failed-job alert). `DeleteTransaction` delegates each receipt to `DeleteDocument` inside its own transaction. The removal timing deviates from D-09 by the accepted decision D-23 (object removed after commit, guaranteed by retry plus alert) |
-| 5 | Admin records income and expense transactions with hierarchical categories, currency, CZK amount, optional client and project and receipts, and sees an overview per month and year, per category and per client in CZK | VERIFIED (regression check) | `TransactionCzk`, `FinanceOverview` (sums stored `czk_minor`), `FinanceOverviewPage`; `TransactionCzkTest`, `CategoryRulesTest`, `TransactionReceiptsTest` (now also the WR-01 rollback cases), `FinanceOverviewTest` green |
+| 1 | Admin uploads files to clients, projects, tasks, comments, transactions or leaves them unattached, including the files on the project and task forms | VERIFIED | Upload path untouched by the later phases; `AttachDocumentsTest`, `CommentAttachmentsTest`, `DocumentsRelationManagerTest` are green in the 604-test run below |
+| 2 | Partner sees and downloads only visible files on accessible projects and tasks, never internal-comment attachments, never another client's files | VERIFIED | `tests/Isolation/DocumentVisibilityTest.php` and `DocumentFinanceLeakTest.php` green, including the mutation self-checks and the new "preview of a file (lightbox and new tab)" cases. No later change touched `Document::constrainForPartner()` or the policy |
+| 3 | Admin has a central listing with filters and sorting, downloads single files or a ZIP built in the background, bulk-deletes files, sees storage totals overall and per client | VERIFIED | `DocumentActions` still wires bulk delete to `DeleteDocument` per file. Phase 10 added one rule: a file that is the PDF of an issued document is skipped in bulk and counted in the notification (`$skipped`), never silently deleted. `ArchiveEntryNames`, `BuildDocumentArchive` and `PruneExpiredDocumentArchives` are unchanged since the gap closure; their tests are green |
+| 4 | Every download goes through the app with a permission check and a short-lived signed URL (no public bucket URL); deleting a record also removes its stored object | VERIFIED | `DocumentFileController` unchanged and still behind the signed, user-bound route. `DeleteDocument` keeps the WR-01 shape (locked row, media rows deleted by query builder, `deletePreservingMedia()`, objects removed in `DB::afterCommit()`, refused objects queued to `RemoveDocumentObjects`). Later phases only added refusals before anything changes: the explicit flag for an issued PDF (Phase 10) and a protected stored cash-receipt PDF (Phase 15). Phase 17 changed preview: an image opens in a lightbox whose link is minted at modal render after the `view` check; a PDF is a real `target="_blank"` link, signed, bound to the viewer (`u`), short-lived (`kokpit.documents.signed_url_ttl_seconds`) and served by the same guarded route. This is a documented owner decision (Phase 17), not a public URL, and keeps the "short-lived signed URL" criterion |
+| 5 | Admin records income and expense transactions with hierarchical categories, currency, CZK amount, optional client and project and receipts, and sees an overview per month and year, per category and per client in CZK | VERIFIED | `TransactionCzk` still resolves CZK from a typed figure, an own rate or the CNB list; the Phase 9.1 change only converts an invalid own rate into a `exchange_rate` validation error instead of an exception. `DeleteTransaction` still deletes the transaction and its receipts in one transaction through `DeleteDocument`, after a Phase 10 refusal for the income of an invoice payment raised on the locked row before any receipt is touched. `FinanceOverview` sums stored `czk_minor`. `TransactionCzkTest`, `CategoryRulesTest`, `TransactionReceiptsTest`, `FinanceOverviewTest` green. The "Finance pass" browser check passed in UAT |
 
-**Score:** 5/5 truths verified (0 present, behavior-unverified). The status is `human_needed` only because of the three browser and deploy checks below.
+**Score:** 5/5 truths verified (0 present, behavior-unverified)
 
-### Gap Closure Check
+### Re-check of the four changed files
 
-| Finding | Plan | Code evidence | Test evidence | Status |
-|---------|------|---------------|---------------|--------|
-| CR-01 archive entry names | 09-25 | `ArchiveEntryNames::unique()` total for every order | Re-executed above; `ArchiveEntryNamesTest` permutation case; `DocumentArchiveTest` CR-01 cases | CLOSED |
-| WR-01 objects removed after commit | 09-27, 09-28 | `DeleteDocument` (afterCommit removal), `DeleteTransaction` (nested delegation), `RemoveDocumentObjects` (guarded retry job) | `DeleteDocumentTest`, `RemoveDocumentObjectsTest`, `TransactionReceiptsTest`, `DocumentStorageConsistencyTest` | CLOSED |
-| WR-02 orphan archive ZIP | 09-26 | `PruneExpiredDocumentArchives` deletes `storagePath()` of every expired record whatever its status; `BuildDocumentArchive::removeZipAfterCommit()` on failed, vanished or given-up records, never for a ready one | `DocumentArchivePruneTest`, `DocumentArchiveCleanupTest` | CLOSED |
-
-`09-REVIEW-DISPOSITION.md` records CR-01, WR-01 and WR-02 as closed with commit hashes that exist on the branch (b6d4fc9, 3719a52, cc293c3, 7e636be, da86cf6, 68ee519, f55476a, a67c124). IN-01 to IN-09 stay open as Info and block no success criterion.
+| File | Later change | Effect on Phase 9 must-haves |
+|------|--------------|------------------------------|
+| `app/Domain/Documents/Actions/DeleteDocument.php` | Phase 10 (10-36) explicit flag for an issued PDF; Phase 15 (15-12) protection of the stored cash-receipt PDF | Additive guards inside the same locked transaction, thrown before any change. Delete order, `afterCommit` object removal and retry job intact (read in full) |
+| `app/Domain/Finance/Actions/DeleteTransaction.php` | Phase 10 (10-19) payment-income refusal | Additive refusal on the locked row; receipts still delegated to `DeleteDocument`, rollback keeps rows and objects (`TransactionReceiptsTest` WR-01 cases green) |
+| `app/Domain/Finance/TransactionCzk.php` | Phase 9.1 own-rate source and its validation | Extends `resolve()` with a custom rate; the weekend/Friday CNB rule and the manual figure rule are unchanged |
+| `app/Filament/Support/DocumentActions.php` | Phase 10 (issued-PDF confirmation, bulk skip); Phase 17 (lightbox preview) | Delete, bulk delete, download and ZIP request unchanged in effect; preview behaviour documented above |
 
 ### Required Artifacts
 
-| Artifact | Expected | Status | Details |
-|----------|----------|--------|---------|
-| `app/Domain/Documents/Support/ArchiveEntryNames.php` | total unique naming | VERIFIED | read and executed |
-| `app/Domain/Documents/Actions/DeleteDocument.php` | row delete in transaction, object after commit | VERIFIED | used by `DocumentActions`, `RendersTaskCommentThread`, `DeleteTransaction` |
-| `app/Domain/Documents/Jobs/RemoveDocumentObjects.php` | guarded retry of refused objects | VERIFIED | dispatched from `DeleteDocument`; extends `KokpitJob` |
-| `app/Domain/Documents/Jobs/PruneExpiredDocumentArchives.php` | id-derived ZIP delete for every expired record | VERIFIED | scheduled in `routes/console.php` |
-| `app/Domain/Documents/Jobs/BuildDocumentArchive.php` | cleanup of failed or vanished archives | VERIFIED | `removeZipAfterCommit()` |
-| `app/Domain/Finance/Actions/DeleteTransaction.php` | atomic delete with receipts | VERIFIED | |
-| Remaining Phase 9 artifacts (migrations, policy, controllers, resources, finance overview) | as in the first verification | VERIFIED (regression) | covered by the green suite |
+| Artifact | Status | Details |
+|----------|--------|---------|
+| `app/Domain/Documents/Actions/DeleteDocument.php` | VERIFIED | Substantive, used by `DocumentActions`, `RendersTaskCommentThread`, `DeleteTransaction` |
+| `app/Domain/Documents/Jobs/RemoveDocumentObjects.php` | VERIFIED | Dispatched from `DeleteDocument::removeObjects()` |
+| `app/Domain/Documents/Jobs/BuildDocumentArchive.php`, `PruneExpiredDocumentArchives.php`, `app/Domain/Documents/Support/ArchiveEntryNames.php` | VERIFIED | Unchanged since gap closure; tests green |
+| `app/Domain/Finance/Actions/DeleteTransaction.php`, `app/Domain/Finance/TransactionCzk.php`, `app/Domain/Finance/Queries/FinanceOverview.php` | VERIFIED | Wired as above |
+| `app/Http/Controllers/DocumentFileController.php` | VERIFIED | Signed, user-bound streaming route |
+| `app/Filament/Support/DocumentActions.php` | VERIFIED | Wired to the policy, the Actions and the URL minting |
 
 ### Key Link Verification
 
-| From | To | Via | Status | Details |
-|------|----|-----|--------|---------|
-| `BuildDocumentArchive::add()` | `ArchiveEntryNames::unique()` | line 295 | WIRED | no longer throws on the CR-01 order |
-| `DocumentActions` bulk delete | `DeleteDocument` | line 338 | WIRED | per file, own transaction |
-| `DeleteTransaction` | `DeleteDocument` | nested transaction, `afterCommit` attaches to the outer commit | WIRED | |
-| `DeleteDocument` | `RemoveDocumentObjects` | `dispatch($standing)` after a refused object | WIRED | |
-| Partner tabs | `Document::constrainForPartner()` | scoped queries | WIRED | leak sweep green |
-| `FinanceOverview` | `transactions.czk_minor` | SQL sums | WIRED | no re-conversion |
+| From | To | Status |
+|------|----|--------|
+| `DocumentActions` single and bulk delete | `DeleteDocument` (`deleteOne()`) | WIRED |
+| `DeleteTransaction` | `DeleteDocument` (nested transaction, `afterCommit` joins the outer commit) | WIRED |
+| `DeleteDocument` | `RemoveDocumentObjects` (dispatch of the standing objects) | WIRED |
+| `DocumentActions::preview()` | `DocumentUrl::preview()` after the `view` check | WIRED |
+| `BuildDocumentArchive` | `ArchiveEntryNames::unique()` | WIRED |
+| Partner tabs | `Document::constrainForPartner()` | WIRED |
+| `FinanceOverview` | `transactions.czk_minor` | WIRED |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Phase 9 feature, unit and leak tests | `ddev exec vendor/bin/pest tests/Feature/Documents tests/Feature/Finance tests/Unit/Documents tests/Isolation/DocumentFinanceLeakTest.php tests/Isolation/DocumentVisibilityTest.php` | 523 passed (9012 assertions), up from 485 before the closure | PASS |
-| ZIP entry numbering for the CR-01 orders | run the real `ArchiveEntryNames` with warnings turned into exceptions | three sets, all distinct, no exception | PASS |
-| Static analysis of the touched domains | `ddev exec vendor/bin/phpstan analyse app/Domain/Documents app/Domain/Finance` | No errors | PASS |
+| Phase 9 feature, unit and leak tests | `ddev exec php -d memory_limit=1G vendor/bin/pest tests/Feature/Documents tests/Feature/Finance tests/Unit/Documents tests/Isolation/DocumentFinanceLeakTest.php tests/Isolation/DocumentVisibilityTest.php` | 604 passed (9463 assertions), up from 523 at the previous verification | PASS |
+| Full Pest suite excluding Audit | run by the orchestrator in DDEV | exit 0 | PASS |
 
 ### Probe Execution
 
@@ -174,28 +159,26 @@ No phase-declared probe scripts. SKIPPED.
 | Requirement | Source Plans | Description | Status | Evidence |
 |-------------|--------------|-------------|--------|----------|
 | DO-01 | 09-01, 02, 05, 08, 10, 12, 13, 14, 20, 21, 24, 27 | Files on all owners; Partner visibility | SATISFIED | SC1, SC2 |
-| DO-02 | 09-14, 16 to 20, 23, 25, 26, 28 | Central listing, single and ZIP download, bulk delete, totals | SATISFIED | SC3; CR-01 and WR-02 closed |
-| DO-03 | 09-03, 05, 07, 10, 13, 18, 20, 21, 27, 28 | Signed app downloads, object removal on delete | SATISFIED | SC4; WR-01 closed under D-23. The issued-invoice-PDF confirmation part is proven in Phase 10 per ROADMAP |
-| FI-01 | 09-04, 06, 09, 11, 13, 20, 22, 27, 28 | Transactions with categories, currency, CZK, receipts | SATISFIED | SC5 (invoice reference is Phase 10 per ROADMAP) |
+| DO-02 | 09-14, 16 to 20, 23, 25, 26, 28 | Central listing, single and ZIP download, bulk delete, totals | SATISFIED | SC3 |
+| DO-03 | 09-03, 05, 07, 10, 13, 18, 20, 21, 27, 28 | Signed app downloads, object removal on delete, explicit confirmation for an issued PDF | SATISFIED | SC4; the issued-PDF confirmation is now in `DeleteDocument` and `DocumentActions` (Phase 10) |
+| FI-01 | 09-04, 06, 09, 11, 13, 20, 22, 27, 28 | Transactions with categories, currency, CZK, receipts | SATISFIED | SC5 (invoice reference delivered in Phase 10) |
 | FI-02 | 09-15, 20 | Overview per month/year, category, client in CZK | SATISFIED | SC5 |
 
-All five phase IDs (DO-01, DO-02, DO-03, FI-01, FI-02) appear in PLAN frontmatter and in REQUIREMENTS.md. No orphaned requirements: FI-03 is mapped to Phase 10. The REQUIREMENTS.md traceability table still shows these five as "Gaps Found" and the checkboxes are unchecked; they are updated at phase completion, after the human checks.
+All five IDs appear in PLAN frontmatter and in REQUIREMENTS.md; none is orphaned (FI-03 belongs to Phase 10). Housekeeping, not a verification gap: the REQUIREMENTS.md checkboxes for DO-01, DO-02, DO-03 and FI-02 are still unchecked and the traceability table still reads "Gaps Found" for them; this report supports marking all five Complete.
 
 ### Anti-Patterns Found
 
-None blocking. The three previous items (CR-01 BLOCKER, WR-01, WR-02) are closed. IN-01 to IN-09 (INFO) remain open by disposition.
+None blocking. CR-01, WR-01 and WR-02 are closed in 09-REVIEW-DISPOSITION.md (verified in the previous report and unaffected by the later changes). IN-01 to IN-09 remain Info by disposition.
 
-### Human Verification Required
+### Human Verification
 
-1. **DDEV browser pass.** Admin uploads, previews, downloads, builds a ZIP (include two files with the same name) and downloads it from the bell link; archives and restores a project; a Partner sees only the shared file and uploads while creating a task. Why human: real browser.
-2. **Deploy rehearsal (D-18).** Two web containers, unset temporary disk, 10 MB direct-to-bucket upload, CORS, one-day expiry rule, streamed download. Why human: needs the production-like bucket.
-3. **Finance pass.** Weekend EUR expense against Friday's CNB list, manual figure override, month and year on the overview. Why human: visual and browser check.
+All three items of the previous report are recorded as passed in 09-UAT.md (DDEV browser pass, deploy rehearsal of the browser-to-bucket upload, finance pass; 3 passed, 0 issues). No open human items.
 
 ### Gaps Summary
 
-No gaps. All five success criteria are achieved in the code and proven by tests; the three gap-closure findings are fixed and verified by reading and by execution. The phase moves to `human_needed` for the three browser and deploy checks that cannot be automated.
+No gaps. The later changes to the four covered files are additive guards or documented owner decisions and do not weaken any Phase 9 success criterion; the phase tests and the full suite are green.
 
 ---
 
-_Verified: 2026-10-16_
+_Verified: 2026-10-29_
 _Verifier: Claude (gsd-verifier)_

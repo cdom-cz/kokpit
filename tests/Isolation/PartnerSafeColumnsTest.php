@@ -44,7 +44,8 @@ it('has no projects column whose name looks like money, an estimate, billing or 
  * The tasks table is readable by every Partner of the client for the tasks of the
  * client-visible projects (TA-01, D-13), so its column list is pinned in
  * migration order as well. A new column fails this test until a reviewer has
- * decided that every Partner may read it.
+ * decided that every Partner may read it. The Phase 17 reviewer decided that every
+ * Partner of the client may read the hidden_on_board display flag (D-04, D-05).
  */
 
 it('pins the Partner-safe column list of the tasks table', function (): void {
@@ -71,6 +72,7 @@ it('pins the Partner-safe column list of the tasks table', function (): void {
         'deleted_at',
         'created_at',
         'updated_at',
+        'hidden_on_board',
     ], 'The tasks table is readable by Partners. Put Admin-only attributes (billing terms, the private checklist, internal comments) into task_billing, task_checklist_items or an internal comment; extend this list only after reviewing that every Partner may read the new column.');
 });
 

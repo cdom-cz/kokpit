@@ -98,9 +98,9 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 
 ### Exchange Rates
 
-- [ ] **EX-01**: Daily scheduled, idempotent download of CNB rates, manual run and history backfill; weekend/holiday uses previous rate; per-unit amounts handled
-- [ ] **EX-02**: Overview of rates and Admin alert when download fails; last known rate is used meanwhile
-- [ ] **EX-03**: Conversion helper used for invoice and transaction CZK amounts; document rates are snapshots
+- [x] **EX-01**: Daily scheduled, idempotent download of CNB rates, manual run and history backfill; weekend/holiday uses previous rate; per-unit amounts handled
+- [x] **EX-02**: Overview of rates and Admin alert when download fails; last known rate is used meanwhile
+- [x] **EX-03**: Conversion helper used for invoice and transaction CZK amounts; document rates are snapshots
 
 ### Reports
 
@@ -108,18 +108,18 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **RE-02**: Billable/non-billable and billed/unbilled split with amounts in client currency and CZK
 - [x] **RE-03**: CSV/XLSX export (queued, delivered by notification) and PDF work report attachable to an invoice
 - [x] **RE-04**: Dashboard: today/this week hours, unbilled per client, overdue invoices, unresolved payments, upcoming task deadlines
-- [ ] **RE-05**: Effective hourly rate shown for fixed-price projects
+- [x] **RE-05**: Effective hourly rate shown for fixed-price projects
 
 ### Documents
 
-- [ ] **DO-01**: Files uploaded to clients, projects, tasks, comments, invoices, transactions or unattached on S3; Partner sees only files on accessible projects/tasks, excluding internal-comment attachments, and only those flagged visible
-- [ ] **DO-02**: Admin central listing with filters, sorting, single and ZIP download (queued), bulk delete, storage totals overall and per client
-- [ ] **DO-03**: Downloads always go through the app with permission check and short-lived signed URL; deleting a record removes the S3 object; issued invoice PDFs need explicit confirmation to delete
+- [x] **DO-01**: Files uploaded to clients, projects, tasks, comments, invoices, transactions or unattached on S3; Partner sees only files on accessible projects/tasks, excluding internal-comment attachments, and only those flagged visible
+- [x] **DO-02**: Admin central listing with filters, sorting, single and ZIP download (queued), bulk delete, storage totals overall and per client
+- [x] **DO-03**: Downloads always go through the app with permission check and short-lived signed URL; deleting a record removes the S3 object; issued invoice PDFs need explicit confirmation to delete
 
 ### Finance
 
 - [x] **FI-01**: Income and expense transactions with hierarchical categories, currency, CZK amount, optional client/project/invoice, receipts as attachments
-- [ ] **FI-02**: Overview per month/year, per category and per client in CZK
+- [x] **FI-02**: Overview per month/year, per category and per client in CZK
 - [x] **FI-03**: Payment of an invoice creates an income transaction (automatically for Stripe; editable date and category for manual payment)
 
 ### Invoicing
@@ -191,6 +191,19 @@ Requirements for initial release. Each maps to roadmap phases. Original brief ID
 - [x] **P16-09**: The Admin locks an open, uncancelled cash receipt (PPD) by hand with the same rules
 - [x] **P16-10**: Unlock stays Admin-only with a mandatory reason; the lock literals stay confined to named files (the architecture tests are extended on purpose); the database row guards are unchanged
 - [x] **P16-11**: System e-mails to the Partner users of the client (invitation, password reset, task notifications) are unaffected by the switch
+
+### Task, Project and Search UX Refinements
+
+- [x] **P17-01**: The checklist card of the task form spans the full width of the form
+- [x] **P17-02**: Rich-text content (task descriptions, comments, any rich-text field) is rendered with its formatting in read-only output on every surface of both panels, through the one sanitiser (sanitized, whitelisted HTML); e-mails and PDFs are unchanged
+- [x] **P17-03**: The Admin creates a task from the project view with the project pre-filled and locked; the action is not offered for a Done or archived project
+- [x] **P17-04**: In the global search, tasks and projects that are not Done come first inside their category; the category order and the display are unchanged
+- [x] **P17-05**: The Admin adds a time entry from the task view with client, project and task pre-filled and locked, under the existing time-entry rules
+- [x] **P17-06**: A task can be hidden from the kanban boards (shown by default); only the boards hide it and only the Admin changes it
+- [x] **P17-07**: The Signal add field offers unfinished tasks by type-ahead and a pick stores the text `{PROJECT}: {task name} [{task code}]` linked to the task; a cross clears the pick, and a linked signal shows the shared timer control and an open-task icon
+- [x] **P17-08**: Image files open in a single-image lightbox and non-image files in a new tab in every file list of both panels
+- [x] **P17-09**: The project pickers of task creation (Admin and Partner) offer only projects that are not Done
+- [x] **P17-10**: The project status can be changed from the project view as it can on the task view
 
 ### Partner Audit
 
@@ -306,19 +319,19 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AP-03 | Backlog (999.1) | Deferred |
 | AP-04 | Phase 7 | Complete |
 | AP-05 | Phase 7 | Complete |
-| EX-01 | Phase 8 | Gaps Found |
-| EX-02 | Phase 8 | Gaps Found |
-| EX-03 | Phase 8 | Gaps Found |
+| EX-01 | Phase 8 | Complete |
+| EX-02 | Phase 8 | Complete |
+| EX-03 | Phase 8 | Complete |
 | RE-01 | Phase 8 | Complete |
 | RE-02 | Phase 8 | Complete |
 | RE-03 | Phase 8 | Complete |
 | RE-04 | Phase 8 | Complete |
-| RE-05 | Phase 8 | Gaps Found |
-| DO-01 | Phase 9 | Gaps Found |
-| DO-02 | Phase 9 | Gaps Found |
-| DO-03 | Phase 9 | Gaps Found |
+| RE-05 | Phase 8 | Complete |
+| DO-01 | Phase 9 | Complete |
+| DO-02 | Phase 9 | Complete |
+| DO-03 | Phase 9 | Complete |
 | FI-01 | Phase 9 | Complete |
-| FI-02 | Phase 9 | Gaps Found |
+| FI-02 | Phase 9 | Complete |
 | FI-03 | Phase 10 | Complete |
 | IN-01 | Phase 10 | Complete |
 | IN-02 | Phase 10 | Complete |
@@ -375,12 +388,22 @@ Which phases cover which requirements. Updated during roadmap creation.
 | P16-09 | Phase 16 | Complete |
 | P16-10 | Phase 16 | Complete |
 | P16-11 | Phase 16 | Complete |
+| P17-01 | Phase 17 | Complete |
+| P17-02 | Phase 17 | Complete |
+| P17-03 | Phase 17 | Complete |
+| P17-04 | Phase 17 | Complete |
+| P17-05 | Phase 17 | Complete |
+| P17-06 | Phase 17 | Complete |
+| P17-07 | Phase 17 | Complete |
+| P17-08 | Phase 17 | Complete |
+| P17-09 | Phase 17 | Complete |
+| P17-10 | Phase 17 | Complete |
 | AUD-01 | Phase 12 | Complete |
 | AUD-02 | Phase 12 | Complete |
 
 **Coverage:**
-- v1 requirements: 134 total
-- Mapped to phases: 133
+- v1 requirements: 144 total
+- Mapped to phases: 143
 - Deferred to backlog: 1 (AP-03)
 - Unmapped: 0
 
@@ -388,4 +411,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-10-06*
-*Last updated: 2026-10-28 for Phase 16 (per-client e-mail sending switch and manual lock: P16-01 to P16-11 added)*
+*Last updated: 2026-10-29 for Phase 17 (task, project and search UX refinements: P17-01 to P17-10 added)*

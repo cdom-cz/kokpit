@@ -28,9 +28,11 @@ services:
       timeout: 5s
       retries: 12
 
-  # One-shot bucket creation. The trailing "exec sleep infinity" is mandatory:
-  # without it the container exits successfully and ddev start fails with
-  # "container exited".
+  # One-shot bucket setup: creates the bucket and sets its CORS rule, then sleeps. The browser uploads files
+  # straight to the bucket with a presigned PUT, so the bucket must allow PUT from the origin the panel is served
+  # from (the DDEV primary URL) and nothing else. The rule is replaced on every start, so it survives a lost volume.
+  # The trailing "exec sleep infinity" is mandatory: without it the container exits successfully and ddev start
+  # fails with "container exited".
   rustfs-init:
     container_name: ddev-${DDEV_SITENAME}-rustfs-init
     image: rustfs/rc:v0.1.36
@@ -38,12 +40,19 @@ services:
     labels:
       com.ddev.site-name: ${DDEV_SITENAME}
       com.ddev.approot: ${DDEV_APPROOT}
+    environment:
+      CORS_ORIGIN: ${DDEV_PRIMARY_URL}
     depends_on:
       rustfs:
         condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
     command:
-      - "rc alias set local http://rustfs:9000 rustfsadmin rustfsadmin && (rc bucket create local/kokpit-dev || true) && exec sleep infinity"
+      - |
+        rc alias set local http://rustfs:9000 rustfsadmin rustfsadmin &&
+        (rc bucket create local/kokpit-dev || true) &&
+        printf '{"rules":[{"allowedOrigins":["%s"],"allowedMethods":["PUT"],"allowedHeaders":["*"],"maxAgeSeconds":3000}]}' "$$CORS_ORIGIN" > /tmp/cors.json &&
+        rc bucket cors set local/kokpit-dev /tmp/cors.json &&
+        exec sleep infinity
 
 volumes:
   rustfs-data:

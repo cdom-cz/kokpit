@@ -45,7 +45,8 @@ use Spatie\Tags\HasTags;
  *
  * Changes to the identity, status, priority, dates, people and escalation are
  * written to the activity log through the allowlist; the description and the
- * board position are never logged.
+ * board position are never logged. The `hidden_on_board` display flag is
+ * not logged either, since it is a preference and not a change of the task (D-04).
  *
  * Only the plain content columns are fillable. The ids, number, reference,
  * depth, position, people and escalation columns are set with `forceFill` by
@@ -70,6 +71,7 @@ use Spatie\Tags\HasTags;
  * @property string $requester_id
  * @property CarbonInterface|null $escalated_at
  * @property string|null $escalated_by_id
+ * @property bool $hidden_on_board
  * @property CarbonInterface|null $deleted_at
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -81,6 +83,7 @@ use Spatie\Tags\HasTags;
     'priority',
     'start_date',
     'due_date',
+    'hidden_on_board',
 ])]
 #[LoggedAttributes([
     'project_id',
@@ -279,6 +282,7 @@ final class Task extends KokpitModel implements PartnerIsolated, Sortable
             'number' => 'integer',
             'depth' => 'integer',
             'position' => 'integer',
+            'hidden_on_board' => 'boolean',
         ];
     }
 

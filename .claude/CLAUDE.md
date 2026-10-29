@@ -50,6 +50,7 @@ Development is done in git worktrees. The final test run and the database migrat
 - In a worktree: write code and tests, and run only cheap checks that need no shared state (formatting, static analysis where it works without the DB).
 - Do not run migrations from a worktree. They would change the shared development database and diverge between parallel worktrees.
 - After the merge into the HEAD branch: run the migrations there, then the full test suite and static analysis (in DDEV, see the memory note), and treat that result as the final verdict.
+- Run the suite the way CI does: `ddev exec php -d memory_limit=1G vendor/bin/pest --testsuite=Unit,Arch,Feature,Isolation,Concurrency` (CI shards it with `--shard`). Do not use `pest --parallel`: paratest turns the "use statement has no effect" warning of a `use Closure;` in a global-namespace test into an `ErrorException` and aborts the whole run, although CI is green. Such a failure is not a repository bug, so do not "fix" the tests; rerun without `--parallel`.
 
 <!-- GSD:skills-start source:skills/ -->
 

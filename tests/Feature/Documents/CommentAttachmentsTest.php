@@ -288,7 +288,7 @@ it('stores the file of an internal Admin comment hidden and shows a Partner neit
 
     // A refusal ends the component's round trip, so every call gets its own thread.
     caPartnerThread($this->partner, $task)->call('downloadCommentDocument', $documents[$secret]->id)->assertNotFound();
-    caPartnerThread($this->partner, $task)->call('previewCommentDocument', $documents[$secret]->id)->assertNotFound();
+    caPartnerThread($this->partner, $task)->mountAction('previewCommentImage', ['document' => $documents[$secret]->id])->assertNotFound();
 });
 
 it('answers 404 to a Partner for a visible file of another task, of another client and for a malformed id', function (): void {
@@ -309,7 +309,120 @@ it('answers 404 to a Partner for a visible file of another task, of another clie
     // A refusal ends the component's round trip, so every call gets its own thread.
     foreach ([$otherTaskFile->id, $otherClientFile->id, 'not-a-uuid', '../../etc/passwd', Str::uuid()->toString()] as $forged) {
         caPartnerThread($this->partner, $task)->call('downloadCommentDocument', $forged)->assertNotFound();
-        caPartnerThread($this->partner, $task)->call('previewCommentDocument', $forged)->assertNotFound();
+        caPartnerThread($this->partner, $task)->mountAction('previewCommentImage', ['document' => $forged])->assertNotFound();
+    }
+});
+
+/**
+ * A comment of the author on the task with one file of the given bytes (so its stored type is detected from them).
+ *
+ * @return array{0: TaskComment, 1: Document}
+ */
+function caCommentWithBytes(User $author, Task $task, string $fileName, string $content, bool $internal = false): array
+{
+    test()->actingAs($author);
+
+    $comment = app(AddTaskComment::class)->handle($author, $task, '<p>Example remark</p>', $internal);
+    $document = app(AttachDocuments::class)->handle($author, $comment, [DocumentFixtures::upload($fileName, $content)])->firstOrFail();
+
+    return [$comment, $document];
+}
+
+function caPngBytes(): string
+{
+    return (string) base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==');
+}
+
+function caPdfBytes(): string
+{
+    return "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n";
+}
+
+/**
+ * The query of the link a rendered thread holds for the document, or null when it holds none.
+ *
+ * @return array<string, string>|null
+ */
+function caLinkQuery(string $html, string $documentId): ?array
+{
+    if (preg_match('/(?:href|src)="([^"]*\/files\/documents\/'.preg_quote($documentId, '/').'[^"]*)"/', $html, $match) !== 1) {
+        return null;
+    }
+
+    parse_str((string) parse_url(html_entity_decode($match[1]), PHP_URL_QUERY), $query);
+
+    /** @var array<string, string> $query */
+    return $query;
+}
+
+it('opens a comment PNG in the lightbox minted for the Admin and gives a comment PDF a new-tab link, a TXT nothing', function (): void {
+    $task = caTask($this->admin, $this->project);
+    [, $png] = caCommentWithBytes($this->admin, $task, 'picture-example.png', caPngBytes());
+    [, $pdf] = caCommentWithBytes($this->admin, $task, 'paper-example.pdf', caPdfBytes());
+    [, $txt] = caCommentWithBytes($this->admin, $task, 'note-example.txt', 'Fictional note');
+
+    $thread = caAdminThread($task);
+    $html = $thread->html();
+
+    // The PNG has a button that mounts the lightbox and no link; the PDF has the only signed link; the TXT has no control.
+    expect($html)->toContain("mountAction('previewCommentImage', { document: '{$png->id}' })")
+        ->and(caLinkQuery($html, $png->id))->toBeNull()
+        ->and(substr_count($html, 'signature='))->toBe(1)
+        ->and($html)->toContain('target="_blank"')
+        ->and(caLinkQuery($html, $pdf->id))->toMatchArray(['mode' => 'inline', 'u' => $this->admin->id])
+        ->and(caLinkQuery($html, $txt->id))->toBeNull()
+        ->and($html)->not->toContain("previewCommentImage', { document: '{$txt->id}'")
+        ->and($html)->not->toContain("previewCommentImage', { document: '{$pdf->id}'");
+
+    $thread->mountAction('previewCommentImage', ['document' => $png->id]);
+
+    $mounted = $thread->instance()->getMountedAction();
+
+    expect((string) $mounted?->getModalHeading())->toContain('picture-example.png')
+        ->and($mounted?->getModalSubmitAction())->toBeFalsy()
+        ->and(caLinkQuery((string) $thread->instance()->getMountedAction()?->getModalContent()?->render(), $png->id))->toMatchArray(['mode' => 'inline', 'u' => $this->admin->id]);
+});
+
+it('gives a Partner the lightbox and the new-tab link only for visible files of the own task', function (): void {
+    $task = caTask($this->partner, $this->project);
+    [, $png] = caCommentWithBytes($this->admin, $task, 'picture-example.png', caPngBytes());
+    [, $pdf] = caCommentWithBytes($this->admin, $task, 'paper-example.pdf', caPdfBytes());
+    [, $secretPdf] = caCommentWithBytes($this->admin, $task, 'internal-paper-example.pdf', caPdfBytes(), internal: true);
+    [, $hiddenPdf] = caCommentWithBytes($this->admin, $task, 'hidden-paper-example.pdf', caPdfBytes());
+    app(PartnerContext::class)->runAsSystem(static function () use ($hiddenPdf): void {
+        Document::query()->whereKey($hiddenPdf->id)->update(['visible_to_client' => false]);
+    });
+
+    $thread = caPartnerThread($this->partner, $task);
+    $html = $thread->html();
+
+    expect($html)->toContain("mountAction('previewCommentImage', { document: '{$png->id}' })")
+        ->and(caLinkQuery($html, $pdf->id))->toMatchArray(['mode' => 'inline', 'u' => $this->partner->id])
+        ->and(substr_count($html, 'signature='))->toBe(1)
+        ->and($html)->not->toContain($secretPdf->id)
+        ->and($html)->not->toContain($hiddenPdf->id)
+        ->and($html)->not->toContain('internal-paper-example.pdf')
+        ->and($html)->not->toContain('hidden-paper-example.pdf');
+
+    $thread->mountAction('previewCommentImage', ['document' => $png->id]);
+
+    expect(caLinkQuery((string) $thread->instance()->getMountedAction()?->getModalContent()?->render(), $png->id))->toMatchArray(['mode' => 'inline', 'u' => $this->partner->id]);
+
+    // The hidden and the internal file answer 404 even for a type that would qualify.
+    foreach ([$secretPdf->id, $hiddenPdf->id] as $forged) {
+        caPartnerThread($this->partner, $task)->mountAction('previewCommentImage', ['document' => $forged])->assertNotFound();
+    }
+});
+
+it('answers 404 to the lightbox for a document that is not an image', function (): void {
+    $task = caTask($this->admin, $this->project);
+    [, $pdf] = caCommentWithBytes($this->admin, $task, 'paper-example.pdf', caPdfBytes());
+    [, $txt] = caCommentWithBytes($this->admin, $task, 'note-example.txt', 'Fictional note');
+
+    $this->actingAs($this->admin);
+
+    foreach ([$pdf->id, $txt->id] as $notImage) {
+        caAdminThread($task)->mountAction('previewCommentImage', ['document' => $notImage])->assertNotFound();
     }
 });
 

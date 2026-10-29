@@ -14,6 +14,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Tasks\Actions\AddTaskComment;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\Models\TaskComment;
+use App\Filament\Support\DocumentActions;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
@@ -24,6 +25,8 @@ use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Contracts\View\View as ViewContract;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -48,10 +51,15 @@ use Throwable;
  * Files (DO-01, D-02, D-05): the form carries a separate `files` field, never an editor attachment (the
  * editors keep `fileAttachments(false)`, D-22). addComment() saves the comment and its files in one
  * transaction through AddTaskComment and AttachDocuments, so one cannot exist without the other. The files
- * are listed under their comment; the thread never renders a link. A button calls a method of this
- * component with the document id, which re-reads the document through the scoped query restricted to the
- * comments of this task (so a forged id of another task, another client or an internal comment is a 404),
- * authorizes it and mints the signed link only at click time (D-10).
+ * are listed under their comment. A button calls this component with the document id, which re-reads the
+ * document through the scoped query restricted to the comments of this task (so a forged id of another task,
+ * another client or an internal comment is a 404), authorizes it and mints the signed link only at click time
+ * (D-10): the download redirects, and an image opens in the lightbox (D-08), whose link is minted when the
+ * modal renders. The one exception, decided by the owner in Phase 17: a PDF (an inline non-image file) is a
+ * real `target="_blank"` link rendered into the thread, minted for the viewing user, for a file the viewer
+ * may `view` only. It is bound to the viewer (`u` under the signature), lives for
+ * `kokpit.documents.signed_url_ttl_seconds`, and the unchanged file route guards it; a thread left open
+ * longer holds an expired link that answers 403 in the new tab until it renders again.
  *
  * @property-read Schema $commentForm The form schema Filament's InteractsWithSchemas resolves from commentForm().
  */
@@ -123,12 +131,17 @@ trait RendersTaskCommentThread
     {
         return $schema->components([
             View::make('filament.tasks.comment-thread')
-                ->viewData(fn (): array => [
-                    'comments' => $this->comments(),
-                    'emptyHeading' => $this->emptyHeading(),
-                    'emptyDescription' => $this->emptyDescription(),
-                    'showInternal' => $this->acceptsInternalFlag(),
-                ]),
+                ->viewData(function (): array {
+                    $comments = $this->comments();
+
+                    return [
+                        'comments' => $comments,
+                        'emptyHeading' => $this->emptyHeading(),
+                        'emptyDescription' => $this->emptyDescription(),
+                        'showInternal' => $this->acceptsInternalFlag(),
+                        'previewUrls' => $this->previewUrls($comments),
+                    ];
+                }),
             Form::make([EmbeddedSchema::make('commentForm')])
                 ->livewireSubmitHandler('addComment')
                 ->footer([
@@ -217,17 +230,16 @@ trait RendersTaskCommentThread
     }
 
     /**
-     * Redirects to the signed inline preview; only a type on the inline allowlist has one.
+     * The lightbox of an image under a comment (D-08), the same modal as the Soubory lists. The id is
+     * client-controlled: the document is re-read through the scoped query restricted to the comments of this
+     * task (404 otherwise), authorized with `view`, and must be an inline image; only then is the link minted.
      */
-    public function previewCommentDocument(string $documentId): void
+    public function previewCommentImageAction(): Action
     {
-        $document = $this->commentDocument($documentId);
-        $actor = $this->commentActor();
-
-        Gate::forUser($actor)->authorize('view', $document);
-        abort_unless(DocumentDisposition::isInline($document), 404);
-
-        $this->redirect(DocumentUrl::preview($document, $actor));
+        return DocumentActions::lightboxModal(Action::make('previewCommentImage')
+            ->label(__('documents.comments.preview'))
+            ->modalHeading(fn (array $arguments): Htmlable => DocumentActions::lightboxHeading($this->previewableImage($arguments)->name))
+            ->modalContent(fn (array $arguments): ViewContract => DocumentActions::lightboxView($this->previewableImage($arguments), $this->commentActor())));
     }
 
     /**
@@ -264,6 +276,47 @@ trait RendersTaskCommentThread
 
                 Notification::make()->success()->title(__('documents.notifications.deleted'))->send();
             });
+    }
+
+    /**
+     * The image document named by the arguments of the preview action: a file of this task's comments that the
+     * actor may view and whose stored type is an inline image, or 404/403.
+     *
+     * @param  array<string, mixed>  $arguments
+     */
+    private function previewableImage(array $arguments): Document
+    {
+        $document = $this->commentDocument(is_string($arguments['document'] ?? null) ? $arguments['document'] : '');
+
+        Gate::forUser($this->commentActor())->authorize('view', $document);
+        abort_unless(DocumentDisposition::isInlineImage($document), 404);
+
+        return $document;
+    }
+
+    /**
+     * The new-tab links of the PDFs in the thread (document id to URL): every listed document that is inline,
+     * not an image and viewable by the actor. Images get none (they open in the lightbox), nor does any other file.
+     *
+     * @param  Collection<int, TaskComment>  $comments
+     * @return array<string, string>
+     */
+    private function previewUrls(Collection $comments): array
+    {
+        $actor = $this->commentActor();
+        $urls = [];
+
+        foreach ($comments as $comment) {
+            foreach ($comment->documents as $document) {
+                if (DocumentDisposition::isInline($document)
+                    && ! DocumentDisposition::isInlineImage($document)
+                    && Gate::forUser($actor)->allows('view', $document)) {
+                    $urls[(string) $document->getKey()] = DocumentUrl::preview($document, $actor);
+                }
+            }
+        }
+
+        return $urls;
     }
 
     /**
