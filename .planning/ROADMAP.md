@@ -1044,7 +1044,7 @@ Plans:
 - Search results ordering: within each category, active (not completed) tasks and projects come first; the current order of categories and the display stay as they are.
 - Time entries can be added directly from a task.
 - A task can be flagged to be hidden from the kanban board; by default every task is shown.
-- Signal: the task can be picked from the system via type-ahead over unfinished tasks inside the existing text field, without switching modes. A picked task inserts the text `{PROJECT}: {task code} {task name}` and is linked; a cross icon in the input clears the pick so free text can be typed again; if nothing is picked, plain unlinked text is stored. In the signal listing, a linked task shows a timer control and an open-task icon (the name itself is not a link).
+- Signal: the task can be picked from the system via type-ahead over unfinished tasks inside the existing text field, without switching modes. A picked task inserts the text `{PROJECT}: {task name} [{task code}]` (`{PROJECT}` = project name; built server-side, truncated to 255 characters) and is linked; a cross icon in the input clears the pick so free text can be typed again; if nothing is picked, plain unlinked text is stored. In the signal listing, a linked task shows a timer control and an open-task icon (the name itself is not a link).
 - Files: image previews open in a single-image modal/lightbox (no navigation between images); non-image files open in a new window.
 - Task creation: the project suggestions offer only projects not in the "Completed" state (if not already so).
 - Projects: the status can be changed from the project view, similar to the task view.

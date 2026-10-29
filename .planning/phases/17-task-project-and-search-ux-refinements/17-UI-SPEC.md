@@ -16,6 +16,8 @@ This phase adds no new screens and no new design language. It is ten refinements
 
 Sources: D-01..D-12 and the plan-phase clarifications from 17-CONTEXT.md; 17-RESEARCH.md for stack and seams; the live code (`resources/views/livewire/signal/day.blade.php`, `TaskResource::timerAction()`, `ViewTask`, `ViewProject`) for existing conventions.
 
+Amended at plan-phase on 2026-10-29 to match the plans (popup-blocked toast removed, rich-text links keep their forced new tab, reused copy keys); every change is listed under "Plan-phase Amendments" at the end.
+
 ---
 
 ## Design System
@@ -127,24 +129,24 @@ All app-facing copy is Czech and lives in `lang/cs/kokpit.php` and `lang/cs/docu
 | New-task modal heading / submit (modal primary) | "Nový úkol" / "Vytvořit úkol" | reuse `kokpit.tasks.actions.create_heading`, `create_submit` |
 | Locked project helper (new-task modal) | "Projekt je daný detailem projektu." | new, `kokpit.tasks.hints.project_locked` |
 | Header action (secondary, gray) — task header | "Přidat čas" | new, `kokpit.time.task.add_time` |
-| Add-time modal heading / submit | "Přidat čas k úkolu" / "Uložit záznam" | new, `kokpit.time.task.add_time_heading`, `add_time_submit` |
+| Add-time modal heading / submit | "Přidat čas k úkolu" / "Uložit záznam" | heading new, `kokpit.time.task.add_time_heading`; submit reuses `kokpit.time.save` (existing, same copy) |
 | Add-time locked-context helper | "Klient, projekt a úkol jsou dané úkolem." | new, `kokpit.time.task.context_locked` |
-| Add-time success toast | "Záznam byl uložen" | new, `kokpit.time.task.saved` |
+| Add-time success toast | "Záznam byl uložen" | reuse `kokpit.time.saved` (existing, same copy) |
 | Change project status — action / heading / submit | "Změnit stav" / "Změnit stav projektu" / "Uložit stav" | action and submit reuse the task wording; heading new, `kokpit.projects.actions.change_status_heading` |
 | Change project status success toast | "Stav projektu byl změněn" | new, `kokpit.projects.notifications.status_changed` |
 | Hide-from-board checkbox label | "Skrýt na nástěnce" | new, `kokpit.tasks.fields.hidden_on_board` |
 | Hide-from-board helper | "Úkol se nezobrazí na kanbanové nástěnce. V seznamech, hledání a na detailu zůstává." | new, `kokpit.tasks.hints.hidden_on_board` |
 | Signal input placeholder (replaces "Název úkolu") | "Název úkolu nebo hledání v úkolech" | change of `kokpit.signal.day.new_placeholder` |
 | Signal clear-pick cross (tooltip and `aria-label`) | "Zrušit výběr úkolu" | new, `kokpit.signal.day.clear_pick` |
-| Signal open-task icon (tooltip and `aria-label`) | "Otevřít úkol" | new, `kokpit.signal.day.open_task` |
+| Signal open-task icon (tooltip and `aria-label`) | "Otevřít úkol" | reuse `kokpit.task_board.card.open` (existing, same copy) |
 | Signal timer icon (tooltip and `aria-label`) | "Spustit časovač" / "Zastavit časovač" | reuse `kokpit.time.timer.start` / `stop` |
 | Signal suggestion empty state | No list and no message: the dropdown simply closes and the typed text stays free text | see UI Considerations |
 | Empty state heading (task time, project tasks) | unchanged | no new empty state is introduced |
 | Empty state body | unchanged | idem |
 | Error state — picked task no longer available | "Úkol už není k dispozici. Vyberte jiný, nebo napište text ručně." | new, `kokpit.signal.errors.task_unavailable` (shown as the existing Signal validation error/notification) |
 | Error state — add-time rejected (archived or inconsistent context) | Show the domain message as a danger `Notification` titled "Záznam se nepodařilo uložit" with the validation message as body | locked fields cannot show inline errors; new title `kokpit.time.task.save_failed` |
-| Error state — image preview fails to load | "Náhled se nepodařilo načíst. Zavřete okno a zkuste to znovu." | new, `kokpit.documents.errors.preview_failed` (shown in the lightbox in place of the image) |
-| Error state — popup blocked (non-image file) | Warning `Notification`: "Prohlížeč zablokoval nové okno. Povolte vyskakovací okna pro tento web a zkuste to znovu." | new, `documents.errors.popup_blocked` |
+| Error state — image preview fails to load | "Náhled se nepodařilo načíst. Zavřete okno a zkuste to znovu." | new, `documents.errors.preview_failed` in `lang/cs/documents.php` (shown in the lightbox in place of the image) |
+| Error state — popup blocked (non-image file) | Removed at plan-phase: the PDF opens from a real link click with `target="_blank"`, which a popup blocker does not intercept, so there is no blocked state and no toast | no key |
 | Lightbox close button | "Zavřít" | new, `documents.actions.close` |
 | Preview action label (all file lists) | "Zobrazit" | unchanged, `documents.actions.preview` |
 | Destructive confirmation | none new in this phase. Clearing a picked signal task is reversible by picking again and has no confirmation. Existing archive/delete confirmations are unchanged. | n/a |
@@ -163,7 +165,7 @@ Notes: toast titles are sentence case, no trailing period, no exclamation marks,
 
 ### 2. Rich text read-only (P17-2, D-09)
 - Wrap every read-only rich-text output in the `fi-prose` class: the Admin and Partner description `TextEntry` (`->prose()`), the board task-preview partial (`<div class="fi-prose">`, keeps `overflow-x: auto; overflow-wrap: anywhere`), and comments (already `fi-prose`, verify unchanged).
-- Rendered formatting that must be visible: bold, italic, underline, strike, bullet and numbered lists with markers and indentation, headings, blockquote with a left border, links (primary color, open in the same tab), inline code and code blocks, tables with borders (horizontally scrollable, never widening the page).
+- Rendered formatting that must be visible: bold, italic, underline, strike, bullet and numbered lists with markers and indentation, headings, blockquote with a left border, links (primary color; they keep the `target="_blank"` and `rel="noopener noreferrer nofollow"` that `RichText::render()` forces, so they open in a new tab), inline code and code blocks, tables with borders (horizontally scrollable, never widening the page).
 - Keep `RichText::render()` as the only sanitiser. No `style`, `class` or data attributes pass through. Images are not part of rich text in this phase.
 - Light and dark themes both verified; prose uses Filament's own theme-aware colors, no overrides.
 - E-mails and PDFs are untouched.
@@ -208,7 +210,7 @@ Layout (the add form of `signal/day.blade.php`; edit mode is unchanged and has n
 
 ### 9. Signal listing: linked task (P17-7, D-01, D-02)
 - Row structure (left to right): drag handle, done circle, title (plain text, never a link), recurring icon, then a right-hand cluster of 4px-spaced `icon-button size="sm"` controls: **timer**, **open task**, edit, delete.
-- **Timer control:** `heroicon-m-play` gray when idle, `heroicon-m-stop` with `color="warning"` when this task is the user's running one; `aria-pressed` reflects running. Tooltip and label "Spustit časovač" / "Zastavit časovač". It is the shared task timer: starting it stops a timer running elsewhere with the same toast the timer bar shows. It is hidden (not disabled) when the linked task is completed or archived. State refreshes on `timer-started` / `timer-stopped` / `time-entry-saved`, so today and tomorrow panels and the top bar never disagree.
+- **Timer control:** `heroicon-m-play` gray when idle, `heroicon-m-stop` with `color="warning"` when this task is the user's running one; `aria-pressed` reflects running. Tooltip and label "Spustit časovač" / "Zastavit časovač". It is the shared task timer: starting it stops a timer running elsewhere with the same toast the timer bar shows. It is hidden (not disabled) when the linked task is completed or archived. State refreshes on `timer-started` / `timer-stopped` / `time-entry-saved` / `time-entry-deleted`, so today and tomorrow panels and the top bar never disagree.
 - **Open-task control:** an `<a>` styled as a gray `icon-button size="sm"` with `heroicon-m-arrow-top-right-on-square`, label "Otevřít úkol", opening the task detail in the same tab (SPA navigation). It stays while the task exists, including when completed or archived. If the link was cleared (task deleted), neither control renders and the row looks like any plain signal.
 - The timer and open controls are independent of the lock state of the day: they do not edit the signal, so they render even on a locked past day (inside their own `wire:sort:ignore` container). Edit and delete keep their existing `can_edit` condition.
 - Done signals (strike-through, 60% opacity) keep the controls at full opacity so they remain usable.
@@ -217,7 +219,8 @@ Layout (the add form of `signal/day.blade.php`; edit mode is unchanged and has n
 ### 10. Files: lightbox and new window (P17-8, D-08)
 - The explicit "Zobrazit" action stays in every file list and in comment attachments, in both panels. Its behaviour depends on the file type:
   - **Image** (`image/png`, `image/jpeg`, `image/gif`, `image/webp`; never SVG): opens a Filament modal, width 5xl, heading = file name (16px/600, ellipsis, with the standard close X), body = the image centered, `max-width: 100%`, `max-height: 80vh`, `object-fit: contain`, `alt` = file name, 16px body padding, no submit button, footer with one gray "Zavřít" button. ESC, close X and backdrop click close it. No previous/next, no zoom, no thumbnails strip. While the image loads, show a centered `loading-indicator`; if it errors, replace it with the "Náhled se nepodařilo načíst..." message. The image URL is minted when the modal renders and never appears in list HTML.
-  - **Non-image** (PDF and everything else): opens in a new browser tab/window (`_blank`, no opener) on click. If the browser blocks it, show the "Prohlížeč zablokoval nové okno..." warning toast. The current page stays where it is.
+  - **Non-image inline file** (PDF): "Zobrazit" is a real link (`<a href target="_blank">`, no opener) that opens the file in a new browser tab; its signed, user-bound link is rendered with the row (owner decision "Signed PDF link exception", 17-CONTEXT.md). A real link click is not intercepted by popup blockers, so there is no blocked state and no toast. A page left open longer than the 120 s link lifetime opens a 403 in the new tab until the list renders again (accepted by the owner). The current page stays where it is.
+  - **Every other type** (outside the inline allowlist, SVG included): no "Zobrazit"; the existing download action stays, and a download is an attachment that never replaces the page.
 - The Partner panel shows the same behaviour only for files the Partner may already see; no new affordance appears for hidden files.
 
 ---
@@ -243,7 +246,7 @@ Applicable state considerations resolved: 11 covered, 3 backstop, 0 unresolved
 | error | Image lightbox: image fails to load or the 120 s link expired while the modal stays open | ✅ covered | The image slot is replaced by "Náhled se nepodařilo načíst. Zavřete okno a zkuste to znovu." and the footer "Zavřít" still works |
 | long-text | Lightbox heading with a long file name | 🧪 backstop | Heading truncates with ellipsis in one line; held-out visual check at 320px and 1280px widths |
 | overflow | Rendered rich text containing wide tables or long unbroken strings | 🧪 backstop | Tables scroll horizontally inside the prose container and long strings wrap; held-out visual check in light and dark themes on the admin task view, the Partner task view and the board preview |
-| partial | Non-image file open when the popup is blocked | 🧪 backstop | Behaviour depends on the browser's popup policy (Safari is strictest); manual check in Safari, Chrome and Firefox at end of phase, expected result is the warning toast, never a silent no-op |
+| partial | Non-image (PDF) file opened in a new tab | 🧪 backstop | The PDF opens from a real link click with `target="_blank"`, which popup blockers do not intercept; manual check in Safari, Chrome and Firefox at end of phase; expected result: the new tab opens and the list page stays, never a silent no-op; on a page left open past 120 s the new tab answers 403 until the list renders again (accepted, owner decision) |
 
 <!-- Status vocabulary (locked by probe-core projectTruths):
      ✅ covered   → a plain truth string lifted into must_haves.truths
@@ -271,6 +274,21 @@ Applicable state considerations resolved: 11 covered, 3 backstop, 0 unresolved
 |----------|-------------|-------------|
 | shadcn official | none (Tool: none, not applicable) | not required |
 | Third-party registries | none | not applicable; no third-party UI blocks or packages are introduced in this phase (the lightbox is a Filament modal, not a JS lightbox library) |
+
+---
+
+## Plan-phase Amendments
+
+Applied on 2026-10-29 so this contract matches the plans. Approval below still holds for everything not listed.
+
+| # | Section | Was | Now | Source |
+|---|---------|-----|-----|--------|
+| 1 | Copywriting, Interaction 10, UI Considerations | Warning toast "Prohlížeč zablokoval nové okno..." when a popup blocker stops the non-image file | Removed: the PDF opens from a real link click with `target="_blank"`, which is never blocked; the backstop row now checks that the tab opens | 17-02 R-17-02-3; 17-CONTEXT.md "Non-image files", "Signed PDF link exception" |
+| 2 | Interaction 10 | Non-image link minted at click time; "PDF and everything else" opens in a new tab | The PDF link is rendered with the row (the one owner-approved signed-link exception, 403 after 120 s on a stale page accepted); types outside the inline allowlist keep download only | 17-02 R-17-02-3; 17-CONTEXT.md "Signed PDF link exception" |
+| 3 | Interaction 2 | Rich-text links open in the same tab | Links keep the `target="_blank"` and `rel` that `RichText::render()` forces, because D-09 keeps that sanitiser as the authority | 17-03 R-17-03-4; 17-CONTEXT.md "Owner-visible rulings" |
+| 4 | Copywriting | New keys `add_time_submit`, `kokpit.time.task.saved`, `kokpit.signal.day.open_task` | The existing keys with the same copy are reused: `kokpit.time.save`, `kokpit.time.saved`, `kokpit.task_board.card.open` (rule: reuse an existing string) | 17-08 R-17-08-4; 17-04 R-17-04-7 |
+| 5 | Copywriting | `kokpit.documents.errors.preview_failed` | `documents.errors.preview_failed` (the file copy lives in `lang/cs/documents.php`) | 17-02 R-17-02-6 |
+| 6 | Interaction 9 | Refresh on timer-started, timer-stopped, time-entry-saved | Also on time-entry-deleted | 17-06 R-17-06-4 |
 
 ---
 

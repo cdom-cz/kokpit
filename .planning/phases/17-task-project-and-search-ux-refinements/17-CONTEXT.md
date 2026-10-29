@@ -117,3 +117,17 @@ None — discussion stayed within phase scope
 - **Editing a linked signal:** keeps the task link; the title text can be changed freely.
 - **Non-image files:** open in a new window/tab by adding `target="_blank"` to the existing open behaviour (no new route, no `window.open`). Images use the single-image lightbox.
 - **Archived linked task in the signal listing:** open-task icon stays, timer control is hidden (research reading of D-01, not explicitly contested).
+- **Signed PDF link exception (owner decision, 2026-10-29):** accepted as planned in 17-02 R-17-02-3. The inline preview of a non-image file (a PDF) is the single case where a page renders a signed file link into its HTML: a `target="_blank"` link, minted when the row renders, bound to the viewing user and guarded by the unchanged route (authenticated panel route, `signed`, `u` must equal the signed-in user, the Partner-scoped lookup, the `view` policy, `nosniff`, the no-referrer header) with the existing 120-second lifetime. Downloads, ZIP archives and image previews keep the click-time rule. A page left open longer than 120 seconds holds an expired PDF link that answers 403 in the new tab until the list renders again; this is accepted: no change to the link lifetime and no click-time `window.open`. The CONTRIBUTING Documents rule is rewritten in 17-08 (R-17-08-5 a) to name this one exception. It departs from the Phase 9 rule that no screen renders a signed link (Phase 9 D-10, T-09-18) for this case only. Threat T-17-04 (17-02) cites this decision.
+- **Preview trigger (RESEARCH Open Question 5):** the explicit "Zobrazit" row action stays the only trigger of the lightbox and of the PDF tab, in every file list and under comments; the file name and the row are not made clickable (17-02 R-17-02-2).
+- **RESEARCH Open Questions, all resolved:** 1 -> "Signal text format"; 2 -> "D-11 scope"; 3 -> "Editing a linked signal"; 4 -> "Non-image files" and "Signed PDF link exception"; 5 -> "Preview trigger"; 6 -> "Archived linked task in the signal listing" (all in this section).
+
+### Owner-visible rulings (planner rulings, accepted; the owner may still contest them at verification)
+
+None of these changes a locked decision; each is recorded in the named plan and flagged in its SUMMARY.
+
+- Rich-text links keep the `target="_blank"` and `rel="noopener noreferrer nofollow"` that `RichText::render()` forces; the UI-SPEC wording "open in the same tab" was amended to match, because changing it would loosen the one sanitiser that D-09 keeps (17-03 R-17-03-4).
+- Inside the global-search task group, each part (not Done first, then Done) is ordered newest first; task results had no order before (17-05 R-17-05-1).
+- "Nový úkol" on the project view is hidden for a Done project and also for an archived project and a project of an archived client; "Změnit stav" is hidden on an archived project (17-07 R-17-07-5 and R-17-07-6, research A6).
+- The add-time modal pre-fills start one hour ago and end now (17-08 R-17-08-2, research A10).
+- The Signal type-ahead matches case-insensitively with `ILIKE` but not accent-insensitively, and orders suggestions by project key, then task number (17-04 R-17-04-3, research A9).
+- From a stale Signal row of a Done or archived task, starting the timer is refused while stopping its own running timer stays possible (17-06 R-17-06-3).
