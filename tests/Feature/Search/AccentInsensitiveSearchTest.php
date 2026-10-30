@@ -2,10 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clients\Models\Client;
+use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Database\AccentInsensitiveSearch;
 use App\Domain\Signal\Queries\LinkableTasks;
+use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Filament\Concerns\SearchesGloballyWithoutAccents;
+use App\Filament\Resources\ClientResource;
+use App\Filament\Resources\ProjectResource;
+use App\Filament\Resources\TaskResource;
 use Filament\Facades\Filament;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -90,6 +97,25 @@ function accSearchIndexNames(): array
         ->all();
 
     return $names;
+}
+
+/**
+ * The titles of the panel global search for a term, category label => list of titles.
+ *
+ * @return array<string, list<string>>
+ */
+function accSearchGlobal(string $term): array
+{
+    $results = Filament::getCurrentOrDefaultPanel()->getGlobalSearchProvider()?->getResults($term);
+    $categories = [];
+
+    foreach ($results?->getCategories() ?? [] as $label => $items) {
+        foreach ($items as $item) {
+            $categories[$label][] = (string) $item->title;
+        }
+    }
+
+    return $categories;
 }
 
 /**
@@ -206,6 +232,79 @@ describe('the Signal type-ahead', function (): void {
 
         expect(accSearchOffered('sumava'))->toBe(['SUM-1'])
             ->and(accSearchOffered('ŠUMAVA'))->toBe(['SUM-1']);
+    });
+});
+
+describe('the global search', function (): void {
+    it('finds a client, a project and a task whatever the diacritics and the letter case', function (): void {
+        Client::factory()->create(['name' => 'Example Školní jídelna']);
+        Client::factory()->create(['name' => 'Example Plain client']);
+        accSearchTask(accSearchProject('SUM', 'Example Šumava web'), 'Example plain title');
+        accSearchTask(accSearchProject('ATL', 'Example Atlas'), 'Example Žlutý kůň');
+
+        foreach (['skolni', 'ŠKOLNÍ', 'Školní'] as $term) {
+            expect(accSearchGlobal($term))->toBe(['Klienti' => ['Example Školní jídelna']]);
+        }
+
+        expect(accSearchGlobal('sumava'))->toBe(['Projekty' => ['SUM · Example Šumava web']])
+            ->and(accSearchGlobal('zluty kun'))->toBe(['Úkoly' => ['ATL-1 · Example Žlutý kůň']])
+            ->and(accSearchGlobal('ŽLUTÝ KŮŇ'))->toBe(['Úkoly' => ['ATL-1 · Example Žlutý kůň']])
+            ->and(accSearchGlobal('zluty banana'))->toBe([]);
+    });
+
+    it('searches through the index expression', function (): void {
+        accSearchTask(accSearchProject(), 'Example Žlutý kůň');
+
+        DB::enableQueryLog();
+        accSearchGlobal('zluty');
+        $queries = array_column(DB::getQueryLog(), 'query');
+        DB::disableQueryLog();
+
+        $matching = array_filter($queries, static fn (string $sql): bool => str_contains($sql, 'kokpit_search_text("tasks"."reference")')
+            && str_contains($sql, 'kokpit_search_text("tasks"."title")'));
+
+        expect($matching)->not->toBe([]);
+    });
+
+    it('finds nothing for a Partner, whatever the diacritics', function (): void {
+        $client = Client::factory()->create(['name' => 'Example Školní partner']);
+        $project = app(CreateProject::class)->handle($client, [
+            'name' => 'Example Šumava partner',
+            'key' => 'PSK',
+            'billing_type' => 'hourly',
+            'client_visible' => true,
+        ]);
+        app(CreateTask::class)->handle($this->admin, $project, ['title' => 'Example Žlutý partner']);
+
+        $terms = ['skolni', 'sumava', 'zluty'];
+
+        // The control: the Admin finds each term, so the empty Partner answer is the rule and not an empty index.
+        foreach ($terms as $term) {
+            expect(accSearchGlobal($term))->not->toBe([]);
+        }
+
+        $this->actingAs(Canary::partnerFor($client->id));
+
+        foreach ($terms as $term) {
+            expect(accSearchGlobal($term))->toBe([]);
+        }
+    });
+
+    it('is built from the trait on every globally searchable resource', function (): void {
+        $searchable = array_values(array_filter(
+            Filament::getResources(),
+            static fn (string $resource): bool => $resource::canGloballySearch(),
+        ));
+        sort($searchable);
+
+        $expected = [ClientResource::class, ProjectResource::class, TaskResource::class];
+        sort($expected);
+
+        expect($searchable)->toBe($expected);
+
+        foreach ($searchable as $resource) {
+            expect(class_uses_recursive($resource))->toContain(SearchesGloballyWithoutAccents::class);
+        }
     });
 });
 
