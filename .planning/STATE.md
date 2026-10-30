@@ -3,11 +3,11 @@ gsd_state_version: "1.0"
 current_phase: "10.1"
 current_phase_name: Invoices stay fully editable until sent, with a manual unlock
 status: verifying
-stopped_at: Phase 10 complete, ready to verify Phase 10.1
-last_updated: "2026-10-30T11:06:16.789Z"
+stopped_at: Phase 17.1 context gathered
+last_updated: "2026-10-30T14:30:31.164Z"
 last_activity: 2026-10-30
 last_activity_desc: Phase 10 complete, transitioned to Phase 10.1
-state_head: e2743d5f078ad1e8fe0272f983b4809f9768ee15
+state_head: 8a7846c65bf413f2524f13d7593fb7c712b55f93
 progress:
   total_phases: 20
   completed_phases: 10
@@ -969,6 +969,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-29T07:58:52.034Z
-Stopped at: Phase 10 complete, ready to verify Phase 10.1
-Resume file: .planning/phases/17-task-project-and-search-ux-refinements/17-UI-SPEC.md
+Last session: 2026-10-30T14:30:29.770Z
+Stopped at: Phase 17.1 context gathered
+Resume file: .planning/phases/17.1-close-gap-g1-g2-release-time-on-full-partial-credit-and-reje/17.1-CONTEXT.md
