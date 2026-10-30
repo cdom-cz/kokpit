@@ -6,7 +6,9 @@ namespace App\Providers;
 
 use App\Domain\Notifications\Mail\EmbedMailLogo;
 use App\Domain\Notifications\Mail\MailBrand;
+use App\Filament\Support\AccentInsensitiveTextColumn;
 use App\Support\ProductionConfigGuard;
+use Filament\Tables\Columns\TextColumn;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Mail\Events\MessageSending;
@@ -25,6 +27,10 @@ class AppServiceProvider extends ServiceProvider
         // The supplier branding of every e-mail: one read per request, console run or queue job, and the next job
         // reads again (the scope PartnerContext uses). MailBrand::read() runs as system and never throws (D-03).
         $this->app->scoped(MailBrand::class, static fn (): MailBrand => MailBrand::read());
+
+        // Filament's Column::make() resolves a column through the container, so this binding is the one hook that makes
+        // the search of every table text column ignore diacritics and letter case (CONTRIBUTING "Search").
+        $this->app->bind(TextColumn::class, AccentInsensitiveTextColumn::class);
     }
 
     /**

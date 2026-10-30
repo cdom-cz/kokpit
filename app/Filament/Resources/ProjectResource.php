@@ -16,6 +16,7 @@ use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Tags\TagType;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
+use App\Filament\Concerns\SearchesGloballyWithoutAccents;
 use App\Filament\RelationManagers\ProjectDocumentsRelationManager;
 use App\Filament\RelationManagers\ProjectHistoryRelationManager;
 use App\Filament\Resources\ProjectResource\Pages\CreateProject;
@@ -75,6 +76,7 @@ use Illuminate\Support\Str;
 final class ProjectResource extends Resource
 {
     use EnforcesResourceAccessRule;
+    use SearchesGloballyWithoutAccents;
 
     protected static ?string $model = Project::class;
 

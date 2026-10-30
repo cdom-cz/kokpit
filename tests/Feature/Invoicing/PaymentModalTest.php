@@ -5,11 +5,13 @@ declare(strict_types=1);
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Invoicing\Actions\ConvertProforma;
+use App\Domain\Invoicing\Actions\DeletePayment;
 use App\Domain\Invoicing\Actions\IssueCreditNote;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\PaymentMethod;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Resources\InvoiceResource\Pages\ViewInvoice;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelationManager;
@@ -293,5 +295,28 @@ describe('the fields of the modal', function (): void {
         app(ConvertProforma::class)->handle($this->admin, $proforma);
 
         paymentTab($proforma)->assertActionHidden(TestAction::make('recordPayment')->table());
+    });
+});
+
+describe('a converted proforma that owes its total again (Phase 17.1, D-05 to D-07, D-09)', function (): void {
+    it('refuses the payment under the amount with the number of the invoice and stores nothing', function (): void {
+        $proforma = InvoiceFixtures::issued(InvoiceFixtures::client(), [], InvoiceKind::Proforma);
+        $source = app(RecordPayment::class)->handle($this->admin, $proforma, ['amount' => '1000.00', 'paid_on' => '2026-10-14']);
+        $invoice = app(ConvertProforma::class)->handle($this->admin, $proforma);
+
+        // The invoice-side copy goes first, then the proforma payment: the proforma owes its total again.
+        app(DeletePayment::class)->handle($this->admin, InvoicePayment::query()->where('invoice_id', $invoice->id)->sole());
+        app(DeletePayment::class)->handle($this->admin, $source);
+
+        paymentPage($proforma)
+            ->assertActionVisible('recordPayment')
+            ->mountAction('recordPayment')
+            ->callMountedAction()
+            ->assertHasActionErrors(['amount' => __('invoices.errors.payment_on_converted_proforma', ['number' => (string) $invoice->number])])
+            ->assertNotNotified('Platba byla uložena');
+
+        expect(InvoicePayment::query()->where('invoice_id', $proforma->id)->count())->toBe(0)
+            ->and(InvoicePayment::query()->where('invoice_id', $invoice->id)->count())->toBe(0)
+            ->and(Transaction::query()->count())->toBe(0);
     });
 });

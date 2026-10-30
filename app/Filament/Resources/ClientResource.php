@@ -24,6 +24,7 @@ use App\Domain\Shared\Auth\Audience;
 use App\Domain\Shared\Money\Money;
 use App\Domain\Shared\Tags\TagType;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
+use App\Filament\Concerns\SearchesGloballyWithoutAccents;
 use App\Filament\RelationManagers\ClientDocumentsRelationManager;
 use App\Filament\RelationManagers\ClientHistoryRelationManager;
 use App\Filament\Resources\ClientResource\Pages\CreateClient;
@@ -93,6 +94,7 @@ use InvalidArgumentException;
 final class ClientResource extends Resource
 {
     use EnforcesResourceAccessRule;
+    use SearchesGloballyWithoutAccents;
 
     protected static ?string $model = Client::class;
 

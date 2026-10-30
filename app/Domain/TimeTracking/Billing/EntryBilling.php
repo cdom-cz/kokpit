@@ -26,7 +26,8 @@ use LogicException;
  * - bill(): free -> billed by hand, or reserved -> billed by its issued document (the link stays);
  * - unbill(): billed by hand -> free;
  * - reserve() / unreserve(): free <-> reserved;
- * - release(): billed or reserved -> free, link and snapshot cleared (a draft dropped, or a full storno, D-14);
+ * - release(): billed or reserved -> free, link and snapshot cleared (a draft dropped, a full storno, D-14, or the
+ *   last partial credit note that takes back everything, Phase 17.1 D-01);
  * - repoint(): billed by a proforma -> billed by the invoice created from it (D-15), snapshot and billed_at kept.
  *
  * Every method takes rows the caller has already locked FOR UPDATE in id order, and saves each row as a model, so
@@ -139,7 +140,9 @@ final class EntryBilling
 
     /**
      * Returns rows billed or reserved by a document to unbilled with no link and no snapshot: the time of a
-     * cancelled invoice (D-14) or of a dropped draft. The database refuses a release the document does not allow.
+     * cancelled invoice (D-14), of an invoice that partial credit notes took back in full (the credit note that took
+     * back the last quantity, Phase 17.1 D-01) or of a dropped draft. The database refuses a release the document
+     * does not allow.
      *
      * @param  iterable<TimeEntry>  $rows  rows with a link, locked FOR UPDATE in id order
      *

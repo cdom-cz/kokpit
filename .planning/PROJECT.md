@@ -12,25 +12,32 @@ Tracked time turns into an issued, payable invoice in one pass, with no unbilled
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ Repository hygiene tooling (scanner, pre-commit hook, gitleaks, CI scan, contribution rules) — v1
+- ✓ Foundation: Laravel + Filament SPA panel, UUID v7 keys, roles Admin/Partner, settings, activity log, queue, scheduler, CI, Zerops deploy — v1
+- ✓ Clients and contacts (tags, client accounts, ARES lookup) — v1
+- ✓ Projects (keys, client visibility, billing type, rates, fixed price, estimate) — v1
+- ✓ Tasks, subtasks, comments, list filters and kanban (per project and global) — v1
+- ✓ Time tracking (always-visible timer, manual entries, billed locking, timesheet) — v1
+- ✓ REST API `/api/v1` for time entries, lookups and transactions (Sanctum abilities, OpenAPI docs, rate limiting) — v1
+- ✓ CNB exchange rates, reports, dashboard, CSV/XLSX export, work report PDF — v1
+- ✓ Documents on S3-compatible storage, central listing, ZIP download, bulk delete — v1
+- ✓ Finance: income/expense transactions, categories, overview in CZK — v1
+- ✓ Invoicing: number sequences, invoices, proformas, credit notes, PDF with QR, e-mail, billing from time, manual and cash payment with receipts, switchable payment method and currency, send-driven lock with Admin unlock — v1
+- ✓ Stripe: payment links, signed idempotent webhooks, automatic matching, duplicate and unmatched payment handling — v1
+- ✓ Unified HTML e-mail layout and payment confirmations — v1
+- ✓ Partner-view audit: automated leak and client-isolation tests across all screens and API — v1
 
 ### Active
 
-- [ ] Repository hygiene tooling (step 0): .gitignore, sensitive-content check script, pre-commit hook, gitleaks, CI scan, CLAUDE.md rule, CONTRIBUTING section
-- [ ] Foundation: Laravel + Filament SPA panel, UUID (v7) keys across own and package tables, auth, roles (Admin/Partner), settings, activity log, queue worker, scheduler, CI, Zerops deploy, .env.example, README/SECURITY/CONTRIBUTING
-- [ ] Clients and contacts (incl. tags, client accounts, synchronous ARES lookup by company ID)
-- [ ] Projects (Jira-style keys, client visibility flag, billing type, rates, fixed price, estimate)
-- [ ] Tasks and subtasks (shared per-project counter `KEY-N`, todos, comments with internal flag, list view with filters)
-- [ ] Kanban per project and global, drag and drop
-- [ ] Time tracking (always-visible timer, manual entries, one running timer per user, consistency rules, billed locking, timesheet)
-- [ ] REST API `/api/v1` for time entries and lookups; timer endpoints are in the backlog (Sanctum tokens with abilities, OpenAPI docs, rate limiting)
-- [ ] CNB exchange rates (daily scheduled download, idempotent, manual backfill, failure alert)
-- [ ] Reports and dashboard (time per client/project, billable vs billed, CSV/XLSX export, work report PDF)
-- [ ] Documents on S3-compatible storage via medialibrary, central listing, ZIP download, bulk delete
-- [ ] Finance: income/expense transactions and categories, monthly/yearly overview in CZK
-- [ ] Invoicing: number sequences, invoices, proformas, credit notes, PDF, email, billing from time entries, manual payment, client view of issued invoices; non-VAT-payer mode
-- [ ] Stripe: payment links, signed webhooks, automatic matching, duplicate and unmatched payment handling, payments overview
-- [ ] Partner-view audit: automated leak and client-isolation tests across all screens and API
+Next milestone is not defined yet; run `/gsd-new-milestone`. Candidates carried over from the v1 audit (`milestones/v1-MILESTONE-AUDIT.md`):
+
+- [ ] API timer endpoints (AP-03, backlog 999.1)
+- [ ] G1b: release time held by an unpaid issued proforma
+- [ ] G3: dashboard alert for unbilled time older than the current month
+- [ ] G4: reaper, System indicator and resend path for a stuck `payment_confirmations` row
+- [ ] Human UAT and verification of phases 10.1, 11, 12, 13 and 14
+- [ ] Fix the PHPStan error in `ResetAdminTwoFactorCommand.php:39`
+- [ ] Redesign the unreadable time report layout (todo 2026-10-14)
 
 ### Out of Scope
 
@@ -46,13 +53,14 @@ Tracked time turns into an issued, payable invoice in one pass, with no unbilled
 
 ## Context
 
+- Shipped v1 on 2026-10-30: 20 phases, 325 plans, about 84k lines of PHP in `app/` and about 142k in `tests/`; archives in `.planning/milestones/`.
 - Repository is public from the first commit; anything committed is treated as published. All seeds, factories, tests, docs and planning files use fictional data only (`example.com`, non-existent company IDs).
 - Language: code, DB, enums, routes, tests, comments, commit messages in English; all user-facing text in Czech via `lang/cs` (default locale `cs`); invoice and invoice email follow `clients.invoice_language` (`cs`/`en`).
 - Money: bigint minor units plus ISO 4217 currency; time stored UTC (`timestamptz`), shown in `Europe/Prague`; durations in integer seconds, never rounded.
 - Spatie packages preferred: permission, medialibrary, tags, activitylog, settings, query-builder, data, eloquent-sortable, pdf, webhook-client.
 - Deployment target: Zerops; deploy only from published release or manual dispatch, behind a GitHub `production` environment with manual approval.
 - Slow or external work runs in queued, idempotent jobs; synchronous only where the user waits (timer, kanban move, invoice number allocation, ARES lookup).
-- Existing `.planning/codebase/` map was committed before step 0 although the repository contains no application code; treat it as unreliable.
+- The `.planning/codebase/` map predates the application code and is ignored by git; treat it as unreliable and re-map before relying on it.
 
 ## Constraints
 
@@ -112,4 +120,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-24 after Phase 12 plan 12-09 (Partner audit hand-over)*
+*Last updated: 2026-10-30 after v1 milestone*

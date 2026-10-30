@@ -188,6 +188,74 @@ function timeLinkBilledEntry(object $test, bool $locked = false): array
     return [$entry, $invoice];
 }
 
+/**
+ * Inserts one line of 100,00 a unit into the draft document by raw SQL and returns its id; a credit line points at the
+ * line it takes back through $creditedItemId and carries a negative quantity.
+ */
+function timeLinkLine(string $documentId, int $position, string $quantity, ?string $creditedItemId = null): string
+{
+    /** @var object{id: string} $inserted */
+    $inserted = DB::selectOne(
+        "insert into invoice_items (invoice_id, position, description, quantity, unit, unit_price_minor, line_total_minor, credited_item_id, created_at, updated_at) values (?, ?, 'Example line', ?, 'h', 10000, ?, ?, now(), now()) returning id",
+        [$documentId, $position, $quantity, (int) round((float) $quantity * 10000), $creditedItemId],
+    );
+
+    return $inserted->id;
+}
+
+/**
+ * A credit note of the invoice with one credit line per entry of $lines (item id of the invoice to the negative
+ * quantity), issued by raw SQL when $issue says so, otherwise left a draft.
+ *
+ * @param  array<string, string>  $lines
+ */
+function timeLinkCreditLines(string $invoiceId, string $clientId, array $lines, bool $issue): string
+{
+    $creditNote = timeLinkDocument($clientId, [
+        'kind' => 'credit_note',
+        'credited_invoice_id' => $invoiceId,
+        'cancels_invoice' => 'false',
+    ]);
+
+    $position = 1;
+
+    foreach ($lines as $itemId => $quantity) {
+        timeLinkLine($creditNote, $position++, $quantity, $itemId);
+    }
+
+    if ($issue) {
+        timeLinkIssue($creditNote);
+    }
+
+    return $creditNote;
+}
+
+/**
+ * A sent (locked) invoice with a line per quantity and two billed entries, each reserved while the invoice was a draft.
+ *
+ * @param  list<string>  $quantities  the quantity of each line of the invoice
+ * @return array{0: string, 1: string, 2: list<string>, 3: string} the first entry id, the invoice id, the ids of its lines and the second entry id
+ */
+function timeLinkCreditedEntry(object $test, array $quantities): array
+{
+    $invoice = timeLinkDocument($test->timeLinkClientA);
+    $lines = [];
+
+    foreach ($quantities as $index => $quantity) {
+        $lines[] = timeLinkLine($invoice, $index + 1, $quantity);
+    }
+
+    $entry = timeLinkEntry($test->timeLinkUser, $test->timeLinkClientA);
+    $second = timeLinkEntry($test->timeLinkUser, $test->timeLinkClientA);
+    timeLinkReserve($entry, $invoice);
+    timeLinkReserve($second, $invoice);
+    timeLinkIssue($invoice, locked: true);
+    timeLinkBill($entry);
+    timeLinkBill($second);
+
+    return [$entry, $invoice, $lines, $second];
+}
+
 describe('reserving an entry', function (): void {
     it('lets a draft reserve a free entry and release it again', function (): void {
         $draft = timeLinkDocument($this->timeLinkClientA);
@@ -332,7 +400,7 @@ describe('releasing a billed entry', function (): void {
         ));
     });
 
-    it('refuses the release of a locked invoice while it is not cancelled, a partial credit note included', function (): void {
+    it('refuses the release of a locked invoice while it is not cancelled, a partial credit note of an invoice without lines included', function (): void {
         [$entry, $invoice] = timeLinkBilledEntry($this, locked: true);
         $release = fn () => DB::update(
             "update time_entries set invoice_id = null, billing_state = 'unbilled', billed_at = null, billed_rate_minor = null, billed_rate_currency = null, billed_amount_minor = null where id = ?",
@@ -375,6 +443,108 @@ describe('releasing a billed entry', function (): void {
             "update time_entries set invoice_id = null, billing_state = 'unbilled', billed_at = null, billed_rate_minor = null, billed_rate_currency = null, billed_amount_minor = null where id = ?",
             [$entry],
         ));
+    });
+});
+
+describe('releasing the time of an invoice that credit notes took back in full (Phase 17.1)', function (): void {
+    $release = static fn (string $entry) => DB::update(
+        "update time_entries set invoice_id = null, billing_state = 'unbilled', billed_at = null, billed_rate_minor = null, billed_rate_currency = null, billed_amount_minor = null where id = ?",
+        [$entry],
+    );
+    $answer = static fn (string $document): bool => (bool) DB::selectOne('select kokpit_invoice_fully_credited(?) as credited', [$document])->credited;
+
+    it('opens the release only when issued credit notes took back every line with a positive quantity', function () use ($release, $answer): void {
+        [$entry, $invoice, $lines] = timeLinkCreditedEntry($this, ['10', '2', '-1']);
+        $before = DB::selectOne('select xmin::text as version, updated_at from invoices where id = ?', [$invoice]);
+
+        expect($answer($invoice))->toBeFalse();
+        RawSql::expectSqlState('KP001', fn () => $release($entry));
+
+        // The first line credited in full, the second not yet: still closed.
+        timeLinkCreditLines($invoice, $this->timeLinkClientA, [$lines[0] => '-10'], issue: true);
+
+        expect($answer($invoice))->toBeFalse();
+        RawSql::expectSqlState('KP001', fn () => $release($entry));
+
+        // A draft credit note counts for nothing.
+        timeLinkCreditLines($invoice, $this->timeLinkClientA, [$lines[1] => '-2'], issue: false);
+
+        expect($answer($invoice))->toBeFalse();
+        RawSql::expectSqlState('KP001', fn () => $release($entry));
+
+        // A line credited only in part keeps it closed.
+        timeLinkCreditLines($invoice, $this->timeLinkClientA, [$lines[1] => '-1'], issue: true);
+
+        expect($answer($invoice))->toBeFalse();
+        RawSql::expectSqlState('KP001', fn () => $release($entry));
+
+        // The last quantity: open, and the invoice row is not written.
+        timeLinkCreditLines($invoice, $this->timeLinkClientA, [$lines[1] => '-1'], issue: true);
+
+        expect($answer($invoice))->toBeTrue();
+        RawSql::expectAllowed(fn () => $release($entry));
+
+        $row = timeLinkRow($entry);
+        $after = DB::selectOne('select xmin::text as version, updated_at from invoices where id = ?', [$invoice]);
+
+        expect($row->invoice_id)->toBeNull()
+            ->and($row->billing_state)->toBe('unbilled')
+            ->and($row->billed_amount_minor)->toBeNull()
+            ->and($after->version)->toBe($before->version)
+            ->and($after->updated_at)->toBe($before->updated_at);
+    });
+
+    it('answers false for an unknown id, a proforma, a credit note, a draft and an invoice without lines', function () use ($answer): void {
+        $proforma = timeLinkDocument($this->timeLinkClientA, ['kind' => 'proforma']);
+        timeLinkLine($proforma, 1, '1');
+        timeLinkIssue($proforma, locked: true);
+
+        $invoice = timeLinkDocument($this->timeLinkClientA);
+        $invoiceLine = timeLinkLine($invoice, 1, '1');
+        $draft = timeLinkDocument($this->timeLinkClientA);
+        timeLinkLine($draft, 1, '1');
+        timeLinkIssue($invoice, locked: true);
+        $creditNote = timeLinkCreditLines($invoice, $this->timeLinkClientA, [$invoiceLine => '-1'], issue: true);
+
+        $empty = timeLinkDocument($this->timeLinkClientA);
+        timeLinkIssue($empty, locked: true);
+        timeLinkIssuedCreditNote($empty, $this->timeLinkClientA, cancels: false);
+
+        expect($answer('00000000-0000-7000-8000-000000000000'))->toBeFalse()
+            ->and($answer($proforma))->toBeFalse()
+            ->and($answer($creditNote))->toBeFalse()
+            ->and($answer($draft))->toBeFalse()
+            ->and($answer($empty))->toBeFalse()
+            // The invoice itself, credited in full by the issued credit note, is the one true answer.
+            ->and($answer($invoice))->toBeTrue();
+    });
+
+    it('keeps the frozen snapshot of an entry that stays billed', function () use ($release): void {
+        [$entry, $invoice, $lines, $second] = timeLinkCreditedEntry($this, ['3']);
+        timeLinkCreditLines($invoice, $this->timeLinkClientA, [$lines[0] => '-3'], issue: true);
+
+        RawSql::expectAllowed(fn () => $release($entry));
+        RawSql::expectSqlState('KP001', fn () => DB::update('update time_entries set billed_amount_minor = 1 where id = ?', [$second]));
+        RawSql::expectSqlState('KP001', fn () => DB::update('update time_entries set invoice_id = null where id = ?', [$second]));
+
+        expect(timeLinkRow($second)->billing_state)->toBe('billed')
+            ->and(timeLinkRow($second)->billed_amount_minor)->toBe(100000);
+    });
+
+    it('restores the Phase 10.1 rule on down() and the credited-in-full rule on up()', function () use ($release): void {
+        $migration = require base_path('database/migrations/2026_10_30_000200_release_time_of_fully_credited_invoice.php');
+        [$entry, $invoice, $lines] = timeLinkCreditedEntry($this, ['4']);
+        timeLinkCreditLines($invoice, $this->timeLinkClientA, [$lines[0] => '-4'], issue: true);
+
+        $migration->down();
+
+        $helper = DB::selectOne("select count(*) as total from pg_proc where proname = 'kokpit_invoice_fully_credited'");
+        expect($helper->total)->toBe(0);
+        RawSql::expectSqlState('KP001', fn () => $release($entry));
+
+        $migration->up();
+
+        RawSql::expectAllowed(fn () => $release($entry));
     });
 });
 

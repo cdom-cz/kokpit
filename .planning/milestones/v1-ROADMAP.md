@@ -1,0 +1,1086 @@
+# Roadmap: Kokpit
+
+## Overview
+
+Kokpit is built in dependency order so that every later phase rests on conventions that are already enforced by failing tests. Phase 1 puts repository hygiene tooling in place before anything else lands in the public repository. Phases 2-3 are the foundation: UUID v7 and `timestamptz` schema conventions, money, gap-free numbering, default-deny Partner isolation with its canary test harness, then operations, deploy, storage and the technology spikes. Phases 4-8 deliver the working-day flow: clients and projects, tasks and kanban, time tracking, the time API, exchange rates and reports. Phases 9-11 close the money loop (documents and finance, invoicing, Stripe payments), which is the core value: tracked time becomes an issued, payable invoice in one pass, with no unbilled time or unpaid invoice slipping through unnoticed. Phase 12 audits the Partner view across every screen, route and endpoint.
+
+**Mapping notes** (how the 97 v1 requirements were assigned, each to exactly one phase):
+
+- Default rule: a requirement is traced to the phase that delivers the entity or capability it describes. Panels that need later modules are wired by the later phase's success criteria (listed below) and do not change the traced phase.
+- Traced to the phase where the requirement first becomes fully observable: PR-05 to Phase 6 (needs tasks and time), CL-03 and FI-03 to Phase 10 (need invoices, documents and invoice payments), US-01 to Phase 12 (the permission matrix is only complete when every entity exists; the mechanism is built in Phase 2).
+- Dashboard (RE-04) is delivered in Phase 8 with hours, unbilled per client and deadlines. The overdue-invoices tile is wired in Phase 10 and the unresolved-payments tile in Phase 11.
+- System page (FND-10) is built in Phase 3. Its last-rate-date, unsent-invoice-e-mail and unprocessed-webhook indicators are wired in Phases 8, 10 and 11.
+- File attachments on projects, tasks and comments (the "files" part of PR-01, TA-01 and TA-04) are delivered once, with download route and Partner visibility rules, by the Documents work in Phase 9 (DO-01). Confirmation before deleting an issued invoice PDF (part of DO-03) is proven in Phase 10.
+- PR-02 key suggestion and uniqueness are in Phase 4; the freeze after the first task is proven in Phase 5. TI-05 automatic billing and the TI-08 rate/amount snapshot on billing are exercised in Phase 10 (IN-02, IN-03). The invoice reference on transactions (FI-01) is added in Phase 10.
+- Foundation is split into Phases 2 and 3 because its 19 requirements cannot be verified through 2-5 observable criteria in one phase. The isolation harness (FND-18) stays in Phase 2. Invoicing (Phase 10) is the largest feature phase and is expected to be planned as several plans in waves (for example issue/numbering/snapshots/PDF, then bill-from-time, then payments and Partner view).
+- Numbering note: the brief calls hygiene "step 0" and foundation "phase 1". In this roadmap hygiene is Phase 1 and the brief's foundation is Phases 2-3, so a brief reference to "phase 1" (queue driver and S3 provider decisions) now means Phase 3.
+
+## Phases
+
+**Phase Numbering:**
+- Integer phases (1, 2, 3): Planned milestone work
+- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+
+Decimal phases appear between their surrounding integers in numeric order.
+
+- [x] **Phase 1: Repository Hygiene** - Tooling that keeps secrets and real data out of the public repository, in place before anything else is committed (completed 2026-10-08)
+- [x] **Phase 2: Platform Foundation** - Installable Laravel + Filament app with enforced UUID/timestamp/money/numbering conventions, Czech UI and default-deny Partner isolation (completed 2026-10-08)
+- [x] **Phase 3: Operations Foundation** - Typed settings, audit trail, resilient background jobs, health page, release deploy, private storage and technology spikes (completed 2026-10-08)
+- [x] **Phase 4: Clients and Projects** - Clients, contacts, ARES lookup, Partner invitations, and projects with keys, billing terms and client visibility (completed 2026-10-09)
+- [x] **Phase 5: Tasks and Kanban** - Tasks and subtasks with per-project keys, comments, list filters, drag-and-drop boards and Partner task access (completed 2026-10-09)
+- [x] **Phase 6: Time Tracking** - Always-visible timer, manual entries, exact durations, billed locking, timesheet and project time totals (completed 2026-10-14)
+- [x] **Phase 7: REST API** - Token-secured `/api/v1` for time entries (single and batch) and lookups with the same rules as the UI (completed 2026-10-14)
+- [x] **Phase 8: Exchange Rates and Reports** - Daily CNB rates, time and billing reports in client currency and CZK, exports, work report PDF and dashboard (completed 2026-10-29)
+- [x] **Phase 9: Documents and Finance** - Files on private S3 with Partner visibility rules, central document listing, and income/expense overview in CZK (completed 2026-10-29)
+- [x] **Phase 10: Invoicing** - Bill-from-time drafts, numbered immutable invoices, proformas and credit notes, PDF with QR, e-mail, manual payment and Partner invoice view (completed 2026-10-29)
+- [ ] **Phase 11: Stripe Payments** - Payment links, signed idempotent webhooks, automatic matching, and duplicate and unmatched payment handling
+- [ ] **Phase 12: Partner Audit** - Automated proof that the Partner view leaks nothing and that every route, screen and endpoint has an explicit role rule
+
+## Phase Details
+
+### Phase 1: Repository Hygiene
+
+**Goal**: Nothing sensitive can enter the public repository, and the tooling that guarantees it exists before any application code or planning docs are committed
+**Depends on**: Nothing (first phase)
+**Requirements**: HYG-01, HYG-02, HYG-03, HYG-04, HYG-05, HYG-06, HYG-07
+**Success Criteria** (what must be TRUE):
+  1. Staging a file that contains a non-example e-mail, an 8-digit company-ID-like number, an IBAN or account number, a public IP, a hosting hostname or a key prefix makes `scripts/check-sensitive.sh` fail and name the file and line; a clean staged change passes
+  2. With `KOKPIT_DENYLIST` pointing at a local file outside the repository, terms from that file also block a commit; without the variable (as in CI) the script still runs with generic patterns only
+  3. After running `scripts/install-hooks.sh`, committing a staged secret is rejected locally by the lefthook pre-commit hook (sensitive-content check plus gitleaks), and env files, local AI/IDE settings, storage, logs, dumps, exports and the local-data directory stay untracked
+  4. The CI step scanning full git history with `.gitleaks.toml` and the same sensitive-content checks fails on a planted fake secret and passes on a clean branch
+  5. `CLAUDE.md` and CONTRIBUTING state the fictional-data-only rule and the review procedure (`git status`, `git diff --staged`, script run), and GitHub secret scanning with push protection is enabled and documented
+
+**Plans:** 11/11 plans complete (01-07 to 01-11 are gap closure from 01-VERIFICATION.md)
+
+Plans:
+**Wave 1**
+- [x] 01-01-PLAN.md — Tracer: staged fake key blocked by the lefthook-wired scanner; hardened CI with `CI Passed`; hook installed (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 01-02-PLAN.md — Full D-02 generic rule set with reviewed allowlist and mawk parity (wave 2)
+- [x] 01-03-PLAN.md — Local denylist (`KOKPIT_DENYLIST`), explicit files and `--history` mode, CI history step (wave 2)
+- [x] 01-04-PLAN.md — Fictional-data rule in CLAUDE.md and CONTRIBUTING, GitHub settings checklist, `.gitignore` review (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 01-05-PLAN.md — gitleaks in hook and pinned CI full-history scan; workflow lint gate, Dependabot, CODEOWNERS (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 01-06-PLAN.md — Phase gate on the real repository; owner decision on unpushed history and codebase map (wave 4, checkpoint)
+
+**Gap closure wave 1** *(from 01-VERIFICATION.md, gaps 1 to 3)*
+- [x] 01-07-PLAN.md — Content-complete scanner input: attributes, NUL bytes, UTF-16, textconv, type changes, renames and merge commits can no longer hide content (gap 1, CR-01, WR-02, WR-05)
+- [x] 01-08-PLAN.md — Second layer: git-attributes guard, CI gitleaks with text and merge diffs, CODEOWNERS for the attribute file and hygiene docs (gap 1, WR-02, WR-06)
+
+**Gap closure wave 2** *(blocked on gap closure wave 1)*
+- [x] 01-09-PLAN.md — Denylist folds diacritics on both sides, locale-free, and scans the exempt paths (gap 2, CR-02, WR-01, WR-08)
+- [x] 01-10-PLAN.md — Home paths in both layers incl. Windows form; boundary, IČ, ASIA, interval self-test and narrowed planning exemption (gap 3, CR-03, WR-03, WR-04, WR-07, IN-03)
+
+**Gap closure wave 3** *(blocked on gap closure wave 2)*
+- [x] 01-11-PLAN.md — CONTRIBUTING matches the code, credential ignore rules, decision for every review finding, full phase gate (WR-06 checklist, WR-09)
+
+### Phase 2: Platform Foundation
+
+**Goal**: A running, installable Laravel + Filament application whose data conventions, money handling, numbering and Partner default-deny access are enforced by failing tests before any feature is built
+**Depends on**: Phase 1
+**Requirements**: FND-01, FND-02, FND-03, FND-04, FND-05, FND-06, FND-11, FND-12, FND-13, FND-14, FND-17, FND-18, FND-20
+**Success Criteria** (what must be TRUE):
+  1. A fresh checkout following only the README and `.env.example` starts with `ddev start` (versioned `.ddev/` config: PHP 8.5, PostgreSQL 18, Redis, Mailpit, RustFS S3 storage, queue worker and scheduler) and boots on PostgreSQL; the install command creates the Admin without a default password; the Admin enables two-factor authentication, logs in to the single Filament SPA panel and sees Czech text (Filament, validation, enum labels) with Czech date, number and currency formats and times shown in `Europe/Prague`
+  2. Every push runs CI on PostgreSQL with tests, static analysis, formatting, secret scan and a dependency licence allowlist (AGPL-compatible only), and the repository carries `LICENSE` (AGPL-3.0, matching `composer.json`), README, SECURITY.md, CONTRIBUTING.md and an `.env.example` that stays in sync
+  3. Schema tests fail the build if any own or package table (media, tags, activity log, permission pivots, Sanctum tokens, webhook calls, sessions) has a non-UUID v7 key or morph column, a timestamp that is not `timestamptz`, or a morph type outside the enforced morph map; a pilot immutability trigger, CHECK and partial index are proven by raw-SQL tests
+  4. Money is stored as integer minor units plus ISO 4217 currency through one value object with a single documented rounding point, and the sequence allocator hands out gap-free, duplicate-free numbers under real parallel-process tests on PostgreSQL
+  5. A Partner test account sees nothing by default (policies plus global scopes, not UI hiding); the canary harness with two fictional clients passes; a registry test fails when any Resource, Page, Widget or relation manager lacks an explicit access rule
+
+**Plans:** 13/13 plans complete (strictly sequential: every plan from 02-02 on runs Pest in the single DDEV project against the shared `kokpit_test` database)
+
+Plans:
+**Wave 1**
+- [x] 02-01-PLAN.md — Skeleton merge through the hygiene gate; owner decisions on the composer.lock allowlist and the SPDX licence id (wave 1, checkpoints)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 02-02-PLAN.md — DDEV (PHP 8.5, PostgreSQL 18, Redis, Mailpit, RustFS, daemons), guarded PostgreSQL test harness, `.env.example` sync, Pint and Larastan level 8 (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 02-03-PLAN.md — UUID v7, timestamptz and enforced morph map on core and permission tables, catalogue schema tests (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 02-04-PLAN.md — Sanctum, notifications, webhook calls, media, tags and activity log under the conventions; rule R9 (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 02-05-PLAN.md — Money value object over brick/money with one HALF_UP rounding point and a two-column cast (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 02-06-PLAN.md — Sequence allocator with real parallel-process proof; owner confirms the counter contract (wave 6, checkpoint)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 02-07-PLAN.md — Immutability trigger pattern, constraint pilot and raw-SQL test helper (wave 7)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 02-08-PLAN.md — Czech localisation and Europe/Prague display (wave 8)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [x] 02-09-PLAN.md — Roles, `kokpit:install`, mandatory Admin TOTP and CLI reset (wave 9)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [x] 02-10-PLAN.md — Partner default-deny data layer, policy base and model declarations (wave 10)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [x] 02-11-PLAN.md — Panel access declarations, registry test and canary harness with route walk (wave 11)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [x] 02-12-PLAN.md — CI jobs (tests on PostgreSQL 18, static analysis, dependencies with licence allowlist) behind `CI Passed` (wave 12)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [x] 02-13-PLAN.md — README, SECURITY.md, CONTRIBUTING development conventions and the phase gate with manual checks (wave 13)
+
+### Phase 3: Operations Foundation
+
+**Goal**: The app is operable and deployable: settings, audit trail, background work, health visibility, release deploy and file storage all work and fail loudly rather than silently
+**Depends on**: Phase 2
+**Requirements**: FND-07, FND-08, FND-09, FND-10, FND-15, FND-16, FND-19
+**Success Criteria** (what must be TRUE):
+  1. Admin edits typed settings (supplier data, bank accounts per currency, VAT mode, default rate and currency, payment terms, numbering patterns, online-payment toggle) in Czech, and changes to allowlisted attributes of tasks, projects, invoices and time entries appear in the activity log while non-allowlisted attributes never do
+  2. A deliberately failing queued job is retried with backoff, ends up in failed jobs and raises an Admin alert that does not depend on the queue; the Admin System page shows failed jobs, oldest pending job and scheduler heartbeat, with slots for last rate date, unprocessed webhooks and unsent invoice e-mails that later phases fill
+  3. A published release or a manual dispatch deploys to Zerops through the protected `production` environment with manual approval, no other trigger can deploy, `zerops.yml` contains no secrets and describes build, deploy, worker, scheduler and migrations, and the manual GitHub settings checklist is documented
+  4. Configuring S3-compatible private storage through environment variables only, a smoke test uploads a file and fetches it through a temporary URL
+  5. Spike results are recorded as decisions: PDF engine (multi-page report with Czech diacritics and QR), kanban library versus custom board (queue driver Redis, PostgreSQL 18 and RustFS S3 storage are already decided)
+
+**Plans:** 19/19 plans complete (the two spikes run in parallel in wave 1; every application plan after them is serialized because each runs Pest in the single DDEV project against the shared `kokpit_test` database)
+**UI hint**: yes
+
+Plans:
+**Wave 1**
+- [x] 03-01-PLAN.md — PDF engine spike outside the repository: Dompdf versus the Chromium engine behind spatie/laravel-pdf, decision record (FND-19, D-14, D-16)
+- [x] 03-02-PLAN.md — Kanban spike outside the repository: custom wire:sort board versus Flowforge, build-or-buy decision record (FND-19, D-15, D-16)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 03-03-PLAN.md — Tracer: UUID v7 settings storage with fail-closed Partner scope, system-context settings migrations, supplier settings (FND-07, D-01)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 03-04-PLAN.md — Admin-only Czech settings page with the supplier tab, data-layer validation, boot-time 403 before mount() (FND-07, D-02)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 03-05-PLAN.md — Default rate and currency via a no-rounding Money::fromMajor (FND-07, D-02)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 03-06-PLAN.md — VAT mode, payment terms and online-payment toggle, one-transaction save across tabs (FND-07, D-02)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 03-07-PLAN.md — Bank accounts per currency with format-driven fields and an own IBAN rule (FND-07, D-03, D-04)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 03-08-PLAN.md — Numbering engine: token grammar, SequenceAllocator::peek preview, fixed KEY-N task numbers (FND-07, D-05)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 03-09-PLAN.md — Numbering patterns on the settings page with live previews and the locked task pattern (FND-07, D-05)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [x] 03-10-PLAN.md — Activity log allowlist attribute and source labels with null causer (FND-08, D-06, D-08)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [x] 03-11-PLAN.md — Allowlist architecture test, refused pruning, production guard for the activity log (FND-08, D-06, D-09)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [x] 03-12-PLAN.md — Admin activity overview and reusable history relation manager, boot-time denial for relation managers and widgets (FND-08, D-07)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [x] 03-13-PLAN.md — Job base with retries, backoff and idempotence declaration; queue-independent throttled Admin alerts (FND-09, D-10, D-11)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [x] 03-14-PLAN.md — Job contract: after-commit dispatch, system-context reads, architecture test, production queue guard (FND-09, D-10)
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [x] 03-15-PLAN.md — Health indicator registry with six slots and the Admin System page (FND-10, D-12, D-13)
+
+**Wave 15** *(blocked on Wave 14 completion)*
+- [x] 03-16-PLAN.md — Real failed-jobs, oldest-pending and scheduler indicators, scheduler and worker heartbeats (FND-10, FND-09, D-12, D-13)
+
+**Wave 16** *(blocked on Wave 15 completion)*
+- [x] 03-17-PLAN.md — Private S3 storage check command and s3 test group against RustFS locally and in CI (FND-16, D-17)
+
+**Wave 17** *(blocked on Wave 16 completion)*
+- [x] 03-18-PLAN.md — zerops.yml with once-per-deploy migrations, protected release deploy workflow, settings checklist, Zerops rehearsal checklist (FND-15, D-18)
+
+**Wave 18** *(blocked on Wave 17 completion)*
+- [x] 03-19-PLAN.md — Conventions and operations documentation, per-phase .gitignore review and the phase gate
+
+### Phase 4: Clients and Projects
+
+**Goal**: Admin can maintain clients, contacts and projects with their billing terms, and invite a client to a restricted Partner account that sees only projects flagged visible to it
+**Depends on**: Phase 3
+**Requirements**: US-02, CL-01, CL-02, CL-04, CL-05, PR-01, PR-02, PR-03, PR-04
+**Success Criteria** (what must be TRUE):
+  1. Admin creates, edits and archives clients with billing data, stage, currency, rate, payment terms, invoice e-mail and language, online-payment flag, tags and several contacts with primary and billing flags; archived clients disappear from pickers and lists but can be restored
+  2. Entering a fictional company ID and pressing the ARES button fills the client form; on a lookup error or timeout the message appears next to the field and the form stays unchanged
+  3. Admin creates projects with name, status, description, dates, priority, tags, billing type, hourly rate, fixed price and time estimate; a unique 2-6 letter uppercase key is suggested from the name and a duplicate key is rejected
+  4. From the client detail Admin invites a Partner account by e-mail, and the invited person sets a password and logs in
+  5. A Partner sees only projects of their own client that are flagged client-visible, never sees rates, prices or estimates in lists, details, selects or search, and never sees another client's canary data
+
+**Plans:** 21/21 plans complete (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 and 3 rule; each plan modifies at most 14 files)
+**UI hint**: yes
+
+Plans:
+**Wave 1**
+- [x] 04-01-PLAN.md — Tracer: clients table, Admin-only Client, real canary clients, users FK with deactivation and archived-client lockout (CL-01, CL-05, US-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 04-02-PLAN.md — Projects table, fail-closed Project Partner scope and policy, Project canary fixture, projects column allowlist (PR-04, PR-01, PR-02, CL-05)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 04-03-PLAN.md — Read-only Partner project list and detail with Partner-safe columns and the route-walk resource map (PR-04, PR-01)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 04-04-PLAN.md — Partner-visible project tags through a real Tag constraint, with the soft-delete detach guard (PR-04, PR-01)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 04-05-PLAN.md — Access primitives: fail-closed Audience::Guest with the SimplePage registry rule, and the PartnerScope escape-hatch rule (PR-04)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 04-06-PLAN.md — Admin-only project_billing table and the CreateProject Action with money, key and archive guards (PR-03, PR-02, PR-01)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 04-07-PLAN.md — UpdateProject, exact estimate conversion, selectable scope, project auditing and billing constraint tests (PR-03, PR-02, PR-01)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 04-08-PLAN.md — Admin project resource with billing section, archive, history and the deterministic key suggester (PR-01, PR-02, PR-03, PR-04)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [x] 04-09-PLAN.md — Admin client resource with billing data and terms, exact money and field validation (CL-01)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [x] 04-10-PLAN.md — Typed default invoice language and the one-time defaults prefill of new clients (CL-01)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [x] 04-11-PLAN.md — Client archive and restore, client tags, client history, currency lock and per-country company number uniqueness (CL-05, CL-01)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [x] 04-12-PLAN.md — Contacts in the client detail: first contact primary, make-primary on creation, Partner isolation (CL-02)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [x] 04-13-PLAN.md — Contact edit, primary switch, protected delete, primary contact column and contact auditing (CL-02)
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [x] 04-14-PLAN.md — Czech company number checksum in the client form and Actions, fictional number generator for tests (CL-04)
+
+**Wave 15** *(blocked on Wave 14 completion)*
+- [x] 04-15-PLAN.md — ARES lookup button for Czech clients with field-level errors and an unchanged form on failure (CL-04)
+
+**Wave 16** *(blocked on Wave 15 completion)*
+- [x] 04-16-PLAN.md — Hashed-token invitation records, InvitePartner and the D-03 duplicate rules (US-02)
+
+**Wave 17** *(blocked on Wave 16 completion)*
+- [x] 04-17-PLAN.md — Queued invitation mail with a signed link, guest landing page, derived state, resend and revoke (US-02)
+
+**Wave 18** *(blocked on Wave 17 completion)*
+- [x] 04-18-PLAN.md — Guest accept flow: password, single-use Partner account, login, neutral failures and throttling (US-02)
+
+**Wave 19** *(blocked on Wave 18 completion)*
+- [x] 04-19-PLAN.md — Invitations in the client detail: invite action and the Pozvánky tab with resend and revoke (US-02)
+
+**Wave 20** *(blocked on Wave 19 completion)*
+- [x] 04-20-PLAN.md — Partner accounts in the client detail: deactivate, reactivate and password reset (US-02)
+
+**Wave 21** *(blocked on Wave 20 completion)*
+- [x] 04-21-PLAN.md — Conventions and operator documentation, per-phase .gitignore review and the phase gate
+
+### Phase 5: Tasks and Kanban
+
+**Goal**: Admin organises work as tasks and subtasks with per-project keys and a drag-and-drop board, and a Partner can raise and discuss tasks in visible projects without seeing anything internal
+**Depends on**: Phase 4
+**Requirements**: TA-01, TA-02, TA-03, TA-04, TA-05, TA-06, TA-07, KB-01, KB-02, KB-03
+**Success Criteria** (what must be TRUE):
+  1. Admin creates tasks and one-level subtasks with title, status, description, dates, priority, assignee, tags and a todo checklist, plus per-task billing type, fixed price, rate override and estimate
+  2. Each new task receives the next `KEY-N` from its project counter; creating tasks in parallel never duplicates or skips a number, deleted numbers are never reused, a task can be found and opened by its key in search and URL, and the project key can no longer be changed after the first task
+  3. Admin filters the list by client, project, status, priority, assignee, tag and due date, and adds comments to tasks and subtasks, optionally marked internal
+  4. Admin drags cards on the per-project and the global kanban board; status and position persist immediately and survive a reload, and the global board filters by client, assignee, tag and priority
+  5. A Partner creates tasks and comments in visible projects but cannot change status or priority or move cards, sees a read-only task list, never sees internal comments or another client's tasks, and Admin is notified of Partner tasks and comments
+
+**Plans:** 22/22 plans complete: 17/17 executed, gap-closure plans 05-18 and 05-19 executed, 05-20 and 05-21 executed for UAT gap G-05-5, 05-22 planned for the flaky closing-gate test reported by 05-VERIFICATION.md (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 4 rule; each plan modifies at most 14 files)
+**UI hint**: yes
+
+Plans:
+**Wave 1**
+- [x] 05-01-PLAN.md — Tracer: tasks table, Partner-isolated Task, CreateTask with KEY-N from the project counter and the D-04/D-05 people rules (TA-01, TA-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 05-02-PLAN.md — Project key freeze (trigger KP002, Action, form), tasks constraint proofs, column pin, parallel-process numbering proof (TA-02, TA-01)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 05-03-PLAN.md — Admin task list, one-modal quick creation, task page at /admin/tasks/KEY-N, global search by key, list filters (TA-02, TA-05, TA-01)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 05-04-PLAN.md — Edit page and UpdateTask, locked status changes, people pickers, tags, strict rich-text sanitiser, task history (TA-01)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 05-05-PLAN.md — One-level subtasks from the task page, archive and restore with the parent guard (TA-01)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 05-06-PLAN.md — Admin-only todo checklist on tasks and subtasks with progress (TA-03)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 05-07-PLAN.md — Admin-only task_billing with four billing types, form section and input rules (TA-06)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 05-08-PLAN.md — Read-time TaskBillingResolver with sources on the task page, billing constraints and audit (TA-06)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [x] 05-09-PLAN.md — Comments with the internal flag, Partner scope hiding internal rows, server-side forcing (TA-04)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [x] 05-10-PLAN.md — Global drag-and-drop board: status columns, Done cap, filters, guarded locked mover (KB-01, KB-02, KB-03)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [x] 05-11-PLAN.md — Per-project board, slide-over preview, quick creation on boards, parallel-move proof (KB-01, KB-02)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [x] 05-12-PLAN.md — Partner read-only task list, create and task page with pinned Partner-safe builders (TA-07, KB-03)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [x] 05-13-PLAN.md — Partner comments and escalation with a required comment; the Admin clears the flag (TA-07, TA-04)
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [x] 05-14-PLAN.md — Per-user notification preferences on the profile page, bell for Partners (TA-07)
+
+**Wave 15** *(blocked on Wave 14 completion)*
+- [x] 05-15-PLAN.md — Queued mail and bell for Partner tasks and comments both ways, unconditional internal guard (TA-07)
+
+**Wave 16** *(blocked on Wave 15 completion)*
+- [x] 05-16-PLAN.md — Escalation and change notifications, canary proof of no notification leak (TA-07)
+
+**Wave 17** *(blocked on Wave 16 completion)*
+- [x] 05-17-PLAN.md — Conventions and hand-over documentation, requirements correction, .gitignore review and the phase gate
+
+Gap closure (from 05-REVIEW.md CR-01 and WR-02, 05-SECURITY.md T-05-44 and G-1, 05-VERIFICATION.md O-1 and O-2):
+
+**Wave 18** *(blocked on Wave 17 completion)*
+- [x] 05-18-PLAN.md — The edit form keeps a deactivated assignee or requester and refuses new inactive picks; a Partner payload can no longer attach task tags (CR-01, G-1; TA-01, TA-07)
+
+**Wave 19** *(blocked on Wave 18 completion)*
+- [x] 05-19-PLAN.md — Every task notification value escaped once in the TaskNotification base, markup canary for every class and audience, closing gate (T-05-44, WR-02; TA-07, TA-04)
+
+Gap closure (from 05-UAT.md G-05-5, test 5: the Partner should be able to edit the task description):
+
+**Wave 20** *(blocked on Wave 19 completion)*
+- [x] 05-20-PLAN.md — A Partner edits only the description of an own visible task in "Plánovaný" or "K upřesnění" (owner decision D-16): editDescription ability, UpdateTaskDescription (status re-checked under the row lock, sanitised, stale and unchanged saves refused or skipped, history row without the text), "Upravit popis" header action (G-05-5; TA-07, TA-01, KB-03)
+
+**Wave 21** *(blocked on Wave 20 completion)*
+- [x] 05-21-PLAN.md — The Admin and the assignee are told of a Partner's description edit, the Admin's "Změna úkolu" switch, markup proof for the new audience, Partner write paths documented, closing gate (G-05-5; TA-07)
+
+Gap closure (from 05-VERIFICATION.md gap 1: the closing-gate test of G-05-5 is flaky because the description history helper orders by created_at only):
+
+**Wave 22** *(blocked on Wave 21 completion)*
+- [x] 05-22-PLAN.md — Test-only: description history and escalation comment helpers ordered by created_at then id, an order-independent author proof in the any-Partner description case, a recorded frozen-clock check, five green Tasks directory runs and one green full suite (TA-07, TA-01)
+
+### Phase 6: Time Tracking
+
+**Goal**: Admin tracks exact time against clients, projects and tasks with a timer or manual entries and always knows what is billable, billed and unbilled
+**Depends on**: Phase 5
+**Requirements**: TI-01, TI-02, TI-03, TI-04, TI-05, TI-06, TI-07, TI-08, TI-09, PR-05
+**Success Criteria** (what must be TRUE):
+  1. A timer is visible on every screen and can be started from a task in at most two clicks; starting a timer stops the running one, and concurrent starts never leave two running timers for one user
+  2. Admin creates and edits entries manually (from, to, client, project, task, description), can save an entry with only a client, and the database rejects entries whose client, project and task disagree or whose end is before the start
+  3. The billable flag defaults to true, is pre-set to false for non-billable projects and tasks and can be overridden; entries marked billed manually or in bulk are locked until billing is cancelled; durations are exact seconds and the effective rate resolves task, then project, then client, then global default
+  4. Admin sees a daily and weekly timesheet with totals, and a timer left running unusually long is flagged to the user
+  5. Project detail (Admin only) shows tasks, estimate versus actual and billed versus unbilled time, and a Partner sees no time, rates or prices anywhere, proven by the canary tests
+
+**Plans:** 14/14 plans complete (one per wave: every application plan runs Pest in the single DDEV project against the shared `kokpit_test` database, the Phase 2 to 5 rule; each plan modifies at most 13 files)
+**UI hint**: yes
+
+Plans:
+**Wave 1**
+- [x] 06-01-PLAN.md — Tracer: `time_entries` with composite keys, CHECKs, one-running partial index and billed guard; Admin-only TimeEntry; StartTimer client-only start with same-instant auto-stop and exact seconds (TI-01, TI-03, TI-07, TI-08)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 06-02-PLAN.md — Start from a task, StopTimer, D-03 billable default, context guards, every constraint proven by SQLSTATE (TI-01, TI-04, TI-05, TI-07)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 06-03-PLAN.md — TimerLock and the parallel-process proof with a mutation run; typed lost-race error (TI-07)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 06-04-PLAN.md — Manual entries: Create/Update/DeleteTimeEntry, billed refusal, overlap finder, DurationFormat (TI-02, TI-03, TI-07, TI-08)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 06-05-PLAN.md — Mark billed and cancel billing with audit; effective rate resolver task, project, client, default (TI-05, TI-08)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 06-06-PLAN.md — Time entries resource: list, create, edit, view; consistent pickers in Czech order; overlap warning; billable preset (TI-02, TI-03, TI-04)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 06-07-PLAN.md — Bulk billing actions, locked rows and pages, filters, whole-set totals, overlap badge, rate, delete, history (TI-05, TI-06, TI-08)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 06-08-PLAN.md — Top bar timer: quick start, running pill, forgotten-timer state, "Doplnit záznam", Admin guard on every Livewire request (TI-01, TI-09)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [x] 06-09-PLAN.md — "Poslední záznamy" side panel with the detailed timer, day groups and the per-user toggle (TI-01, TI-09)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [x] 06-10-PLAN.md — One-click start and stop on the task page, task list and board cards; task "Čas" section (TI-01, TI-04)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [x] 06-11-PLAN.md — "Výkaz" timesheet: day view and week grid with totals, Prague days and DST (TI-06)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [x] 06-12-PLAN.md — Admin project time overview: stats, tasks with estimate vs actual, project entries (PR-05)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [x] 06-13-PLAN.md — Forgotten-timer job: one escaped bell notice per running entry, never stopping (TI-09)
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [x] 06-14-PLAN.md — Partner leak proof, collation readiness check, conventions and hand-over docs, .gitignore review and the phase gate
+
+### Phase 7: REST API
+
+**Goal**: External tools can read and write time entries (single and batch) and look up clients, projects and tasks through a versioned, token-secured API that applies the same rules as the UI
+**Depends on**: Phase 6
+**Requirements**: AP-01, AP-02, AP-04, AP-05
+**Success Criteria** (what must be TRUE):
+  1. Admin creates and revokes API tokens with `time:read` and `time:write` abilities in a token management screen, a Partner cannot create tokens, and a request whose token lacks the needed ability is refused
+  2. An API client lists time entries with filters and creates, reads, updates and deletes them, and the API refuses what the UI refuses (locked billed entries, inconsistent client/project/task, end before start)
+  3. Creating a time entry (single or batch) with the same idempotency key repeated does not create a duplicate; a batch saves every valid item and reports only the failed ones
+  4. An API client resolves clients, projects and tasks by UUID, key and name through read-only lookups, and addresses a task by its `KEY-N`
+  5. Excess requests receive a rate-limit response, and published OpenAPI documentation describes every endpoint
+
+**Plans:** 20/20 plans complete
+
+Plans:
+**Wave 1**
+- [x] 07-01-PLAN.md — Token-secured /api/v1 skeleton: an Admin token reads one entry, clean 401/403/404, per-token rate limits (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 07-02-PLAN.md — Scribe docs generated without a database, public /docs and /docs.openapi, owner confirms the wire contract (wave 2, checkpoint)
+- [x] 07-03-PLAN.md — Admin token screen: create with password and TOTP, one-time display, revoke, Partner isolation, ability labels, API route walk (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 07-04-PLAN.md — Time entry list: filters by uuid or key, inclusive Prague-day range via shared PragueDay, stable cursor paging (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 07-05-PLAN.md — Create, update, delete over the Actions: duration_seconds alternative, key references, 409 locked/running, UI refusal matrix (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 07-06-PLAN.md — Optional external jsonb object: object-only, size and depth caps, frozen on billed entries (wave 5)
+- [x] 07-07-PLAN.md — api activity source label for API writes (wave 5)
+- [x] 07-08-PLAN.md — Read-only lookups of clients, projects and tasks by uuid, key and name (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 07-09-PLAN.md — Idempotency-Key on create: replay, mismatch, in-progress, 2xx-only storage (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 07-10-PLAN.md — Daily purge of expired keys and the multi-process idempotency proof (wave 7)
+- [x] 07-11-PLAN.md — Batch create up to 100 entries with partial success and replay-safe retries (wave 7)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 07-12-PLAN.md — Docs generation as the last Zerops init command, output hygiene scan, API canary line, CONTRIBUTING (wave 8)
+
+**Gap closure** *(from 07-VERIFICATION.md; gap plans waves 1-3, run with `/gsd-execute-phase 07 --gaps-only`)*
+
+**Gap wave 1**
+- [x] 07-13-PLAN.md — Interval span bound in the shared Actions: a far-past or far-ahead start answers 422 on finished and running entries (gap 1, closes T-07-26)
+- [x] 07-16-PLAN.md — Cursor validation on all four list endpoints (gap 4)
+
+**Gap wave 2** *(blocked on gap wave 1 completion)*
+- [x] 07-14-PLAN.md — UTC years 1 to 9999 for every stored instant, the end computed from duration_seconds included, and range-aware PragueDay filters (gap 2)
+- [x] 07-17-PLAN.md — Review info items IN-01 to IN-04: key patterns, ordering note, docs limits pinned to config, docs helper note
+- [x] 07-18-PLAN.md — Complete example cursor in the published docs and the 401/403-before-cursor guard (gap 4, split from 07-16)
+
+**Gap wave 3** *(blocked on gap wave 2 completion)*
+- [x] 07-15-PLAN.md — Batch item faults reported as failed items, so the Idempotency-Key is never released after partial commits (gap 3)
+- [x] 07-19-PLAN.md — Overflow-proof elapsed seconds: one clamped bigint expression for the entry list and the time totals, so a running start at the edge of the limit never breaks the Admin screens (07-UAT.md G-07-1, WR-02)
+- [x] 07-20-PLAN.md — Empty-state "Nový API token" opens the create modal: the table action replaces the mounted stack with the page action instead of a nested mount, with a Livewire click test and a both-ability token created from it (07-UAT.md G-07-3; depends only on 07-03)
+
+**UI hint**: yes
+
+### Phase 8: Exchange Rates and Reports
+
+**Goal**: Admin sees where time and money stand per client, project and period in client currency and CZK, can export and hand over work reports, and CNB rates feed every conversion
+**Depends on**: Phase 6
+**Requirements**: EX-01, EX-02, EX-03, RE-01, RE-02, RE-03, RE-04, RE-05
+**Success Criteria** (what must be TRUE):
+  1. A scheduled daily job downloads CNB rates idempotently (a rerun creates no duplicates), weekends and holidays use the previous rate, per-unit amounts (for example 100 units) convert correctly, and Admin can run the download manually and backfill history
+  2. Admin sees a rates overview; when a download fails Admin is alerted without depending on the queue, the last known rate keeps being used, and the System page shows the last rate date; a conversion helper returns the CZK amount for a given currency and date
+  3. Admin sees a time report per client and project for a period with breakdown by task, day and user, split billable versus non-billable and billed versus unbilled with amounts in client currency and CZK, and the effective hourly rate for fixed-price projects
+  4. Admin requests a CSV or XLSX export that is built in the background and delivered by notification with spreadsheet-safe cells, and generates a multi-page PDF work report with correct Czech diacritics
+  5. The dashboard shows today's and this week's hours, unbilled time per client and upcoming task deadlines
+
+**Plans:** 27/27 plans complete (7 waves; same-wave plans share no file; 08-03 holds the owner's AGPL-3.0 licence decision checkpoint before Dompdf is installed; 5 gap-closure plans 08-23 to 08-27 from 08-VERIFICATION.md in 3 gap waves)
+**UI hint**: yes
+
+Plans:
+**Wave 1**
+- [x] 08-01-PLAN.md — `exchange_rates` with DB constraints and `ExchangeRate` under every repository convention; Partner reads no rate (EX-01)
+- [x] 08-02-PLAN.md — Partner dashboard: open tasks with `in_review` first and highlighted, own projects, leak proof (RE-04, D-12)
+- [x] 08-03-PLAN.md — Owner licence checkpoint (Dompdf LGPL-2.1 vs AGPL-3.0), then tracer: first real Czech work report PDF (RE-03, D-10)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 08-04-PLAN.md — Tracer: `kokpit:rates:download` via `CnbClient::daily()`, refusal matrix, rates copy and config (EX-01, EX-02)
+- [x] 08-05-PLAN.md — `RateBook`, `ExchangeRateConverter`, `ExchangeRateMissing`, `Money::forDurationConverted`, `Money::hourlyRateFor` (EX-03, RE-02, RE-05)
+- [x] 08-06-PLAN.md — Work report document: two sections (billable, non-billable), summary, running header, page N / M, English version, no money (RE-03)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 08-07-PLAN.md — `report_exports` record and lifecycle, exports copy and config (RE-03, D-09)
+- [x] 08-08-PLAN.md — Schedule 15/16/17 plus final 18:00 Prague run, Czech working-day calendar, final-run alert without the queue (EX-01, EX-02)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 08-09-PLAN.md — Report core tracer: one reader, per-entry amounts, parity with resolvers, filter strip, summary tiles, tree (RE-01, RE-02)
+- [x] 08-10-PLAN.md — Real last-rate-date System page slot in Czech working days (EX-02)
+- [x] 08-11-PLAN.md — "Exporty" list with click-time permission-checked download (RE-03)
+- [x] 08-12-PLAN.md — Daily prune of expired exports (RE-03)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 08-13-PLAN.md — "Kurzy ČNB" overview: stats, table, filters, empty states, download outcomes, no calculator (EX-01, EX-02)
+- [x] 08-14-PLAN.md — Report tree completion: day/user breakdowns, accessible expand/collapse, footnotes, row cap, DST edges, constant query count (RE-01, RE-02)
+- [x] 08-15-PLAN.md — Admin dashboard hours stats and unbilled time per client (RE-04, D-11)
+- [x] 08-16-PLAN.md — CSV export end to end: job, spreadsheet-safe cells, bell notices (RE-03)
+- [x] 08-17-PLAN.md — Gap self-heal from `CnbClient::year()` in the scheduled command (EX-01)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 08-18-PLAN.md — "Doplnit historii" modal and `BackfillCnbRates` job (EX-01, D-05)
+- [x] 08-19-PLAN.md — Effective hourly rate for fixed-price projects (RE-05, D-08)
+- [x] 08-20-PLAN.md — Admin dashboard deadlines and read-only tomorrow plan (RE-04, D-11)
+- [x] 08-21-PLAN.md — XLSX export with summary sheet and "Pracovní výkaz PDF" report-page item (RE-03)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 08-22-PLAN.md — Partner leak sweep, CONTRIBUTING and README updates, .gitignore review, phase gate, VALIDATION sign-off
+
+**Gap closure** *(from 08-VERIFICATION.md; gap plans waves 1-3, run with `/gsd-execute-phase 08 --gaps-only`)*
+
+**Gap wave 1**
+- [x] 08-23-PLAN.md — CR-01 report and exports: per-currency amounts on every tree row, footer equal to the summary, XLSX/CSV regression for a CZK client with one EUR task rate (gap 1)
+- [x] 08-24-PLAN.md — CR-01 dashboard: "Nevyfakturováno tento měsíc" lists amounts per currency, so the Admin landing page renders for a two-currency client (gap 1)
+- [x] 08-25-PLAN.md — CR-01 root cause: the client currency lock covers task_billing money, archived tasks and projects included, with a message that names tasks (gap 1)
+
+**Gap wave 2** *(blocked on gap wave 1 completion)*
+- [x] 08-26-PLAN.md — UI-SPEC Amendment A-1 first, then a full-width report with a fixed-layout tree: Název floor 20rem, grouped and fewer columns, two-line names with tooltips (gap 2)
+
+**Gap wave 3** *(blocked on gap wave 2 completion)*
+- [x] 08-27-PLAN.md — Open depth by filter, four distinguishable levels, sticky Název column, on-scale effective-rate block; CR-01 disposition and validation map; gap-round gate (gap 2)
+
+### Phase 9: Documents and Finance
+
+**Goal**: Files live on private storage under Admin control with correct Partner visibility, and Admin can record income and expenses and see the money picture in CZK
+**Depends on**: Phase 8
+**Requirements**: DO-01, DO-02, DO-03, FI-01, FI-02
+**Success Criteria** (what must be TRUE):
+  1. Admin uploads files to clients, projects, tasks, comments, transactions or leaves them unattached, including the files on projects and tasks that those forms offer
+  2. A Partner sees and downloads only files flagged visible on projects and tasks they can access, never attachments of internal comments and never another client's files
+  3. Admin uses a central document listing with filters and sorting, downloads single files or a ZIP built in the background, bulk-deletes files, and sees storage totals overall and per client
+  4. Every download goes through the app with a permission check and a short-lived signed URL (no public bucket URL), and deleting a record also removes its stored object
+  5. Admin records income and expense transactions with hierarchical categories, currency, CZK amount, optional client and project and receipts as attachments, and sees an overview per month and year, per category and per client in CZK
+
+**Plans:** 28/28 plans complete (4 gap-closure plans 09-25 to 09-28 from 09-VERIFICATION.md and 09-REVIEW.md in 3 gap waves)
+**UI hint**: yes
+
+Plans:
+**Wave 1**
+- [x] 09-01-PLAN.md — Documents record: a file attached to a project is stored privately as one document; owner resolver, Partner scope with four hidden canary twins, documents settings
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 09-02-PLAN.md — Upload safety: only uploaded files, clean names, shared limits, disallowed extensions, archived owners, all-or-nothing; owner relations; one byte-level path for temporary uploads held on the bucket
+- [x] 09-03-PLAN.md — Signed, user-bound, short-lived streaming file route with inline allowlist, nosniff, SPA exception and route walk
+- [x] 09-04-PLAN.md — Transaction categories in the database: two levels, inherited type, system income category guard, generic Czech seed
+- [x] 09-21-PLAN.md — Archived owners (D-21): files hidden from the Partner and the default Admin query, back on restore, objects kept; documents schema refusals; Partner-safe column pin
+- [x] 09-24-PLAN.md — Livewire temporary uploads on the private bucket (D-18): published config, production boot guard, DDEV path, CORS and expiry requirements
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 09-05-PLAN.md — Admin "Soubory" tabs on project, task and client: upload, download, preview; task placeholder replaced
+- [x] 09-06-PLAN.md — Category screen and Actions: create, rename, move, archive, delete unused; finance copy contract
+- [x] 09-09-PLAN.md — Transactions record: table with CZK snapshot columns and composite keys, Admin-only model and registrations, database integrity
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 09-07-PLAN.md — Rename, visibility toggle and permanent delete (object removed, activity logged), single and bulk
+- [x] 09-08-PLAN.md — Partner read: policy grant, Partner Soubory tabs, visibility matrix with archive and restore pass and mutation self-check
+- [x] 09-22-PLAN.md — Transaction write paths: CZK identity, CNB snapshot of the day, manual amount, record, update with recompute-versus-manual, delete
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 09-10-PLAN.md — Partner upload on create-task, own deletion while the task is open, Admin bell
+- [x] 09-11-PLAN.md — Transactions screen: create with CNB preview, edit with the manual switch, delete with confirmation, activity and history
+- [x] 09-23-PLAN.md — ZIP archive record: owner-scoped table and model, status, expiry and download state, registrations
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 09-12-PLAN.md — Comment attachments for Admin and Partner; internal-comment files never reach a Partner
+- [x] 09-13-PLAN.md — Receipts on transactions, receipt count and filter, client sync, deletion with the transaction, owner deletion guard with archive and restore proofs
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 09-14-PLAN.md — Central documents listing: owner links, D-07 filters, archived-owners filter, sorting, search, unattached upload, bulk delete
+- [x] 09-15-PLAN.md — Finance overview: month/year tiles, category rollup, by-client table, monthly bar chart
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 09-16-PLAN.md — Storage totals: tiles and by-client table with the no-client row, archived owners counted and labelled
+- [x] 09-17-PLAN.md — ZIP request and background build on private storage
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [x] 09-18-PLAN.md — Archives list, signed archive download route, 7-day prune on schedule
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [x] 09-19-PLAN.md — ZIP hardening: safe unique entry names, limits re-checked, ready and failed bells, ZipStream as a direct dependency
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [x] 09-20-PLAN.md — Partner leak sweep, storage consistency check, CONTRIBUTING and README, .gitignore review, phase gate, VALIDATION sign-off
+
+**Gap closure** *(from 09-VERIFICATION.md and 09-REVIEW.md; gap plans waves 1-3, run with `/gsd-execute-phase 09 --gaps-only`)*
+
+**Gap wave 1**
+- [x] 09-25-PLAN.md — CR-01: ZIP entry numbering total for every order of names, so a.pdf, a.pdf, a (2).pdf is built in the background with the ready bell (DO-02, SC3 gap)
+- [x] 09-27-PLAN.md — WR-01: rows in the transaction, objects after the commit, refused objects queued to `RemoveDocumentObjects`; a transaction delete keeps every receipt on rollback (DO-03, FI-01; user-accepted deviation from D-09 recorded as D-23)
+
+**Gap wave 2** *(blocked on gap wave 1 completion)*
+- [x] 09-26-PLAN.md — WR-02: the prune deletes `storagePath()` whatever the status, and the build job removes the ZIP of an archive that failed or vanished during the build (DO-02; after 09-25, whose DocumentArchiveTest.php it runs)
+
+**Gap wave 3** *(blocked on gap wave 2 completion)*
+- [x] 09-28-PLAN.md — Consistency proof through every delete path, CONTRIBUTING update, CR-01/WR-01/WR-02 closed in the disposition, D-23 recorded in 09-CONTEXT.md and the WR-01 note, validation rows, phase gate
+
+### Phase 09.1: Transactions API (INSERTED)
+
+**Goal:** REST API for the transactions and transaction_categories tables, including bulk creation of transactions
+**Requirements**: TBD
+**Depends on:** Phase 9
+**Plans:** 9/9 plans complete in 5 waves (gap-closure plan 09.1-09 from 09.1-VERIFICATION.md and 09.1-REVIEW.md planned in gap wave 1)
+
+Plans:
+**Wave 1**
+- [x] 09.1-01-PLAN.md — Own exchange rate (D-06): `custom` CZK source in the database, `CustomRate`, the custom branch of `TransactionCzk`, rate rules in `TransactionInput`, `RecordTransaction` wiring
+- [x] 09.1-02-PLAN.md — Finance abilities (D-01) and reading one transaction (D-07): finance read group, show endpoint, response contract, route-walk and docs pins
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 09.1-03-PLAN.md — Finance token on the token screen (D-01), public docs intro and CONTRIBUTING for the four abilities and the finance formats
+- [x] 09.1-04-PLAN.md — Editing a transaction booked at an own rate: sticky-rate rule in `UpdateTransaction`, Admin UI badge and kept-rate edit state
+- [x] 09.1-05-PLAN.md — Listing (D-09): transaction list with filters, sorts and date/integer cursors; read-only transaction categories list and detail
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 09.1-06-PLAN.md — Single writes (D-02, D-03, D-06, D-08): POST, PATCH, DELETE through the Actions, `TransactionPayload` mapping and error-key remap, 409 `transaction_in_use`
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 09.1-07-PLAN.md — Bulk create (D-04, D-05): partial-success batch of up to 500 with its duration measured against the idempotency stale lock; Idempotency-Key on both creates
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 09.1-08-PLAN.md — Importer journey end to end, Phase 10 hand-over in CONTRIBUTING, full gate and validation sign-off
+
+**Gap wave 1**
+- [x] 09.1-09-PLAN.md — CR-01: a CZK figure sent with `exchange_rate: null` on an own-rate transaction becomes its bank figure; WR-01: JSON booleans refused in the integer fields; WR-04 guard on the finance:write refusal walk; disposition and validation rows, phase gate
+
+### Phase 10: Invoicing
+
+**Goal**: Admin turns unbilled time into an issued, immutable, payable invoice in one pass and follows it through payment, and Partner sees their own issued documents
+**Depends on**: Phase 6, Phase 8, Phase 9
+**Requirements**: IN-01, IN-02, IN-03, IN-04, IN-05, IN-06, IN-07, IN-08, IN-09, IN-10, CL-03, FI-03
+**Success Criteria** (what must be TRUE):
+  1. Admin creates a draft from unbilled billable time (client, period, projects, grouping per project or task, fixed sums) plus manual items and edits the items; two drafts can never bill the same time entry; cancelling or deleting a draft, or storno, returns the entries to unbilled and unlocked
+  2. Issuing allocates the next number only at issue from separate invoice, proforma and credit-note series (gap-free under concurrent issuing), freezes supplier, customer and bank snapshots, rates, amounts and the CNB rate with CZK total for client-currency invoices, and afterwards only payment state and internal note can change, even through raw SQL; non-VAT-payer mode is the default
+  3. At issue a PDF is generated from the snapshots only, in the client's invoice language, with a SPAYD QR code for CZK bank transfer, stored in documents (deleting it needs explicit confirmation), and sent by queued e-mail with an optional work report; unsent invoice e-mails show on the System page
+  4. Admin records a manual payment (transfer or cash) with a warning if already paid, which creates an income transaction with editable date and category; overdue status is derived and listed in an overdue overview and as a dashboard tile; a paid proforma converts to a linked invoice
+  5. The client detail shows projects, unbilled time and amount, invoices, documents and client accounts, and a Partner sees only their own issued invoices and proformas (list, detail, PDF) read-only, never drafts, internal notes, linked time or rates
+
+**Plans:** 41/41 plans complete in 13 waves
+**UI hint**: yes
+
+Plans:
+**Wave 1**
+- [x] 10-01-PLAN.md — Money arithmetic for invoice lines: quantity from exact seconds, quantity times price rounded once, signs, exact conversion between two CNB currencies, converted line amount rounded exactly once
+- [x] 10-02-PLAN.md — SPAYD payload and local QR PNG with decode round trip; fictional IBAN helper; chillerlan/php-qrcode pinned as a direct dependency
+- [x] 10-03-PLAN.md — Document appearance: accent colour, footer, logo and signature as typed settings (content-addressed, retained images) with the palette derived by the reference rules, on the Settings page
+- [x] 10-04-PLAN.md — Guard functions and the invoices and invoice_items tables: issued documents frozen against raw SQL with recorded D-13 carve-outs, every CHECK, series uniqueness, same-client links, pinned Partner-safe columns
+- [x] 10-33-PLAN.md — Invoicing enums with Czech labels: kinds, states, derived statuses (Admin and Partner wording), line origins, payment methods, e-mail states
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 10-05-PLAN.md — Invoice and InvoiceItem models with the fail-closed Partner scope, policies, morph aliases, registries and canaries
+- [x] 10-06-PLAN.md — Admin-only side tables, payments never edited and deleted only together with their income through the sanctioned path, e-mail log, transactions link with the payment-income lock, and the time_entries invoice link with its lifecycle guard
+- [x] 10-07-PLAN.md — Number series as variable symbols: digits-only proforma rule (owner acknowledgement point), distinct proforma default, VariableSymbol helper
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 10-08-PLAN.md — Admin-only invoicing models, relations and registrations proven closed to Partners
+- [x] 10-09-PLAN.md — EntryBilling as the single writer of billing columns with the TI-08 rate and amount snapshot; manual billing respects drafts and invoices
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 10-10-PLAN.md — Reserved entries locked against edits and deletion in panel, timesheet and API
+- [x] 10-11-PLAN.md — Draft lifecycle with manual items, server-side totals, internal note, domain error copy and fixtures
+- [x] 10-34-PLAN.md — Reports price billed entries with their snapshot and flag reserved time, which still counts as unbilled
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 10-12-PLAN.md — Issuing: blockers, number at issue, chronology, snapshots (appearance with image hashes), CNB snapshot of the document
+- [x] 10-13-PLAN.md — Draft from unbilled time: picker, grouping per project or task, reservation claimed on locked rows, single-rounding preview of converted lines
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 10-14-PLAN.md — Issue bills linked time; unlink, add new time and fixed amounts on drafts
+- [x] 10-15-PLAN.md — Invoice PDF from the snapshot: Roboto, D-24 layout, SPAYD QR, hash-verified logo and signature, cs and en copy, PDF test helpers
+- [x] 10-16-PLAN.md — Manual payments with income from invoices only and the balance reader
+- [x] 10-35-PLAN.md — Concurrency proofs with mutation twins: gap-free issue under parallel processes and race-free reservation of time
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 10-17-PLAN.md — Foreign-currency lines converted at the issue date with frozen rates and one rounding per line, draft preview, non-VAT-payer proof
+- [x] 10-18-PLAN.md — PDF variants (proforma, credit note, non-CZK, optional blocks) and regeneration equivalence
+- [x] 10-19-PLAN.md — Receivables: derived statuses and overdue, tab filters and counts, CZK summaries, payment income locked on the finance side and in the Transactions API
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 10-20-PLAN.md — PDF stored at issue with full rollback and the invoice owner kind
+- [x] 10-21-PLAN.md — Admin document list with tabs and the Nová faktura modal; complete Czech screen copy; UI-SPEC amended to the rulings
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [x] 10-22-PLAN.md — Proforma conversion: linked invoice, time moved still billed, payments carried with income at their dates
+- [x] 10-23-PLAN.md — Credit notes: partial credits and full storno releasing time, converted lines credited with one rounding
+- [x] 10-24-PLAN.md — Queued idempotent e-mail with PDF and optional work report, failure notice
+- [x] 10-25-PLAN.md — Draft editor: items table, previews, fixed amounts, linked time with add and unlink
+- [x] 10-27-PLAN.md — Client detail panels: stats, Projekty and Faktury tabs
+- [x] 10-28-PLAN.md — Dashboard card Nezaplacené faktury
+- [x] 10-36-PLAN.md — Stored PDF lifecycle: confirmed deletion of issued PDFs and regeneration from the snapshot
+- [x] 10-37-PLAN.md — System page slot for unsent invoice e-mails
+- [x] 10-38-PLAN.md — Signed, user-bound invoice PDF route for Admin and Partner
+- [x] 10-39-PLAN.md — Invoice link and payment-income lock on the transactions screen
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [x] 10-26-PLAN.md — Partner read-only documents and the canary leak proof
+- [x] 10-29-PLAN.md — Issue flow from the draft and the issued detail with its tabs
+- [x] 10-40-PLAN.md — Draft and invoice markers on time entries and the reserved line in the report
+- [x] 10-41-PLAN.md — DeletePayment: a mistaken payment deleted together with its income, carried-payment rule, lock order and concurrency proof
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [x] 10-30-PLAN.md — Payment modal, payment deletion with confirmation, and proforma conversion in the panel
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [x] 10-31-PLAN.md — Storno and partial credit notes, e-mail dialog, send log and resend in the panel
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [x] 10-32-PLAN.md — End-to-end flow and Partner sweep, CONTRIBUTING and README hand-over, validation map, phase gate
+
+### Phase 10.1: Invoices stay fully editable until sent, with a manual unlock (INSERTED)
+
+**Goal:** Admin can correct an issued invoice or proforma (items, dates, customer and supplier data, bank account, currency, language and linked time) until a successfully sent e-mail locks it, and can unlock a sent document with a recorded reason; number and kind never change, credit notes stay locked, the database enforces the lock, and every post-send change, lock and unlock is audited
+**Requirements**: IN-03, IN-11, IN-12, IN-13, IN-14, IN-15
+**Depends on:** Phase 10
+**Success Criteria** (what must be TRUE):
+  1. An issued invoice or proforma stays editable until a successfully sent document e-mail locks it; queued, failed or pending e-mails, payments, credit notes and storno never lock it; a credit note is locked at issue; number and kind never change; a locked document refuses every write, raw SQL included
+  2. Admin unlocks a locked invoice or proforma only with a reason; the unlock and every lock are in the document history, and the next successful send locks it again
+  3. While open, Admin edits lines, dates, customer and supplier data, bank account, currency, language and linked time; amounts follow the single rounding rule, credited lines and money already received stay consistent, and totals below paid or credited amounts warn instead of blocking
+  4. Every saved edit replaces the stored PDF and its QR code and renews the card link when amount or currency change; nothing is sent automatically, and an edit never interleaves with a queued or sending e-mail
+  5. A Partner sees only the current version of an edited invoice and none of the lock, unlock or edit surfaces or history
+
+**Plans:** 16/16 plans complete in 9 waves (4 gap-closure plans 10.1-13 to 10.1-16 from 10.1-VERIFICATION.md and 10.1-REVIEW.md, planned in 2 gap waves)
+
+Plans:
+**Wave 1**
+- [x] 10.1-01-PLAN.md — Tracer: send-driven lock in the database (lock column, backfill, invoice row guard, child guards, Admin-only row guard), issue leaves documents open, a successful send locks
+- [x] 10.1-11-PLAN.md — Contract documents amended: send-driven Immutability in PROJECT.md and CLAUDE.md, IN-03 amended, IN-11 to IN-15 with traceability
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 10.1-02-PLAN.md — Unlock with a reason through the sanctioned path, lock and unlock audited, lock badge and banners on the detail, architecture test
+- [x] 10.1-03-PLAN.md — Time link guard and payment-link currency key follow the lock; [BLOCKING] phase migrations applied to the development database
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 10.1-04-PLAN.md — UpdateIssuedDocument for lines and note: shared line writer, PDF replacement, editability rules, credited lines, frozen conversions
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 10.1-12-PLAN.md — In-flight e-mail rule and queue lock, warnings below paid or credited, post-send edit audit
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 10.1-05-PLAN.md — Card link and QR follow an edit, render failure rolls back, readable history rows
+- [x] 10.1-06-PLAN.md — Issued mode of the editor reached from the detail, credited lines frozen in the UI, warnings below paid or credited
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 10.1-07-PLAN.md — Header edits: dates within the numbering period, language, customer and supplier data with refill, bank account refill
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 10.1-08-PLAN.md — Currency change with CNB figures of the issue date, re-converted time lines, bank and card link; refused with payments or credit notes (owner ruling in D-06)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 10.1-09-PLAN.md — Linked time and fixed amounts added and released on an open issued document
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [x] 10.1-10-PLAN.md — Edit-versus-send concurrency proof, end-to-end journey, Partner sweep, CONTRIBUTING hand-over and phase gate
+
+**Gap closure** *(from 10.1-VERIFICATION.md and 10.1-REVIEW.md; gap plans waves 1-2, run with `/gsd-execute-phase 10.1 --gaps-only`)*
+
+**Gap wave 1**
+- [x] 10.1-13-PLAN.md — CR-01 (gap 1): a paid card session whose link currency is no longer the document's is unmatched `currency`, nothing booked; webhook test after a CZK to EUR change with the same figure; database pin of a card payment record to a payment in its own currency (IN-13, IN-14)
+- [x] 10.1-14-PLAN.md — WR-02 (gap 2): keyed `bank_fingerprint` in the audited snapshot, so a bank-only refill after the first send writes one `invoice_edited` row without any bank data (IN-15)
+- [x] 10.1-15-PLAN.md — WR-01: a queued e-mail row ages out at the stale threshold like a sending one, the job claims under the invoice row lock and never sends a stale row, the Odeslání tab offers the resend (IN-13, IN-14)
+
+**Gap wave 2** *(blocked on gap wave 1 completion)*
+- [x] 10.1-16-PLAN.md — CONTRIBUTING hand-over pinned by RepositoryFilesTest, phase regression gate, review disposition (WR-03, WR-04 and IN-01 to IN-06 deferred, WR-04 with owner options), validation rows, REQUIREMENTS.md consistency check
+
+### Phase 11: Stripe Payments
+
+**Goal**: Issued invoices can be paid by card through Stripe, payments are matched automatically, and duplicate or unmatched payments are surfaced instead of lost
+**Depends on**: Phase 10
+**Requirements**: PA-01, PA-02, PA-03, PA-04, PA-05, PA-06, PA-07, PA-08
+**Success Criteria** (what must be TRUE):
+  1. Issuing an invoice with online payment enabled creates a single-use Stripe Payment Link in a background job; a Stripe failure never blocks issuing and alerts Admin; online payment can be disabled per client and per document
+  2. A "Pay by card" button appears in the e-mail, the PDF and the invoice detail (Admin and Partner) and is hidden once paid; the link is deactivated when the invoice is paid by any route or stornoed, and can be regenerated after the old one is deactivated
+  3. The webhook endpoint rejects a bad signature, stores a valid event under a unique event id, answers immediately and processes it in a job; a repeated event is ignored
+  4. A matching payment (invoice id, with link id as fallback, correct amount and currency) creates the payment, marks the invoice paid, creates the income transaction, deactivates the link and notifies Admin; a second payment of the same invoice is stored as a duplicate with no income or invoice change and alerts Admin
+  5. Unmatched payments and refund events are recorded and alerted, Admin works through a payments overview with duplicate and unmatched filters and manual resolution, unresolved payments show as a dashboard tile and unprocessed webhooks on the System page, and old webhook events are pruned
+
+**Plans:** 20/20 plans executed in 8 waves
+**UI hint**: yes
+
+Plans:
+**Wave 1**
+- [x] 11-01-PLAN.md — Stripe SDK behind a two-method gateway with a fake, fixed failure classes, secrets from the environment only (blocking-human package check)
+- [x] 11-02-PLAN.md — Card payment write core: RecordPayment::recordLocked() for a job without a user, method card, link-only payment income
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 11-03-PLAN.md — Per-document card switch and stable pay token frozen at issue; draft editor, issue confirmation, settings and client hints
+- [x] 11-04-PLAN.md — Webhook endpoint: signature check, unique event stored once, immediate answer, processing job with the job contract
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 11-05-PLAN.md — "Zaplatit kartou" in the invoice PDF and the pay-link block in the e-mail
+- [x] 11-06-PLAN.md — Payment link records: Admin-only table, one live link per document, guarded lifecycle
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 11-07-PLAN.md — Link created by an idempotent queued job at issue; failure alerts Admin and never blocks issuing
+- [x] 11-08-PLAN.md — Public pay page /pay/{token}: redirect to Stripe or a neutral paid, cancelled or preparing page
+- [x] 11-09-PLAN.md — Card payment records: unique Stripe references kept reserved, final resolutions
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 11-10-PLAN.md — Link follows what is owed: reconcile on payment, storno, credit note and deletion; regenerate, deactivate, sweep
+- [x] 11-11-PLAN.md — Payments overview "Platby kartou": queue tabs, filters, record view with banners
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 11-12-PLAN.md — Admin document detail: card link section, banners, header action, invoice list link filter
+- [x] 11-13-PLAN.md — Automatic matching of paid checkout sessions; duplicates, unmatched reasons, repeats ignored
+- [x] 11-14-PLAN.md — System page: unprocessed webhooks and Stripe configured slots; 90-day pruning of processed events
+- [x] 11-19-PLAN.md — Resolutions: assign to a document, mark resolved with a note, record a money return
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 11-15-PLAN.md — Partner "Zaplatit kartou" in the free header slot, with the rendered-HTML leak proof
+- [x] 11-16-PLAN.md — Duplicate, unmatched and refund alerts in the bell and by e-mail; refund events recorded
+- [x] 11-17-PLAN.md — Dashboard card "Nevyřešené platby"
+- [x] 11-18-PLAN.md — Concurrency proof of matching with a mutation twin
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 11-20-PLAN.md — End-to-end journey, Partner sweep, Phase 12 hand-over, owner's Stripe setup, full gate
+
+### Phase 12: Partner Audit
+
+**Goal**: The Partner view is proven airtight across every screen, route and endpoint before release
+**Depends on**: Phase 11
+**Requirements**: US-01, AUD-01, AUD-02
+**Success Criteria** (what must be TRUE):
+  1. An automated matrix test enumerates every Resource, Page, Widget, relation manager and API endpoint against Admin and Partner and confirms each behaves as the permission matrix specifies
+  2. Canary tests prove a Partner never sees time, rates, prices, finance, internal comments or another client's data in the UI, global search, selects, exports, notifications, activity log, downloads and API, for every entity
+  3. A route audit confirms every non-public route requires authentication, the public routes are an explicit allowlist, and an anonymous request to any other route is refused
+  4. The audit suite runs in CI and fails the build when a new screen, route or endpoint is added without an explicit role rule
+
+**Plans:** 9/9 plans executed in 6 waves
+
+Plans:
+**Wave 1**
+- [x] 12-01-PLAN.md — Audit suite, CI gate and route inventory: every route has an auth middleware or a RouteRules entry
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 12-02-PLAN.md — Anonymous refusal of every non-public route; unauthenticated API 500 and dead Filament export routes fixed
+- [x] 12-03-PLAN.md — Permission matrix for screens and endpoints: panel classes, API, Livewire, Horizon against Admin and Partner
+- [x] 12-05-PLAN.md — Canary channel matrix over every entity; global search, API, activity log and selects channels
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 12-04-PLAN.md — Permission matrix for Partner actions per record state and Partner-visible fields
+- [x] 12-06-PLAN.md — Canary channel matrix: UI pages, downloads and exports channels
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 12-07-PLAN.md — Canary channel matrix: notifications channel, notification audiences, every channel driven
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 12-08-PLAN.md — Owner sign-off of the Partner matrix, findings and open questions (blocking decision)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 12-09-PLAN.md — Hand-over in CONTRIBUTING, README and PROJECT.md; full gate
+
+## Backlog
+
+### Phase 999.1: API Timer (BACKLOG)
+
+**Goal**: An API client starts and stops the timer and reads the currently running one, with the same rules as the UI (auto-stop of the running timer on start, one running timer per user) and idempotent start
+**Requirements**: AP-03
+**Origin**: Removed from Phase 7 on 2026-10-14 (see `.planning/phases/07-rest-api/07-CONTEXT.md`, deferred)
+**Plans**: 0 plans
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1. Repository Hygiene | 11/11 | Complete    | 2026-10-08 |
+| 2. Platform Foundation | 13/13 | Complete    | 2026-10-08 |
+| 3. Operations Foundation | 19/19 | Complete    | 2026-10-08 |
+| 4. Clients and Projects | 21/21 | Complete    | 2026-10-09 |
+| 5. Tasks and Kanban | 22/22 | Complete    | 2026-10-09 |
+| 6. Time Tracking | 14/14 | Complete    | 2026-10-14 |
+| 7. REST API | 20/20 | Complete    | 2026-10-14 |
+| 8. Exchange Rates and Reports | 27/27 | Complete    | 2026-10-29 |
+| 9. Documents and Finance | 28/28 | Complete    | 2026-10-29 |
+| 10. Invoicing | 41/41 | Complete    | 2026-10-29 |
+| 11. Stripe Payments | 20/20 | In Progress | - |
+| 12. Partner Audit | 9/9 | In Progress | - |
+
+### Phase 13: Unified e-mail layout and HTML e-mail templates
+
+**Goal:** Every e-mail the system sends shares one HTML layout built on the Laravel mail theme. The payment e-mails are reworked first: a new confirmation to the client that an invoice has been paid (absorbs the former Phase 10.2), and the invoice e-mail with its "Pay by card" button. The other e-mails (partner invitation, password reset, task notifications, operational alerts) are moved to the layout and their texts reviewed.
+**Requirements**: P13-01, P13-02, P13-03, P13-04, P13-05, P13-06, P13-07, P13-08, P13-09, P13-10, P13-11 (phase-local, defined in 13-RESEARCH.md)
+**Depends on:** Phase 12
+**Plans:** 9/9 plans executed
+
+Plans:
+**Wave 1**
+- [x] 13-01-PLAN.md — Shared mail layout, theme and brand: published kokpit theme, MailBrand header and footer, notification view, layout strings (Wave 1)
+- [x] 13-02-PLAN.md — Payment confirmation storage: payment_confirmations table, model and state enum, Admin-only registries, database contract (Wave 1)
+- [x] 13-03-PLAN.md — Existing payment and invoicing tests select the e-mails they mean by recipient and subject, ready for the confirmation (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 13-04-PLAN.md — Shared mail layout, second half: inline cid logo, plain-text part, MailText escapes, TaskNotification on MailText (Wave 2)
+- [x] 13-05-PLAN.md — Invoice e-mail on the layout: escaped plain-text body, Pay by card button under PayLinkBlock, document language (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 13-06-PLAN.md — Payment confirmation trigger, send job and e-mail: one per payment from RecordPayment::recordLocked(), full and partial wording in cs and en (Wave 3)
+- [x] 13-07-PLAN.md — Invitation, password reset, task notifications and alerts on the layout with reviewed Czech texts (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 13-08-PLAN.md — Confirmation state in the Platby tab and the record dialog; path and failure proofs (Wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 13-09-PLAN.md — CONTRIBUTING, README and PROJECT.md hand-over, full gate, separate human review in real mail clients (Wave 5)
+
+### Phase 14: Switchable payment method and independent invoice currency
+
+**Goal:** The invoice currency can be changed freely, independent of the payment method (bank transfer or online), the selected bank account, or whether payment is online. The payment method can be switched on the invoice between bank transfer and online (Stripe): bank transfer shows the bank payment details, online shows no bank details, only what is needed to pay via Stripe. When the chosen currency matches a preconfigured bank account, that account is preselected; the account can also be chosen separately and independently of the currency. The chosen currency carries through to the PDF and the Stripe payment.
+**Requirements**: P14-01, P14-02, P14-03, P14-04, P14-05, P14-06, P14-07, P14-08, P14-09
+**Depends on:** Phase 13
+**Plans:** 15/15 plans executed
+
+Plans:
+**Wave 1**
+- [x] 14-01-PLAN.md — Bank accounts get stable UUID v7 ids; several accounts per currency; Repeater id round trip (Wave 1)
+- [x] 14-02-PLAN.md — `invoices.payment_method` with guard, checks and backfill; open card switch and set-once token; account id on `invoice_admin` (Wave 1)
+- [x] 14-03-PLAN.md — One union currency list (CNB + accounts + client + current + CZK) for every editor (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 14-04-PLAN.md — Draft method and account, preselection, online availability, issue without bank snapshot for online (Wave 2)
+- [x] 14-05-PLAN.md — PDF payment box by method; pay URL gated on switch AND token (Wave 2)
+- [x] 14-06-PLAN.md — Admin and Partner detail show the method; no bank rows for online (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 14-07-PLAN.md — Open issued document: method, account, switch and currency changes with the Stripe link following (Wave 3)
+- [x] 14-08-PLAN.md — Draft editor: method, account and card toggle; preselection on currency change (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 14-09-PLAN.md — Proforma conversion inherits method and account; link-job race; audit of method changes (Wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 14-10-PLAN.md — Issued editor fields; old currency-to-account lookups deleted; architecture test (Wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 14-11-PLAN.md — CONTRIBUTING and PROJECT.md hand-over, docblock sweep, development database migrated, full gate (Wave 6)
+
+**Gap closure, Wave 1** *(from 14-VERIFICATION.md)*
+- [x] 14-12-PLAN.md — CR-01: the issued editor keeps a re-picked stored account through a currency change (gap closure, Wave 1)
+- [x] 14-13-PLAN.md — WR-01: the card switch needs card payment to be available on every issued path that turns it on or keeps it on (gap closure, Wave 1)
+- [x] 14-14-PLAN.md — WR-02: a paid proforma whose account was removed converts and the invoice prints the proforma's bank snapshot (gap closure, Wave 1)
+
+**Gap closure, Wave 2** *(blocked on gap closure Wave 1 completion)*
+- [x] 14-15-PLAN.md — IN-01 and IN-02 doc fixes, CONTRIBUTING hand-over of the gap rules, full gate (gap closure, Wave 2)
+
+### Phase 15: Cash payment method for invoices and cash receipt documents
+
+**Goal:** Invoices can be created with cash as the payment method, and a cash receipt document (Czech: pokladni prijmovy doklad, PPD) can be issued for such invoices. Research must first establish what a cash receipt document is and how it is issued (legal requirements, content, numbering).
+**Requirements**: P15-01, P15-02, P15-03, P15-04, P15-05, P15-06, P15-07, P15-08, P15-09, P15-10, P15-11, P15-12
+**Depends on:** Phase 14
+**Plans:** 14/14 plans complete
+
+Plans:
+**Wave 1**
+- [x] 15-01-PLAN.md — Cash as third document method: CHECKs, draft rule, issue without bank snapshot or pay token; P15 requirements and assumptions AS-1 to AS-16 (owner answers included) recorded (Wave 1)
+- [x] 15-02-PLAN.md — Owner decision on the receipt table shape, then `cash_receipts` (frozen `document_number` included) with guard, D-08 FK/CHECK and Partner-safe pin (Wave 1, checkpoint)
+- [x] 15-03-PLAN.md — Shared closed Dompdf engine and PDF parts extracted from the invoice PDF, options pinned by a test (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 15-04-PLAN.md — Cash on paper and screen: PDF cash box, default e-mail text, Admin and Partner detail without bank details (Wave 2)
+- [x] 15-05-PLAN.md — Own gap-free `cash_receipt` number series and pattern setting (Wave 2)
+- [x] 15-06-PLAN.md — Partner-isolated `CashReceipt` model, policy and relations, registered in every isolation and audit harness (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 15-07-PLAN.md — Open issued document changed to and from cash: snapshot, card switch, Stripe link, pay URL, conversion, editors (Wave 3)
+- [x] 15-08-PLAN.md — Receipt issued automatically in the cash payment transaction with its audit row; concurrency proof (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 15-09-PLAN.md — Receipt PDF (Accounting Act Sec. 11 content) built from the receipt row only and stored (Wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 15-10-PLAN.md — Receipt attached to the payment confirmation; the successful send locks it (Wave 5)
+- [x] 15-11-PLAN.md — Signed download route and the Partner's read-only receipt list, declared in every audit matrix (Wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 15-12-PLAN.md — Storno with a recorded reason; payment deletion refused while the receipt is valid; receipt PDF protected (Wave 6)
+- [x] 15-13-PLAN.md — Edit while open, Admin unlock with reason, regenerate a missing PDF, unlock-path architecture test (Wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 15-14-PLAN.md — Platby tab receipt column and actions, hand-over in CONTRIBUTING, full gate (Wave 7)
+
+### Phase 16: Per-client e-mail sending toggle
+
+**Goal:** A client setting that disables sending e-mails (invoices and related documents) to that client, for clients served exclusively by hand; sending stays enabled by default
+**Requirements**: P16-01, P16-02, P16-03, P16-04, P16-05, P16-06, P16-07, P16-08, P16-09, P16-10, P16-11
+**Depends on:** Phase 15
+**Plans:** 6/6 plans complete
+
+Plans:
+**Wave 1**
+- [x] 16-01-PLAN.md — Client switch "Odesílat doklady e-mailem": column (default on), form, detail badge, audit, defaults, the fail-closed gate `ClientDocumentEmails`; P16 requirements registered (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 16-02-PLAN.md — Invoice detail of a hand-served client (no send action, gray note, no post-issue dialog, queue refused) and the manual invoice/proforma lock `LockInvoice` with its audit and arch allowlist (Wave 2)
+- [x] 16-03-PLAN.md — `skipped` document e-mail: job re-check after the claim, list/Odeslání tab read it as not sent and hide the resend, System indicator ignores skipped rows and hand-served clients (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 16-04-PLAN.md — Manual lock of a cash receipt (PPD) from the Platby tab, `LockCashReceipt`, audit and arch allowlist (Wave 3)
+- [x] 16-05-PLAN.md — Payment confirmation of a hand-served client: skipped row with no job, record-dialog hint, job re-check, relaxed recipient CHECK (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 16-06-PLAN.md — Hand-served journey, D-01 scope test (system e-mails unaffected), Partner isolation, CONTRIBUTING hand-over, full gate (Wave 4)
+
+### Phase 17: Task, project and search UX refinements
+
+**Goal:** A batch of UX refinements across tasks, projects, search, signals and files:
+- Task create/edit form: the "Checklist" card spans the full width.
+- Rich-text content (descriptions, comments, any rich-text field) is rendered with its formatting in read-only output.
+- A task can be created directly from the project detail.
+- Search results ordering: within each category, active (not completed) tasks and projects come first; the current order of categories and the display stay as they are.
+- Time entries can be added directly from a task.
+- A task can be flagged to be hidden from the kanban board; by default every task is shown.
+- Signal: the task can be picked from the system via type-ahead over unfinished tasks inside the existing text field, without switching modes. A picked task inserts the text `{PROJECT}: {task name} [{task code}]` (`{PROJECT}` = project name; built server-side, truncated to 255 characters) and is linked; a cross icon in the input clears the pick so free text can be typed again; if nothing is picked, plain unlinked text is stored. In the signal listing, a linked task shows a timer control and an open-task icon (the name itself is not a link).
+- Files: image previews open in a single-image modal/lightbox (no navigation between images); non-image files open in a new window.
+- Task creation: the project suggestions offer only projects not in the "Completed" state (if not already so).
+- Projects: the status can be changed from the project view, similar to the task view.
+
+**Requirements**: P17-01, P17-02, P17-03, P17-04, P17-05, P17-06, P17-07, P17-08, P17-09, P17-10
+**Depends on:** Phase 16
+**Plans:** 8/8 plans complete
+
+Plans:
+**Wave 1**
+- [x] 17-01-PLAN.md — Hide-from-board flag (`tasks.hidden_on_board`, filtered only in `TaskBoard::applyFilters`, Admin-only writer, reviewed Partner-safe pin) (Wave 1)
+- [x] 17-02-PLAN.md — Files: single-image lightbox for images and new-tab PDF preview in every list and under comments, both panels (Wave 1)
+- [x] 17-03-PLAN.md — Rich text read-only with `fi-prose` on the Admin, Partner and board-preview surfaces through `RichText::render`; P17 requirements registered (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 17-04-PLAN.md — Signal type-ahead pick of an unfinished task, snapshot text composed by the server at pick time and `signal_tasks.task_id` link (Wave 2)
+- [x] 17-05-PLAN.md — Global search: active tasks and projects first inside their group, before the 50-row limit; the full-width checklist card of the task form (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 17-06-PLAN.md — Signal listing: shared timer control and open-task icon on linked rows, states and page-wide sync (Wave 3)
+- [x] 17-07-PLAN.md — Project view: "Nový úkol" with the project locked, task-creation pickers without Done projects (Admin and Partner), "Změnit stav" (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 17-08-PLAN.md — "Přidat čas" from the task view with the context locked; CONTRIBUTING hand-over, the `DocumentUrl` docblock and the full gate (Wave 4)
+
+### Phase 17.1: Close gap: G1/G2 — release time on full partial credit and reject payments on converted proformas (INSERTED)
+
+**Goal:** No tracked time stays locked on an invoice that is credited in full, and no payment exists without its income: once partial credit notes have taken back every creditable quantity of an invoice, the credit note that took back the last quantity returns all its time entries to unbilled and unlocked in the same locked transaction (the invoice is not cancelled, `cancels_invoice` stays the one storno marker, and the database link guard accepts exactly this release); a payment on a proforma that already has its invoice is refused by the shared `RecordPayment::refuses()` on the manual and the card path with its own message (audit gaps G1 and G2; the time held by an unpaid proforma stays deferred)
+**Requirements**: IN-10, TI-08, IN-07, IN-06, PA-01
+**Depends on:** Phase 17
+**Plans:** 3/3 plans complete
+
+Plans:
+**Wave 1**
+- [x] 17.1-01-PLAN.md — G1: `IssueCreditNote::partial()` releases the time when nothing is left to credit, the guard helper `kokpit_invoice_fully_credited()` in the link guard (function-only migration), Feature, raw-SQL and Concurrency proofs (Wave 1)
+- [x] 17.1-02-PLAN.md — G2: `RecordPayment::refuses()` refuses a converted proforma with `payment_on_converted_proforma` on the dialog, `handle()`, `recordLocked()` and the card assignment (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 17.1-03-PLAN.md — The partial credit dialog callout and the sent-invoice journey, the CONTRIBUTING hand-over with its repository test, and the CI-style phase gate (Wave 2)

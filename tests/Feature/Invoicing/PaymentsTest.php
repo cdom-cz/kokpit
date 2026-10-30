@@ -7,6 +7,8 @@ use App\Domain\Finance\Enums\CzkSource;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Actions\ConvertProforma;
+use App\Domain\Invoicing\Actions\DeletePayment;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\InvoiceState;
@@ -215,6 +217,61 @@ describe('documents that cannot be paid', function (): void {
             ->and($attempt($invoice))->toBe($expected)
             ->and(InvoicePayment::query()->count())->toBe(0)
             ->and(Transaction::query()->count())->toBe(0);
+    });
+});
+
+describe('a converted proforma (Phase 17.1, D-05, D-06)', function (): void {
+    it('refuses a payment on a paid converted proforma with the number of the invoice and stores nothing', function (): void {
+        [$admin, $proforma] = payIssued(InvoiceKind::Proforma);
+        app(RecordPayment::class)->handle($admin, $proforma, ['amount' => '12500', 'paid_on' => '2026-10-13']);
+        $invoice = app(ConvertProforma::class)->handle($admin, $proforma);
+        $before = [payBalance($proforma), payBalance($invoice)];
+
+        $errors = payErrors(fn () => app(RecordPayment::class)->handle($admin, $proforma, ['amount' => '100', 'paid_on' => '2026-10-14']));
+
+        expect($errors)->toBe(['payment' => [__('invoices.errors.payment_on_converted_proforma', ['number' => (string) $invoice->number])]])
+            ->and(InvoicePayment::query()->count())->toBe(2)
+            ->and(Transaction::query()->count())->toBe(1)
+            ->and([payBalance($proforma), payBalance($invoice)])->toBe($before);
+    });
+
+    it('refuses it the same way when the proforma owes its total again', function (): void {
+        [$admin, $proforma] = payIssued(InvoiceKind::Proforma);
+        $source = app(RecordPayment::class)->handle($admin, $proforma, ['amount' => '12500', 'paid_on' => '2026-10-13']);
+        $invoice = app(ConvertProforma::class)->handle($admin, $proforma);
+
+        // The invoice-side copy goes first, then the proforma payment.
+        app(DeletePayment::class)->handle($admin, InvoicePayment::query()->where('invoice_id', $invoice->id)->sole());
+        app(DeletePayment::class)->handle($admin, $source);
+
+        $errors = payErrors(fn () => app(RecordPayment::class)->handle($admin, $proforma, ['amount' => '100', 'paid_on' => '2026-10-14']));
+
+        expect(payBalance($proforma)['remaining'])->toBe(1250000)
+            ->and($errors)->toBe(['payment' => [__('invoices.errors.payment_on_converted_proforma', ['number' => (string) $invoice->number])]])
+            ->and(InvoicePayment::query()->count())->toBe(0)
+            ->and(Transaction::query()->count())->toBe(0);
+    });
+
+    it('still takes a payment on an issued proforma without an invoice, as a payment only', function (): void {
+        [$admin, $proforma] = payIssued(InvoiceKind::Proforma);
+
+        $payment = app(RecordPayment::class)->handle($admin, $proforma, ['amount' => '100', 'paid_on' => '2026-10-14']);
+
+        expect($payment->invoice_id)->toBe($proforma->id)
+            ->and(InvoicePayment::query()->count())->toBe(1)
+            ->and(Transaction::query()->count())->toBe(0);
+    });
+
+    it('still takes a further payment on the invoice made from a proforma and books its income', function (): void {
+        [$admin, $proforma] = payIssued(InvoiceKind::Proforma);
+        app(RecordPayment::class)->handle($admin, $proforma, ['amount' => '12500', 'paid_on' => '2026-10-13']);
+        $invoice = app(ConvertProforma::class)->handle($admin, $proforma);
+
+        $payment = app(RecordPayment::class)->handle($admin, $invoice, ['amount' => '100', 'paid_on' => '2026-10-14']);
+
+        expect($payment->invoice_id)->toBe($invoice->id)
+            ->and(InvoicePayment::query()->count())->toBe(3)
+            ->and(Transaction::query()->count())->toBe(2);
     });
 });
 
