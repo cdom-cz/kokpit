@@ -7,6 +7,7 @@ use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
 use App\Domain\Identity\Models\User;
+use App\Domain\Invoicing\Actions\ConvertProforma;
 use App\Domain\Invoicing\Actions\RecordPayment;
 use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\PaymentMethod;
@@ -165,6 +166,23 @@ it('refuses a draft, a credit note and a cancelled invoice with payment_not_allo
     expect($errors)->toBe(['draft' => $expected, 'credit note' => $expected, 'cancelled' => $expected])
         ->and(InvoicePayment::query()->count())->toBe(0)
         ->and(Transaction::query()->count())->toBe(0);
+});
+
+it('refuses a card payment of a converted proforma with payment_on_converted_proforma and stores nothing', function (): void {
+    $admin = Canary::admin();
+    $this->actingAs($admin);
+    $proforma = InvoiceFixtures::issued(InvoiceFixtures::client(), [InvoiceFixtures::item('Example work', '1', '12500.00')], InvoiceKind::Proforma);
+    app(RecordPayment::class)->handle($admin, $proforma, ['amount' => '12500.00', 'paid_on' => '2026-10-14']);
+    $invoice = app(ConvertProforma::class)->handle($admin, $proforma);
+    $payments = InvoicePayment::query()->count();
+    $transactions = Transaction::query()->count();
+
+    $errors = cardCoreErrors(fn () => recordAsJob($proforma, cardFacts('100.00')));
+    $this->actingAs(Canary::admin());
+
+    expect($errors)->toBe(['payment' => [__('invoices.errors.payment_on_converted_proforma', ['number' => (string) $invoice->number])]])
+        ->and(InvoicePayment::query()->count())->toBe($payments)
+        ->and(Transaction::query()->count())->toBe($transactions);
 });
 
 it('throws a LogicException outside a transaction', function (): void {

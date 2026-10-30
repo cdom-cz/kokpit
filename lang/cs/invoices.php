@@ -76,6 +76,7 @@ return [
         'payment_amount' => 'Zadejte částku větší než nula.',
         'payment_date_future' => 'Datum platby nesmí být v budoucnosti.',
         'payment_not_allowed' => 'Platbu nelze zaznamenat u dobropisu ani u stornovaného dokladu.',
+        'payment_on_converted_proforma' => 'Ze zálohy už vznikla faktura :number. Platbu zaznamenejte na této faktuře.',
         'payment_category' => 'Zvolte kategorii příjmů.',
         'payment_method' => 'Zvolte platbu převodem nebo hotově.',
         'payment_note' => 'Poznámka k platbě může mít nejvýše 500 znaků.',

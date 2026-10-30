@@ -34,8 +34,10 @@ use LogicException;
  *
  * Several payments are normal, and a payment on a document that is already paid or above the remaining amount is
  * allowed: the screen asks for confirmation from {@see RecordPayment::warnings()}, the Action never blocks on them
- * (D-17). What it refuses is a payment on a draft, a credit note or a cancelled invoice (`payment_not_allowed`).
- * Whether a document is unpaid, partly paid or paid is derived from the sum of its payments by
+ * (D-17). What it refuses is a payment on a draft, a credit note or a cancelled invoice (`payment_not_allowed`), and a
+ * payment on a proforma that already has its invoice (`payment_on_converted_proforma`, Phase 17.1 D-05 to D-07), which
+ * would book no income because the conversion carried the proforma payments over once; the Admin records it on the
+ * invoice. Whether a document is unpaid, partly paid or paid is derived from the sum of its payments by
  * {@see InvoiceBalances}; no state is stored.
  *
  * An invoice payment creates, in the same transaction, an income transaction in the system income category by
@@ -90,8 +92,10 @@ final readonly class RecordPayment
         return DB::transaction(function () use ($actor, $invoice, $data): InvoicePayment {
             $locked = Invoice::query()->whereKey($invoice->getKey())->lockForUpdate()->firstOrFail();
 
-            if ($this->refuses($locked)) {
-                throw ValidationException::withMessages(['payment' => __('invoices.errors.payment_not_allowed')]);
+            $refusal = $this->refuses($locked);
+
+            if ($refusal instanceof ValidationException) {
+                throw $refusal;
             }
 
             return $this->recordLocked($locked, PaymentInput::fromArray($data, $locked, IssueContext::today())->toFacts(), $actor);
@@ -101,7 +105,7 @@ final readonly class RecordPayment
     /**
      * The write core of a payment, for a caller that already holds the lock of the document inside its transaction:
      * the manual path above, and a queue job that matched a Stripe payment, which has no user (PA-06, PA-08; D-10,
-     * D-13). It checks that the document can be paid (`payment_not_allowed`), that the CNB list of the income date
+     * D-13). It checks that the document can be paid (`payment_not_allowed`, `payment_on_converted_proforma`), that the CNB list of the income date
      * exists for an invoice in a foreign currency, inserts the payment and, for an invoice, books the income through
      * the one finance write path (CONTEXT rule: income only through the rules of RecordPayment). Once the payment link
      * is reconciled it queues the one confirmation e-mail of the payment in the same transaction (D-05).
@@ -115,7 +119,7 @@ final readonly class RecordPayment
      * @param  User|null  $actor  the person who records the payment, null only for a card payment of the system
      *
      * @throws LogicException outside a transaction, or without an actor for a method other than card
-     * @throws ValidationException `payment_not_allowed`, or `cnb_missing` when the list of the income date is missing
+     * @throws ValidationException `payment_not_allowed`, `payment_on_converted_proforma`, or `cnb_missing` when the list of the income date is missing
      */
     public function recordLocked(Invoice $locked, PaymentFacts $facts, ?User $actor): InvoicePayment
     {
@@ -127,8 +131,10 @@ final readonly class RecordPayment
             throw new LogicException('Only a card payment is recorded without a person.');
         }
 
-        if ($this->refuses($locked)) {
-            throw ValidationException::withMessages(['payment' => __('invoices.errors.payment_not_allowed')]);
+        $refusal = $this->refuses($locked);
+
+        if ($refusal instanceof ValidationException) {
+            throw $refusal;
         }
 
         $books = $locked->kind === InvoiceKind::Invoice;
@@ -168,9 +174,29 @@ final readonly class RecordPayment
         return $payment->refresh();
     }
 
-    private function refuses(Invoice $locked): bool
+    /**
+     * The one rule of what cannot be paid, judged on the document row the caller holds locked FOR UPDATE (the lock
+     * order shared with {@see ConvertProforma}), before anything is written. Phase 17.1, D-05 to D-07: a draft, a
+     * credit note and a cancelled invoice are refused with `payment_not_allowed`; a proforma that an invoice already
+     * names through `proforma_id` is refused with `payment_on_converted_proforma`, because a payment on it would book
+     * no income (the conversion carried its payments over once) and the Admin records it on that invoice.
+     * Both keys land under `payment`, so every caller that handles the first handles the second the same way.
+     */
+    private function refuses(Invoice $locked): ?ValidationException
     {
-        return $locked->state !== InvoiceState::Issued || ! $locked->kind->carriesPayment() || $locked->isCancelled();
+        if ($locked->state !== InvoiceState::Issued || ! $locked->kind->carriesPayment() || $locked->isCancelled()) {
+            return ValidationException::withMessages(['payment' => __('invoices.errors.payment_not_allowed')]);
+        }
+
+        if ($locked->kind === InvoiceKind::Proforma && $locked->invoiceFromProforma()->exists()) {
+            $number = $locked->invoiceFromProforma()->value('number');
+
+            return ValidationException::withMessages([
+                'payment' => __('invoices.errors.payment_on_converted_proforma', ['number' => is_string($number) ? $number : '']),
+            ]);
+        }
+
+        return null;
     }
 
     /**
