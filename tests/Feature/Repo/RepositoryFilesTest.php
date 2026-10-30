@@ -1545,6 +1545,66 @@ it('hands Phase 17 over: the Phase 17 refinements bullet names only what exists'
         ->and(repoFile('app/Domain/Documents/Support/DocumentUrl.php'))->not->toContain('never renders such a link');
 });
 
+it('hands Phase 17.1 over: the gap closure bullet names only what exists', function () {
+    $bullet = repoContributingBullet('Phase 17.1 gap closure.');
+
+    expect($bullet)->not->toBe('');
+
+    // The rules the text must keep naming, and the deferred part it must not claim.
+    foreach ([
+        'G1 and G2', '`IssueCreditNote::partial()`', '`EntryBilling::release()`', '`IssueCreditNote::creditedInFull()`',
+        '`CreditableQuantities::for()`', '`cancels_invoice`', '`Invoice::isCancelled()`', '`kokpit_invoice_fully_credited()`',
+        '`kokpit_guard_time_entry_link()`', '`RecordPayment::refuses()`', '`Invoice::invoiceFromProforma()`',
+        '`payment_on_converted_proforma`', '`RecordPayment::recordLocked()`', 'deferred', 'no earlier row was repaired',
+        '`CreditNoteTest`', '`CreditNoteActionsTest`', '`TimeEntryInvoiceLinkTest`', '`CreditNoteConcurrencyTest`',
+        '`PaymentsTest`', '`PaymentModalTest`', '`CardPaymentCoreTest`', '`CardPaymentResolutionTest`',
+    ] as $name) {
+        expect($bullet)->toContain($name);
+    }
+
+    // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists.
+    preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet, $matches, PREG_SET_ORDER);
+
+    expect(count($matches))->toBeGreaterThan(10);
+
+    foreach ($matches as $match) {
+        if (str_ends_with($match[1], 'Test')) {
+            continue;
+        }
+
+        $classes = repoClassesNamed($match[1]);
+
+        expect($classes)->not->toBe([], "CONTRIBUTING.md names {$match[1]} but no such class exists");
+
+        if (isset($match[2])) {
+            $exists = array_filter($classes, static fn (string $class): bool => method_exists($class, $match[2]));
+
+            expect($exists)->not->toBe([], "CONTRIBUTING.md names {$match[1]}::{$match[2]}() but no such method exists");
+        }
+    }
+
+    // The enforcing tests the text names exist, in the file the text implies.
+    $tests = [
+        'CreditNoteTest' => 'tests/Feature/Invoicing/CreditNoteTest.php',
+        'CreditNoteActionsTest' => 'tests/Feature/Invoicing/CreditNoteActionsTest.php',
+        'TimeEntryInvoiceLinkTest' => 'tests/Feature/Schema/TimeEntryInvoiceLinkTest.php',
+        'CreditNoteConcurrencyTest' => 'tests/Concurrency/CreditNoteConcurrencyTest.php',
+        'PaymentsTest' => 'tests/Feature/Invoicing/PaymentsTest.php',
+        'PaymentModalTest' => 'tests/Feature/Invoicing/PaymentModalTest.php',
+        'CardPaymentCoreTest' => 'tests/Feature/Invoicing/CardPaymentCoreTest.php',
+        'CardPaymentResolutionTest' => 'tests/Feature/Payments/CardPaymentResolutionTest.php',
+    ];
+
+    foreach ($tests as $name => $path) {
+        expect($bullet)->toContain($name);
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$name} but {$path} does not exist");
+    }
+
+    // The migration and the message the text names exist.
+    expect(repoFile('database/migrations/2026_10_30_000200_release_time_of_fully_credited_invoice.php'))->toContain('kokpit_invoice_fully_credited')
+        ->and(repoFile('lang/cs/invoices.php'))->toContain('payment_on_converted_proforma');
+});
+
 it('hands the e-mail layout over: the E-mail bullet names only what exists', function () {
     $bullet = repoContributingBullet('E-mail.');
 
