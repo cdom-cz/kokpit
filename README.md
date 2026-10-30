@@ -18,6 +18,7 @@ The PDF documents are set in the bundled Roboto fonts (`resources/fonts/Roboto-R
 
 - Docker and [DDEV](https://ddev.readthedocs.io/) 1.25 or newer. DDEV supplies PHP 8.5, PostgreSQL 18, Redis, RustFS, Mailpit, the queue worker and the scheduler, so nothing else has to be installed on your machine.
 - PostgreSQL 18 with ICU support, because the application sorts Czech names with the ICU collation `cs-CZ-x-icu`. The official PostgreSQL images and the DDEV database have it; a server built without ICU does not, and `kokpit:deploy:verify` then fails the readiness gate on purpose, with no fallback to the default collation (which would sort Czech names wrongly). The remedy is an ICU-enabled PostgreSQL.
+- The PostgreSQL contrib extensions `pg_trgm` and `unaccent`, because search ignores diacritics and letter case and is backed by GIN trigram indexes. Both are trusted extensions that ship with the official PostgreSQL images and with DDEV, and the migrations install them, so the migrating database role needs `CREATE` on the database. If it does not have it, a superuser creates both extensions in the database first (`CREATE EXTENSION IF NOT EXISTS pg_trgm;` and `CREATE EXTENSION IF NOT EXISTS unaccent;`) and the migration then skips them.
 - Contributors also need `lefthook` and `gitleaks` (the pre-commit hook); see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Install

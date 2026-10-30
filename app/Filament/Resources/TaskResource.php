@@ -21,6 +21,7 @@ use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\Tasks\TaskPeople;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
+use App\Filament\Concerns\SearchesGloballyWithoutAccents;
 use App\Filament\RelationManagers\TaskDocumentsRelationManager;
 use App\Filament\RelationManagers\TaskHistoryRelationManager;
 use App\Filament\Resources\TaskResource\Pages\EditTask;
@@ -80,6 +81,7 @@ use WeakMap;
 final class TaskResource extends Resource
 {
     use EnforcesResourceAccessRule;
+    use SearchesGloballyWithoutAccents;
 
     protected static ?string $model = Task::class;
 
