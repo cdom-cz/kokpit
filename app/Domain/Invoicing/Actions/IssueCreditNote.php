@@ -57,9 +57,13 @@ use OverflowException;
  * amount, because the rounding is half away from zero. A line of the document's own currency is credited with
  * {@see Money::times()}.
  *
- * The time is released only by the storno, and only after the storno credit note is issued, because the link guard of
- * the entries demands that issued credit note (T-10-62). A partial credit note never touches the time. Payments and
- * their income stay as they are (D-16); a refund is booked by hand.
+ * The storno releases the time of the invoice. A partial credit note releases it only when, together with the earlier
+ * ones, it leaves nothing creditable on any line (Phase 17.1, D-01, D-02): the one that takes back the last quantity
+ * returns every entry to unbilled and unlocked, in its own transaction under the same row lock. The release comes
+ * after the issue because the link guard of the entries demands the issued credit note (T-10-62): the storno
+ * credit note for the storno, `kokpit_invoice_fully_credited()` for the partial case. The invoice is not cancelled by
+ * that (D-03): no credit note but the storno carries `cancels_invoice`, and nothing is written on the invoice. Payments
+ * and their income stay as they are (D-16); a refund is booked by hand.
  *
  * The problems of the lines are one {@see ValidationException} keyed `lines.<item id>`; a document that cannot be
  * credited is keyed `invoice`, an empty selection `lines`.
@@ -74,7 +78,8 @@ final readonly class IssueCreditNote
     ) {}
 
     /**
-     * A credit note of chosen quantities. The time stays billed.
+     * A credit note of chosen quantities. The time stays billed until the credit notes take back every line; the one
+     * that takes back the last quantity returns all entries of the invoice to unbilled (Phase 17.1, D-01).
      *
      * @param  array<array-key, mixed>  $lines  item id of the invoice to the quantity to credit, a decimal text
      *
@@ -92,6 +97,11 @@ final readonly class IssueCreditNote
             $quantities = $this->requested($lines, CreditableQuantities::for($locked));
 
             $credit = $this->issueCredit($actor, $locked, $quantities, false);
+
+            // D-01, D-02: judged on the locked row after the issue, so this credit note counts; the invoice is not cancelled (D-03).
+            if ($this->creditedInFull($locked)) {
+                $this->releaseEntries($locked);
+            }
 
             // D-08: the credit note lowers what is owed, so a live payment link that offers the old amount is deactivated here.
             $this->paymentLinks->reconcile($locked);
@@ -433,8 +443,25 @@ final readonly class IssueCreditNote
     }
 
     /**
-     * Returns every entry of the cancelled invoice to unbilled and unlocked. They are locked in id order, the order
-     * every claim uses; the link guard lets them go because the storno credit note is issued by now (D-14).
+     * True when no line of the invoice has a creditable quantity left. It runs only after a partial credit note was
+     * issued in this transaction under the row lock taken by {@see self::lock()}, so the new credit note counts and at
+     * least one line had something to credit. Nothing is written on the invoice (D-03).
+     */
+    private function creditedInFull(Invoice $locked): bool
+    {
+        foreach (CreditableQuantities::for($locked) as $left) {
+            if ($left->isPositive()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Returns every entry of the cancelled or fully credited invoice to unbilled and unlocked. They are locked in id
+     * order, the order every claim uses; the link guard lets them go because the credit note is issued by now (D-14,
+     * Phase 17.1 D-01).
      */
     private function releaseEntries(Invoice $invoice): void
     {
