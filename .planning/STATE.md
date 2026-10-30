@@ -917,6 +917,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 261030-s2z | Check openspout/openspout and chillerlan/php-qrcode updates: no-op, new majors blocked by Filament 5.11.0 | 2026-10-30 | 6778e5e | [261030-s2z-check-and-if-appropriate-update-php-libr](./quick/261030-s2z-check-and-if-appropriate-update-php-libr/) |
+| 261030-u20 | Supplier company name as From name of invoice, document and payment e-mails | 2026-10-30 | 95cc781 | [261030-u20-use-the-supplier-company-name-from-setti](./quick/261030-u20-use-the-supplier-company-name-from-setti/) |
 
 ### Roadmap Evolution
 
