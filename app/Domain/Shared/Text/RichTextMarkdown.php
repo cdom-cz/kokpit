@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Shared\Text;
 
+use League\HTMLToMarkdown\Converter\TableConverter;
 use League\HTMLToMarkdown\HtmlConverter;
 
 /**
@@ -12,7 +13,10 @@ use League\HTMLToMarkdown\HtmlConverter;
  * The HTML is cleaned again through {@see RichText::render()} before the converter sees it, so
  * text written around the Actions is as harmless here as on every page. ATX headings keep the
  * editor's h2 and h3 as `##` and `###` under the one H1 the title gets. Tags with no Markdown
- * form (underline) collapse to their text. The result is plain text that no caller prints as HTML.
+ * form (underline) collapse to their text. The editor offers tables, which the library leaves out
+ * by default, so the table converter is added; strike has no default converter either, so
+ * {@see StrikethroughConverter} writes it as `~~`. The result is plain text that no caller prints
+ * as HTML.
  */
 final class RichTextMarkdown
 {
@@ -56,9 +60,18 @@ final class RichTextMarkdown
 
     private static function converter(): HtmlConverter
     {
-        return self::$converter ??= new HtmlConverter([
-            'header_style' => 'atx',
-            'strip_tags' => true,
-        ]);
+        if (self::$converter === null) {
+            $converter = new HtmlConverter([
+                'header_style' => 'atx',
+                'strip_tags' => true,
+            ]);
+
+            $converter->getEnvironment()->addConverter(new TableConverter);
+            $converter->getEnvironment()->addConverter(new StrikethroughConverter);
+
+            self::$converter = $converter;
+        }
+
+        return self::$converter;
     }
 }
