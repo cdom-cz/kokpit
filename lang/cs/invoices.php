@@ -681,7 +681,7 @@ return [
                 'total' => 'Celkem',
             ],
             'total' => 'Dobropis celkem',
-            'callout' => 'Záznamy času zůstanou vyfakturované.',
+            'callout' => 'Záznamy času zůstanou vyfakturované. Jakmile dobropisy vezmou zpět celé množství všech položek, vrátí se mezi nevyfakturované.',
             'submit' => 'Vystavit dobropis',
             'cancel' => 'Nevystavovat',
         ],

@@ -420,8 +420,10 @@ final class ViewInvoice extends ViewRecord
     /**
      * "Dobropis na položky" (IN-01; D-14; UI-SPEC E7, N8): the lines of the invoice with a checkbox, the original
      * quantity, an editable quantity to credit (default what is still creditable), the amount of the row and the live
-     * negative total. The time stays billed. The domain Action reads the lines of the locked invoice only and judges
-     * every quantity again; the page maps its field errors back under the quantity of the row.
+     * negative total. The time stays billed until the credit notes take back every line; the credit note that takes
+     * back the last quantity returns it among unbilled entries, and the callout says so (Phase 17.1, D-01). The domain
+     * Action reads the lines of the locked invoice only and judges every quantity again; the page maps its field
+     * errors back under the quantity of the row.
      */
     private function creditItemsAction(): Action
     {
