@@ -270,3 +270,9 @@ describe('the copy', function (): void {
         expect($keys('en'))->toBe($keys('cs'));
     });
 });
+
+it('sends from the company name of the supplier settings', function (): void {
+    $email = payMailSend('2026-0001', Money::ofMinor(100000, 'CZK'), 0, 'cs');
+
+    expect($email->getFrom()[0]->getName())->toBe('Example Supplier s.r.o.');
+});

@@ -71,7 +71,7 @@ final class PaymentConfirmationMail extends Mailable
     {
         $key = $this->remaining === null ? 'full' : 'partial';
 
-        return new Envelope(subject: (string) trans('payment_mail.subject.'.$key, ['number' => $this->number], $this->language));
+        return new Envelope(from: SupplierSender::address(), subject: (string) trans('payment_mail.subject.'.$key, ['number' => $this->number], $this->language));
     }
 
     public function content(): Content
