@@ -12,7 +12,7 @@ provides:
   - transactions.external, a nullable jsonb column that is only ever a JSON object
   - App\Domain\Api\ExternalObject, the one object/size/depth rule shared by time entries and transactions
   - App\Http\Requests\Api\V1\RawJsonBody, the request body decoded as objects once per request
-  - `external` in the transaction response, create, PATCH and every batch item
+  - "`external` in the transaction response, create, PATCH and every batch item"
 affects: [transactions-api, time-entries-api, api-docs, payments]
 tech-stack:
   added: []
@@ -60,6 +60,10 @@ actuals:
   tokens: 11970
   tasks: 3
   commits: 3
+audit_acknowledged:
+  milestone: v1
+  at: 2026-10-30
+  status: complete
 ---
 
 # Phase quick-261018-mic Plan 01: External identifier on transactions Summary

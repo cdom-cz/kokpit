@@ -263,6 +263,10 @@ human_verification:
   - test: "Owner confirms research assumption A7: the payer's personal data (customer_details, customer_email, shipping_details, shipping, collected_information) is dropped from the stored webhook payload"
     expected: "Owner agrees that the trimmed payload is sufficient for tracing a payment"
     why_human: "Privacy/product decision recorded as an assumption for the owner"
+audit_acknowledged:
+  milestone: v1
+  at: 2026-10-30
+  status: human_needed
 ---
 
 # Phase 11: Stripe Payments Verification Report

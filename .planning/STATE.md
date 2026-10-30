@@ -1,38 +1,34 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 11
-current_phase_name: Stripe Payments
-status: verifying
+status: Awaiting next milestone
 stopped_at: Phase 17.1 complete, ready to verify Phase 11
-last_updated: "2026-10-30T16:51:48.745Z"
+last_updated: "2026-10-30T18:23:56.034Z"
 last_activity: 2026-10-30
-last_activity_desc: Phase 17.1 complete, transitioned to Phase 11
-state_head: f778ebb4858e85813162f530e45be22f5f61c820
+last_activity_desc: Milestone v1 completed and archived
+state_head: 73376cd34ed1a9011bbec8a1262b7fe8c08e7072
 progress:
   total_phases: 20
-  completed_phases: 10
+  completed_phases: 20
   total_plans: 325
   completed_plans: 325
-  percent: 50
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-06)
+See: .planning/PROJECT.md (updated 2026-10-30)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 17.1 — Close gap G1/G2
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 11 — Stripe Payments
-Plan: 20
-Status: Phase complete — ready for verification
-Last activity: 2026-10-30 — Phase 17.1 complete, transitioned to Phase 11
-
-Progress: [█████░░░░░] 50%
+Phase: Milestone v1 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-10-30 — Milestone v1 completed and archived
 
 ## Performance Metrics
 
@@ -920,33 +916,6 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 261008-28i | Remove the hosted product name from all tracked documentation | 2026-10-08 | e943790 | [261008-28i-remove-the-product-name-from-all-tracked](./quick/261008-28i-remove-the-product-name-from-all-tracked/) |
-| 261008-bec | Install and configure laravel/horizon | 2026-10-08 | 8f37d5c | [261008-bec-install-and-configure-laravel-horizon](./quick/261008-bec-install-and-configure-laravel-horizon/) |
-| 261008-bp0 | Adapt Zerops tests and deploy workflow to the single backend setup | 2026-10-08 | 66bb759 | [261008-bp0-adapt-zerops-tests-and-deploy-workflow-t](./quick/261008-bp0-adapt-zerops-tests-and-deploy-workflow-t/) |
-| 261008-c7i | Wire kokpit:deploy:verify into zerops initCommands, onOneServer schedules, drop pnpm build | 2026-10-08 | 9948a80 | [261008-c7i-wire-kokpit-deploy-verify-into-zerops-in](./quick/261008-c7i-wire-kokpit-deploy-verify-into-zerops-in/) |
-| 5 | Run composer install in CI with APP_ENV=testing so the production config guard does not fail package:discover | 2026-10-09 | d6f8d86 | — |
-| 261011-cqm | Code review of the Signal merge and test coverage check | 2026-10-11 | 0f9f45a | [261011-cqm-code-review-of-the-signal-feature-merge-](./quick/261011-cqm-code-review-of-the-signal-feature-merge-/) |
-| 261011-cx0 | Fix all findings from the Signal merge code review (261011-cqm) | 2026-10-11 | f6e2d94 | [261011-cx0-fix-all-findings-from-the-signal-merge-c](./quick/261011-cx0-fix-all-findings-from-the-signal-merge-c/) |
-| 261011-dqq | Fix the tests to match the current source code and configuration | 2026-10-11 | 3a1f008 | [261011-dqq-fix-the-tests-to-match-the-current-sourc](./quick/261011-dqq-fix-the-tests-to-match-the-current-sourc/) |
-| 261011-ekq | Prefix S3 storage env vars with S3_, keep all files on the S3 disk, add AWS SES mailer | 2026-10-11 | b60da59 | [261011-ekq-prefix-s3-storage-env-vars-with-s3-store](./quick/261011-ekq-prefix-s3-storage-env-vars-with-s3-store/) |
-| 261012-tsk | Admin task list: order by priority and due date, hide Done by default, multi-state status filter | 2026-10-12 | — | [261012-tsk-task-list-priority-due-order-hide-done](./quick/261012-tsk-task-list-priority-due-order-hide-done/) |
-| 261014-cy9 | Prune activity log records older than one year via a daily scheduled task | 2026-10-14 | ab8ec7f | [261014-cy9-prune-activity-log-records-older-than-on](./quick/261014-cy9-prune-activity-log-records-older-than-on/) |
-| 261014-o13 | Hourly safety-net command that ends running time entries older than 48 hours | 2026-10-14 | 136bbce | [261014-o13-hourly-safety-net-command-that-ends-runn](./quick/261014-o13-hourly-safety-net-command-that-ends-runn/) |
-| 261015-cdq | Show today's plan under the hours stats on the Admin dashboard | 2026-10-15 | 54e2f88 | [261015-cdq-show-today-s-plan-under-the-hours-stats-](./quick/261015-cdq-show-today-s-plan-under-the-hours-stats-/) |
-| 261015-cv5 | Make dashboard widgets collapsible with the state saved per user in the database | 2026-10-15 | 75a5c2e | [261015-cv5-make-dashboard-widgets-collapsible-with-](./quick/261015-cv5-make-dashboard-widgets-collapsible-with-/) |
-| 261015-diz | Add overdue highlight to the admin tasks list, reusing the deadlines widget rendering and copy | 2026-10-15 | f9dc2e7 | [261015-diz-add-overdue-highlight-to-the-admin-tasks](./quick/261015-diz-add-overdue-highlight-to-the-admin-tasks/) |
-| 261016-tnb | Show the Checklist section on the admin task view page and allow toggling checklist item states there | 2026-10-16 | e4a5880 | [261016-tnb-task-view-checklist-toggle](./quick/261016-tnb-task-view-checklist-toggle/) |
-| 261018-mic | Add an external identifier column to transactions for passing advanced identifiers (like time_entries.external), exposed via the API | 2026-10-18 | 8dc3ebb | [261018-mic-add-an-external-identifier-column-to-tra](./quick/261018-mic-add-an-external-identifier-column-to-tra/) |
-| 261018-rvf | Allow changing a task's status directly in its view, not only in the task detail | 2026-10-18 | 9701c56 | [261018-rvf-allow-changing-a-task-s-status-directly-](./quick/261018-rvf-allow-changing-a-task-s-status-directly-/) |
-| 261022-sgn | Improve global search to match client, project and task names, and project and task codes, with as-you-type suggestions in the current style | 2026-10-22 | 30823f6 | [261022-sgn-improve-global-search-to-match-client-pr](./quick/261022-sgn-improve-global-search-to-match-client-pr/) |
-| 261025-oc2 | Optimize the test suite: prune non-essential tests and shard CI (30m timeout fix) | 2026-10-25 | 96507ce | [261025-oc2-optimize-the-test-suite-keep-only-functi](./quick/261025-oc2-optimize-the-test-suite-keep-only-functi/) |
-| 261028-kr9 | Fix SPAYD message sanitising failing on musl iconv in production | 2026-10-28 | 84cb780 | [261028-kr9-fix-spayd-message-sanitising-failing-on-iconv](./quick/261028-kr9-fix-spayd-message-sanitising-failing-on-iconv/) |
-| 261028-krr | Make the Unit field optional on invoice and proforma items | 2026-10-28 | 3220181 | [261028-krr-make-the-unit-field-optional-on-invoice-](./quick/261028-krr-make-the-unit-field-optional-on-invoice-/) |
-| 261028-odp | Compact payment block on invoice/proforma PDF; no supplier contact lines on PDFs; no footer on cash receipt | 2026-10-28 | 6b25849 | [261028-odp-invoice-and-proforma-pdf-make-the-paymen](./quick/261028-odp-invoice-and-proforma-pdf-make-the-paymen/) |
-| 24 | Set the DDEV RustFS bucket CORS rule for browser uploads | 2026-10-29 | e451692 | — |
-| 261030-gcw | Widen the task hint in the signal form to the full width of the text input | 2026-10-30 | e9a95f7 | [261030-gcw-widen-the-task-hint-in-the-signal-form-t](./quick/261030-gcw-widen-the-task-hint-in-the-signal-form-t/) |
-| 261030-gby | Add a Markdown copy of the task assignment (H1 = task name without code, body = Description converted from HTML), with a popup preview to copy from | 2026-10-30 | e2743d5 | [261030-gby-add-a-markdown-copy-of-the-task-assignme](./quick/261030-gby-add-a-markdown-copy-of-the-task-assignme/) |
-| 261030-l02 | Enable pg_trgm and unaccent, add GIN trigram search indexes and make search accent-insensitive | 2026-10-30 | 5e7a0c2 | [261030-l02-enable-pg-trgm-and-unaccent-add-gin-trig](./quick/261030-l02-enable-pg-trgm-and-unaccent-add-gin-trig/) |
 
 ### Roadmap Evolution
 
@@ -967,10 +936,29 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 | Category | Item | Status | Deferred At | Milestone |
 |----------|------|--------|-------------|-----------|
-| *(none)* | | | | |
+| quick_tasks | 261012-sig-port-the-signal-planner-as-its-own-menu-section | complete-pending-ci | 2026-10-30 | v1 |
+| quick_tasks | 261012-tsk-task-list-priority-due-order-hide-done | unknown | 2026-10-30 | v1 |
+| quick_tasks | 261018-mic-add-an-external-identifier-column-to-tra | complete | 2026-10-30 | v1 |
+| todos | 2026-10-14-redesign-unreadable-time-report-layout.md | (presence-only) | 2026-10-30 | v1 |
+| uat_gaps | 10.1/10.1-UAT.md | testing, 4 pending scenarios | 2026-10-30 | v1 |
+| uat_gaps | 11/11-UAT.md | testing, 8 pending scenarios | 2026-10-30 | v1 |
+| uat_gaps | 12/12-UAT.md | testing, 2 pending scenarios | 2026-10-30 | v1 |
+| uat_gaps | 13/13-UAT.md | testing, 1 pending scenario | 2026-10-30 | v1 |
+| verification_gaps | 11/11-VERIFICATION.md | human_needed | 2026-10-30 | v1 |
+| verification_gaps | 12/12-VERIFICATION.md | human_needed | 2026-10-30 | v1 |
+| verification_gaps | 13/13-VERIFICATION.md | human_needed | 2026-10-30 | v1 |
+| verification_gaps | 14/14-VERIFICATION.md | human_needed | 2026-10-30 | v1 |
+| deferred_items | 07/deferred-items.md: Scribe rule sentences (fixed in 07-12); empty `examples` on batch `entries` (cosmetic) | acknowledged | 2026-10-30 | v1 |
+| deferred_items | 08/deferred-items.md: time report across currencies (resolved by 08-14) | acknowledged | 2026-10-30 | v1 |
+| deferred_items | 10.1/deferred-items.md: PHPStan `function.alreadyNarrowedType` in ResetAdminTwoFactorCommand.php:39 | acknowledged | 2026-10-30 | v1 |
+| deferred_items | 14/deferred-items.md: same PHPStan error in ResetAdminTwoFactorCommand.php:39 | acknowledged | 2026-10-30 | v1 |
 
 ## Session Continuity
 
 Last session: 2026-10-30T14:30:29.770Z
 Stopped at: Phase 17.1 complete, ready to verify Phase 11
 Resume file: .planning/phases/17.1-close-gap-g1-g2-release-time-on-full-partial-credit-and-reje/17.1-CONTEXT.md
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

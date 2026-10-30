@@ -9,6 +9,10 @@ provides:
   - "Owner-scoped, Admin-only planner tables signal_*"
 affects: [app/Domain/Signal, app/Livewire/Signal, app/Filament/Pages/Signal, database/migrations]
 status: complete-pending-ci
+audit_acknowledged:
+  milestone: v1
+  at: 2026-10-30
+  status: complete-pending-ci
 ---
 
 # Quick task 261012-sig: the planner Signal as its own menu section

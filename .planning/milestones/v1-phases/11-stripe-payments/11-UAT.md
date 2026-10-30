@@ -4,6 +4,10 @@ phase: 11-stripe-payments
 source: [11-VERIFICATION.md]
 started: 2026-10-18T18:51:50Z
 updated: 2026-10-18T18:51:50Z
+audit_acknowledged:
+  milestone: v1
+  at: 2026-10-30
+  gap_snapshot: "testing::scenarios=8"
 ---
 
 ## Current Test

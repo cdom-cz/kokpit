@@ -74,6 +74,10 @@ human_verification:
     why_human: "Visual state of the toggle and section and the real pay-URL page; the server rules are covered by tests, the rendering is not."
 deferred: []
 advisory: []
+audit_acknowledged:
+  milestone: v1
+  at: 2026-10-30
+  status: human_needed
 ---
 
 # Phase 14: Online payment method and invoice currency Verification Report

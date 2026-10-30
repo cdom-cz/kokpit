@@ -14,6 +14,10 @@ key-files:
     - app/Filament/Resources/TaskResource.php
     - app/Filament/Support/TaskColumns.php
     - tests/Feature/Tasks/TaskListFiltersTest.php
+audit_acknowledged:
+  milestone: v1
+  at: 2026-10-30
+  status: unknown
 ---
 
 # Summary

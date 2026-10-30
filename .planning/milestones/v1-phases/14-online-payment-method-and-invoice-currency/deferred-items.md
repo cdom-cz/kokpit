@@ -10,3 +10,4 @@ Out-of-scope discoveries logged during execution. Not fixed by the plan that fou
   plan 14-01 and makes `phpstan analyse` exit non-zero for the whole project. Plan 14-01
   verified that it is the only reported error. Needs a fix (or a baseline entry) outside
   Phase 14 so the PHPStan gate of later plans can be read as clean.
+  status: acknowledged

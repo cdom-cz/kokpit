@@ -4,6 +4,10 @@ phase: 12-partner-audit
 source: [12-VERIFICATION.md]
 started: 2026-10-24T06:10:57Z
 updated: 2026-10-24T06:10:57Z
+audit_acknowledged:
+  milestone: v1
+  at: 2026-10-30
+  gap_snapshot: "testing::scenarios=2"
 ---
 
 ## Current Test

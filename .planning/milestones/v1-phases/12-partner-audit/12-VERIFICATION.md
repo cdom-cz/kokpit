@@ -57,6 +57,10 @@ human_verification:
   - test: "Decide the disposition of review warnings WR-01 (policy completeness) and WR-02 (unprobed abilities) before release: fix them in a follow-up plan, or accept them with a written reason and soften the README/CONTRIBUTING claim (IN-05)"
     expected: "12-REVIEW-DISPOSITION.md rows WR-01, WR-02 and IN-05 move from 'open' to fixed or accepted-with-reason"
     why_human: "The current behaviour is airtight (see Truth 2 and the WR analysis below), so this is not a failed truth, but it is a decision about how strong the 'proven' claim of the phase must be; that is the owner's call"
+audit_acknowledged:
+  milestone: v1
+  at: 2026-10-30
+  status: human_needed
 ---
 
 # Phase 12: Partner Audit Verification Report

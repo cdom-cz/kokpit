@@ -55,6 +55,10 @@ human_verification:
   - test: "Open every e-mail of the phase in Mailpit (ddev launch -m) and, where a test mailbox exists, in Gmail, Outlook, Apple Mail and one mobile client. Trigger: a card-enabled and a transfer invoice (one Czech and one English client), a partial and then the final payment (wait out the 5-minute grace window with the queue worker running), a partner invitation, a password reset, a Partner comment on a task, an operational alert through AdminAlerter from tinker."
     expected: "Same header on all (logo at most 180 px wide and sharp, or the supplier name as text) and same footer; the logo is not listed as an attachment and no image is broken; the amber button is readable and works; the invoice body keeps its line breaks and typed symbols; the confirmation shows number, amount, date and the remaining amount or the paid-in-full sentence; no Czech label in English e-mails; plain-text views read cleanly with no stray backslashes; the alert matches the client e-mails apart from its red button."
     why_human: "Outlook's Word rendering engine, Gmail image handling, mobile layout and the overall visual look cannot be asserted by the test suite (plan 13-09 task 3 is explicitly the separate human review step and was left open)."
+audit_acknowledged:
+  milestone: v1
+  at: 2026-10-30
+  status: human_needed
 ---
 
 # Phase 13: Unified e-mail layout and HTML e-mail templates Verification Report
