@@ -5,11 +5,15 @@ declare(strict_types=1);
 use App\Domain\Clients\Models\Client;
 use App\Domain\Projects\Actions\CreateProject;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Tasks\Actions\ArchiveTask;
 use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Actions\UpdateTask;
 use App\Domain\Tasks\Models\Task;
+use App\Filament\Partner\Resources\PartnerTaskResource\Pages\ViewPartnerTask;
+use App\Filament\Resources\TaskResource;
 use App\Filament\Resources\TaskResource\Pages\ViewTask;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 
@@ -77,4 +81,97 @@ it('never puts the task reference in the Markdown', function (): void {
     $markdown = $component->get('mountedActions.0.data.markdown');
 
     expect($markdown)->toBeString()->not->toContain($task->reference);
+});
+
+it('has a Czech text for every key of the modal', function (): void {
+    foreach (['action', 'heading', 'description', 'label', 'copy', 'copied', 'close'] as $key) {
+        $full = 'kokpit.tasks.markdown.'.$key;
+
+        expect(__($full))->toBeString()->not->toBe($full)->not->toBe('');
+    }
+});
+
+it('wires the modal to the clipboard', function (): void {
+    $task = taskMdTask('Example markdown task', '<p>Example body</p>');
+
+    Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->mountAction('copyMarkdown')
+        ->assertMountedActionModalSee([__('kokpit.tasks.markdown.heading'), __('kokpit.tasks.markdown.copy')])
+        ->assertMountedActionModalSeeHtml(['navigator.clipboard', 'mountedActions[0].data.markdown']);
+});
+
+it('gives only the heading for a task without a description', function (): void {
+    $task = taskMdTask('Example empty task', null, key: 'MDE');
+
+    Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->mountAction('copyMarkdown')
+        ->assertActionDataSet(['markdown' => "# Example empty task\n"]);
+});
+
+it('stays available on an archived task and gives the same Markdown', function (): void {
+    $task = taskMdTask('Example archived task', '<p>Example body</p>', key: 'MDA');
+
+    $before = Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->mountAction('copyMarkdown')
+        ->get('mountedActions.0.data.markdown');
+
+    app(ArchiveTask::class)->handle($this->admin, $task);
+
+    Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->assertActionVisible('copyMarkdown')
+        ->mountAction('copyMarkdown')
+        ->assertActionDataSet(['markdown' => $before]);
+
+    expect($before)->toBe("# Example archived task\n\nExample body\n");
+});
+
+it('cleans a description forged straight into the row', function (): void {
+    $task = taskMdTask('Example forged task', '<p>Example body</p>', key: 'MDF');
+
+    $lt = '<';
+
+    DB::table('tasks')->where('id', $task->getKey())->update(['description' => implode('', [
+        $lt.'scr'.'ipt>window.markerOne()'.$lt.'/scr'.'ipt>',
+        $lt.'img src="https://example.com/marker'.'Two.png" on'.'error="markerThree()">',
+        $lt.'p>Benign words'.$lt.'/p>',
+    ])]);
+
+    $markdown = Livewire::test(ViewTask::class, ['record' => $task->reference])
+        ->mountAction('copyMarkdown')
+        ->get('mountedActions.0.data.markdown');
+
+    expect($markdown)->toBeString()
+        ->toContain('Benign words')
+        ->not->toContain('markerOne')
+        ->not->toContain('markerTwo')
+        ->not->toContain('markerThree')
+        ->not->toContain('<script')
+        ->not->toContain('<img');
+});
+
+it('refuses a Partner the Admin task page', function (): void {
+    $task = taskMdTask('Example partner task', '<p>Example body</p>', key: 'MDP');
+    $partner = Canary::partnerFor(Project::query()->findOrFail($task->project_id)->client_id);
+
+    $this->actingAs($partner)->get(TaskResource::getUrl('view', ['record' => $task->reference]))->assertForbidden();
+});
+
+it('hides the action when the session switched to a Partner after the page was mounted', function (): void {
+    $task = taskMdTask('Example switched task', '<p>Example body</p>', key: 'MDS');
+    $partner = Canary::partnerFor(Project::query()->findOrFail($task->project_id)->client_id);
+
+    $component = Livewire::test(ViewTask::class, ['record' => $task->reference])->assertActionVisible('copyMarkdown');
+
+    $this->actingAs($partner);
+
+    $component->assertActionHidden('copyMarkdown');
+});
+
+it('gives the Partner task page no copyMarkdown action', function (): void {
+    $task = taskMdTask('Example visible task', '<p>Example body</p>', key: 'MDV');
+    $partner = Canary::partnerFor(Project::query()->findOrFail($task->project_id)->client_id);
+
+    $this->actingAs($partner);
+
+    Livewire::test(ViewPartnerTask::class, ['record' => $task->reference])->assertActionDoesNotExist('copyMarkdown');
 });
