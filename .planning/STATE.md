@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
-current_phase: "10.1"
-current_phase_name: Invoices stay fully editable until sent, with a manual unlock
-status: verifying
+current_phase: "17.1"
+current_phase_name: Close gap G1/G2
+status: executing
 stopped_at: Phase 17.1 context gathered
-last_updated: "2026-10-30T15:08:29.923Z"
+last_updated: "2026-10-30T16:07:32.044Z"
 last_activity: 2026-10-30
-last_activity_desc: Phase 10 complete, transitioned to Phase 10.1
-state_head: 5e7a0c2609e5fdfceed1eb52ddbd016c483f58af
+last_activity_desc: Phase 17.1 execution started
+state_head: d3aba321e315818d562cfee3465e9a30c6107bca
 progress:
   total_phases: 20
   completed_phases: 10
-  total_plans: 322
+  total_plans: 325
   completed_plans: 322
   percent: 50
 ---
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-06)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 17 — Task, project and search UX refinements
+**Current focus:** Phase 17.1 — Close gap G1/G2
 
 ## Current Position
 
-Phase: 10.1 — Invoices stay fully editable until sent, with a manual unlock
-Plan: 16
-Status: Phase complete — ready for verification
-Last activity: 2026-10-30 - Completed quick task 261030-l02: Enable pg_trgm and unaccent, add GIN trigram search indexes and make search accent-insensitive
+Phase: 17.1 (Close gap G1/G2) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 17.1
+Last activity: 2026-10-30 — Phase 17.1 execution started
 
 Progress: [█████░░░░░] 50%
 
