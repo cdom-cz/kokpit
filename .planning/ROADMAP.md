@@ -1074,7 +1074,7 @@ Plans:
 **Goal:** No tracked time stays locked on an invoice that is credited in full, and no payment exists without its income: once partial credit notes have taken back every creditable quantity of an invoice, the credit note that took back the last quantity returns all its time entries to unbilled and unlocked in the same locked transaction (the invoice is not cancelled, `cancels_invoice` stays the one storno marker, and the database link guard accepts exactly this release); a payment on a proforma that already has its invoice is refused by the shared `RecordPayment::refuses()` on the manual and the card path with its own message (audit gaps G1 and G2; the time held by an unpaid proforma stays deferred)
 **Requirements**: IN-10, TI-08, IN-07, IN-06, PA-01
 **Depends on:** Phase 17
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -1082,4 +1082,4 @@ Plans:
 - [x] 17.1-02-PLAN.md — G2: `RecordPayment::refuses()` refuses a converted proforma with `payment_on_converted_proforma` on the dialog, `handle()`, `recordLocked()` and the card assignment (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 17.1-03-PLAN.md — The partial credit dialog callout and the sent-invoice journey, the CONTRIBUTING hand-over with its repository test, and the CI-style phase gate (Wave 2)
+- [x] 17.1-03-PLAN.md — The partial credit dialog callout and the sent-invoice journey, the CONTRIBUTING hand-over with its repository test, and the CI-style phase gate (Wave 2)
