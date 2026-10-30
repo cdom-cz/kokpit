@@ -4,10 +4,10 @@ current_phase: "10.1"
 current_phase_name: Invoices stay fully editable until sent, with a manual unlock
 status: verifying
 stopped_at: Phase 17.1 context gathered
-last_updated: "2026-10-30T14:30:31.164Z"
+last_updated: "2026-10-30T15:08:29.923Z"
 last_activity: 2026-10-30
 last_activity_desc: Phase 10 complete, transitioned to Phase 10.1
-state_head: 8a7846c65bf413f2524f13d7593fb7c712b55f93
+state_head: 5e7a0c2609e5fdfceed1eb52ddbd016c483f58af
 progress:
   total_phases: 20
   completed_phases: 10
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 Phase: 10.1 — Invoices stay fully editable until sent, with a manual unlock
 Plan: 16
 Status: Phase complete — ready for verification
-Last activity: 2026-10-30 - Completed quick task 261030-gby: Add a Markdown copy of the task assignment with a popup preview
+Last activity: 2026-10-30 - Completed quick task 261030-l02: Enable pg_trgm and unaccent, add GIN trigram search indexes and make search accent-insensitive
 
 Progress: [█████░░░░░] 50%
 
@@ -945,6 +945,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 24 | Set the DDEV RustFS bucket CORS rule for browser uploads | 2026-10-29 | e451692 | — |
 | 261030-gcw | Widen the task hint in the signal form to the full width of the text input | 2026-10-30 | e9a95f7 | [261030-gcw-widen-the-task-hint-in-the-signal-form-t](./quick/261030-gcw-widen-the-task-hint-in-the-signal-form-t/) |
 | 261030-gby | Add a Markdown copy of the task assignment (H1 = task name without code, body = Description converted from HTML), with a popup preview to copy from | 2026-10-30 | e2743d5 | [261030-gby-add-a-markdown-copy-of-the-task-assignme](./quick/261030-gby-add-a-markdown-copy-of-the-task-assignme/) |
+| 261030-l02 | Enable pg_trgm and unaccent, add GIN trigram search indexes and make search accent-insensitive | 2026-10-30 | 5e7a0c2 | [261030-l02-enable-pg-trgm-and-unaccent-add-gin-trig](./quick/261030-l02-enable-pg-trgm-and-unaccent-add-gin-trig/) |
 
 ### Roadmap Evolution
 
