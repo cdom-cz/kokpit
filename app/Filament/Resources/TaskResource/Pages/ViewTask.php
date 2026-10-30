@@ -10,6 +10,7 @@ use App\Domain\Projects\EstimateHours;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Money\Money;
+use App\Domain\Shared\Text\RichTextMarkdown;
 use App\Domain\Tasks\Actions\ClearEscalation;
 use App\Domain\Tasks\Actions\ToggleTaskChecklistItem;
 use App\Domain\Tasks\Actions\UpdateTask;
@@ -31,12 +32,15 @@ use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Validation\ValidationException;
@@ -259,6 +263,8 @@ final class ViewTask extends ViewRecord
             TaskResource::timerAction()->record($this->getRecord()),
             // Time worked on this task is recorded from here with the task's context locked (D-06).
             $this->addTimeAction(),
+            // The assignment (title and description) as Markdown in a preview with a copy button; read-only.
+            $this->copyMarkdownAction(),
             // An archived task is read-only until it is restored.
             EditAction::make()
                 ->hidden(fn (): bool => $this->getRecord() instanceof Task && $this->getRecord()->trashed()),
@@ -353,6 +359,58 @@ final class ViewTask extends ViewRecord
 
                 $action->success();
             });
+    }
+
+    /**
+     * The assignment as Markdown (the title as the one H1, never the KEY-N reference, then the
+     * description) in a read-only preview with a copy button. Nothing is written. The fill re-checks
+     * {@see TaskResource::canAccess()} because /livewire/update is public. The copy runs in the
+     * browser from the modal state, the same pattern as the API token modal. It stays available on
+     * an archived task, because it only reads.
+     */
+    private function copyMarkdownAction(): Action
+    {
+        return Action::make('copyMarkdown')
+            ->label(__('kokpit.tasks.markdown.action'))
+            ->icon(Heroicon::OutlinedClipboardDocument)
+            ->color('gray')
+            ->modalHeading(__('kokpit.tasks.markdown.heading'))
+            ->modalDescription(__('kokpit.tasks.markdown.description'))
+            ->modalWidth(Width::ThreeExtraLarge)
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel(__('kokpit.tasks.markdown.close'))
+            ->visible(fn (): bool => $this->getRecord() instanceof Task && TaskResource::canAccess())
+            ->fillForm(function (): array {
+                abort_unless(TaskResource::canAccess(), 403);
+
+                $task = $this->getRecord();
+                assert($task instanceof Task);
+
+                return ['markdown' => RichTextMarkdown::document($task->title, $task->description)];
+            })
+            ->schema([
+                Textarea::make('markdown')
+                    ->label(__('kokpit.tasks.markdown.label'))
+                    ->readOnly()
+                    ->dehydrated(false)
+                    ->rows(16)
+                    ->extraInputAttributes([
+                        'class' => 'font-mono',
+                        'x-on:focus' => '$el.select()',
+                        'x-on:click' => '$el.select()',
+                    ]),
+                Actions::make([
+                    Action::make('copyMarkdownToClipboard')
+                        ->label(__('kokpit.tasks.markdown.copy'))
+                        ->icon(Heroicon::OutlinedClipboard)
+                        ->color('primary')
+                        ->alpineClickHandler(
+                            'navigator.clipboard?.writeText($wire.mountedActions[0].data.markdown).then(() => new FilamentNotification().title('
+                            .json_encode(__('kokpit.tasks.markdown.copied'), JSON_THROW_ON_ERROR | JSON_HEX_APOS | JSON_HEX_QUOT)
+                            .').success().send())',
+                        ),
+                ]),
+            ]);
     }
 
     /**

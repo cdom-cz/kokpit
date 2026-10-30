@@ -264,7 +264,7 @@
                             x-show="open"
                             id="{{ $listId }}"
                             role="listbox"
-                            class="fi-dropdown-panel"
+                            class="fi-dropdown-panel fi-width-none"
                             style="position: absolute; top: 100%; left: 0; width: 100%; margin-top: 0.25rem; z-index: 20; max-height: 25rem; overflow-y: auto; border-radius: 0.5rem; border: 1px solid rgba(127, 127, 127, 0.25);"
                         >
                             <div class="fi-dropdown-list">

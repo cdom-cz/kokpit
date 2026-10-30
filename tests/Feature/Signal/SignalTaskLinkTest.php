@@ -358,6 +358,8 @@ it('renders a listbox with one option per suggestion once two characters match, 
 
     expect($html)->toContain('role="listbox"')
         ->and($html)->toContain('id="signal-suggestions-2026-10-12"')
+        // The modifier lifts Filament's 14rem dropdown cap so the panel matches the field width.
+        ->and($html)->toContain('class="fi-dropdown-panel fi-width-none"')
         ->and(substr_count($html, 'role="option"'))->toBe(2)
         ->and($html)->toContain("pickTask('{$login->id}')")
         ->and($html)->toContain('signal-suggestion-2026-10-12-1');
