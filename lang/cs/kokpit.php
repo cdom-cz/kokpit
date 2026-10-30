@@ -1332,6 +1332,15 @@ return [
             'change_status_heading' => 'Změnit stav úkolu',
             'change_status_submit' => 'Uložit stav',
         ],
+        'markdown' => [
+            'action' => 'Kopírovat jako Markdown',
+            'heading' => 'Zadání úkolu v Markdownu',
+            'description' => 'Název úkolu jako nadpis a jeho popis převedený do Markdownu.',
+            'label' => 'Markdown',
+            'copy' => 'Kopírovat',
+            'copied' => 'Markdown je zkopírovaný do schránky',
+            'close' => 'Zavřít',
+        ],
         'notifications' => [
             'archived' => 'Úkol byl archivován',
             'restored' => 'Úkol byl obnoven',
