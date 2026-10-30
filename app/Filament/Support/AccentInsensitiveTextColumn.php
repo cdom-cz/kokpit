@@ -45,7 +45,9 @@ final class AccentInsensitiveTextColumn extends TextColumn
         foreach ($searchColumns as $searchColumn) {
             if ($relationshipName !== null) {
                 // The column stays unqualified inside the subquery, as Filament does, so a self-relation resolves to the inner table.
-                $constraint = static fn (EloquentBuilder $related): EloquentBuilder => AccentInsensitiveSearch::where($related, $searchColumn, $search);
+                $constraint = static function (EloquentBuilder $related) use ($searchColumn, $search): void {
+                    AccentInsensitiveSearch::where($related, $searchColumn, $search);
+                };
 
                 if ($isFirst) {
                     $query->whereHas($relationshipName, $constraint);

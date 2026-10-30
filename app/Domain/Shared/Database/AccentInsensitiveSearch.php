@@ -37,14 +37,11 @@ final class AccentInsensitiveSearch
      * boolean is limited to and or or, and the pattern is a bound value, so nothing a caller passes can reach the
      * SQL as it is.
      *
-     * @template TBuilder of EloquentBuilder<*>|QueryBuilder
-     *
-     * @param  TBuilder  $query
-     * @return TBuilder
+     * @param  EloquentBuilder<*>|QueryBuilder  $query
      *
      * @throws InvalidArgumentException a boolean other than and or or
      */
-    public static function where(EloquentBuilder|QueryBuilder $query, string $column, string $term, string $boolean = 'and'): EloquentBuilder|QueryBuilder
+    public static function where(EloquentBuilder|QueryBuilder $query, string $column, string $term, string $boolean = 'and'): void
     {
         if ($boolean !== 'and' && $boolean !== 'or') {
             throw new InvalidArgumentException('The boolean must be and or or.');
@@ -54,12 +51,11 @@ final class AccentInsensitiveSearch
 
         // The column is quoted by the grammar and the rest is constant, so the text is not injectable.
         $query->whereRaw(
+            // @phpstan-ignore argument.type (the column is quoted by the grammar, the pattern is bound)
             self::FUNCTION.'('.$base->getGrammar()->wrap($column).') like '.self::FUNCTION."(?) escape '".self::ESCAPE."'",
             [self::pattern($term)],
             $boolean,
         );
-
-        return $query;
     }
 
     /**

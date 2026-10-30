@@ -39,7 +39,9 @@ trait SearchesGloballyWithoutAccents
 
                 $query->{$whereClause.'Has'}(
                     $relationship,
-                    static fn (Builder $related): Builder => AccentInsensitiveSearch::where($related, $related->qualifyColumn($column), $search),
+                    static function (Builder $related) use ($column, $search): void {
+                        AccentInsensitiveSearch::where($related, $related->qualifyColumn($column), $search);
+                    },
                 );
             } else {
                 AccentInsensitiveSearch::where($query, $query->qualifyColumn($searchAttribute), $search, $whereClause === 'where' ? 'and' : 'or');
