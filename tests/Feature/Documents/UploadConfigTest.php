@@ -32,12 +32,14 @@ final class UploadConfigProbe extends Component
     }
 }
 
-/** The four keys of the published config that differ from the Livewire defaults. */
+/** The keys of the published config that differ from the Livewire defaults. */
 const UPLOAD_CONFIG_CHANGED_KEYS = [
     'temporary_file_upload.disk',
     'temporary_file_upload.rules',
     'temporary_file_upload.middleware',
     'temporary_file_upload.preview_mimes',
+    // Raised for the nested JSON state of the RichEditor.
+    'payload.max_nesting_depth',
 ];
 
 it('holds temporary uploads on the bucket disk in the suite, as production does', function (): void {
