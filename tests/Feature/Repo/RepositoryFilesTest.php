@@ -40,6 +40,21 @@ function repoFile(string $name): string
 }
 
 /**
+ * Whether a `.planning/` path named in the documentation exists, where it was written or, once its milestone is
+ * archived, under `.planning/milestones/v*-phases/`.
+ */
+function planningPathExists(string $path): bool
+{
+    if (file_exists(base_path($path))) {
+        return true;
+    }
+
+    $relative = preg_replace('#^\.planning/phases/#', '', $path, -1, $count);
+
+    return $count === 1 && glob(base_path('.planning/milestones/v*-phases/'.$relative)) !== [];
+}
+
+/**
  * @return array<string, mixed>
  */
 function repoComposer(): array
@@ -620,6 +635,21 @@ it('names the Phase 7 enforcing tests, and each of them exists', function () {
     }
 });
 
+it('only names .planning paths in CONTRIBUTING.md that exist, in place or in an archived milestone', function () {
+    preg_match_all('#`(\.planning/[^`\s]+)`#', repoFile('CONTRIBUTING.md'), $matches);
+
+    expect($matches[1])->not->toBeEmpty();
+
+    foreach (array_unique($matches[1]) as $path) {
+        // A bare directory such as `.planning/` is a rule about the folder, not a pointer to a file.
+        if (str_ends_with($path, '/')) {
+            continue;
+        }
+
+        expect(planningPathExists($path))->toBeTrue("CONTRIBUTING.md names {$path} but it exists neither in place nor in an archived milestone");
+    }
+});
+
 it('only names Phase 8 classes in CONTRIBUTING.md that exist in app/', function () {
     $contributing = repoFile('CONTRIBUTING.md');
 
@@ -697,6 +727,9 @@ it('only names Phase 8 classes in CONTRIBUTING.md that exist in app/', function 
     ] as $phrase) {
         expect($contributing)->toContain($phrase);
     }
+
+    // The coverage matrix the text points at exists, in the phase directory.
+    expect(planningPathExists('.planning/phases/08-exchange-rates-and-reports/COVERAGE.md'))->toBeTrue();
 });
 
 it('names the Phase 8 enforcing tests, and each of them exists', function () {
@@ -1115,6 +1148,14 @@ it('documents the queued task notifications for the operator in the README', fun
         ->and($readme)->toContain('MAIL_*');
 });
 
+it('no longer points the import at a projects counter column', function () {
+    $requirements = file_get_contents(base_path('.planning/milestones/v1-REQUIREMENTS.md'));
+
+    // .planning is a public part of the repository; the stale wording is research correction C1.
+    expect($requirements)->not->toContain('next_task_number')
+        ->and($requirements)->toContain('task:<project uuid>');
+});
+
 /**
  * The class a documentation name stands for: the one file of that name under app/ or tests/Support, as its full
  * class name, or null when there is none. A name that two files share (a widget and a query) resolves to the first
@@ -1384,9 +1425,10 @@ it('hands the cash receipts over: the Cash receipts bullet names only what exist
         expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$name} but {$path} does not exist");
     }
 
-    // The migration holds the guard function and the unlock setting the text names.
+    // The migration holds the guard function and the unlock setting the text names; the assumptions it cites are in the plan.
     expect(repoFile('database/migrations/2026_10_27_000200_create_cash_receipts_table.php'))->toContain('kokpit_guard_cash_receipt_row')
-        ->and(repoFile('database/migrations/2026_10_27_000200_create_cash_receipts_table.php'))->toContain('kokpit.cash_receipt_unlock');
+        ->and(repoFile('database/migrations/2026_10_27_000200_create_cash_receipts_table.php'))->toContain('kokpit.cash_receipt_unlock')
+        ->and(planningPathExists('.planning/phases/15-cash-payment-method-for-invoices-and-cash-receipt-documents/15-01-PLAN.md'))->toBeTrue();
 
     // The Payment method bullet says cash is the third method and prints no bank details, and points here.
     expect(repoContributingBullet('Payment method and bank accounts.'))->toContain('`cash` as the third method')
