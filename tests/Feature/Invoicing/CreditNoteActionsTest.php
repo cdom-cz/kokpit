@@ -215,6 +215,61 @@ describe('the partial credit note', function (): void {
         }
     });
 
+    it('credits a sent invoice in full with the default quantities and returns its time (Phase 17.1, D-01)', function (): void {
+        ['invoice' => $invoice, 'entries' => $entries] = creditActionInvoice();
+        $invoice = InvoiceFixtures::lock($invoice);
+
+        $modal = creditPage($invoice)
+            ->mountAction('creditItems')
+            ->assertMountedActionModalSee('Záznamy času zůstanou vyfakturované. Jakmile dobropisy vezmou zpět celé množství všech položek, vrátí se mezi nevyfakturované.');
+
+        $page = $modal->callMountedAction();
+
+        $credit = Invoice::query()->where('kind', InvoiceKind::CreditNote->value)->sole();
+
+        $page->assertNotified('Dobropis '.$credit->number.' byl vystaven')
+            ->assertRedirect(InvoiceResource::getUrl('view', ['record' => $credit, 'send' => 1]));
+
+        expect($credit->cancels_invoice)->toBeFalse()
+            ->and($credit->total_minor)->toBe(-600000);
+
+        // The invoice is not cancelled (D-03), and every entry is unbilled with no link again.
+        creditPage($invoice)->assertDontSee('Stornováno');
+
+        foreach (creditActionFreshEntries($entries) as $entry) {
+            expect($entry->billing_state)->toBe(BillingState::Unbilled)
+                ->and($entry->invoice_id)->toBeNull();
+        }
+    });
+
+    it('keeps the time billed after a part and releases it with the rest (Phase 17.1, D-01)', function (): void {
+        ['invoice' => $invoice, 'entries' => $entries] = creditActionInvoice();
+        $invoice = InvoiceFixtures::lock($invoice);
+
+        $first = creditPage($invoice)->mountAction('creditItems');
+        $key = creditActionRowKey($first);
+
+        $first->fillForm(['lines' => [$key => ['quantity' => '2']]], 'mountedActionSchema0')
+            ->callMountedAction();
+
+        foreach (creditActionFreshEntries($entries) as $entry) {
+            expect($entry->billing_state)->toBe(BillingState::Billed)
+                ->and($entry->invoice_id)->toBe($invoice->id);
+        }
+
+        // The second dialog defaults to the 3 h still creditable; submitting it takes back the rest.
+        creditPage($invoice)
+            ->mountAction('creditItems')
+            ->callMountedAction();
+
+        expect(Invoice::query()->where('kind', InvoiceKind::CreditNote->value)->count())->toBe(2);
+
+        foreach (creditActionFreshEntries($entries) as $entry) {
+            expect($entry->billing_state)->toBe(BillingState::Unbilled)
+                ->and($entry->invoice_id)->toBeNull();
+        }
+    });
+
     it('shows the amount of a deselected row as a dash and the total as zero', function (): void {
         ['invoice' => $invoice] = creditActionInvoice();
 
