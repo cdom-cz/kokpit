@@ -11,11 +11,17 @@ use App\Domain\Tasks\Actions\CreateTask;
 use App\Domain\Tasks\Models\Task;
 use App\Filament\Concerns\SearchesGloballyWithoutAccents;
 use App\Filament\Resources\ClientResource;
+use App\Filament\Resources\ClientResource\Pages\ListClients;
 use App\Filament\Resources\ProjectResource;
+use App\Filament\Resources\ProjectResource\Pages\ListProjects;
 use App\Filament\Resources\TaskResource;
+use App\Filament\Resources\TaskResource\Pages\ListTasks;
+use App\Filament\Support\AccentInsensitiveTextColumn;
 use Filament\Facades\Filament;
+use Filament\Tables\Columns\TextColumn;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Livewire\Livewire;
 use Symfony\Component\Finder\Finder;
 use Tests\Support\Canary;
 
@@ -305,6 +311,63 @@ describe('the global search', function (): void {
         foreach ($searchable as $resource) {
             expect(class_uses_recursive($resource))->toContain(SearchesGloballyWithoutAccents::class);
         }
+    });
+});
+
+describe('the table search', function (): void {
+    it('binds the text column of Filament to the accent-insensitive subclass', function (): void {
+        expect(TextColumn::make('name'))->toBeInstanceOf(AccentInsensitiveTextColumn::class);
+    });
+
+    it('finds a task in the task list whatever the diacritics and the letter case', function (): void {
+        $project = accSearchProject();
+        $school = accSearchTask($project, 'Example Škola web');
+        $other = accSearchTask($project, 'Example login fix');
+
+        foreach (['skola', 'ŠKOLA', 'Škola'] as $term) {
+            Livewire::test(ListTasks::class)
+                ->searchTable($term)
+                ->assertCanSeeTableRecords([$school])
+                ->assertCanNotSeeTableRecords([$other]);
+        }
+    });
+
+    it('finds a project and a client in their lists without the diacritics', function (): void {
+        $sumava = accSearchProject('SUM', 'Example Šumava web');
+        $other = accSearchProject('OTH', 'Example Other web');
+        $school = Client::factory()->create(['name' => 'Example Školní jídelna']);
+        $plain = Client::factory()->create(['name' => 'Example Plain client']);
+
+        Livewire::test(ListProjects::class)
+            ->searchTable('sumava')
+            ->assertCanSeeTableRecords([$sumava])
+            ->assertCanNotSeeTableRecords([$other]);
+
+        Livewire::test(ListClients::class)
+            ->searchTable('skolni')
+            ->assertCanSeeTableRecords([$school])
+            ->assertCanNotSeeTableRecords([$plain]);
+    });
+
+    it('searches the task list through the index expression', function (): void {
+        accSearchTask(accSearchProject(), 'Example Škola web');
+
+        $query = Livewire::test(ListTasks::class)->searchTable('skola')->instance()->getFilteredTableQuery();
+
+        expect($query->toSql())->toContain('kokpit_search_text("tasks"."title")')
+            ->and(accSearchPlan($query))->toContain('tasks_title_search_index');
+    });
+
+    it('searches a relationship column without a table context', function (): void {
+        $sumava = accSearchTask(accSearchProject('SUM', 'Example Šumava'), 'Example plain title');
+        $other = accSearchTask(accSearchProject('OTH', 'Example Other'), 'Example plain title');
+
+        $isFirst = true;
+        $found = TextColumn::make('project.name')->searchable()->applySearchConstraint(Task::query(), 'sumava', $isFirst)->pluck('tasks.id')->all();
+
+        expect($found)->toBe([$sumava->id])
+            ->and($found)->not->toContain($other->id)
+            ->and($isFirst)->toBeFalse();
     });
 });
 

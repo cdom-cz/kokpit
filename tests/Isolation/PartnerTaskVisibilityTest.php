@@ -212,6 +212,22 @@ describe('what a Partner can open', function (): void {
             ->searchTable($foreign->title)
             ->assertCanNotSeeTableRecords([$this->taskA, $foreign, $hidden]);
     });
+
+    it('finds the own tasks for a term without diacritics and never a foreign or hidden one', function (): void {
+        $own = partnerTaskVisTask($this->admin, $this->projectA, 'Example Školní '.Canary::canary('own'));
+        $foreign = partnerTaskVisTask($this->admin, $this->projectB, 'Example Školní '.Canary::canary('foreign'));
+        $hidden = partnerTaskVisTask($this->admin, $this->hiddenA, 'Example Školní '.Canary::canary('hidden'));
+        $this->actingAs($this->partnerA);
+
+        foreach (['skolni', 'SKOLNI'] as $term) {
+            Livewire::test(ListPartnerTasks::class)
+                ->searchTable($term)
+                ->assertCanSeeTableRecords([$own])
+                ->assertCanNotSeeTableRecords([$foreign, $hidden, $this->taskA])
+                ->assertDontSee($foreign->title)
+                ->assertDontSee($hidden->title);
+        }
+    });
 });
 
 describe('nothing to change', function (): void {
