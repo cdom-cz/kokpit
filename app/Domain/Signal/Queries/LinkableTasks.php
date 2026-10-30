@@ -6,6 +6,7 @@ namespace App\Domain\Signal\Queries;
 
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Projects\Models\Project;
+use App\Domain\Shared\Database\AccentInsensitiveSearch;
 use App\Domain\Signal\Support\SignalRules;
 use App\Domain\Tasks\Models\Task;
 use Illuminate\Database\Eloquent\Builder;
@@ -44,19 +45,19 @@ final class LinkableTasks
             return [];
         }
 
-        // The term is a bound value; a typed `%`, `_` or `\` is a plain character.
-        $like = '%'.addcslashes($term, '\\%_').'%';
-
+        // The term is a bound value, and a typed `%`, `_` or `!` is a plain character. The match ignores
+        // diacritics and letter case (AccentInsensitiveSearch).
         $tasks = self::linkable()
-            ->where(static function (Builder $match) use ($like): void {
-                $match->where('tasks.reference', 'ilike', $like)
-                    ->orWhere('tasks.title', 'ilike', $like)
-                    ->orWhereHas('project', static function (Builder $project) use ($like): void {
-                        $project->where(static function (Builder $inner) use ($like): void {
-                            $inner->where('projects.key', 'ilike', $like)
-                                ->orWhere('projects.name', 'ilike', $like);
-                        });
+            ->where(static function (Builder $match) use ($term): void {
+                AccentInsensitiveSearch::where($match, 'tasks.reference', $term);
+                AccentInsensitiveSearch::where($match, 'tasks.title', $term, 'or');
+
+                $match->orWhereHas('project', static function (Builder $project) use ($term): void {
+                    $project->where(static function (Builder $inner) use ($term): void {
+                        AccentInsensitiveSearch::where($inner, 'projects.key', $term);
+                        AccentInsensitiveSearch::where($inner, 'projects.name', $term, 'or');
                     });
+                });
             })
             ->with('project:id,key,name')
             ->orderBy(Project::query()->select('projects.key')->whereColumn('projects.id', 'tasks.project_id'))
