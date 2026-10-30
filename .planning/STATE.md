@@ -4,10 +4,10 @@ current_phase: "10.1"
 current_phase_name: Invoices stay fully editable until sent, with a manual unlock
 status: verifying
 stopped_at: Phase 10 complete, ready to verify Phase 10.1
-last_updated: "2026-10-29T18:29:52.012Z"
+last_updated: "2026-10-30T10:52:02.787Z"
 last_activity: 2026-10-29
 last_activity_desc: Phase 10 complete, transitioned to Phase 10.1
-state_head: 090c367fd06afcf29f9bfd4131972b64c58fdd9a
+state_head: e9a95f7f11917602660865d8bfc2aba4885f5374
 progress:
   total_phases: 20
   completed_phases: 10
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-06)
 Phase: 10.1 — Invoices stay fully editable until sent, with a manual unlock
 Plan: 16
 Status: Phase complete — ready for verification
-Last activity: 2026-10-29 — Phase 10 complete, transitioned to Phase 10.1
+Last activity: 2026-10-30 - Completed quick task 261030-gcw: Widen the task hint in the signal form to the full width of the text input
 
 Progress: [█████░░░░░] 50%
 
@@ -943,6 +943,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261028-krr | Make the Unit field optional on invoice and proforma items | 2026-10-28 | 3220181 | [261028-krr-make-the-unit-field-optional-on-invoice-](./quick/261028-krr-make-the-unit-field-optional-on-invoice-/) |
 | 261028-odp | Compact payment block on invoice/proforma PDF; no supplier contact lines on PDFs; no footer on cash receipt | 2026-10-28 | 6b25849 | [261028-odp-invoice-and-proforma-pdf-make-the-paymen](./quick/261028-odp-invoice-and-proforma-pdf-make-the-paymen/) |
 | 24 | Set the DDEV RustFS bucket CORS rule for browser uploads | 2026-10-29 | e451692 | — |
+| 261030-gcw | Widen the task hint in the signal form to the full width of the text input | 2026-10-30 | e9a95f7 | [261030-gcw-widen-the-task-hint-in-the-signal-form-t](./quick/261030-gcw-widen-the-task-hint-in-the-signal-form-t/) |
 
 ### Roadmap Evolution
 
