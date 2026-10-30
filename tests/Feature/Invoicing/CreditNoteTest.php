@@ -39,7 +39,8 @@ use Tests\Support\RawSql;
 /*
  * Credit notes (IN-10, IN-01, IN-03; D-13, D-14, D-16): the full storno issues a credit note from its own series that
  * marks the invoice cancelled and returns its time to unbilled, a partial credit note credits chosen quantities and
- * keeps the time billed. Nothing is ever written on the issued invoice itself. Every name and amount is fictional.
+ * keeps the time billed until the credit notes together take back every line (Phase 17.1, D-01). Nothing is ever
+ * written on the issued invoice itself. Every name and amount is fictional.
  */
 
 beforeEach(function (): void {
@@ -241,6 +242,57 @@ describe('the tracer: the storno of an invoice built from time', function (): vo
     });
 });
 
+describe('the tracer: partial credit notes that take back everything (Phase 17.1, D-01 to D-03)', function (): void {
+    it('returns the time of a sent invoice to unbilled with the credit note that takes back the last quantity, and does not cancel the invoice', function (): void {
+        ['client' => $client, 'projects' => $projects, 'entries' => $entries] = creditTimeSetup();
+        $invoice = InvoiceFixtures::lock(creditIssuedFromTime($client, $projects));
+        [$alpha, $bravo] = creditLines($invoice);
+        $rowBefore = creditRawRow($invoice);
+
+        // The first credit note leaves the second line untouched: nothing is released.
+        $first = app(IssueCreditNote::class)->partial($this->admin, $invoice, [$alpha->id => '2.5']);
+
+        foreach ($entries as $entry) {
+            $stored = creditFreshEntry($entry);
+
+            expect($stored->billing_state)->toBe(BillingState::Billed)
+                ->and($stored->invoice_id)->toBe($invoice->id)
+                ->and($stored->billed_amount_minor)->not->toBeNull();
+        }
+
+        // The second one takes back the last quantity: all four entries go back to unbilled, with no link and no snapshot.
+        $second = app(IssueCreditNote::class)->partial($this->admin, $invoice, [$bravo->id => '1.5']);
+
+        foreach ($entries as $entry) {
+            $stored = creditFreshEntry($entry);
+
+            expect($stored->billing_state)->toBe(BillingState::Unbilled)
+                ->and($stored->invoice_id)->toBeNull()
+                ->and($stored->billed_at)->toBeNull()
+                ->and($stored->billed_rate_minor)->toBeNull()
+                ->and($stored->billed_rate_currency)->toBeNull()
+                ->and($stored->billed_amount_minor)->toBeNull();
+        }
+
+        // The entries can be edited again.
+        app(UpdateTimeEntry::class)->handle($this->admin, $entries[0], ['description' => 'Edited after the full credit']);
+
+        expect(creditFreshEntry($entries[0])->description)->toBe('Edited after the full credit');
+
+        // The invoice is not cancelled and its row is exactly as before the first credit note (D-03).
+        expect($first->cancels_invoice)->toBeFalse()
+            ->and($second->cancels_invoice)->toBeFalse()
+            ->and(creditStored($invoice)->isCancelled())->toBeFalse()
+            ->and(creditRawRow($invoice))->toBe($rowBefore);
+
+        // Nothing is left to credit, so the storno is refused.
+        $errors = creditRefusal(fn () => app(IssueCreditNote::class)->storno($this->admin, $invoice));
+
+        expect($errors['lines'][0])->toBe(__('invoices.errors.credit_nothing'))
+            ->and(Invoice::query()->where('kind', 'credit_note')->count())->toBe(2);
+    });
+});
+
 /**
  * The errors of a refused credit note, or a failure when it was not refused.
  *
@@ -317,19 +369,29 @@ describe('a partial credit note', function (): void {
         }
     });
 
-    it('never releases the time of the invoice, even when every quantity is credited in pieces', function (): void {
+    it('releases the time of an open invoice only with the credit note that takes back the last quantity', function (): void {
         ['client' => $client, 'projects' => $projects, 'entries' => $entries] = creditTimeSetup();
         $invoice = creditIssuedFromTime($client, $projects);
         [$alpha, $bravo] = creditLines($invoice);
 
-        app(IssueCreditNote::class)->partial($this->admin, $invoice, [$alpha->id => '2.5']);
-        app(IssueCreditNote::class)->partial($this->admin, $invoice, [$bravo->id => '1.5']);
+        app(IssueCreditNote::class)->partial($this->admin, $invoice, [$alpha->id => '1']);
+        app(IssueCreditNote::class)->partial($this->admin, $invoice, [$alpha->id => '1.5']);
+        app(IssueCreditNote::class)->partial($this->admin, $invoice, [$bravo->id => '1']);
 
         expect(creditStored($invoice)->isCancelled())->toBeFalse();
 
         foreach ($entries as $entry) {
             expect(creditFreshEntry($entry)->billing_state)->toBe(BillingState::Billed)
                 ->and(creditFreshEntry($entry)->invoice_id)->toBe($invoice->id);
+        }
+
+        app(IssueCreditNote::class)->partial($this->admin, $invoice, [$bravo->id => '0.5']);
+
+        expect(creditStored($invoice)->isCancelled())->toBeFalse();
+
+        foreach ($entries as $entry) {
+            expect(creditFreshEntry($entry)->billing_state)->toBe(BillingState::Unbilled)
+                ->and(creditFreshEntry($entry)->invoice_id)->toBeNull();
         }
     });
 
