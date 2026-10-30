@@ -395,6 +395,59 @@ describe('a partial credit note', function (): void {
         }
     });
 
+    it('releases the time in the one call that credits every remaining quantity at once, and not while a ten-thousandth is left', function (): void {
+        ['client' => $client, 'projects' => $projects, 'entries' => $entries] = creditTimeSetup();
+        $invoice = creditIssuedFromTime($client, $projects);
+        [$alpha, $bravo] = creditLines($invoice);
+
+        app(IssueCreditNote::class)->partial($this->admin, $invoice, [$alpha->id => '2.5', $bravo->id => '1.4999']);
+
+        foreach ($entries as $entry) {
+            expect(creditFreshEntry($entry)->billing_state)->toBe(BillingState::Billed)
+                ->and(creditFreshEntry($entry)->invoice_id)->toBe($invoice->id);
+        }
+
+        // The last ten-thousandth takes back the last quantity.
+        app(IssueCreditNote::class)->partial($this->admin, $invoice, [$bravo->id => '0.0001']);
+
+        foreach ($entries as $entry) {
+            expect(creditFreshEntry($entry)->billing_state)->toBe(BillingState::Unbilled)
+                ->and(creditFreshEntry($entry)->invoice_id)->toBeNull();
+        }
+
+        ['client' => $otherClient, 'projects' => $otherProjects] = creditTimeSetup();
+        $other = creditIssuedFromTime($otherClient, $otherProjects);
+        [$otherAlpha, $otherBravo] = creditLines($other);
+        $otherEntries = creditSystem(static fn (): array => TimeEntry::query()->where('invoice_id', $other->id)->get()->all());
+
+        expect($otherEntries)->toHaveCount(4);
+
+        // The dialog default: every remaining quantity in one call.
+        app(IssueCreditNote::class)->partial($this->admin, $other, [$otherAlpha->id => '2.5', $otherBravo->id => '1.5']);
+
+        foreach ($otherEntries as $entry) {
+            expect(creditFreshEntry($entry)->billing_state)->toBe(BillingState::Unbilled)
+                ->and(creditFreshEntry($entry)->invoice_id)->toBeNull();
+        }
+    });
+
+    it('leaves the payments and their income as they were when the last credit note releases the time (D-16)', function (): void {
+        ['client' => $client, 'projects' => $projects] = creditTimeSetup();
+        $invoice = creditIssuedFromTime($client, $projects);
+        [$alpha, $bravo] = creditLines($invoice);
+        app(RecordPayment::class)->handle($this->admin, $invoice, ['amount' => '1000', 'paid_on' => '2026-10-05']);
+
+        $transactionsBefore = Transaction::query()->get()->map(static fn (Transaction $transaction): array => $transaction->getAttributes())->all();
+        $paymentsBefore = creditSystem(static fn (): array => InvoicePayment::query()->get()->map(static fn (InvoicePayment $row): array => $row->getAttributes())->all());
+
+        app(IssueCreditNote::class)->partial($this->admin, $invoice, [$alpha->id => '2.5']);
+        app(IssueCreditNote::class)->partial($this->admin, $invoice, [$bravo->id => '1.5']);
+
+        expect($paymentsBefore)->toHaveCount(1)
+            ->and(creditSystem(static fn (): array => InvoicePayment::query()->get()->map(static fn (InvoicePayment $row): array => $row->getAttributes())->all()))->toBe($paymentsBefore)
+            ->and(Transaction::query()->get()->map(static fn (Transaction $transaction): array => $transaction->getAttributes())->all())->toBe($transactionsBefore);
+    });
+
     it('respects the earlier credits: it refuses more than is left, accepts exactly what is left, and the storno takes only the rest', function (): void {
         $invoice = creditTwoLineInvoice();
         [$consulting, $licence] = creditLines($invoice);
@@ -629,7 +682,71 @@ describe('a foreign currency invoice', function (): void {
     });
 });
 
+describe('a foreign currency invoice credited in full by partial credit notes (Phase 17.1, IN-07)', function (): void {
+    it('releases its time and every credit note carries the CNB snapshot of the invoice', function (): void {
+        InvoiceFixtures::cnbRate('EUR', '2026-10-14', '25.125');
+        ['client' => $client, 'projects' => $projects, 'entries' => $entries] = creditTimeSetup('EUR');
+        $invoice = creditIssuedFromTime($client, $projects, 'EUR');
+        [$alpha, $bravo] = creditLines($invoice);
+        $original = creditSystem(static fn (): InvoiceAdmin => InvoiceAdmin::query()->where('invoice_id', $invoice->id)->firstOrFail());
+
+        // Another day, and no CNB list for it: a fresh lookup would fail.
+        $this->travelTo(CarbonImmutable::parse('2026-10-20 09:30:00', 'Europe/Prague'));
+
+        $first = app(IssueCreditNote::class)->partial($this->admin, $invoice, [$alpha->id => '2.5']);
+
+        foreach ($entries as $entry) {
+            expect(creditFreshEntry($entry)->billing_state)->toBe(BillingState::Billed);
+        }
+
+        $second = app(IssueCreditNote::class)->partial($this->admin, $invoice, [$bravo->id => '1.5']);
+
+        foreach ($entries as $entry) {
+            expect(creditFreshEntry($entry)->billing_state)->toBe(BillingState::Unbilled)
+                ->and(creditFreshEntry($entry)->invoice_id)->toBeNull();
+        }
+
+        foreach ([$first, $second] as $credit) {
+            $admin = creditSystem(static fn (): InvoiceAdmin => InvoiceAdmin::query()->where('invoice_id', $credit->id)->firstOrFail());
+
+            expect($admin->exchange_rate)->toBe($original->exchange_rate)
+                ->and($admin->exchange_unit_amount)->toBe($original->exchange_unit_amount)
+                ->and($admin->exchange_rate_date?->format('Y-m-d'))->toBe('2026-10-14');
+        }
+
+        expect(creditStored($invoice)->isCancelled())->toBeFalse()
+            ->and($first->total_minor + $second->total_minor)->toBe(-$invoice->total_minor);
+    });
+});
+
 describe('the storno is atomic', function (): void {
+    it('leaves nothing when the PDF of the credit note that would release the time cannot be rendered (Phase 17.1)', function (): void {
+        ['client' => $client, 'projects' => $projects, 'entries' => $entries] = creditTimeSetup();
+        $invoice = creditIssuedFromTime($client, $projects);
+        [$alpha, $bravo] = creditLines($invoice);
+
+        app(IssueCreditNote::class)->partial($this->admin, $invoice, [$alpha->id => '2.5']);
+
+        $sequences = creditSequences();
+        $files = Storage::disk('local')->allFiles();
+
+        View::composer('pdf.invoice', static function (): void {
+            throw new RuntimeException('The rendering failed.');
+        });
+
+        expect(fn () => app(IssueCreditNote::class)->partial($this->admin, $invoice, [$bravo->id => '1.5']))->toThrow(RuntimeException::class, 'The rendering failed.');
+
+        expect(Invoice::query()->where('kind', 'credit_note')->count())->toBe(1)
+            ->and(creditSequences())->toBe($sequences)
+            ->and(Storage::disk('local')->allFiles())->toBe($files)
+            ->and(creditStored($invoice)->isCancelled())->toBeFalse();
+
+        foreach ($entries as $entry) {
+            expect(creditFreshEntry($entry)->billing_state)->toBe(BillingState::Billed)
+                ->and(creditFreshEntry($entry)->invoice_id)->toBe($invoice->id);
+        }
+    });
+
     it('leaves nothing when the PDF cannot be rendered: no credit note, no number, still billed, not cancelled', function (): void {
         ['client' => $client, 'projects' => $projects, 'entries' => $entries] = creditTimeSetup();
         $invoice = creditIssuedFromTime($client, $projects);
