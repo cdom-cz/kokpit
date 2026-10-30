@@ -5,8 +5,12 @@ declare(strict_types=1);
 use App\Domain\Finance\Enums\TransactionType;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Finance\Models\TransactionCategory;
+use App\Domain\Invoicing\Actions\ConvertProforma;
+use App\Domain\Invoicing\Actions\RecordPayment;
+use App\Domain\Invoicing\Enums\InvoiceKind;
 use App\Domain\Invoicing\Enums\PaymentMethod;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Payments\Actions\AssignCardPayment;
 use App\Domain\Payments\Actions\RecordPaymentReturn;
 use App\Domain\Payments\Actions\ResolveCardPayment;
@@ -431,6 +435,21 @@ describe('the currency and the document of an assignment', function (): void {
         $select = resolutionPage($record)->mountAction('assignCardPayment')->instance()->getSchema('mountedActionSchema0')->getFlatComponents()['invoice_id'];
 
         expect($select->getOptions())->not->toHaveKey($cancelled->id);
+    });
+});
+
+describe('a converted proforma (Phase 17.1, D-07)', function (): void {
+    it('refuses assigning a duplicate card payment to it with payment_on_converted_proforma and keeps the record unresolved', function (): void {
+        $proforma = CardPaymentSetup::issued(CardPaymentSetup::client(), InvoiceKind::Proforma);
+        app(RecordPayment::class)->handle($this->admin, $proforma, ['amount' => '12500.00', 'paid_on' => '2026-10-14']);
+        $invoice = app(ConvertProforma::class)->handle($this->admin, $proforma);
+        $record = CardPaymentFixtures::duplicate($proforma);
+        $payments = InvoicePayment::query()->count();
+
+        expect(refusal(fn () => app(AssignCardPayment::class)->handle($this->admin, $record, ['invoice_id' => $proforma->id])))
+            ->toBe(['payment' => [__('invoices.errors.payment_on_converted_proforma', ['number' => (string) $invoice->number])]])
+            ->and(storedRecord($record)->resolution)->toBe(CardPaymentResolution::None)
+            ->and(InvoicePayment::query()->count())->toBe($payments);
     });
 });
 
