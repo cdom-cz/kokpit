@@ -38,9 +38,9 @@ secretGroup = 1
 keywords = ["/users/", "/home/"]
 [[rules.allowlists]]
 # Placeholder and system names that are documentation, CI-runner or OS conventions, not a person. Kept in step
-# with the home-path rule of scripts/lib/scan.awk (which also allows ddev and the macOS Shared folder). Whole
+# with the home-path rule of scripts/lib/scan.awk (which also allows ddev, zerops and the macOS Shared folder). Whole
 # name segments only.
-regexes = ['''^(?:example|user|username|name|you|runner|vagrant|ubuntu|www-data|ddev|Shared)$''']
+regexes = ['''^(?:example|user|username|name|you|runner|vagrant|ubuntu|www-data|ddev|zerops|Shared)$''']
 [[rules.allowlists]]
 # A Windows system folder written with forward slashes ("C:/Users/Public") also matches this rule, because the
 # colon is a legal left boundary (a PATH list entry). scripts/lib/scan.awk hands every drive-letter path to the
