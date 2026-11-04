@@ -17,6 +17,8 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use Laravel\Horizon\Contracts\JobRepository;
+use Mockery\MockInterface;
 use Tests\Support\Canary;
 use Tests\Support\RedisTestQueue;
 
@@ -81,6 +83,18 @@ it('shows the Admin the failed-jobs slot as Warning with the count after a job f
         ->toContain(__('enums.health_status.warning'))
         ->toContain('fi-color-warning')
         ->toContain(__('kokpit.system.failed_jobs.some'));
+});
+
+it('shows the Admin the failed jobs Horizon holds when the queue runs on Redis', function (): void {
+    useRedisQueueAt($this);
+    $this->mock(JobRepository::class, function (MockInterface $mock): void {
+        $mock->shouldReceive('countFailed')->andReturn(2);
+    });
+
+    $html = (string) $this->actingAs(Canary::admin())->get('/admin/system')->assertOk()->getContent();
+
+    expect($html)->toContain(__('kokpit.system.failed_jobs.some'))
+        ->not->toContain(__('kokpit.system.failed_jobs.none'));
 });
 
 /**
