@@ -291,12 +291,14 @@ it('lists in the bell of each user only the own notifications', function (): voi
 
     $this->actingAs($this->partnerA);
     Livewire::test(DatabaseNotifications::class)
+        ->set('isOpen', true)
         ->assertSee($partnerTitle)
         ->assertDontSee($adminTitle)
         ->assertDontSee($otherTitle);
 
     $this->actingAs($this->admin);
     Livewire::test(DatabaseNotifications::class)
+        ->set('isOpen', true)
         ->assertSee($adminTitle)
         ->assertDontSee($partnerTitle)
         ->assertDontSee($otherTitle);

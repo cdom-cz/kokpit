@@ -214,7 +214,7 @@ describe('proves the fixtures exist: the Admin sees what the Partner does not', 
         Livewire::test(DocumentStorageStats::class)->assertSuccessful();
         Livewire::test(DocumentStorageByClient::class)->assertSee($this->canaryA);
 
-        $bell = Livewire::test(DatabaseNotifications::class)->html();
+        $bell = Livewire::test(DatabaseNotifications::class)->set('isOpen', true)->html();
 
         foreach ($this->bellTexts as $text) {
             expect($bell)->toContain($text);
@@ -339,7 +339,7 @@ describe('what a Partner sees', function (): void {
         expect(DB::table('notifications')->where('notifiable_id', $this->partnerA->id)->count())->toBe(0);
 
         $everything = (string) DB::table('notifications')->where('notifiable_id', $this->partnerA->id)->get()->toJson();
-        $bell = Livewire::test(DatabaseNotifications::class)->html();
+        $bell = Livewire::test(DatabaseNotifications::class)->set('isOpen', true)->html();
 
         foreach ([$everything, $bell] as $where => $text) {
             foreach ($this->bellTexts as $title) {
