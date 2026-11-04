@@ -99,6 +99,11 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // `disable` (libpq >= 16) stops libpq from looking for a client certificate in
+            // $HOME/.postgresql/, which fails the TLS connection when HOME points at an
+            // unreadable directory (a non-root process with HOME=/root). The app never uses
+            // client-certificate auth. Unset = libpq default; see PooledPostgresConnector.
+            'sslcertmode' => env('DB_SSLCERTMODE'),
             'timezone' => 'UTC',
         ],
 

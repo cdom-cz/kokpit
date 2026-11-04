@@ -96,9 +96,11 @@ done
 
 # (c) documented placeholders alone produce no finding
 ph=$(new_repo)
-put "$ph" notes.md "$(printf 'ico: 12345678\ncompany_id = 00000000\nIČ: 12345678\npath: /Users/example/project\nrunner: /home/runner/work\nshared: /Users/Shared/tmp\nbare: /Users/example\nbare: /home/runner\nbare: /home/ubuntu\nbare: /Users/Shared\nurl: https://example.com/home/about\nview: resources/views/home/index.blade.php\n')"
+zp=$(printf '/%s/%s' home zerops)
+put "$ph" notes.md "$(printf 'zerops platform user: %s\nHOME=\"%s\"\n' "$zp" "$zp")
+$(printf 'ico: 12345678\ncompany_id = 00000000\nIČ: 12345678\npath: /Users/example/project\nrunner: /home/runner/work\nshared: /Users/Shared/tmp\nbare: /Users/example\nbare: /home/runner\nbare: /home/ubuntu\nbare: /Users/Shared\nurl: https://example.com/home/about\nview: resources/views/home/index.blade.php\n')"
 commit_all "$ph" placeholders
-assert_exit 0 "(c) placeholders (12345678, 00000000, IČ key, /Users/example/, /home/runner/, /Users/Shared/, bare forms) and URL or relative home segments are not reported" glk "$ph"
+assert_exit 0 "(c) placeholders (12345678, 00000000, IČ key, /Users/example/, /home/runner/, /Users/Shared/, bare forms, the Zerops platform user) and URL or relative home segments are not reported" glk "$ph"
 
 # (d) the history case: the bad file is deleted in a later commit, gitleaks still reports it
 git -C "$bad" rm -q planted.txt

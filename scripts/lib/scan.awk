@@ -120,7 +120,7 @@ function handle(rule, tok,   t, ip, n, w, k, m, q) {
       if (tok !~ /^[a-z]:\/+users\/+(example|user|username|name|you|public|default|all|runneradmin)$/) hit(rule, tok)
     } else if (tok ~ /^\/Users\// && (lctx ~ /^[A-Za-z]:$/ || lctx ~ /[^A-Za-z0-9][A-Za-z]:$/)) {
       # a drive letter and colon before /Users/: the Windows rule decides (forward-slash C:/Users/Public)
-    } else if (tok !~ /^\/(Users|home)\/(example|user|username|name|you|runner|vagrant|ubuntu|www-data|ddev|Shared)$/) hit(rule, tok)
+    } else if (tok !~ /^\/(Users|home)\/(example|user|username|name|you|runner|vagrant|ubuntu|www-data|ddev|zerops|Shared)$/) hit(rule, tok)
   } else hit(rule, tok)
 }
 BEGIN {
