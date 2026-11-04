@@ -109,7 +109,7 @@ final class ReportFailedJob
                 return route('filament.admin.pages.system');
             }
 
-            return Filament::getPanel('admin')->getUrl();
+            return Filament::getPanel('admin')?->getUrl();
         } catch (Throwable) {
             return null;
         }

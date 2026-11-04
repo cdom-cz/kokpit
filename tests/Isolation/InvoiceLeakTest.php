@@ -415,7 +415,7 @@ describe('bell and search', function (): void {
         $this->actingAs($this->partnerA);
 
         $encoded = (string) json_encode(User::query()->whereKey($this->partnerA->id)->firstOrFail()->notifications()->get()->pluck('data'));
-        $bell = Livewire::test(DatabaseNotifications::class)->html();
+        $bell = Livewire::test(DatabaseNotifications::class)->set('isOpen', true)->html();
 
         expect($this->partnerA->notifications()->count())->toBe(0)
             ->and($encoded)->not->toContain($invoice->number)
@@ -540,7 +540,7 @@ describe('the Admin invoicing surfaces, each refused to a Partner and open to th
         }
 
         expect($this->partnerA->notifications()->count())->toBe(0)
-            ->and(Livewire::test(DatabaseNotifications::class)->html())->not->toContain($this->a['invoice']->number);
+            ->and(Livewire::test(DatabaseNotifications::class)->set('isOpen', true)->html())->not->toContain($this->a['invoice']->number);
     });
 });
 
@@ -906,7 +906,7 @@ describe('an invoice that was sent, unlocked and edited (Phase 10.1)', function 
         $this->get('/admin/activity')->assertForbidden();
 
         // The bell of the Partner holds nothing of it.
-        $bell = Livewire::test(DatabaseNotifications::class)->html();
+        $bell = Livewire::test(DatabaseNotifications::class)->set('isOpen', true)->html();
 
         expect($this->partnerA->notifications()->count())->toBe(0)
             ->and($bell)->not->toContain($edit['reason'])

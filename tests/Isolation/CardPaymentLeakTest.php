@@ -596,7 +596,7 @@ describe('the five notices', function (): void {
             $this->actingAs($partner);
 
             $encoded = (string) json_encode(User::query()->whereKey($partner->getKey())->firstOrFail()->notifications()->get()->pluck('data'));
-            $bellHtml = Livewire::test(DatabaseNotifications::class)->html();
+            $bellHtml = Livewire::test(DatabaseNotifications::class)->set('isOpen', true)->html();
 
             expect($partner->notifications()->count())->toBe(0)
                 ->and($addresses)->not->toContain($partner->email)

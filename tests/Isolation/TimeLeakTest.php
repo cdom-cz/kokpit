@@ -251,7 +251,7 @@ describe('what a Partner sees', function (): void {
         expect(DB::table('notifications')->where('notifiable_id', $this->partnerA->id)->count())->toBe(0);
 
         $everything = (string) DB::table('notifications')->where('notifiable_id', $this->partnerA->id)->get()->toJson();
-        $bell = Livewire::test(DatabaseNotifications::class)->html();
+        $bell = Livewire::test(DatabaseNotifications::class)->set('isOpen', true)->html();
 
         foreach ([$everything, $bell] as $where => $text) {
             expect(mb_stripos($text, 'časovač'))->toBeFalse("bell source {$where} must hold no timer text")
@@ -411,7 +411,7 @@ describe('Phase 8: the Partner and the rates, reports and dashboard surfaces', f
         $this->get('/admin/report-exports')->assertOk()->assertSee($this->exportSummary);
         $this->get('/admin')->assertOk()->assertDontSee('Zkontrolovat úkol');
 
-        $bell = Livewire::test(DatabaseNotifications::class)->html();
+        $bell = Livewire::test(DatabaseNotifications::class)->set('isOpen', true)->html();
 
         expect($bell)->toContain(__('kokpit.exports.bell.ready.title'))
             ->and($bell)->toContain(__('kokpit.rates.alert.title'))
@@ -460,7 +460,7 @@ describe('Phase 8: the Partner and the rates, reports and dashboard surfaces', f
         expect(DB::table('notifications')->where('notifiable_id', $this->partnerA->id)->count())->toBe(0);
 
         $everything = (string) DB::table('notifications')->where('notifiable_id', $this->partnerA->id)->get()->toJson();
-        $bell = Livewire::test(DatabaseNotifications::class)->html();
+        $bell = Livewire::test(DatabaseNotifications::class)->set('isOpen', true)->html();
 
         foreach ([$everything, $bell] as $where => $text) {
             leakPhase8AssertClean($text, "bell source {$where}", $this->phase8Values);

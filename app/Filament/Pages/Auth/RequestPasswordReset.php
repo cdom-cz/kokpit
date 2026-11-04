@@ -15,6 +15,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Auth\Events\PasswordResetLinkSent;
 use Illuminate\Contracts\Auth\CanResetPassword;
 use Illuminate\Support\Facades\Password;
+use LogicException;
 use SensitiveParameter;
 
 /**
@@ -51,7 +52,7 @@ final class RequestPasswordReset extends BaseRequestPasswordReset
         Password::broker(Filament::getAuthPasswordBroker())->sendResetLink(
             $this->getCredentialsFromFormData($data),
             function (CanResetPassword $user, #[SensitiveParameter] string $token): void {
-                if (! $user instanceof User || ! $user->canAccessPanel(Filament::getPanel('admin'))) {
+                if (! $user instanceof User || ! $user->canAccessPanel(Filament::getPanel('admin') ?? throw new LogicException('Admin panel is not registered.'))) {
                     return;
                 }
 
