@@ -2,10 +2,10 @@
 gsd_state_version: "1.0"
 status: Awaiting next milestone
 stopped_at: Phase 17.1 complete, ready to verify Phase 11
-last_updated: "2026-11-04T08:35:58.131Z"
+last_updated: "2026-11-04T09:10:15.023Z"
 last_activity: 2026-10-30
 last_activity_desc: Milestone v1 completed and archived
-state_head: 9e3a9ada02ae2a61729fa5bb04a9a440f9c88226
+state_head: 038dc4600e7aa709038079b21a375252c744a37a
 progress:
   total_phases: 20
   completed_phases: 20
@@ -920,6 +920,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261030-u20 | Supplier company name as From name of invoice, document and payment e-mails | 2026-10-30 | 95cc781 | [261030-u20-use-the-supplier-company-name-from-setti](./quick/261030-u20-use-the-supplier-company-name-from-setti/) |
 | 3 | Allow raised Livewire max_nesting_depth in UploadConfigTest config guard | 2026-10-30 | e1b6c76 | — |
 | 4 | Handle nullable Filament::getPanel() return type (PHPStan level 8 CI fix) | 2026-11-04 | 9e3a9ad | — |
+| 5 | Adapt DatabaseNotifications bell tests to Filament lazy isOpen rendering | 2026-11-04 | 038dc46 | — |
 
 ### Roadmap Evolution
 
