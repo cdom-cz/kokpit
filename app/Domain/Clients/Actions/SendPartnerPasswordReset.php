@@ -12,6 +12,7 @@ use Filament\Facades\Filament;
 use Illuminate\Auth\Events\PasswordResetLinkSent;
 use Illuminate\Contracts\Auth\CanResetPassword;
 use Illuminate\Support\Facades\Password;
+use LogicException;
 use SensitiveParameter;
 
 /**
@@ -34,7 +35,7 @@ final class SendPartnerPasswordReset
             throw new DomainException(__('kokpit.partner_accounts.errors.not_a_partner'));
         }
 
-        $panel = Filament::getPanel('admin');
+        $panel = Filament::getPanel('admin') ?? throw new LogicException('Admin panel is not registered.');
 
         if (! $user->canAccessPanel($panel)) {
             return;
