@@ -2,10 +2,10 @@
 gsd_state_version: "1.0"
 status: Awaiting next milestone
 stopped_at: Phase 17.1 complete, ready to verify Phase 11
-last_updated: "2026-10-30T21:50:39.672Z"
+last_updated: "2026-11-04T08:35:58.131Z"
 last_activity: 2026-10-30
 last_activity_desc: Milestone v1 completed and archived
-state_head: e1b6c764218db201440b6f0eba2e1f3419260522
+state_head: 9e3a9ada02ae2a61729fa5bb04a9a440f9c88226
 progress:
   total_phases: 20
   completed_phases: 20
@@ -919,6 +919,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 261030-s2z | Check openspout/openspout and chillerlan/php-qrcode updates: no-op, new majors blocked by Filament 5.11.0 | 2026-10-30 | 6778e5e | [261030-s2z-check-and-if-appropriate-update-php-libr](./quick/261030-s2z-check-and-if-appropriate-update-php-libr/) |
 | 261030-u20 | Supplier company name as From name of invoice, document and payment e-mails | 2026-10-30 | 95cc781 | [261030-u20-use-the-supplier-company-name-from-setti](./quick/261030-u20-use-the-supplier-company-name-from-setti/) |
 | 3 | Allow raised Livewire max_nesting_depth in UploadConfigTest config guard | 2026-10-30 | e1b6c76 | — |
+| 4 | Handle nullable Filament::getPanel() return type (PHPStan level 8 CI fix) | 2026-11-04 | 9e3a9ad | — |
 
 ### Roadmap Evolution
 
