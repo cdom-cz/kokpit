@@ -17,6 +17,8 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use Laravel\Horizon\Contracts\JobRepository;
+use Mockery\MockInterface;
 use Tests\Support\Canary;
 use Tests\Support\RedisTestQueue;
 
@@ -81,6 +83,84 @@ it('shows the Admin the failed-jobs slot as Warning with the count after a job f
         ->toContain(__('enums.health_status.warning'))
         ->toContain('fi-color-warning')
         ->toContain(__('kokpit.system.failed_jobs.some'));
+});
+
+it('shows the Admin the failed jobs Horizon holds when the queue runs on Redis', function (): void {
+    useRedisQueueAt($this);
+    $this->mock(JobRepository::class, function (MockInterface $mock): void {
+        $mock->shouldReceive('countFailed')->andReturn(2);
+    });
+
+    $html = (string) $this->actingAs(Canary::admin())->get('/admin/system')->assertOk()->getContent();
+
+    expect($html)->toContain(__('kokpit.system.failed_jobs.some'))
+        ->not->toContain(__('kokpit.system.failed_jobs.none'));
+});
+
+it('counts the failed jobs Horizon holds when the queue runs on Redis', function (): void {
+    config(['queue.default' => 'redis']);
+    $this->mock(JobRepository::class, function (MockInterface $mock): void {
+        $mock->shouldReceive('countFailed')->once()->andReturn(3);
+    });
+
+    $result = (new FailedJobsIndicator)->check();
+
+    expect($result->status)->toBe(HealthStatus::Warning)
+        ->and($result->value)->toBe('3')
+        ->and($result->detail)->toBe(__('kokpit.system.failed_jobs.some'));
+});
+
+it('ignores the failed_jobs table when Horizon is the failure store', function (): void {
+    config(['queue.default' => 'redis']);
+    logFailedJob();
+    $this->mock(JobRepository::class, function (MockInterface $mock): void {
+        $mock->shouldReceive('countFailed')->once()->andReturn(0);
+    });
+
+    $result = (new FailedJobsIndicator)->check();
+
+    expect($result->status)->toBe(HealthStatus::Ok)
+        ->and($result->value)->toBe('0')
+        ->and($result->detail)->toBe(__('kokpit.system.failed_jobs.none'));
+});
+
+it('takes the warning threshold from the configuration on Horizon too', function (): void {
+    config(['queue.default' => 'redis', 'kokpit.health.failed_jobs_warning_at' => 2]);
+    $this->mock(JobRepository::class, function (MockInterface $mock): void {
+        $mock->shouldReceive('countFailed')->twice()->andReturn(1, 2);
+    });
+
+    $first = (new FailedJobsIndicator)->check();
+    $second = (new FailedJobsIndicator)->check();
+
+    expect($first->status)->toBe(HealthStatus::Ok)
+        ->and($first->value)->toBe('1')
+        ->and($second->status)->toBe(HealthStatus::Warning)
+        ->and($second->value)->toBe('2');
+});
+
+it('keeps counting through the queue failer when the queue is not Redis, even with Horizon installed', function (): void {
+    config(['queue.default' => 'sync']);
+    logFailedJob();
+    $this->mock(JobRepository::class, function (MockInterface $mock): void {
+        $mock->shouldNotReceive('countFailed');
+    });
+
+    $result = (new FailedJobsIndicator)->check();
+
+    expect($result->status)->toBe(HealthStatus::Warning)
+        ->and($result->value)->toBe('1');
+});
+
+it('falls back to the queue failer on Redis when Horizon is not installed', function (): void {
+    config(['queue.default' => 'redis']);
+    unset($this->app[JobRepository::class]);
+    logFailedJob();
+
+    $result = (new FailedJobsIndicator)->check();
+
+    expect($result->status)->toBe(HealthStatus::Warning)
+        ->and($result->value)->toBe('1');
 });
 
 /**

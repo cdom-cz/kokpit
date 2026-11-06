@@ -2,10 +2,10 @@
 gsd_state_version: "1.0"
 status: Awaiting next milestone
 stopped_at: Phase 17.1 complete, ready to verify Phase 11
-last_updated: "2026-11-04T09:10:15.023Z"
+last_updated: "2026-11-04T22:32:13.458Z"
 last_activity: 2026-10-30
 last_activity_desc: Milestone v1 completed and archived
-state_head: 038dc4600e7aa709038079b21a375252c744a37a
+state_head: 17e8c855c0849b121d10dd2abbc2be45f4b5623c
 progress:
   total_phases: 20
   completed_phases: 20
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-30)
 Phase: Milestone v1 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-10-30 — Milestone v1 completed and archived
+Last activity: 2026-11-04 - Completed quick task 261104-weo: Failed jobs indicator reads Horizon on Redis
 
 ## Performance Metrics
 
@@ -921,6 +921,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 3 | Allow raised Livewire max_nesting_depth in UploadConfigTest config guard | 2026-10-30 | e1b6c76 | — |
 | 4 | Handle nullable Filament::getPanel() return type (PHPStan level 8 CI fix) | 2026-11-04 | 9e3a9ad | — |
 | 5 | Adapt DatabaseNotifications bell tests to Filament lazy isOpen rendering | 2026-11-04 | 038dc46 | — |
+| 261104-weo | Make the System page Failed jobs indicator count failures from Horizon on a Redis queue, else from failed_jobs | 2026-11-04 | 17e8c85 | [261104-weo-make-the-system-page-failed-jobs-indicat](./quick/261104-weo-make-the-system-page-failed-jobs-indicat/) |
 
 ### Roadmap Evolution
 

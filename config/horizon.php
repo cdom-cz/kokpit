@@ -122,7 +122,8 @@ return [
     |
     */
 
-    // The failed_jobs table stays the authoritative failure record (FND-09); this is only the dashboard's view.
+    // On a Redis queue the System page failed-jobs slot (FailedJobsIndicator) counts Horizon's failed set, so trim.failed is also the window of that count.
+    // The failed_jobs table, written by the queue failer, is the count source when the queue is not Redis (FND-09).
     'trim' => [
         'recent' => 60,
         'pending' => 60,
