@@ -11,6 +11,7 @@ use App\Domain\Invoicing\Queries\ReceivablesReader;
 use App\Domain\Shared\Money\Money;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Resources\InvoiceResource;
+use App\Filament\Widgets\BirthdaysToday;
 use App\Filament\Widgets\HoursStats;
 use App\Filament\Widgets\TodayPlan;
 use App\Filament\Widgets\UnbilledPerClient;
@@ -136,7 +137,7 @@ describe('the receivables card on the Admin dashboard', function (): void {
 
         $text = unpaidCardText((string) $this->get('/admin')->assertOk()->getContent());
 
-        expect((new Dashboard)->getWidgets())->toBe([HoursStats::class, TodayPlan::class, UnpaidInvoices::class, UnresolvedPayments::class, UnbilledPerClient::class, UpcomingDeadlines::class])
+        expect((new Dashboard)->getWidgets())->toBe([HoursStats::class, TodayPlan::class, BirthdaysToday::class, UnpaidInvoices::class, UnresolvedPayments::class, UnbilledPerClient::class, UpcomingDeadlines::class])
             ->and((new UnpaidInvoices)->getColumnSpan())->toBe('full')
             ->and($text)->toContain('Nezaplacené faktury')
             ->toContain('Nevyfakturováno tento měsíc')

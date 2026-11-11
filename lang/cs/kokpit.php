@@ -229,6 +229,21 @@ return [
             'empty_heading' => 'Žádné nadcházející termíny',
             'empty_description' => 'Otevřené úkoly zatím nemají termín.',
         ],
+        'birthdays' => [
+            'heading' => 'Narozeniny dnes',
+            'summary' => '{0} Dnes nikdo|{1} :count kontakt|[2,4] :count kontakty|[5,*] :count kontaktů',
+            'columns' => [
+                'contact' => 'Kontakt',
+                'client' => 'Klient',
+                'age' => 'Narozeniny',
+            ],
+            'age' => ':age. narozeniny',
+            'show' => 'Zobrazit kontakt',
+            'close' => 'Zavřít',
+            'open_client' => 'Otevřít klienta',
+            'empty_heading' => 'Dnes nikdo nemá narozeniny',
+            'empty_description' => 'Narozeniny se vyplňují u kontaktů klienta.',
+        ],
         'plan' => [
             'heading' => 'Plán na dnešek',
             'summary' => 'Splněno :done z :count',
