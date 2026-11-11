@@ -98,12 +98,14 @@ return [
             'time_write' => 'Zápis času',
             'finance_read' => 'Čtení financí',
             'finance_write' => 'Zápis financí',
+            'contacts_read' => 'Čtení kontaktů',
         ],
         'ability_descriptions' => [
             'time_read' => 'Seznam a detail časových záznamů a vyhledávání klientů, projektů a úkolů.',
             'time_write' => 'Vytváření, úprava a mazání časových záznamů.',
             'finance_read' => 'Seznam a detail příjmů a výdajů a kategorií transakcí.',
             'finance_write' => 'Vytváření, úprava a mazání transakcí, také hromadně.',
+            'contacts_read' => 'Kontakty klientů, kteří mají v daný den narozeniny, se všemi jejich údaji.',
         ],
         'expiry' => [
             'none' => 'Bez omezení',

@@ -93,6 +93,7 @@ function apiWalkProblems(array $routes): array
         ApiAbility::TimeWrite->value => 'throttle:api-write',
         ApiAbility::FinanceRead->value => 'throttle:api-read',
         ApiAbility::FinanceWrite->value => 'throttle:api-write',
+        ApiAbility::ContactsRead->value => 'throttle:api-read',
     ];
     $problems = [];
 

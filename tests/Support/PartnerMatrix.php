@@ -302,6 +302,9 @@ final class PartnerMatrix
             'api.v1.transactions.batch' => ['ability' => 'finance:write', 'admin' => true, 'partner' => false, 'reason' => 'Write of finance.'],
             'api.v1.transactions.update' => ['ability' => 'finance:write', 'admin' => true, 'partner' => false, 'reason' => 'Write of finance.'],
             'api.v1.transactions.destroy' => ['ability' => 'finance:write', 'admin' => true, 'partner' => false, 'reason' => 'Write of finance.'],
+
+            // ability contacts:read
+            'api.v1.contacts.birthdays' => ['ability' => 'contacts:read', 'admin' => true, 'partner' => false, 'reason' => 'Personal data of client contacts.'],
         ];
     }
 
