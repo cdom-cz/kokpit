@@ -138,7 +138,7 @@ final class ContactInput
             return ['birth_year' => __('kokpit.contacts.errors.birth_year_without_date')];
         }
 
-        if ($day === null || $month === null) {
+        if ($day === null) {
             return [];
         }
 
@@ -146,7 +146,7 @@ final class ContactInput
             return ['birth_day' => __('kokpit.contacts.errors.birth_day_invalid')];
         }
 
-        if ($year !== null && CarbonImmutable::create($year, $month, $day, 0, 0, 0, self::ZONE)->isAfter($today)) {
+        if ($year !== null && $today->setDate($year, $month, $day)->startOfDay()->isAfter($today)) {
             return ['birth_year' => __('kokpit.contacts.errors.birth_year_invalid')];
         }
 

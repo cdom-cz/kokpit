@@ -99,7 +99,7 @@ final class ContactsRelationManager extends RelationManager
                 ->schema([
                     Select::make('birth_day')
                         ->label(__('kokpit.contacts.fields.birth_day'))
-                        ->options(array_combine(range(1, 31), range(1, 31))),
+                        ->options(array_combine(range(1, 31), array_map(static fn (int $day): string => (string) $day, range(1, 31)))),
                     Select::make('birth_month')
                         ->label(__('kokpit.contacts.fields.birth_month'))
                         ->options(array_combine(

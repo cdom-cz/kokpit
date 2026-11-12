@@ -163,7 +163,13 @@ final class BirthdaysToday extends TableWidget
 
         $age = $record->ageOn(app(ContactBirthdays::class)->today());
 
-        return $age === null ? null : __('kokpit.dashboard.birthdays.age', ['age' => $age]);
+        if ($age === null) {
+            return null;
+        }
+
+        $label = __('kokpit.dashboard.birthdays.age', ['age' => $age]);
+
+        return is_string($label) ? $label : null;
     }
 
     /**
