@@ -94,6 +94,7 @@ final class ContactsRelationManager extends RelationManager
                 ->maxLength(255),
             // No statePath: the three fields stay top-level keys of the form state, which underModal() relies on.
             Fieldset::make(__('kokpit.contacts.fields.birthday'))
+                ->columnSpanFull()
                 ->columns(3)
                 ->schema([
                     Select::make('birth_day')

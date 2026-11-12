@@ -246,6 +246,14 @@ it('takes a birthday given as digit strings, as a select and a text field delive
         ->and($contact->birth_year)->toBe(1985);
 });
 
+it('takes a birth year delivered as an integral float by a numeric field', function (): void {
+    $client = Client::factory()->create();
+
+    $contact = app(CreateContact::class)->handle($client, birthdayForm(['birth_day' => 12, 'birth_month' => 11, 'birth_year' => 1992.0]));
+
+    expect($contact->birth_year)->toBe(1992);
+});
+
 it('clears the birthday when an update carries no birthday keys', function (): void {
     $client = Client::factory()->create();
     $contact = app(CreateContact::class)->handle($client, birthdayForm());

@@ -162,13 +162,18 @@ final class ContactInput
     }
 
     /**
-     * An int, or a string of one to four digits, as an int; null for an empty value
+     * An int, an integral float, or a string of one to four digits, as an int; null for an empty value
      * and for anything else (array, float, sign, letters), which the caller reports.
      */
     private static function number(mixed $value): ?int
     {
         if (is_int($value)) {
             return $value;
+        }
+
+        // A numeric Filament input may hand over 1992.0; an integral float is still a whole number.
+        if (is_float($value) && is_finite($value) && floor($value) === $value && abs($value) < 10000) {
+            return (int) $value;
         }
 
         if (is_string($value) && preg_match('/^\d{1,4}$/', trim($value)) === 1) {
