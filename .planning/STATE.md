@@ -923,6 +923,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 | 5 | Adapt DatabaseNotifications bell tests to Filament lazy isOpen rendering | 2026-11-04 | 038dc46 | — |
 | 261104-weo | Make the System page Failed jobs indicator count failures from Horizon on a Redis queue, else from failed_jobs | 2026-11-04 | 17e8c85 | [261104-weo-make-the-system-page-failed-jobs-indicat](./quick/261104-weo-make-the-system-page-failed-jobs-indicat/) |
 | 261111-s6e | Contacts: birth date, dashboard birthdays card with modal, API for today's birthdays | 2026-11-11 | 5975e23 | [261111-s6e-contacts-birth-date-dashboard-birthdays-](./quick/261111-s6e-contacts-birth-date-dashboard-birthdays-/) |
+| 6 | Fix contact birth year rejected as integral float; birthday fieldset spans full width | 2026-11-12 | 57d9325 | — |
 
 ### Roadmap Evolution
 
