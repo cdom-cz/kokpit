@@ -123,7 +123,8 @@ it('opens the whole contact in a modal with a link to the client', function (): 
     $component = Livewire::actingAs($this->admin)->test(BirthdaysToday::class)
         ->mountAction(TestAction::make('showContact')->table($contact));
 
-    $html = $component->html();
+    // The action modals render as a Livewire partial, so they are not part of the component's own html().
+    $html = $component->getMountedActionModalHtml();
     $text = birthdaysTodayText($html);
 
     expect($text)->toContain('Example modal contact')
