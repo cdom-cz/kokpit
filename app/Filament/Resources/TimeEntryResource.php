@@ -60,6 +60,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -129,9 +130,13 @@ final class TimeEntryResource extends Resource
      * `KokpitPolicy::before()` for every ability, so the screens add the condition here. The
      * real guards stay the Actions and the database trigger.
      */
-    public static function canEdit(Model $record): bool
+    public static function getEditAuthorizationResponse(Model $record): Response
     {
-        return parent::canEdit($record) && ! ($record instanceof TimeEntry && $record->isBilled());
+        if ($record instanceof TimeEntry && $record->isBilled()) {
+            return Response::deny();
+        }
+
+        return parent::getEditAuthorizationResponse($record);
     }
 
     /**

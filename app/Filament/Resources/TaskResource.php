@@ -58,6 +58,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -153,9 +154,13 @@ final class TaskResource extends Resource
     /**
      * An archived task is read-only until it is restored.
      */
-    public static function canEdit(Model $record): bool
+    public static function getEditAuthorizationResponse(Model $record): Response
     {
-        return parent::canEdit($record) && ! ($record instanceof Task && $record->trashed());
+        if ($record instanceof Task && $record->trashed()) {
+            return Response::deny();
+        }
+
+        return parent::getEditAuthorizationResponse($record);
     }
 
     /**
