@@ -18,6 +18,7 @@ use App\Domain\Signal\Models\SignalTask;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Concerns\CollapsibleDashboardWidget;
+use App\Filament\Widgets\BirthdaysToday;
 use App\Filament\Widgets\HoursStats;
 use App\Filament\Widgets\PartnerProjects;
 use App\Filament\Widgets\PartnerTasks;
@@ -260,6 +261,7 @@ describe('the other Admin cards', function (): void {
             ->and($fresh->html())->toContain('x-cloak');
     })->with([
         'plan' => [TodayPlan::class, DashboardWidget::TodayPlan],
+        'birthdays' => [BirthdaysToday::class, DashboardWidget::BirthdaysToday],
         'unbilled' => [UnbilledPerClient::class, DashboardWidget::UnbilledPerClient],
         'deadlines' => [UpcomingDeadlines::class, DashboardWidget::UpcomingDeadlines],
     ]);

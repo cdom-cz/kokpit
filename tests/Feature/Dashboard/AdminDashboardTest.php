@@ -19,6 +19,7 @@ use App\Domain\Tasks\Enums\TaskBillingType;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
 use App\Filament\Pages\Dashboard;
+use App\Filament\Widgets\BirthdaysToday;
 use App\Filament\Widgets\HoursStats;
 use App\Filament\Widgets\TodayPlan;
 use App\Filament\Widgets\UnbilledPerClient;
@@ -1073,7 +1074,7 @@ describe('the plan for today', function (): void {
 
         $text = adminDashText((string) $this->get('/admin')->assertOk()->getContent());
 
-        expect((new Dashboard)->getWidgets())->toBe([HoursStats::class, TodayPlan::class, UnpaidInvoices::class, UnresolvedPayments::class, UnbilledPerClient::class, UpcomingDeadlines::class])
+        expect((new Dashboard)->getWidgets())->toBe([HoursStats::class, TodayPlan::class, BirthdaysToday::class, UnpaidInvoices::class, UnresolvedPayments::class, UnbilledPerClient::class, UpcomingDeadlines::class])
             ->and((new TodayPlan)->getColumnSpan())->toBe('full')
             ->and($text)->toContain('Tento měsíc')
             ->toContain('Plán na dnešek')

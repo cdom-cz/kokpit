@@ -112,6 +112,7 @@ use App\Filament\Resources\TaskResource\RelationManagers\TaskCommentsRelationMan
 use App\Filament\Resources\TimeEntryResource;
 use App\Filament\Resources\TransactionCategoryResource;
 use App\Filament\Resources\TransactionResource;
+use App\Filament\Widgets\BirthdaysToday;
 use App\Filament\Widgets\HoursStats;
 use App\Filament\Widgets\PartnerProjects;
 use App\Filament\Widgets\PartnerTasks;
@@ -228,6 +229,7 @@ final class PartnerMatrix
             ProjectTimeStats::class => ['admin' => true, 'partner' => false, 'reason' => 'Worked and billed time of a project.'],
             HoursStats::class => ['admin' => true, 'partner' => false, 'reason' => 'Own measured time of the Admin.'],
             TodayPlan::class => ['admin' => true, 'partner' => false, 'reason' => 'Daily plan of the Admin.'],
+            BirthdaysToday::class => ['admin' => true, 'partner' => false, 'reason' => 'Birthdays of client contacts.'],
             UnbilledPerClient::class => ['admin' => true, 'partner' => false, 'reason' => 'Unbilled time and amounts per client.'],
             UnpaidInvoices::class => ['admin' => true, 'partner' => false, 'reason' => 'Receivables, amounts and due dates.'],
             UnresolvedPayments::class => ['admin' => true, 'partner' => false, 'reason' => 'Unresolved card payments.'],
@@ -300,6 +302,9 @@ final class PartnerMatrix
             'api.v1.transactions.batch' => ['ability' => 'finance:write', 'admin' => true, 'partner' => false, 'reason' => 'Write of finance.'],
             'api.v1.transactions.update' => ['ability' => 'finance:write', 'admin' => true, 'partner' => false, 'reason' => 'Write of finance.'],
             'api.v1.transactions.destroy' => ['ability' => 'finance:write', 'admin' => true, 'partner' => false, 'reason' => 'Write of finance.'],
+
+            // ability contacts:read
+            'api.v1.contacts.birthdays' => ['ability' => 'contacts:read', 'admin' => true, 'partner' => false, 'reason' => 'Personal data of client contacts.'],
         ];
     }
 

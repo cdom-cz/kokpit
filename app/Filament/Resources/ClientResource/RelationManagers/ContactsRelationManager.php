@@ -18,10 +18,12 @@ use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
@@ -90,6 +92,27 @@ final class ContactsRelationManager extends RelationManager
             TextInput::make('position')
                 ->label(__('kokpit.contacts.fields.position'))
                 ->maxLength(255),
+            // No statePath: the three fields stay top-level keys of the form state, which underModal() relies on.
+            Fieldset::make(__('kokpit.contacts.fields.birthday'))
+                ->columnSpanFull()
+                ->columns(3)
+                ->schema([
+                    Select::make('birth_day')
+                        ->label(__('kokpit.contacts.fields.birth_day'))
+                        ->options(array_combine(range(1, 31), array_map(static fn (int $day): string => (string) $day, range(1, 31)))),
+                    Select::make('birth_month')
+                        ->label(__('kokpit.contacts.fields.birth_month'))
+                        ->options(array_combine(
+                            range(1, 12),
+                            array_map(static fn (int $month): string => __('kokpit.contacts.months.'.$month), range(1, 12)),
+                        )),
+                    TextInput::make('birth_year')
+                        ->label(__('kokpit.contacts.fields.birth_year'))
+                        ->numeric()
+                        ->minValue(1900)
+                        ->maxValue((int) now('Europe/Prague')->year)
+                        ->helperText(__('kokpit.contacts.hints.birthday')),
+                ]),
             Toggle::make('is_billing')
                 ->label(__('kokpit.contacts.fields.is_billing'))
                 ->helperText(__('kokpit.contacts.hints.is_billing')),
@@ -113,6 +136,10 @@ final class ContactsRelationManager extends RelationManager
                     ->placeholder(__('kokpit.contacts.empty_value')),
                 TextColumn::make('position')
                     ->label(__('kokpit.contacts.fields.position'))
+                    ->placeholder(__('kokpit.contacts.empty_value')),
+                TextColumn::make('birthday')
+                    ->label(__('kokpit.contacts.fields.birthday'))
+                    ->state(static fn (Contact $record): ?string => $record->birthdayLabel())
                     ->placeholder(__('kokpit.contacts.empty_value')),
                 IconColumn::make('is_primary')
                     ->label(__('kokpit.contacts.fields.is_primary'))

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Shared\Auth\AccessRules;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Pages\Dashboard;
+use App\Filament\Widgets\BirthdaysToday;
 use App\Filament\Widgets\HoursStats;
 use App\Filament\Widgets\PartnerProjects;
 use App\Filament\Widgets\PartnerTasks;
@@ -91,7 +92,7 @@ it('replaces the stock dashboard and its widgets', function (): void {
         // The panel discovers exactly the widgets under app/Filament/Widgets (the Partner and the Admin
         // dashboard ones); the stock account and info widgets stay out, and outside a Partner or Admin
         // context the dashboard offers none.
-        ->and(array_values($panel->getWidgets()))->toEqualCanonicalizing([PartnerTasks::class, PartnerProjects::class, HoursStats::class, UnbilledPerClient::class, UpcomingDeadlines::class, TodayPlan::class, UnpaidInvoices::class, UnresolvedPayments::class])
+        ->and(array_values($panel->getWidgets()))->toEqualCanonicalizing([PartnerTasks::class, PartnerProjects::class, HoursStats::class, UnbilledPerClient::class, UpcomingDeadlines::class, TodayPlan::class, BirthdaysToday::class, UnpaidInvoices::class, UnresolvedPayments::class])
         ->and((new Dashboard)->getWidgets())->toBe([]);
 
     $this->actingAs(Canary::admin())->get('/admin')

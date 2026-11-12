@@ -16,7 +16,7 @@ return [
     'title' => 'Kokpit API',
 
     // A short description of your API. Will be included in the docs webpage, Postman collection and OpenAPI spec.
-    'description' => 'REST API for reading and recording time entries, for reading and recording finance transactions and their categories, and for looking up clients, projects and tasks.',
+    'description' => 'REST API for reading and recording time entries, for reading and recording finance transactions and their categories, for looking up clients, projects and tasks, and for reading the contacts that have a birthday on a day.',
 
     // Text to place in the "Introduction" section, right after the `description`. Markdown and HTML are supported.
     'intro_text' => <<<'INTRO'
@@ -30,8 +30,9 @@ return [
             - `time:write`: create, change and delete time entries (POST, PATCH and DELETE endpoints).
             - `finance:read`: read transactions and transaction categories (GET endpoints).
             - `finance:write`: create, change and delete transactions (POST, PATCH and DELETE endpoints).
+            - `contacts:read`: read the contacts of clients that have a birthday on a day (GET endpoint).
 
-            The time and the finance abilities are separate: a token with only `time:*` abilities is refused with `403` on every finance endpoint, and a token with only `finance:*` abilities is refused with `403` on every time entry and lookup endpoint.
+            The time and the finance abilities are separate: a token with only `time:*` abilities is refused with `403` on every finance endpoint, and a token with only `finance:*` abilities is refused with `403` on every time entry and lookup endpoint. Contacts are personal data and have an ability of their own: a token without `contacts:read` is refused with `403` on the contact endpoint, and a token with only `contacts:read` is refused with `403` on every time and finance endpoint.
 
             ## Rate limits
 
@@ -39,7 +40,7 @@ return [
 
             ## Lists and pagination
 
-            List endpoints are cursor paginated and answer `{"data": [...], "links": {...}, "meta": {...}}`. A page holds 50 items; ask for another size with `per_page` (1 to 200). To read the next page send the `meta.next_cursor` of the previous answer as `cursor`; when it is `null` there is no further page. The time entry list is newest first by start and breaks ties by id, so paging never skips or repeats an entry. The transaction list is newest first by transaction date and breaks ties by id for the same reason.
+            List endpoints are cursor paginated and answer `{"data": [...], "links": {...}, "meta": {...}}`. A page holds 50 items; ask for another size with `per_page` (1 to 200). To read the next page send the `meta.next_cursor` of the previous answer as `cursor`; when it is `null` there is no further page. The time entry list is newest first by start and breaks ties by id, so paging never skips or repeats an entry. The transaction list is newest first by transaction date and breaks ties by id for the same reason. The contact birthday list is the exception: it answers one whole day at once, without pagination, and names the day in `meta.date`.
 
             ## Formats and errors
 
@@ -187,7 +188,7 @@ return [
         'placeholder' => '{YOUR_API_TOKEN}',
 
         // Any extra authentication-related info for your users. Markdown and HTML are supported.
-        'extra_info' => 'Create a token in the admin panel, on the screen <b>API tokeny</b>. The token is shown once, right after it is created, so store it then. Choose the abilities the token needs: <code>time:read</code> and <code>time:write</code> for time entries and lookups, <code>finance:read</code> and <code>finance:write</code> for transactions and their categories. A token without the ability of an endpoint is refused with <code>403</code>.',
+        'extra_info' => 'Create a token in the admin panel, on the screen <b>API tokeny</b>. The token is shown once, right after it is created, so store it then. Choose the abilities the token needs: <code>time:read</code> and <code>time:write</code> for time entries and lookups, <code>finance:read</code> and <code>finance:write</code> for transactions and their categories, <code>contacts:read</code> for the contacts that have a birthday on a day. A token without the ability of an endpoint is refused with <code>403</code>.',
     ],
 
     // Example requests for each endpoint will be shown in each of these languages.

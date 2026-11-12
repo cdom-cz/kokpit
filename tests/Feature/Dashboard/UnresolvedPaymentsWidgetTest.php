@@ -7,6 +7,7 @@ use App\Domain\Payments\Enums\CardPaymentResolution;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Resources\CardPaymentResource;
+use App\Filament\Widgets\BirthdaysToday;
 use App\Filament\Widgets\HoursStats;
 use App\Filament\Widgets\TodayPlan;
 use App\Filament\Widgets\UnbilledPerClient;
@@ -79,7 +80,7 @@ describe('the tracer', function (): void {
     });
 
     it('is the third widget of the Admin dashboard, right after the receivables card, with its own card key', function (): void {
-        expect((new Dashboard)->getWidgets())->toBe([HoursStats::class, TodayPlan::class, UnpaidInvoices::class, UnresolvedPayments::class, UnbilledPerClient::class, UpcomingDeadlines::class])
+        expect((new Dashboard)->getWidgets())->toBe([HoursStats::class, TodayPlan::class, BirthdaysToday::class, UnpaidInvoices::class, UnresolvedPayments::class, UnbilledPerClient::class, UpcomingDeadlines::class])
             ->and((new UnresolvedPayments)->getColumnSpan())->toBe('full')
             ->and(UnresolvedPayments::dashboardWidget())->toBe(DashboardWidget::UnresolvedPayments)
             ->and(DashboardWidget::UnresolvedPayments->value)->toBe('unresolved_payments');

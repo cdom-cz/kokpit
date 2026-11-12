@@ -125,13 +125,14 @@ it('creates a finance token through the screen that reads a transaction and is r
     $this->withToken($plain)->getJson('/api/v1/time-entries')->assertForbidden();
 });
 
-it('offers all four abilities with their Czech labels and descriptions in the create modal', function (): void {
-    $labels = ['Čtení času', 'Zápis času', 'Čtení financí', 'Zápis financí'];
+it('offers all five abilities with their Czech labels and descriptions in the create modal', function (): void {
+    $labels = ['Čtení času', 'Zápis času', 'Čtení financí', 'Zápis financí', 'Čtení kontaktů'];
     $descriptions = [
         'time:read' => 'Seznam a detail časových záznamů a vyhledávání klientů, projektů a úkolů.',
         'time:write' => 'Vytváření, úprava a mazání časových záznamů.',
         'finance:read' => 'Seznam a detail příjmů a výdajů a kategorií transakcí.',
         'finance:write' => 'Vytváření, úprava a mazání transakcí, také hromadně.',
+        'contacts:read' => 'Kontakty klientů, kteří mají v daný den narozeniny, se všemi jejich údaji.',
     ];
 
     Livewire::test(ListApiTokens::class)
@@ -594,7 +595,7 @@ it('renders none of the token strings on any page a Partner can open', function 
         ->unique()
         ->all();
 
-    $forbidden = ['API tokeny', 'API token', 'Nový API token', 'Zneplatnit token', 'Dokumentace API', 'Oprávnění', 'Čtení času', 'Zápis času', 'Čtení financí', 'Zápis financí'];
+    $forbidden = ['API tokeny', 'API token', 'Nový API token', 'Zneplatnit token', 'Dokumentace API', 'Oprávnění', 'Čtení času', 'Zápis času', 'Čtení financí', 'Zápis financí', 'Čtení kontaktů'];
 
     expect($urls)->not->toBe([]);
 

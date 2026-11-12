@@ -197,6 +197,7 @@ it('pins the routes of the API, no more and no fewer', function (): void {
     $expected = [
         'GET /api/v1/clients',
         'GET /api/v1/clients/{client}',
+        'GET /api/v1/contacts/birthdays',
         'GET /api/v1/projects',
         'GET /api/v1/projects/{project}',
         'GET /api/v1/tasks',

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Identity\ApiAbility;
 use App\Http\Controllers\Api\V1\ClientController;
+use App\Http\Controllers\Api\V1\ContactBirthdayController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TimeEntryBatchController;
@@ -22,7 +23,7 @@ use Illuminate\Support\Facades\Route;
  * is rate limited per token (throttle:api-read or throttle:api-write). A route added
  * to a group inherits all three, so there is no route without a credential check, an
  * ability check and a limit. There is one group per ability and never a finance route
- * in a time group or the reverse (D-01).
+ * in a time group or the reverse (D-01). Contacts are personal data and have an ability and a group of their own.
  */
 
 // Reads: GET routes, ability time:read.
@@ -104,4 +105,11 @@ Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::FinanceWrite->value,
     Route::delete('transactions/{transaction}', [TransactionController::class, 'destroy'])
         ->whereUuid('transaction')
         ->name('api.v1.transactions.destroy');
+});
+
+// Contact reads: GET routes, ability contacts:read. A contact is personal data of a client, so it has an ability of its
+// own: a time or finance token never reaches it, and the lookups above reveal only the id and the name of a client.
+Route::middleware(['auth:sanctum', 'abilities:'.ApiAbility::ContactsRead->value, 'throttle:api-read'])->group(function (): void {
+    Route::get('contacts/birthdays', ContactBirthdayController::class)
+        ->name('api.v1.contacts.birthdays');
 });
