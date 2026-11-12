@@ -1153,6 +1153,7 @@ return [
             'phone' => 'Telefon',
             'position' => 'Pozice',
             'birthday' => 'Narozeniny',
+            'birth_date' => 'Datum narození',
             'birth_day' => 'Den',
             'birth_month' => 'Měsíc',
             'birth_year' => 'Rok',

@@ -129,7 +129,7 @@ final class BirthdaysToday extends TableWidget
                     ->state(static fn (Model $record): ?string => $record instanceof Contact ? $record->position : null)
                     ->placeholder(__('kokpit.contacts.empty_value')),
                 TextEntry::make('birthday')
-                    ->label(__('kokpit.contacts.fields.birthday'))
+                    ->label(__('kokpit.contacts.fields.birth_date'))
                     ->state(static fn (Model $record): ?string => $record instanceof Contact ? $record->birthdayLabel() : null)
                     ->placeholder(__('kokpit.contacts.empty_value')),
                 TextEntry::make('age')
