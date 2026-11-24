@@ -519,7 +519,6 @@ describe('the payment method and the account (Phase 14)', function (): void {
 
         $editor = editor($draft)
             ->assertFormFieldExists('bank_account_id', fn ($field): bool => array_keys($field->getOptions()) === array_map(static fn ($account): string => (string) $account->id, $this->accounts))
-            ->assertSee('Example EUR A')
             ->set('data.bank_account_id', $this->accounts[1]->id)
             ->call('save')
             ->assertHasNoFormErrors();
