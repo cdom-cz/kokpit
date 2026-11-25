@@ -1,610 +1,393 @@
-# Pitfalls Research
+# Pitfalls Research: Knowledge Center (milestone v1.1)
 
-**Domain:** Single-tenant open-source CRM/ERP (time tracking, invoicing, Stripe payments) on Laravel + Filament SPA panel + PostgreSQL, with a restricted client role (Partner) sharing the admin panel, deployed to Zerops from a public GitHub repo
-**Researched:** 2026-10-06
-**Confidence:** MEDIUM-HIGH. Stripe, Laravel 12 UUIDv7, CNB, Zerops `zsc`/cron, Sanctum and Spatie UUID guidance were verified against official docs fetched during this research. Filament-internal behaviours (global search scoping, Livewire state contents, export job auth context), Zerops worker topology, Payment Link `price_data` rules and the Spatie package morph column details are from training knowledge and are tagged **[verify]**. Each tagged item should become an explicit test or a phase-research spike, not an assumption.
+**Domain:** Knowledge base / wiki with client sharing, versioning and full-text search, added to an existing single-tenant CRM/ERP (Laravel 13, Filament 5 SPA panel, PostgreSQL 18, Spatie packages, Partner role with a restricted view in the same panel, public AGPL repository)
+**Researched:** 2026-11-25
+**Confidence:** MEDIUM-HIGH. Verified directly against the installed code in this repository (league/commonmark 2.10.7 defaults, Filament 5 `MarkdownEditor` source, existing `RichText` sanitiser, existing accent-insensitive search migration, existing audit harness in `tests/Support`) and against the PostgreSQL 18 manual (ts_headline safety, `websearch_to_tsquery`, ispell not shipped). Items tagged **[verify]** come from training knowledge and should become a test or a phase-research spike, not an assumption.
 
-All example data below is fictional (`example.com`, "Acme Studio s.r.o.", company ID `12345678`).
+This file replaces the v1 pitfalls research (Oct 2026, still in git history). All examples are fictional (`example.com`, "Acme Studio s.r.o.", company ID `12345678`). No content, title or link from any real workspace appears here, and none may be written into fixtures, seeders, tests or planning docs.
 
-Phase names below are the Active requirement groups from PROJECT.md (Repo hygiene, Foundation, Clients, Projects/Tasks, Kanban, Time tracking, REST API, CNB rates, Reports, Documents, Finance, Invoicing, Stripe, Partner audit). The roadmapper assigns numbers.
+Phase names below are **suggested logical phases** for the roadmapper (K1..K6), not final numbers:
 
-**Top 5 cross-cutting findings the roadmap must respect**
+| Id | Suggested phase | Contains |
+|----|-----------------|----------|
+| K1 | Data model, tree, visibility seam | tables, enums, tree integrity, `client_visible`/`sensitive` columns and CHECKs, Policy, `PartnerScope`, audit declarations (canaries, `ModelDeclaration`, `RouteRules`, `PanelInventory`), morph map, tags type |
+| K2 | Markdown pipeline, editor, secret guard | one renderer, normaliser, editor screens, copy button, save guard, optimistic lock |
+| K3 | Versions and restore | immutable version rows, restore semantics, purge/redact |
+| K4 | Image attachments | upload, re-encode, EXIF strip, authorised serving, orphan cleanup |
+| K5 | Search | text search config, generated tsvector, query builder, snippets, scoped SQL |
+| K6 | Special sections and sharing | Incidents hub, Retrospectives button, per-article client share switch, Partner view, AI-friendly format |
 
-1. The Partner-isolation harness (canary fixtures + a test that walks every Filament Resource, Page, Widget, RelationManager, action and API route as a Partner) must start in **Foundation** and grow per phase. If it is only built in the final "Partner audit" phase, every earlier phase ships leaks that are expensive to retrofit.
-2. Five "schema conventions" are cheap on day one and a rewrite later: uuid-typed morph columns everywhere, `timestamptz` everywhere (Laravel's default `timestamp()` is NOT timestamptz on PostgreSQL), a single money value object, a single sequence-allocation service, and DB-level immutability triggers. All five belong in **Foundation**, with architecture tests that fail CI on violations.
-3. `spatie/laravel-webhook-client`'s default signature validator does NOT understand Stripe's `Stripe-Signature` (`t=...,v1=...`) scheme. A custom validator (or `stripe-php`'s `Webhook::constructEvent`) is mandatory.
-4. Stripe Payment Links are reusable by default. "One-time" needs `restrictions.completed_sessions.limit = 1` plus deactivation on the Kokpit side, and duplicate-payment handling must still exist.
-5. Zerops' own Git integration can deploy on push and would bypass the GitHub `production` environment approval gate. The deploy path must be GitHub Actions (+ `zcli`) only.
+**Top 6 cross-cutting findings the roadmap must respect**
+
+1. **Laravel's `Str::markdown()` is unsafe by default** (`html_input = allow`, `allow_unsafe_links = true`, verified in `vendor/league/commonmark` 2.10.7). The repo's existing `RichText` sanitiser drops `img`, so a knowledge renderer cannot simply reuse it. One dedicated renderer, with escape mode, no unsafe links, a sanitiser pass on the output, and an internal-only image scheme, must exist before any article view ships (K2).
+2. **The client-share switch is the last thing to enable, not the first thing to build.** The visibility seam (column, DB CHECK, Policy, global scope, audit declarations) is built in K1 with Partner = no access. Search, versions, attachments, tags, folder names, breadcrumbs, incident sub-pages and retrospectives each add a new leak channel; the switch goes live in K6 only after each channel has a canary test.
+3. **Postgres has no Czech text search configuration and the managed database cannot take dictionary files** (ispell files are not shipped, the docs page says so; Czech snowball is not documented as available). Plan for `simple` + `unaccent` + prefix queries + trigram on titles from day one; do not plan on "Czech stemming" **[verify on the Zerops database service]**.
+4. **`ts_headline` output is not HTML-safe** (PostgreSQL 18 manual, explicit XSS warning). Snippets must be produced with sentinel markers, escaped, then re-marked.
+5. **Secrets leak into five places, not one**: the article body, the version rows, the activity log diff, the search vector/snippets, and screenshots. A save-time guard on the body alone fixes one of five.
+6. **Retrospectives contain measured time**, which a Partner must never see. The time overview must be rendered live for Admin from `time_entries` and never stored in the Markdown body that can be shared, and `retrospective` rows must be unshareable by a CHECK constraint.
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: UUID v7 keys with bigint morph / foreign-key columns left behind by packages
+### Pitfall 1: Markdown rendered with library defaults (stored XSS, javascript: links, tracking images)
 
 **What goes wrong:**
-Own tables use `uuid` primary keys, but package and framework migrations still create `bigint` columns: `morphs()` / `nullableMorphs()` in Spatie activitylog (`subject`, `causer`), medialibrary (`model`), Spatie tags (`taggables.taggable_id`), Laravel/Filament notifications (`notifiable`), Spatie permission (`model_has_roles.model_id`, `model_has_permissions.model_id`, role/permission ids), Sanctum (`tokenable`), plus `foreignId('user_id')` in the default `sessions` migration and in Filament's `exports` / `imports` / `failed_import_rows` tables. `php artisan migrate` succeeds. The failure appears at the first runtime insert: `invalid input syntax for type bigint: "0190..."`. Mixed states are worse: a morph column typed `uuid` that points at one model still keyed by bigint (e.g. a package model you forgot to subclass) fails only for that model.
+`Str::markdown($body)` and `->markdown()` call `GithubFlavoredMarkdownConverter` with the CommonMark defaults: raw HTML passes through (`html_input = allow`) and `javascript:`, `data:` and `vbscript:` URLs are kept (`allow_unsafe_links = true`). An article that contains `<img src=x onerror=...>` or `[click](javascript:...)` becomes stored XSS in the Admin session (full panel takeover, Stripe/invoice data) and, once shared, in every Partner session. Three adjacent failures:
+- `![](https://external.example.com/pixel.png)` in a shared article is a tracking pixel and leaks the Partner's IP and reading time to a third party; with an `http://` URL it is also mixed content.
+- Filament's own `MarkdownEditor` preview runs `markdown()->sanitizeHtml()` through Filament's **globally bound** sanitiser config, which (per the existing `RichText` doc comment) allows `style`, `class` and `data-*`. The editor preview therefore differs from the production view: something looks fine in the preview and is stripped in the view (or the reverse, a preview-only injection surface).
+- The existing `App\Domain\Shared\Text\RichText` sanitiser drops `img` entirely by design. Reusing it for articles silently deletes every image; "fixing" that by allowing `img` generally re-opens the external-image problem.
 
 **Why it happens:**
-Package migrations are published once and nobody re-reads them; the failure is lazy (first write); package docs say "modify the migration if you use UUIDs" without a checklist (Spatie permission docs explicitly say it is "NOT A FULL LESSON ON HOW TO IMPLEMENT UUIDs" and that you must edit the published migration in two places). Package models (`Activity`, `Media`, `Tag`, `Role`, `Permission`, `WebhookCall`, Sanctum `PersonalAccessToken`) do not use `HasUuids` unless you subclass them AND register the subclass in each package's config (`activitylog.activity_model`, `media-library.media_model`, `permission.models.role|permission`, tags model config, `webhook-client.configs[].webhook_model`, `Sanctum::usePersonalAccessTokenModel()`). Forgetting the registration leaves the package using its own non-UUID base model, which inserts a row without an id.
+The default converter works in a demo. Escaping vs stripping is not obvious: `html_input = strip` silently deletes placeholders like `<hostname>` or `<your-token>` from technical prose, so developers flip back to `allow`.
 
 **How to avoid:**
-- Laravel 12+ `HasUuids` already generates UUIDv7 (verified: Laravel 12 upgrade guide; `HasVersion7Uuids` was removed, `HasVersion4Uuids` is the opt-out). Do not add a second v7 library. Use `uuid('id')->primary()` and `foreignUuid()->constrained()`; use `uuidMorphs()` / `nullableUuidMorphs()` for every morph.
-- Edit every published package migration in the Foundation phase, in one commit, with a checklist: activitylog, permission (pivot `model_id` to uuid, optionally rename config `model_morph_key` to `model_uuid`), medialibrary, tags, notifications, Sanctum `tokenable`, sessions `user_id`, Filament exports/imports, webhook_calls.
-- Decide explicitly which package-internal tables keep bigint primary keys (jobs, failed_jobs, activity_log.id, webhook_calls.id, personal_access_tokens.id are fine as bigint) versus which must be uuid. The brief says "UUID v7 keys everywhere incl. package morph columns": the morph *owner* columns must be uuid; package-internal surrogate keys may stay bigint. Write that decision into the Key Decisions table.
-- `Relation::enforceMorphMap([...])` from day one. Without it, `*_type` stores FQCNs; renaming a class later orphans years of activity-log and media rows.
-- Add an **architecture test** (Foundation) that introspects the PostgreSQL catalog: every `*_type`/`*_id` morph pair has a `uuid` id column; no `bigint` column is named `*_id` and references a uuid table; every model in the morph map uses `HasUuids`; every package model class referenced from config is the subclass. This test is the real prevention.
-- If Zerops offers PostgreSQL 18+, optionally add `DEFAULT uuidv7()` on primary keys as a safety net for inserts that bypass Eloquent (native `uuidv7()` arrived in PostgreSQL 18) **[verify Zerops PG version]**.
+- One `KnowledgeMarkdown` renderer class, the only place a body becomes HTML. Options: `html_input => 'escape'` (not `strip`: tech articles are full of `<placeholder>` text and escape keeps it visible), `allow_unsafe_links => false`, GFM tables and task lists only, heading ids generated by the renderer (never from user text unescaped).
+- Run the converter output through a Symfony `HtmlSanitizer` with an allowlist built for this renderer (do **not** touch Filament's global config, same approach `RichText` already takes). Allow `img` only with `src` matching the internal attachment route/scheme; no `style`, `class`, `on*`, `iframe`, `svg`, `form`.
+- Images in Markdown use an internal reference, for example `![alt](kokpit-attachment:<uuid>)`, which the renderer resolves to the authorised route. A pasted `https://` image URL is rendered as a plain link or a visible "external image blocked" placeholder.
+- Turn off Filament preview or feed it the same renderer. Never use `{!! !!}` with a body; wrap the renderer output in `HtmlString` in exactly one place.
+- Render on read, store only the Markdown source. Do not cache rendered HTML without keying it on the renderer version (a sanitiser fix must take effect on old articles).
+- Add a hostile-corpus Pest test: a fixed list of XSS payloads (raw HTML, `javascript:` and `data:` links, entity-encoded schemes, reference-style links, autolinks, image `onerror`, SVG `<use>`) must render with no executable attribute; run it against the final HTML with a DOM parser, not a regex.
+- Send a CSP header on the panel (at minimum `img-src 'self' data:` for article views) as defence in depth **[verify Filament/Livewire compatibility with the chosen CSP]**.
 
 **Warning signs:**
-`invalid input syntax for type bigint/uuid` in logs; `null value in column "id"` on a package table; Filament global search or table search throwing `operator does not exist: uuid ~~* unknown` (searching the uuid `id` column with ILIKE: never make `id` searchable); route binding with a malformed id returning 500 instead of 404 (test it).
+`{!!` or `->toHtmlString()` near a body field; `Str::markdown(` without options anywhere in `app/`; an `<img>` in article HTML whose `src` is not an internal route; two different render paths (editor preview vs view vs PDF/e-mail).
 
-**Phase to address:** Foundation (schema conventions + architecture test). Re-verified when each package is introduced (Documents for medialibrary, Clients for tags, REST API for Sanctum).
+**Phase to address:** K2 (renderer + hostile-corpus test). K6 re-verifies it in the Partner view.
 
 ---
 
-### Pitfall 2: Filament SPA mode (`->spa()`) quirks that break the timer, kanban and custom JS
+### Pitfall 2: Secret guard that only scans the body, only by regex, and only once
 
 **What goes wrong:**
-SPA mode is built on Livewire `wire:navigate`. Pages are swapped without a full reload, so:
-- `DOMContentLoaded` handlers and inline `<script>` tags in custom Blade views run once or not at all; code that must run per page needs `livewire:navigated` or Alpine `x-init`.
-- `setInterval`/`addEventListener` registered in global scripts accumulate on every navigation: the always-visible timer ticks 2x, 3x, ... after navigating around, or keeps ticking against a stale element.
-- Third-party JS (SortableJS for kanban) is destroyed by Livewire DOM morphing unless the container is `wire:ignore` and re-initialised on `livewire:navigated`.
-- If prefetch is enabled (`spa(hasPrefetching: true)`, hover prefetch), GET pages are fetched speculatively. Any page or link that has a side effect on GET (mark notification read, "start timer" link) fires on hover.
-- Session expiry produces 419/redirect behaviour inside a persisted shell; the timer component polling after logout keeps erroring or shows stale data. After login as a different role in the same browser (Admin then Partner) persisted DOM can show the previous user's header data until a hard reload.
-- Third-party Filament plugins lag behind Filament majors and are frequently not SPA-safe; code and AI-generated snippets from the v3 era (`Forms\Form`, `Tables\Table` signatures) do not compile on v4/v5 (`Schema`-based API).
+The guard is added to the "Save" action and the team considers the requirement done. Real leak paths remain:
+1. **Version rows**: a secret saved once (warn-and-save path, or guard bypass) lives in `knowledge_article_versions` forever, even after the body is cleaned. Restore can bring it back.
+2. **Activity log**: `spatie/laravel-activitylog` with `logAll()`/`logDirty()` stores the old and new `body` in `activity_log.properties`. That is a second and third copy, readable by anyone with log access, and not covered by the guard or by purge.
+3. **Search**: the `tsvector` and `ts_headline` snippets expose the secret in the results list (and to the Partner if the article is shared).
+4. **Logs and error trackers**: a Livewire validation exception, a failed job payload or an error report can contain the request state including the whole body. The "your text contains a secret" message itself can echo the match.
+5. **Screenshots**: image attachments cannot be scanned; terminal and dashboard screenshots are the most common place a token sits in plain sight.
+6. **Other fields**: title, tags, folder names, image alt text, retrospective notes. The guard runs on the body field only.
+7. **Other entry points**: the future API/MCP, a seeder, a console command, a restore action, a duplicate action, the incident/retrospective generators. A guard in a Filament page hook is bypassed by all of them.
+
+Also the false-positive side: high-entropy heuristics flag UUIDs (every record in this app has one), git SHAs, hashes, base64 fixtures and sample JWT-looking placeholders; a guard that blocks all of these is turned off within a week or trains the Admin to always click "save anyway".
 
 **Why it happens:**
-SPA mode is a one-line toggle that hides a different page lifecycle. Developers test by clicking once and never navigate 10 times.
+Secret detection is treated as a form validation rule. The data model fans the body out to several stores that were added for other reasons (history, audit, search).
 
 **How to avoid:**
-- Implement the timer as one Alpine component in a panel render hook with state from the server (`started_at` + server-time offset), cleaned up in Alpine `destroy`; no global `setInterval`. Include a Playwright/Dusk test: navigate across 10 pages, assert a single ticking interval and correct elapsed seconds.
-- GET routes are side-effect-free; state changes are Livewire actions or POST. Leave prefetching off unless audited.
-- Kanban: custom Livewire page with `wire:ignore` + init on `livewire:navigated`; server is source of truth after each move.
-- Always full-reload on login/logout (`redirect(..., navigate: false)`), and gate the timer widget behind `auth()->check()`.
-- Pin the exact Filament/Livewire versions and use version-matched docs (Context7 / `filamentphp.com/docs/<version>`) for every snippet; avoid third-party Filament plugins unless AGPL-compatible, maintained and SPA-tested.
-- `visible()` / `hidden()` on actions and fields is UX only. Treat authorization as policies and verify by calling the Livewire action as the wrong role (see Pitfall 4).
+- Put the guard in a domain Action (`SaveArticle`, `RestoreVersion`, `CreateRetrospective`, ...), the single write seam, not in a Filament hook. An arch test asserts no code outside the Action assigns `body`.
+- Two severities: **block** for unambiguous material (private key blocks, URLs with embedded credentials, tokens with well-known vendor prefixes, Stripe-style secret keys, `Authorization: Bearer` lines with a long value) and **warn + auto-flag sensitive** for ambiguous material (internal IP addresses, private hostnames, `password:`-style assignments, long entropy strings outside code fences matching UUID/SHA shapes). Warn requires an explicit acknowledgment that is recorded without the value (rule name, line number, masked 4 characters) and sets `sensitive = true`.
+- Mask in every message: show rule name and line number, never the matched text. Never put the body in the exception context. Add `body` to the Livewire/Sentry scrub list **[verify the project's Sentry/scrubbing config]**.
+- Activity log: log only metadata (`title`, `folder_id`, `client_visible`, `sensitive`, version number). `body` is excluded from `logOnly` and from `logAttributesToIgnore`; a test asserts no `activity_log` row ever contains the body of a saved article.
+- Reuse the **rule list** of `scripts/check-sensitive.sh` / gitleaks as the starting vocabulary, but keep a separate runtime ruleset: the repository rule bans *any* real hostname or IP in git, while the Admin's private knowledge base legitimately contains their own infrastructure. The runtime guard's job is to classify and flag, not to forbid.
+- Provide a **purge/redact version** Admin action (versions are otherwise immutable, see Pitfall 7) and say in the UI that rotating the leaked secret is the real remedy, matching the repository's own "rotate first" policy.
+- Image attachments: show a one-line notice at upload ("screenshots may contain tokens") and let the Admin mark the article sensitive; do not promise OCR.
+- Guard tests build their fake secrets at runtime from fragments (repo rule: no single line of a test looks like a real value; the pre-commit scanner and gitleaks will otherwise reject the test file). Allowlist entries need owner approval (project memory), so design the tests to need none.
 
 **Warning signs:**
-Timer ticks faster after navigation; duplicate event listeners in DevTools; kanban stops dragging after visiting another page; console errors after session timeout; actions triggered when merely hovering links.
+`activity_log.properties` containing `body`; the guard referenced only from a `Page` class; error pages or logs quoting article text; a "save anyway" button with no recorded acknowledgment; tests with token-shaped literals.
 
-**Phase to address:** Foundation (panel config + render-hook timer shell), then Kanban and Time tracking (JS-heavy features).
+**Phase to address:** K2 (guard, masking, activity-log scoping), K3 (restore passes through the guard, purge action), K5 (snippets mask sensitive articles), K4 (screenshot notice).
 
 ---
 
-### Pitfall 3: Filament authorization is permissive by default (no policy = allowed; Pages and Widgets default to visible)
+### Pitfall 3: Client (Partner) leaks through the side channels, not the article page
 
 **What goes wrong:**
-Filament delegates to Laravel Policies when one exists for the model; when none exists the action is allowed **[verify per Filament version]**. Custom Pages (`canAccess()`), Widgets (`canView()`), RelationManagers (`canViewForRecord()`) and navigation items default to visible. A Partner who is merely "not shown the menu entry" can still load `/admin/time-entries`, a dashboard widget with revenue totals, or a relation manager tab with rates, by URL or because the widget is auto-discovered.
+The article show page is policy-protected and the team ships. The leaks come from everything *around* the article:
+
+| Channel | Leak |
+|---------|------|
+| Search results | rows, snippets, counts or "N results" for articles the Partner cannot open; ranking applied before filtering in PHP so pagination totals reveal hidden hits |
+| Folder tree / breadcrumb | the folder or ancestor names of a visible article (folder named after another client) |
+| Tags | Spatie tags are a global table; tag autocomplete or tag filter lists every tag, including those on internal articles and on other clients' articles; knowledge tags mixed with the existing client tags |
+| Version history | the Partner opens an old version of a shared article, which was written before it was cleaned up or before sharing was granted; or still sees history after sharing is revoked |
+| Attachments | image URL works for anyone who knows or guesses the media id; presigned URL stays valid after the share is revoked; the image of an unshared article is reachable from a shared article's version |
+| Inline links | a link or embed to another article renders the target's title for a viewer who cannot open it |
+| Incident hub / sub-pages | sharing the hub makes all sub-pages visible, including the internal post-mortem sub-page; or the reverse, sub-pages hidden from the listing but reachable by search and direct URL |
+| Retrospectives | time overview, rates, billed/unbilled state in the body (see Pitfall 11) |
+| Client/Project pages | a new RelationManager "Knowledge" on the Client or Project resource lists articles without the visibility filter |
+| Activity log, notifications, Filament global search | titles of hidden articles in an activity feed or a global search result |
+| Moved article | an article shared with client A is relinked to client B and the grant silently carries over |
 
 **Why it happens:**
-Developers build for the Admin first and add the Partner later by hiding things. Hiding is not authorizing.
+The existing v1 audit protects *known* screens. Every new model and route is a new unknown surface; knowledge features add several query paths (raw SQL for search is the big one: `DB::select` / `whereRaw` bypass Eloquent global scopes).
 
 **How to avoid:**
-- Default-deny architecture: all Resources extend an `AdminResource` base whose `canViewAny()` returns `auth()->user()->isAdmin()`; Partner-facing screens are **separate classes** (`Partner\ProjectResource`, `Partner\TaskResource`) that expose only Partner-safe columns/fields from a narrowed query, instead of one shared Resource with `visible()` toggles. Same for Pages and Widgets (`AdminPage`, `AdminWidget` bases).
-- A policy for every model, generated in the same commit as the model; a test fails if a registered Filament Resource/Page/Widget/RelationManager lacks an explicit access rule.
-- Architecture test: every class in `app/Filament/**` extends one of the approved bases.
-- `User::canAccessPanel()` checks `is_active` and role; deactivated users must lose access on the next request and have their sessions and tokens invalidated.
-- Gate::before for Admin is fine; never add a `Gate::before` that returns `false`/`true` for unrelated abilities.
+- K1 builds the seam before any feature: `client_visible boolean not null default false`, `sensitive boolean not null default false`, DB `CHECK (NOT (client_visible AND sensitive))`, DB `CHECK (kind <> 'retrospective' OR NOT client_visible)`. A Partner sees an article only if `client_visible AND client_id = their client` (and, for a project link, the project is itself client-visible; compute through the existing project visibility rule, not a copy).
+- The model gets the existing `PartnerIsolated` + `IsolatesPartners` (fail-closed `PartnerScope`) from day one. Every raw SQL path (search) is a declared escape hatch in the repo's `EscapeHatchScanner` and **applies the same visibility predicate in the same statement** (`WHERE ... AND <visible>` inside the query that ranks, counts and paginates).
+- Visibility is **per article, never inherited**: not from a folder, not from a hub. For a sub-page the rule is AND (own flag AND hub flag). Folder names and the tree are not shown to the Partner at all; the Partner sees a flat list with the article's own title.
+- Tags: a dedicated Spatie tag `type` for knowledge, and the Partner never gets a tag list or tag autocomplete; tag chips on a visible article show only that article's tags.
+- Versions and history: no Partner access in v1.1 (Policy `viewHistory` = Admin only, tested); a Partner cannot restore or edit. Make Partner **read-only** for the whole milestone (any Partner write path means stored-XSS from the client side and prompt injection into AI context).
+- Attachments are served only through an authorised controller that checks the article's *current* visibility on every request (no public URLs, no long-lived presigned URLs; if presigned, keep expiry at a few minutes). Revoking the share or setting `sensitive` is one transaction and takes effect immediately.
+- Relinking `client_id` resets `client_visible` to false in the same Action.
+- Extend the audit harness in K1, not K6: register new models in `ModelDeclaration`, new routes in `RouteRules` (keyed by route name), the new Filament Resource/pages/RelationManagers in `PanelInventory`, a `Canary` article per visibility state (private, shared-own-client, shared-other-client, sensitive, incident sub-page, retrospective), and add every channel in the table above to `ChannelMatrix`/`PartnerMatrix`. The permission matrix stays a hand-written literal, as decided in Phase 12, and the owner reviews it.
+- Set `$isGloballySearchable = false` on the Knowledge Resource (own search only; Filament global search does ILIKE over searchable attributes and runs outside the panel's own query).
 
 **Warning signs:**
-A Partner test account can open a URL that is not in its menu; a new Resource appears in the Partner's nav because nobody set `canViewAny`; widgets rendering for both roles.
+`DB::select`/`whereRaw` over `knowledge_*` without the visibility predicate; PHP-side `->filter()` after a query; a Resource without `getEloquentQuery()` scoping; a RelationManager on Client/Project showing articles; tag list endpoints; any route returning a media file by id alone.
 
-**Phase to address:** Foundation (bases + registry test). Partner audit finalizes.
+**Phase to address:** K1 (seam, constraints, declarations, canaries), then each of K3/K4/K5/K6 adds its channel rows to the matrix **in the same PR** as the feature. K6 turns the share switch on.
 
 ---
 
-### Pitfall 4: Partner data leaks through secondary Filament surfaces (search, selects, relation managers, exports, notifications, widgets, activity log, Livewire state)
+### Pitfall 4: Search snippets rendered as HTML (`ts_headline` XSS) and snippet leakage
 
 **What goes wrong:**
-Partner isolation is implemented on the main list/edit pages and forgotten on the many side channels. The leak list for this exact product:
+`ts_headline('kokpit_cs', body, query)` wraps hits in `<b>..</b>` and returns the rest of the text unescaped. Rendering it with `{!! !!}` makes article text executable in the results list. The PostgreSQL 18 manual states the output is not safe for direct inclusion in web pages and is not an XSS defence. Rendering it escaped instead shows literal `<b>` tags. Further snippet problems: the snippet comes from the Markdown *source*, so it is full of fences, pipes and `#`; it can contain a secret that the article's `sensitive` flag was supposed to protect; and calling `ts_headline` over thousands of large bodies makes search slow.
 
-| Surface | How it leaks | Prevention |
-|---------|--------------|------------|
-| **Global search** | Search results use the Resource's `getGlobalSearchEloquentQuery()` (defaults to the Resource query); result titles/details can include rate, amount, client name. A Resource without view/edit page is skipped; one with them is searchable by every role that passes `canViewAny` **[verify]** | Disable global search on all Admin resources for Partners; scope via model global scope so the query is safe regardless of path; never put money/rates in `getGlobalSearchResultDetails()`; test with canary strings |
-| **Select / Radio / CheckboxList options** | `Select::relationship()`, `->options(Model::pluck(...))`, `->searchable()`, `->preload()` list unscoped rows: other clients, all users (emails of other Partners, admin account), all tags (Spatie tags are global, tag names reveal other clients). Posting a tampered id from another client (IDOR) succeeds when the option query was the only guard. `exists:`/`unique:` validation rules query the table directly and become **existence oracles** ("project key already taken") | Scope the options query (`modifyQueryUsing`) AND validate server-side with scoped `Rule::exists()->where(...)`; use scoped model queries; never expose users/tags lists to Partner; test tampered payload via Livewire `->set()` |
-| **Relation managers** | The RM queries `$owner->relation()`, not the related Resource's `getEloquentQuery()`, so Resource-level scoping and `canViewAny` of the related Resource are bypassed; RMs default `canViewForRecord` to true; Attach/Associate actions list all records | RM `canViewForRecord` default-deny; apply global scope on the model, not only on the Resource; omit RMs from Partner-facing resources |
-| **Exports (CSV/XLSX, Filament Export action, report exports)** | Export runs in a queue job with no authenticated user; any scope or policy that reads `auth()->user()` silently becomes "no filter" in the worker **[verify how Filament serializes the export query]**. Partner-created text lands in an Admin's CSV: **CSV/formula injection** (`=HYPERLINK(...)`, `@SUM(...)`) | Do not give Partners any export. Admin exports: pass explicit IDs/filters not ambient auth; prefix cells starting with `= + - @ \t \r` with `'`; test export as Partner is forbidden |
-| **Notifications (DB, mail, Filament toasts)** | Recipient list computed as "everyone who can view the project" includes Partners; internal comments trigger Partner notifications; notification body interpolates rate/time/internal text; queued notifications re-render in a worker with no auth context | Compute recipients explicitly with an `isInternal` guard; separate templates for internal events; test that an internal comment creates zero Partner notifications |
-| **Widgets / stats / charts** | Aggregates via `DB::table()` or raw SQL ignore Eloquent global scopes; `Cache::remember('dashboard.revenue', ...)` keyed without role/user serves Admin totals to Partner; widgets default to visible | `canView()` default-deny; no money widgets for Partner; cache keys include role + user + client id; no `DB::table` on client-owned tables outside a reviewed query layer |
-| **Activity log** | `activity_log.properties` holds old/new attributes including rate, price, internal flag, notes; any "History" tab, timeline widget or audit page shows other users' diffs; `$hidden` does not stop logging; Spatie `LogOptions` logs everything unless `logOnly`/`logExcept` are set | Activity log is Admin-only; whitelist attributes with `logOnly([...])`; never log secrets (Stripe ids ok, keys/tokens/passwords never); make it append-only (Pitfall 14) |
-| **Livewire state / snapshots** | Livewire serialises public component properties into the page's HTML snapshot and every update response. A form `fill($record->attributesToArray())` can put attributes of fields that are *hidden for this role* into `$data` **[verify per version]**; custom pages with public array/DTO properties containing full models leak the same way | Fill forms with a whitelisted array per role (`mutateFormDataBeforeFill`); keep sensitive data off public properties; run canary tests against **raw HTML and Livewire JSON**, not only rendered text |
-| **Media / documents / PDFs** | `/documents/{media}` or a ZIP download built from client-supplied IDs; Media is not client-scoped; invoice PDF URLs by id | Authorize per id with a policy, always re-check on download; never trust ID lists |
-| **Counts and badges** | Navigation badges, tab badges, "N results" counts from unscoped queries | Scope via model global scope; test counts with two clients |
-| **Error and validation messages** | "Client X already has project key ABC" reveals data | Generic messages; scoped uniqueness queries |
-
-**Why it happens:**
-Each surface is a separate code path with its own query; scoping is applied to the one the developer looked at. UI hiding feels like security.
-
-**How to avoid (the defence-in-depth stack, all three layers):**
-1. Model-level global scope + denormalized `client_id` on every client-owned table (Pitfall 5).
-2. Policy on every model, Partner-specific Resource classes (Pitfall 3).
-3. **Canary test harness**, started in Foundation: seed two fictional clients; put unique canary strings (`CANARY_B_7f3a...`) in every field of client B (names, notes, comments, internal comments, rates, tags, document names, activity properties); as a Partner of client A, request every Filament route, every Livewire update (mount actions, search, select search, table search, export attempts), every API route, every download route, and assert the canary never appears in the **raw response body**, including Livewire snapshot JSON. Add a registry-walk test that enumerates Resources, Pages, Widgets, RelationManagers and actions so a newly added surface fails CI until it is classified.
+**How to avoid:**
+- Call `ts_headline` with `StartSel`/`StopSel` set to sentinel characters that cannot occur in text (for example `U+E000`/`U+E001`), then `e()` the whole string, then replace the sentinels with `<mark>`/`</mark>`. Never emit raw `ts_headline` output.
+- Compute headlines only for the page of results being shown (outer query over the top N ids), with `MaxWords`/`MinWords` limits and `MaxFragments`, never in the ranking subquery.
+- For `sensitive` articles show no snippet (title only), and for any article mask snippet lines matched by the secret guard rules.
+- Build the headline input from stripped text, not raw Markdown, if the generated column for search already holds the stripped text (see Pitfall 5).
 
 **Warning signs:**
-Any code path using `DB::table`, `Model::withoutGlobalScopes()`, raw SQL, `->options(Model::all())`, `Cache::remember` without role in the key, or a new Resource without a Partner decision.
+`{!! $row->headline !!}`; `ts_headline` inside the same query as `ORDER BY ts_rank` over the whole table; a snippet showing code-fence backticks.
 
-**Phase to address:** Foundation (harness + bases), extended by every feature phase (each phase's "done" includes a canary test for its screens), finalized in Partner audit. Notifications and activity log: Foundation (policy decision), Projects/Tasks (comments with internal flag).
+**Phase to address:** K5.
 
 ---
 
-### Pitfall 5: Laravel global scope pitfalls for client isolation
+### Pitfall 5: PostgreSQL full-text search for Czech built on assumptions that do not hold
 
 **What goes wrong:**
-- Scopes are **not applied** to `DB::table()`, raw SQL, `->join('clients', ...)` (the joined table's scope is not applied: reports "time per client" leak via joins), `insert/upsert`, validation rules (`exists`, `unique`), and `withoutGlobalScopes()`.
-- Scope reads `auth()->user()`. In queue workers, scheduler, console, webhooks and tests there is no user. A scope that returns "unconstrained when no user" is fail-open for queued code dispatched on behalf of a Partner (the worker sees everything); one that returns "empty when no user" breaks Stripe webhooks, CNB jobs and invoice generation.
-- `->when($user->client_id, fn ...)` style: a Partner with `client_id = NULL` (or no assigned clients) gets **no constraint** instead of no data. (`whereIn('client_id', [])` is safe in Laravel; `when(null, ...)` is not.)
-- The scope on `User` (or anything auth resolves) triggers infinite recursion because `auth()->user()` loads the user through the same scope.
-- Child tables (tasks, time entries, comments, documents) have no `client_id`; scoping via `whereHas('project')` is slow and easy to forget in one query.
-- Authentication state leaks across tests/long-lived processes (`Auth::forgetUser()`, Octane/`queue:work` memory).
-- `Model::query()->update()`/`delete()` apply scopes (good), but `updateOrCreate`, `increment` with joined queries or raw updates may not.
-
-**Why it happens:**
-"Global scope" feels like a global guarantee; it is only a convention for Eloquent builder queries on that model.
+- `to_tsvector('czech', ...)` fails: there is no built-in `czech` text search configuration (the manual does not list one; ispell/hunspell dictionaries are **not shipped** and must be placed in `$SHAREDIR/tsearch_data`, which a managed database service normally does not allow) **[verify on the Zerops PostgreSQL service]**. Using `english` "because it works" stems Czech words into garbage and drops Czech words as English stopwords.
+- Plain `simple` finds `příběh` only when typed with diacritics, while the Admin types without them. The repo already solved this for substring search (`kokpit_search_text` = `lower(public.unaccent(...))` with GIN trigram indexes), but a tsvector needs its own handling.
+- Czech is heavily inflected (`server`, `serveru`, `serverem`, `serverů`). Exact lexeme matching with `simple` misses most inflections. Prefix queries (`server:*`) recover most of them at the cost of some noise.
+- The tsvector expression in a generated column or index must be IMMUTABLE. `to_tsvector(regconfig, text)` with a literal config is immutable; the one-argument form and a bare `unaccent()` are not. The repo's migration documents exactly this trap for `unaccent`.
+- `to_tsquery` raises a syntax error on user input such as `a & | b` or a stray quote (HTTP 500 on search). `websearch_to_tsquery` never raises but does **not** support prefix `:*`.
+- A single `tsvector` is limited to about 1 MB and a lexeme to 2046 bytes **[verify]**. A pasted log, a base64 blob or a 2 MB Markdown dump makes the INSERT fail with "string is too long for tsvector", which surfaces as a failed save of the article.
+- Code-heavy content pollutes the index: IPs, hashes, long paths and flags become lexemes; `to_tsvector` splits `/etc/nginx/nginx.conf` and URLs into multiple token types. Searching `nginx.conf` or an exact command may not behave as the user expects.
+- Changing the text search configuration mapping later does not rewrite existing vectors; stale vectors silently stop matching.
+- GIN `fastupdate` pending list makes a freshly saved article appear in search a moment later under heavy writes; irrelevant at this scale but tests that save-then-search can be flaky.
 
 **How to avoid:**
-- One trait `BelongsToClient` that registers `ClientScope`: constrains only when the current user is a Partner; Partner with no clients yields `whereRaw('1 = 0')` (fail closed); explicit and loud `Model::forAllClients()` named macro for internal code (replaces `withoutGlobalScopes()` in review).
-- **Never rely on ambient auth inside jobs/notifications**: pass `client_id`/IDs explicitly and use the explicit macro. Add a CI grep/arch test: `withoutGlobalScopes` and `DB::table(` on client-owned tables only in whitelisted files.
-- Do not apply the scope to `User`, `Role`, `Permission` (recursion); resolve Partner's client list from a cached `auth()->user()` property, not a query inside the scope.
-- Denormalize `client_id` onto every client-owned table (tasks, subtasks, comments, time entries, documents, invoices) and enforce consistency with a composite FK, e.g. `projects UNIQUE (id, client_id)` and `tasks FOREIGN KEY (project_id, client_id) REFERENCES projects (id, client_id)`. Indexed `client_id` also makes the scope cheap.
-- Report queries live in a single reviewed query layer that applies the same constraint explicitly.
-- Optional hardening for later (not v1): PostgreSQL row-level security with a `SET LOCAL app.client_id`; mind pooling semantics before adopting.
+- Create one project configuration in a migration: `CREATE TEXT SEARCH CONFIGURATION public.kokpit_cs (COPY = simple)` then `ALTER ... ALTER MAPPING FOR asciiword, word, numword, asciihword, hword, numhword, hword_asciipart, hword_part, hword_numpart WITH unaccent, simple`. This keeps indexing immutable and diacritic-insensitive. Reuse the already-installed `unaccent` and `pg_trgm` extensions.
+- Store search text in a **generated stored column** (or maintained by the single Action) such as `search_vector = setweight(to_tsvector('public.kokpit_cs'::regconfig, left(title, ...)), 'A') || setweight(tags text, 'B') || setweight(to_tsvector(..., left(stripped_body, 500000)), 'C')`. Cap the body at a hard application limit (for example 200 KB, validated with a field error) so the vector can never overflow.
+- Build the tsquery yourself: lowercase, split on non-word characters, drop empties, join with `&`, append `:*` to each token, bind as a parameter; only then `to_tsquery`. Unit-test hostile input (`"`, `&`, `|`, `!`, `<->`, `(`, `\`, empty string, one 5000-character token).
+- Add `pg_trgm` GIN on the **title only** (substring and typo tolerance, "find the article called ..."), mirroring the existing `{table}_{column}_search_index` convention. Do **not** trigram-index the body (index size is several times the text).
+- Test search with `EXPLAIN` like the existing accent-insensitive test does, and add a regression test that each new search column has its index.
+- Keep a Czech-quality test corpus (fictional articles with inflected forms and diacritics) with expected hits; this is the acceptance test for "search feels right".
+- If the Admin later wants real Czech stemming, treat it as a separate phase: hunspell dictionary licence (AGPL compatibility) and managed-DB file access are both unresolved.
 
 **Warning signs:**
-`DB::table`/`join()` in report code; a Partner test passing only because the test user has a client set; jobs that read models without ids; scope code that calls `Auth::user()->clients()->get()` (recursion/N+1).
+`'czech'` or `'english'` string literal in a migration; `to_tsquery(:q)` with raw user input; an index expression that calls one-argument `unaccent`; search returning 500 on a quote; "no results" for a word typed without diacritics.
 
-**Phase to address:** Foundation (trait + composite-FK pattern + arch test), reapplied in Clients/Projects/Tasks/Time/Invoicing, verified in Partner audit.
+**Phase to address:** K5 (config, generated column, query builder, corpus test). K1 only reserves the columns.
 
 ---
 
-### Pitfall 6: Gap-free sequences (task keys `KEY-N`, invoice numbers) under concurrency
+### Pitfall 6: Folder tree integrity (cycles, concurrent moves, duplicates under NULL, delete cascades)
 
 **What goes wrong:**
-- `MAX(number)+1` or `count()+1` races: duplicate numbers or unique-constraint exceptions.
-- PostgreSQL `SEQUENCE` / `AUTO_INCREMENT` is **not** gap-free: rolled-back transactions and crashes consume values.
-- `lockForUpdate()` outside a transaction is a no-op (lock released immediately).
-- Allocation inside a model event (`creating`) while the surrounding Filament create is not wrapped in the same transaction: a later failure rolls back the row but not necessarily the counter, or vice versa, leaving gaps or duplicates.
-- Assigning the invoice number at **draft creation** instead of at issue time: deleted drafts create gaps.
-- Retried job or double-clicked "Issue" allocates two numbers.
-- Year rollover: the first invoice of January races to create the counter row; the year is derived from UTC (an invoice issued 00:30 on 1 Jan Prague time is still 31 Dec UTC and gets the wrong year in `{YYYY}{NNNN}`).
-- Overflow of the 4-digit pad (invoice 10000) and key-format assumptions.
-- The old tool's import sets counters wrong (`next_task_number` lower than max existing).
-
-**Why it happens:**
-Sequences are treated as a column default instead of a transactional resource; tests run in a wrapping transaction (`RefreshDatabase`), so concurrency is never exercised.
+- **Cycle**: moving folder A under its own descendant produces a loop; the tree rendering or breadcrumb recursion never terminates (or the recursive CTE runs until memory). A UI check in the move action passes in a single request but two concurrent moves (A under B, B under A) each pass and together form a cycle.
+- **Duplicate names at root**: a unique index on `(parent_id, name)` does not protect root siblings because `NULL`s are distinct (PostgreSQL 18 supports `NULLS NOT DISTINCT`, but only if you ask for it).
+- **Delete**: `ON DELETE CASCADE` on `parent_id` deletes a whole subtree of articles, versions and attachment rows in one click. DB-level cascades bypass Eloquent events, so Spatie media rows (morph, no FK) and their S3 objects are orphaned, and `taggables` rows stay behind. The opposite choice, `RESTRICT` with no UX, leaves the Admin unable to delete anything.
+- **Depth/size**: unbounded depth makes breadcrumb and tree queries slow and the UI unusable.
+- **Ordering**: sibling order with `spatie/eloquent-sortable` on UUID keys under concurrent drag/drop produces duplicate positions.
+- **URLs built from names or paths** break on rename/move; folder names in URLs also leak (Pitfall 3).
+- A folder and an article tree needs one decision: are folders their own table, or is a folder a kind of article? Mixed models double the integrity logic.
 
 **How to avoid:**
-- A single `SequenceAllocator` service. Counter rows (`projects.next_task_number`, `number_sequences(series, year, next_value)`) updated with `UPDATE ... SET next = next + 1 ... RETURNING` (or `SELECT ... FOR UPDATE`) **inside the same DB transaction that inserts the numbered row**. Allocation and insert live in one application action (`IssueInvoice`, `CreateTask`), not in model events or Filament hooks. Short transactions, set deadlock retry (`DB::transaction($cb, attempts: 3)`).
-- Counter row for a new year via `INSERT ... ON CONFLICT DO NOTHING` followed by the locking update.
-- Invoice number allocated at **issue** only (drafts have `NULL` number). Issued numbers are never reused; corrections via credit note (not delete/void-and-reuse).
-- Year taken from the issue date in `Europe/Prague`.
-- DB safety nets: `UNIQUE (series, number)`, `UNIQUE (project_id, number)`, `CHECK (next_task_number >= 1)`, `CHECK (status = 'draft' OR number IS NOT NULL)`.
-- Idempotency for the issue action (status transition guarded by `WHERE status = 'draft'` and affected-row check).
-- A **real concurrency test**: spawn N (e.g. 30-50) parallel PHP processes against a real database (no wrapping transaction; `DatabaseMigrations`/truncate) and assert numbers are exactly `1..N`. Plus a scheduled "sequence integrity" health command that flags gaps in issued numbers.
-- Import tooling must set counters from `max(existing)+1` and have a CI-tested "importer sets counters" path (PROJECT.md already calls this out).
+- Separate `knowledge_folders` (self-referencing `parent_id uuid` FK) from articles (`folder_id` FK, nullable for root). Moves and deletes go through Actions only.
+- Prevent cycles in the **database**: a `BEFORE INSERT OR UPDATE OF parent_id` trigger that walks ancestors (recursive CTE) and raises on a cycle or on depth > N (for example 8), taking a transaction-level advisory lock for the whole tree so concurrent moves serialise (a single company, a single tree: a global advisory lock is cheap). The repo already ships "child guard" trigger functions as a pattern. Also keep the app-level check for a friendly message.
+- Unique sibling name: `CREATE UNIQUE INDEX ... ON knowledge_folders (parent_id, lower(name)) NULLS NOT DISTINCT` (or two partial indexes) and the same for the root.
+- Delete rule: refuse to delete a non-empty folder (`ON DELETE RESTRICT`) and offer "move contents to parent, then delete"; articles are soft-deleted with a retention window, never cascaded. If hard delete of an article is allowed, it runs an Action that deletes media (and S3 objects), tag attachments and versions explicitly, and an orphan-detector test asserts no media row points at a missing article (the repo already has morph/orphan arch-test habits).
+- URLs use the article UUID only; the slug, if shown, is cosmetic and ignored on lookup.
+- Folder `sort_order` uses a gap-tolerant integer assigned under the same advisory lock, not eloquent-sortable's read-modify-write.
+- Tree render uses one recursive CTE or an eager-loaded parent map, never per-node queries; the tree is small (hundreds of nodes) so no closure table is needed, **but** document why so nobody adds one.
 
 **Warning signs:**
-`MAX(` in code; `lockForUpdate` without `DB::transaction`; numbers allocated in observers; tests that only pass with `RefreshDatabase`; duplicate-key errors under double-click.
+`parent_id` update without a lock; a test that moves a folder under its child passing only because the UI hides the option; media or taggables rows with no owner after a delete; root folder with two identical names in dev data.
 
-**Phase to address:** Foundation (allocator + concurrency test harness, since both Projects/Tasks and Invoicing depend on it); Invoicing (issue-time allocation, year rollover); Projects/Tasks (task counter).
+**Phase to address:** K1 (schema, trigger, constraints, Actions, orphan test).
 
 ---
 
-### Pitfall 7: Stripe webhook handling (signature, raw body, replay, idempotence, ordering, async payments, visibility)
+### Pitfall 7: Version history that bloats and a restore that destroys or resurrects
 
 **What goes wrong:**
-- `spatie/laravel-webhook-client`'s `DefaultSignatureValidator` computes `hash_hmac('sha256', body, secret)` and compares to a header named `Signature`. Stripe sends `Stripe-Signature: t=<ts>,v1=<sig>[,v0=...]` over `"<ts>.<body>"`. The default validator rejects every real Stripe call; a developer "fixing" this by disabling validation lets anyone forge payments. Verified in the webhook-client docs; Stripe's requirements verified in Stripe docs.
-- Body mutated before verification (re-encoding JSON, middleware that reads `$request->all()`): signature fails. Route inside the `web` group/CSRF/session, or inside the Filament panel prefix, or behind rate limiting that throttles Stripe bursts.
-- Replay: valid payload re-sent later. Stripe libraries enforce a 5-minute timestamp tolerance by default; a tolerance of `0` disables the check; hand-rolled validators often skip it.
-- Duplicates: Stripe may deliver the same event more than once (and sometimes two separate Event objects for the same underlying object). `webhook_calls` has no unique key on the Stripe event id by default, so a check-then-insert in application code races under two simultaneous deliveries.
-- Event ordering is not guaranteed; `created` is not an ordering key.
-- Treating `checkout.session.completed` as "paid": for delayed methods `payment_status` can be `unpaid`; the money arrives with `checkout.session.async_payment_succeeded` (or fails with `..._failed`).
-- Test vs live mode secrets and `livemode` mismatches; `stripe listen` prints a different signing secret from the dashboard endpoint.
-- Processing failures are invisible: `webhook_calls.exception` is populated but nobody looks, the invoice stays "unpaid", and the Core Value ("no unpaid invoice slipping through") is violated while the customer has paid.
-- Webhook payloads contain customer personal data and persist forever.
-- Subscribing the endpoint to all events: refunds/disputes (out of scope) arrive and are silently ignored while the invoice shows paid.
+- **Bloat**: a full copy of the body per save, including no-op saves, or per Livewire update/autosave, multiplies storage. For one company this is not a terabyte problem, but a few hundred articles saved dozens of times each, with large code-heavy bodies, grows quickly, makes backups bigger, and, worse, versions end up in the list query or the search index.
+- **Versions in the hot row/query**: the article list `SELECT *` pulls the TOASTed body (and with a `versions` eager load, all bodies) just to render a table.
+- **Version numbering race**: two saves compute `max(version)+1` and collide or leave gaps.
+- **Mutable history**: versions that can be edited or deleted by code paths other than purge are not history.
+- **Restore semantics** are undefined: restore by rewriting the current row loses the "before restore" state; restore of body only leaves title/folder/tags changed; restore reintroduces a secret that was cleaned later (Pitfall 2) or a link to an image that was deleted since; restore of an article whose folder was deleted; restore by a Partner or on a retrospective's generated section.
+- **Double storage**: the version body plus the activity-log diff (Pitfall 2).
 
 **How to avoid:**
-- Custom `SignatureValidator` implementing Stripe's scheme (use `\Stripe\Webhook::constructEvent` with raw `$request->getContent()`, default tolerance, ignore non-`v1` schemes; support two active secrets for rotation), registered in `config/webhook-client.php`. Alternatively adopt `spatie/laravel-stripe-webhooks` (it wraps webhook-client and already validates Stripe signatures) **[verify AGPL-compat. and maintenance]**. Route is stateless: no session, no CSRF, own throttle that allows Stripe bursts, public URL fixed and unrelated to the panel.
-- Store first, process later, return 200 fast: persist the `WebhookCall` row with a **unique index on Stripe `event.id`** (`INSERT ... ON CONFLICT DO NOTHING`; always return 2xx for duplicates) and dispatch an idempotent job. Layer 2 idempotency: `payments` has `UNIQUE (provider, provider_payment_intent_id)` (and/or checkout session id); processing is a no-op if the payment row exists. Use `data.object.id` + `type` as the secondary dedupe key.
-- Handler handles events by fetching/validating current object state when order matters; only `payment_status = 'paid'` marks an invoice paid; handle async success/failure events.
-- Persist `livemode`; reject events whose mode mismatches the environment.
-- Subscribe only to required event types. For out-of-scope `charge.refunded`/`charge.dispute.created`, consider only *flagging* the payment in the overview ("handle in Stripe") rather than ignoring.
-- Visibility: unprocessed/failed webhook calls older than N minutes appear on the dashboard and trigger an admin alert (Pitfall 18); a manual "reprocess" action; retention policy (`delete_after_days`) for payloads.
-- Test with Stripe CLI fixtures: valid, bad signature, old timestamp, duplicate, out-of-order, async-paid, amount mismatch, unknown invoice, double payment.
+- Separate table `knowledge_article_versions` (`article_id`, `number`, `title`, `body`, `body_sha256`, `created_by`, `created_at`, `reason`). Unique `(article_id, number)`; the Action takes `SELECT ... FOR UPDATE` on the article row, increments `lock_version` and writes the version in the same transaction (this is also the optimistic lock, Pitfall 8).
+- Do not write a version if `body_sha256` and title are unchanged. Coalesce rapid successive saves by the same user within a short window (for example 10 minutes) into one version, except when restore, share change or sensitive change happens. No autosave versions.
+- Version rows are **immutable** (DB trigger like the project's other immutability guards), purge/redact is a separate Admin Action that blanks the body, keeps the row and records who/why in the activity log (without the content).
+- **Restore = create a new version** whose body/title equal the old one; history is append-only and the pre-restore state stays reachable. The restore Action re-runs the secret guard and normaliser, lets the Admin choose "body only" (default) and does not change folder, tags, `client_visible` or `sensitive` (those are current state, not content). If the restored text contains a rule match, restore is blocked or flagged exactly like a save.
+- Attachments referenced by an old version must still exist. Either attachments are never hard-deleted while any version references them, or the renderer shows an explicit "image removed" placeholder instead of a broken image. Decide this in K4 and write it down.
+- Retention: keep everything for the first release, add a `knowledge:prune-versions` command (keep the latest N plus one per day for 30 days) behind a setting only if size measurably matters; document the expected size. A diff-based storage format is **not** worth the complexity at this scale.
+- List and tree queries select explicit columns without `body`; add a test with a query counter and an assertion on the selected columns for the index page.
+- Versions are excluded from the search vector and from Partner access (Pitfall 3).
 
 **Warning signs:**
-Signature validation toggled off "for local dev" in committed config; `webhook_calls` rows with non-null `exception`; payments overview empty while Stripe dashboard shows payments; two payments rows for one event id.
+Versions created on every Livewire `updated` hook; `max(number) + 1` in application code without a lock; `Article::with('versions')` in a list; restore implemented as `$article->update($version->only(...))`.
 
-**Phase to address:** Stripe (all); Foundation (queue failure alerting, public-route/middleware conventions).
+**Phase to address:** K3 (table, Action, restore semantics, purge); K1 reserves `lock_version`.
 
 ---
 
-### Pitfall 8: Payment Links are reusable, and amount/currency/matching edge cases
+### Pitfall 8: Lost updates between two tabs, devices and the restore button
 
 **What goes wrong:**
-A Payment Link is a public URL and, by default, can be paid many times by many people. "One link per invoice" quietly means "one link, paid twice" when the customer double-submits, forwards the URL, or two tabs are open. Stripe supports `restrictions.completed_sessions.limit` (verified in the Payment Link object docs: `restrictions.completed_sessions.limit` and `.count`), but a limit does not make the integration safe by itself. Related edge cases:
-- Payment Link line items are fixed once created; changing an amount means a new link and deactivating the old one; links have no expiry of their own, so an unpaid-then-cancelled/credit-noted/manually-paid invoice keeps an active, payable URL (`active` flag exists for deactivation).
-- Customer pays by other means (bank transfer recorded manually) after the link was sent: link still live.
-- Matching a payment to an invoice by amount alone breaks with repeated amounts. Use the link id (`plink_...`, present on the Checkout Session as `payment_link`), `client_reference_id`, and/or metadata carrying the invoice UUID; verify amount and currency against the invoice's outstanding amount; handle over/under payment.
-- Minor-unit exponent: Stripe amounts are minor units per currency (JPY 0 decimals, some currencies 3, a few quirky ones like ISK/HUF); never hardcode `* 100` (see Pitfall 10).
-- Payment Links likely need a Product/Price per invoice (inline `product_data` may not be allowed for payment links) which clutters the Stripe account **[verify API shape]**.
+There is a single Admin, so "concurrency" looks irrelevant. In practice the Admin has the edit screen open in two tabs, on a laptop and a phone, or leaves an edit screen open for hours; a Livewire form holds the body loaded at mount time. Saving from the stale tab overwrites newer text silently (last write wins). A restore performed while an edit screen is open has the same effect. Related: the session expires during a long edit and the save fails with a 419; the form content is lost.
+
+Also: the "create retrospective" button and "create incident hub" button double-clicked create two rows.
 
 **How to avoid:**
-- Create the link with `restrictions.completed_sessions.limit = 1`, store `stripe_payment_link_id`, and deactivate (`active=false`) on: invoice paid (any method), cancelled, credit-noted, superseded.
-- Still implement the planned duplicate/unmatched handling: second payment for a paid invoice becomes a `duplicate` payment row visible in the overview (manual refund in Stripe dashboard), unknown payment becomes `unmatched`. Never discard a webhook-confirmed payment.
-- Match by link id / client_reference_id, then validate amount+currency; mismatch becomes `needs_review`, not auto-paid.
-- Put per-environment Stripe keys only in env; test and live links never mixed.
+- Optimistic locking: article carries `lock_version integer not null default 1`; the edit form posts the version it loaded; the save Action runs `UPDATE ... WHERE id = ? AND lock_version = ?` (or compares under `FOR UPDATE`) and on mismatch aborts with a Czech message and offers "reload" and "show differences"; it never merges silently. The restore Action uses the same check.
+- Separate **view** and **edit** screens (already the milestone design) reduces accidental editing; keep the edit screen free of auto-refresh/polling that would overwrite typed text.
+- Warn on leaving with unsaved changes (`beforeunload`), and keep the session alive while the edit screen is open **[verify Filament SPA mode behaviour with the session lifetime]**. Persist an unsaved draft in browser storage only if a lost-edit incident motivates it; do not build server drafts in this milestone.
+- Create-once actions rely on DB uniqueness, not on UI disabling: `UNIQUE (project_id) WHERE kind = 'retrospective'`, and an idempotent Action (`firstOrCreate` semantics returning the existing row with a notice).
+- Use `Livewire` `#[Locked]` on the article id and authorise in each action, not only in `mount()` (Livewire state is client-tamperable).
 
 **Warning signs:**
-Two payment rows per invoice; links still active on paid invoices; matching logic using `amount_total` only.
+No `lock_version`/`updated_at` comparison in the save Action; a test "two saves in a row" passing because it runs in one process; duplicate retrospective rows in dev.
 
-**Phase to address:** Stripe. Research flag: confirm Payment Link creation API shape (Price/Product requirements, metadata propagation to Checkout Session / PaymentIntent) in a phase research spike.
+**Phase to address:** K2 (optimistic lock in the Action), K3 (restore uses it), K6 (create-once constraints).
 
 ---
 
-### Pitfall 9: CNB exchange-rate edge cases (weekends, holidays, quantity per 100/1000 units, decimal comma, staleness)
+### Pitfall 9: Pasted Markdown artefacts (whole page inside one fence) and a normaliser that damages code
 
 **What goes wrong:**
-- CNB publishes on working days around 14:30; a rate published on a day is valid for that day and following weekend/holidays (verified on cnb.cz). There is **no row for Saturday/Sunday/holidays**. Requesting `denni_kurz.txt?date=<weekend>` returns the previous working day's table (header carries the actual date), so keying by requested date creates duplicates or mislabeled rows.
-- Many currencies are quoted per 100 units (JPY, HUF, KRW, PHP, THB, TRY, INR, ISK) and **IDR per 1000** (verified on cnb.cz). The file has an `množství` (amount) column; storing only `rate` and treating it as per-1-unit produces invoices that are off by 100x/1000x.
-- Decimal comma (`23,456`) and `|` separators; first line is `DD.MM.YYYY #NNN`; parsing with `floatval` corrupts numbers.
-- Scheduler runs before 14:30 Prague or in a DST-shifted hour and sees yesterday's data; the "idempotent" job stores nothing and a naive alert fires ("no rate for today") or, worse, nothing fires when the endpoint silently returns stale data.
-- Lookup uses `rate_date = invoice_date` exactly: fails on weekends/holidays.
-- Missing rate at issue time silently falls back to 1.0 or an old rate.
-- Rates held as floats; converting using the *latest* rate at report time instead of the snapshot on the document.
+- Content pasted from a chat assistant or another tool arrives wrapped in a single outer fence (```` ```markdown ... ``` ````) so the entire article renders as one grey code block with no headings.
+- Content that itself contains triple-backtick blocks, wrapped in an outer triple-backtick fence, terminates early: the first inner fence closes the outer one and the remainder renders as Markdown, then a later fence opens a block that swallows the rest of the page to the end.
+- Unclosed fence: everything after it becomes code.
+- Invisible characters from web copy and chat tools: NBSP, zero-width space, BOM, smart quotes and en/em dashes inside commands (a copied `--flag` becomes `–flag` and fails when pasted into a terminal), `\r\n` line endings, tabs, trailing spaces that create accidental hard breaks.
+- Raw HTML from a rich-text copy (`<br>`, `<details>`, `<aside>`) now renders as literal text because of `html_input = escape` (Pitfall 1).
+- Shell prompt prefixes (`$ `, `> `) inside code blocks: the **copy button** copies the prompt too and the command fails. Line numbers rendered as text instead of CSS pollute the copy.
+- The **normaliser itself** is the bigger risk: a "helpful" cleaner that rewrites quotes or whitespace *inside* a fenced block silently corrupts the code the user wants to copy exactly.
+- The copy button uses `navigator.clipboard`, which only exists in a secure context; and copying `innerHTML` instead of `textContent` copies entities.
 
 **How to avoid:**
-- Table `exchange_rates(currency, rate_date, units, rate NUMERIC(18,6) or string-decimal, source_sequence)` with `UNIQUE (currency, rate_date)`; `rate_date` is the date from the **file header**, not the requested date. Normalise to per-unit value only at use: `rate / units`, using decimal arithmetic (brick/money `BigDecimal` or bcmath), never float.
-- Lookup: latest `rate_date <= :date`, error if older than a configured staleness (e.g. 7 days) rather than silently using it. Define in the requirements which date applies (issue date vs supply date); store `rate_date` and the rate itself as snapshot on the invoice.
-- Scheduler: `->timezone('Europe/Prague')`, run after 14:30 with retries (e.g. 15:00, 16:00, next-morning catch-up); avoid 02:00-03:00 slots (DST). Failure alert plus a **staleness check** ("newest rate_date older than last working day") so a succeeding-but-empty job is also caught. CZK clients: no lookup needed (identity rate stored explicitly).
-- Backfill command uses the yearly file endpoint with bounded request rate; idempotent upsert; tested with weekend/holiday fixtures and with JPY/HUF/IDR rows.
-- Tests: 2027-03-28 style weekend request, JPY 100 units, IDR 1000 units, decimal comma, repeated import.
+- Define "canonical Markdown" in one short spec (LF endings, UTF-8 without BOM, ATX headings, `-` bullets, fenced code only, `~~~`/longer fences when the content contains backticks, one blank line between blocks, info string on every fence).
+- A conservative, **idempotent** normaliser run by the save Action: (a) normalise line endings and strip BOM; (b) if the *entire* document is one fence whose info string is `markdown`/`md`/empty, unwrap it (with a notice shown to the Admin); (c) detect an unbalanced fence and **warn**, not auto-fix; (d) outside code only: strip zero-width characters and convert NBSP to space, trim trailing whitespace. **Inside fences and inline code: line endings only**, never anything else. Property tests: `normalize(normalize(x)) === normalize(x)`, and "all fenced block contents are byte-identical before and after" over a corpus.
+- Parse with the same CommonMark parser to find fences (do not use regex on backticks); use the AST to know what is code.
+- Copy button: read `textContent` of the `<code>` element, with a fallback to `document.execCommand('copy')` when the Clipboard API is unavailable; render line numbers via CSS counters only; do not auto-add or auto-strip prompts (document a convention instead). Add a feature test on the rendered HTML that a code block contains exactly the source text.
+- The editor shows a visible warning chip when the guard/normaliser changed or flagged something, so the change is never silent.
 
 **Warning signs:**
-Float/`double` columns for rates; no `units` column; rate lookup `where rate_date = ?`; invoices to JPY/HUF clients with CZK totals off by 100x.
+An article whose rendered view has one single `<pre>` element; code blocks that render differently after a save/load round trip; `str_replace` of quotes on the whole body; clipboard code using `innerText`.
 
-**Phase to address:** CNB rates (and snapshot columns defined in Invoicing / Finance).
+**Phase to address:** K2 (spec, normaliser, property tests, copy button).
 
 ---
 
-### Pitfall 10: Money representation and rounding (bigint minor units, per-currency exponents, hours x rate)
+### Pitfall 10: Image uploads (SVG, EXIF, bombs, public URLs)
 
 **What goes wrong:**
-- `(int)(19.99 * 100)` is `1998`: float conversion at the form boundary. Czech locale input `12,5` parsed as `12`.
-- Hardcoded two-decimal assumption; JPY has none and some currencies have three; Stripe has its own list of exponents.
-- Time (seconds, never rounded) times an hourly rate yields fractional minor units: where and how rounding happens is not specified, so the invoice total, the sum of lines, the PDF and the Stripe link amount disagree by 1 haléř.
-- Totals recomputed at PDF render time with different rounding than what was stored.
-- Percentage discounts/fees rounded per line vs per total inconsistently; converted CZK amounts for finance overviews summed from rounded vs unrounded values.
-- Money serialised to JSON as float; JS number precision; API mixing major and minor units.
+- **SVG**: `spatie/laravel-medialibrary` in this repo registers `Svg` as an image generator and `Svgo` as an optimiser. An uploaded SVG served from the app origin executes script (stored XSS) and can reference external resources. "Image-only" validated by file extension or client MIME type lets `evil.svg`, an HTML file renamed `.png`, or a GIF/JS polyglot through.
+- **EXIF**: phone and screenshot tools embed GPS coordinates, device model, timestamps. A shared article with such an image leaks the Admin's location to the client. Orientation tag handling: stripping EXIF *without* applying orientation first makes photos appear rotated.
+- **Decompression bombs / huge dimensions**: a 40000x40000 palette PNG is tiny on disk and exhausts memory in the conversion job (queue worker OOM, retries, stuck queue).
+- **Filename and path**: user-supplied name used as storage key or in `Content-Disposition` (header injection, path tricks).
+- **Public or default disk**: Filament's `MarkdownEditor` file attachments are **always `public`** (verified: `fileAttachmentsVisibility()` throws, the getter returns `'public'`), so enabling the toolbar attach button stores images publicly, outside the Documents policy. The existing `TaskResource` already disables it for the same reason.
+- **Reusing the Documents domain**: images would show up in the central documents listing, ZIP download and bulk delete, and in the Partner's Documents view for a client-visible project.
+- **Orphans**: images attached but later removed from the text stay in storage; deleted articles leave media rows (morph, no FK).
+- **Pasted screenshots** with secrets (Pitfall 2).
 
 **How to avoid:**
-- One `Money` value object (use `brick/money` or `moneyphp/money`, both MIT) holding `int minorUnits + Currency`; parse form input from strings with a decimal parser; custom Eloquent cast; a Filament money input that only ever exchanges strings. Ban `float` for money via a static-analysis/arch rule.
-- Define the rule once and document it: `amount_minor = round_half_up(seconds * hourly_rate_minor / 3600)` using integer arithmetic (`intdiv(2*n + d, 2*d)`), rounding per invoice line, totals = sum of stored line amounts. **Persist** line amounts and totals; PDF/email/Stripe read persisted values, never recompute. DB `CHECK (total_minor = ...)` can't span rows, so add a consistency test and an application-level assertion at issue time.
-- Exponent from ISO 4217 data (via the money library), not literals. Stripe amounts converted through the same table.
-- API returns `{ "amount": 123450, "currency": "CZK" }` as integers.
-- Rate snapshot semantics for converted amounts (Pitfall 9); report conversions use per-transaction snapshots.
+- Allowlist **by content**, not extension: `finfo`/`getimagesize` detected type in {jpeg, png, webp, gif (maybe avif)}; reject SVG and everything else. Remove `Svg` from the knowledge collection's accepted types and use `acceptsMimeTypes()` plus a server-side sniff.
+- Always **re-encode** (Intervention/GD/Imagick) to a fresh file: this kills EXIF/XMP/ICC junk and polyglot payloads; call orientation correction first, then strip. Cap pixel dimensions (for example 8000x8000) *before* decoding (read the header with `getimagesize`) and cap bytes (for example 8 MB); set queue memory limits for conversions **[verify Imagick/GD availability in DDEV and on Zerops]**.
+- Own media collection `knowledge-images` on the private disk, UUID-based storage names, never user filenames; serve through an authorised controller that streams or issues a 2-5 minute presigned URL after checking current visibility, with `X-Content-Type-Options: nosniff`, an explicit `Content-Type` from the re-encoded type, `Content-Disposition: inline` with a sanitised name, and `Content-Security-Policy: sandbox` on the response.
+- `->fileAttachments(false)` on the editor; images are added through a dedicated upload action that inserts the internal reference `kokpit-attachment:<uuid>` (Pitfall 1). Keep the Documents domain out of it.
+- Ownership: the media `model_type` is the article via the morph map; the Action that deletes an article deletes media in the same step; a scheduled `knowledge:prune-orphan-images` job removes images that no current version references, **after** the version-reference decision from Pitfall 7.
+- Add tests: SVG rejected, HTML-as-PNG rejected, GPS EXIF stripped (assert re-encoded file has no EXIF segment), oversized dimensions rejected, anonymous request to image URL is 302/403/404, Partner request for an unshared article's image is 404.
 
 **Warning signs:**
-`* 100`, `/ 100`, `round(`, `number_format(` in domain code; `float`/`decimal` money columns; PDF total differs from DB total in a test; Stripe link amount differs from invoice total.
+`image/svg+xml` accepted anywhere in the knowledge code; image URLs containing a bucket host; `toMediaCollection` with `usingFileName($request->file()->getClientOriginalName())`; image rows visible in the Documents screen.
 
-**Phase to address:** Foundation (value object, casts, arch rule), Invoicing (rounding rule, snapshot), Finance (conversion), Stripe (amount parity test).
+**Phase to address:** K4 (all of it); K1 reserves the morph map entry and the tags/media uuid morph columns.
 
 ---
 
-### Pitfall 11: Timezone and DST in time tracking (timestamptz, local dates, midnight and DST edges)
+### Pitfall 11: Retrospectives and incidents: time, rates and hidden sub-pages
 
 **What goes wrong:**
-- Laravel's `$table->timestamp()` / `timestamps()` creates `timestamp(0) WITHOUT time zone` on PostgreSQL. The brief requires `timestamptz`; using Laravel defaults silently violates it, including in package tables (`activity_log.created_at`). Precision 0 also truncates fractions.
-- "Which day does this entry belong to": `DATE(started_at)` uses the DB session timezone (UTC), so an entry at 00:30 Prague appears on the previous day in timesheets and reports. Grouping by month for invoicing has the same bug.
-- Manual entry for a local time that does not exist (spring forward) or occurs twice (fall back). DST in Europe/Prague: **2026-10-25** (fall back; right after project start), **2027-03-28**, **2027-10-31**. Durations computed from local wall-clock values are off by one hour on those days; durations from UTC instants are right.
-- Filament `DateTimePicker`/table columns default to the app timezone; if `app.timezone = UTC` the user sees UTC unless every column sets `->timezone()`.
-- Timer elapsed computed in the browser from the browser clock (skewed/DST-changed device) instead of server time.
-- Scheduled jobs at 02:30 skipped or run twice on DST nights.
-- Entries spanning midnight; a timer left running for days.
-- `Carbon::now()` mutable instances copied around; tests with real time.
+- A retrospective "created by a button" with a time overview from tracked time **stores** that overview in the Markdown body. Then: it is searchable and snippet-able; it can be shared with the client by flipping the switch (measured time is exactly what a Partner must never see); it is copied into versions and the activity log; and it becomes stale the moment more time is logged or entries are billed/edited.
+- Time overview mistakes: including running timers (no end), counting subtask time twice when rolling up to the parent task, mixing billed and unbilled without labelling, rounding (the project rule is integer seconds, never rounded), showing rates or money (never in a retrospective), ignoring soft-deleted tasks, using local rather than UTC boundaries for "period".
+- Regenerate-on-click **overwrites Admin edits** to the retrospective text.
+- The button creates duplicates (Pitfall 8) or silently fails when the project has no time.
+- **Incident hub**: sub-pages are "hidden from the listing but searchable". Implemented as a global scope on the model, "hidden" also hides them from search, from the Partner scope's counting, from the policy lookup and from admin tools (cannot open them by id). Or implemented as a UI-only filter, so the sub-pages show in the folder tree and under Partner lists. When the hub is deleted or moved, sub-pages become orphans. A shared hub reveals sub-pages (Pitfall 3).
+- `kind` (article / incident_hub / incident_page / retrospective) changes after creation and breaks assumptions in policies and queries.
 
 **How to avoid:**
-- Convention: `timestampTz(precision: 3 or 6)` / `timestampsTz()` everywhere incl. package migrations; arch test inspects the catalog for `timestamp without time zone`. `app.timezone = UTC`, set one display timezone (`FilamentTimezone::set('Europe/Prague')` plus per-component timezone) and one `Date::use(CarbonImmutable::class)`.
-- Durations are `ended_at - started_at` in seconds computed from instants; stored `duration_seconds` integer (never rounded).
-- Local-date logic only via `AT TIME ZONE 'Europe/Prague'` in SQL, but **filter** with raw range predicates on `started_at` (computed Prague day/month boundaries converted to UTC) so indexes remain usable; group with the expression. Document whether an entry spanning midnight is attributed to the start date.
-- Manual entry validation: reject non-existent local times, resolve ambiguous times explicitly (pick first occurrence, show offset), cap maximum duration (e.g. warn above 24h), forbid future end.
-- Server provides `now` with every timer response; client computes `serverNow - clientNow` offset; stop uses **server** time.
-- Schedule with `->timezone('Europe/Prague')` and avoid 02:00-03:00 slots.
-- Tests: fixtures around 2026-10-25, 2027-03-28 and 2027-10-31, entries at 23:30-00:30 Prague, entries across month boundary, `Carbon::setTestNow`.
+- Retrospective = a normal article row with `kind = 'retrospective'`, `project_id` NOT NULL, unique per project, **never shareable** (CHECK, Pitfall 3), and two parts: a stored Markdown body for the Admin's text (fixed headings generated once) and the **time overview rendered live** from `time_entries` by a query class, shown only on the Admin view screen (Policy-gated) and not part of body, search vector, versions or AI export. If a frozen snapshot is a hard requirement later, store it in a separate Admin-only table, not in the body.
+- Overview query: only stopped entries, per task and per user as durations in integer seconds, subtasks counted once at their own row, billed/unbilled labelled, no rates/prices/currency columns selected at all (select an explicit column list so a future refactor cannot leak them), period in `Europe/Prague` converted to UTC bounds. Unit tests include a running timer, a billed entry, a subtask and a soft-deleted task.
+- The button is idempotent (`firstOrCreate` on `project_id`); "regenerate" only recreates the live overview, never touches the Admin's text.
+- Incident model: `kind` plus `parent_article_id` (hub) with CHECKs: sub-page requires a hub parent of kind `incident_hub`; hub has no parent; `kind` immutable (trigger, as for invoices). "Hidden from listing" is an explicit **list-query filter** (`whereNull('parent_article_id')` in the listing query class), not a global scope; search and direct URL do not use it. Deleting a hub requires deleting or moving its sub-pages first (RESTRICT).
+- Sub-page visibility to a Partner = own flag AND hub flag (Pitfall 3); tests cover sub-page of a shared hub that is itself unshared.
 
 **Warning signs:**
-`DATE(started_at)`, `timestamp without time zone` in the catalog, browser-computed `Date.now() - startedAt`, per-column `->timezone()` missing, "off by one hour" bug reports in late March / late October.
+A table of hours inside the stored body; `->select('*')` from `time_entries` in the overview; a global scope on incident sub-pages; no `UNIQUE` for retrospectives; a "regenerate" that calls `update(['body' => ...])`.
 
-**Phase to address:** Foundation (conventions + catalog test), Time tracking (rules and tests), Reports (grouping queries), CNB rates (scheduler time).
+**Phase to address:** K6 (build); K1 (CHECK constraints and `kind` immutability trigger go into the first migration so later phases cannot forget them).
 
 ---
 
-### Pitfall 12: Running-timer and billing races (one timer per user, double stop, billing while running)
+### Pitfall 12: Sensitive flag that is cosmetic, and exclusion that depends on every future caller remembering
 
 **What goes wrong:**
-- Check-then-insert "is a timer already running?" races: double click, two tabs, or UI + API (Sanctum) at once produce two running entries for one user.
-- "Stop" executed twice (Livewire retry, API retry) overwrites `ended_at` with a later time; "start" switching timers leaves a gap or overlap between old end and new start.
-- UI shows no timer while the API started one; the user starts another; confusion and lost time.
-- Billing selects entries while a timer is stopping; entries added to two concurrent draft invoices; a running entry (no end) gets billed.
-- Entry edited after billing through a path that skips the lock (bulk action, API, raw update).
-- Task/project archived, moved, or client deactivated while the timer runs.
-- Forgotten timer runs for days.
+`sensitive` is added as a boolean and honoured by the Partner view, but not by search snippets, the AI-friendly export, notifications, or the future API/MCP. The milestone explicitly prepares an "AI-friendly storage format" for a later API/MCP milestone; the later milestone reads `knowledge_articles` directly and ships sensitive content to a model provider. Other holes: new articles default to shared or non-sensitive without a prompt; un-flagging happens by editing a field with no audit trail; flagging an article that is currently shared leaves the share active; versions of a sensitive article are not themselves treated as sensitive; the guard auto-flags an article but a later edit that removes the match does not un-flag it (correct) while a later import or restore does reset it (wrong).
+
+Also **prompt injection**: article text is untrusted data once fed to a model; if Partner can write articles (not planned) or a pasted web page contains instructions, the AI consumer may follow them.
 
 **How to avoid:**
-- DB constraint is the authority: **partial unique index** `CREATE UNIQUE INDEX one_running_timer_per_user ON time_entries (user_id) WHERE ended_at IS NULL`. Catch `UniqueConstraintViolationException`; "start" is idempotent (returns the existing running timer) or returns 409 with the current timer.
-- "Start" while another runs = one transaction: lock the user row (`FOR UPDATE`), stop the old entry at `now()`, start the new one at the same `now()`.
-- "Stop" is conditional: `UPDATE ... SET ended_at = ? WHERE id = ? AND ended_at IS NULL`, check affected rows; second stop is a no-op returning the final state.
-- Overlap rules (if required) via an exclusion constraint on `tstzrange(started_at, COALESCE(ended_at, 'infinity'))` with `btree_gist` **[verify extension is available on the Zerops PG service]**.
-- Billing: `invoice_line_id` (or `invoice_id`) nullable FK on entries; link with `UPDATE ... WHERE invoice_line_id IS NULL AND ended_at IS NOT NULL RETURNING id` inside the issue/draft transaction and assert the affected set equals the selected set; `CHECK (invoice_line_id IS NULL OR ended_at IS NOT NULL)`.
-- Billed locking enforced at DB level (Pitfall 13), not only in policies.
-- UI refetches on `visibilitychange` and via a light poll so API-started timers show up; disable the button during the request but treat server state as truth.
-- Scheduler job notifies about timers running longer than N hours; archive/move task blocks or auto-stops with a notification.
-- Concurrency tests with parallel processes (as in Pitfall 6).
+- Defaults fail closed: `client_visible = false`, new articles from the guard path `sensitive = true` when a warn rule fired.
+- One **query seam for machine/outsider consumption**: a single class (and optionally a DB view `knowledge_exportable`) returning only `NOT sensitive` rows plus an explicit allowlist of columns; the AI export, any future API resource and any feed read only from it; an arch test forbids `KnowledgeArticle::` queries in `app/Domain/Api` and in the export namespace outside the seam. Put this in the K6 format spec so the later milestone inherits it.
+- The AI-friendly format (for example Markdown file per article with a small YAML front matter: `id`, `title`, `kind`, `folder_path`, `tags`, `client_ref`, `updated_at`, `format_version`) carries no sensitive articles, no retrospective time data, no attachments binaries, and has a `format_version` so it can evolve. `client_ref` uses the client's UUID or key, not name data that is not needed.
+- Setting `sensitive = true` is one transaction that also sets `client_visible = false`, revokes outstanding attachment URLs (they are per-request authorised, Pitfall 10) and logs the change. Clearing it requires an explicit Admin action with a reason in the activity log.
+- Treat any article text handed to a model as data (document this rule in the format spec; instruct consumers to delimit it).
 
 **Warning signs:**
-`->first()` + `->create()` for timers; no partial unique index; billing code that loads entries into PHP and updates them by id later; support reports of "two timers".
+A second place that filters `where('sensitive', false)` by hand; export code that selects from the table directly; default `true` for `client_visible` in a factory.
 
-**Phase to address:** Time tracking (core), REST API (idempotent start/stop endpoints), Invoicing (billing from entries).
-
----
-
-### Pitfall 13: Immutability of issued invoices and billed time entries enforced only in application code
-
-**What goes wrong:**
-Policies/observers that block edits are bypassed by `Model::query()->update()`, `DB::table()`, `saveQuietly()`, `increment()`, mass actions, relationship `sync`, Filament inline edits, API endpoints added later, `touch()`, a data-fix tinker session, or cascading FKs (`ON DELETE CASCADE` from clients deletes issued invoices). Snapshots are taken, then the PDF is regenerated from *live* client/supplier/settings data and no longer matches what was sent. Marking an invoice "paid" is itself a change to an "immutable" row, so teams either loosen the rule everywhere or block legitimate transitions. Migrations/imports fight the protection. Activity log can be edited or deleted.
-
-**How to avoid:**
-- Define "immutable" precisely: *financial content* (number, issue date, supplier/customer snapshot, lines, amounts, currency, rate snapshot) is frozen; *state* columns (`status`, `paid_at`, `sent_at`, payment links) change only via explicit transitions.
-- **PostgreSQL triggers** (`BEFORE UPDATE OR DELETE`) on `invoices`, `invoice_lines` and billed `time_entries` that compare protected columns with `IS DISTINCT FROM` when `OLD.status <> 'draft'` (or `OLD.invoice_line_id IS NOT NULL`) and raise an exception; `BEFORE DELETE` blocks deletion. FKs from clients/projects/tasks to billed records are `ON DELETE RESTRICT`. Soft-delete conflicts are decided up front (unique indexes with `deleted_at`).
-- Migrations for triggers via raw SQL (`DB::unprepared`), tested with a test that attempts `DB::table('invoices')->update(...)` on an issued invoice and expects an exception.
-- Snapshots: `supplier_snapshot` / `customer_snapshot` JSONB and line text at issue time; PDF rendered from snapshot only; store the generated PDF as the canonical media artifact with a sha256, regenerate only on explicit action.
-- Corrections: credit note + new invoice only.
-- Documented break-glass for imports/maintenance (`SET session_replication_role = replica` or a dedicated migration role), never in app runtime.
-- Activity log append-only (trigger blocking UPDATE/DELETE).
-
-**Warning signs:**
-"Immutable" implemented as `abort_if` in an observer; PDF template reads `$invoice->client->address`; no raw-SQL test; `onDelete('cascade')` on invoice FKs.
-
-**Phase to address:** Foundation (trigger pattern + test helper), Time tracking (billed locking), Invoicing (invoice snapshots/triggers).
-
----
-
-### Pitfall 14: Secrets and real data leaking into a public repository from the first commit
-
-**What goes wrong:**
-- Anything committed is public forever (history, forks, caches); deleting the file later does not help; the only fix is rotation plus history rewrite.
-- Pre-commit hooks live in `.git/hooks`, are not cloned, are skipped by `--no-verify`; CI is the only authoritative gate. `gitleaks/gitleaks-action` may require a license key for organization-owned repositories (check before depending on it); a scan of only the PR diff misses secrets already in history (`fetch-depth: 0`).
-- Secret scanners find keys, not **instance-specific or real-person data**: real company IDs and names (ARES fixtures recorded from real lookups), emails, phone numbers, IPs and hostnames, Zerops project/service IDs, S3 bucket names and endpoints, Stripe `acct_`/`plink_`/`price_` ids, Sentry DSNs, personal absolute paths (`/Users/<name>/...`) in tooling files.
-- Planning/tooling directories: `.claude/` (settings.local.json, absolute paths) and `.planning/` are currently untracked and must be either ignored or sanitized before the first commit that includes them; `.planning/codebase/` was already committed before step 0 and must be scanned by the new tooling, and if the repository is already public, treated as already published.
-- Real ARES company IDs that pass the mod-11 checksum may belong to real companies; "fictional" checksum-valid IDs can collide with real ones.
-- Seeders/fixtures derived from a production dump, screenshots in docs, test mail addresses on real domains.
-- `.env.example` containing live-looking placeholders; docker/zerops config containing real ids; `composer.lock`/`package.json` referencing private registries.
-- Stripe/Zerops/GitHub tokens echoed in CI logs.
-
-**How to avoid:**
-- Step 0 deliverables as already planned, plus: a **local denylist outside the repo** (real names, domains, IDs, paths) used by the pre-commit script and a CI-safe subset of generic patterns; custom gitleaks rules for `plink_`, `acct_`, `whsec_`, `sk_live_`, `rk_live_`, `pk_live_`, Zerops tokens, S3 endpoints, absolute home paths, Czech IČO-like 8-digit numbers outside an allowlist (`12345678`, `00000000`); allowlist file reviewed in PRs.
-- CI: gitleaks (pinned binary or pinned action by SHA) on full history on every push/PR; enable GitHub secret scanning + push protection (free on public repos).
-- Tests never call real ARES: `Http::fake()` with invented payloads; the ARES client validates the ID format (8 digits) before building the URL.
-- `.gitignore` covers `.env*` (except `.example`), `.claude/`, `.idea/`, `storage` dumps, `*.sql`, coverage output; `CONTRIBUTING` and `CLAUDE.md` rule: fictional data only.
-- If something leaks: rotate first, then rewrite history, then notify; document the runbook in SECURITY.md.
-
-**Warning signs:**
-Hook only; scan only on diff; fixtures with real-sounding Czech company names; planning files with local paths.
-
-**Phase to address:** Repo hygiene (step 0), enforced continuously in CI; each fixture-adding phase (Clients/ARES, Stripe, Invoicing) re-checks.
-
----
-
-### Pitfall 15: GitHub Actions and deploy security for a public repo
-
-**What goes wrong:**
-- `pull_request_target` (and `workflow_run`, `issue_comment`) run with base-repo secrets and a write token; checking out and executing the PR head there (`npm install`, `composer install` scripts, test run) hands secrets to any fork author.
-- Script injection: `${{ github.event.pull_request.title }}`, `github.head_ref` (branch names), `github.event.inputs.*`, issue titles interpolated into `run:` blocks execute attacker-controlled shell.
-- Third-party actions pinned to mutable tags (`@v4`): a compromised tag runs with your secrets. Missing top-level `permissions: contents: read`; `GITHUB_TOKEN` default write scope; `actions/checkout` persisting credentials.
-- Deploy secrets (Zerops token) stored as repository secrets, reachable by any workflow, instead of **environment secrets** in the `production` environment.
-- "Deploy only from a published release": the release tag can point to any commit (not necessarily on `main`); anyone with write access can publish a release; environment approvals set to "prevent self-review" lock out a solo maintainer, while leaving it off makes the approval ceremonial.
-- `actions/cache` or artifacts shared from untrusted PR builds into the deploy build (cache poisoning); `workflow_dispatch` inputs unvalidated; self-hosted runners on a public repo.
-- Dependabot / forks do not get secrets: CI that needs a secret to pass fails for contributors (tempting to "fix" with `pull_request_target`).
-
-**How to avoid:**
-- CI on `pull_request` (no secrets) only. Do not use `pull_request_target` at all; if ever needed, never check out or execute PR head code.
-- Pass untrusted values via `env:` and reference `"$VAR"` in the script; never interpolate `${{ }}` of event data into `run:`.
-- Pin every third-party action to a full 40-char commit SHA with a version comment; Dependabot `github-actions` ecosystem to update; CODEOWNERS on `.github/workflows/`; prefer first-party actions or inline scripts.
-- Workflow defaults: `permissions: {}`/`contents: read`, grant per job; `persist-credentials: false`; `concurrency` group for deploys.
-- Deploy workflow: `on: release: types: [published]` and `workflow_dispatch`; job `environment: production` (required reviewers); the Zerops token is an **environment secret**; first step verifies the release tag's commit is an ancestor of `main` (`git merge-base --is-ancestor`); restrict environment deployment branches/tags (`v*` protected tags); deploy from a clean build that does not reuse PR caches.
-- Tool installs (zcli, gitleaks) pinned by version + checksum.
-- Solo-maintainer note: required reviewer = the maintainer is still useful as a deliberate pause and audit trail; pair it with branch protection and 2FA.
-
-**Warning signs:**
-`pull_request_target` anywhere; `@v3`-style refs; `${{ github.event` inside `run:`; secrets at repo level; Zerops GitHub integration enabled alongside Actions deploy (Pitfall 16).
-
-**Phase to address:** Repo hygiene (CI scan, workflow lint, pinning) and Foundation (deploy workflow). Add `actionlint`/`zizmor` to CI.
-
----
-
-### Pitfall 16: Zerops deployment specifics (migrations, scheduler, worker, multi-container state, proxy, deploy gate)
-
-**What goes wrong:**
-- **Migrations**: running `php artisan migrate` in every container's `initCommands` races when more than one container starts; `--isolated` needs a shared cache store for its lock (a per-container file cache does not lock across containers). Verified: Zerops provides `zsc execOnce <key> -- <command>` which runs once per key across containers; keying with `${ZEROPS_appVersionId}` runs once per deployed version; if the command fails all containers report failure and the deploy fails (unless `--retryUntilSuccessful`).
-- During a rolling deploy the **old code runs against the new schema**: renames/drops in the same release break running requests and queued jobs. Jobs serialized by new code can be consumed by the old worker.
-- **Scheduler**: `schedule:run` in `run.crontab` with `allContainers: true` runs on every container (duplicate CNB/notification jobs); Zerops supports `allContainers: false` to run on one container (verified). Without it, `->onOneServer()` needs a shared cache lock.
-- **Worker**: a long-running `queue:work` is not a web process; run it as a separate service built from the same repo (or via the supported process mechanism) **[verify current Zerops topology for queue workers]**; no one restarts it after deploy unless the container is replaced; `--max-time`/`--memory` set; job `timeout` must be lower than the connection `retry_after`, otherwise jobs run twice.
-- **Ephemeral filesystem and per-container state**: file cache/sessions/rate-limit/Livewire temporary uploads on local disk break on 2+ containers (upload lands on container A, form submit on B); `Cache::lock`, `onOneServer`, `--isolated`, Spatie settings/permission caches all need a shared store.
-- **Build vs runtime env**: `config:cache` run in the build step bakes build-time env, not runtime env; `APP_KEY` rotation breaks encrypted columns and sessions.
-- **Trusted proxies**: TLS terminates at the platform load balancer; without `trustProxies` Laravel generates `http://` URLs, signed URLs fail validation, Filament assets/mixed content break, Stripe webhook URL and redirect loops appear.
-- **Deploy gate bypass**: Zerops' native GitHub/GitLab integration can deploy on push/tag and ignores GitHub environment approvals.
-- Roles/permissions seeded by a dev seeder never exist in production after deploy.
-- Backups "handled by the database service" are assumed, never restore-tested.
-
-**How to avoid:**
-- `zerops.yml`: `initCommands: zsc execOnce ${ZEROPS_appVersionId} --retryUntilSuccessful -- php artisan migrate --force`; additive-only (expand/contract) migrations with a CI check for dangerous ops (drop/rename) and a documented two-release procedure.
-- Scheduler: `crontab` entry with `allContainers: false` for `php artisan schedule:run` every minute; scheduler heartbeat visible in the admin UI (Pitfall 18). Jobs also `withoutOverlapping`.
-- Worker as separate service/`setup`; `--max-time=3600 --tries=3 --backoff=...`; graceful SIGTERM; `retry_after` > longest job timeout.
-- Shared store (Redis/Valkey or DB) for cache, sessions, locks; Livewire temp uploads to S3 (with CORS configured); logs to `stderr`; `filament:cache-components`, `config:cache`, `route:cache`, `view:cache`, `icons:cache` in `initCommands`/runtime phase, not build.
-- `trustProxies(at: '*')` (platform LB only reaches the app); test signed URL and webhook URL in the deployed environment.
-- Disable Zerops auto-deploy from Git; deploy only via the Actions workflow + `zcli push` with token in environment secrets.
-- Idempotent `kokpit:install`/migration-based seeding for roles/settings; first-admin creation command, not a seeder with a default password.
-- Quarterly restore drill documented in SECURITY/README.
-- Queue driver decision (Phase 1): database driver on the same PostgreSQL gives atomic dispatch with the transaction and one fewer service; with Redis set `after_commit => true` (else jobs run before the row is visible and fail with `ModelNotFoundException`). Either way dispatch from inside a transaction must use `afterCommit()`.
-
-**Warning signs:**
-Duplicate scheduled notifications; "file not found" after upload with 2 containers; http links in emails; migration failing only in production; `config:cache` in `buildCommands`.
-
-**Phase to address:** Foundation (deploy pipeline, queue, scheduler), then every migration-carrying phase (expand/contract discipline).
-
----
-
-### Pitfall 17: S3 signed URLs, uploads and downloads (documents, invoice PDFs)
-
-**What goes wrong:**
-- Presigned URLs generated at **list render time** for every row and embedded in HTML/Livewire snapshots (leak + cost), or stored/cached beyond their expiry; long expiries ("7 days") become de facto public links.
-- Presigning with the **internal** S3 endpoint: the signature covers the host, so a URL that works server-side is unreachable (or invalid when the host is rewritten) from the browser. Path-style vs virtual-host style (`AWS_USE_PATH_STYLE_ENDPOINT`) differs by provider.
-- Bucket accidentally public or objects with public ACL; code calling `getUrl()` instead of `getTemporaryUrl()`; thumbnails/conversions on a public disk.
-- Authorization done at link creation for a list, not at download: ZIP/bulk endpoints trust client-supplied IDs.
-- ZIP download built in memory or in `/tmp` of an ephemeral container (large files exhaust memory/disk, timeouts); bulk delete removes DB rows but leaves orphaned objects (or vice versa).
-- User-uploaded HTML/SVG served inline from the bucket origin (stored XSS); wrong content type; no size/MIME validation.
-- Livewire temporary uploads on local disk with multiple containers (Pitfall 16).
-- Sorting out CORS for direct browser uploads.
-
-**How to avoid:**
-- Documents are always downloaded through an app route (`/documents/{media}/download`) that runs the policy check, then 302s to a **short-lived (1-5 min)** presigned URL generated at click time, with `ResponseContentDisposition: attachment` and the original filename.
-- Separate `endpoint` (internal) and public `url`/presign endpoint config; test presigned URL from outside the platform network in a deploy smoke test.
-- Private bucket, block public access, no ACLs; custom `Media` URL generator that only supports temporary URLs; arch test forbids `getUrl()` on the media disk.
-- ZIP: stream entries from S3 to the response (ZipStream), re-authorize **every** id server-side, cap count/size, perform in a queued job writing to S3 with a temporary link if large.
-- Delete flow: soft-delete row, queued job removes objects, reconciliation command for orphans.
-- Validate size, extension and sniffed MIME; deny inline rendering; random object keys.
-- Invoice PDFs are immutable artifacts (Pitfall 13); consider bucket versioning.
-
-**Warning signs:**
-`Storage::url()`/`getUrl()` in code; presigned URLs visible in page source for all rows; works locally, 403/SignatureDoesNotMatch in production; memory spikes on ZIP.
-
-**Phase to address:** Foundation (disk config, deploy smoke test), Documents (download route, ZIP, bulk delete), Invoicing (PDF storage).
-
----
-
-### Pitfall 18: Queue and scheduler failures are invisible, so "nothing slips through unnoticed" is not true
-
-**What goes wrong:**
-- Failed jobs accumulate in `failed_jobs` silently; the scheduler or worker simply stops (container crash, cron misconfig) and nothing alerts.
-- Alerting is itself a queued mail: when the queue is broken the alert is never sent.
-- Jobs swallow exceptions (`try/catch` + log) and report success; `tries=1` with no `failed()` hook; `ShouldBeUnique`/`WithoutOverlapping` locks left behind after a crash block the next run.
-- Specific to this product: CNB rate job succeeds but loads nothing (stale rates), Stripe webhook processing job fails (paid invoice shows unpaid), PDF/email job fails (invoice not delivered but marked "sent"), ARES/external timeouts.
-- `queue:prune-failed` runs before anyone looked; webhook-client's `exception` column is never surfaced.
-
-**How to avoid:**
-- Foundation: `Queue::failing()` / `JobFailed` listener that records an admin-visible alert (DB notification + a synchronous mail or log channel, not queued); admin-only Filament page for failed jobs with retry/forget; dashboard "system health" widget: failed jobs count, oldest pending job age, **scheduler heartbeat** (last `schedule:run` tick stored by a scheduled task), **newest CNB rate date**, **unprocessed webhook calls older than N min**, **unsent invoice emails**.
-- `queue:monitor` with thresholds scheduled; optional dead-man's-switch ping to an external monitor (URL in env, never committed) with `pingOnFailure`/`thenPing`.
-- Domain-level states instead of fire-and-forget: `invoice.sent_at` set only after a successful send, `email_status = failed` visible with a retry action; webhook call status; PDF generation status.
-- Jobs: explicit `$tries`, `$backoff`, `failed()` hook, no swallowed exceptions, unique-lock expiry (`uniqueFor`), `retry_after` > timeout.
-- Prune failed jobs only after 30+ days.
-
-**Warning signs:**
-`failed_jobs` non-empty with nobody aware; `catch (Throwable) { Log::error(...); }` in jobs; mail alerts dispatched via the same queue.
-
-**Phase to address:** Foundation (failure alerting + health widget skeleton); extended in CNB rates, Stripe, Invoicing (each contributes its health signal).
-
----
-
-### Pitfall 19: Sanctum API (`/api/v1`) mixing session and token auth, Partner access and token hygiene
-
-**What goes wrong:**
-- Enabling `statefulApi()` lets the Filament session cookie authenticate API calls (CSRF surface; Partner session can reach API routes). Sanctum's `tokenCan()` **always returns true for first-party SPA (session) requests** (verified in Sanctum docs), so ability checks give no protection in that mode.
-- Partner users can mint tokens or reach endpoints that return time/rates.
-- Tokens never expire by default (verified); `last_used_at` gives no revocation; no expiry + public repo docs encourages leaving tokens around; tokens of deactivated users still work.
-- Abilities declared but not enforced per route/policy; the time-entry endpoint skips the global scope/policy because it only checks "authenticated".
-- Rate limiting by IP only (behind a proxy everyone shares one IP) or not at all on timer endpoints; OpenAPI docs page (e.g. Scramble) exposed publicly in production.
-- Uuid `tokenable` morph left bigint (Pitfall 1).
-
-**How to avoid:**
-- API is token-only: do not call `statefulApi()`; API guard separate from the Filament web guard. Token creation UI and API access limited to Admin by policy; Partner has zero API access in v1.
-- Abilities per endpoint group (`time:read`, `time:write`, `timer:control`) enforced with `ability`/`abilities` middleware **and** policies; `expiration` configured (e.g. 365 days) plus per-token expiry and `sanctum:prune-expired` scheduled; deactivation revokes tokens.
-- Rate limiter keyed by token/user id; idempotent start/stop (Pitfall 12); strict JSON validation via Spatie data/form requests; consistent error format.
-- Gate API docs behind admin auth or disable in production; keep the OpenAPI spec generated in CI and checked in only if free of instance data.
-- Tests: token without ability gets 403; Partner token impossible; deactivated user token rejected; canary leak test on API.
-
-**Warning signs:**
-`statefulApi()` present; `auth:sanctum` as the only middleware; no `expiration` in config.
-
-**Phase to address:** REST API (with Foundation auth decisions and Partner audit coverage).
+**Phase to address:** K1 (columns, CHECK, defaults), K6 (seam, format spec, arch test).
 
 ---
 
 ## Moderate Pitfalls
 
-### Pitfall 20: Synchronous ARES lookup blocks and breaks forms
-**What goes wrong:** ARES is slow or down; a Livewire action waits on it; timeouts surface as 500s; unvalidated input forms URL.
-**Prevention:** 3-5 s timeout, validate 8-digit ID (and checksum) before request, catch and degrade to manual entry with a clear Czech message, short cache, rate limit, admin-only action, `Http::fake()` in all tests.
-**Phase:** Clients.
+### Pitfall 13: Filament specifics that bite this feature
+**What goes wrong:** The editor value travels in every Livewire request; `->live()` on a large body makes typing laggy and balloons payloads. A Resource without `getEloquentQuery()` scoping relies solely on the model scope. A table column `->searchable()` on `body` runs ILIKE over a large TOAST column and is unindexed. `$isGloballySearchable` left true. Separate view and edit pages share a form schema, so a "view" page accidentally has editable state. Notifications and breadcrumbs include titles of hidden articles.
+**Prevention:** `->live(onBlur: true)` or none; table columns searchable only on `title`; custom Livewire search page, not table search, for body search; `$isGloballySearchable = false`; the view page is an Infolist rendering the single renderer; authorise in each page and action; Livewire properties for ids are `#[Locked]`. **Phase:** K2, K5.
 
-### Pitfall 21: Invoice language and PDF rendering in the wrong locale or fonts
-**What goes wrong:** The panel locale is `cs`; a queued job rendering an English invoice or email runs under the default locale (mixed languages); number/date formatting differs (`1 234,56 Kc` vs `CZK 1,234.56`); PDF fonts lack Czech glyphs (r with caron, u with ring, e with caron); the chosen PDF driver (Chromium-based) is heavy or absent on the Zerops runtime.
-**Prevention:** Render with `App::setLocale($client->invoice_language)` / `withLocale` inside the job; mailables `->locale()`; locale-aware formatters; embed a font with full Latin Extended-A; decide PDF driver and verify it in the deployed runtime in Foundation/Invoicing spike; snapshot test both languages; PDFs stored once.
-**Phase:** Invoicing (spike in Foundation if Chromium is required).
+### Pitfall 14: Tags shared across features
+**What goes wrong:** `spatie/laravel-tags` is global; the existing client tags and the new knowledge tags mix, translatable-name JSON and slug collisions appear, tag counts show other clients' tag names to a Partner, and `taggables` has no FK so deleting an article leaves rows.
+**Prevention:** dedicated `type = 'knowledge'`; explicit tag management only for Admin; delete tags through the same Action as the article; `taggables.taggable_id` is uuid (existing convention, add to the arch test); show tags on the Partner view only for the visible article. **Phase:** K1.
 
-### Pitfall 22: Kanban ordering with `eloquent-sortable` under concurrency
-**What goes wrong:** `setNewOrder` rewrites many rows, two users/drag events interleave, positions duplicate; status change and position update are separate writes; unbounded columns; Partner reorder endpoint reachable via Livewire.
-**Prevention:** One transaction per move updating status + position; fractional/gap positions (or per-column reindex under lock); partial column loading; authorize move per role (Partner cannot change status); server returns authoritative order.
-**Phase:** Kanban.
+### Pitfall 15: Morph map, UUID and arch tests fail late
+**What goes wrong:** New models are not in `MorphMap::MAP` (`enforceMorphMap` throws at runtime on the first media/tag/activity write), `HasUuids` missing on the new package-model subclasses, `uuid` morph columns. The repository's catalog-introspecting arch tests catch this, but only after the feature is written.
+**Prevention:** first K1 task = migration + model + morph map + declarations so the red arch tests drive the rest. **Phase:** K1.
 
-### Pitfall 23: "Unbilled time / unpaid invoice" dashboards drift from the ledger
-**What goes wrong:** The Core Value depends on these numbers, but dashboard queries re-implement rules (billable? fixed-price project? archived project? running timer? proforma counted as receivable? credit note offset? partial payment? due date in Prague time) differently from billing code.
-**Prevention:** One query/definition object (or DB view) used by billing, reports and the dashboard; reconciliation test: sum of unbilled seconds on the dashboard equals what the "bill all" action would select; scheduled "unbilled older than N days" and "overdue invoices" notifications; overdue computed on `due_date` in Europe/Prague.
-**Phase:** Reports, Invoicing.
+### Pitfall 16: Search page does too much work per request
+**What goes wrong:** `ts_headline` and `ts_rank` over every match; counting with `COUNT(*)` over the same expensive expression; loading bodies for the list; recursive tree queries per node; N+1 on tags, folder paths and client names.
+**Prevention:** two-step query (ids + rank on the indexed column with `LIMIT 50`, then headline for the page); `simplePaginate` or a capped total; select explicit columns; eager-load tags and folder path with one query; a query-count test on the list and search pages. **Phase:** K5.
 
-### Pitfall 24: Spatie settings, permission and cache state across containers
-**What goes wrong:** Settings cache or permission cache on file store gives stale supplier/rates data across containers; role cache not reset after seeding in migration; secrets stored in settings table unencrypted.
-**Prevention:** shared cache store; call `permission:cache-reset` in deploy; keep Stripe/S3/SMTP secrets in env only; settings only for non-secret business data; snapshot values onto documents (Pitfall 13).
-**Phase:** Foundation.
+### Pitfall 17: Article-to-article links
+**What goes wrong:** relative-path links break on move/rename; links by title leak a hidden target's title to a Partner; a link to a deleted article is a 404 with no explanation.
+**Prevention:** internal links use the UUID (`kokpit-article:<uuid>` resolved by the renderer); the renderer shows the link text only (never the target title) and a neutral "no access" state when the viewer cannot open it; deleting leaves a visible "removed" state. **Phase:** K2 (renderer), K6 (Partner checks).
 
-### Pitfall 25: Activity log volume and content
-**What goes wrong:** Every timer tick or model touch logged; rows with large property blobs; PII and rates in diffs; log rows referencing deleted subjects; no retention plan.
-**Prevention:** `logOnly`, `dontSubmitEmptyLogs`, `logOnlyDirty`; log domain events (timer started/stopped, invoice issued/paid) rather than attribute spam; prune policy; Admin-only (Pitfall 4).
-**Phase:** Foundation.
-
-### Pitfall 26: Czech collation and search
-**What goes wrong:** Database collation (set at creation, not changeable cheaply) sorts Czech strings wrongly (diacritics, "ch" digraph) and `ILIKE` ignores accents poorly, so "Novak" does not find "Novak with accents".
-**Prevention:** Check Zerops PG collation early; use `unaccent` extension (if allowed) or an ICU collation (`cs-CZ-x-icu`) for sorted columns; store a normalised search column when needed.
-**Phase:** Foundation (decision), Clients/Projects (search).
-
-### Pitfall 27: Webhook and external payload retention (privacy)
-**What goes wrong:** `webhook_calls` and activity log keep customer personal data indefinitely.
-**Prevention:** retention settings, minimal stored payload, document in SECURITY/README.
-**Phase:** Stripe.
-
-### Pitfall 28: Dependency and licence drift (AGPL compatibility)
-**What goes wrong:** A paid/closed Filament plugin or PDF engine slips in; transitive licence incompatible with AGPL-3.0; AGPL network clause requires offering source to users (a "Source" link in the UI is good practice).
-**Prevention:** CI licence check (`composer licenses`/allowlist), review each new package, footer link to the repository, LICENSE/NOTICE files.
-**Phase:** Repo hygiene / Foundation, ongoing.
-
-### Pitfall 29: Soft deletes and uniqueness
-**What goes wrong:** Unique indexes ignore `deleted_at` (cannot recreate a deleted project key) or include it (key reused, breaking frozen `KEY-N` links).
-**Prevention:** decide: project keys are never reused (plain unique, deleted projects keep their key); partial unique indexes only where reuse is intended; billed/issued data is never deleted.
-**Phase:** Projects/Tasks.
+### Pitfall 18: Client/project link and share switch semantics drift
+**What goes wrong:** project link without client link, article linked to a project of client A but `client_id` of client B, switch turned on with no client, project made non-client-visible later while the article stays shared, client account deactivated.
+**Prevention:** DB CHECK `client_visible => client_id IS NOT NULL`; `client_id` derived from the project when `project_id` is set (single source, composite FK `(project_id, client_id)` if the existing schema allows) **[verify against the projects table]**; the Partner predicate re-checks the project's visibility at read time; changing the project's client or visibility triggers the same reset Action as relinking. **Phase:** K1 (constraints), K6 (switch).
 
 ---
 
 ## Minor Pitfalls
 
-### Pitfall 30: UUID v7 details
-**What goes wrong:** v7 ids encode creation time (visible in URLs/API); ordering by `id` is only approximately chronological within the same millisecond/process; developers use `ORDER BY id` as a strict tiebreaker or business sequence.
-**Prevention:** order by explicit `created_at, id`; never use uuid order as a business sequence (use Pitfall 6); accept timestamp disclosure and note it in docs.
+### Pitfall 19: Czech UI and canonical English
+**What goes wrong:** user-facing strings hard-coded, enum labels, Czech collation in sorting folders and tags (`ch` sorts after `h`), diacritics lost in generated slugs.
+**Prevention:** all UI text in `lang/cs`; sort with an explicit ICU/`cs-CZ-x-icu` collation or by `sort_order`, and verify the database locale **[verify]**; do not build URLs from names. **Phase:** K1/K2.
 
-### Pitfall 31: Route binding and ids in logs
-**What goes wrong:** malformed ids returning 500; ids in analytics.
-**Prevention:** route `whereUuid`, test 404s.
-
-### Pitfall 32: Filament bulk actions and "select all across pages"
-**What goes wrong:** bulk delete/export over a filtered set with hidden records.
-**Prevention:** scope via model global scope; policy per record in bulk; confirmation text.
-
-### Pitfall 33: Stale docs and AI-generated code for older Filament/Laravel majors
-**What goes wrong:** snippets compile on v3 but not on the installed major.
-**Prevention:** version-matched docs lookup, pin versions, CI `composer outdated --direct` weekly.
-
-### Pitfall 34: `.env.example` and README drift
-**What goes wrong:** new env vars missing from `.env.example`; self-hosters cannot deploy.
-**Prevention:** CI check that every `env('X')`/`config` env key appears in `.env.example`.
+### Pitfall 20: Repository hygiene in tests, seeders, docs and screenshots
+**What goes wrong:** a developer pastes a real article to produce a realistic fixture; a demo seeder runs in production; a secret-guard test contains a token-shaped literal and trips the scanner; documentation screenshots show real folder names; planning docs quote structure from a real workspace.
+**Prevention:** fixtures and factories use a fictional corpus ("Acme Studio s.r.o.", `example.com`, company ID `12345678`) written from scratch; guard test secrets are assembled from fragments at runtime; any importer, if it is ever added, ships **only** with a fictional input fixture and the real export directory lives outside the repository (and its path is never committed); the demo seeder is guarded by `ProductionConfigGuard`; run `scripts/check-sensitive.sh` on every new planning and test file; never bypass the hook or edit the allowlist without owner approval. **Phase:** every phase, a standing review item.
 
 ---
 
@@ -612,162 +395,152 @@ Duplicate scheduled notifications; "file not found" after upload with 2 containe
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Keep package migrations as published (bigint morphs) | Faster scaffolding | Runtime insert failures, rewrite of every package table | Never (decide in Foundation) |
-| Shared Admin Resource with `visible()` toggles for Partner | Less code | Permanent leak risk; every new field needs two decisions | Never for money/rates/finance; acceptable only for trivial presentation differences |
-| Immutability via observers/policies only | Quick | Bypass by any raw query; audit integrity lost | Never |
-| `MAX(n)+1` for numbers | Trivial | Duplicates under concurrency | Never |
-| Float or `decimal` money columns | Familiar | Rounding drift between PDF/DB/Stripe | Never |
-| `timestamp()` (without tz) | Laravel default | DST/day-boundary bugs; contradicts brief | Never |
-| Skipping CI test with real parallel processes | Speed | Races reach production | Only for non-sequence, non-timer code |
-| Queue driver `sync` in production | No worker to run | Slow requests, lost isolation of failures | Never |
-| Alerting via the same queue | Simple | Silent total failure | Never |
-| Manual-only restore testing | Less work | Unknown recoverability | Acceptable in MVP if documented and scheduled before first real invoice |
-| Hardcoded Czech strings | Fast | i18n rework | Never (use `lang/cs` from first screen) |
+| `Str::markdown($body)` directly in a Blade view | one line | stored XSS; two render paths diverge | Never |
+| Reuse `RichText` sanitiser for articles | already exists | images dropped, then "fixed" by loosening it for the whole app | Never; build a sibling sanitiser |
+| Filament `MarkdownEditor` attachments enabled | free image upload button | public disk, bypasses policy, EXIF, SVG | Never |
+| Body stored only in the article row, versions added "later" | faster K2 | cannot recover history; restore semantics designed under pressure | Never: version table in K3 but `lock_version` and Action seam in K2 |
+| `english` or no text search config | search works today | wrong stemming, hard reindex later | Never; use `kokpit_cs` from the first migration |
+| Search with `ILIKE '%q%'` on body only | no FTS work | sequential scans, no ranking, no snippets | Only as a temporary internal tool, never behind the Partner view |
+| Visibility enforced in the Resource query only | fast | raw SQL search, API, export bypass it | Never; model global scope + DB CHECK + Policy |
+| Full body copy per save, no dedupe | trivial | storage growth | Acceptable in K3 if dedupe by hash and a coalescing window exist |
+| Closure table / `ltree` for the tree | scalable ancestors | extra moving parts for a few hundred nodes | Not needed; revisit above ~10k nodes |
+| Skip optimistic locking "single user" | less code | silent lost edits with two tabs | Never |
+| `sensitive` as a UI hint only | quick | AI/API milestone leaks it | Never; query seam from K6 |
 
 ## Integration Gotchas
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| Stripe webhooks | Default webhook-client validator, body re-encoded, no event-id uniqueness | Custom Stripe validator on raw body, unique event id, 2xx for duplicates, queue processing |
-| Stripe Payment Links | One reusable link per invoice, match by amount | `completed_sessions.limit = 1`, deactivate on settle, match by link id/reference, validate amount+currency |
-| CNB | Key rates by requested date, ignore `množství`, float parse | Key by header date, store units, decimal parse, latest-on-or-before lookup with staleness cap |
-| ARES | Real calls in tests, unvalidated id in URL, no timeout | Fake HTTP, 8-digit validation, short timeout, graceful fallback |
-| S3-compatible storage | Internal endpoint presigned, public ACL, `getUrl()` | Public presign endpoint, private bucket, app route + short-lived temporary URL |
-| Zerops | `migrate` in every container, scheduler on all containers, Git auto-deploy | `zsc execOnce`, `allContainers: false`, Actions-only deploy |
-| GitHub Actions | Tag-pinned third-party actions, `pull_request_target` | SHA pinning, `pull_request`, environment secrets and approval |
-| Sanctum | `statefulApi()` plus tokens, no expiry | Token-only API, abilities + policies, expiry + prune |
-| Spatie activitylog/permission/medialibrary/tags | Published bigint morph migrations | uuid morph edits + subclass models in config + arch test |
-| Filament Export / notifications | Rely on ambient `auth()` in queued jobs | Pass explicit ids/filters; compute recipients explicitly |
+| league/commonmark (via Laravel) | default options | escape HTML, no unsafe links, sanitiser pass, internal image scheme |
+| Filament `MarkdownEditor` | enabling attachments; trusting its preview | `fileAttachments(false)`; preview through the same renderer or off |
+| Filament global search | leaving knowledge resource searchable | `$isGloballySearchable = false`; own search page |
+| `spatie/laravel-medialibrary` | default collection, SVG generator, user filename, conversions on huge images | private disk collection, content sniff + re-encode, dimension cap, UUID names |
+| `spatie/laravel-activitylog` | `logAll()` storing body diffs | log metadata only, test that no body is stored |
+| `spatie/laravel-tags` | global tag list shared with clients | dedicated tag type; Admin-only tag management |
+| `spatie/eloquent-sortable` | read-modify-write ordering under concurrency | `sort_order` assigned under the tree advisory lock |
+| PostgreSQL FTS | `to_tsquery` on raw input; no Czech config; unescaped `ts_headline` | own query builder; `kokpit_cs`; sentinel markers + escape |
+| PostgreSQL `unaccent` | calling the one-argument (STABLE) form in an index/generated column | schema-qualified dictionary inside a text search configuration or the existing `kokpit_search_text` wrapper |
+| S3-compatible storage | presigned URLs with long expiry; orphaned objects after DB cascade | per-request authorisation, 2-5 minute URLs, Actions that delete objects |
+| Sentry / logging | request state with body in exception context | scrub `body`, never put matches in messages |
+| Existing audit harness | adding models/routes without declarations | declare in K1; canary per visibility state |
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| `AT TIME ZONE` on the filtered column | Seq scans on time entries/reports | Filter with UTC range predicates, group by expression; index `(client_id, started_at)`, `(user_id, started_at)` | Tens of thousands of entries (a few years of one freelancer) |
-| Scope via `whereHas` across tables | Slow lists, N+1 in Partner screens | Denormalized indexed `client_id` | Thousands of tasks/time entries |
-| Presigning every row on list render | Slow tables, URL leakage | Presign at click | Lists above ~50 rows |
-| Filament `preload()` on large selects | Slow forms, large HTML | Searchable async selects with scoped queries | Thousands of tasks/clients |
-| Activity log on every update | Table growth, slow writes | Log domain events, retention | Months of timer edits |
-| Unbounded kanban columns | Slow board, heavy Livewire payload | Limit/paginate per column | Hundreds of tasks per column |
-| Cache-miss thundering in dashboard | Slow home page | Cache with role/user key, short TTL | Several widgets with aggregate queries |
-| ZIP built in memory | OOM on ephemeral container | Streaming | Tens of MB |
+| `ts_headline` for every match | slow search page | headline only for the shown page | about 1k articles with large bodies |
+| Trigram GIN on `body` | index several times table size, slow writes | trigram on title only, tsvector for body | about 500 large articles |
+| `SELECT *` incl. body in lists | slow index page, memory | explicit columns, `defer` | about 200 articles |
+| Eager loading all versions | huge payloads | count with `withCount`, paginate versions | a few dozen versions per article |
+| Per-node tree queries | N+1 on the tree sidebar | one recursive CTE / one query + in-memory build | about 100 folders |
+| Livewire `live()` on body | laggy typing, large payloads | `onBlur` or none | bodies above about 50 KB |
+| Image conversions in a worker with no memory cap | queue worker OOM, retry loop | pixel/byte caps before decode, `--memory` | a single huge upload |
+| Re-indexing tsvector in the web request for bulk operations | timeouts | generated column; bulk operations through a job | bulk moves/imports of hundreds |
+| tsvector size overflow | save fails with "string too long" | cap body length and `left()` in the expression | about 1 MB of text |
 
 ## Security Mistakes
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| UI hiding instead of authorization (HIGH) | Partner reaches admin data via URL/Livewire call | Default-deny bases, policies, canary tests |
-| Fail-open global scope in queued code (HIGH) | Worker exposes cross-client data | Explicit ids; fail-closed scope for Partner; arch grep |
-| Webhook signature disabled or default validator (HIGH) | Forged payments | Stripe-specific validator, tolerance, raw body |
-| Secrets/instance data in public repo (HIGH) | Credential theft, privacy breach | Hook + CI gitleaks + denylist + rotation runbook |
-| `pull_request_target` / `${{ }}` injection (HIGH) | Secret exfiltration, supply-chain compromise | Rules in Pitfall 15 |
-| Long-lived presigned URLs (MEDIUM) | De facto public documents | Minutes-level expiry, click-time presign |
-| CSV/formula injection in exports (MEDIUM) | Code execution in spreadsheets of admin | Prefix dangerous cells |
-| Tokens without expiry, Partner tokens (MEDIUM) | Persistent access | Expiry, admin-only, revocation on deactivate |
-| Existence oracles via `unique`/`exists` errors (LOW-MEDIUM) | Information disclosure | Scoped rules, generic messages |
-| Livewire public properties holding sensitive data (MEDIUM) **[verify]** | Data in snapshot JSON | Whitelist fill, canary on raw payloads |
-| Default admin credentials / seeded password (HIGH) | Takeover of self-hosted instances | Install command prompting for admin, no default |
-| Missing security headers/CSP, no 2FA for admin (MEDIUM) | XSS/credential theft impact | Add headers middleware; consider Filament MFA for Admin |
-| Unrestricted file upload types (MEDIUM) | Stored XSS, malware hosting | Allowlist, attachment disposition |
+| Raw HTML / unsafe links in Markdown | stored XSS in Admin and Partner sessions (HIGH) | Pitfall 1 |
+| `ts_headline` output unescaped | XSS in search results (HIGH) | Pitfall 4 |
+| Secret in body, versions, activity log, snippets | credential disclosure to Partners, logs, AI (HIGH) | Pitfall 2 |
+| Search/tag/folder/version/attachment endpoints without visibility predicate | client data leak across clients (HIGH) | Pitfall 3 |
+| Retrospective with time in a shareable body | measured time disclosed to Partner (HIGH) | Pitfall 11 |
+| SVG or polyglot upload served inline | stored XSS, content sniffing (HIGH) | Pitfall 10 |
+| EXIF GPS kept in shared images | location disclosure (MEDIUM) | re-encode, strip |
+| External image URLs rendered | tracking, IP leak, mixed content (MEDIUM) | block external images in renderer, CSP |
+| Public or long-lived attachment URLs | access after revoke (MEDIUM-HIGH) | authorised streaming or short presigned URLs |
+| Partner write access to articles | stored XSS from client side, prompt injection (HIGH) | Partner is read-only in v1.1 |
+| Share inherited from folder/hub | silent over-sharing (HIGH) | per-article flag, AND rule for sub-pages |
+| Livewire id tampering on edit/restore | unauthorised action (MEDIUM) | `#[Locked]`, authorise per action |
+| Sensitive articles in the AI/API path | secrets to a model provider (HIGH, later milestone) | single export seam, arch test |
 
 ## UX Pitfalls
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| Timer state differs between UI and API | Lost or double-counted time | Server-truth, refetch on focus |
-| Rounding hidden from the user | "Why is this 1 haléř off?" | One documented rule, stored values shown everywhere |
-| Gap in invoice numbers after cancelled draft | Accounting confusion | Number only at issue; credit notes for corrections |
-| Partner sees disabled/empty screens instead of tailored ones | Confusion, support load | Partner-specific resources and Czech copy |
-| Silent failure of email/Stripe processing | Invoice looks sent/unpaid wrongly | Explicit statuses with retry actions |
-| Czech decimal comma and date input errors | Wrong amounts | Locale-aware inputs, strict parsing, confirmation of totals |
-| Weekend/holiday rate surprises | "Why is yesterday's rate used?" | Show rate date on the invoice and in the form |
-| DST confusion (non-existent local time) | Rejected manual entries | Clear error with suggested alternative |
+| Guard blocks with a vague message | Admin cannot tell what to fix | rule name + line number, masked, with "mark sensitive and save" |
+| Guard cries wolf on UUIDs and hashes | alert fatigue, "save anyway" habit | tuned rules, code-fence aware, separate block vs warn |
+| Silent normalisation | unexpected edits to text | visible notice of what changed (unwrapped fence, stripped characters) |
+| Restore replaces current text with no undo | fear of using history | restore creates a new version, diff before confirm |
+| Edit conflict loses the typed text | rage | show conflict, keep the user's text in the form, offer reload and diff |
+| Search finds nothing for unaccented input or inflected forms | search feels broken | unaccent + prefix + title trigram; corpus test |
+| Hidden incident sub-pages with no way to find them | pages appear lost | breadcrumb + hub page lists its sub-pages; search finds them |
+| Share switch with no explanation | accidental sharing | confirm dialog naming the client and listing what the client will see; badge on shared articles |
+| Copy button copies prompt or line numbers | commands fail | plain text copy, CSS line numbers |
+| Deleting a folder deletes everything | data loss | refuse non-empty, move-then-delete |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **UUID everywhere:** Often missing package/framework tables (sessions, notifications, exports, tags, tokens) — verify catalog test passes and an insert into each table works.
-- [ ] **Timestamps:** Often still `timestamp without time zone` in package tables — verify catalog test.
-- [ ] **Partner isolation:** Often only list pages scoped — verify canary test covers global search, selects, relation managers, widgets, notifications, exports, downloads, API, Livewire JSON.
-- [ ] **Gap-free numbers:** Often only tested sequentially — verify parallel-process test yields exactly 1..N, and year-rollover/Prague-timezone test.
-- [ ] **Stripe webhook:** Often missing tolerance, event-id uniqueness, async-paid handling — verify fixtures: bad signature, old timestamp, duplicate, out-of-order, async paid, mismatch amount.
-- [ ] **One-time payment link:** Often missing deactivation on manual payment/credit note — verify link `active=false` after each settlement path.
-- [ ] **CNB job:** Often works on weekdays only — verify weekend/holiday, JPY/HUF/IDR, stale-rate alert.
-- [ ] **Money:** Often float at the form boundary — verify `19.99`, `12,5` Czech input, JPY, rounding table test, PDF = DB = Stripe total.
-- [ ] **Timer:** Often missing DB constraint — verify two parallel starts leave exactly one running entry; double stop is a no-op.
-- [ ] **Immutability:** Often only observers — verify raw `DB::table()->update()` on an issued invoice and a billed entry fails.
-- [ ] **Invoice PDF:** Often reads live client data — verify changing the client address after issue does not change the PDF; both languages; Czech glyphs.
-- [ ] **Deploy:** Often passes once on one container — verify 2 containers: one migration run, one scheduler run, uploads work, signed URLs valid, https URLs.
-- [ ] **Failure visibility:** Often alerts only in logs — verify an intentionally failing job, a stale CNB table and a stuck webhook all show in the health widget and notify the admin.
-- [ ] **Repo hygiene:** Often hook only — verify CI fails on a planted fake key and on a denylisted string, scanning full history.
-- [ ] **Actions:** Often tag-pinned — verify all `uses:` are SHA pinned and no `pull_request_target`/`${{ github.event` in `run:` (actionlint/zizmor in CI).
-- [ ] **API:** Often session-authenticated by accident — verify cookie auth returns 401 on `/api/v1`, token without ability gets 403, expired token fails.
+- [ ] **Markdown view:** often missing hostile-corpus test and escape mode, verify raw `<script>`, `javascript:` and external image render inert in the final DOM.
+- [ ] **Editor preview:** often differs from the view, verify one renderer or preview disabled.
+- [ ] **Secret guard:** often only on the form, verify the same guard runs in restore, duplicate, retrospective create and any console/API path, and that activity log contains no body.
+- [ ] **Sensitive flag:** often cosmetic, verify excluded from Partner view, snippets, export seam; share is revoked in the same transaction.
+- [ ] **Partner isolation:** often missing the side channels, verify canary rows for each channel (search, folder, tag, version, attachment, link, sub-page, retrospective, relation managers) and the hand-written matrix reviewed by the owner.
+- [ ] **Search:** often works only with diacritics, verify unaccented, inflected, hostile-input and empty-query cases; `EXPLAIN` uses the GIN index.
+- [ ] **Snippets:** verify sentinel escape and no snippet for sensitive articles.
+- [ ] **Tree:** verify DB-level cycle prevention under two concurrent moves, root duplicate names, non-empty delete refusal, no media orphans.
+- [ ] **Versions:** verify unique `(article_id, number)` under concurrent saves, no-op save creates no version, restore creates a new version, purge keeps the row.
+- [ ] **Attachments:** verify SVG/HTML-as-PNG rejected, EXIF stripped, dimension cap, private serving, revoke takes effect immediately, orphan cleanup.
+- [ ] **Copy button:** verify copied text equals the source of the fence, with a non-secure-context fallback.
+- [ ] **Retrospective:** verify no time in stored body, unique per project, regenerate does not overwrite text, running timers excluded, no money columns selected.
+- [ ] **Incidents:** verify sub-pages hidden from the list, found by search, orphan handling on hub delete, AND rule for Partner.
+- [ ] **Hygiene:** verify no real data in fixtures, `scripts/check-sensitive.sh` clean on all new files, no allowlist change without owner approval.
+- [ ] **Migrations:** run only after merge into HEAD branch, not in a worktree; the text search configuration migration is reversible and tested on a fresh database.
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Bigint morph columns discovered late | HIGH | New migration converting columns with data mapping (ids are not convertible: need mapping tables), re-register models; best avoided |
-| Partner leak found in production | HIGH | Revoke sessions/tokens, hotfix scope/policy, audit logs for exposure window, notify affected client, add canary for the vector |
-| Duplicate or gapped invoice numbers | HIGH | Legal/accounting review; credit notes; fix allocator; integrity command; never renumber issued invoices silently |
-| Duplicate Stripe payment | MEDIUM | Refund in Stripe dashboard, mark payment `duplicate`, ensure link deactivated |
-| Wrong CNB rate/units on issued invoice | HIGH | Credit note + reissue (immutable); fix parser; backfill; audit other invoices by currency |
-| Money rounding drift | MEDIUM | Reconcile persisted vs recomputed totals; corrective credit notes where issued |
-| Secret leaked in public repo | HIGH | Rotate secret immediately, rewrite history (`git filter-repo`), force-push, contact GitHub to purge caches if needed, post-mortem |
-| Compromised workflow/action | HIGH | Rotate all environment secrets, review workflow runs, pin and re-audit |
-| Migration broke production during deploy | MEDIUM | Roll back release via Zerops version, ensure expand/contract; restore from DB backup if destructive |
-| Timers duplicated | LOW | Stop extras by script, add partial unique index (needs clean data first) |
-| Silent job failures discovered late | MEDIUM | Replay failed jobs/webhook calls, reconcile payments with Stripe dashboard, add health signals |
+| XSS payload found in stored articles | MEDIUM | fix renderer (sanitiser pass takes effect on read since only source is stored), find affected rows by scanning bodies, rotate sessions |
+| Secret saved into body/versions/log | HIGH | rotate the secret first (repo policy), purge/redact versions, clean activity log rows, reindex search vector; check backups |
+| Share leak discovered | HIGH | revoke all `client_visible` in one migration, add the missing canary, notify owner (client data disclosure) |
+| tsvector built with wrong config | LOW-MEDIUM | new config migration + `UPDATE ... SET body = body` (regenerate column) or `REINDEX`, in a queued job |
+| Folder cycle already in data | MEDIUM | recursive CTE to find, detach node to root, add the trigger |
+| Version bloat | LOW | prune command, `VACUUM FULL` off-hours |
+| Orphan media / S3 objects | LOW | scheduled orphan scan; reconcile against bucket listing |
+| Lost edit | MEDIUM | restore from the previous version if saved; otherwise unrecoverable, so lock first |
+| Duplicate retrospectives | LOW | merge manually, add unique index |
+| Image with EXIF already shared | MEDIUM | re-encode existing media in a job, invalidate caches/URLs |
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| 1 UUID/morph mismatch | Foundation | Catalog architecture test + insert smoke test per package table |
-| 2 SPA-mode quirks | Foundation, Kanban, Time tracking | Browser test navigating 10 pages; single timer interval |
-| 3 Permissive Filament authz | Foundation | Registry test: every Resource/Page/Widget/RM has explicit rule and approved base |
-| 4 Secondary leak surfaces | Foundation (harness), every feature phase, Partner audit | Canary test over HTML + Livewire JSON + API |
-| 5 Global scope pitfalls | Foundation | Trait tests incl. no-client Partner, queue context, grep for `withoutGlobalScopes`/`DB::table` |
-| 6 Gap-free sequences | Foundation (allocator), Projects/Tasks, Invoicing | Parallel-process test; year rollover in Prague time |
-| 7 Stripe webhooks | Stripe | Fixture suite incl. signature, tolerance, duplicates, async |
-| 8 Payment Links | Stripe | Link limit=1, deactivation on all settle paths, duplicate payment test |
-| 9 CNB | CNB rates | Weekend/holiday/units/decimal fixtures; stale alert test |
-| 10 Money | Foundation, Invoicing, Stripe | Rounding table test; PDF=DB=Stripe parity; float ban rule |
-| 11 Timezone/DST | Foundation, Time tracking, Reports | DST fixtures 2026-10-25, 2027-03-28, 2027-10-31; catalog test timestamptz |
-| 12 Timer and billing races | Time tracking, REST API, Invoicing | Parallel start/stop test; billing double-select test |
-| 13 Immutability | Foundation (pattern), Time tracking, Invoicing | Raw SQL update/delete blocked; PDF from snapshot |
-| 14 Repo secrets/real data | Repo hygiene | CI fails on planted secret/denylisted string; full-history scan |
-| 15 GitHub Actions security | Repo hygiene, Foundation | actionlint/zizmor in CI; SHA pins; environment approval exercised |
-| 16 Zerops specifics | Foundation | 2-container deploy rehearsal: one migrate, one scheduler, uploads, https |
-| 17 S3 signed URLs | Foundation, Documents | Smoke test presigned URL externally; no `getUrl()`; ZIP streaming test |
-| 18 Failure visibility | Foundation, CNB, Stripe, Invoicing | Planted failures appear in health widget and alerts |
-| 19 Sanctum API | REST API | Cookie auth rejected; abilities/expiry tests; Partner denied |
-| 20 ARES | Clients | Timeout/failure fallback test |
-| 21 Invoice locale/PDF | Invoicing | Snapshot tests cs/en; Czech glyph rendering in deployed runtime |
-| 22 Kanban ordering | Kanban | Concurrent move test |
-| 23 Dashboard drift | Reports, Invoicing | Reconciliation test dashboard vs billing selection |
-| 24 Settings/permission cache | Foundation | 2-container stale-cache test |
-| 25 Activity log volume | Foundation | Log only whitelisted events; prune command |
-| 26 Czech collation | Foundation | Sort/search test with diacritics |
-| 27 Payload retention | Stripe | Prune job test |
-| 28 Licence drift | Repo hygiene | CI licence allowlist |
-| 29 Soft delete uniqueness | Projects/Tasks | Key reuse test |
+| 1 Markdown XSS / unsafe links | K2 | hostile-corpus test on final DOM; arch test forbids raw markdown calls |
+| 2 Secret guard and its five leak paths | K2, K3, K5 | tests: activity log has no body, masked messages, guard in every Action, restore guarded |
+| 3 Partner side-channel leaks | K1 seam, K3-K6 per channel | canaries and hand-written matrix entries per channel; raw SQL declared as escape hatch |
+| 4 `ts_headline` XSS | K5 | test with `<script>` in a body; snippet escaped; no snippet for sensitive |
+| 5 Czech FTS | K5 | corpus test (diacritics, inflections, hostile input), EXPLAIN uses GIN, size-cap test |
+| 6 Tree integrity | K1 | concurrent-move test (two connections), duplicate root name, delete refusal, no orphans |
+| 7 Versions and restore | K3 | numbering race test, dedupe, restore-as-new-version, purge, no body in list query |
+| 8 Lost updates and double-create | K2, K3, K6 | stale-form save rejected; unique retrospective constraint |
+| 9 Pasted artefacts, normaliser | K2 | idempotence and code-byte-identical property tests; outer-fence unwrap test |
+| 10 Image upload risks | K4 | SVG, polyglot, EXIF, dimension, private URL tests |
+| 11 Retrospective and incident design | K6 (constraints in K1) | CHECKs reject shared retrospective; overview query unit tests; hub delete restricted |
+| 12 Sensitive exclusion and AI seam | K1 columns, K6 seam | arch test on export seam; share revoked on flag |
+| 13 Filament specifics | K2, K5 | `isGloballySearchable` false test; page authorisation tests |
+| 14 Tags | K1 | tag type test; Partner sees no tag list |
+| 15 Morph/UUID/arch | K1 | existing arch suite green |
+| 16 Search performance | K5 | query-count and EXPLAIN tests |
+| 17 Article links | K2, K6 | renderer test: no hidden title leak |
+| 18 Client/project link semantics | K1, K6 | CHECK and reset-on-relink tests |
+| 19 Czech UI and collation | K1, K2 | lang coverage test, sort test |
+| 20 Repository hygiene | all | `scripts/check-sensitive.sh`, gitleaks, CI scan, owner review of fixtures |
+
+**Research flags for the roadmapper:**
+- K5 (search) and K4 (images) deserve a short phase-level research spike: the Czech config behaviour on the real managed PostgreSQL and the image library available on Zerops are **[verify]** items.
+- K1, K2 and K3 follow patterns already used in this repository (scope, Actions, immutability triggers, escape-hatch scanning); standard planning is enough.
+- K6 needs the owner's decision on the share semantics (per-article flag, AND rule for sub-pages, Partner read-only), the retrospective overview contents and the AI export format before planning.
 
 ## Sources
 
-- Laravel 12 upgrade guide, "Models and UUIDv7" (HasUuids returns UUIDv7; HasVersion4Uuids opt-out) — https://laravel.com/docs/12.x/upgrade — HIGH (official docs, fetched)
-- Laravel Sanctum docs (tokens never expire by default; `tokenCan` true for first-party SPA; `sanctum:prune-expired`; model override) — https://laravel.com/docs/12.x/sanctum — HIGH (official docs, fetched)
-- Spatie laravel-permission UUID guide and prerequisites (edit migration in two places; extend models with HasUuids; "not a full lesson") — https://spatie.be/docs/laravel-permission/v6/advanced-usage/uuid and /prerequisites — HIGH (official docs, fetched)
-- Spatie laravel-webhook-client README (default `hash_hmac('sha256', body, secret)` validator, `Signature` header, stored `webhook_calls`, queued processing, `WebhookProfile`) — https://github.com/spatie/laravel-webhook-client — HIGH (official docs, fetched)
-- Spatie laravel-activitylog upgrade notes (no UUID morph guidance; verify `nullableUuidMorphs` manually) — https://github.com/spatie/laravel-activitylog/blob/main/UPGRADING.md — MEDIUM
-- Stripe webhook docs (raw body, `Stripe-Signature`, 5-minute tolerance, tolerance 0 disables, duplicates, no ordering guarantee, async handling, retries up to 3 days live, resend limits, roll secrets) — https://docs.stripe.com/webhooks — HIGH (official docs, fetched)
-- Stripe Payment Link object (`restrictions.completed_sessions.limit/count`, `active`, `inactive_message`) — https://docs.stripe.com/api/payment-link/object — HIGH (official docs, fetched)
-- CNB exchange-rate page (publication ~14:30 on working days, validity over weekends/holidays, `denni_kurz.txt`, per-100 and IDR per-1000 quotation) — https://www.cnb.cz/cs/financni-trhy/devizovy-trh/kurzy-devizoveho-trhu/kurzy-devizoveho-trhu/ — HIGH (official source, fetched)
-- Zerops docs: `zsc execOnce` semantics (key, `${ZEROPS_appVersionId}`, failure behaviour, `--retryUntilSuccessful`), Laravel `initCommands` migrations with `--isolated`, `crontab` with `allContainers` — https://docs.zerops.io/references/zsc, https://docs.zerops.io/frameworks/laravel/migrations, https://docs.zerops.io/frameworks/laravel/cron (via search summary) — MEDIUM-HIGH. Worker topology and object-storage presign endpoints NOT verified.
-- Filament global search docs (needs Edit/View page to link; override `getGlobalSearchEloquentQuery()`; eager loading) — https://filamentphp.com/docs/4.x/resources/global-search — MEDIUM (authorization specifics not documented in fetched excerpt)
-- GitHub Actions hardening guidance (no `pull_request_target` + PR-head checkout, env indirection for event data, SHA pinning, environment protection, least-privilege `GITHUB_TOKEN`, CODEOWNERS on workflows) — GitHub docs "Security hardening for GitHub Actions" and community summaries from web search — MEDIUM (secondary summaries; matches well-known official guidance)
-- Training knowledge, tagged **[verify]** in text: Filament permissive-by-default authorization, Livewire form state contents, export job auth context, Zerops worker topology, Payment Link `price_data` requirements, `btree_gist` availability, PostgreSQL 18 `uuidv7()`.
-- Note on method: findings were gathered with direct WebFetch/WebSearch calls; the research-plan cache seam was not used for this pass, so no digests were written to the research store.
+- Repository (verified directly): `vendor/league/commonmark` 2.10.7 `Environment.php` defaults (`html_input` allow, `allow_unsafe_links` true); `vendor/laravel/framework` `Str::markdown`; `vendor/filament/forms` `MarkdownEditor` (attachments always public, preview via `sanitizeHtml()`); `app/Domain/Shared/Text/RichText.php`; `app/Filament/Resources/TaskResource.php` (`fileAttachments(false)` rationale); `database/migrations/2026_10_30_000100_add_accent_insensitive_search.php`; `app/Domain/Shared/Auth/IsolatesPartners.php`; `tests/Support` audit harness; `.planning/PROJECT.md`; `.claude/CLAUDE.md` repository hygiene rules.
+- PostgreSQL 18 manual, text search dictionaries (ispell files not shipped, unaccent as filtering dictionary): https://www.postgresql.org/docs/18/textsearch-dictionaries.html
+- PostgreSQL 18 manual, text search controls (`ts_headline` not safe for web pages, `websearch_to_tsquery` never raises syntax errors and has no prefix support): https://www.postgresql.org/docs/18/textsearch-controls.html
+- Training knowledge, tagged **[verify]** above: tsvector 1 MB / 2046-byte limits, absence of a Czech snowball configuration, `NULLS NOT DISTINCT` behaviour, Imagick/GD availability on the deploy target, Filament SPA session behaviour.
 
 ---
-*Pitfalls research for: single-tenant CRM/ERP with time tracking, invoicing and Stripe on Laravel + Filament SPA + PostgreSQL + Zerops (public AGPL repo)*
-*Researched: 2026-10-06*
+*Pitfalls research for: Knowledge Center added to an existing Laravel/Filament CRM with Partner isolation (milestone v1.1)*
+*Researched: 2026-11-25*
