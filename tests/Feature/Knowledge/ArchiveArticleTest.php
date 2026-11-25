@@ -138,8 +138,7 @@ it('archives an article from its view screen after a confirmation and keeps its 
         ->assertActionVisible('archive')
         ->assertActionHasLabel('archive', 'Archivovat článek')
         ->mountAction('archive')
-        ->assertSee('Archivovat článek?')
-        ->assertSee('Archivovaný článek zmizí ze seznamu, ale zůstane uložený i s historií. Půjde ho obnovit.')
+        ->assertMountedActionModalSee(['Archivovat článek?', 'Archivovaný článek zmizí ze seznamu, ale zůstane uložený i s historií. Půjde ho obnovit.'])
         ->callMountedAction()
         ->assertNotified('Článek byl archivován');
 
@@ -221,7 +220,7 @@ it('archives an article from its list row after the same confirmation', function
 
     Livewire::test(ListKnowledgeArticles::class)
         ->mountTableAction('archive', $article)
-        ->assertSee('Archivovat článek?')
+        ->assertMountedActionModalSee('Archivovat článek?')
         ->callMountedTableAction()
         ->assertNotified('Článek byl archivován')
         ->assertCanNotSeeTableRecords([$article]);

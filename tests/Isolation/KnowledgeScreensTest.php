@@ -153,7 +153,8 @@ it('refuses ArchiveArticle and RestoreArticle to a Partner and to a user without
             ->and(knowledgeScreensState())->toBe($state);
     }
 
-    // The Admin does both on the same articles.
+    // The Admin does both on the same articles; the scoped queries read the authenticated user.
+    $this->actingAs($admin);
     app(ArchiveArticle::class)->handle($admin, $active);
     app(RestoreArticle::class)->handle($admin, $archived);
 
