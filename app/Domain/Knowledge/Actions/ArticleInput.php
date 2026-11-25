@@ -18,7 +18,9 @@ use InvalidArgumentException;
  *
  * The title is trimmed and must be 1 to MAX_TITLE_LENGTH characters. The body is the raw text as typed
  * (normalised later by SaveArticle) and may be empty, but a text over MAX_BODY_LENGTH characters is refused
- * here, before any parser sees it.
+ * here, before any parser sees it. A title or a body that contains a NUL byte is refused with a field error, never
+ * stripped or replaced: the PostgreSQL driver would cut the text off at the NUL without a message, and changing a
+ * byte would alter code content (D-10) and break the hash binding of the save-anyway acknowledgment.
  */
 final readonly class ArticleInput
 {
@@ -42,6 +44,11 @@ final readonly class ArticleInput
             throw new InvalidArgumentException('Marking and clearing the sensitive flag cannot be requested together.');
         }
 
+        // Checked on the raw text: trim() strips a NUL at either end, which would hide it instead of refusing it.
+        if (is_string($title) && str_contains($title, "\0")) {
+            throw ValidationException::withMessages(['title' => __('knowledge.errors.nul_character')]);
+        }
+
         $title = is_string($title) ? trim($title) : '';
 
         if ($title === '') {
@@ -53,6 +60,10 @@ final readonly class ArticleInput
         }
 
         $body = is_string($body) ? $body : '';
+
+        if (str_contains($body, "\0")) {
+            throw ValidationException::withMessages(['body' => __('knowledge.errors.nul_character')]);
+        }
 
         if (mb_strlen($body) > KnowledgeArticle::MAX_BODY_LENGTH) {
             throw ValidationException::withMessages(['body' => __('knowledge.errors.body_too_long', ['max' => KnowledgeArticle::MAX_BODY_LENGTH])]);

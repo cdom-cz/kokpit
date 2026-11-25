@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Knowledge\Actions\ArticleInput;
+use App\Domain\Knowledge\Actions\SaveArticle;
+use App\Domain\Knowledge\Exceptions\ArticleWriteFailed;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Support\KnowledgeMarkdown;
@@ -16,10 +19,15 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\MarkdownEditor;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Notifications\Livewire\Notifications;
+use Filament\Notifications\Notification;
+use Filament\Notifications\NotificationMailbox;
 use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Tabs;
 use Filament\Support\Assets\Js;
 use Filament\Support\Facades\FilamentAsset;
+use Illuminate\Support\Facades\Exceptions;
+use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -75,6 +83,22 @@ function createArticleBody(): string
         'ls -la',
         '```',
     ]);
+}
+
+/**
+ * The notifications waiting for the browser, pulled the way Filament's own assertion pulls them.
+ *
+ * @return list<Notification>
+ */
+function createArticleNotifications(): array
+{
+    app(NotificationMailbox::class)->flush();
+
+    $component = new Notifications;
+    $component->mount();
+    $component->pullNotifications();
+
+    return array_values($component->notifications->all());
 }
 
 beforeEach(function (): void {
@@ -517,4 +541,64 @@ it('removes the callouts after a clean save that follows a refusal', function ()
         ->assertDontSee('Text obsahuje tajný údaj a nelze ho uložit');
 
     expect(createArticleCount())->toBe(1);
+});
+
+it('refuses a save the database rejects on the create screen with a persistent notice and creates nothing', function (): void {
+    Exceptions::fake();
+
+    // SaveArticle is final; the path from a PDOException to ArticleWriteFailed is proven by SaveArticleTest.
+    app()->bind(SaveArticle::class, static function (): never {
+        throw new ArticleWriteFailed('23505');
+    });
+
+    $page = Livewire::test(CreateKnowledgeArticle::class)
+        ->fillForm(['title' => 'Example typed failing title', 'body' => 'Example typed failing body'])
+        ->call('create')
+        ->assertNoRedirect()
+        ->assertSet('data.title', 'Example typed failing title')
+        ->assertSet('data.body', 'Example typed failing body');
+
+    $notifications = createArticleNotifications();
+
+    expect($notifications)->toHaveCount(1)
+        ->and($notifications[0]->getTitle())->toBe('Článek se nepodařilo uložit')
+        ->and($notifications[0]->getBody())->toBe('Váš text zůstal v editoru, aby ho šlo zkopírovat. Zkuste článek uložit znovu.')
+        ->and($notifications[0]->getStatus())->toBe('danger')
+        ->and($notifications[0]->getDuration())->toBe('persistent')
+        ->and(createArticleCount())->toBe(0)
+        ->and($page->instance())->toBeInstanceOf(CreateKnowledgeArticle::class);
+
+    Exceptions::assertReported(ArticleWriteFailed::class);
+});
+
+it('refuses a NUL byte in the title or the body with a field error before anything is written', function (): void {
+    $message = 'Text obsahuje neplatný znak (NUL). Odstraňte ho a uložte znovu.';
+
+    Livewire::test(CreateKnowledgeArticle::class)
+        ->fillForm(['title' => 'Example title', 'body' => "Example\0body"])
+        ->call('create')
+        ->assertHasFormErrors(['body'])
+        ->assertSee($message)
+        ->assertSet('data.body', "Example\0body");
+
+    Livewire::test(CreateKnowledgeArticle::class)
+        ->fillForm(['title' => "Example\0title", 'body' => 'Example body'])
+        ->call('create')
+        ->assertHasFormErrors(['title'])
+        ->assertSee($message)
+        ->assertSet('data.title', "Example\0title");
+
+    expect(createArticleCount())->toBe(0);
+
+    $caught = null;
+
+    try {
+        ArticleInput::from('Example title', "Example\0body", false);
+    } catch (ValidationException $exception) {
+        $caught = $exception;
+    }
+
+    expect($caught)->toBeInstanceOf(ValidationException::class)
+        ->and(array_keys($caught->errors()))->toBe(['body'])
+        ->and(ArticleInput::from('Example title', 'Example body', false)->body)->toBe('Example body');
 });

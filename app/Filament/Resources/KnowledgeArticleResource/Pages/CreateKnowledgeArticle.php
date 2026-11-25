@@ -8,9 +8,11 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Actions\ArticleInput;
 use App\Domain\Knowledge\Actions\SaveArticle;
 use App\Domain\Knowledge\Actions\SaveResult;
+use App\Domain\Knowledge\Exceptions\ArticleWriteFailed;
 use App\Filament\Concerns\RethrowsDomainValidation;
 use App\Filament\Resources\KnowledgeArticleResource;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\GuardsSecrets;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\RefusesFailedSaves;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\SecretGuardForm;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -22,10 +24,13 @@ use Illuminate\Database\Eloquent\Model;
  * the sensitive toggle. The page never writes the model; the one write path is {@see SaveArticle::create()}, and the
  * Admin lands on the view screen of version 1. A refusal of the secret guard keeps every typed character and shows the
  * callouts of {@see GuardsSecrets}; an Ambiguous-only refusal can be saved anyway for the exact body that was refused.
+ * A write the database refuses creates nothing, keeps the typed text and says so in a persistent notice
+ * ({@see RefusesFailedSaves}).
  */
 final class CreateKnowledgeArticle extends CreateRecord implements SecretGuardForm
 {
     use GuardsSecrets;
+    use RefusesFailedSaves;
     use RethrowsDomainValidation;
 
     protected static string $resource = KnowledgeArticleResource::class;
@@ -79,13 +84,18 @@ final class CreateKnowledgeArticle extends CreateRecord implements SecretGuardFo
         $actor = auth()->user();
         assert($actor instanceof User);
 
-        $result = $this->runGuarded(fn (): SaveResult => $this->withFormErrors(
-            fn (): SaveResult => app(SaveArticle::class)->create(
-                $actor,
-                ArticleInput::from($data['title'] ?? null, $data['body'] ?? null, $data['sensitive'] ?? false),
-                acknowledge: $this->acknowledgeThisSave,
-            ),
-        ));
+        try {
+            $result = $this->runGuarded(fn (): SaveResult => $this->withFormErrors(
+                fn (): SaveResult => app(SaveArticle::class)->create(
+                    $actor,
+                    ArticleInput::from($data['title'] ?? null, $data['body'] ?? null, $data['sensitive'] ?? false),
+                    acknowledge: $this->acknowledgeThisSave,
+                ),
+            ));
+        } catch (ArticleWriteFailed $failed) {
+            // The database refused the write: nothing was created, the typed text stays (D-09).
+            $this->refuseWriteFailure($failed);
+        }
 
         $this->saveResult = $result;
 
