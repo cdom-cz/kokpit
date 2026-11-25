@@ -20,6 +20,7 @@ use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Support\CashReceiptPdfUrl;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
+use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
@@ -1105,6 +1106,7 @@ final class ChannelProbe
                 'transaction' => (string) Transaction::query()->where('counterparty', $canary)->firstOrFail()->getKey(),
                 'invoice' => $invoice,
                 'card' => (string) CardPayment::query()->where('resolution_note', $canary)->firstOrFail()->getKey(),
+                'article' => (string) KnowledgeArticle::query()->where('title', $canary)->firstOrFail()->getKey(),
             ];
         });
         $a = $find('a');
@@ -1121,6 +1123,7 @@ final class ChannelProbe
             'transactions' => $row(false, 'transaction'),
             'invoices' => $row(false, 'invoice'),
             'card-payments' => $row(false, 'card'),
+            'knowledge-articles' => $row(false, 'article'),
             'my-invoices' => $row(true, 'invoice'),
             'my-tasks' => $row(true, 'task'),
         ];

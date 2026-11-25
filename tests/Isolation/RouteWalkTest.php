@@ -13,6 +13,7 @@ use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Support\CashReceiptPdfUrl;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
+use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -243,7 +244,7 @@ function walkedArchive(string $side): DocumentArchive
  * Every resource that has record routes: who may open its record routes and the
  * record id to request for each side (client A is the signed-in Partner, client B
  * the other client). The walk fails on a resource that is not listed, so a new
- * resource is looked at on purpose. Admin-only resources (`projects`, `clients`, `tasks`, `time-entries`, `transactions`, `invoices` and `card-payments`) are listed with `partner => false`: a Partner
+ * resource is looked at on purpose. Admin-only resources (`projects`, `clients`, `tasks`, `time-entries`, `transactions`, `invoices`, `card-payments` and `knowledge-articles`) are listed with `partner => false`: a Partner
  * must get 403 on all their routes, whatever record is requested.
  *
  * @return array<string, array{partner: bool, a: string, b: string}>
@@ -283,6 +284,11 @@ function walkedResourceMap(string $canaryRecordA, string $canaryRecordB, string 
         static fn (): string => CardPayment::query()->where('resolution_note', $canary)->firstOrFail()->id,
     );
 
+    // The knowledge article canary is the title; the record is addressed by its id.
+    $articleId = static fn (string $canary): string => app(PartnerContext::class)->runAsSystem(
+        static fn (): string => KnowledgeArticle::query()->where('title', $canary)->firstOrFail()->id,
+    );
+
     return [
         'canary-records' => ['partner' => true, 'a' => $canaryRecordA, 'b' => $canaryRecordB],
         'my-projects' => ['partner' => true, 'a' => $projectId($canaryA), 'b' => $projectId($canaryB)],
@@ -293,6 +299,7 @@ function walkedResourceMap(string $canaryRecordA, string $canaryRecordB, string 
         'transactions' => ['partner' => false, 'a' => $transactionId($canaryA), 'b' => $transactionId($canaryB)],
         'invoices' => ['partner' => false, 'a' => $invoiceId($canaryA), 'b' => $invoiceId($canaryB)],
         'card-payments' => ['partner' => false, 'a' => $cardPaymentId($canaryA), 'b' => $cardPaymentId($canaryB)],
+        'knowledge-articles' => ['partner' => false, 'a' => $articleId($canaryA), 'b' => $articleId($canaryB)],
         'my-invoices' => ['partner' => true, 'a' => $invoiceId($canaryA), 'b' => $invoiceId($canaryB)],
         'my-tasks' => ['partner' => true, 'a' => $taskReference($canaryA), 'b' => $taskReference($canaryB)],
     ];

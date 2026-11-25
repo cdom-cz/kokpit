@@ -11,6 +11,7 @@ use App\Filament\Resources\KnowledgeArticleResource\Pages\ViewKnowledgeArticle;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Support\Canary;
@@ -49,6 +50,23 @@ function knowledgeResourceRichBody(): string
         "echo 'example';",
         '```',
     ]);
+}
+
+/**
+ * The labels of the navigation groups of the signed-in user, in menu order; the group without a label is ''.
+ *
+ * @return list<string>
+ */
+function knowledgeResourceGroupLabels(): array
+{
+    return collect(Filament::getNavigation())
+        ->map(static function ($group): string {
+            $label = $group->getLabel();
+
+            return $label instanceof Htmlable ? $label->toHtml() : (string) $label;
+        })
+        ->values()
+        ->all();
 }
 
 beforeEach(function (): void {
@@ -207,4 +225,17 @@ it('does not open an article of another kind on this resource', function (): voi
 
 it('is not globally searchable', function (): void {
     expect(KnowledgeArticleResource::canGloballySearch())->toBeFalse();
+});
+
+it('places the group Znalosti after the ungrouped entries and before Signal and Správa', function (): void {
+    $labels = knowledgeResourceGroupLabels();
+    $known = array_values(array_intersect($labels, ['Znalosti', 'Signal', 'Správa']));
+
+    expect($labels[0])->toBe('')
+        ->and($known)->toBe(['Znalosti', 'Signal', 'Správa']);
+
+    $group = collect(Filament::getNavigation())->first(static fn ($group): bool => (string) $group->getLabel() === 'Znalosti');
+    $items = $group->getItems()->map(static fn ($item): string => (string) $item->getLabel())->values()->all();
+
+    expect($items)->toBe(['Obecné znalosti']);
 });
