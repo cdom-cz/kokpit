@@ -8,7 +8,7 @@
 
 ### Knowledge articles (KB)
 
-- [ ] **KB-01**: Admin can create an article with a title and a body written in Markdown
+- [x] **KB-01**: Admin can create an article with a title and a body written in Markdown
 - [ ] **KB-02**: Every article has its own view screen and its own edit screen
 - [x] **KB-03**: The body renders safely (tables, task lists, links, highlighted code; raw HTML is escaped, unsafe links are dropped)
 - [x] **KB-04**: A callout written as `> [!NOTE]` renders as a highlighted block
@@ -113,7 +113,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| KB-01 | Phase 18 | Pending |
+| KB-01 | Phase 18 | Complete |
 | KB-02 | Phase 18 | Pending |
 | KB-03 | Phase 18 | Complete |
 | KB-04 | Phase 18 | Complete |
