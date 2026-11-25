@@ -125,7 +125,7 @@ it('marks a sensitive article with the lock icon and no other article', function
 });
 
 it('clips a long title to one line and shows the full title as the tooltip', function (): void {
-    $title = str_repeat('Long example title ', 10);
+    $title = str_repeat('Long example title ', 12);
     $title = mb_substr($title, 0, KnowledgeArticle::MAX_TITLE_LENGTH);
     $article = KnowledgeFixtures::article(['title' => $title]);
 

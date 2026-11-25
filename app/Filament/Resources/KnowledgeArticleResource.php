@@ -110,7 +110,7 @@ final class KnowledgeArticleResource extends Resource
                     ->color(static fn (KnowledgeArticle $record): ?string => $record->trashed() ? 'gray' : null),
                 TextColumn::make('archived')
                     ->label('')
-                    ->state(static fn (KnowledgeArticle $record): ?string => $record->trashed() ? __('knowledge.badges.archived') : null)
+                    ->state(static fn (KnowledgeArticle $record): ?string => $record->trashed() ? trans()->string('knowledge.badges.archived') : null)
                     ->badge()
                     ->color('gray'),
                 TextColumn::make('version_no')
@@ -126,7 +126,7 @@ final class KnowledgeArticleResource extends Resource
                     ->trueIcon(Heroicon::OutlinedLockClosed)
                     ->trueColor('warning')
                     ->falseIcon(false)
-                    ->tooltip(static fn (bool $state): ?string => $state ? __('knowledge.columns.sensitive_tooltip') : null),
+                    ->tooltip(static fn (bool $state): ?string => $state ? trans()->string('knowledge.columns.sensitive_tooltip') : null),
             ])
             ->filters([
                 Filter::make('show_archived')
@@ -136,11 +136,11 @@ final class KnowledgeArticleResource extends Resource
             ->recordUrl(static fn (KnowledgeArticle $record): string => self::getUrl('view', ['record' => $record]))
             ->defaultSort('edited_at', 'desc')
             ->emptyStateHeading(static fn (HasTable $livewire): string => data_get($livewire->getTableFilterState('show_archived'), 'isActive', false)
-                ? __('knowledge.empty.archived_heading')
-                : __('knowledge.empty.list_heading'))
+                ? trans()->string('knowledge.empty.archived_heading')
+                : trans()->string('knowledge.empty.list_heading'))
             ->emptyStateDescription(static fn (HasTable $livewire): ?string => data_get($livewire->getTableFilterState('show_archived'), 'isActive', false)
                 ? null
-                : __('knowledge.empty.list_description'));
+                : trans()->string('knowledge.empty.list_description'));
     }
 
     /**

@@ -109,7 +109,7 @@ function saveArticleCounts(): array
  */
 function saveArticleText(string $label): array
 {
-    return [Canary::canary($label.'_title'), 'Example body line. '.Canary::canary($label.'_body')];
+    return [Canary::canary($label.'_title'), 'Example body line. '.str_replace('_', ' ', Canary::canary($label.'_body'))];
 }
 
 /**
@@ -373,13 +373,13 @@ it('refuses a Partner and a user without a role on create and update and writes 
     saveArticleWatch($title, $body);
 
     $article = $this->save->create($this->admin, ArticleInput::from($title, $body, false))->article;
-    $counts = saveArticleCounts();
 
     $actors = [
         'partner' => Canary::partnerFor(Canary::twoClients()[0]),
         'roleless' => Canary::userWithoutRole(null),
         'fresh' => new User,
     ];
+    $counts = saveArticleCounts();
 
     foreach ($actors as $name => $actor) {
         expect(fn () => $this->save->create($actor, ArticleInput::from($title.$name, $body, false)))

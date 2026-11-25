@@ -8,7 +8,6 @@ use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Filament\Resources\KnowledgeArticleResource;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\ViewRecord;
-use Illuminate\Contracts\Support\Htmlable;
 
 /**
  * The own screen of one article: the title as heading, the meta line and the body rendered by the one renderer.
@@ -29,7 +28,7 @@ final class ViewKnowledgeArticle extends ViewRecord
         parent::mount($record);
     }
 
-    public function getTitle(): string|Htmlable
+    public function getTitle(): string
     {
         $record = $this->getRecord();
         assert($record instanceof KnowledgeArticle);

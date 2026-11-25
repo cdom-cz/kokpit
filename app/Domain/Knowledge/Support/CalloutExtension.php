@@ -64,7 +64,7 @@ final class CalloutExtension implements ExtensionInterface
             $marker->detach();
             $lineBreak?->detach();
 
-            if ($paragraph->firstChild() === null) {
+            if (! $paragraph->hasChildren()) {
                 $paragraph->detach();
             }
 
