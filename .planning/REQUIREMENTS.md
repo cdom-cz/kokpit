@@ -8,14 +8,14 @@
 
 ### Knowledge articles (KB)
 
-- [x] **KB-01**: Admin can create an article with a title and a body written in Markdown
-- [x] **KB-02**: Every article has its own view screen and its own edit screen
-- [x] **KB-03**: The body renders safely (tables, task lists, links, highlighted code; raw HTML is escaped, unsafe links are dropped)
-- [x] **KB-04**: A callout written as `> [!NOTE]` renders as a highlighted block
-- [x] **KB-05**: Every code block has a Copy button
-- [x] **KB-06**: The editor offers a server-rendered preview
-- [x] **KB-07**: Admin can archive and restore an article
-- [x] **KB-08**: A concurrent edit never overwrites another change silently (a stale save is rejected, not merged)
+- [ ] **KB-01**: Admin can create an article with a title and a body written in Markdown
+- [ ] **KB-02**: Every article has its own view screen and its own edit screen
+- [ ] **KB-03**: The body renders safely (tables, task lists, links, highlighted code; raw HTML is escaped, unsafe links are dropped)
+- [ ] **KB-04**: A callout written as `> [!NOTE]` renders as a highlighted block
+- [ ] **KB-05**: Every code block has a Copy button
+- [ ] **KB-06**: The editor offers a server-rendered preview
+- [ ] **KB-07**: Admin can archive and restore an article
+- [ ] **KB-08**: A concurrent edit never overwrites another change silently (a stale save is rejected, not merged)
 
 ### Organisation (ORG)
 
@@ -26,7 +26,7 @@
 
 ### Versions (VER)
 
-- [x] **VER-01**: Every content change creates an immutable version (gap-free numbering, no version for a save without changes)
+- [ ] **VER-01**: Every content change creates an immutable version (gap-free numbering, no version for a save without changes)
 - [ ] **VER-02**: Admin can see the version history and view an earlier version
 - [ ] **VER-03**: Restoring creates a new version and passes the secret guard again
 - [ ] **VER-04**: Admin can see the difference between two versions
@@ -34,9 +34,9 @@
 
 ### Secret guard (SEC)
 
-- [x] **SEC-01**: Every save and every restore scans the content for secrets; the message names the rule and the line, never the value
-- [x] **SEC-02**: Unambiguous secrets block the save; ambiguous findings need acknowledgment and mark the article sensitive
-- [x] **SEC-03**: An override applies to one save only and is logged without the content
+- [ ] **SEC-01**: Every save and every restore scans the content for secrets; the message names the rule and the line, never the value
+- [ ] **SEC-02**: Unambiguous secrets block the save; ambiguous findings need acknowledgment and mark the article sensitive
+- [ ] **SEC-03**: An override applies to one save only and is logged without the content
 - [ ] **SEC-04**: A sensitive article cannot be shared with a client and is excluded from exports
 
 ### Images (IMG)
@@ -113,26 +113,26 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| KB-01 | Phase 18 | Complete |
-| KB-02 | Phase 18 | Complete |
-| KB-03 | Phase 18 | Complete |
-| KB-04 | Phase 18 | Complete |
-| KB-05 | Phase 18 | Complete |
-| KB-06 | Phase 18 | Complete |
-| KB-07 | Phase 18 | Complete |
-| KB-08 | Phase 18 | Complete |
+| KB-01 | Phase 18 | Gaps Found |
+| KB-02 | Phase 18 | Gaps Found |
+| KB-03 | Phase 18 | Gaps Found |
+| KB-04 | Phase 18 | Gaps Found |
+| KB-05 | Phase 18 | Gaps Found |
+| KB-06 | Phase 18 | Gaps Found |
+| KB-07 | Phase 18 | Gaps Found |
+| KB-08 | Phase 18 | Gaps Found |
 | ORG-01 | Phase 19 | Pending |
 | ORG-02 | Phase 19 | Pending |
 | ORG-03 | Phase 19 | Pending |
 | ORG-04 | Phase 19 | Pending |
-| VER-01 | Phase 18 | Complete |
+| VER-01 | Phase 18 | Gaps Found |
 | VER-02 | Phase 19 | Pending |
 | VER-03 | Phase 19 | Pending |
 | VER-04 | Phase 19 | Pending |
 | VER-05 | Phase 19 | Pending |
-| SEC-01 | Phase 18 | Complete |
-| SEC-02 | Phase 18 | Complete |
-| SEC-03 | Phase 18 | Complete |
+| SEC-01 | Phase 18 | Gaps Found |
+| SEC-02 | Phase 18 | Gaps Found |
+| SEC-03 | Phase 18 | Gaps Found |
 | SEC-04 | Phase 23 | Pending |
 | IMG-01 | Phase 20 | Pending |
 | IMG-02 | Phase 20 | Pending |
