@@ -208,14 +208,27 @@ final class SecretScanner
      */
     private function fold(string $line): string
     {
-        $stripped = $this->checked(preg_replace(self::INVISIBLE, '', $line));
-        $normalised = \Normalizer::normalize((string) $stripped, \Normalizer::FORM_KC);
+        $normalised = \Normalizer::normalize($this->withoutInvisible($line), \Normalizer::FORM_KC);
 
         if ($normalised === false) {
             throw new \RuntimeException('The text could not be normalised.');
         }
 
-        return (string) $this->checked(preg_replace(self::INVISIBLE, '', $normalised));
+        return $this->withoutInvisible($normalised);
+    }
+
+    /**
+     * Removes the characters a reader never sees; fails closed when the pattern engine does.
+     */
+    private function withoutInvisible(string $text): string
+    {
+        $result = preg_replace(self::INVISIBLE, '', $text);
+
+        if (! is_string($result) || preg_last_error() !== PREG_NO_ERROR) {
+            throw new \RuntimeException('The pattern engine failed.');
+        }
+
+        return $result;
     }
 
     /**
