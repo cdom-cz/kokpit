@@ -29,6 +29,9 @@ use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Invoicing\Policies\CashReceiptPolicy;
 use App\Domain\Invoicing\Policies\InvoiceItemPolicy;
 use App\Domain\Invoicing\Policies\InvoicePolicy;
+use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Projects\Models\Project;
@@ -148,6 +151,12 @@ final class AccessServiceProvider extends ServiceProvider
         // A ZIP archive bundles files of every client: Admin-only, and the owner scope of the model keeps even a
         // second Admin away from it.
         Gate::policy(DocumentArchive::class, AdminOnlyPolicy::class);
+
+        // Knowledge articles, their versions and folders are the Admin's internal notes: a Partner is granted
+        // nothing until Phase 23 replaces the article policy for shared articles.
+        Gate::policy(KnowledgeArticle::class, AdminOnlyPolicy::class);
+        Gate::policy(KnowledgeArticleVersion::class, AdminOnlyPolicy::class);
+        Gate::policy(KnowledgeFolder::class, AdminOnlyPolicy::class);
 
         // An export request names the clients and periods of one Admin: Admin-only, and the owner scope of the
         // model keeps even a second Admin away from it.
