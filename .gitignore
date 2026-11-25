@@ -87,6 +87,9 @@ CLAUDE.local.md
 /public/js/filament/
 /public/css/filament/
 /public/fonts/filament/
+# App assets registered with FilamentAsset::register() (Phase 18): the sources under resources/ stay tracked
+/public/css/app/
+/public/js/app/
 
 # Planning: risky session artefacts (logs, debug output, conversation copies, migration notes)
 /.planning/debug/

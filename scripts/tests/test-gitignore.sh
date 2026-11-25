@@ -59,9 +59,17 @@ do
   ignored "$repo" "$p"
 done
 
+# --- ignored: published copies of the app assets registered with FilamentAsset (Phase 18) ----------------
+for p in \
+  public/css/app/kokpit-prose.css public/js/app/knowledge-copy.js
+do
+  ignored "$repo" "$p"
+done
+
 # --- trackable: hygiene artefacts and the paths next to ignored ones --------------------------------------
 for p in \
   .env.example .claude/CLAUDE.md .ddev/config.yaml \
+  resources/css/kokpit-prose.css resources/js/knowledge-copy.js \
   scripts/check-sensitive.sh scripts/sensitive-allowlist.txt lefthook.yml .gitleaks.toml \
   .github/workflows/hygiene.yml CONTRIBUTING.md LICENSE .planning/ROADMAP.md \
   .npmrc.example terraform/main.tf config/credentials.php config/scribe.php resources/views/vendor/x.blade.php

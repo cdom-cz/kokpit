@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Domain\Knowledge\Support\KnowledgeMarkdown;
+use Filament\Support\Assets\Css;
+use Filament\Support\Assets\Js;
+use Filament\Support\Facades\FilamentAsset;
 use Illuminate\Support\ServiceProvider;
 
 /**
  * Wires the knowledge domain. KnowledgeMarkdown is a singleton (its CommonMark environment and sanitiser are built
  * once) whose translator reads the Czech labels under knowledge.render; the class itself stays free of the
- * application so unit tests can pass an identity translator. Later knowledge plans register the prose assets in boot().
+ * application so unit tests can pass an identity translator. boot() registers the prose assets of rendered articles.
  */
 final class KnowledgeServiceProvider extends ServiceProvider
 {
@@ -24,5 +27,16 @@ final class KnowledgeServiceProvider extends ServiceProvider
         );
     }
 
-    public function boot(): void {}
+    /**
+     * The prose stylesheet and the copy script of rendered articles, as Filament assets of the app package (no build
+     * step). filament:assets publishes them to public/css/app and public/js/app, which composer install runs through
+     * filament:upgrade; the published copies are ignored by git.
+     */
+    public function boot(): void
+    {
+        FilamentAsset::register([
+            Css::make('kokpit-prose', resource_path('css/kokpit-prose.css')),
+            Js::make('knowledge-copy', resource_path('js/knowledge-copy.js')),
+        ]);
+    }
 }
