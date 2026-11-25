@@ -64,6 +64,26 @@ it('keeps only the rule and the line in a finding, never the matched value', fun
     expect($findings[0]->toArray())->toBe(['rule' => 'pem_private_key', 'line' => 2]);
 });
 
+it('reports a very long key as one finding on the line of its header', function (): void {
+    $kind = 'OPENSSH '.'PRIV'.'ATE KEY';
+    $lines = array_map(
+        static fn (int $number): string => base64_encode(random_bytes(48)),
+        range(1, 3000),
+    );
+    $body = "Example heading\n-----BEGIN ".$kind."-----\n".implode("\n", $lines)."\n-----END ".$kind."-----\nExample footer";
+
+    expect(secretScannerPairs(secretScannerScan($body)))->toBe([['pem_private_key', 2]]);
+});
+
+it('reports a key whose last line has no line ending and a key with header fields', function (): void {
+    $kind = 'RSA '.'PRIV'.'ATE KEY';
+    $row = base64_encode(random_bytes(48));
+
+    expect(secretScannerPairs(secretScannerScan('-----BEGIN '.$kind."-----\n".$row."\n".$row)))->toBe([['pem_private_key', 1]])
+        ->and(secretScannerPairs(secretScannerScan("Example\n-----BEGIN ".$kind."-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,0123456789\n\n".$row."\n".$row."\n-----END ".$kind.'-----')))
+        ->toBe([['pem_private_key', 2]]);
+});
+
 it('does not report a sentence that only names the private key header', function (): void {
     $header = '-----BEGIN '.'RSA PRIV'.'ATE KEY-----';
 
@@ -85,3 +105,186 @@ it('gives every rule the severity of the D-01 split', function (): void {
     expect(SecretRule::StripeTestKey->severity())->toBe(Severity::Blocking)
         ->and(SecretRule::ScanFailed->severity())->toBe(Severity::Blocking);
 });
+
+/**
+ * The text with every printable ASCII character replaced by its fullwidth form.
+ */
+function secretScannerFullwidth(string $text): string
+{
+    $out = '';
+
+    foreach (str_split($text) as $char) {
+        $code = ord($char);
+        $out .= $code >= 0x21 && $code <= 0x7E ? mb_chr(0xFF01 + $code - 0x21) : $char;
+    }
+
+    return $out;
+}
+
+/**
+ * The text with a zero-width space between every two characters.
+ */
+function secretScannerZeroWidth(string $text): string
+{
+    return implode("\u{200B}", str_split($text));
+}
+
+it('finds each blocking fixture on its line with the rule of the D-01 split', function (string $rule, string $fixture): void {
+    $findings = secretScannerScan(SecretFixtures::bodyWith(SecretFixtures::$fixture(), 3));
+
+    expect(secretScannerPairs($findings))->toBe([[$rule, 3]])
+        ->and($findings[0]->severity())->toBe(Severity::Blocking);
+})->with([
+    'aws access key' => ['aws_access_key', 'awsAccessKey'],
+    'stripe live secret' => ['stripe_secret', 'stripeLiveSecret'],
+    'stripe live restricted key' => ['stripe_secret', 'stripeRestrictedLiveKey'],
+    'stripe webhook secret' => ['stripe_secret', 'stripeWebhookSecret'],
+    'stripe test secret' => ['stripe_test_key', 'stripeTestSecret'],
+    'stripe test restricted key' => ['stripe_test_key', 'stripeRestrictedTestKey'],
+    'github token' => ['github_token', 'githubToken'],
+    'github fine-grained token' => ['github_token', 'githubFineGrainedToken'],
+    'jwt' => ['jwt', 'jwt'],
+    'url with credentials' => ['url_credentials', 'urlWithCredentials'],
+]);
+
+it('finds each ambiguous fixture on its line as an ambiguous finding', function (string $rule, string $fixture): void {
+    $findings = secretScannerScan(SecretFixtures::bodyWith(SecretFixtures::$fixture(), 5));
+
+    expect(secretScannerPairs($findings))->toBe([[$rule, 5]])
+        ->and($findings[0]->severity())->toBe(Severity::Ambiguous);
+})->with([
+    'password assignment' => ['password_assignment', 'passwordAssignment'],
+    'high entropy string' => ['high_entropy_string', 'highEntropyString'],
+]);
+
+it('treats every Stripe test-mode key as blocking, with the label of its own rule', function (): void {
+    foreach ([SecretFixtures::stripeTestSecret(), SecretFixtures::stripeRestrictedTestKey()] as $key) {
+        $findings = secretScannerScan('Key: '.$key);
+
+        expect($findings)->toHaveCount(1)
+            ->and($findings[0]->rule)->toBe(SecretRule::StripeTestKey)
+            ->and($findings[0]->severity())->toBe(Severity::Blocking);
+    }
+});
+
+it('does not report placeholders or prose', function (string $text): void {
+    expect(secretScannerScan($text))->toBe([]);
+})->with([
+    'url with a placeholder password' => ['postgres://user:password@localhost/db'],
+    'url with a variable password' => ['mysql://app:${DB_PASS}@db.example.com/app'],
+    'changeme assignment' => ['password=changeme'],
+    'template variable' => ['token: ${API_TOKEN}'],
+    'angle bracket placeholder' => ['api_key = <your-key>'],
+    'double brace placeholder' => ['password: {{ secret }}'],
+    'percent placeholder' => ['password=%PASSWORD%'],
+    'masked value' => ['password=********'],
+    'your- placeholder' => ['secret: your-secret-here'],
+    'prose about a token' => ['The token is stored in the session.'],
+]);
+
+it('does not report the AWS documentation key, ids, digests or identifiers', function (): void {
+    $texts = [
+        'Example key: '.SecretFixtures::awsDocumentationKey(),
+        'id '.implode('-', ['123e4567', 'e89b', '12d3', 'a456', '426614174000']),
+        'commit '.sha1('example'),
+        'digest '.hash('sha256', 'example'),
+        'name '.substr(str_repeat('stringlowercaseword', 3), 0, 40),
+        'column '.substr(str_repeat('some_snake_case_name_', 3), 0, 40),
+    ];
+
+    foreach ($texts as $text) {
+        expect(secretScannerScan($text))->toBe([]);
+    }
+});
+
+it('reports one token only once, with the earlier blocking rule', function (): void {
+    $github = secretScannerScan('token: '.SecretFixtures::githubToken());
+    $assignment = secretScannerScan('password = '.SecretFixtures::highEntropyString());
+    $stripe = secretScannerScan('STRIPE_KEY='.SecretFixtures::stripeLiveSecret());
+
+    expect(secretScannerPairs($github))->toBe([['github_token', 1]])
+        ->and(secretScannerPairs($assignment))->toBe([['password_assignment', 1]])
+        ->and(secretScannerPairs($stripe))->toBe([['stripe_secret', 1]]);
+});
+
+it('finds a fullwidth or zero-width disguised key on the same line', function (): void {
+    $key = SecretFixtures::awsAccessKey();
+
+    expect(secretScannerPairs(secretScannerScan(SecretFixtures::bodyWith(secretScannerFullwidth($key), 3))))
+        ->toBe([['aws_access_key', 3]])
+        ->and(secretScannerPairs(secretScannerScan(SecretFixtures::bodyWith(secretScannerZeroWidth($key), 3))))
+        ->toBe([['aws_access_key', 3]]);
+});
+
+it('keeps the editor line numbers with every kind of line ending', function (): void {
+    $body = "one\r\ntwo\rthree\n".SecretFixtures::awsAccessKey()."\r\nfive";
+
+    expect(secretScannerPairs(secretScannerScan($body)))->toBe([['aws_access_key', 4]]);
+});
+
+it('fails closed on invalid UTF-8 with one blocking finding on line 0', function (): void {
+    $findings = secretScannerScan("Example text \xC3\x28 end");
+
+    expect(secretScannerPairs($findings))->toBe([['scan_failed', 0]])
+        ->and($findings[0]->severity())->toBe(Severity::Blocking);
+});
+
+it('fails closed when the pattern engine fails', function (): void {
+    $jit = (string) ini_get('pcre.jit');
+    $limit = (string) ini_get('pcre.backtrack_limit');
+
+    try {
+        ini_set('pcre.jit', '0');
+        ini_set('pcre.backtrack_limit', '1');
+
+        $findings = secretScannerScan(SecretFixtures::bodyWith(SecretFixtures::urlWithCredentials(), 3));
+    } finally {
+        ini_set('pcre.jit', $jit);
+        ini_set('pcre.backtrack_limit', $limit);
+    }
+
+    expect(secretScannerPairs($findings))->toBe([['scan_failed', 0]]);
+});
+
+it('sorts the findings by line, then rule, and reports a repeated token once per rule and line', function (): void {
+    $github = SecretFixtures::githubToken();
+    $body = implode("\n", [
+        'Example heading',
+        $github.' and '.$github,
+        'Example prose line.',
+        SecretFixtures::stripeLiveSecret().' '.SecretFixtures::awsAccessKey(),
+        SecretFixtures::awsAccessKey(),
+    ]);
+
+    expect(secretScannerPairs(secretScannerScan($body)))->toBe([
+        ['github_token', 2],
+        ['aws_access_key', 4],
+        ['stripe_secret', 4],
+        ['aws_access_key', 5],
+    ]);
+});
+
+it('finishes on 200 KB of adversarial input in under a second per rule, without failing', function (string $unit): void {
+    $body = substr(str_repeat($unit, intdiv(200_000, strlen($unit)) + 1), 0, 200_000);
+
+    $start = hrtime(true);
+    $findings = secretScannerScan($body);
+    $seconds = (hrtime(true) - $start) / 1e9;
+
+    expect($seconds)->toBeLessThan(1.0)
+        ->and(secretScannerPairs($findings))->not->toContain(['scan_failed', 0]);
+})->with([
+    'repeated A' => ['A'],
+    'repeated jwt head' => ['eyJabcdefgh.'],
+    'repeated scheme' => ['a://'],
+    'repeated pem header' => ["-----BEGIN PRIVATE KEY-----\n"],
+    'repeated password' => ['password='],
+    'repeated colon pairs' => ['a:b:'],
+    'repeated aws prefix' => ['AKIA'],
+    'repeated stripe prefix' => ['sk_live_'],
+    'repeated github prefix' => ['ghp_'],
+    'repeated run characters' => ['aB3+/=_-'],
+    'repeated spaces after a keyword' => ['password'.'                                        '],
+    'repeated url user' => ['a://a:'],
+    'repeated at signs' => ['a://b:c@'],
+]);
