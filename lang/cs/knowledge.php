@@ -82,6 +82,10 @@ return [
         'restored' => 'Článek byl obnoven',
         'stale_title' => 'Článek mezitím někdo změnil',
         'stale_body' => 'Váš text zůstal v editoru, aby ho šlo zkopírovat. Načtěte aktuální verzi a změny sloučte ručně.',
+        'write_failed_title' => 'Článek se nepodařilo uložit',
+        'write_failed_body' => 'Váš text zůstal v editoru, aby ho šlo zkopírovat. Zkuste článek uložit znovu.',
+        'archived_meanwhile_title' => 'Článek byl mezitím archivován',
+        'archived_meanwhile_body' => 'Váš text zůstal v editoru, aby ho šlo zkopírovat. Článek nejprve obnovte a změny pak uložte znovu.',
     ],
 
     'guard' => [
@@ -111,6 +115,7 @@ return [
         'title_required' => 'Vyplňte název článku.',
         'title_too_long' => 'Název může mít nejvýše :max znaků.',
         'body_too_long' => 'Text článku může mít nejvýše :max znaků.',
+        'nul_character' => 'Text obsahuje neplatný znak (NUL). Odstraňte ho a uložte znovu.',
     ],
 
     'render' => [

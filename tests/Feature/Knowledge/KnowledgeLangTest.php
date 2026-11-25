@@ -46,6 +46,14 @@ it('holds the strings of the rendered article', function (): void {
     }
 });
 
+it('holds the strings of the save refusals', function (): void {
+    expect(__('knowledge.notifications.write_failed_title'))->toBe('Článek se nepodařilo uložit')
+        ->and(__('knowledge.notifications.write_failed_body'))->toBe('Váš text zůstal v editoru, aby ho šlo zkopírovat. Zkuste článek uložit znovu.')
+        ->and(__('knowledge.notifications.archived_meanwhile_title'))->toBe('Článek byl mezitím archivován')
+        ->and(__('knowledge.notifications.archived_meanwhile_body'))->toBe('Váš text zůstal v editoru, aby ho šlo zkopírovat. Článek nejprve obnovte a změny pak uložte znovu.')
+        ->and(__('knowledge.errors.nul_character'))->toBe('Text obsahuje neplatný znak (NUL). Odstraňte ho a uložte znovu.');
+});
+
 it('holds the strings of the editor, the actions and the notifications', function (): void {
     expect(__('knowledge.navigation_group'))->toBe('Znalosti')
         ->and(__('knowledge.articles.navigation_label'))->toBe('Obecné znalosti')

@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Domain\Knowledge\Actions\ArchiveArticle;
 use App\Domain\Knowledge\Actions\ArticleInput;
 use App\Domain\Knowledge\Actions\SaveArticle;
 use App\Domain\Knowledge\Actions\SaveOutcome;
+use App\Domain\Knowledge\Exceptions\ArticleWriteFailed;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Support\KnowledgeMarkdown;
@@ -20,6 +22,8 @@ use Filament\Facades\Filament;
 use Filament\Notifications\Livewire\Notifications;
 use Filament\Notifications\Notification;
 use Filament\Notifications\NotificationMailbox;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -480,4 +484,52 @@ it('warns about unsaved changes on the edit page', function (): void {
 
     expect((new ReflectionMethod($page, 'hasUnsavedDataChangesAlert'))->invoke($page))->toBeTrue()
         ->and(Filament::hasUnsavedChangesAlerts())->toBeFalse();
+});
+
+it('refuses a save the database rejects with a persistent notice, keeps the typed text and writes nothing', function (): void {
+    Exceptions::fake();
+
+    $article = KnowledgeFixtures::article(['title' => 'Example failing article', 'body_md' => 'Example original body']);
+    $page = editArticlePage($article);
+
+    // A conflicting version row at the next number: the version insert of the save hits the unique constraint.
+    DB::table('knowledge_article_versions')->insert([
+        'article_id' => $article->getKey(),
+        'version_no' => 2,
+        'title' => 'Example conflicting title',
+        'body_md' => 'Example conflicting body',
+        'author_id' => auth()->id(),
+    ]);
+
+    $before = editArticleVersionCount($article->getKey());
+
+    $page->fillForm(['title' => 'Example typed failing title', 'body' => 'Example typed failing body'])
+        ->call('save')
+        ->assertNoRedirect()
+        ->assertSet('data.title', 'Example typed failing title')
+        ->assertSet('data.body', 'Example typed failing body');
+
+    $notifications = editArticleNotifications();
+
+    expect($notifications)->toHaveCount(1);
+
+    $notice = $notifications[0];
+
+    expect($notice->getTitle())->toBe('Článek se nepodařilo uložit')
+        ->and($notice->getBody())->toBe('Váš text zůstal v editoru, aby ho šlo zkopírovat. Zkuste článek uložit znovu.')
+        ->and($notice->getStatus())->toBe('danger')
+        ->and($notice->getDuration())->toBe('persistent')
+        ->and($notice->getTitle())->not->toContain('Example typed')
+        ->and($notice->getBody())->not->toContain('Example typed');
+
+    $stored = editArticleRow($article->getKey());
+
+    expect($stored->version_no)->toBe(1)
+        ->and($stored->title)->toBe('Example failing article')
+        ->and($stored->body_md)->toBe('Example original body')
+        ->and(editArticleVersionCount($article->getKey()))->toBe($before);
+
+    Exceptions::assertReported(static fn (ArticleWriteFailed $failed): bool => $failed->sqlState === '23505'
+        && ! str_contains($failed->getMessage(), 'Example typed')
+        && $failed->getPrevious() === null);
 });

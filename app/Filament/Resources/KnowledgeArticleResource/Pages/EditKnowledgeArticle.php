@@ -9,11 +9,13 @@ use App\Domain\Knowledge\Actions\ArticleInput;
 use App\Domain\Knowledge\Actions\SaveArticle;
 use App\Domain\Knowledge\Actions\SaveOutcome;
 use App\Domain\Knowledge\Actions\SaveResult;
+use App\Domain\Knowledge\Exceptions\ArticleWriteFailed;
 use App\Domain\Knowledge\Exceptions\StaleArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Filament\Concerns\RethrowsDomainValidation;
 use App\Filament\Resources\KnowledgeArticleResource;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\GuardsSecrets;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\RefusesFailedSaves;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\SecretGuardForm;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
@@ -32,12 +34,14 @@ use Livewire\Attributes\Locked;
  * after a refused save, so pressing "Uložit změny" again after a stale refusal is refused again and a flag set by
  * another save in the meantime is never cleared by a toggle that was already off when the screen opened (D-04 fail
  * closed, D-09). A stale save writes nothing, keeps every typed character and offers the current article in a new
- * tab; there is no overwrite and no merge. A save without changes, or with a change of the sensitive flag alone,
+ * tab; there is no overwrite and no merge. A save the database refuses writes nothing, keeps the typed text and says so
+ * in a persistent notice ({@see RefusesFailedSaves}). A save without changes, or with a change of the sensitive flag alone,
  * writes no version and says so (D-10, VER-01). The secret guard behaves as on the create screen (SEC-01 to SEC-03).
  */
 final class EditKnowledgeArticle extends EditRecord implements SecretGuardForm
 {
     use GuardsSecrets;
+    use RefusesFailedSaves;
     use RethrowsDomainValidation;
 
     protected static string $resource = KnowledgeArticleResource::class;
@@ -176,6 +180,9 @@ final class EditKnowledgeArticle extends EditRecord implements SecretGuardForm
                 ->send();
 
             throw new Halt;
+        } catch (ArticleWriteFailed $failed) {
+            // The database refused the write: nothing was stored, the typed text stays (D-09).
+            $this->refuseWriteFailure($failed);
         }
 
         $this->saveResult = $result;
