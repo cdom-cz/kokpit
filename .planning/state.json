@@ -1,73 +1,12 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": null,
-  "phases": [
-    {
-      "number": "1",
-      "name": "Repository Hygiene",
-      "status": "complete"
-    },
-    {
-      "number": "2",
-      "name": "Platform Foundation",
-      "status": "complete"
-    },
-    {
-      "number": "3",
-      "name": "Operations Foundation",
-      "status": "complete"
-    },
-    {
-      "number": "4",
-      "name": "Clients and Projects",
-      "status": "complete"
-    },
-    {
-      "number": "5",
-      "name": "Tasks and Kanban",
-      "status": "complete"
-    },
-    {
-      "number": "6",
-      "name": "Time Tracking",
-      "status": "complete"
-    },
-    {
-      "number": "7",
-      "name": "REST API",
-      "status": "complete"
-    },
-    {
-      "number": "8",
-      "name": "Exchange Rates and Reports",
-      "status": "complete"
-    },
-    {
-      "number": "9",
-      "name": "Documents and Finance",
-      "status": "complete"
-    },
-    {
-      "number": "10",
-      "name": "Invoicing",
-      "status": "complete"
-    },
-    {
-      "number": "11",
-      "name": "Stripe Payments",
-      "status": "in_progress"
-    },
-    {
-      "number": "12",
-      "name": "Partner Audit",
-      "status": "in_progress"
-    }
-  ],
+  "milestone": "v1.1",
+  "phases": [],
   "next": {
-    "command": "/gsd-progress",
-    "label": "Show progress",
-    "reason": "Unsure of state — showing progress"
+    "command": "/gsd-discuss-phase",
+    "label": "Discuss the first phase",
+    "reason": "Project initialized — plan your first phase"
   },
-  "updated_at": "2026-10-30T18:23:56.092Z"
+  "updated_at": "2026-11-25T08:01:48.320Z"
 }

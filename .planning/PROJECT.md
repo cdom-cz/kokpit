@@ -8,6 +8,20 @@ Kokpit is an open-source (AGPL-3.0) web CRM/ERP for a freelancer or small compan
 
 Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
 
+## Current Milestone: v1.1 Knowledge Center
+
+**Goal:** A company "second brain" inside Kokpit: general and project/client knowledge, organised in folders and tags, versioned, full-text searchable and stored in a form that AI tools can read.
+
+**Target features:**
+- Knowledge articles in canonical Markdown with copyable code blocks, a separate view and a separate edit screen per article
+- Folders (tree) plus tags; link to a client or project; per-client/project switch that grants the client access
+- Image-only attachments on private storage; text always lives inside the article
+- Version history with restore
+- Own full-text search, separate from the Filament global search
+- Special sections: Incidents (hub with sub-pages, sub-pages hidden from the listing but searchable) and Project retrospectives (created by a button, fixed format, time overview from tracked time)
+- New left-menu group "Znalosti" with General knowledge, Incidents, Retrospectives
+- Secret/sensitive-data guard on save; AI-friendly storage format (API and MCP are out of this milestone)
+
 ## Requirements
 
 ### Validated
@@ -29,7 +43,7 @@ Tracked time turns into an issued, payable invoice in one pass, with no unbilled
 
 ### Active
 
-Next milestone is not defined yet; run `/gsd-new-milestone`. Candidates carried over from the v1 audit (`milestones/v1-MILESTONE-AUDIT.md`):
+Milestone v1.1 requirements are defined in `REQUIREMENTS.md`. Candidates carried over from the v1 audit (`milestones/v1-MILESTONE-AUDIT.md`), not part of v1.1 unless scoped in:
 
 - [ ] API timer endpoints (AP-03, backlog 999.1)
 - [ ] G1b: release time held by an unpaid issued proforma
@@ -120,4 +134,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-30 after v1 milestone*
+*Last updated: 2026-11-25 after starting milestone v1.1*
