@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Domain\Knowledge\Actions\ArchiveArticle;
 use App\Domain\Knowledge\Actions\ArticleInput;
 use App\Domain\Knowledge\Actions\SaveArticle;
 use App\Domain\Knowledge\Actions\SaveOutcome;
+use App\Domain\Knowledge\Exceptions\ArticleWriteFailed;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Support\KnowledgeMarkdown;
@@ -20,6 +22,8 @@ use Filament\Facades\Filament;
 use Filament\Notifications\Livewire\Notifications;
 use Filament\Notifications\Notification;
 use Filament\Notifications\NotificationMailbox;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -480,4 +484,132 @@ it('warns about unsaved changes on the edit page', function (): void {
 
     expect((new ReflectionMethod($page, 'hasUnsavedDataChangesAlert'))->invoke($page))->toBeTrue()
         ->and(Filament::hasUnsavedChangesAlerts())->toBeFalse();
+});
+
+it('refuses a save the database rejects with a persistent notice, keeps the typed text and writes nothing', function (): void {
+    Exceptions::fake();
+
+    $article = KnowledgeFixtures::article(['title' => 'Example failing article', 'body_md' => 'Example original body']);
+    $page = editArticlePage($article);
+
+    // A conflicting version row at the next number: the version insert of the save hits the unique constraint.
+    DB::table('knowledge_article_versions')->insert([
+        'article_id' => $article->getKey(),
+        'version_no' => 2,
+        'title' => 'Example conflicting title',
+        'body_md' => 'Example conflicting body',
+        'author_id' => auth()->id(),
+    ]);
+
+    $before = editArticleVersionCount($article->getKey());
+
+    $page->fillForm(['title' => 'Example typed failing title', 'body' => 'Example typed failing body'])
+        ->call('save')
+        ->assertNoRedirect()
+        ->assertSet('data.title', 'Example typed failing title')
+        ->assertSet('data.body', 'Example typed failing body');
+
+    $notifications = editArticleNotifications();
+
+    expect($notifications)->toHaveCount(1);
+
+    $notice = $notifications[0];
+
+    expect($notice->getTitle())->toBe('Článek se nepodařilo uložit')
+        ->and($notice->getBody())->toBe('Váš text zůstal v editoru, aby ho šlo zkopírovat. Zkuste článek uložit znovu.')
+        ->and($notice->getStatus())->toBe('danger')
+        ->and($notice->getDuration())->toBe('persistent')
+        ->and($notice->getTitle())->not->toContain('Example typed')
+        ->and($notice->getBody())->not->toContain('Example typed');
+
+    $stored = editArticleRow($article->getKey());
+
+    expect($stored->version_no)->toBe(1)
+        ->and($stored->title)->toBe('Example failing article')
+        ->and($stored->body_md)->toBe('Example original body')
+        ->and(editArticleVersionCount($article->getKey()))->toBe($before);
+
+    Exceptions::assertReported(static fn (ArticleWriteFailed $failed): bool => $failed->sqlState === '23505'
+        && ! str_contains($failed->getMessage(), 'Example typed')
+        && $failed->getPrevious() === null);
+});
+
+it('tells that the article was archived meanwhile, keeps the typed text and writes nothing', function (): void {
+    $article = KnowledgeFixtures::article(['title' => 'Example archived meanwhile article', 'body_md' => 'Example original body']);
+    $viewUrl = editArticleViewUrl($article);
+
+    $page = editArticlePage($article);
+
+    // Another tab archives the article after this screen was opened.
+    app(ArchiveArticle::class)->handle(auth()->user(), $article);
+
+    $before = editArticleVersionCount($article->getKey());
+
+    $page->fillForm(['body' => 'Example typed body'])
+        ->call('save')
+        ->assertStatus(200)
+        ->assertNoRedirect()
+        ->assertSet('data.body', 'Example typed body');
+
+    $notifications = editArticleNotifications();
+
+    expect($notifications)->toHaveCount(1);
+
+    $notice = $notifications[0];
+    $actions = array_values($notice->getActions());
+
+    expect($notice->getTitle())->toBe('Článek byl mezitím archivován')
+        ->and($notice->getBody())->toBe('Váš text zůstal v editoru, aby ho šlo zkopírovat. Článek nejprve obnovte a změny pak uložte znovu.')
+        ->and($notice->getStatus())->toBe('warning')
+        ->and($notice->getDuration())->toBe('persistent')
+        ->and($actions)->toHaveCount(1)
+        ->and($actions[0]->getName())->toBe('load_current')
+        ->and($actions[0]->getLabel())->toBe('Načíst aktuální verzi')
+        ->and($actions[0]->getUrl())->toBe($viewUrl)
+        ->and($actions[0]->shouldOpenUrlInNewTab())->toBeTrue();
+
+    $stored = editArticleRow($article->getKey());
+
+    expect($stored->trashed())->toBeTrue()
+        ->and($stored->version_no)->toBe(1)
+        ->and($stored->body_md)->toBe('Example original body')
+        ->and(editArticleVersionCount($article->getKey()))->toBe($before);
+
+    // The same press is refused the same way, never as an unhandled exception.
+    $page->call('save')
+        ->assertStatus(200)
+        ->assertNoRedirect()
+        ->assertSet('data.body', 'Example typed body');
+
+    $again = editArticleNotifications();
+
+    expect($again)->toHaveCount(1)
+        ->and($again[0]->getTitle())->toBe('Článek byl mezitím archivován')
+        ->and(editArticleRow($article->getKey())->body_md)->toBe('Example original body')
+        ->and(editArticleVersionCount($article->getKey()))->toBe($before);
+});
+
+it('keeps an open edit screen hydrating after another tab archived its article, so only the save is refused', function (): void {
+    $article = KnowledgeFixtures::article(['title' => 'Example hydrated article', 'body_md' => 'Example original body']);
+
+    $page = editArticlePage($article);
+
+    app(ArchiveArticle::class)->handle(auth()->user(), $article);
+
+    // Step 2 of R-18-12-6: the route-binding query Filament re-runs on every hydrate resolves the archived article.
+    $resolved = KnowledgeArticleResource::resolveRecordRouteBinding($article->getKey());
+
+    expect($resolved)->not->toBeNull()
+        ->and($resolved?->getKey())->toBe($article->getKey())
+        ->and($resolved?->trashed())->toBeTrue();
+
+    // Step 3: the Admin policy lets the archived record through.
+    expect($resolved !== null && KnowledgeArticleResource::canEdit($resolved))->toBeTrue();
+
+    // Steps 1 to 3 together: two full roundtrips without a save hydrate the archived record with no 404 and no 403.
+    $page->set('activeTab', 'preview')->assertStatus(200);
+    $page->set('activeTab', 'write')->assertStatus(200);
+
+    expect(editArticleNotifications())->toBeEmpty()
+        ->and(editArticleRow($article->getKey())->version_no)->toBe(1);
 });

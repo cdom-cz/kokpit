@@ -9,11 +9,13 @@ use App\Domain\Knowledge\Actions\ArticleInput;
 use App\Domain\Knowledge\Actions\SaveArticle;
 use App\Domain\Knowledge\Actions\SaveOutcome;
 use App\Domain\Knowledge\Actions\SaveResult;
+use App\Domain\Knowledge\Exceptions\ArticleWriteFailed;
 use App\Domain\Knowledge\Exceptions\StaleArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Filament\Concerns\RethrowsDomainValidation;
 use App\Filament\Resources\KnowledgeArticleResource;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\GuardsSecrets;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\RefusesFailedSaves;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\SecretGuardForm;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
@@ -22,6 +24,7 @@ use Filament\Resources\Pages\EditRecord;
 use Filament\Support\Components\Attributes\Unexposed;
 use Filament\Support\Exceptions\Halt;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Livewire\Attributes\Locked;
 
 /**
@@ -32,12 +35,15 @@ use Livewire\Attributes\Locked;
  * after a refused save, so pressing "Uložit změny" again after a stale refusal is refused again and a flag set by
  * another save in the meantime is never cleared by a toggle that was already off when the screen opened (D-04 fail
  * closed, D-09). A stale save writes nothing, keeps every typed character and offers the current article in a new
- * tab; there is no overwrite and no merge. A save without changes, or with a change of the sensitive flag alone,
+ * tab; there is no overwrite and no merge. A save of an article that another tab archived meanwhile is refused with a
+ * warning and a link, the same way. A save the database refuses writes nothing, keeps the typed text and says so
+ * in a persistent notice ({@see RefusesFailedSaves}). A save without changes, or with a change of the sensitive flag alone,
  * writes no version and says so (D-10, VER-01). The secret guard behaves as on the create screen (SEC-01 to SEC-03).
  */
 final class EditKnowledgeArticle extends EditRecord implements SecretGuardForm
 {
     use GuardsSecrets;
+    use RefusesFailedSaves;
     use RethrowsDomainValidation;
 
     protected static string $resource = KnowledgeArticleResource::class;
@@ -145,6 +151,11 @@ final class EditKnowledgeArticle extends EditRecord implements SecretGuardForm
      * Saves through the one write path with the version this screen was opened with. The manual clear of the
      * sensitive flag is sent only when the toggle showed the flag on at opening and the Admin turned it off (D-04).
      *
+     * This is the one place that handles a concurrent archive: hydration of an open screen resolves an archived
+     * record (the restore of the locked record and the resource's route-binding query both ignore the soft-delete
+     * scope, and the Admin policy allows it), so the only not-found is the scoped re-read inside
+     * {@see SaveArticle::update()}. It becomes a warning notice with a link to the article (R-18-12-6).
+     *
      * @param  array<string, mixed>  $data
      */
     protected function handleRecordUpdate(Model $record, array $data): Model
@@ -176,6 +187,25 @@ final class EditKnowledgeArticle extends EditRecord implements SecretGuardForm
                 ->send();
 
             throw new Halt;
+        } catch (ModelNotFoundException) {
+            // Another tab archived the article after this screen was opened. Nothing was written, the typed text
+            // stays, and the starting version stays as it was, so the next press is refused the same way (KB-08).
+            Notification::make()
+                ->warning()
+                ->persistent()
+                ->title(trans()->string('knowledge.notifications.archived_meanwhile_title'))
+                ->body(trans()->string('knowledge.notifications.archived_meanwhile_body'))
+                ->actions([
+                    Action::make('load_current')
+                        ->label(trans()->string('knowledge.actions.load_current'))
+                        ->url(KnowledgeArticleResource::getUrl('view', ['record' => $record]), shouldOpenInNewTab: true),
+                ])
+                ->send();
+
+            throw new Halt;
+        } catch (ArticleWriteFailed $failed) {
+            // The database refused the write: nothing was stored, the typed text stays (D-09).
+            $this->refuseWriteFailure($failed);
         }
 
         $this->saveResult = $result;
