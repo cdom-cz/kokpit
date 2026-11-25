@@ -6,6 +6,7 @@ namespace App\Filament\Resources;
 
 use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Actions\ArchiveArticle;
+use App\Domain\Knowledge\Actions\RestoreArticle;
 use App\Domain\Knowledge\Enums\ArticleKind;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Support\KnowledgeMarkdown;
@@ -138,6 +139,10 @@ final class KnowledgeArticleResource extends Resource
                     ->label(__('knowledge.filters.show_archived'))
                     ->toggle(),
             ])
+            ->recordActions([
+                self::archiveAction()->iconButton(),
+                self::restoreAction()->iconButton(),
+            ])
             ->recordUrl(static fn (KnowledgeArticle $record): string => self::getUrl('view', ['record' => $record]))
             ->defaultSort('edited_at', 'desc')
             ->emptyStateHeading(static fn (HasTable $livewire): string => data_get($livewire->getTableFilterState('show_archived'), 'isActive', false)
@@ -199,6 +204,28 @@ final class KnowledgeArticleResource extends Resource
                 assert($record instanceof KnowledgeArticle);
 
                 app(ArchiveArticle::class)->handle(self::actor(), $record);
+
+                $action->success();
+            });
+    }
+
+    /**
+     * The restore action of a row and of the view header (KB-07, D-13): no confirmation, because nothing is lost. It is
+     * offered for an archived article only. The caller adds `iconButton()` for a row; the header shows the label.
+     */
+    public static function restoreAction(): Action
+    {
+        return Action::make('restore')
+            ->label(__('knowledge.actions.restore'))
+            ->tooltip(__('knowledge.actions.restore'))
+            ->icon(Heroicon::OutlinedArrowUturnLeft)
+            ->color('gray')
+            ->successNotificationTitle(__('knowledge.notifications.restored'))
+            ->visible(static fn (Model $record): bool => $record instanceof KnowledgeArticle && $record->trashed())
+            ->action(static function (Model $record, Action $action): void {
+                assert($record instanceof KnowledgeArticle);
+
+                app(RestoreArticle::class)->handle(self::actor(), $record);
 
                 $action->success();
             });

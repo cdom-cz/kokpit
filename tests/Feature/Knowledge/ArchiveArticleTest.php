@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Knowledge\Actions\ArchiveArticle;
+use App\Domain\Knowledge\Actions\RestoreArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Shared\Auth\PartnerContext;
@@ -170,6 +171,121 @@ it('moves an archived article from the default list to the archived switch', fun
         ->assertCanNotSeeTableRecords([$article])
         ->filterTable('show_archived')
         ->assertCanSeeTableRecords([$other, $article]);
+});
+
+it('shows archive and no restore on the view header of an active article, and the reverse on an archived one', function (): void {
+    $active = archiveArticleMake();
+    $archived = KnowledgeFixtures::archived(['title' => 'Example archived article']);
+
+    Livewire::test(ViewKnowledgeArticle::class, ['record' => $active->getRouteKey()])
+        ->assertActionVisible('archive')
+        ->assertActionHidden('restore');
+
+    Livewire::test(ViewKnowledgeArticle::class, ['record' => $archived->getRouteKey()])
+        ->assertActionHidden('archive')
+        ->assertActionVisible('restore')
+        ->assertActionHasLabel('restore', 'Obnovit článek');
+});
+
+it('offers archive as an icon button with a tooltip on an active row and restore on an archived one', function (): void {
+    $active = KnowledgeFixtures::article(['title' => 'Example active article']);
+    $archived = KnowledgeFixtures::archived(['title' => 'Example archived article']);
+
+    $component = Livewire::test(ListKnowledgeArticles::class)
+        ->assertTableActionVisible('archive', $active)
+        ->assertTableActionHidden('restore', $active)
+        ->filterTable('show_archived')
+        ->assertTableActionHidden('archive', $archived)
+        ->assertTableActionVisible('restore', $archived)
+        ->assertTableActionVisible('archive', $active);
+
+    $table = $component->instance()->getTable();
+    $archive = $table->getAction('archive')?->record($active);
+    $restore = $table->getAction('restore')?->record($archived);
+
+    expect($archive?->isIconButton())->toBeTrue()
+        ->and($archive?->getLabel())->toBe('Archivovat článek')
+        ->and($archive?->getTooltip())->toBe('Archivovat článek')
+        ->and($restore?->isIconButton())->toBeTrue()
+        ->and($restore?->getLabel())->toBe('Obnovit článek')
+        ->and($restore?->getTooltip())->toBe('Obnovit článek')
+        ->and($table->getAction('forceDelete'))->toBeNull()
+        ->and($table->getFlatBulkActions())->toBe([]);
+});
+
+it('archives an article from its list row after the same confirmation', function (): void {
+    $article = archiveArticleMake();
+    $known = archiveArticleActivityIds($article->id);
+
+    Livewire::test(ListKnowledgeArticles::class)
+        ->mountTableAction('archive', $article)
+        ->assertSee('Archivovat článek?')
+        ->callMountedTableAction()
+        ->assertNotified('Článek byl archivován')
+        ->assertCanNotSeeTableRecords([$article]);
+
+    $rows = array_filter(archiveArticleNewActivity($article->id, $known), static fn (Activity $row): bool => $row->event === 'article_archived');
+
+    expect(archiveArticleRow($article->id)->deleted_at)->not->toBeNull()
+        ->and(archiveArticleRow($article->id)->version_no)->toBe(2)
+        ->and($rows)->toHaveCount(1);
+});
+
+it('restores an archived article from the archived switch without a confirmation and keeps its place in the list', function (): void {
+    $older = KnowledgeFixtures::archived([
+        'title' => 'Archive probe title zq7',
+        'body_md' => 'Archive probe body zq7',
+        'version_no' => 3,
+        'edited_at' => archiveArticleMoment('2026-11-18 10:00:00'),
+    ]);
+    $newer = KnowledgeFixtures::article(['title' => 'Example newer article', 'edited_at' => archiveArticleMoment('2026-11-24 10:00:00')]);
+    $oldest = KnowledgeFixtures::article(['title' => 'Example oldest article', 'edited_at' => archiveArticleMoment('2026-11-10 10:00:00')]);
+    $known = archiveArticleActivityIds($older->id);
+    $before = archiveArticleRow($older->id);
+
+    Livewire::test(ListKnowledgeArticles::class)
+        ->filterTable('show_archived')
+        ->callTableAction('restore', $older)
+        ->assertNotified('Článek byl obnoven');
+
+    $after = archiveArticleRow($older->id);
+    $new = archiveArticleNewActivity($older->id, $known);
+    $restored = array_values(array_filter($new, static fn (Activity $row): bool => $row->event === 'article_restored'));
+
+    expect($after->deleted_at)->toBeNull()
+        ->and($after->version_no)->toBe(3)
+        ->and($after->edited_at->format('Y-m-d H:i:s.u'))->toBe($before->edited_at->format('Y-m-d H:i:s.u'))
+        ->and(archiveArticleVersionCount($older->id))->toBe(3)
+        ->and($restored)->toHaveCount(1)
+        ->and($restored[0]->causer_id)->toBe($this->admin->getKey())
+        ->and(collect($restored[0]->properties)->isEmpty())->toBeTrue()
+        ->and(archiveArticleJson($new))->not->toContain('Archive probe title zq7')
+        ->and(archiveArticleJson($new))->not->toContain('Archive probe body zq7');
+
+    // D-13: the list is sorted by the last edit, so the restored article returns between the other two.
+    Livewire::test(ListKnowledgeArticles::class)
+        ->assertCanSeeTableRecords([$newer, $older, $oldest], inOrder: true);
+});
+
+it('restores an archived article from its view screen', function (): void {
+    $article = KnowledgeFixtures::archived(['title' => 'Archive probe title zq7', 'body_md' => 'Archive probe body zq7']);
+
+    Livewire::test(ViewKnowledgeArticle::class, ['record' => $article->getRouteKey()])
+        ->callAction('restore')
+        ->assertNotified('Článek byl obnoven')
+        ->assertActionVisible('archive')
+        ->assertActionHidden('restore');
+
+    expect(archiveArticleRow($article->id)->deleted_at)->toBeNull();
+});
+
+it('refuses to restore an article that is active and writes no row', function (): void {
+    $article = archiveArticleMake();
+    $known = archiveArticleActivityIds($article->id);
+
+    expect(fn () => app(RestoreArticle::class)->handle($this->admin, $article))
+        ->toThrow(ModelNotFoundException::class)
+        ->and(archiveArticleNewActivity($article->id, $known))->toBe([]);
 });
 
 it('refuses to archive an article that is already archived and writes no second row', function (): void {

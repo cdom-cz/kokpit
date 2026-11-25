@@ -43,6 +43,7 @@ final class ViewKnowledgeArticle extends ViewRecord
     {
         return [
             KnowledgeArticleResource::archiveAction(),
+            KnowledgeArticleResource::restoreAction(),
         ];
     }
 }
