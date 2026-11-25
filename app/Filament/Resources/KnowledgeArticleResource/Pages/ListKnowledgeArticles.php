@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Filament\Resources\KnowledgeArticleResource\Pages;
 
 use App\Filament\Resources\KnowledgeArticleResource;
+use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
+use Filament\Support\Icons\Heroicon;
 
 /**
- * The list of the general knowledge articles. The create button arrives with the create screen.
+ * The list of the general knowledge articles. The header button opens the create screen (KB-01); the empty state of
+ * the table offers the same action.
  */
 final class ListKnowledgeArticles extends ListRecords
 {
@@ -28,5 +31,17 @@ final class ListKnowledgeArticles extends ListRecords
     public function getTitle(): string
     {
         return __('knowledge.articles.navigation_label');
+    }
+
+    /**
+     * @return array<CreateAction>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            CreateAction::make()
+                ->label(__('knowledge.actions.create'))
+                ->icon(Heroicon::OutlinedPlus),
+        ];
     }
 }
