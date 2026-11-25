@@ -16,6 +16,9 @@
  * buttons (their rule paints a solid square for a class without a mask), added once as a constructed stylesheet.
  * The editor is rebuilt by Filament on some updates, so a mutation observer (and the Livewire navigation event)
  * looks for editors that lack the button; the flag stops a second load of this file from binding a second observer.
+ * The observer watches the document element, not the body element: Livewire's SPA navigation replaces the body
+ * element with the body of the next page, so an observer on the old body would watch a detached node and the button
+ * would be lost on every editor built after the first navigation. The document element survives navigation.
  */
 (function () {
     'use strict'
@@ -164,7 +167,7 @@
     function start() {
         addIconStyle()
 
-        new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true })
+        new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true })
 
         schedule()
     }

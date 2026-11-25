@@ -361,9 +361,12 @@ it('registers the editor script, which edits through CodeMirror only and holds n
 
     $source = createArticleScriptSource('js/knowledge-editor.js');
 
-    foreach (['_editor', 'codemirror', 'operation(', '- [ ] ', 'MutationObserver', 'livewire:navigated', 'kokpitKnowledgeEditorBound'] as $needle) {
+    // The observer is rooted on the document element, which SPA navigation keeps; the body element is replaced (WR-02).
+    foreach (['_editor', 'codemirror', 'operation(', '- [ ] ', 'MutationObserver', 'observe(document.documentElement', 'livewire:navigated', 'kokpitKnowledgeEditorBound'] as $needle) {
         expect($source)->toContain($needle);
     }
+
+    expect($source)->not->toContain('observe(document.'.'body');
 
     // Assembled from fragments so this list does not trip a scanner of its own.
     $sinks = [
