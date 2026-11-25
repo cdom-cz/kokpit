@@ -7,11 +7,12 @@ namespace App\Filament\Resources\KnowledgeArticleResource\Pages;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Filament\Resources\KnowledgeArticleResource;
 use Filament\Actions\Action;
+use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
 
 /**
  * The own screen of one article: the title as heading, the meta line and the body rendered by the one renderer.
- * The archive and restore buttons are in the header; the edit button is added by a later plan.
+ * The edit button comes first in the header, then the archive and restore buttons; an archived article has no edit button.
  */
 final class ViewKnowledgeArticle extends ViewRecord
 {
@@ -42,6 +43,7 @@ final class ViewKnowledgeArticle extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            KnowledgeArticleResource::editAction(EditAction::make())->color('primary'),
             KnowledgeArticleResource::archiveAction(),
             KnowledgeArticleResource::restoreAction(),
         ];
