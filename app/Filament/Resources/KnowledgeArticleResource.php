@@ -19,11 +19,13 @@ use App\Filament\Concerns\InKnowledgeGroup;
 use App\Filament\RelationManagers\KnowledgeArticleHistoryRelationManager;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\SecretGuardForm;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\CreateKnowledgeArticle;
+use App\Filament\Resources\KnowledgeArticleResource\Pages\EditKnowledgeArticle;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ListKnowledgeArticles;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ViewKnowledgeArticle;
 use App\Providers\LocalisationServiceProvider;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
+use Filament\Actions\EditAction;
 use Filament\Forms\Components\MarkdownEditor;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -113,7 +115,7 @@ final class KnowledgeArticleResource extends Resource
     }
 
     /**
-     * The form of the create screen (and, later, the edit screen): the title, the tabs Psaní and Náhled and the
+     * The form of the create screen and of the edit screen: the title, the tabs Psaní and Náhled and the
      * sensitive toggle, in one column (KB-01, D-06, D-07).
      *
      * The body is the only field the preview reads. It is not live: typing sends no request and the text travels
@@ -280,6 +282,7 @@ final class KnowledgeArticleResource extends Resource
                     ->toggle(),
             ])
             ->recordActions([
+                self::editAction(EditAction::make())->iconButton(),
                 self::archiveAction()->iconButton(),
                 self::restoreAction()->iconButton(),
             ])
@@ -320,11 +323,26 @@ final class KnowledgeArticleResource extends Resource
                         ->viewData(static fn (KnowledgeArticle $record): array => [
                             'html' => app(KnowledgeMarkdown::class)->render((string) $record->body_md),
                             'emptyText' => __('knowledge.empty.body'),
-                            'emptyActionUrl' => null,
-                            'emptyActionLabel' => null,
+                            // An empty body invites the Admin to write one; an archived article has no edit screen.
+                            'emptyActionUrl' => $record->trashed() ? null : self::getUrl('edit', ['record' => $record]),
+                            'emptyActionLabel' => __('knowledge.actions.edit'),
                         ]),
                 ]),
         ]);
+    }
+
+    /**
+     * The edit action of a row and of the view header (KB-02): a link to the own edit screen, never a modal, so the
+     * only write path stays SaveArticle::update(). An archived article has no edit screen (restore first), so
+     * the action is hidden for it. The caller adds `iconButton()` for a row; the header shows the label.
+     */
+    public static function editAction(EditAction $action): EditAction
+    {
+        return $action
+            ->label(__('knowledge.actions.edit'))
+            ->tooltip(__('knowledge.actions.edit'))
+            ->url(static fn (Model $record): string => self::getUrl('edit', ['record' => $record]))
+            ->hidden(static fn (Model $record): bool => $record instanceof KnowledgeArticle && $record->trashed());
     }
 
     /**
@@ -404,6 +422,7 @@ final class KnowledgeArticleResource extends Resource
             'index' => ListKnowledgeArticles::route('/'),
             'create' => CreateKnowledgeArticle::route('/create'),
             'view' => ViewKnowledgeArticle::route('/{record}'),
+            'edit' => EditKnowledgeArticle::route('/{record}/edit'),
         ];
     }
 }

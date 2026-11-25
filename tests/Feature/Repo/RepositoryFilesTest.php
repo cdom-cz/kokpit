@@ -1635,6 +1635,89 @@ it('hands Phase 17.1 over: the gap closure bullet names only what exists', funct
         ->and(repoFile('lang/cs/invoices.php'))->toContain('payment_on_converted_proforma');
 });
 
+it('hands Phase 18 over: the knowledge bullet names only what exists', function () {
+    $bullet = repoContributingBullet('Phase 18 (knowledge articles).');
+
+    expect($bullet)->not->toBe('');
+
+    // The names and the rules the text must keep naming.
+    foreach ([
+        '`KnowledgeArticle`', '`KnowledgeArticleVersion`', '`KnowledgeFolder`', '`ArticleKind`', '`SaveArticle::create()`',
+        '`SaveArticle::update()`', '`ArticleInput`', '`StaleArticle`', '`SecretGuardRefused`', '`ArticleWriteFailed`',
+        '`SecretScanner::scan()`', '`SecretRule`', '`MarkdownNormaliser::normalise()`', '`KnowledgeMarkdown::render()`',
+        '`CodeBlockRenderer`', '`CalloutExtension`', '`ArchiveArticle`', '`RestoreArticle`', '`KnowledgeArticleResource`',
+        '`KnowledgeArticleHistoryRelationManager`', '`KnowledgeServiceProvider`', '`GuardsSecrets`',
+        '`kokpit_refuse_knowledge_version_change()`', '`kokpit_guard_knowledge_article_kind()`', '`kokpit_guard_knowledge_folder_tree()`',
+        '`KnowledgeFolder::MAX_DEPTH`', '`DeniesPartners`', '`PartnerMatrix`', '`ChannelMatrix`', '`PanelInventory`', '`RouteWalkTest`',
+        'Phase 19 restore', 'Phase 21 kinds', 'append-only', 'Phase 23', 'no external error reporter', 'deploy-time hand-over item',
+    ] as $name) {
+        expect($bullet)->toContain($name);
+    }
+
+    // SQLSTATE KP003 is written without backticks: a backticked CamelCase word is resolved to a class below.
+    expect($bullet)->toContain('KP003')
+        ->and($bullet)->not->toContain('`KP003`');
+
+    // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists.
+    preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet, $matches, PREG_SET_ORDER);
+
+    expect(count($matches))->toBeGreaterThan(20);
+
+    foreach ($matches as $match) {
+        if (str_ends_with($match[1], 'Test')) {
+            continue;
+        }
+
+        $classes = repoClassesNamed($match[1]);
+
+        expect($classes)->not->toBe([], "CONTRIBUTING.md names {$match[1]} but no such class exists");
+
+        if (isset($match[2])) {
+            $exists = array_filter($classes, static fn (string $class): bool => method_exists($class, $match[2]));
+
+            expect($exists)->not->toBe([], "CONTRIBUTING.md names {$match[1]}::{$match[2]}() but no such method exists");
+        }
+    }
+
+    // The enforcing tests the text names exist, in the file the text implies.
+    $tests = [
+        'KnowledgeTablesTest' => 'tests/Feature/Schema/KnowledgeTablesTest.php',
+        'KnowledgeVisibilityTest' => 'tests/Isolation/KnowledgeVisibilityTest.php',
+        'KnowledgeMarkdownTest' => 'tests/Unit/Knowledge/KnowledgeMarkdownTest.php',
+        'CodeBlockTest' => 'tests/Unit/Knowledge/CodeBlockTest.php',
+        'CalloutTest' => 'tests/Unit/Knowledge/CalloutTest.php',
+        'SecretScannerTest' => 'tests/Unit/Knowledge/SecretScannerTest.php',
+        'MarkdownNormaliserTest' => 'tests/Unit/Knowledge/MarkdownNormaliserTest.php',
+        'SaveArticleTest' => 'tests/Feature/Knowledge/SaveArticleTest.php',
+        'KnowledgeSaveConcurrencyTest' => 'tests/Concurrency/KnowledgeSaveConcurrencyTest.php',
+        'KnowledgeArticleResourceTest' => 'tests/Feature/Knowledge/KnowledgeArticleResourceTest.php',
+        'ArchiveArticleTest' => 'tests/Feature/Knowledge/ArchiveArticleTest.php',
+        'CreateKnowledgeArticleTest' => 'tests/Feature/Knowledge/CreateKnowledgeArticleTest.php',
+        'EditKnowledgeArticleTest' => 'tests/Feature/Knowledge/EditKnowledgeArticleTest.php',
+        'KnowledgeScreensTest' => 'tests/Isolation/KnowledgeScreensTest.php',
+        'KnowledgeSeamTest' => 'tests/Arch/KnowledgeSeamTest.php',
+        'RouteWalkTest' => 'tests/Isolation/RouteWalkTest.php',
+    ];
+
+    foreach ($tests as $name => $path) {
+        expect($bullet)->toContain($name);
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$name} but {$path} does not exist");
+    }
+
+    // The three database functions and the SQLSTATE the text names exist in the migrations.
+    expect(repoFile('database/migrations/2026_11_25_000200_create_knowledge_article_versions_table.php'))->toContain('kokpit_refuse_knowledge_version_change')
+        ->and(repoFile('database/migrations/2026_11_25_000100_create_knowledge_articles_table.php'))->toContain('kokpit_guard_knowledge_article_kind')
+        ->and(repoFile('database/migrations/2026_11_25_000300_create_knowledge_folders_table.php'))->toContain('kokpit_guard_knowledge_folder_tree')
+        ->and(repoFile('database/migrations/2026_11_25_000300_create_knowledge_folders_table.php'))->toContain("'KP003'");
+
+    // The statement "no external error reporter" stays true, or this case fails when one is added.
+    $composer = repoFile('composer.json');
+
+    foreach (['sentry/', 'bugsnag/', 'spatie/flare-client-php', 'spatie/laravel-ignition'] as $package) {
+        expect(str_contains($composer, $package))->toBeFalse("composer.json names {$package}: scrub title, body and body_md from it, then update the Phase 18 bullet of CONTRIBUTING.md");
+    }
+});
+
 it('hands the e-mail layout over: the E-mail bullet names only what exists', function () {
     $bullet = repoContributingBullet('E-mail.');
 
