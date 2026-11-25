@@ -98,18 +98,26 @@ Exceptions (multiples of 4, outside the scale; default):
 
 Phase 19 adds chrome around Filament-native text; native elements (page heading, table cells, form labels, modal
 heading, notifications) keep Filament's own sizes. The contract below covers the custom markup only. Rendered article
-bodies on the version view keep the `kokpit-prose` scale of Phase 18 (28, 20, 16, 14).
+bodies on the version view keep the `kokpit-prose` scale of Phase 18 (28, 20, 16, 14; verified against
+`resources/css/kokpit-prose.css`).
+
+**Size budget (checker Dimension 4 fix).** The phase's complete set of sizes is exactly four: **14, 16, 20, 28**. The
+mechanism is to fold the former 12px caption into 14px, so the custom chrome uses only 14 and 16, and 20 and 28 occur
+only inside `.kokpit-prose` (the rendered version body, whose h1 and h2 are 28 and 20). No custom markup in this phase
+declares 20 or 28, and nothing declares 12. The caption role is told apart from body text by muted colour
+(`var(--gray-500)` light / `var(--gray-400)` dark, at least 4.5:1 on the panel surfaces), not by size.
 
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
 | Body (tree rows, diff text, table text, helper text) | 14px | 400 | 1.5 |
 | Label (selected tree row, diff section labels, field labels) | 14px | 600 | 1.5 |
 | Heading (tree panel heading "Složky", diff title block heading) | 16px | 600 | 1.25 |
-| Caption (folder article counts, line numbers, "Nezměněných řádků" separators, meta line) | 12px | 400 | 1.5 |
+| Caption (folder article counts, line numbers, "Nezměněných řádků" separators, meta line, diff summary), muted colour | 14px | 400 | 1.5 |
 | Display | not used in this phase (page headings are Filament-native) | — | — |
 
-Sizes declared: 12, 14, 16. Weights declared: 400 and 600 only. Diff text, source preview and line numbers use the
-monospace stack at 14px/400 (line numbers 12px/400), `white-space: pre-wrap; overflow-wrap: anywhere` so a long line wraps
+Sizes declared for custom markup: 14, 16 (effective phase total with the prose body: 14, 16, 20, 28 = 4). Weights
+declared: 400 and 600 only. Diff text, source preview and line numbers use the monospace stack at 14px/400 (line numbers
+in the muted caption colour), `white-space: pre-wrap; overflow-wrap: anywhere` so a long line wraps
 and never forces horizontal scrolling.
 
 ---
@@ -148,6 +156,8 @@ looks like an action button in a header; it is outlined `danger`, never filled, 
 
 **Layout.** `ListKnowledgeArticles` keeps its Filament table. The page content becomes a flex row: tree panel (280px, `flex: 0 0 280px`) and the table (`flex: 1; min-width: 0`), 16px gap. Below 1024px the panel moves above the table inside a collapsed disclosure whose summary reads "Složky" plus the name of the current selection; choosing a folder closes it. The panel is a bordered 8px-radius surface (secondary colour) with 16px padding, sticky at the top of the content area on wide screens.
 
+**Primary visual anchor:** the folder tree panel, the only bordered secondary-surface block, left of the table; the selected row with its 2px accent bar is the focal point inside it.
+
 **Panel header.** Heading "Složky" (16/600) on the left; an icon button "Nová složka" (plus icon, tooltip and `aria-label` with the same text) on the right creates a root folder.
 
 **Entries, in order.**
@@ -156,7 +166,7 @@ looks like an action button in a header; it is outlined `danger`, never filled, 
 3. A 1px divider.
 4. The folder tree, siblings sorted alphabetically (Czech collation); no manual order and no drag and drop (D-03).
 
-**Row anatomy (36px min height).** [chevron button 32px, only if the folder has children, else a 32px spacer] [folder icon 16px] [name, 14px, single line, ellipsis, full name in `title`] [article count, 12px muted] [row action menu trigger, ellipsis icon button]. The count is the number of **non-archived** articles in the folder **including its subfolders** (it matches what clicking the folder lists). The action trigger is visible on hover, on keyboard focus within the row and always on touch devices and on the selected row; it is a real focusable button in every state (not `display: none`).
+**Row anatomy (36px min height).** [chevron button 32px, only if the folder has children, else a 32px spacer] [folder icon 16px] [name, 14px, single line, ellipsis, full name in `title`] [article count, 14px muted] [row action menu trigger, ellipsis icon button]. The count is the number of **non-archived** articles in the folder **including its subfolders** (it matches what clicking the folder lists). The action trigger is visible on hover, on keyboard focus within the row and always on touch devices and on the selected row; it is a real focusable button in every state (not `display: none`).
 
 **Expansion.** Roots are expanded on first load, deeper levels collapsed; ancestors of the selected folder are always expanded. Expansion state is not persisted. Chevron buttons carry `aria-expanded` and `aria-label` "Rozbalit :name" / "Sbalit :name".
 
@@ -226,11 +236,11 @@ Table, default sort version number descending, 25 rows per page:
 | Vytvořeno | `j. n. Y H:i` in Europe/Prague (`LocalisationServiceProvider::DATE_TIME_FORMAT`) |
 | Značky | Gray badge "Obnoveno z verze :n" (arrow-uturn-left icon), `warning` badge "Redigováno" (eye-slash icon) |
 
-Row actions as icon buttons with tooltips (same pattern as the General list): "Zobrazit verzi" (eye), "Porovnat s předchozí" (arrows-right-left; hidden on version 1), and an overflow dropdown holding "Obnovit tuto verzi" (hidden on the current version and on an archived article) and "Redigovat verzi" (danger colour in the dropdown). There is no bulk selection; picking two arbitrary versions happens on the diff page.
+**Primary visual anchor:** the version table with the newest row's `success` badge "Aktuální" as the first thing the eye lands on. Row actions as icon buttons with tooltips (same pattern as the General list), and **every icon-only button carries an explicit `aria-label` equal to its tooltip copy** ("Zobrazit verzi", "Porovnat s předchozí", and "Další akce" on the overflow trigger): "Zobrazit verzi" (eye), "Porovnat s předchozí" (arrows-right-left; hidden on version 1), and an overflow dropdown holding "Obnovit tuto verzi" (hidden on the current version and on an archived article) and "Redigovat verzi" (danger colour in the dropdown). There is no bulk selection; picking two arbitrary versions happens on the diff page.
 
 ### 5. Version view (VER-02; D-08)
 
-Page `versions/{version}`. Header: back link "Zpět na verze". Meta line (P18 style): "Verze :n · :author · :date" plus badges. Header actions: "Porovnat s předchozí" (gray), "Obnovit tuto verzi" (primary, hidden on the current version and on an archived article), "Redigovat verzi" (outlined `danger`).
+Page `versions/{version}`. **Primary visual anchor:** the rendered version body inside `.kokpit-prose` (28px h1 scale, the largest type on the page), with the status callouts directly above it as the secondary focus. Header: back link "Zpět na verze". Meta line (P18 style): "Verze :n · :author · :date" plus badges. Header actions: "Porovnat s předchozí" (gray), "Obnovit tuto verzi" (primary, hidden on the current version and on an archived article), "Redigovat verzi" (outlined `danger`).
 
 Body: the stored title as a 16px/600 Heading line, then the stored body rendered by the one renderer inside `.kokpit-prose` (`KnowledgeMarkdown`, never a second renderer), so a redacted version shows its redacted text. Callouts above the body, at most one of each:
 - Old version (info): "Toto je starší verze. Aktuální je verze :current." with a link "Zobrazit aktuální verzi".
@@ -239,7 +249,7 @@ Body: the stored title as a 16px/600 Heading line, then the stored body rendered
 
 ### 6. Diff page (VER-04; D-09)
 
-Page `versions/compare?from=<n>&to=<m>` (query string, so the comparison is linkable and survives reload). Default: `to` is the version chosen, `from` its predecessor. Two searchable Selects at the top, "Z verze" and "Na verzi", options "Verze :n · :date"; changing either recomputes live (`wire:model.live`, loading indicator shown during the request). Any two versions may be chosen, in either order.
+**Primary visual anchor:** the body diff table, with the added and removed tints as the only saturated areas on the page; the summary line and title block are subordinate. Page `versions/compare?from=<n>&to=<m>` (query string, so the comparison is linkable and survives reload). Default: `to` is the version chosen, `from` its predecessor. Two searchable Selects at the top, "Z verze" and "Na verzi", options "Verze :n · :date"; changing either recomputes live (`wire:model.live`, loading indicator shown during the request). Any two versions may be chosen, in either order.
 
 Content, top to bottom:
 1. Summary line (Caption): "Přidáno :added, odstraněno :removed řádků" (counts of body lines).
@@ -251,11 +261,11 @@ Limits (default): more than 1,500 diff rows renders the first 1,500 plus the not
 
 States: identical content → "Obě verze mají stejný text." (empty-state style, no table); same version picked on both sides → "Vybrali jste stejnou verzi. Zvolte dvě různé verze."; a version number that does not exist for the article → 404.
 
-Header links: "Zobrazit verzi :to" and "Zpět na verze". Diff library: the contract needs hunks with old and new line numbers; either `sebastian/diff` or `jfcherng/php-diff` satisfies it (planner decides, D-09). Note for the planner: `sebastian/diff@9.0.1` is in `composer.lock` under `packages-dev` only, so it is **not** present in a production install; if chosen it must become a runtime requirement.
+Header links: "Zobrazit verzi :to" and "Zpět na verze". Diff library: the contract needs hunks with old and new line numbers; either `sebastian/diff` or `jfcherng/php-diff` satisfies it (planner decides, D-09). Recommendation: `sebastian/diff` 9.0.1 (BSD-3-Clause, see Registry Safety). It sits in `composer.lock` under `packages-dev` only, so it is **not** present in a production install and must be moved to a runtime `require`.
 
 ### 7. Restore (VER-03; D-11)
 
-Trigger: "Obnovit tuto verzi" on the version view and in the Versions row menu (Filament action opening a modal). Hidden for the current version and for an archived article. Modal: width `5xl`, scrollable content, icon arrow-uturn-left, no danger styling (nothing is lost).
+**Primary visual anchor:** the diff area of the current version against the chosen one, above the footer's single primary submit. Trigger: "Obnovit tuto verzi" on the version view and in the Versions row menu (Filament action opening a modal). Hidden for the current version and for an archived article. Modal: width `5xl`, scrollable content, icon arrow-uturn-left, no danger styling (nothing is lost).
 
 1. Heading "Obnovit verzi :from?"; description "Název a text se vrátí na stav verze :from a uloží se jako nová verze :next. Žádná verze se nesmaže."
 2. The diff of the **current** version against the chosen one (same `.kokpit-diff` component, `max-height: 60vh`, own scroll), captioned "Změny oproti aktuální verzi :current".
@@ -269,14 +279,20 @@ The confirmed restore calls the same save path as an editor save (stale-save che
 - **Stale (article changed meanwhile)**: `danger` notification "Článek mezitím někdo změnil" / "Aktuální text článku se mezitím změnil. Zavřete okno, znovu otevřete obnovení a zkontrolujte změny."
 - Failure of the write: the P18 `write_failed` notification; the modal stays open.
 
+**Open editor versus a redacted latest version (D-13).** Redacting the current version changes the article body without
+a version bump, so the contract is: the stale token covers redaction. A save from an editor (or a restore modal) opened
+before the redaction is **refused** as stale, nothing is written, and the form keeps the typed text so nothing is lost;
+the unredacted text can therefore never be saved back. The notification reuses the stale pattern, `danger`, persistent:
+"Text článku byl mezitím změněn nebo redigován" / "Uložení se neprovedlo, aby se do článku nevrátil redigovaný text. Znovu otevřete článek a zkontrolujte změny." The planner chooses the mechanism (for example a revision counter bumped by redaction, or a token over the body hash); the behaviour above is the contract and applies to the restore modal too (its stale notification above is shown).
+
 ### 8. Redaction (VER-05; D-12, D-13)
 
-Trigger: "Redigovat verzi" (version view header, Versions row menu), available for **any** version including the current one and including on an archived article. Modal width `3xl`, `danger` icon (shield-exclamation), content top to bottom:
+**Primary visual anchor:** the `danger` callout "Redigování nelze vrátit zpět" at the top of the modal (the only filled-tint block above the fold), with the filled `danger` submit as the single action anchor in the footer. Trigger: "Redigovat verzi" (version view header, Versions row menu), available for **any** version including the current one and including on an archived article. Modal width `3xl`, `danger` icon (shield-exclamation), content top to bottom:
 
 1. `danger` callout "Redigování nelze vrátit zpět": "Vybraný text se v uložené verzi nenávratně přepíše značkou [REDIGOVÁNO]. Zobrazení, rozdíl i obnovení této verze pak použijí upravený text."
 2. `warning` callout "Skutečné řešení je tajný údaj změnit": "Redigování odstraní jen kopii z Kokpitu. Únik vždy řešte změnou nebo zneplatněním údaje u jeho vydavatele (heslo, klíč, token)." (D-12: the UI states that rotation is the real remedy.)
 3. If the version is the current one, an info callout: "Tato verze je aktuální: redigování se projeví i v aktuálním textu článku." (D-13).
-4. Read-only **numbered source preview** of the stored Markdown (monospace, line numbers 12px, `max-height: 320px`, own scroll) so the line numbers match those the secret guard reports. It is visible to Admin only and never logged.
+4. Read-only **numbered source preview** of the stored Markdown (monospace, line numbers 14px muted, `max-height: 320px`, own scroll) so the line numbers match those the secret guard reports. It is visible to Admin only and never logged.
 5. Radio "Rozsah": "Jen vybrané řádky" (default) / "Celý text verze". For the line scope, a text input "Čísla řádků" with helper "Čísla oddělte čárkou, rozsah zapište pomlčkou, například 3, 7-9." Each selected line is replaced by `[REDIGOVÁNO]`; the whole scope replaces the body with that single marker (default; the title is not redacted).
 6. Required textarea "Důvod redigování" (max 500 chars) with helper "Do protokolu změn se zapíše jen to, že důvod existuje, ne jeho text. Nepište do něj tajný údaj." The reason text is never echoed back on any screen after submit.
 7. Footer: submit "Redigovat verzi" (`danger`, filled), cancel "Zrušit".
@@ -307,6 +323,7 @@ All copy Czech, in `lang/cs/knowledge.php`. Wording below is the contract; keys 
 | Error, delete refused | Title: Složku nelze smazat. Body: Složka není prázdná: obsahuje :contents. Přesuňte obsah jinam a zkuste to znovu. |
 | Error, restore refused (secret) | Verzi nelze obnovit, obsahuje tajný údaj. Redigujte tajný údaj v této verzi a obnovte ji znovu. |
 | Error, restore stale | Článek mezitím někdo změnil. Aktuální text článku se mezitím změnil. Zavřete okno, znovu otevřete obnovení a zkontrolujte změny. |
+| Error, editor save after redaction | Title: Text článku byl mezitím změněn nebo redigován. Body: Uložení se neprovedlo, aby se do článku nevrátil redigovaný text. Znovu otevřete článek a zkontrolujte změny. |
 | Error, redaction | Vyberte alespoň jeden řádek. / Řádek :n ve verzi neexistuje. / Vyplňte důvod redigování. / Verzi se nepodařilo redigovat. Nic se nezměnilo. Zkuste to znovu. |
 | Success notifications | Složka byla vytvořena / přejmenována / přesunuta / smazána. Zařazení článku bylo uloženo, nová verze nevznikla. Verze :from byla obnovena jako verze :next. Verze :n byla redigována. |
 | Destructive confirmation (folder delete) | Smazat složku „:name“: Složka je prázdná. Smazání nelze vrátit zpět. Submit: Smazat složku |
@@ -329,7 +346,7 @@ destructive and has a diff-confirmation modal in the neutral style.
 > Shape-rooted state coverage. Empty-state and error-state copy lives in `## Copywriting Contract` above; rows
 > reference it rather than restating it.
 
-Applicable state considerations resolved: 11 covered, 3 backstop, 3 unresolved
+Applicable state considerations resolved: 12 covered, 3 backstop, 2 unresolved (documented assumptions)
 
 | Category | Element(s) | Status | Resolution / Reason |
 |----------|------------|--------|---------------------|
@@ -347,9 +364,9 @@ Applicable state considerations resolved: 11 covered, 3 backstop, 3 unresolved
 | loading | diff recomputation after changing "Z verze" or "Na verzi" | 🧪 backstop | Loading indicator shows during the Livewire request and the previous diff stays until the new one arrives; verified by a visual UI-state test |
 | partial | redacted version (marker rows, "Redigováno" badge) shown in view, diff and restore | 🧪 backstop | All three screens show the marker text and none shows the original; verified by an end-to-end check with a fictional secret assembled at runtime |
 | populated | tree after create, rename, move and delete | 🧪 backstop | Counts and expansion update without a full reload; selection survives; verified by a visual UI-state test |
-| partial | editing a deeply nested folder while its parent is renamed in another tab | ⚠ unresolved | Planner treats as an assumption: the next action re-reads the tree and a stale folder shows the "not found" notification |
-| partial | open editor of an article whose newest version is redacted (D-13) | ⚠ unresolved | The article body changes without a version bump, so the stale-save check could let an open editor save the unredacted text back; the planner must make the stale token cover a redaction (for example a revision counter) or refuse that save |
-| partial | where the redaction reason is stored (D-12) | ⚠ unresolved | Needs a column or table (the version row is frozen and the log must not carry it); also redaction and "restored from" markers need persisted columns on the version row, written through the trigger variant of D-12; the UI contract only requires that the reason is never displayed after submit |
+| partial | editing a deeply nested folder while its parent is renamed in another tab | ⚠ unresolved (assumption) | Planner treats as an assumption: the next action re-reads the tree and a stale folder shows the "not found" notification |
+| partial | open editor of an article whose newest version is redacted (D-13) | ✅ covered | The stale token covers redaction: an editor or restore modal opened before the redaction is refused on save with the documented "Text článku byl mezitím změněn nebo redigován" notification, the typed text stays in the form, nothing is written (Section 7, "Open editor versus a redacted latest version") |
+| partial | where the redaction reason is stored (D-12) | ⚠ unresolved (assumption) | Needs a column or table (the version row is frozen and the log must not carry it); also redaction and "restored from" markers need persisted columns on the version row, written through the trigger variant of D-12; the UI contract only requires that the reason is never displayed after submit |
 
 ---
 
@@ -359,7 +376,7 @@ Applicable state considerations resolved: 11 covered, 3 backstop, 3 unresolved
 |----------|-------------|-------------|
 | shadcn official | none (shadcn not initialised, not applicable to a Filament stack) | not applicable |
 | Third-party registries | none | none declared, no vetting gate required |
-| Composer packages added by this phase (if any) | `jfcherng/php-diff` only if the planner prefers it over promoting `sebastian/diff` to a runtime requirement | AGPL-compatibility check required before adding (MIT is acceptable; confirm in the plan) |
+| Composer packages added by this phase | **Recommended: `sebastian/diff` 9.0.1**, promoted from `require-dev` to `require` (already in `composer.lock`, no new transitive packages). Fallback: `jfcherng/php-diff` 7.0.1 (adds `php-color-output`, `php-mb-string`, `php-sequence-matcher`) | `sebastian/diff`: licence BSD-3-Clause, verified from `composer.lock` (`packages-dev` entry) and `vendor/sebastian/diff/composer.json` + `LICENSE`, 2026-11-25. `jfcherng/php-diff`: licence BSD-3-Clause, verified from the Packagist metadata (`repo.packagist.org/p2/jfcherng/php-diff.json`, version 7.0.1), 2026-11-25; its three dependencies were not individually checked. BSD-3-Clause is on the `scripts/check-licenses.php` allowlist, so both pass `composer check-licenses`; the planner reruns that command after the `composer.json` change |
 
 ---
 
