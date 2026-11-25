@@ -436,9 +436,11 @@ it('refuses a Blocking finding with rule and line, keeps the typed text and offe
 });
 
 /**
- * The shapes of the two closed verification gaps as the Admin could paste them: a private key embedded in a YAML
- * block scalar, a blockquote or a JSON string, and tokens hidden by Markdown escapes, an entity or a soft hyphen.
- * Each case is the text, the rule label of the callout and the 0-based offset of the finding line inside the text.
+ * The shapes of the closed verification gaps as the Admin could paste them: a private key embedded in a YAML
+ * block scalar, a blockquote or a JSON string, a key with a one-line body (PKCS#8 Ed25519, plain or fenced, or an
+ * unwrapped 1600-character body) and a key behind a comment marker or in quoted lines, and tokens hidden by Markdown
+ * escapes, an entity or a soft hyphen. Each case is the text, the rule label of the callout and the 0-based offset
+ * of the finding line inside the text.
  *
  * @return array<string, array{string, string, int}>
  */
@@ -450,6 +452,11 @@ function createArticleBlockingShapes(): array
         'yaml block scalar key' => [$keys['yaml block scalar'][0], 'Soukromý klíč (PEM)', $keys['yaml block scalar'][1]],
         'blockquote key' => [$keys['blockquote'][0], 'Soukromý klíč (PEM)', $keys['blockquote'][1]],
         'json escaped key' => [$keys['json escaped'][0], 'Soukromý klíč (PEM)', $keys['json escaped'][1]],
+        'ed25519 single line key' => [$keys['ed25519 single line'][0], 'Soukromý klíč (PEM)', $keys['ed25519 single line'][1]],
+        'ed25519 fenced key' => [$keys['ed25519 fenced'][0], 'Soukromý klíč (PEM)', $keys['ed25519 fenced'][1]],
+        'long single line key' => [$keys['single long line'][0], 'Soukromý klíč (PEM)', $keys['single long line'][1]],
+        'hash comment key' => [$keys['hash comment'][0], 'Soukromý klíč (PEM)', $keys['hash comment'][1]],
+        'quoted lines with trailing comma key' => [$keys['quoted lines with trailing comma'][0], 'Soukromý klíč (PEM)', $keys['quoted lines with trailing comma'][1]],
         'markdown escaped stripe key' => [SecretFixtures::markdownEscaped(SecretFixtures::stripeLiveSecret()), 'Token Stripe', 0],
         'entity encoded github token' => [SecretFixtures::entityEncoded(SecretFixtures::githubToken()), 'Token GitHub', 0],
         'aws key id with a soft hyphen' => [SecretFixtures::withInserted(SecretFixtures::awsAccessKey(), "\u{00AD}"), 'Přístupový klíč AWS', 0],
