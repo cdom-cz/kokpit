@@ -7,6 +7,7 @@ use App\Providers\ApiServiceProvider;
 use App\Providers\AppServiceProvider;
 use App\Providers\Filament\AdminPanelProvider;
 use App\Providers\HorizonServiceProvider;
+use App\Providers\KnowledgeServiceProvider;
 use App\Providers\LocalisationServiceProvider;
 use App\Providers\ModelConventionsServiceProvider;
 use App\Providers\OperationsServiceProvider;
@@ -21,5 +22,6 @@ return [
     LocalisationServiceProvider::class,
     OperationsServiceProvider::class,
     PaymentsServiceProvider::class,
+    KnowledgeServiceProvider::class,
     HorizonServiceProvider::class,
 ];
