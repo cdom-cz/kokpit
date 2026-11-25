@@ -79,6 +79,14 @@ final class KnowledgeArticle extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * @return BelongsTo<KnowledgeFolder, $this>
+     */
+    public function folder(): BelongsTo
+    {
+        return $this->belongsTo(KnowledgeFolder::class, 'folder_id');
+    }
+
+    /**
      * @return BelongsTo<KnowledgeArticle, $this>
      */
     public function parent(): BelongsTo

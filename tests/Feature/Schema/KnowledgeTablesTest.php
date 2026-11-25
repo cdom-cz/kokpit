@@ -6,6 +6,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Enums\ArticleKind;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use Illuminate\Support\Facades\DB;
@@ -244,5 +245,103 @@ describe('articles and versions', function (): void {
 
     it('has a Czech label for the incident sub-page kind', function (): void {
         expect(ArticleKind::from('incident_page')->getLabel())->toBe('Podstránka incidentu');
+    });
+});
+
+describe('folders', function (): void {
+    it('refuses duplicate sibling names, also among roots and ignoring case, and a blank name', function (): void {
+        $root = knowledgeTablesFolder('Example ops');
+
+        RawSql::expectSqlState('23505', fn () => knowledgeTablesFolder('example OPS'));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesFolder('   ', $root));
+
+        $first = knowledgeTablesFolder('Example docs');
+
+        RawSql::expectAllowed(fn () => knowledgeTablesFolder('Runbooks', $root));
+        RawSql::expectAllowed(fn () => knowledgeTablesFolder('Runbooks', $first));
+        RawSql::expectSqlState('23505', fn () => knowledgeTablesFolder('RUNBOOKS', $root));
+    });
+
+    it('gives a folder a version 7 id from the column default', function (): void {
+        DB::table('knowledge_folders')->insert(['name' => 'Example ops', 'created_at' => now(), 'updated_at' => now()]);
+
+        expect(DB::table('knowledge_folders')->value('id'))->toMatch(Uuids::V7_PATTERN);
+    });
+
+    it('refuses a folder that is its own parent and a move into its own subtree', function (): void {
+        $a = knowledgeTablesFolder('Folder A');
+        $b = knowledgeTablesFolder('Folder B', $a);
+        $c = knowledgeTablesFolder('Folder C', $b);
+
+        RawSql::expectSqlState('KP003', fn () => DB::table('knowledge_folders')->where('id', $a)->update(['parent_id' => $a]));
+        RawSql::expectSqlState('KP003', fn () => DB::table('knowledge_folders')->where('id', $a)->update(['parent_id' => $b]));
+        RawSql::expectSqlState('KP003', fn () => DB::table('knowledge_folders')->where('id', $a)->update(['parent_id' => $c]));
+        RawSql::expectAllowed(fn () => DB::table('knowledge_folders')->where('id', $c)->update(['parent_id' => $a]));
+    });
+
+    it('allows a chain of six nested folders and refuses a seventh level', function (): void {
+        $parent = null;
+        for ($level = 1; $level <= 6; $level++) {
+            $parent = knowledgeTablesFolder('Level '.$level, $parent);
+        }
+
+        RawSql::expectSqlState('KP003', fn () => knowledgeTablesFolder('Level 7', $parent));
+    });
+
+    it('adds the height of a moved subtree to the depth of its new parent', function (): void {
+        // A subtree of height 3: top -> middle -> leaf.
+        $top = knowledgeTablesFolder('Subtree top');
+        $middle = knowledgeTablesFolder('Subtree middle', $top);
+        knowledgeTablesFolder('Subtree leaf', $middle);
+
+        // A chain of four levels, and one of three.
+        $four = null;
+        for ($level = 1; $level <= 4; $level++) {
+            $four = knowledgeTablesFolder('Deep '.$level, $four);
+        }
+        $three = null;
+        for ($level = 1; $level <= 3; $level++) {
+            $three = knowledgeTablesFolder('Shallow '.$level, $three);
+        }
+
+        // 4 + 3 > 6 is refused, 3 + 3 = 6 is allowed.
+        RawSql::expectSqlState('KP003', fn () => DB::table('knowledge_folders')->where('id', $top)->update(['parent_id' => $four]));
+        RawSql::expectAllowed(fn () => DB::table('knowledge_folders')->where('id', $top)->update(['parent_id' => $three]));
+    });
+
+    it('refuses to delete a folder with a child or an article', function (): void {
+        $parent = knowledgeTablesFolder('Example ops');
+        knowledgeTablesFolder('Runbooks', $parent);
+        $filed = knowledgeTablesFolder('Filed');
+        knowledgeTablesArticle(['folder_id' => $filed]);
+
+        RawSql::expectSqlState('23503', fn () => DB::table('knowledge_folders')->where('id', $parent)->delete());
+        RawSql::expectSqlState('23503', fn () => DB::table('knowledge_folders')->where('id', $filed)->delete());
+    });
+
+    it('files only a general article, and only in an existing folder', function (): void {
+        $folder = knowledgeTablesFolder('Example ops');
+
+        RawSql::expectSqlState('23503', fn () => knowledgeTablesArticle(['folder_id' => (string) Str::uuid7()]));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesArticle(['kind' => 'incident', 'folder_id' => $folder]));
+        RawSql::expectAllowed(fn () => knowledgeTablesArticle(['folder_id' => $folder]));
+    });
+
+    it('reads the folder tree and its articles through the models', function (): void {
+        $parent = knowledgeTablesFolder('Example ops');
+        $child = knowledgeTablesFolder('Runbooks', $parent);
+        $article = knowledgeTablesArticle(['folder_id' => $child]);
+
+        [$children, $folder, $articles] = app(PartnerContext::class)->runAsSystem(static fn (): array => [
+            KnowledgeFolder::query()->findOrFail($parent)->children()->get(),
+            KnowledgeArticle::query()->findOrFail($article)->folder()->first(),
+            KnowledgeFolder::query()->findOrFail($child)->articles()->get(),
+        ]);
+
+        expect($children->modelKeys())->toBe([$child])
+            ->and($folder?->getKey())->toBe($child)
+            ->and($articles->modelKeys())->toBe([$article])
+            ->and((new KnowledgeFolder)->getMorphClass())->toBe('knowledge_folder')
+            ->and(KnowledgeFolder::MAX_DEPTH)->toBe(6);
     });
 });
