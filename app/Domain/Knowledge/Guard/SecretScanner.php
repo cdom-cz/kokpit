@@ -37,6 +37,17 @@ final class SecretScanner
         .'(?:[ \t>]{0,40}+[A-Za-z0-9+\/=]{16,}+[ \t]*(?:(?:\\\\r)?\\\\n)?(?:\n|\z)){2}/';
 
     /**
+     * A private key on one line with escaped line breaks (a JSON string, with or without escaped slashes,
+     * or a YAML double-quoted scalar on one line): the header, an escaped line break, up to four escaped
+     * header fields, an optional second escaped line break, then exactly sixteen units that are a base64
+     * character or an escaped slash. The count is fixed and no group repeats without a bound, so a long
+     * line cannot exhaust the pattern engine (R-18-11-2).
+     */
+    private const string PEM_PRIVATE_KEY_ESCAPED = '/-----BEGIN (?:[A-Z]{1,20} ){0,5}PRIVATE KEY(?: BLOCK)?-----(?:\\\\r)?\\\\n'
+        .'(?:[A-Za-z][A-Za-z-]{0,30}: [^\\\\\n]{0,200}(?:\\\\r)?\\\\n){0,4}(?:(?:\\\\r)?\\\\n)?'
+        .'(?:[A-Za-z0-9+\/=]|\\\\\/){16}/';
+
+    /**
      * The characters that may stand in front of a base64 line of a key: spaces, tabs and quote markers.
      */
     private const string LINE_PREFIX = " \t>";
@@ -81,17 +92,26 @@ final class SecretScanner
     private const string URL_CREDENTIALS = '/(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,30}+:\/\/[^\s:@\/]{1,128}+:([^\s@\/]{1,256}+)@[A-Za-z0-9\[]/';
 
     /**
-     * A secret-like name, a separator and a value. Group 1 is the value, checked against the placeholders.
+     * A secret-like name, a separator and a value. The value is a double-quoted one, a single-quoted one (6 to
+     * 128 characters, spaces allowed) or an unquoted word. A branch-reset group keeps group 1 the value in
+     * every branch, so the placeholder check needs no change; a quoted value that is too long falls back to
+     * the unquoted word.
      */
     private const string PASSWORD_ASSIGNMENT = '/(?<![A-Za-z0-9])(?:password|passwd|pwd|secret|token|api[ _-]?key|auth(?:orization)?)'
-        .'["\']?[ \t]{0,20}[:=][ \t]{0,20}["\']?(?:(?:bearer|basic)[ \t]{1,20})?([^\s"\']{6,128})/i';
+        .'["\']?[ \t]{0,20}[:=][ \t]{0,20}(?|'
+        .'"(?:(?:bearer|basic)[ \t]{1,20})?([^"\n]{6,128}+)"'
+        .'|\'(?:(?:bearer|basic)[ \t]{1,20})?([^\'\n]{6,128}+)\''
+        .'|["\']?(?:(?:bearer|basic)[ \t]{1,20})?([^\s"\']{6,128}))/i';
 
     /**
      * A maximal run of characters that tokens are made of. The length and the shape are checked in code.
      */
     private const string RUN = '/[A-Za-z0-9+\/=_-]{32,}+/';
 
-    private const int RUN_MAX_LENGTH = 256;
+    /**
+     * The length of the window in which a long run is checked, and the longest run checked as one piece.
+     */
+    private const int RUN_WINDOW_LENGTH = 256;
 
     private const float RUN_MIN_ENTROPY = 4.2;
 
@@ -182,6 +202,13 @@ final class SecretScanner
             }
 
             $findings[SecretRule::PemPrivateKey->value.'@'.$first] = new SecretFinding(SecretRule::PemPrivateKey, $first);
+        }
+
+        foreach ($folded as $index => $line) {
+            if (str_contains($line, '-----BEGIN ') && $this->checked(preg_match(self::PEM_PRIVATE_KEY_ESCAPED, $line)) === 1) {
+                $covered[$index + 1] = true;
+                $findings[SecretRule::PemPrivateKey->value.'@'.($index + 1)] = new SecretFinding(SecretRule::PemPrivateKey, $index + 1);
+            }
         }
 
         return $covered;
@@ -333,22 +360,47 @@ final class SecretScanner
     }
 
     /**
-     * A run of 32 to 256 characters that is no hex digest or UUID, mixes lower case, upper case and digits
-     * and has the entropy of a random token. Words, identifiers and digests do not reach all three.
+     * A run of 32 or more characters that is no hex digest or UUID, mixes lower case, upper case and digits
+     * and has the entropy of a random token. A run of up to 256 characters is checked as one piece; a longer
+     * one is checked in consecutive windows of 256 characters plus one final window holding its last 256
+     * characters, and is a finding when any window passes. The loop stops at the first passing window and
+     * takes one pass over the run, so the work stays linear. Words, identifiers and digests do not reach
+     * all three classes.
      */
     private function isRandomRun(string $run): bool
     {
         $length = strlen($run);
 
-        if ($length < 32 || $length > self::RUN_MAX_LENGTH || ctype_xdigit(str_replace('-', '', $run))) {
+        if ($length < 32) {
             return false;
         }
 
-        $mixed = strcspn($run, 'abcdefghijklmnopqrstuvwxyz') < $length
-            && strcspn($run, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') < $length
-            && strcspn($run, '0123456789') < $length;
+        if ($length <= self::RUN_WINDOW_LENGTH) {
+            return $this->isRandomWindow($run);
+        }
 
-        return $mixed && $this->entropy($run) >= self::RUN_MIN_ENTROPY;
+        for ($offset = 0; $offset + self::RUN_WINDOW_LENGTH <= $length; $offset += self::RUN_WINDOW_LENGTH) {
+            if ($this->isRandomWindow(substr($run, $offset, self::RUN_WINDOW_LENGTH))) {
+                return true;
+            }
+        }
+
+        return $this->isRandomWindow(substr($run, -self::RUN_WINDOW_LENGTH));
+    }
+
+    private function isRandomWindow(string $window): bool
+    {
+        $length = strlen($window);
+
+        if (ctype_xdigit(str_replace('-', '', $window))) {
+            return false;
+        }
+
+        $mixed = strcspn($window, 'abcdefghijklmnopqrstuvwxyz') < $length
+            && strcspn($window, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') < $length
+            && strcspn($window, '0123456789') < $length;
+
+        return $mixed && $this->entropy($window) >= self::RUN_MIN_ENTROPY;
     }
 
     /**

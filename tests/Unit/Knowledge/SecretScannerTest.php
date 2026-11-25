@@ -100,6 +100,54 @@ it('does not report a sentence that only names the private key header', function
         ->and(secretScannerScan("\n\n"))->toBe([]);
 });
 
+it('does not report an indented, quoted or escaped header without a key body', function (): void {
+    $kind = 'RSA '.'PRIV'.'ATE KEY';
+    $header = '-----BEGIN '.$kind.'-----';
+    $footer = '-----END '.$kind.'-----';
+
+    $texts = [
+        'indented header, short line and footer' => '  '.$header."\n  short\n  ".$footer,
+        'blockquoted sentence' => '> A file that starts with '.$header.' holds the key.',
+        'json value with prose' => '{"note":"'.$header.'\\nsee the vault entry"}',
+        'header and an escaped newline only' => '{"note":"'.$header.'\\n"}',
+        'quoted header and a short line' => '> '.$header."\n> short\n> ".$footer,
+    ];
+
+    foreach ($texts as $text) {
+        expect(secretScannerScan($text))->toBe([]);
+    }
+});
+
+it('reports a random run longer than the window and a quoted password with spaces as ambiguous findings', function (): void {
+    $cases = [
+        [SecretFixtures::longRandomRun(336), 'high_entropy_string'],
+        [SecretFixtures::longRandomRun(257), 'high_entropy_string'],
+        [SecretFixtures::longRandomRun(256), 'high_entropy_string'],
+        [SecretFixtures::quotedPasswordAssignment(), 'password_assignment'],
+        [SecretFixtures::quotedPasswordAssignment("'"), 'password_assignment'],
+    ];
+
+    foreach ($cases as [$text, $rule]) {
+        $findings = secretScannerScan(SecretFixtures::bodyWith($text, 3));
+
+        expect(secretScannerPairs($findings))->toBe([[$rule, 3]])
+            ->and($findings[0]->severity())->toBe(Severity::Ambiguous);
+    }
+
+    $quiet = [
+        'hex digest' => bin2hex(random_bytes(200)),
+        'single class run' => str_repeat('abcdefghij', 40),
+        'quoted angle placeholder' => 'password = "<your password>"',
+        'quoted variable placeholder' => 'password: "${DB_PASSWORD}"',
+        'quoted changeme' => 'password = "changeme"',
+        'quoted short value' => 'password = "abc"',
+    ];
+
+    foreach ($quiet as $text) {
+        expect(secretScannerScan(SecretFixtures::bodyWith($text, 3)))->toBe([]);
+    }
+});
+
 it('gives every rule the severity of the D-01 split', function (): void {
     $ambiguous = [SecretRule::PasswordAssignment, SecretRule::HighEntropyString];
 
@@ -294,4 +342,9 @@ it('finishes on 200 KB of adversarial input in under a second per rule, without 
     'repeated spaces after a keyword' => ['password'.'                                        '],
     'repeated url user' => ['a://a:'],
     'repeated at signs' => ['a://b:c@'],
+    'repeated indented quoted pem header' => ["  > -----BEGIN PRIV"."ATE KEY-----\n"],
+    'repeated escaped pem header' => ['-----BEGIN PRIV'.'ATE KEY-----\\n'],
+    'repeated prefix-only lines' => ["  >  > \n"],
+    'repeated high entropy run' => [SecretFixtures::highEntropyString()],
+    'repeated open quoted password' => ['password = "a b '],
 ]);

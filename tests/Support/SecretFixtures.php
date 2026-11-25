@@ -36,6 +36,18 @@ final class SecretFixtures
     }
 
     /**
+     * A fictional service-account style object on one line, whose private key is a JSON string with
+     * literal escaped line breaks. The encoder produces both spellings, nothing is typed.
+     */
+    public static function pemPrivateKeyJsonEscaped(bool $escapeSlashes = false): string
+    {
+        return (string) json_encode(
+            ['type' => 'service_account', 'private_key' => self::pemPrivateKey()."\n"],
+            $escapeSlashes ? 0 : JSON_UNESCAPED_SLASHES,
+        );
+    }
+
+    /**
      * The shapes a private key takes inside a note: shape name to the text and the 0-based offset of the
      * header line inside that text. Every key is a fresh runtime-assembled fake (D-05).
      *
@@ -43,10 +55,43 @@ final class SecretFixtures
      */
     public static function pemPrivateKeyShapes(): array
     {
+        $fence = '   '.str_repeat('`', 3);
+        $lines = explode("\n", self::pemPrivateKey());
+        $quoted = 'tls_key: "'.$lines[0].'\\n'."\n"
+            .'  '.$lines[1].'\\n'."\n"
+            .'  '.$lines[2].'\\n'."\n"
+            .'  '.$lines[3].'"';
+
         return [
             'plain' => [self::pemPrivateKey(), 0],
             'yaml block scalar' => ["tls_key: |\n".self::prefixedLines(self::pemPrivateKey(), '  '), 1],
+            'blockquote' => [self::prefixedLines(self::pemPrivateKey(), '> '), 0],
+            'nested blockquote' => [self::prefixedLines(self::pemPrivateKey(), '> > '), 0],
+            'list item fence' => ["- Example step\n".$fence."\n".self::prefixedLines(self::pemPrivateKey(), '   ')."\n".$fence, 2],
+            'tab indent' => [self::prefixedLines(self::pemPrivateKey(), "\t"), 0],
+            'json escaped' => [self::pemPrivateKeyJsonEscaped(), 0],
+            'json escaped slashes' => [self::pemPrivateKeyJsonEscaped(true), 0],
+            'yaml double quoted' => [$quoted, 0],
+            'markdown escaped header' => ['\\'.self::pemPrivateKey(), 0],
         ];
+    }
+
+    /**
+     * One random base64 run on a single line, the first characters of the encoding of fresh random bytes
+     * (a new value on every call).
+     */
+    public static function longRandomRun(int $length = 336): string
+    {
+        return substr(base64_encode(random_bytes((int) ceil($length * 3 / 4) + 3)), 0, $length);
+    }
+
+    /**
+     * A password assignment whose quoted value holds several short words (the unquoted form stops at the
+     * first short word and finds nothing).
+     */
+    public static function quotedPasswordAssignment(string $quote = '"'): string
+    {
+        return 'db password = '.$quote.implode(' ', ['Zq9X', 'bT1m', 'Rw7L', 'cVd5']).$quote;
     }
 
     /**
