@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources;
 
+use App\Domain\Identity\Models\User;
+use App\Domain\Knowledge\Actions\ArchiveArticle;
 use App\Domain\Knowledge\Enums\ArticleKind;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Support\KnowledgeMarkdown;
@@ -14,6 +16,7 @@ use App\Filament\Concerns\InKnowledgeGroup;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ListKnowledgeArticles;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ViewKnowledgeArticle;
 use App\Providers\LocalisationServiceProvider;
+use Filament\Actions\Action;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\View;
@@ -26,7 +29,9 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use InvalidArgumentException;
 
 /**
  * The Admin screens of the general knowledge articles: the list with the archived switch and the view screen that
@@ -169,6 +174,48 @@ final class KnowledgeArticleResource extends Resource
                         ]),
                 ]),
         ]);
+    }
+
+    /**
+     * The archive action of a row and of the view header (KB-07, D-13): a confirmation first, then the one write path
+     * of the archive. The step is reversible, so the confirmation is neutral and not a danger prompt. The caller
+     * adds `iconButton()` for a row; the header shows the label.
+     */
+    public static function archiveAction(): Action
+    {
+        return Action::make('archive')
+            ->label(__('knowledge.actions.archive'))
+            ->tooltip(__('knowledge.actions.archive'))
+            ->icon(Heroicon::OutlinedArchiveBox)
+            ->color('gray')
+            ->requiresConfirmation()
+            ->modalHeading(__('knowledge.actions.archive_heading'))
+            ->modalDescription(__('knowledge.actions.archive_description'))
+            ->modalSubmitActionLabel(__('knowledge.actions.archive'))
+            ->modalIcon(Heroicon::OutlinedArchiveBox)
+            ->successNotificationTitle(__('knowledge.notifications.archived'))
+            ->visible(static fn (Model $record): bool => $record instanceof KnowledgeArticle && ! $record->trashed())
+            ->action(static function (Model $record, Action $action): void {
+                assert($record instanceof KnowledgeArticle);
+
+                app(ArchiveArticle::class)->handle(self::actor(), $record);
+
+                $action->success();
+            });
+    }
+
+    /**
+     * The signed-in user behind a screen action; the Action authorises again inside itself.
+     */
+    private static function actor(): User
+    {
+        $user = auth()->user();
+
+        if (! $user instanceof User) {
+            throw new InvalidArgumentException('The knowledge screens need a signed-in user.');
+        }
+
+        return $user;
     }
 
     public static function getRelations(): array

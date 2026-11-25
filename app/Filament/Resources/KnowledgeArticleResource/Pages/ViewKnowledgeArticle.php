@@ -11,7 +11,7 @@ use Filament\Resources\Pages\ViewRecord;
 
 /**
  * The own screen of one article: the title as heading, the meta line and the body rendered by the one renderer.
- * Archive, restore and edit buttons are added by later plans.
+ * The archive and restore buttons are in the header; the edit button is added by a later plan.
  */
 final class ViewKnowledgeArticle extends ViewRecord
 {
@@ -41,6 +41,8 @@ final class ViewKnowledgeArticle extends ViewRecord
      */
     protected function getHeaderActions(): array
     {
-        return [];
+        return [
+            KnowledgeArticleResource::archiveAction(),
+        ];
     }
 }
