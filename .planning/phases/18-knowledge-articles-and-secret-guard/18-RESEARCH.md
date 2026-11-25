@@ -240,8 +240,8 @@ tests/Unit/Knowledge/  tests/Feature/Knowledge/  tests/Feature/Schema/  tests/Is
 | Rule key | Severity | Pattern idea (PCRE, no backtracking traps) | Notes |
 |----------|----------|--------------------------------------------|-------|
 | `pem_private_key` | Blocking | `-----BEGIN (?:[A-Z]+ )*PRIVATE KEY(?: BLOCK)?-----` followed by newline and at least two base64-looking lines of 16+ characters | A bare header sentence in prose did **not** match (executed), so documentation that merely names the header is not blocked without an override |
-| `aws_access_key` | Blocking | `\b(?:A3T[A-Z0-9]\|AKIA\|ASIA\|ABIA\|ACCA)[A-Z2-7]{16}\b` | The widely published documentation example key ends in `EXAMPLE`; decide whether to allowlist that exact suffix (Open Question 2) |
-| `stripe_secret` | Blocking | live-mode secret and restricted keys (`sk` or `rk`, `_live_`, 24-99 alphanumerics) and webhook signing secrets | Test-mode keys: ambiguous, planner's choice (the repo uses Stripe, docs may legitimately show test keys) |
+| `aws_access_key` | Blocking | `\b(?:A3T[A-Z0-9]\|AKIA\|ASIA\|ABIA\|ACCA)[A-Z2-7]{16}\b` | The widely published documentation example key ends in `EXAMPLE`; decide whether to allowlist that exact suffix (Open Question 1, RESOLVED: exempt) |
+| `stripe_secret` | Blocking | live-mode secret and restricted keys (`sk` or `rk`, `_live_`, 24-99 alphanumerics) and webhook signing secrets | Test-mode keys: originally suggested as ambiguous; owner ruling 2026-11-25 makes them Blocking too (rule `stripe_test_key`, Open Question 1, RESOLVED) |
 | `github_token` | Blocking | `gh[pousr]_` + 36-255 alphanumerics, fine-grained `github_pat_` + 22-255 | |
 | `jwt` | Blocking | `eyJ…{8,}.eyJ…{8,}.…{8,}` (header and payload both start with the base64 of `{"`) | |
 | `url_credentials` | Blocking | `scheme://user:pass@host` with a placeholder allowlist on the password part | `postgres://user:password@localhost/db` is **not** a finding (executed) |
@@ -251,8 +251,8 @@ tests/Unit/Knowledge/  tests/Feature/Knowledge/  tests/Feature/Schema/  tests/Is
 Process the text per line for single-line rules and over the whole text for the PEM rule; line number = `substr_count(substr($text, 0, $offset), "\n") + 1`. Scan a copy folded with `Normalizer::normalize(NFKC)` and with zero-width characters removed **inside lines only**, so line numbers stay identical to the editor. Fail closed: if `preg_last_error() !== PREG_NO_ERROR` after any rule, throw a refusal that names the rule and line 0, never fall through to "clean". All eight regexes ran on 200 KB pathological inputs (repeated `A`, `eyJabcdefgh.`, `a://`, repeated PEM headers, `password=`, `a:b:`, `AKIA`) with none above 50 ms and no PCRE error [VERIFIED: executed redos.php].
 
 ### Pattern 4: Normaliser driven by the CommonMark AST
-**What:** `MarkdownNormaliser::normalise(string $md): string`: strip BOM, convert `\r\n` and `\r` to `\n`, collect the line numbers covered by every `FencedCode` and `IndentedCode` node (from `getStartLine()` to `getEndLine()` of a parsed document), `rtrim` spaces and tabs on every other line, `rtrim` trailing newlines of the whole text. Executed result: fences inside block quotes and list items are protected, tilde fences and indented code are protected, an unclosed fence is protected to the end of the text, and `normalise(normalise(x)) === normalise(x)`. A regex over backticks would not do this.
-**Interpretation to confirm:** D-10 says content inside fenced code blocks "is never altered" while line endings are unified. This research applies LF unification everywhere (including inside fences, because a stored CR in a copied command is a bug) and leaves trailing spaces and blank lines inside code untouched. Logged as A3. Trailing double-space hard line breaks outside code are trimmed by D-10 and therefore lost.
+**What (revised after the owner ruling on A3, 2026-11-25):** `MarkdownNormaliser::normalise(string $md): string`: strip one leading BOM; split the text into lines that keep their own line ending (the same CRLF, CR, LF split as league's `MarkdownInput`, so line numbers match the parser); collect the line numbers covered by every `FencedCode` and `IndentedCode` node (from `getStartLine()` to `getEndLine()` of the parsed, unconverted text); keep every code line and its own ending byte for byte; on every other (prose) line `rtrim` spaces and tabs and write LF as its ending; at the end drop trailing blank prose lines and the ending of a final prose line, while a final code line keeps its ending. Executed result (first spike and the planner's revision-2 spike on league/commonmark 2.10.7): fences inside block quotes and list items are protected, tilde fences and indented code are protected, an unclosed fence is protected to the end of the text, every code block stays byte-identical with mixed LF, CR and CRLF, and `normalise(normalise(x)) === normalise(x)`. A regex over backticks would not do this.
+**Interpretation (settled):** D-10 says content inside fenced code blocks "is never altered" while line endings are unified. The first draft of this research unified line endings inside code too; the owner ruled that D-10 applies literally, so line endings are unified on prose lines only and no byte inside fenced or indented code changes (A3). The line break between a prose line and the block after it is a prose byte (LF); the line break after a block's last line is a code byte (kept). Trailing double-space hard line breaks outside code are trimmed by D-10 and therefore lost; the preview renders the normalised text so it shows the same (plan 18-09).
 
 ### Pattern 5: Filament screens on the existing conventions
 - **Resource:** `#[AccessRule(Audience::AdminOnly, reason: '…')]`, `use EnforcesResourceAccessRule`, `getNavigationGroup()` through a new `InKnowledgeGroup` trait copied from `InSignalGroup` [VERIFIED: app/Filament/Concerns/InSignalGroup.php:16, `return __('kokpit.signal.navigation_group');`]. Not opted into global search (the panel uses `->globalSearchResourceOptIn()`) [VERIFIED: app/Providers/Filament/AdminPanelProvider.php:133, `->globalSearchResourceOptIn()`].
@@ -360,7 +360,7 @@ Left to later phases on purpose: `page_type` (Phase 21 adds it with its own CHEC
 **What goes wrong:** after a refused save the page re-reads the record and the next attempt passes the version check. **Avoid:** `#[Locked] int $loadedVersion` set only in `mount()`; Filament `EditRecord` refreshes the record after `afterSave`, never after `Halt`. UI-SPEC: "the version number the form started from is not silently refreshed".
 
 ### Pitfall 7: A no-op save that is not one
-**What goes wrong:** CRLF vs LF, trailing spaces or a trailing blank line make every save a "change" and inflate versions; or normalisation inside fences corrupts commands. **Avoid:** compare normalised stored text with normalised input; property test `normalise(normalise(x)) === normalise(x)`; fixture whose fenced block content must stay byte-identical (except LF unification).
+**What goes wrong:** CRLF vs LF, trailing spaces or a trailing blank line make every save a "change" and inflate versions; or normalisation inside fences corrupts commands. **Avoid:** compare normalised stored text with normalised input; property test `normalise(normalise(x)) === normalise(x)`; fixture whose fenced block content must stay byte-identical, its CR and CRLF line endings included (owner ruling on A3).
 
 ### Pitfall 8: Generated asset files appear in git
 **What goes wrong:** `filament:upgrade` (every `composer install`) writes `public/css/app/kokpit-prose.css` and `public/js/app/knowledge-copy.js`; they are not ignored today (`git check-ignore` printed nothing and exited 1; only `/public/js/filament/`, `/public/css/filament/`, `/public/fonts/filament/` are ignored). **Avoid:** add both directories to `.gitignore` in the same change that registers the assets.
@@ -446,20 +446,34 @@ $sanitiser = new HtmlSanitizer(
 ```
 Observed on the hostile corpus: `<script>`, `<iframe>`, `onclick`, `onerror` appear only as escaped text; `javascript:` / `JaVaScRiPt:` / `data:` / `vbscript:` / relative / protocol-relative / reference-style links become plain text; images become alt text; `[!NOTE]` and `[!TIP]` became callout blocks; `[!WARNING] same line text`, `[!FOO]` and a nested `[!NOTE]` stayed blockquotes; a code fence info string `php"><script>x</script>` rendered as plain code with an empty language; HTML entities in the body (`&lt;script&gt;`) stay visible as text.
 
-### Example 2: Normaliser (AST line mask)
+### Example 2: Normaliser (AST line mask, code bytes kept)
 ```php
-// Source: executed prototype (scratchpad norm.php)
-$md  = ltrim(str_replace(["\r\n", "\r"], "\n", $md), "\u{FEFF}");
-$doc = (new MarkdownParser($env))->parse($md);                       // CommonMarkCore + GFM, no rendering
-$protected = [];
-foreach ($doc->iterator() as $n) {
-    if ($n instanceof FencedCode || $n instanceof IndentedCode) {
-        for ($l = $n->getStartLine(); $l <= $n->getEndLine(); $l++) { $protected[$l] = true; }
+// Source: executed prototype, revision 2 after the owner ruling on A3 (planner scratchpad norm2.php,
+// PHP 8.6, league/commonmark 2.10.7): idempotent and every code block byte-identical on 200 seeded
+// bodies with mixed LF, CR and CRLF. The first prototype converted CR inside code and is superseded.
+if (str_starts_with($md, "\u{FEFF}")) { $md = substr($md, 3); }
+if ($md === '') { return ''; }
+$parts = preg_split('/(\r\n|\r|\n)/', $md, -1, PREG_SPLIT_DELIM_CAPTURE); // same split as MarkdownInput
+$lines = [];                                                           // [text, own line ending]
+for ($i = 0, $n = count($parts); $i < $n; $i += 2) { $lines[] = [$parts[$i], $parts[$i + 1] ?? '']; }
+if (count($lines) > 1 && end($lines) === ['', '']) { array_pop($lines); } // final ending opens no line
+$code = [];
+foreach ($parser->parse($md)->iterator() as $node) {                   // CommonMarkCore + GFM, no rendering
+    if ($node instanceof FencedCode || $node instanceof IndentedCode) {
+        for ($l = $node->getStartLine(); $l <= $node->getEndLine(); $l++) { $code[$l] = true; }
     }
 }
-$lines = explode("\n", $md);
-foreach ($lines as $i => $line) { if (! isset($protected[$i + 1])) { $lines[$i] = rtrim($line, " \t"); } }
-return rtrim(implode("\n", $lines), "\n");
+$out = [];
+foreach ($lines as $k => [$text, $end]) {
+    $out[] = isset($code[$k + 1])
+        ? [$text, $end, true]                                          // code line: every byte kept
+        : [rtrim($text, " \t"), $end === '' ? '' : "\n", false];       // prose line: trim, LF
+}
+while ($out !== [] && ! $out[array_key_last($out)][2] && $out[array_key_last($out)][0] === '') {
+    array_pop($out);                                                   // trailing blank prose lines
+}
+if ($out !== [] && ! $out[array_key_last($out)][2]) { $out[array_key_last($out)][1] = ''; } // no final prose ending
+return implode('', array_map(fn (array $l): string => $l[0].$l[1], $out));
 ```
 
 ### Example 3: Secret fixtures assembled at runtime (D-05)
@@ -518,7 +532,7 @@ Tabs::make()->livewireProperty('activeTab')->tabs([
 | Hardened pipeline on a hostile corpus (script, img onerror, event handlers, six unsafe link forms, reference-style, data images, fence-info injection, nested callouts) | No live markup; all dropped links plain text; callouts correct; output identical on PHP 8.5.13 (DDEV) and 8.6.0 (host) |
 | Highlighter round trip | `{+ +}` family breaks text equality; the invariant falls back to plain text; unknown language falls back to escaped text; 200 KB of nginx config highlights in 72 ms |
 | Render time and memory | 228 KB of ordinary paragraphs 242 ms; 120 KB emphasis flood 395 ms; 200 KB backtick flood 733 ms; 100 KB bracket flood 526 ms and 186 MB peak |
-| Normaliser | Idempotent; fences in quotes and lists protected; unclosed fence protected |
+| Normaliser | Idempotent; fences in quotes and lists protected; unclosed fence protected; revision 2 (owner ruling on A3): every code block byte-identical with mixed LF, CR and CRLF on 200 seeded bodies |
 | Scanner regexes | All six blocking patterns and both ambiguous patterns hit their fixtures; placeholders and prose do not; no regex over 50 ms on 200 KB adversarial input |
 | PostgreSQL 18.6 | `NULLS NOT DISTINCT` expression unique index, cycle and self-parent refusal, depth cap, append-only versions trigger (UPDATE, DELETE, TRUNCATE all refused) |
 
@@ -539,28 +553,32 @@ Tabs::make()->livewireProperty('activeTab')->tabs([
 |---|-------|---------|---------------|
 | A1 | GitHub treats `> [!NOTE] text on the same line` as a plain blockquote and accepts lowercase types; Kokpit mirrors this (accepts types case-insensitively, requires the marker alone on its line) | Pattern 2 | Cosmetic: a callout renders as a quote or vice versa; author sees the difference at once |
 | A2 | The Spatie `deleted` / `restored` events write no activity row when nothing allowlisted is dirty, hence the explicit archive/restore rows | Pattern 1 | A duplicate or missing audit row; one test settles it |
-| A3 | D-10 "never altered inside fenced code" is read as: LF unification everywhere, nothing else changed inside code (trailing spaces and blank lines kept) | Pattern 4 | If the owner wants raw CRs kept in code, the normaliser needs a different mask; low impact |
+| A3 | SETTLED by owner ruling 2026-11-25: D-10 applies literally. No byte inside fenced or indented code changes (CR, LF, CRLF, trailing whitespace, inner and trailing blank lines of an unclosed fence); only prose lines are normalised (BOM, line endings, trailing whitespace, trailing blank lines). The original assumption (LF unification inside code too) was rejected | Pattern 4 | A body that differs only in line endings inside code is a content change and creates a version; a CR kept in code renders and copies as an LF line break (CommonMark line endings). Implemented in plan 18-04 (R-18-04-5) |
 | A4 | The deploy target's PHP `memory_limit` is at least 256 MB and a 100 000 character cap (peak 186 MB on the worst adversarial body) is acceptable | Pitfall 4 | Out-of-memory on an adversarial body; lower the cap to 50 000 characters (99 MB peak) if the target is smaller |
 | A5 | Deferred (non-live) MarkdownEditor state reaches the server with the `$set('activeTab', …)` call of a tab click, so the preview shows unsaved text | Pattern 5, Pitfall 13 | Preview would show the last synced text; mitigation is a Livewire feature test plus a human check, fallback `->live(onBlur: true)` on the editor |
-| A6 | Stripe test-mode keys and the AWS documentation example key should be ambiguous / allowlisted rather than blocking | Pattern 3 | Either docs get blocked with no override (too strict) or a real test key slips as "ambiguous"; owner's call, see Open Question 2 |
+| A6 | SETTLED by owner ruling 2026-11-25: every Stripe key (live and test mode, secret, restricted and webhook) is Blocking with no override; only the AWS documentation example key (suffix `EXAMPLE`) stays exempt. The original assumption (Stripe test-mode keys ambiguous) was rejected | Pattern 3 | Documentation that shows a Stripe test key must use a placeholder instead; accepted by the owner. Implemented in plan 18-04 (R-18-04-1); see Open Question 1 |
 | A7 | `ArticleKind` values `general`, `incident`, `incident_page`, `retrospective` | Pattern 6 | Immutable after creation, so choose deliberately; the names match the roadmap and requirement wording |
 | A8 | Body cap 100 000 characters and title cap 200 are acceptable product limits | Pattern 6 | Owner may want a larger cap for long runbooks; raising it needs the memory check of A4 |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Stripe test keys and documentation placeholders**
    - What we know: D-01 lists "AWS/Stripe/GitHub-style tokens" as unambiguous; an unambiguous finding has no override.
    - What is unclear: whether test-mode keys (`sk_test_…`) and the public AWS example key must also hard-block.
    - Recommendation: block live and restricted-live keys and webhook secrets; treat test-mode keys as ambiguous; allowlist a value ending in `EXAMPLE`. Confirm with the owner when D-01 is next touched; implement as data in the rule table so it is a one-line change.
+   - RESOLVED (owner ruling, 2026-11-25): block ALL Stripe keys, live and test mode (secret `sk_`, restricted `rk_`, webhook `whsec_`), with no override; the recommendation to treat test-mode keys as ambiguous is rejected. The AWS documentation key exemption (suffix `EXAMPLE`) stays as recommended. Implemented in plan 18-04, R-18-04-1 (rule `stripe_test_key` is Blocking) and R-18-04-2.
 2. **Scan skipped for a no-op save**
    - What we know: a no-op save creates no version (D-10) and the flag toggle must remain editable on an article whose stored body has an acknowledged ambiguous finding.
    - Unclear: whether SEC-01 "every save scans" should also cover a metadata-only save.
    - Recommendation: scan only when the normalised content differs from the stored current version (nothing new enters the store otherwise). Record as decision in the plan.
+   - RESOLVED: as recommended; the scan runs only on a content-changing save, a no-op or sensitivity-only save writes no version and is not scanned. Recorded in plan 18-05, R-18-05-4 (with the guard decision in R-18-05-5).
 3. **Folder depth cap value**
    - Research suggests 6 to 8; the trigger needs one number now.
    - Recommendation: 6, as a single constant shared by the trigger and the later `MoveFolder`.
+   - RESOLVED: as recommended; `KnowledgeFolder::MAX_DEPTH` is 6, shared by the tree trigger (SQLSTATE KP003) and the later `MoveFolder`. Recorded in plan 18-01, R-18-01-6 (the constant itself in R-18-01-7).
 4. **`edited_at` for archive and restore**
    - UI-SPEC says archive and restore must not reorder the list; `edited_at` is stored and only `SaveArticle` writes it. No open risk, listed so the planner does not use `updated_at`.
+   - RESOLVED: `edited_at` has no default and is written only by `SaveArticle` and the test fixtures; archive and restore never touch it. Recorded in plan 18-01, R-18-01-3 (archive and restore in 18-08, R-18-08-1).
 
 ## Environment Availability
 
@@ -598,7 +616,7 @@ Unit tests are plain PHPUnit without the application (so the renderer must not c
 | KB-04 | Five callout types render; unknown type, same-line text and nested callout stay blockquotes | unit | `pest tests/Unit/Knowledge/CalloutTest.php` | ❌ Wave 0 |
 | KB-05 | Copy button markup present once per block; JS reads `textContent` (asset file contains no `innerHTML`/`innerText` read) | unit + manual | `pest tests/Unit/Knowledge/CodeBlockTest.php` + UAT item | ❌ Wave 0 |
 | SEC-01/02 | Each rule hits its runtime-assembled fixture with correct line; placeholders and prose do not; finding DTO and exceptions carry no value; preg error fails closed | unit | `pest tests/Unit/Knowledge/SecretScannerTest.php` | ❌ Wave 0 |
-| VER-01 / D-10 | Normaliser idempotent; fenced and indented code protected; CRLF/BOM/trailing space/trailing blank lines | unit | `pest tests/Unit/Knowledge/MarkdownNormaliserTest.php` | ❌ Wave 0 |
+| VER-01 / D-10 | Normaliser idempotent; fenced and indented code byte-identical (CR included); prose CRLF/BOM/trailing space/trailing blank lines | unit | `pest tests/Unit/Knowledge/MarkdownNormaliserTest.php` | ❌ Wave 0 |
 | KB-01, VER-01, SEC-01..03 | `SaveArticle`: create makes version 1; content change raises version by one and writes a snapshot; title-only change versions; no-op writes no version; blocking finding refused and nothing stored; ambiguous refused then acknowledged sets `sensitive`, writes the metadata-only `secret_acknowledged` row; a later body change needs a fresh acknowledgment; clean save never clears `sensitive`; activity `properties` JSON never contains title, body or a fixture fragment | feature | `pest tests/Feature/Knowledge/SaveArticleTest.php` | ❌ Wave 0 |
 | KB-08 | Two edit screens from the same version: second save refused with the stale notice, typed text stays in the form, retry still refused | feature (Livewire) | `pest tests/Feature/Knowledge/EditKnowledgeArticleTest.php` | ❌ Wave 0 |
 | KB-08, VER-01 | Real parallel processes: N workers save from the same expected version, exactly one wins; sequential saves produce gap-free numbers; DB refuses a duplicate `(article_id, version_no)` | concurrency | `pest tests/Concurrency/KnowledgeSaveConcurrencyTest.php` | ❌ Wave 0 |

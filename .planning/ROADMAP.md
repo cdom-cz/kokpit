@@ -79,7 +79,28 @@ The milestone is built schema and write seam first, guard before content, sharin
   3. Saving a body that contains an unambiguous secret (a fake credential assembled at runtime in the test) is refused with a message that names the rule and the line but never the value; an ambiguous finding saves only after explicit acknowledgment and marks the article sensitive, and that override covers the one save only and appears in the activity log without the content
   4. A save that changes the content raises the article's version number by one and keeps the content as an immutable version, a save without changes creates no version, and when two edit screens save from the same starting version the second save is rejected with a notice instead of overwriting the first
   5. A Partner account sees no Knowledge menu group and is refused on every knowledge screen and URL; the new screens and routes are declared in the Partner permission matrix and the Partner audit stays green
-**Plans**: TBD
+**Plans:** 10 plans (5 waves; every Pest run happens after the merge into the HEAD branch, one at a time against the shared `kokpit_test` database; after the wave 1 merge run `ddev composer install` first)
+
+Plans:
+**Wave 1**
+- [ ] 18-01-PLAN.md — Tracer: knowledge article, version and folder tables with their triggers, the three models, `ArticleKind`, morph aliases (wave 1)
+- [ ] 18-02-PLAN.md — Fail-closed Partner seam: Admin-only policies, `TagType::Knowledge`, canary, matrix and declaration rows, `KnowledgeFixtures` (wave 1, coupled with 18-01)
+- [ ] 18-03-PLAN.md — Hardened `KnowledgeMarkdown` renderer: link and image policy, sanitiser, code blocks with Copy chrome and highlighting, task lists, container binding (wave 1)
+- [ ] 18-04-PLAN.md — `SecretScanner`, `MarkdownNormaliser`, `SecretFixtures` and the complete `lang/cs/knowledge.php` (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 18-05-PLAN.md — `SaveArticle` single save path: versions, no-op, stale check, secret guard with one-save acknowledgment, concurrency proof (wave 2)
+- [ ] 18-06-PLAN.md — Callouts, prose stylesheet and copy script as Filament assets (wave 2)
+- [ ] 18-07-PLAN.md — Znalosti group, General knowledge list with the archived switch, view screen, Partner screen declarations (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 18-08-PLAN.md — Archive and restore Actions with metadata-only history rows, row and header actions, history relation manager (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 18-09-PLAN.md — Create screen on the shared form: server preview tab, D-07 toolbar with task-list button, leave warning, guard feedback (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 18-10-PLAN.md — Edit screen with stale-save notice, edit entry points, knowledge seam Arch test, CONTRIBUTING hand-over (wave 5)
 **UI hint**: yes
 
 ### Phase 19: Folders, Tags and Version History
