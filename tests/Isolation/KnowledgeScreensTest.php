@@ -18,7 +18,8 @@ use Tests\Support\KnowledgeFixtures;
 
 /*
  * The Admin knowledge screens are closed to a Partner (ROADMAP success criterion 5): no navigation group, no
- * entry, and a 403 (not a 404) on the list, the create URL and every view URL, an archived article included. Each refusal is
+ * entry, and a 403 (not a 404) on the list, the create URL, every view URL (an archived article included) and the
+ * edit URL of an active and of an archived article. Each refusal is
  * paired with the Admin opening the same URL, and a guest is sent to the login page. Every text is fictional.
  */
 
@@ -37,6 +38,7 @@ function knowledgeScreensUrls(): array
         'create' => KnowledgeArticleResource::getUrl('create'),
         'view of an active article' => KnowledgeArticleResource::getUrl('view', ['record' => $active->getKey()]),
         'view of an archived article' => KnowledgeArticleResource::getUrl('view', ['record' => $archived->getKey()]),
+        'edit of an active article' => KnowledgeArticleResource::getUrl('edit', ['record' => $active->getKey()]),
     ];
 }
 
@@ -94,6 +96,21 @@ it('answers a Partner with 403 on the list, the create URL and every view URL wh
     foreach ($urls as $url) {
         $this->get($url)->assertForbidden();
     }
+});
+
+it('answers a Partner with 403 on the edit URL of an archived article too, while the Admin gets 404 there', function (): void {
+    $archived = KnowledgeFixtures::archived(['title' => 'Example archived article', 'body_md' => 'Example archived body']);
+    $url = KnowledgeArticleResource::getUrl('edit', ['record' => $archived->getKey()]);
+
+    $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
+    $this->get($url)->assertForbidden();
+
+    $this->actingAs(Canary::partnerFor(null));
+    $this->get($url)->assertForbidden();
+
+    // An archived article is read-only: restore it first.
+    $this->actingAs(Canary::admin());
+    $this->get($url)->assertNotFound();
 });
 
 it('answers a Partner without a client with 403 on every knowledge URL', function (): void {
