@@ -190,6 +190,11 @@ final class SecretFixtures
             'left-to-right isolate' => "\u{2066}",
             'variation selector' => "\u{FE0F}",
             'tag character' => "\u{E0041}",
+            'start of heading' => "\u{0001}",
+            'backspace' => "\u{0008}",
+            'delete' => "\u{007F}",
+            'next line' => "\u{0085}",
+            'operating system command' => "\u{009D}",
         ] as $name => $invisible) {
             $shapes['aws access key, '.$name] = [self::withInserted($aws, $invisible), 'aws_access_key'];
         }

@@ -9,8 +9,9 @@ namespace App\Domain\Knowledge\Guard;
  *
  * The text is folded before the rules run, line by line, so an evasion is still found on the editor's line
  * number: every Unicode default-ignorable character is removed (soft hyphen, joiners, bidi marks, invisible
- * operators, variation selectors, tag characters), the compatibility normalisation maps fullwidth forms to
- * ASCII, and what that mapping produced is removed again. Each line has a second, rendered-equivalent view:
+ * operators, variation selectors, tag characters) and so is every control character except tab (the C0
+ * controls, DEL and the C1 controls; tab stays because the indent shapes of a key use it), the compatibility
+ * normalisation maps fullwidth forms to ASCII, and what that mapping produced is removed again. Each line has a second, rendered-equivalent view:
  * Markdown escapes removed and HTML entities decoded, with a decoded line break kept as the two characters
  * backslash and n, so a token that the rendered article shows intact is found although the source hides it.
  * Both views are local variables. The findings are the union of both views, keyed by rule and line: a fold
@@ -30,11 +31,15 @@ final class SecretScanner
     private const string LINE_BREAK = '/\r\n|\r|\n/';
 
     /**
-     * The Unicode Default_Ignorable_Code_Point set as explicit ranges (a reader never sees these characters,
-     * so a token that holds one still reads as the token). Ranges, not a property escape, because the pattern
-     * engine of a build may not know the property (R-18-11-3).
+     * The characters a reader never sees, so a token that holds one still reads as the token: the C0 control
+     * characters except tab, DEL and the C1 control characters, and the Unicode Default_Ignorable_Code_Point
+     * set, as explicit ranges. Ranges, not a property escape, because the pattern engine of a build may not
+     * know the property (R-18-11-3). Tab stays, because the indent shapes of a key and the patterns use it;
+     * a line break never reaches the fold, because the body is split into lines first, so no line number
+     * shifts. NUL is refused earlier by ArticleInput; folding it here is defence in depth only (R-18-14-6).
      */
-    private const string INVISIBLE = '/[\x{00AD}\x{034F}\x{061C}\x{115F}-\x{1160}\x{17B4}-\x{17B5}\x{180B}-\x{180F}'
+    private const string INVISIBLE = '/[\x{0000}-\x{0008}\x{000B}\x{000C}\x{000E}-\x{001F}\x{007F}-\x{009F}'
+        .'\x{00AD}\x{034F}\x{061C}\x{115F}-\x{1160}\x{17B4}-\x{17B5}\x{180B}-\x{180F}'
         .'\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}-\x{206F}\x{3164}\x{FE00}-\x{FE0F}\x{FEFF}\x{FFA0}'
         .'\x{FFF0}-\x{FFF8}\x{1BCA0}-\x{1BCA3}\x{1D173}-\x{1D17A}\x{E0000}-\x{E0FFF}]/u';
 

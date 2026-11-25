@@ -430,5 +430,6 @@ it('finishes on 200 KB of adversarial input in under a second per rule, without 
     'repeated named entity' => ['&lowbar;'],
     'repeated entity line break' => ['&#10;'],
     'repeated soft hyphen' => ["\u{00AD}"],
+    'repeated start of heading' => ["\u{0001}"],
     'repeated escaped stripe prefix' => ['sk\\_live\\_'],
 ]);
