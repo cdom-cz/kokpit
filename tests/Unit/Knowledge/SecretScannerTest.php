@@ -84,6 +84,13 @@ it('reports a key whose last line has no line ending and a key with header field
         ->toBe([['pem_private_key', 2]]);
 });
 
+it('reports a private key in every shape it takes in a note as one blocking finding on its header line', function (string $text, int $offset): void {
+    $findings = secretScannerScan(SecretFixtures::bodyWith($text, 3));
+
+    expect(secretScannerPairs($findings))->toBe([['pem_private_key', 3 + $offset]])
+        ->and($findings[0]->severity())->toBe(Severity::Blocking);
+})->with(fn (): array => SecretFixtures::pemPrivateKeyShapes());
+
 it('does not report a sentence that only names the private key header', function (): void {
     $header = '-----BEGIN '.'RSA PRIV'.'ATE KEY-----';
 

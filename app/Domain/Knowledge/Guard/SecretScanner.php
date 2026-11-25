@@ -26,10 +26,20 @@ final class SecretScanner
     /**
      * A private key block: the header, then at least two base64 lines of 16 or more characters. A prose
      * sentence that only names the header is not a finding.
+     *
+     * The header is not anchored. Every line after it may start with a possessive run of up to 40 spaces,
+     * tabs and quote markers (a YAML block scalar, a list item, an indented fence, a blockquote), and the
+     * header and every base64 run may end with an escaped line break (the two characters backslash and n,
+     * or backslash r backslash n) in front of the real one, as in a YAML double-quoted scalar (R-18-11-1).
      */
-    private const string PEM_PRIVATE_KEY = '/-----BEGIN (?:[A-Z]{1,20} ){0,5}PRIVATE KEY(?: BLOCK)?-----[ \t]*\n'
-        .'(?:[A-Za-z][A-Za-z-]{0,30}: [^\n]{0,200}\n){0,4}\n?'
-        .'(?:[A-Za-z0-9+\/=]{16,}+[ \t]*(?:\n|\z)){2}/';
+    private const string PEM_PRIVATE_KEY = '/-----BEGIN (?:[A-Z]{1,20} ){0,5}PRIVATE KEY(?: BLOCK)?-----[ \t]*(?:(?:\\\\r)?\\\\n)?\n'
+        .'(?:[ \t>]{0,40}+[A-Za-z][A-Za-z-]{0,30}: [^\n]{0,200}\n){0,4}(?:[ \t>]{0,40}+\n)?'
+        .'(?:[ \t>]{0,40}+[A-Za-z0-9+\/=]{16,}+[ \t]*(?:(?:\\\\r)?\\\\n)?(?:\n|\z)){2}/';
+
+    /**
+     * The characters that may stand in front of a base64 line of a key: spaces, tabs and quote markers.
+     */
+    private const string LINE_PREFIX = " \t>";
 
     /**
      * The characters of a base64 line. The lines of a key after the two the pattern proves are covered by
@@ -296,9 +306,23 @@ final class SecretScanner
         return $low < count($taken) && $taken[$low][0] < $end;
     }
 
+    /**
+     * Whether a line is one more base64 line of a key: the quote markers and indent in front and the
+     * spaces and the escaped line break behind it are ignored, the same as in the PEM pattern.
+     */
     private function isBase64Line(string $line): bool
     {
-        $line = rtrim($line, " \t");
+        $line = rtrim(ltrim($line, self::LINE_PREFIX), " \t");
+
+        if (str_ends_with($line, '\n')) {
+            $line = substr($line, 0, -2);
+
+            if (str_ends_with($line, '\r')) {
+                $line = substr($line, 0, -2);
+            }
+
+            $line = rtrim($line, " \t");
+        }
 
         return $line !== '' && strspn($line, self::BASE64) === strlen($line);
     }

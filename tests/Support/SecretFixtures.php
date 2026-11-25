@@ -25,6 +25,31 @@ final class SecretFixtures
     }
 
     /**
+     * Every line of the text with the prefix put in front of it.
+     */
+    public static function prefixedLines(string $text, string $prefix): string
+    {
+        return implode("\n", array_map(
+            static fn (string $line): string => $prefix.$line,
+            explode("\n", $text),
+        ));
+    }
+
+    /**
+     * The shapes a private key takes inside a note: shape name to the text and the 0-based offset of the
+     * header line inside that text. Every key is a fresh runtime-assembled fake (D-05).
+     *
+     * @return array<string, array{string, int}>
+     */
+    public static function pemPrivateKeyShapes(): array
+    {
+        return [
+            'plain' => [self::pemPrivateKey(), 0],
+            'yaml block scalar' => ["tls_key: |\n".self::prefixedLines(self::pemPrivateKey(), '  '), 1],
+        ];
+    }
+
+    /**
      * An access key id of the AWS shape (not the documentation example).
      */
     public static function awsAccessKey(): string

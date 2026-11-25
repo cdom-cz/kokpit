@@ -603,6 +603,37 @@ it('refuses every blocking secret with its rule and line, with no override, and 
     }
 });
 
+it('refuses a private key in every embedded shape with no override, and writes nothing', function (): void {
+    [$title, $clean] = saveArticleText('pem_shapes');
+    saveArticleWatch($title, $clean);
+
+    $article = $this->save->create($this->admin, ArticleInput::from($title, $clean, false))->article;
+
+    foreach (SecretFixtures::pemPrivateKeyShapes() as $name => [$text, $offset]) {
+        $body = SecretFixtures::bodyWith($text, 2);
+        $counts = saveArticleCounts();
+
+        foreach ([false, true] as $acknowledge) {
+            $onCreate = saveArticleRefusal(fn () => $this->save->create($this->admin, ArticleInput::from($title.' '.$name, $body, false), $acknowledge));
+            $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, $acknowledge));
+
+            foreach ([$onCreate, $onUpdate] as $refused) {
+                expect($refused)->toBeInstanceOf(SecretGuardRefused::class);
+
+                expect($refused->hasBlocking())->toBeTrue()
+                    ->and($refused->isAcknowledgeable())->toBeFalse()
+                    ->and(array_map(static fn (SecretFinding $finding): array => $finding->toArray(), $refused->findings))
+                    ->toBe([['rule' => 'pem_private_key', 'line' => 2 + $offset]]);
+
+                saveArticleAssertNoSecret($text, $refused);
+            }
+        }
+
+        expect(saveArticleCounts())->toBe($counts)
+            ->and(saveArticleRow($article->id)->version_no)->toBe(1);
+    }
+});
+
 it('refuses an ambiguous finding without the acknowledgment and writes nothing', function (): void {
     [$title, $clean] = saveArticleText('ambiguous');
     $secret = SecretFixtures::passwordAssignment();
