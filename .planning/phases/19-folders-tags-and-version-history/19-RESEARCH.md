@@ -461,19 +461,23 @@ RawSql::expectSqlState('KP001', fn () => DB::table('knowledge_article_versions')
 | A10 | Folder create/rename/move/delete write no activity rows (consistent with the `KnowledgeFolder` docblock "Not logged") | Summary | Low: owner may want a metadata-only audit of folder changes |
 | A11 | The Filament action modal can stay open on a guard refusal through `Halt` plus locked page properties (mirrors `GuardsSecrets` for forms); not prototyped for modal actions | Pattern 4, UI | Medium: modal composition is the least-verified UI piece; recommend a spike task before the restore UI plan |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Where does the redaction reason live?**
    - What we know: D-12 requires a reason; the activity log must record only that a reason exists; the UI never shows it again; the version row is frozen apart from `body_md`.
    - What's unclear: whether to persist the text at all (a typed secret in the reason would create a fifth store, per PITFALLS.md "secrets leak into five places").
    - Recommendation: store it in the append-only redactions table with a 500-char cap, never select it in application queries (Arch rule), and keep the helper text warning not to type the secret. If the owner prefers zero storage, persist only `reason_length` and keep the same table.
+   - RESOLVED (owner decision OD-1, 2026-11-25): length only. `knowledge_version_redactions` keeps `reason_length` (1 to 500), no column for the text (the flag that a reason exists is the `reason_recorded` property of the `version_redacted` activity row); the Admin still types a required reason, `RedactVersion` validates it and discards it. See 19-01 R-19-01-3, 19-09 R-19-09-3 and R-19-09-4 (Arch persistence ban), 19-11 R-19-11-4.
 2. **Should restore be allowed for a version that currently fails the guard after a partial redaction?**
    - What we know: D-11 refuses an unambiguous secret; UI-SPEC shows a link to redact.
    - Recommendation: keep the refusal as specified; no special case.
+   - RESOLVED (planner, per D-11): no special case; a Blocking finding refuses the restore, an Ambiguous one needs the one-restore acknowledgment. See 19-09 R-19-09-OQ2 and 19-11 R-19-11-3.
 3. **Redaction of a version whose content also lives in later versions.**
    - What we know: only the chosen row (and the article when it is current) changes (D-12, D-13); a secret that survived several saves exists in every later snapshot.
    - Recommendation: no automatic cascade (not in scope); the modal copy already says rotating the secret is the real remedy. Optionally show "same text appears in N other versions" (cheap hash compare), planner's discretion.
+   - RESOLVED (planner, within D-12): no cascade and no count of other versions (a count would bind the redacted line text into a query parameter). D-12 limits the redaction to the chosen stored version; the owner chose an explicit on-screen warning of this consequence (owner decision OD-3, 2026-11-26): the redaction modal shows `knowledge.redact.later_versions_keep`. See 19-09 R-19-09-OQ3, 19-02 R-19-02-3 and 19-11 R-19-11-4.
 4. **Does the Knowledge tab include incidents later?** Phase 21 owns that; keep the relation manager filtered to `general` now.
+   - RESOLVED (planner): the client and project Knowledge tabs list only the general kind in Phase 19; incidents are Phase 21's. See 19-07 R-19-07-2.
 
 ## Environment Availability
 

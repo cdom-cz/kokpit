@@ -79,7 +79,7 @@ The milestone is built schema and write seam first, guard before content, sharin
   3. Saving a body that contains an unambiguous secret (a fake credential assembled at runtime in the test) is refused with a message that names the rule and the line but never the value; an ambiguous finding saves only after explicit acknowledgment and marks the article sensitive, and that override covers the one save only and appears in the activity log without the content
   4. A save that changes the content raises the article's version number by one and keeps the content as an immutable version, a save without changes creates no version, and when two edit screens save from the same starting version the second save is rejected with a notice instead of overwriting the first
   5. A Partner account sees no Knowledge menu group and is refused on every knowledge screen and URL; the new screens and routes are declared in the Partner permission matrix and the Partner audit stays green
-**Plans:** 13/14 plans executed (5 waves, then 3 gap closure waves: 18-11 to 18-13 close 18-VERIFICATION.md gaps 1 and 2 and review findings IN-01, WR-02 and IN-04; 18-14 closes the re-verification gap SC3b with gap-closure review findings CR-01, WR-01 and WR-03; every Pest run happens after the merge into the HEAD branch, one at a time against the shared `kokpit_test` database; after the wave 1 merge run `ddev composer install` first)
+**Plans:** 14/14 plans executed (5 waves, then 3 gap closure waves: 18-11 to 18-13 close 18-VERIFICATION.md gaps 1 and 2 and review findings IN-01, WR-02 and IN-04; 18-14 closes the re-verification gap SC3b with gap-closure review findings CR-01, WR-01 and WR-03; every Pest run happens after the merge into the HEAD branch, one at a time against the shared `kokpit_test` database; after the wave 1 merge run `ddev composer install` first)
 
 Plans:
 **Wave 1**
@@ -113,7 +113,7 @@ Plans:
 - [x] 18-13-PLAN.md — Create-screen proof of the closed guard gaps, task-list observer that survives SPA navigation, disposition for all nine review findings (WR-02)
 
 **Gap closure wave 3** *(from the 18-VERIFICATION.md re-verification, gap SC3b; blocked on gap closure wave 2)*
-- [ ] 18-14-PLAN.md — Secret scanner: per-line private key check (one base64 line of 40 or more, or two of 16, with comment, list, quote and continuation decoration trimmed in code and one blank line tolerated), control characters in the fold, proved in the Unit dataset, through `SaveArticle` and on the create screen (gap-closure review CR-01, WR-01, WR-03)
+- [x] 18-14-PLAN.md — Secret scanner: per-line private key check (one base64 line of 40 or more, or two of 16, with comment, list, quote and continuation decoration trimmed in code and one blank line tolerated), control characters in the fold, proved in the Unit dataset, through `SaveArticle` and on the create screen (gap-closure review CR-01, WR-01, WR-03)
 **UI hint**: yes
 
 ### Phase 19: Folders, Tags and Version History
@@ -126,7 +126,28 @@ Plans:
   3. Admin links an article to a client, a project or both, and the client and project detail pages show a Knowledge tab listing the linked articles
   4. Admin opens an article's version history, views any earlier version read-only and sees the difference between two chosen versions
   5. Restoring an earlier version adds a new version on top (nothing in the history is lost) and passes the secret guard exactly like a save; Admin can redact a secret from a stored version so it no longer appears in that version's view, diff or restore, and the redaction is logged without the value
-**Plans**: TBD
+**Plans:** 12 plans (4 waves; every Composer, Pest and PHPStan run happens through DDEV after the merge of its wave into the HEAD branch, one process at a time; after the wave 1 merge run `ddev composer require sebastian/diff:^9.0.1` (19-03) and `ddev exec php artisan migrate` first)
+
+Plans:
+**Wave 1**
+- [ ] 19-01-PLAN.md — Tracer: one migration (restore marker, redaction counter, append-only redactions table holding only the reason length, setting-gated version immutability function, rollback refused on a non-empty history), redaction model and scope enum, knowledge tags on articles (wave 1)
+- [ ] 19-02-PLAN.md — Fail-closed declarations of the redaction model, shared knowledge fixtures, the complete Phase 19 Czech copy (wave 1, coupled with 19-01)
+- [ ] 19-03-PLAN.md — Diff engine over sebastian/diff (promoted to require through `ddev composer`) with line numbers, context collapse and the owner-approved caps (1,500 rows, 10,000 compared lines, too-large state); the diff component and the Phase 19 stylesheet (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 19-04-PLAN.md — SaveArticle seam: required redaction stale token, classification and knowledge tags inside the save transaction, restore marker; edit screen refuses a save after a redaction (wave 2, coupled with 19-12)
+- [ ] 19-05-PLAN.md — Folder Actions (create, rename, move, delete) with cycle, depth and non-empty refusals, and the FolderTree query (wave 2)
+- [ ] 19-06-PLAN.md — Versions table, read-only version view and compare page with sub-navigation; Partner 403 and route walk on the new URLs (wave 2)
+- [ ] 19-07-PLAN.md — Znalosti tabs on client and project pages, Admin only and declared in the Partner matrix (wave 2)
+- [ ] 19-12-PLAN.md — Existing callers of SaveArticle::update() (SaveArticleTest, EditKnowledgeArticleTest, the concurrency worker) moved to the redaction-aware signature (wave 2, coupled with 19-04)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 19-08-PLAN.md — Folder tree panel on the General knowledge list with folder actions, subtree filter, folder and tag columns and the AND tag filter (wave 3)
+- [ ] 19-09-PLAN.md — RestoreVersion through SaveArticle and RedactVersion through the redaction setting (reason validated and discarded, only its length stored), Arch writer map and reason persistence ban, restore-versus-redaction race proof (wave 3)
+- [ ] 19-10-PLAN.md — Zařazení section in the editor (folder, knowledge tags, client then project), create-screen prefill, meta row on the view screen (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 19-11-PLAN.md — Restore and redaction modals on the version screens, end-to-end proof that a redacted secret is gone from view, diff and restore, CONTRIBUTING hand-over (wave 4)
 **UI hint**: yes
 
 ### Phase 20: Image Attachments
@@ -186,8 +207,8 @@ Phases execute in numeric order: 18 → 19 → 20 → 21 → 22 → 23
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 18. Knowledge Articles and Secret Guard | v1.1 | 13/14 | In Progress | - |
-| 19. Folders, Tags and Version History | v1.1 | 0/TBD | Not started | - |
+| 18. Knowledge Articles and Secret Guard | v1.1 | 14/14 | In Progress | - |
+| 19. Folders, Tags and Version History | v1.1 | 0/12 | Planned | - |
 | 20. Image Attachments | v1.1 | 0/TBD | Not started | - |
 | 21. Incidents and Retrospectives | v1.1 | 0/TBD | Not started | - |
 | 22. Knowledge Search | v1.1 | 0/TBD | Not started | - |
