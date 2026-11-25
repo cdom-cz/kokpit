@@ -14,7 +14,7 @@
 - [x] **KB-04**: A callout written as `> [!NOTE]` renders as a highlighted block
 - [x] **KB-05**: Every code block has a Copy button
 - [ ] **KB-06**: The editor offers a server-rendered preview
-- [ ] **KB-07**: Admin can archive and restore an article
+- [x] **KB-07**: Admin can archive and restore an article
 - [ ] **KB-08**: A concurrent edit never overwrites another change silently (a stale save is rejected, not merged)
 
 ### Organisation (ORG)
@@ -119,7 +119,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | KB-04 | Phase 18 | Complete |
 | KB-05 | Phase 18 | Complete |
 | KB-06 | Phase 18 | Pending |
-| KB-07 | Phase 18 | Pending |
+| KB-07 | Phase 18 | Complete |
 | KB-08 | Phase 18 | Pending |
 | ORG-01 | Phase 19 | Pending |
 | ORG-02 | Phase 19 | Pending |
