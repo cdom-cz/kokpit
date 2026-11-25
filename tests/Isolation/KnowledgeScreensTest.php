@@ -2,8 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Domain\Knowledge\Actions\ArchiveArticle;
+use App\Domain\Knowledge\Actions\RestoreArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Activity;
+use App\Filament\RelationManagers\KnowledgeArticleHistoryRelationManager;
 use App\Filament\Resources\KnowledgeArticleResource;
+use App\Filament\Resources\KnowledgeArticleResource\Pages\ViewKnowledgeArticle;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use Tests\Support\Canary;
 use Tests\Support\KnowledgeFixtures;
@@ -113,4 +121,53 @@ it('shows a Partner no text of an article even when asking for the view URL of t
 
     expect($content)->not->toContain(Canary::canary('knowledge_screen'))
         ->and($content)->not->toContain(Canary::canary('knowledge_body'));
+});
+
+/**
+ * What a refused archive or restore must leave untouched: the activity rows and the archived state of both articles.
+ *
+ * @return array{activity: int, archived: list<string>}
+ */
+function knowledgeScreensState(): array
+{
+    return app(PartnerContext::class)->runAsSystem(static fn (): array => [
+        'activity' => Activity::query()->count(),
+        'archived' => KnowledgeArticle::query()->onlyTrashed()->orderBy('title')->pluck('title')->all(),
+    ]);
+}
+
+it('refuses ArchiveArticle and RestoreArticle to a Partner and to a user without a role and changes nothing', function (): void {
+    $admin = Canary::admin();
+    [$clientA] = Canary::twoClients();
+    $actors = [
+        'partner' => Canary::partnerFor($clientA),
+        'roleless' => Canary::userWithoutRole(null),
+    ];
+    $active = KnowledgeFixtures::article(['title' => 'Example active article']);
+    $archived = KnowledgeFixtures::archived(['title' => 'Example archived article']);
+    $state = knowledgeScreensState();
+
+    foreach ($actors as $actor) {
+        expect(fn () => app(ArchiveArticle::class)->handle($actor, $active))->toThrow(AuthorizationException::class)
+            ->and(fn () => app(RestoreArticle::class)->handle($actor, $archived))->toThrow(AuthorizationException::class)
+            ->and(knowledgeScreensState())->toBe($state);
+    }
+
+    // The Admin does both on the same articles.
+    app(ArchiveArticle::class)->handle($admin, $active);
+    app(RestoreArticle::class)->handle($admin, $archived);
+
+    expect(knowledgeScreensState()['archived'])->toBe(['Example active article']);
+});
+
+it('does not admit a Partner to the history of an article', function (): void {
+    $article = KnowledgeFixtures::article(['title' => 'Example history article']);
+
+    $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
+
+    expect(KnowledgeArticleHistoryRelationManager::canViewForRecord($article, ViewKnowledgeArticle::class))->toBeFalse();
+
+    $this->actingAs(Canary::admin());
+
+    expect(KnowledgeArticleHistoryRelationManager::canViewForRecord($article, ViewKnowledgeArticle::class))->toBeTrue();
 });
