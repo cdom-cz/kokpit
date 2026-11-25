@@ -22,6 +22,8 @@ use Filament\Support\Enums\FontWeight;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -90,16 +92,27 @@ final class KnowledgeArticleResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            // The body is large and private: the list never loads it. Archived articles are left out here.
-            ->modifyQueryUsing(static fn (Builder $query): Builder => $query
-                ->select(['id', 'kind', 'title', 'version_no', 'edited_at', 'sensitive', 'deleted_at'])
-                ->whereNull('deleted_at'))
+            // The body is large and private: the list never loads it. The archived switch is applied here and not in
+            // the filter, because a filter callback runs only while the filter is on, and the default is the other way.
+            ->modifyQueryUsing(static function (Builder $query, HasTable $livewire, bool $isResolvingRecord): Builder {
+                $query->select(['id', 'kind', 'title', 'version_no', 'edited_at', 'sensitive', 'deleted_at']);
+
+                $showArchived = (bool) data_get($livewire->getTableFilterState('show_archived'), 'isActive', false);
+
+                return $showArchived || $isResolvingRecord ? $query : $query->whereNull('deleted_at');
+            })
             ->columns([
                 TextColumn::make('title')
                     ->label(__('knowledge.columns.title'))
                     ->weight(FontWeight::SemiBold)
                     ->lineClamp(1)
-                    ->tooltip(static fn (string $state): string => $state),
+                    ->tooltip(static fn (string $state): string => $state)
+                    ->color(static fn (KnowledgeArticle $record): ?string => $record->trashed() ? 'gray' : null),
+                TextColumn::make('archived')
+                    ->label('')
+                    ->state(static fn (KnowledgeArticle $record): ?string => $record->trashed() ? __('knowledge.badges.archived') : null)
+                    ->badge()
+                    ->color('gray'),
                 TextColumn::make('version_no')
                     ->label(__('knowledge.columns.version'))
                     ->alignEnd(),
@@ -115,10 +128,19 @@ final class KnowledgeArticleResource extends Resource
                     ->falseIcon(false)
                     ->tooltip(static fn (bool $state): ?string => $state ? __('knowledge.columns.sensitive_tooltip') : null),
             ])
+            ->filters([
+                Filter::make('show_archived')
+                    ->label(__('knowledge.filters.show_archived'))
+                    ->toggle(),
+            ])
             ->recordUrl(static fn (KnowledgeArticle $record): string => self::getUrl('view', ['record' => $record]))
             ->defaultSort('edited_at', 'desc')
-            ->emptyStateHeading(__('knowledge.empty.list_heading'))
-            ->emptyStateDescription(__('knowledge.empty.list_description'));
+            ->emptyStateHeading(static fn (HasTable $livewire): string => data_get($livewire->getTableFilterState('show_archived'), 'isActive', false)
+                ? __('knowledge.empty.archived_heading')
+                : __('knowledge.empty.list_heading'))
+            ->emptyStateDescription(static fn (HasTable $livewire): ?string => data_get($livewire->getTableFilterState('show_archived'), 'isActive', false)
+                ? null
+                : __('knowledge.empty.list_description'));
     }
 
     /**

@@ -120,10 +120,48 @@ it('clips a long title to one line and shows the full title as the tooltip', fun
         ->and($column->getTooltip($title))->toBe($title);
 });
 
-it('shows the empty state of an empty list', function (): void {
+it('shows the empty state of an empty list and of an empty archive', function (): void {
     Livewire::test(ListKnowledgeArticles::class)
         ->assertSee('Zatím tu nejsou žádné články')
-        ->assertSee('Napište první článek, třeba postup nebo poznámky k nastavení.');
+        ->assertSee('Napište první článek, třeba postup nebo poznámky k nastavení.')
+        ->filterTable('show_archived')
+        ->assertSee('Žádné archivované články')
+        ->assertDontSee('Zatím tu nejsou žádné články');
+});
+
+it('leaves archived articles out of the list until the switch is on, then shows them marked and muted', function (): void {
+    $active = KnowledgeFixtures::article(['title' => 'Example active article', 'edited_at' => knowledgeResourceMoment('2026-11-24 12:00:00')]);
+    $archived = KnowledgeFixtures::archived(['title' => 'Example archived article', 'edited_at' => knowledgeResourceMoment('2026-11-22 12:00:00')]);
+
+    $component = Livewire::test(ListKnowledgeArticles::class)
+        ->assertCanSeeTableRecords([$active])
+        ->assertCanNotSeeTableRecords([$archived])
+        ->assertDontSee('Archivováno')
+        ->filterTable('show_archived')
+        ->assertCanSeeTableRecords([$active, $archived], inOrder: true)
+        ->assertSee('Archivováno')
+        ->assertTableColumnStateSet('archived', 'Archivováno', $archived)
+        ->assertTableColumnStateSet('archived', null, $active);
+
+    $column = $component->instance()->getTable()->getColumn('title');
+
+    $archivedRow = KnowledgeArticle::withTrashed()->findOrFail($archived->getKey());
+    $activeRow = KnowledgeArticle::query()->findOrFail($active->getKey());
+
+    expect($column->record($archivedRow)->getColor('x'))->toBe('gray')
+        ->and($column->record($activeRow)->getColor('x'))->toBeNull();
+
+    $component->resetTableFilters()->assertCanNotSeeTableRecords([$archived]);
+});
+
+it('opens an archived article on its view URL with the archived badge and its body', function (): void {
+    $archived = KnowledgeFixtures::archived(['title' => 'Example archived article', 'body_md' => 'Example archived body']);
+
+    $this->get(KnowledgeArticleResource::getUrl('view', ['record' => $archived->getKey()]))
+        ->assertOk()
+        ->assertSee('Example archived article')
+        ->assertSee('Archivováno')
+        ->assertSee('Example archived body');
 });
 
 it('shows the title, the meta line and the body rendered by the one renderer on the view screen', function (): void {
