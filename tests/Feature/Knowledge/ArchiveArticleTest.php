@@ -8,6 +8,8 @@ use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
+use App\Filament\RelationManagers\KnowledgeArticleHistoryRelationManager;
+use App\Filament\Resources\KnowledgeArticleResource;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ListKnowledgeArticles;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ViewKnowledgeArticle;
 use Carbon\CarbonImmutable;
@@ -296,4 +298,34 @@ it('refuses to archive an article that is already archived and writes no second 
     expect(fn () => app(ArchiveArticle::class)->handle($this->admin, $archived))
         ->toThrow(ModelNotFoundException::class)
         ->and(archiveArticleNewActivity($article->id, $known))->toBe([]);
+});
+
+it('shows the history of an article on its view screen with the Czech labels of the archive steps and no content', function (): void {
+    $article = archiveArticleMake();
+
+    app(ArchiveArticle::class)->handle($this->admin, $article);
+    app(RestoreArticle::class)->handle($this->admin, $article);
+
+    $owner = archiveArticleRow($article->id);
+    $rows = archiveArticleActivity($article->id);
+    $events = array_map(static fn (Activity $row): ?string => $row->event, $rows);
+
+    expect($events)->toContain('created')->toContain('article_archived')->toContain('article_restored')
+        ->and(KnowledgeArticleHistoryRelationManager::canViewForRecord($owner, ViewKnowledgeArticle::class))->toBeTrue();
+
+    $this->get(KnowledgeArticleResource::getUrl('view', ['record' => $article->getKey()]))
+        ->assertOk()
+        ->assertSeeLivewire(KnowledgeArticleHistoryRelationManager::class);
+
+    Livewire::test(KnowledgeArticleHistoryRelationManager::class, ['ownerRecord' => $owner, 'pageClass' => ViewKnowledgeArticle::class])
+        ->assertSuccessful()
+        ->assertCanSeeTableRecords($rows)
+        ->assertSee('Vytvořeno')
+        ->assertSee('Článek archivován')
+        ->assertSee('Článek obnoven')
+        ->assertDontSee('Archive probe title zq7')
+        ->assertDontSee('Archive probe body zq7');
+
+    expect(archiveArticleJson($rows))->not->toContain('Archive probe title zq7')
+        ->and(archiveArticleJson($rows))->not->toContain('Archive probe body zq7');
 });

@@ -76,6 +76,7 @@ use App\Filament\RelationManagers\ClientDocumentsRelationManager;
 use App\Filament\RelationManagers\ClientHistoryRelationManager;
 use App\Filament\RelationManagers\InvoiceDocumentsRelationManager;
 use App\Filament\RelationManagers\InvoiceHistoryRelationManager;
+use App\Filament\RelationManagers\KnowledgeArticleHistoryRelationManager;
 use App\Filament\RelationManagers\ProjectDocumentsRelationManager;
 use App\Filament\RelationManagers\ProjectHistoryRelationManager;
 use App\Filament\RelationManagers\TaskDocumentsRelationManager;
@@ -246,6 +247,7 @@ final class PartnerMatrix
             ClientHistoryRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Change history of a client.'],
             InvoiceDocumentsRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Files of a billing document, its PDF first.'],
             InvoiceHistoryRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Change history of a billing document.'],
+            KnowledgeArticleHistoryRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Change history of a knowledge article.'],
             ProjectDocumentsRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Admin management of every project file.'],
             ProjectHistoryRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Change history of a project.'],
             TaskDocumentsRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Admin management of every task file.'],

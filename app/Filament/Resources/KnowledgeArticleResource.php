@@ -14,6 +14,7 @@ use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Concerns\InKnowledgeGroup;
+use App\Filament\RelationManagers\KnowledgeArticleHistoryRelationManager;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ListKnowledgeArticles;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ViewKnowledgeArticle;
 use App\Providers\LocalisationServiceProvider;
@@ -247,7 +248,9 @@ final class KnowledgeArticleResource extends Resource
 
     public static function getRelations(): array
     {
-        return [];
+        return [
+            KnowledgeArticleHistoryRelationManager::class,
+        ];
     }
 
     public static function getPages(): array
