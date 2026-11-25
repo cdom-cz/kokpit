@@ -29,6 +29,9 @@ use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Invoicing\Notifications\InvoiceEmailFailedNotification;
 use App\Domain\Operations\Alerts\OperationalAlert;
+use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Payments\Notifications\CardPaymentMatchedNotification;
@@ -171,6 +174,10 @@ final class ChannelMatrix
             SignalDayOverride::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
             SignalWeeklyGoal::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
             SignalWeeklyRecap::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
+            // The knowledge models are the Admin's internal notes, closed on every channel (Phase 18). The article is a logging model (metadata only, never a title or a body), so only its activity cell is applicable; the versions and folders write no activity rows.
+            KnowledgeArticle::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => self::NONE, 'downloads' => $downloadsNa, 'api' => self::NONE],
+            KnowledgeArticleVersion::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
+            KnowledgeFolder::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
             Media::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => self::NONE, 'api' => self::NONE],
             Tag::class => ['ui' => self::FOREIGN, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => $activityNa, 'downloads' => $downloadsNa, 'api' => self::NONE],
             Activity::class => ['ui' => self::NONE, 'search' => self::NONE, 'selects' => self::NONE, 'exports' => $exportsNa, 'notifications' => self::NONE, 'activity' => self::NONE, 'downloads' => $downloadsNa, 'api' => self::NONE],

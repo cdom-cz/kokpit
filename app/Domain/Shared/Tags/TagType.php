@@ -9,13 +9,15 @@ namespace App\Domain\Shared\Tags;
  *
  * Every tag is stored with one of these types, so a Partner constraint can tell
  * a project tag (shown on the Partner's own visible projects) from a client tag
- * (Admin only), and a task tag (Admin only, never shown to a Partner). The values are written to `tags.type`. A tag input or column
- * always passes its type: without one the plugin reads and syncs tags of every
- * type.
+ * (Admin only), and a task tag (Admin only, never shown to a Partner). A knowledge tag (on a knowledge article)
+ * is Admin only as well and never shown to a Partner: `Tag::constrainForPartner()` keeps project tags only. The
+ * values are written to `tags.type`. A tag input or column always passes its type: without one the plugin reads
+ * and syncs tags of every type.
  */
 enum TagType: string
 {
     case Client = 'client';
     case Project = 'project';
     case Task = 'task';
+    case Knowledge = 'knowledge';
 }

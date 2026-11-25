@@ -11,6 +11,7 @@ use App\Domain\Finance\Models\Transaction;
 use App\Domain\Invoicing\Models\Invoice;
 use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Models\InvoicePayment;
+use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Projects\Models\Project;
@@ -51,7 +52,7 @@ function allowlistProblemsOf(object $model): array
 }
 
 it('lists the application models that log activity explicitly', function (): void {
-    expect(AuditDeclaration::loggingModels())->toBe([Client::class, Contact::class, Document::class, Transaction::class, Invoice::class, InvoiceAdmin::class, InvoicePayment::class, CardPayment::class, PaymentLink::class, Project::class, ProjectBilling::class, Task::class, TaskBilling::class, TimeEntry::class]);
+    expect(AuditDeclaration::loggingModels())->toBe([Client::class, Contact::class, Document::class, Transaction::class, Invoice::class, InvoiceAdmin::class, InvoicePayment::class, KnowledgeArticle::class, CardPayment::class, PaymentLink::class, Project::class, ProjectBilling::class, Task::class, TaskBilling::class, TimeEntry::class]);
 });
 
 it('finds a logging model when it scans the probe directory, so the scan cannot pass vacuously', function (): void {
