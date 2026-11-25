@@ -1,196 +1,156 @@
 # Project Research Summary
 
-**Project:** Kokpit (single-tenant, self-hosted, open-source CRM/ERP for a freelancer or small company)
-**Domain:** Client -> project -> task -> time -> invoice -> payment, with Czech invoicing conventions (non-VAT-payer supplier) and a restricted client role (Partner) in the same Filament panel
-**Researched:** 2026-10-06
+**Project:** Kokpit, milestone v1.1 Knowledge Center
+**Domain:** Internal knowledge base (Markdown articles, incident post-mortems, project retrospectives) inside an existing single-company CRM/ERP (Laravel 13, Filament 5.12 SPA panel, Livewire 4, PHP 8.5, PostgreSQL 18, Redis queue, S3-compatible private bucket, AGPL-3.0)
+**Researched:** 2026-11-25
 **Confidence:** MEDIUM-HIGH
+
+All examples are fictional (`example.com`, `Example Ltd`, company ID `12345678`). No content, title or link from any external workspace was read or used.
 
 ## Executive Summary
 
-Kokpit is a Jira-lite plus time-tracker plus Czech invoicing tool. Its reason to exist is one pass: tracked time becomes an issued, payable invoice, and nothing unbilled or unpaid slips through unnoticed. Experts build this kind of product as a Laravel monolith. Filament, the REST API and queue jobs are thin adapters over transactional Domain Actions. Every invariant (one running timer, gap-free numbers, immutable issued invoices, idempotent payments, Partner isolation) is enforced by PostgreSQL itself (partial unique indexes, CHECK, triggers, row locks), not by UI or observers. The stack is fully resolved: Laravel 13, Filament 5 (Livewire 4), PHP 8.5, PostgreSQL 18, UUID v7 keys, the Spatie package family, Sanctum, Stripe Payment Links, and the database queue.
+Kokpit v1.1 adds a Markdown knowledge store next to the existing CRM objects: general articles in an Admin-only folder tree, incident hubs with hidden searchable sub-pages, and one retrospective per project created from a button. The Markdown source is the only stored truth, HTML is rendered per request through one hardened renderer, every save is an append-only full snapshot, and search uses the database's own full-text engine. No new service is needed: PostgreSQL 18 with `pg_trgm` and `unaccent` is installed, and the Markdown, sanitiser and attachment libraries are already in `vendor/`.
 
-The recommended approach is to front-load cross-cutting infrastructure in Foundation, because retrofitting it is the expensive part:
-- UUID and timestamptz schema conventions, with edited package migrations;
-- a single `Money` value object;
-- one `SequenceAllocator`;
-- a DB immutability trigger pattern;
-- default-deny Partner isolation (model scope, policy, separate Partner allowlist screens);
-- failure visibility;
-- a canary-based isolation test harness that grows with every phase.
+The approach has three parts. First, one `KnowledgeMarkdown` renderer (CommonMark with `html_input = escape`, no unsafe links, GFM tables and task lists, a Kokpit-owned HTML sanitiser pass, a small own callout extension) is the only place a body becomes HTML. Second, one write seam (`SaveArticle` and siblings) enforces the optimistic version check, the secret guard, the version row and the metadata-only activity log in one transaction. Third, Partner isolation is enforced by the model's fail-closed scope, a Policy and database CHECK constraints, never by hiding UI. Search uses a custom `kokpit_cs` text-search configuration (`simple` plus `unaccent`, prefix queries, title trigram) because PostgreSQL ships no Czech stemmer.
 
-Feature phases then follow the dependency chain: Clients, Projects, Tasks, Kanban, Time, API, Rates, Reports, Documents, Finance, Invoicing, Stripe. The last phase is an audit that only verifies, because the leak tests started in the first phase.
-
-Key risks:
-- Partner data leaking through secondary Filament surfaces (search, selects, relation managers, widgets, exports, notifications, Livewire snapshots).
-- Package migrations left with bigint morph columns.
-- Numbering that is not gap-free or is race-prone.
-- Mutable issued invoices.
-- The Stripe webhook: the default Spatie validator does not understand Stripe signatures, and Payment Links are reusable.
-- Secrets or real data leaking into a public repo; Zerops Git auto-deploy would bypass the GitHub approval gate.
-
-The research also found things the brief omits that hurt v1 if skipped: a payments table, overdue and unbilled alerts, supplier profile and bank accounts, notifications, API lookup endpoints, admin 2FA, Partner document visibility. These are folded into the phases.
+Main risks: stored XSS through Markdown or `ts_headline` snippets; Partner side-channel leaks (search, folder names, tags, version history, image URLs, sub-pages, retrospective time); secrets reaching several stores (body, versions, activity log, search index and snippets, screenshots); weak Czech search quality without dictionary files; retrospective measured time leaking into shareable text. The Partner share switch is deliberately enabled last.
 
 ## Key Findings
 
 ### Recommended Stack
-Start on the newest majors. Everything is MIT except DOMPDF (LGPL, compatible as an unmodified Composer library). Details in STACK.md.
 
-**Core technologies:**
-- PHP 8.5 + Laravel `^13.0`: `HasUuids` already generates UUID v7.
-- Filament `^5.0` (Livewire `^4.4`): one SPA panel (`->spa()`) with two roles, plus plugins for medialibrary, settings and tags.
-- PostgreSQL 18: native `uuidv7()`, partial unique indexes, row locks; the `database` queue uses `SKIP LOCKED`.
-- Spatie: permission `^8.3`, medialibrary `^11.23`, tags `^4.12`, activitylog `^5.1` (PHP 8.4+, breaking vs v4), settings, query-builder, data, eloquent-sortable, pdf, webhook-client. Every table-owning package needs its migration edited to uuid before the first migrate, plus a model subclass registered in config.
-- Laravel Sanctum `^4.3`: token-only `/api/v1` with abilities; Scramble (free core) for OpenAPI.
-- `stripe/stripe-php ^22` used directly with a custom signature validator on webhook-client. Do NOT use `spatie/laravel-stripe-webhooks` (caps stripe-php at ^21).
-- DOMPDF behind spatie/laravel-pdf's driver switch (no binaries on Zerops), with a Foundation spike on the multi-page work report. Gotenberg is the per-document escape hatch.
-- `spatie/simple-excel` for streamed CSV/XLSX. Own small `Spayd` value object plus `chillerlan/php-qrcode ^5`. Never `openspout ^5` or `php-qrcode ^6` (they conflict with Filament).
-- Queue, cache and sessions on the PostgreSQL database. Zerops worker service plus crontab for `schedule:run`. S3 via env only (Zerops MinIO needs path-style).
-- Pest, Pint, Larastan, gitleaks, and a `composer licenses` allowlist in CI.
+Small Composer additions, zero npm packages, two own components (a CommonMark callout extension and a `SecretScanner`).
+
+- `league/commonmark` ^2.10 (promote to direct): Markdown to HTML, AST access for callouts and task lists.
+- `symfony/html-sanitizer` ^8.1 (promote to direct): defence-in-depth pass with a Kokpit-owned config; not Filament's global config (allows `style`, truncates long input).
+- `tempest/highlight` ^2.30: server-side highlighting, pure PHP. Optional (P3).
+- `jfcherng/php-diff` ^7.0: version diff. Optional (P2); fallback `sebastian/diff` already in the lock.
+- `symfony/yaml` ^8.1 (move from require-dev): YAML front matter for the AI-friendly export.
+- Folder tree: own `parent_id` plus recursive CTE (recommended) or `staudenmeir/laravel-adjacency-list`; decide in phase 1.
+- Already installed and reused: `unaccent`, `pg_trgm` (via `kokpit_search_text()`), `spatie/laravel-medialibrary`, `spatie/laravel-tags` (dedicated type `knowledge`), `spatie/laravel-activitylog` (metadata only, never title or body).
+- Filament `MarkdownEditor` (EasyMDE) with `fileAttachments(false)`: no usable built-in preview; its attachments are always public, so images go through an own upload action.
+
+Database: text-search configuration `public.kokpit_cs` (`COPY = simple`, `unaccent, simple` for word tokens); generated STORED `tsvector` (title A, body B) with GIN index; GIN trigram indexes; `UNIQUE ... NULLS NOT DISTINCT` on `(parent_id, name)` for folders.
+
+Do not use: `Str::markdown()` / `TextEntry::markdown()` defaults; the `RichText` sanitiser for articles; Filament `RichEditor`; Node-based highlighters; Scout/Meilisearch/pgvector; public or long-lived image URLs; one-argument `unaccent()` in indexes; raw input to `to_tsquery`; third-party secret-scanner packages.
 
 ### Expected Features
-Details in FEATURES.md.
 
 **Must have (table stakes):**
-- Clients and contacts with ARES lookup (graceful fallback), invoice defaults, archive instead of delete.
-- Projects with billing types, rate precedence with snapshots, `client_visible` flag.
-- Tasks with gap-free `KEY-N`, subtasks, checklist, comments with internal flag, list view with filters, kanban (Admin-only drag, Partner read-only list).
-- Timer plus manual entries, DB-enforced single running timer, consistency rules, timesheet, billed lock, long-timer warning.
-- Time API with project/task lookup endpoints and `Idempotency-Key`.
-- CNB rates: weekend/holiday handling, per-unit `amount`, snapshot on documents.
-- Documents on private S3 with an explicit Partner-visible flag, central listing, ZIP job.
-- Invoicing: draft vs issued split, numbers allocated at issue; bill-from-time wizard with entry reservation; PDF cs/en with SPAYD QR and stored issued PDF; e-mail with work report; `payments` table (1:N); proforma -> invoice; credit notes; derived overdue.
-- Stripe: single-use Payment Links, signed idempotent webhooks, duplicate/unmatched queue, link deactivation on any settlement.
-- Finance: income auto-created from payments (cash basis), expenses with receipts, CZK overview.
-- Dashboard and reports with unbilled-time and overdue alerts, work report PDF, CSV/XLSX.
-- Partner view plus an automated isolation suite.
-- Gaps to make explicit: supplier profile with per-currency bank accounts, notifications, Admin 2FA, first-run setup and fictional demo data.
+- Article = title plus canonical Markdown body; separate view and edit screens; safe rendering of tables, task lists, autolinks; fenced code with language and copy button.
+- Nested folder tree (Admin-only): move, rename, depth cap, refuse to delete a non-empty folder.
+- Tags on a dedicated type; link to a client and/or project.
+- Per-article client-visible switch, effective only with a client link; Partner gets a flat read-only list; visible only if the linked project is also client-visible.
+- Image-only attachments, private storage, authorised delivery, EXIF stripping, orphan cleanup.
+- Version history with view and non-destructive restore; Admin only.
+- Own full-text search: diacritics- and case-insensitive, prefix match, snippets on the visible page, filters, same visibility rules as listings, hidden incident sub-pages searchable.
+- Secret guard on every save path including restore; message names rule and line, never the value; Admin override logged without the body.
+- Incidents: index table; hub with metadata (occurred-at with timezone, severity, status), causes marked hypothesis or confirmed, timeline, actions, follow-ups; free-form sub-pages hidden from listings.
+- Retrospective: project button, one per project, four fixed sections, time overview from tracked time, Admin only.
+- Menu group "Znalosti"; Czech UI strings in `lang/cs`; optimistic concurrency; soft delete.
+- AI-readable serialisation (front matter plus untouched Markdown) and "Copy as Markdown for AI".
 
-**Should have (differentiators):**
-- One-pass bill-from-time wizard (the Core Value path).
-- "Slip-through" alerts: unbilled-time age, overdue invoices, unmatched Stripe payments, stale CNB rates, daily admin digest.
-- Stripe auto-matching with DB-enforced idempotence; Partner "pay now".
-- Time API as an integration surface.
+**Should have (v1.1.x):** overdue follow-up badge; incident numbers; follow-up to task; version diff; Markdown ZIP export; linked incidents on client and project pages; starter templates.
 
-**Defer (v1.x / v2+):**
-- v1.x: scheduled reminders, recurring invoices, editable templates, accountant export pack, forgotten-timer e-mail, expense re-billing, profitability widgets, VAT-threshold monitor.
-- v2+: real VAT-payer mode (keep nullable columns and snapshots), bank import and matching, team features, Peppol, public invoice link.
-- Anti-features to hold firm on: time rounding, configurable kanban workflows, editing issued invoices, Partner seeing time or rates, full accounting.
+**Defer (v2+):** API and MCP; embeddings; backlinks; Czech Hunspell stemming; client-facing incident summaries.
+
+**Anti-features:** real-time co-editing; WYSIWYG/block editor storing HTML; general file attachments; secrets vault; folder-level permissions; public share links; Partner editing; sharing incidents or retrospectives with Partner in v1.1; approval workflows; server-side autosave; Filament global search for knowledge; any "person at fault" field; two-way task sync; profitability figures in retrospectives.
 
 ### Architecture Approach
-Filament, the REST API and jobs are adapters. Every state change is one Action class in `app/Domain/*` (no Filament imports, arch-tested), run in a short DB transaction with I/O after commit.
 
-Partner isolation is default-deny in three layers: (1) sensitive data lives in Admin-only tables; (2) a `KokpitModel` base with abstract `constrainForPartner()` forces a decision per model; (3) `BasePolicy` enforces ownership. Partner screens are a separate allowlist (`app/Filament/Partner/*`), Partner has no API tokens, jobs never use ambient auth.
+New bounded folder `app/Domain/Knowledge/` (Actions, Enums, Models, Policies, Queries, Guard, Support). Writes go through Actions (`SaveArticle`, `RestoreVersion`, `MoveFolder`, `CreateIncidentPage`, `CreateRetrospective`, `AttachImage`, `ArchiveArticle`) that a later API/MCP layer will also call.
 
-**Major components:**
-1. Shared kernel: `Money`/`MoneyMath` (only rounding points), `SequenceAllocator`, `PartnerContext`/`PartnerScope`, `KokpitModel`, `KokpitJob` base with failure reporter.
-2. Identity, Clients, Projects (billing terms Admin-only), Tasks.
-3. TimeTracking: partial unique index for one running timer, generated duration, `invoice_item_id` as billed lock enforced by trigger.
-4. Rates, Reports, Documents, Finance.
-5. Invoicing and Payments: `IssueInvoice` state machine (lock, allocate number, snapshots, after-commit PDF/mail/Stripe link); `ApplyPayment` as the single entry point for manual and Stripe payments; Stripe pipeline with three idempotence layers (unique event id, job claim, unique payment object).
+1. `KnowledgeArticle`: one table for all kinds (`general`, `incident`, `incident_page`, `retrospective`); canonical `body_md`, `version_no`, client/project link, client-visible flag, `search_vector`.
+2. `KnowledgeFolder`: Admin-only adjacency list; cycle guard trigger; depth cap in `MoveFolder`.
+3. `KnowledgeArticleVersion`: append-only full snapshot; `UNIQUE (article_id, version_no)`; numbers allocated under a row lock; Admin only.
+4. `KnowledgeImage`: owns one medialibrary row on the private disk; Partner-visible exactly when its article is; signed authorised controller.
+5. `RetrospectiveTimeOverview`: Admin-only 1:1 table, integer seconds, no rates or money; never in the body.
+6. `SaveArticle` + `SecretScanner`, `MarkdownRenderer`, `KnowledgeSearch`, `ArticleDocument` (AI export), `FolderTree`.
+7. Access layer extended: `PartnerIsolated`, `DeniesPartners`, `KnowledgeArticlePolicy` (view only for Partner), `#[AccessRule]`, morph aliases, `TagType::Knowledge`, `ModelDeclarationTest`, `PartnerMatrix`, `RouteRules`.
+
+Key patterns: one write path; Markdown canonical, HTML derived, images as `kokpit-image:<uuid>` tokens; Admin-only half in a separate table; sub-pages carry no access columns and inherit the hub's access; one scoped search query class; images are not `Document` rows.
 
 ### Critical Pitfalls
-Top items from PITFALLS.md:
-1. **Partner leaks through secondary surfaces** (global search, selects, relation managers, widgets, exports, notifications, activity log, Livewire snapshots, counts). Prevention: three layers plus a canary harness started in Foundation and extended every phase; registry test that every Resource/Page/Widget/RelationManager has an approved base.
-2. **UUID and timestamp conventions broken by package migrations.** Edit all published migrations in one Foundation commit; `Relation::enforceMorphMap`; catalog architecture test.
-3. **Gap-free numbers and timer races.** `SequenceAllocator` in the numbering transaction, allocate at issue only, year from `Europe/Prague`; partial unique index for the timer; real parallel-process tests on PostgreSQL.
-4. **Immutability only in app code.** PostgreSQL triggers on issued invoices, lines, billed entries; `ON DELETE RESTRICT`; PDF rendered from snapshots and stored with sha256.
-5. **Stripe correctness.** Custom `Stripe-Signature` validator on the raw body; unique `evt_` id; only `payment_status = paid` settles; `completed_sessions.limit = 1`; deactivate link on every settlement path; match by metadata, not amount.
-6. **Operational traps.** Health widget, non-queued failure alert, scheduler heartbeat, stale-CNB check; Zerops `zsc execOnce` and single-container scheduler; deploy only via GitHub Actions; gitleaks on full history in CI; SHA-pinned actions, no `pull_request_target`.
-7. **Money, CNB and time details.** Integer minor units, one rounding per invoice line; CNB `amount` of 1/100/1000 and lookups keyed by `validFor`; local-day bucketing via `AT TIME ZONE 'Europe/Prague'`; DST fixtures.
+
+1. Markdown XSS and unsafe links: `html_input => escape`, `allow_unsafe_links => false`, dedicated sanitiser, one renderer everywhere, hostile-corpus test.
+2. Secret guard with several leak paths: guard inside the Action, metadata-only logs, masked messages, runtime-built test fixtures, redaction path for versions.
+3. Partner side-channel leaks: fail-closed scope from phase 1, DB CHECKs, canary per visibility state, matrix entry per channel in the same PR; sub-page visibility = own flag AND hub flag.
+4. `ts_headline` is not HTML-safe: sentinel characters, escape, then replace with `<mark>`.
+5. Czech full-text assumptions: `kokpit_cs`, tsquery built in PHP, body length cap, fictional Czech corpus as acceptance test.
+6. Folder tree integrity: cycle trigger with advisory lock, depth cap, no cascading deletes.
+7. Versions and restore: numbers from the locked row, no version on no-op save, restore creates a new version and re-runs the guard.
+8. Lost updates and double creates: locked `version_no`, partial unique index per project for retrospectives.
+9. Pasted-content artefacts: idempotent normaliser, never touches fenced content.
+10. Image uploads: content sniffing, reject SVG, re-encode, caps, UUID names, authorised streaming, orphan job.
+11. Retrospective and incident design: no time in any stored body; running timers excluded; no money columns; `kind` immutable.
+12. Sensitive flag and export seam: fail closed; sensitive revokes sharing; one export seam excluding sensitive rows.
 
 ## Implications for Roadmap
 
-Ordering follows the architecture build order, which matches the brief. Deliberate adjustments: isolation harness starts in Foundation; payments table and notification channel introduced early; Stripe last because it only extends `ApplyPayment`. Step 0 (hygiene) stays first.
+Suggested phase order (schema and seam first, guard before content, sharing last):
 
-### Phase 0: Repo Hygiene
-**Rationale:** The repo is public from the first commit; leaks cannot be undone. `.planning/codebase/` is already committed.
-**Delivers:** `.gitignore`, sensitive-content script and hook; gitleaks on full history in CI with custom rules; local denylist outside the repo; secret scanning and push protection; actionlint/zizmor, SHA-pinned actions, CODEOWNERS on workflows; fictional-data rule in CLAUDE.md and CONTRIBUTING; licence allowlist CI step.
-
-### Phase 1: Foundation
-**Rationale:** Everything rests on these conventions; retrofitting is the most expensive item.
-**Delivers:** Laravel 13 + Filament 5 SPA panel; CI with PostgreSQL; edited package migrations and UUID/timestamptz/morph-map catalog tests; `KokpitModel`/`PartnerScope`/`BasePolicy`/approved Filament bases with registry and arch tests; roles; `Money`/`MoneyMath`; `SequenceAllocator` plus parallel-process test harness; immutability trigger pattern; `KokpitJob` base, failure reporter, System/health page with scheduler heartbeat; typed settings (supplier profile, bank accounts, invoicing defaults); activity-log allowlist; notification channel; Admin 2FA; first-run install command; S3 disk smoke test; Actions-only Zerops deploy; spikes (DOMPDF 3-page report with diacritics and QR; Flowforge on UUID table with Partner policy); Zerops audits (PHP extensions, PG collation/extensions); `lang/cs`; isolation canary harness skeleton.
-
-### Phase 2: Clients
-Clients, contacts, tags, archive-not-delete, per-client defaults, ARES lookup (validation, timeout, fallback), Partner account invite linked via `users.client_id`, first isolation registry entries. Decide one Partner per client vs many-to-many.
-
-### Phase 3: Projects
-Projects with frozen key, billing type, rate precedence, `client_visible`, estimate, archive; billing terms in an Admin-only table; project keys never reused.
-
-### Phase 4: Tasks
-Per-project counter proving the allocator, subtasks, checklist, comments with internal flag forced in the Action, attachments, list view with filters, Partner task creation, notification e-mails using Partner-safe DTOs.
-
-### Phase 5: Kanban
-Admin-only board (project and global), `MoveTask` reusing `ChangeTaskStatus`, read-only Partner list. Flowforge if the Foundation spike passes (needs a custom theme/Node build); otherwise a custom Livewire page with Alpine `x-sort`.
-
-### Phase 6: Time Tracking
-`time_entries` schema (partial unique index, generated duration, composite task/project FK), Start/Stop/Manual Actions, topbar timer widget (server timestamps, Alpine tick), timesheet, overlap policy decision, billed-lock trigger, long-timer banner.
-
-### Phase 7: REST API
-Token-only `/api/v1`, abilities plus policies, token expiry/prune, rate limit by token, `Idempotency-Key`, read-only projects/tasks lookup, `updated_since`, Scramble docs (gated), Admin-only token UI. Calls the same Actions as the UI.
-
-### Phase 8: Exchange Rates (CNB)
-JSON feed with TXT fallback, stored `amount`, `valid_for`-keyed idempotent upsert, backfill command, converter (latest on or before date, staleness cap), 14:45 Prague schedule with retries, stale-rate health signal.
-
-### Phase 9: Reports and Dashboard
-Query objects; time per client/project/period; billable vs billed vs unbilled; streamed CSV/XLSX with formula-injection sanitising; work-report PDF; dashboard; daily admin digest.
-
-### Phase 10: Documents
-medialibrary (UUID) on private S3, app download route with short-lived URLs, per-document `visible_to_client` (default hidden), MIME/size allowlist, streamed ZIP job, bulk delete with orphan reconciliation.
-
-### Phase 11: Finance
-Transactions and categories, expenses with receipts, CZK snapshot, monthly/yearly overview, cash-basis recognition, `PaymentApplied` listener.
-
-### Phase 12: Invoicing
-Largest and riskiest; consider splitting 12a (draft, issue, numbering, snapshots, PDF, e-mail, manual payment) and 12b (bill-from-time wizard, proforma, credit notes, overdue and reminder). Includes `payments` table and `ApplyPayment`, `IssueInvoice` state machine with triggers, series per document type, VS column, SPAYD QR, PDF from snapshots, work-report e-mail, entry reservation, derived overdue, Partner invoice view (issued only).
-
-### Phase 13: Stripe
-Payment Link job (limit 1, idempotency key, metadata, deactivation on every settlement path), custom signature validator, three idempotence layers, matching, duplicate/unmatched/needs_review queue, payments overview with retry, payload retention, livemode check, fixture suite.
-
-### Phase 14: Partner Audit
-Close registry gaps, route audit, Resources/Pages/Widgets/API x roles enumeration, canary pass over HTML, Livewire JSON, API, downloads, notifications; 2-container deploy rehearsal.
-
-### Phase Ordering Rationale
-- Money and scopes precede Projects (rates); allocator proven on tasks before invoices; Rates precede Reports, Finance and Invoicing; Documents and Finance precede Invoicing; `payments` precedes Stripe.
-- Each phase adds one Domain module, its migrations, and its rows in the Partner isolation registry.
-- All schema conventions and the harness are Foundation work with failing CI tests; Stripe and Invoicing get fixture suites; the deploy path is fixed once in Foundation.
-- v1.x items (reminders, recurring invoices, accountant export) stay outside this roadmap; keep invoice creation callable from a job.
+1. **Data model and access seam:** migrations for all kinds, folders with cycle trigger, versions table with append-only trigger, morph map, `TagType::Knowledge`, models with isolation traits, policies, declarations, canary articles, language keys.
+2. **Core article, renderer, secret guard, save path:** `SaveArticle`, `SecretScanner`, renderer and sanitiser, callouts, copy buttons, normaliser, Admin resource "Obecné znalosti" with separate list/create/view/edit pages, server-rendered preview, archive, concurrency and hostile-corpus tests.
+3. **Organisation and version history:** folder tree UI, tags, client/project link, "Verze" tab, `RestoreVersion`, redaction action, retention decision.
+4. **Image attachments:** `knowledge_images`, own upload action, sniffing and re-encoding, signed controller, CSP, orphan job.
+5. **Incidents and retrospectives:** incident hub and hidden sub-pages, metadata, causes, timeline, follow-ups; retrospective button, fixed template, Admin-only time overview.
+6. **Own full-text search:** `kokpit_cs`, generated vector, GIN and trigram indexes, scoped `KnowledgeSearch`, sentinel snippets, search page outside global search, leak canaries.
+7. **Client sharing, Partner view, AI-friendly export:** share switch with confirmation, `PartnerKnowledgeResource`, relation managers, matrix and route rules, `ArticleDocument` export, "Copy as Markdown for AI".
 
 ### Research Flags
-Deeper research (`/gsd-plan-phase --research-phase <N>`): Phase 1 (Zerops specifics, PDF and Flowforge spikes, PHP 8.5 package compatibility, Filament v5 [verify] items), Phase 5 (only if Flowforge spike fails), Phase 6 (overlap policy, SPA timer), Phase 7 (Scramble coverage), Phase 12 (Czech invoicing details), Phase 13 (Payment Link API shape, event matrix, API version pinning).
-Standard patterns: 0, 2, 3, 4, 8, 9, 10, 11, 14.
+
+Spikes needed: renderer and sanitiser config and cursor image insertion (2); image library on deploy target and CSP (4); nested Filament resource for sub-pages (5); `kokpit_cs` rights on managed PostgreSQL, generated-column immutability, `ts_headline` on accents (6); owner decisions before 7.
+
+Standard patterns: phases 1 and 3 follow existing conventions.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Versions read from Packagist/package sources on 2026-10-06. MEDIUM for Zerops specifics, UUID edits, Scramble/Stripe details |
-| Features | MEDIUM | Czech invoicing rules MEDIUM-HIGH; competitor analysis from product knowledge; VAT threshold and Stripe edge cases need re-verification |
-| Architecture | MEDIUM-HIGH | Patterns are established practice; package-specific and Filament v5 details partly unverified |
-| Pitfalls | MEDIUM-HIGH | Stripe, CNB, Sanctum, Spatie UUID, Zerops `zsc` verified against docs; Filament internals tagged [verify] |
+| Stack | HIGH (versions, licences); MEDIUM (PostgreSQL config, highlighter output) | Verified in `vendor/` and `composer.lock`; text-search behaviour must be proven on PG 18. |
+| Features | MEDIUM | Established wiki and post-mortem conventions. |
+| Architecture | HIGH (integration points); MEDIUM (nested resource, generated column, renderer) | Read from repository code. |
+| Pitfalls | MEDIUM-HIGH | Verified against installed libraries; some items to verify in spikes. |
 
 **Overall confidence:** MEDIUM-HIGH
 
+### Conflicts between research files (resolved)
+
+- Dependencies: promote `league/commonmark` and `symfony/html-sanitizer`; `tempest/highlight` and `jfcherng/php-diff` optional; folder tree via own recursive CTE unless the owner prefers the package.
+- Markdown escaping: `escape`, not `strip`.
+- Time in retrospectives: none in the body; Admin-only overview table with a refresh action.
+- Secret guard: block unambiguous secrets; warn plus acknowledgment for ambiguous matches; override per save, logged without the body.
+- Share flag naming: `client_visible` and `sensitive`.
+- Incident kinds: one naming chosen in phase 1.
+- Search configuration name: `kokpit_cs`.
+- Sharing timing: Partner code may exist earlier behind the closed scope; the switch goes live only in phase 7.
+
 ### Gaps to Address
-- **Researcher drift:** ARCHITECTURE cites spatie/laravel-permission v7 and an in-house kanban; STACK verified `^8.3` and recommends Flowforge. Treat STACK as authoritative on versions; resolve kanban via the Foundation spike (fallback: custom board).
-- **Zerops runtime facts** (extensions, worker model, PG extensions/collation, S3 checksums): verify in Foundation.
-- **DOMPDF multi-page work report:** spike; switch that document to Gotenberg if it fails.
-- **Filament v5 behaviours** (default authorization without policy, global search/relation-manager scoping, Livewire snapshot contents, export auth context): encode as tests in the isolation harness.
-- **Product decisions before the owning phase:** Partner per client cardinality (P2); overlapping entries (P6); credit-note effect on billed entries and sign convention (P12); which date selects the CNB rate; proforma series and VS; whether Partner sees documents (default hidden with share flag).
-- **Czech legal text:** not legal advice; document as limitation and re-verify at implementation.
-- **Activity log UI:** `rmsramos/activitylog` vs a simple relation manager under activitylog v5.
+
+- Owner decisions: per-article switch and its AND rule with the project's client-visible flag; incidents and retrospectives never shared in v1.1; guard block-only versus block-plus-warn; version coalescing.
+- Retrospective overview contents: live query versus refreshed snapshot table.
+- Czech search quality: accept `kokpit_cs` for v1.1; Hunspell is a separate later decision.
+- Managed PostgreSQL permissions and image library availability.
+- Folder tree implementation and UUID behaviour.
+- P2 items: decide at requirements time whether any enters v1.1.
+- Retention of versions and orphan images.
+- Filament SPA session behaviour on long edits; Sentry and log scrubbing of `body`.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- Packagist metadata and package sources (Laravel 13, Filament 5, Spatie packages, Sanctum, stripe-php, Flowforge, openspout, QR libraries), 2026-10-06.
-- Laravel 12/13 docs, Stripe docs, CNB feeds, ARES REST API (live), Spatie docs, PostgreSQL 18 docs, SPAYD specification.
+- Repository code and `vendor/` read 2026-11-25 (CommonMark defaults, Filament `MarkdownEditor`, `RichText` sanitiser, `KokpitModel`, `PartnerScope`, `TimeTotals`, `DocumentFileController`, accent-insensitive search migration, Partner audit harness).
+- `composer.lock` and Packagist metadata.
+- PostgreSQL 18 manual: text-search dictionaries and controls.
 
 ### Secondary (MEDIUM confidence)
-- Zerops docs, Filament docs, Czech invoicing tool guides, GitHub Actions hardening guidance, competitor product knowledge.
+- Tempest highlight upstream source (read, not executed).
+- Public post-mortem and retrospective templates; wiki product comparisons.
 
-### Tertiary (LOW confidence, needs validation)
-- Items tagged [verify] in PITFALLS.md; Czech statute references; Scramble UI licence.
+### Tertiary (LOW confidence)
+- Web search excerpts on secret-scanning libraries and CommonMark alert extensions.
+- Training-knowledge limits to verify in spikes.
 
 ---
-*Research completed: 2026-10-06*
+*Research completed: 2026-11-25*
 *Ready for roadmap: yes*
