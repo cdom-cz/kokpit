@@ -8,19 +8,32 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Actions\ArchiveArticle;
 use App\Domain\Knowledge\Actions\RestoreArticle;
 use App\Domain\Knowledge\Enums\ArticleKind;
+use App\Domain\Knowledge\Guard\Severity;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Support\KnowledgeMarkdown;
+use App\Domain\Knowledge\Support\MarkdownNormaliser;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Concerns\InKnowledgeGroup;
 use App\Filament\RelationManagers\KnowledgeArticleHistoryRelationManager;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\SecretGuardForm;
+use App\Filament\Resources\KnowledgeArticleResource\Pages\CreateKnowledgeArticle;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ListKnowledgeArticles;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ViewKnowledgeArticle;
 use App\Providers\LocalisationServiceProvider;
 use Filament\Actions\Action;
+use Filament\Actions\CreateAction;
+use Filament\Forms\Components\MarkdownEditor;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Callout;
+use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Tabs;
+use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\FontWeight;
@@ -33,7 +46,10 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\HtmlString;
 use InvalidArgumentException;
+use Livewire\Component as LivewireComponent;
 
 /**
  * The Admin screens of the general knowledge articles: the list with the archived switch and the view screen that
@@ -96,6 +112,129 @@ final class KnowledgeArticleResource extends Resource
             ->where('kind', ArticleKind::General->value);
     }
 
+    /**
+     * The form of the create screen (and, later, the edit screen): the title, the tabs Psaní and Náhled and the
+     * sensitive toggle, in one column (KB-01, D-06, D-07).
+     *
+     * The body is the only field the preview reads. It is not live: typing sends no request and the text travels
+     * with the next call, which is the tab switch, a save or the save-anyway button.
+     */
+    public static function form(Schema $schema): Schema
+    {
+        return $schema
+            ->columns(1)
+            ->components([
+                // The secret-guard feedback of a refused save, danger first (D-01, D-03). Each callout shows only the
+                // rule and the line of its findings, never the matched text.
+                self::guardCallout(Severity::Blocking, 'danger', Heroicon::OutlinedShieldExclamation, 'blocking'),
+                self::guardCallout(Severity::Ambiguous, 'warning', Heroicon::OutlinedExclamationTriangle, 'ambiguous'),
+                TextInput::make('title')
+                    ->label(__('knowledge.fields.title'))
+                    ->required()
+                    ->maxLength(KnowledgeArticle::MAX_TITLE_LENGTH)
+                    ->validationMessages(['required' => __('knowledge.errors.title_required')])
+                    ->autofocus(static fn (LivewireComponent $livewire): bool => $livewire instanceof CreateKnowledgeArticle),
+                Tabs::make()
+                    ->key('editor')
+                    ->livewireProperty('activeTab')
+                    ->tabs([
+                        'write' => Tab::make(__('knowledge.tabs.write'))
+                            ->schema([
+                                MarkdownEditor::make('body')
+                                    ->label(__('knowledge.fields.body'))
+                                    // The toolbar of D-07. The task-list button is added by resources/js/knowledge-editor.js
+                                    // after the ordered-list button: Filament's toolbar has no such name.
+                                    ->toolbarButtons([
+                                        ['bold', 'italic', 'link'],
+                                        ['heading'],
+                                        ['blockquote', 'codeBlock', 'bulletList', 'orderedList'],
+                                        ['table'],
+                                        ['undo', 'redo'],
+                                    ])
+                                    ->fileAttachments(false)
+                                    // A changed body drops the refusal: the next save scans the new text again (SEC-03).
+                                    ->afterStateUpdated(static function (LivewireComponent $livewire): void {
+                                        if ($livewire instanceof SecretGuardForm) {
+                                            $livewire->clearGuardFindings();
+                                        }
+                                    })
+                                    ->maxLength(KnowledgeArticle::MAX_BODY_LENGTH)
+                                    ->minHeight('24rem')
+                                    ->extraAttributes(['data-kokpit-task-list' => __('knowledge.editor.task_list')]),
+                            ]),
+                        'preview' => Tab::make(__('knowledge.tabs.preview'))
+                            ->schema([
+                                Html::make(static fn (Get $get): HtmlString => self::previewHtml($get('body'))),
+                            ]),
+                    ]),
+                // Shown while the tab roundtrip runs: an inactive tab renders nothing, so the indicator sits outside it.
+                Html::make(static fn (): HtmlString => self::previewLoadingIndicator()),
+                Toggle::make('sensitive')
+                    ->label(__('knowledge.fields.sensitive'))
+                    ->helperText(__('knowledge.fields.sensitive_helper')),
+            ]);
+    }
+
+    /**
+     * One callout of the secret guard: visible while the page reports findings of its severity, announced to assistive
+     * technology and focusable so the page can bring it into view. The finding lines come from the page.
+     *
+     * @param  'blocking'|'ambiguous'  $kind
+     */
+    private static function guardCallout(Severity $severity, string $color, Heroicon $icon, string $kind): Callout
+    {
+        return Callout::make(trans()->string('knowledge.guard.'.$kind.'_heading'))
+            ->description(trans()->string('knowledge.guard.'.$kind.'_body'))
+            ->color($color)
+            ->icon($icon)
+            ->extraAttributes(['role' => 'alert', 'data-kokpit-guard' => '', 'tabindex' => '-1'])
+            ->footer([
+                View::make('filament.knowledge.guard-findings')
+                    ->viewData(static fn (LivewireComponent $livewire): array => [
+                        'lines' => $livewire instanceof SecretGuardForm ? $livewire->guardFindingLines($severity) : [],
+                    ]),
+            ])
+            ->visible(static fn (LivewireComponent $livewire): bool => $livewire instanceof SecretGuardForm && $livewire->hasGuardFindings($severity));
+    }
+
+    /**
+     * The preview of an unsaved body: the normalised text, as SaveArticle will store it, rendered by the one renderer
+     * inside the prose view of the view screen, so the preview and the saved article are identical (D-06). It never
+     * scans for secrets and never writes.
+     */
+    public static function previewHtml(mixed $body): HtmlString
+    {
+        $text = is_string($body) ? $body : '';
+        $markdown = app(KnowledgeMarkdown::class);
+
+        // The input is bounded before anything parses it: the normaliser runs a full CommonMark parse itself, so a text
+        // over the renderer's limit goes to the renderer unnormalised, whose plain branch shows it escaped without
+        // parsing. Such a text can never be stored (ArticleInput refuses it), so parity with the view screen is intact.
+        $html = mb_strlen($text) > KnowledgeMarkdown::MAX_INPUT_LENGTH
+            ? $markdown->render($text)
+            : $markdown->render(app(MarkdownNormaliser::class)->normalise($text));
+
+        return new HtmlString(view('filament.knowledge.prose', [
+            'html' => $html,
+            'emptyText' => __('knowledge.empty.preview'),
+            'emptyActionUrl' => null,
+            'emptyActionLabel' => null,
+        ])->render());
+    }
+
+    /**
+     * The Filament loading indicator that shows while a tab switch is on its way to the server. Livewire hides it
+     * until the request starts; inline styles only, because the panel theme does not compile utility classes.
+     */
+    private static function previewLoadingIndicator(): HtmlString
+    {
+        return new HtmlString(
+            '<div wire:loading.flex wire:target="activeTab" role="status" style="justify-content:center;padding:0.5rem 0;">'
+            .Blade::render('<x-filament::loading-indicator style="width:1.5rem;height:1.5rem;" />')
+            .'</div>',
+        );
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -149,6 +288,12 @@ final class KnowledgeArticleResource extends Resource
             ->emptyStateHeading(static fn (HasTable $livewire): string => data_get($livewire->getTableFilterState('show_archived'), 'isActive', false)
                 ? trans()->string('knowledge.empty.archived_heading')
                 : trans()->string('knowledge.empty.list_heading'))
+            ->emptyStateActions([
+                CreateAction::make()
+                    ->label(__('knowledge.actions.create'))
+                    ->icon(Heroicon::OutlinedPlus)
+                    ->visible(static fn (HasTable $livewire): bool => ! (bool) data_get($livewire->getTableFilterState('show_archived'), 'isActive', false)),
+            ])
             ->emptyStateDescription(static fn (HasTable $livewire): ?string => data_get($livewire->getTableFilterState('show_archived'), 'isActive', false)
                 ? null
                 : trans()->string('knowledge.empty.list_description'));
@@ -257,6 +402,7 @@ final class KnowledgeArticleResource extends Resource
     {
         return [
             'index' => ListKnowledgeArticles::route('/'),
+            'create' => CreateKnowledgeArticle::route('/create'),
             'view' => ViewKnowledgeArticle::route('/{record}'),
         ];
     }
