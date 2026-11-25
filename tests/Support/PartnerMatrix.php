@@ -103,6 +103,7 @@ use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEmailsRelationManager;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoiceEntriesRelationManager;
 use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelationManager;
+use App\Filament\Resources\KnowledgeArticleResource;
 use App\Filament\Resources\ProjectResource;
 use App\Filament\Resources\ProjectResource\Pages\ProjectBoard;
 use App\Filament\Resources\ProjectResource\RelationManagers\ProjectTasksTimeRelationManager;
@@ -199,6 +200,7 @@ final class PartnerMatrix
             DocumentResource::class => ['admin' => true, 'partner' => false, 'reason' => 'Central listing of the files of every client.'],
             ExchangeRateResource::class => ['admin' => true, 'partner' => false, 'reason' => 'Exchange rates feed invoice amounts.'],
             InvoiceResource::class => ['admin' => true, 'partner' => false, 'reason' => 'Billing documents carry rates, payments and drafts.'],
+            KnowledgeArticleResource::class => ['admin' => true, 'partner' => false, 'reason' => 'Internal knowledge articles of the Admin; sharing arrives in Phase 23.'],
             ProjectResource::class => ['admin' => true, 'partner' => false, 'reason' => 'Projects carry rates, prices and billing terms.'],
             ReportExportResource::class => ['admin' => true, 'partner' => false, 'reason' => 'Report exports hold measured time and rates.'],
             TaskResource::class => ['admin' => true, 'partner' => false, 'reason' => 'Admin task screens carry people, billing and internal data.'],
