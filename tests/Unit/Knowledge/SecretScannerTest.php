@@ -118,6 +118,63 @@ it('does not report an indented, quoted or escaped header without a key body', f
     }
 });
 
+/**
+ * The rule keys of the findings, for checks that a rule is absent while another rule may still fire.
+ *
+ * @param  list<SecretFinding>  $findings
+ * @return list<string>
+ */
+function secretScannerRules(array $findings): array
+{
+    return array_map(static fn (SecretFinding $finding): string => $finding->rule->value, $findings);
+}
+
+it('applies the key body limits: one line of 40 or two lines of 16 characters, header fields and one blank line', function (): void {
+    $kind = 'RSA '.'PRIV'.'ATE KEY';
+    $header = '-----BEGIN '.$kind.'-----';
+    $footer = '-----END '.$kind.'-----';
+    $row = SecretFixtures::base64Line(...);
+    $scan = static fn (string ...$lines): array => secretScannerScan(SecretFixtures::bodyWith(implode("\n", $lines), 3));
+    $block = ['pem_private_key', 3];
+
+    expect(secretScannerPairs($scan($header, $row(40), $footer)))->toBe([$block])
+        ->and(secretScannerRules($scan($header, $row(39), $footer)))->not->toContain('pem_private_key')
+        ->and(secretScannerPairs($scan($header, $row(16), $row(16), $footer)))->toBe([$block])
+        ->and($scan($header, $row(16), $row(15), $footer))->toBe([])
+        ->and(secretScannerPairs($scan(
+            '# '.$header,
+            '# Proc-Type: 4,ENCRYPTED',
+            '# DEK-Info: AES-128-CBC,0123456789',
+            '#',
+            '# '.$row(64),
+            '# '.$row(64),
+            '# '.$footer,
+        )))->toBe([$block])
+        ->and(secretScannerPairs($scan($header, $row(20), '', $row(20), $footer)))->toBe([$block])
+        ->and($scan($header, $row(20), '', '', $row(20), $footer))->toBe([])
+        ->and(secretScannerRules($scan($header, '', '', $row(64), $footer)))->not->toContain('pem_private_key')
+        ->and(secretScannerPairs($scan($header, 'A: b', 'C: d', 'E: f', 'G: h', '', $row(64), $footer)))->toBe([$block])
+        ->and(secretScannerRules($scan($header, 'A: b', 'C: d', 'E: f', 'G: h', 'I: j', $row(64), $footer)))->not->toContain('pem_private_key');
+});
+
+it('does not report a private key header followed by prose, a commented sentence or a short line', function (): void {
+    $kind = 'RSA '.'PRIV'.'ATE KEY';
+    $header = '-----BEGIN '.$kind.'-----';
+    $footer = '-----END '.$kind.'-----';
+
+    $texts = [
+        'prose' => $header."\nThe base64 body follows here.\n".$footer,
+        'commented sentence' => $header."\n# see the vault entry\n".$footer,
+        'short line' => $header."\n".SecretFixtures::base64Line(30)."\n".$footer,
+        'quoted sentence' => $header."\n\"see the vault entry\",\n".$footer,
+        'list item header and step' => '- '.$header."\n- Example step one\n".$footer,
+    ];
+
+    foreach ($texts as $text) {
+        expect(secretScannerScan(SecretFixtures::bodyWith($text, 3)))->toBe([]);
+    }
+});
+
 it('reports a random run longer than the window and a quoted password with spaces as ambiguous findings', function (): void {
     $cases = [
         [SecretFixtures::longRandomRun(336), 'high_entropy_string'],
@@ -361,6 +418,11 @@ it('finishes on 200 KB of adversarial input in under a second per rule, without 
     'repeated indented quoted pem header' => ['  > -----BEGIN PRIV'."ATE KEY-----\n"],
     'repeated escaped pem header' => ['-----BEGIN PRIV'.'ATE KEY-----\\n'],
     'repeated prefix-only lines' => ["  >  > \n"],
+    'repeated commented pem header' => ['# -----BEGIN PRIV'."ATE KEY-----\n"],
+    'repeated header with blank and field lines' => ['-----BEGIN PRIV'."ATE KEY-----\n#\nA: b\n#\nA: b\n"],
+    'repeated header and decorated short line' => ['-----BEGIN PRIV'."ATE KEY-----\n\"".str_repeat('aB3+', 5)."\",\n"],
+    'repeated single-line key' => ['-----BEGIN PRIV'."ATE KEY-----\n".str_repeat('aB3+', 16)."\n"],
+    'repeated decoration characters' => ['"#,\\'],
     'repeated high entropy run' => [SecretFixtures::highEntropyString()],
     'repeated open quoted password' => ['password = "a b '],
     'repeated backslash underscore' => ['\\_'],

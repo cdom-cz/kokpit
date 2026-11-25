@@ -21,7 +21,9 @@ namespace App\Domain\Knowledge\Guard;
  *
  * Rules run in precedence order, every blocking rule before the two ambiguous ones. A match that overlaps
  * an earlier reported match on the same line is dropped, so one token never yields two findings. The
- * private key rule runs first over the whole text and covers the lines of the key.
+ * private key rules run first: a line that ends in a private key header is followed by a bounded look-ahead
+ * over the next lines, checked in code (decoration trimmed at both ends of every line, a body of one long
+ * base64 line or two shorter ones), and the lines of the key are covered so no line rule reports them again.
  */
 final class SecretScanner
 {
@@ -42,17 +44,12 @@ final class SecretScanner
     private const string MARKDOWN_ESCAPE = '/\\\\([!-\/:-@\[-`{-~])/';
 
     /**
-     * A private key block: the header, then at least two base64 lines of 16 or more characters. A prose
-     * sentence that only names the header is not a finding.
-     *
-     * The header is not anchored. Every line after it may start with a possessive run of up to 40 spaces,
-     * tabs and quote markers (a YAML block scalar, a list item, an indented fence, a blockquote), and the
-     * header and every base64 run may end with an escaped line break (the two characters backslash and n,
-     * or backslash r backslash n) in front of the real one, as in a YAML double-quoted scalar (R-18-11-1).
+     * The header of a private key, anchored at the offset it is matched at (a line is checked at the last
+     * start of a header in it). What may follow the header on its line, and what the lines after it must
+     * look like, is decided in code (keyCore(), keyBodyEnd()), not by a pattern over the joined text, so the
+     * work per line stays bounded (R-18-14-1).
      */
-    private const string PEM_PRIVATE_KEY = '/-----BEGIN (?:[A-Z]{1,20} ){0,5}PRIVATE KEY(?: BLOCK)?-----[ \t]*(?:(?:\\\\r)?\\\\n)?\n'
-        .'(?:[ \t>]{0,40}+[A-Za-z][A-Za-z-]{0,30}: [^\n]{0,200}\n){0,4}(?:[ \t>]{0,40}+\n)?'
-        .'(?:[ \t>]{0,40}+[A-Za-z0-9+\/=]{16,}+[ \t]*(?:(?:\\\\r)?\\\\n)?(?:\n|\z)){2}/';
+    private const string PEM_PRIVATE_KEY_HEADER = '/\G-----BEGIN (?:[A-Z]{1,20} ){0,5}PRIVATE KEY(?: BLOCK)?-----/';
 
     /**
      * A private key on one line with escaped line breaks (a JSON string, with or without escaped slashes,
@@ -66,13 +63,42 @@ final class SecretScanner
         .'(?:[A-Za-z0-9+\/=]|\\\\\/){16}/';
 
     /**
-     * The characters that may stand in front of a base64 line of a key: spaces, tabs and quote markers.
+     * A header field line of a key (such as Proc-Type or DEK-Info) behind any decoration: a possessive run
+     * of at most 40 characters that are no letter or digit, a field name, a colon and a space.
      */
-    private const string LINE_PREFIX = " \t>";
+    private const string PEM_HEADER_FIELD = '/\A[^A-Za-z0-9]{0,40}+[A-Za-z][A-Za-z-]{0,30}: /';
 
     /**
-     * The characters of a base64 line. The lines of a key after the two the pattern proves are covered by
-     * a plain loop, because a repeated group over thousands of lines would exhaust the PCRE stack.
+     * Every byte that is not an ASCII letter or a digit, as a trim() range list: the decoration at the edge
+     * of a line (a quote, a comment marker, a list dash, a comma, a plus, a backslash, spaces, tabs). Every
+     * byte of a multi-byte character is 0x80 or higher, so trimming never splits a character.
+     */
+    private const string KEY_EDGE = "\x00..\x2F\x3A..\x40\x5B..\x60\x7B..\xFF";
+
+    /**
+     * How many lines after a key header are looked at, at most, to find the body of the key.
+     */
+    private const int KEY_LOOKAHEAD = 8;
+
+    /**
+     * How many header field lines (Proc-Type, DEK-Info) may stand between the header and the body.
+     */
+    private const int KEY_FIELD_LINES = 4;
+
+    /**
+     * The shortest base64 line that counts as a body line of a key.
+     */
+    private const int KEY_LINE_MIN_LENGTH = 16;
+
+    /**
+     * The shortest base64 line that proves a key alone: a one-line body (PKCS#8 Ed25519, an unwrapped key).
+     * Shorter body lines prove a key only as a pair of two.
+     */
+    private const int KEY_SINGLE_LINE_MIN_LENGTH = 40;
+
+    /**
+     * The characters of a base64 line. The lines of a key after the one that proves it are covered by a
+     * plain loop, because a repeated pattern over thousands of lines would exhaust the PCRE stack.
      */
     private const string BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
 
@@ -249,8 +275,13 @@ final class SecretScanner
     }
 
     /**
-     * The PEM rule runs over the whole folded text, because a key spans lines. Every line of a match is
-     * marked covered, so the base64 lines of a key are never reported again by a line rule.
+     * The private key rules, per line. A line that ends in a private key header and is followed by the body
+     * of a key (keyBodyEnd()) is one finding on the header line; the lines from the header on to the last
+     * base64 line of the key are marked covered, so the base64 lines are never reported again by a line rule.
+     * The covered range is extended over every following base64 line and over one blank line that is
+     * directly followed by one, with a plain loop (a repeated pattern over thousands of lines would exhaust
+     * the PCRE stack). Each extension run belongs to one header, because a header line is never a base64
+     * line, so the work stays linear. A key on one line with escaped line breaks has its own rule.
      *
      * @param  list<string>  $folded
      * @param  array<string, SecretFinding>  $findings
@@ -258,26 +289,34 @@ final class SecretScanner
      */
     private function scanPrivateKeys(array $folded, array &$findings): array
     {
-        $text = implode("\n", $folded);
         $covered = [];
 
-        foreach ($this->matches(self::PEM_PRIVATE_KEY, $text) as $match) {
-            [$matched, $offset] = $match[0];
-
-            $first = substr_count(substr($text, 0, $offset), "\n") + 1;
-            $count = substr_count($matched, "\n") + (str_ends_with($matched, "\n") ? 0 : 1);
-
-            $last = $first + $count - 1;
-
-            while (isset($folded[$last]) && $this->isBase64Line($folded[$last])) {
-                $last++;
+        foreach ($folded as $index => $line) {
+            if (! $this->endsInPrivateKeyHeader($line)) {
+                continue;
             }
 
-            for ($line = $first; $line <= $last; $line++) {
-                $covered[$line] = true;
+            $last = $this->keyBodyEnd($folded, $index);
+
+            if ($last === null) {
+                continue;
             }
 
-            $findings[SecretRule::PemPrivateKey->value.'@'.$first] = new SecretFinding(SecretRule::PemPrivateKey, $first);
+            while (true) {
+                if (isset($folded[$last + 1]) && $this->isBase64Line($folded[$last + 1])) {
+                    $last++;
+                } elseif (isset($folded[$last + 2]) && $this->keyCore($folded[$last + 1]) === '' && $this->isBase64Line($folded[$last + 2])) {
+                    $last += 2;
+                } else {
+                    break;
+                }
+            }
+
+            for ($covering = $index + 1; $covering <= $last + 1; $covering++) {
+                $covered[$covering] = true;
+            }
+
+            $findings[SecretRule::PemPrivateKey->value.'@'.($index + 1)] = new SecretFinding(SecretRule::PemPrivateKey, $index + 1);
         }
 
         foreach ($folded as $index => $line) {
@@ -288,6 +327,95 @@ final class SecretScanner
         }
 
         return $covered;
+    }
+
+    /**
+     * Whether the line ends in a private key header: the header pattern matches at the last start of a
+     * header in the line, and nothing but decoration (quotes, a comment marker, an escaped line break, a
+     * comma, a backslash) follows it. A sentence that continues after the header is no key header line.
+     */
+    private function endsInPrivateKeyHeader(string $line): bool
+    {
+        $offset = strrpos($line, '-----BEGIN ');
+
+        if ($offset === false || $this->checked(preg_match(self::PEM_PRIVATE_KEY_HEADER, $line, $match, 0, $offset)) !== 1 || ! isset($match[0])) {
+            return false;
+        }
+
+        return $this->keyCore(substr($line, $offset + strlen($match[0]))) === '';
+    }
+
+    /**
+     * The 0-based index of the line that proves a key after its header line, or null. At most eight lines
+     * after the header are looked at, in order: a blank line is skipped, a second blank line in a row ends
+     * the look-ahead; before the first body line up to four header fields are skipped; any other line is a
+     * body line when its core is at least 16 characters long and base64 only, otherwise the look-ahead ends
+     * without a key. The key is proven by the second body line, or by a first one of 40 or more characters
+     * (a one-line body).
+     *
+     * @param  list<string>  $folded
+     */
+    private function keyBodyEnd(array $folded, int $header): ?int
+    {
+        $bodyLines = 0;
+        $fields = 0;
+        $blank = false;
+        $last = min(count($folded) - 1, $header + self::KEY_LOOKAHEAD);
+
+        for ($index = $header + 1; $index <= $last; $index++) {
+            $core = $this->keyCore($folded[$index]);
+
+            if ($core === '') {
+                if ($blank) {
+                    return null;
+                }
+
+                $blank = true;
+
+                continue;
+            }
+
+            $blank = false;
+
+            if ($bodyLines === 0 && $fields < self::KEY_FIELD_LINES && $this->checked(preg_match(self::PEM_HEADER_FIELD, $folded[$index])) === 1) {
+                $fields++;
+
+                continue;
+            }
+
+            if (strlen($core) < self::KEY_LINE_MIN_LENGTH || strspn($core, self::BASE64) !== strlen($core)) {
+                return null;
+            }
+
+            $bodyLines++;
+
+            if ($bodyLines === 2 || strlen($core) >= self::KEY_SINGLE_LINE_MIN_LENGTH) {
+                return $index;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The core of a line: the line without the decoration at its edges (every byte that is no ASCII letter
+     * or digit), and without an escaped line break at its end (the two characters backslash and n, or
+     * backslash r backslash n). The right side is processed first, because the letter n of an escaped line
+     * break is alphanumeric. A blank line has an empty core.
+     */
+    private function keyCore(string $line): string
+    {
+        $core = rtrim($line, self::KEY_EDGE);
+
+        if (str_ends_with($core, '\n')) {
+            $core = rtrim(substr($core, 0, -2), self::KEY_EDGE);
+
+            if (str_ends_with($core, '\r')) {
+                $core = rtrim(substr($core, 0, -2), self::KEY_EDGE);
+            }
+        }
+
+        return ltrim($core, self::KEY_EDGE);
     }
 
     /**
@@ -410,24 +538,14 @@ final class SecretScanner
     }
 
     /**
-     * Whether a line is one more base64 line of a key: the quote markers and indent in front and the
-     * spaces and the escaped line break behind it are ignored, the same as in the PEM pattern.
+     * Whether a line is one more base64 line of a key: its core (decoration at both edges and an escaped
+     * line break at the end removed, see keyCore()) is not empty and made only of base64 characters.
      */
     private function isBase64Line(string $line): bool
     {
-        $line = rtrim(ltrim($line, self::LINE_PREFIX), " \t");
+        $core = $this->keyCore($line);
 
-        if (str_ends_with($line, '\n')) {
-            $line = substr($line, 0, -2);
-
-            if (str_ends_with($line, '\r')) {
-                $line = substr($line, 0, -2);
-            }
-
-            $line = rtrim($line, " \t");
-        }
-
-        return $line !== '' && strspn($line, self::BASE64) === strlen($line);
+        return $core !== '' && strspn($core, self::BASE64) === strlen($core);
     }
 
     private function isPlaceholder(string $value): bool
