@@ -43,6 +43,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
 use InvalidArgumentException;
 use Livewire\Component as LivewireComponent;
@@ -134,14 +135,27 @@ final class KnowledgeArticleResource extends Resource
                             ->schema([
                                 MarkdownEditor::make('body')
                                     ->label(__('knowledge.fields.body'))
+                                    // The toolbar of D-07. The task-list button is added by resources/js/knowledge-editor.js
+                                    // after the ordered-list button: Filament's toolbar has no such name.
+                                    ->toolbarButtons([
+                                        ['bold', 'italic', 'link'],
+                                        ['heading'],
+                                        ['blockquote', 'codeBlock', 'bulletList', 'orderedList'],
+                                        ['table'],
+                                        ['undo', 'redo'],
+                                    ])
+                                    ->fileAttachments(false)
                                     ->maxLength(KnowledgeArticle::MAX_BODY_LENGTH)
-                                    ->minHeight('24rem'),
+                                    ->minHeight('24rem')
+                                    ->extraAttributes(['data-kokpit-task-list' => __('knowledge.editor.task_list')]),
                             ]),
                         'preview' => Tab::make(__('knowledge.tabs.preview'))
                             ->schema([
                                 Html::make(static fn (Get $get): HtmlString => self::previewHtml($get('body'))),
                             ]),
                     ]),
+                // Shown while the tab roundtrip runs: an inactive tab renders nothing, so the indicator sits outside it.
+                Html::make(static fn (): HtmlString => self::previewLoadingIndicator()),
                 Toggle::make('sensitive')
                     ->label(__('knowledge.fields.sensitive'))
                     ->helperText(__('knowledge.fields.sensitive_helper')),
@@ -156,13 +170,34 @@ final class KnowledgeArticleResource extends Resource
     public static function previewHtml(mixed $body): HtmlString
     {
         $text = is_string($body) ? $body : '';
+        $markdown = app(KnowledgeMarkdown::class);
+
+        // The input is bounded before anything parses it: the normaliser runs a full CommonMark parse itself, so a text
+        // over the renderer's limit goes to the renderer unnormalised, whose plain branch shows it escaped without
+        // parsing. Such a text can never be stored (ArticleInput refuses it), so parity with the view screen is intact.
+        $html = mb_strlen($text) > KnowledgeMarkdown::MAX_INPUT_LENGTH
+            ? $markdown->render($text)
+            : $markdown->render(app(MarkdownNormaliser::class)->normalise($text));
 
         return new HtmlString(view('filament.knowledge.prose', [
-            'html' => app(KnowledgeMarkdown::class)->render(app(MarkdownNormaliser::class)->normalise($text)),
+            'html' => $html,
             'emptyText' => __('knowledge.empty.preview'),
             'emptyActionUrl' => null,
             'emptyActionLabel' => null,
         ])->render());
+    }
+
+    /**
+     * The Filament loading indicator that shows while a tab switch is on its way to the server. Livewire hides it
+     * until the request starts; inline styles only, because the panel theme does not compile utility classes.
+     */
+    private static function previewLoadingIndicator(): HtmlString
+    {
+        return new HtmlString(
+            '<div wire:loading.flex wire:target="activeTab" role="status" style="justify-content:center;padding:0.5rem 0;">'
+            .Blade::render('<x-filament::loading-indicator style="width:1.5rem;height:1.5rem;" />')
+            .'</div>',
+        );
     }
 
     public static function table(Table $table): Table

@@ -18,7 +18,7 @@ use Tests\Support\KnowledgeFixtures;
 
 /*
  * The Admin knowledge screens are closed to a Partner (ROADMAP success criterion 5): no navigation group, no
- * entry, and a 403 (not a 404) on the list and on every view URL, an archived article included. Each refusal is
+ * entry, and a 403 (not a 404) on the list, the create URL and every view URL, an archived article included. Each refusal is
  * paired with the Admin opening the same URL, and a guest is sent to the login page. Every text is fictional.
  */
 
@@ -34,6 +34,7 @@ function knowledgeScreensUrls(): array
 
     return [
         'list' => KnowledgeArticleResource::getUrl('index'),
+        'create' => KnowledgeArticleResource::getUrl('create'),
         'view of an active article' => KnowledgeArticleResource::getUrl('view', ['record' => $active->getKey()]),
         'view of an archived article' => KnowledgeArticleResource::getUrl('view', ['record' => $archived->getKey()]),
     ];
@@ -79,7 +80,7 @@ it('gives the Admin the Znalosti group with the General knowledge entry', functi
         ->and(knowledgeScreensNavigationLabels())->toContain('Obecné znalosti');
 });
 
-it('answers a Partner with 403 on the list and on every view URL while the Admin opens them', function (): void {
+it('answers a Partner with 403 on the list, the create URL and every view URL while the Admin opens them', function (): void {
     $urls = knowledgeScreensUrls();
 
     $this->actingAs(Canary::admin());

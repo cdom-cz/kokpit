@@ -58,6 +58,16 @@ final class CreateKnowledgeArticle extends CreateRecord
     }
 
     /**
+     * The browser's own leave warning while the form holds unsaved changes (D-08). It is scoped to the two article
+     * form pages: the panel-wide setting stays off. A tab switch changes no form data and a successful save
+     * remembers the saved data, so neither raises it.
+     */
+    protected function hasUnsavedDataChangesAlert(): bool
+    {
+        return true;
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      */
     protected function handleRecordCreation(array $data): Model
