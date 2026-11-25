@@ -84,6 +84,13 @@ it('reports a key whose last line has no line ending and a key with header field
         ->toBe([['pem_private_key', 2]]);
 });
 
+it('reports a private key in every shape it takes in a note as one blocking finding on its header line', function (string $text, int $offset): void {
+    $findings = secretScannerScan(SecretFixtures::bodyWith($text, 3));
+
+    expect(secretScannerPairs($findings))->toBe([['pem_private_key', 3 + $offset]])
+        ->and($findings[0]->severity())->toBe(Severity::Blocking);
+})->with(fn (): array => SecretFixtures::pemPrivateKeyShapes());
+
 it('does not report a sentence that only names the private key header', function (): void {
     $header = '-----BEGIN '.'RSA PRIV'.'ATE KEY-----';
 
@@ -91,6 +98,54 @@ it('does not report a sentence that only names the private key header', function
         ->and(secretScannerScan($header."\nshort\n".'-----END '.'RSA PRIV'.'ATE KEY-----'))->toBe([])
         ->and(secretScannerScan(''))->toBe([])
         ->and(secretScannerScan("\n\n"))->toBe([]);
+});
+
+it('does not report an indented, quoted or escaped header without a key body', function (): void {
+    $kind = 'RSA '.'PRIV'.'ATE KEY';
+    $header = '-----BEGIN '.$kind.'-----';
+    $footer = '-----END '.$kind.'-----';
+
+    $texts = [
+        'indented header, short line and footer' => '  '.$header."\n  short\n  ".$footer,
+        'blockquoted sentence' => '> A file that starts with '.$header.' holds the key.',
+        'json value with prose' => '{"note":"'.$header.'\\nsee the vault entry"}',
+        'header and an escaped newline only' => '{"note":"'.$header.'\\n"}',
+        'quoted header and a short line' => '> '.$header."\n> short\n> ".$footer,
+    ];
+
+    foreach ($texts as $text) {
+        expect(secretScannerScan($text))->toBe([]);
+    }
+});
+
+it('reports a random run longer than the window and a quoted password with spaces as ambiguous findings', function (): void {
+    $cases = [
+        [SecretFixtures::longRandomRun(336), 'high_entropy_string'],
+        [SecretFixtures::longRandomRun(257), 'high_entropy_string'],
+        [SecretFixtures::longRandomRun(256), 'high_entropy_string'],
+        [SecretFixtures::quotedPasswordAssignment(), 'password_assignment'],
+        [SecretFixtures::quotedPasswordAssignment("'"), 'password_assignment'],
+    ];
+
+    foreach ($cases as [$text, $rule]) {
+        $findings = secretScannerScan(SecretFixtures::bodyWith($text, 3));
+
+        expect(secretScannerPairs($findings))->toBe([[$rule, 3]])
+            ->and($findings[0]->severity())->toBe(Severity::Ambiguous);
+    }
+
+    $quiet = [
+        'hex digest' => bin2hex(random_bytes(200)),
+        'single class run' => str_repeat('abcdefghij', 40),
+        'quoted angle placeholder' => 'password = "<your password>"',
+        'quoted variable placeholder' => 'password: "${DB_PASSWORD}"',
+        'quoted changeme' => 'password = "changeme"',
+        'quoted short value' => 'password = "abc"',
+    ];
+
+    foreach ($quiet as $text) {
+        expect(secretScannerScan(SecretFixtures::bodyWith($text, 3)))->toBe([]);
+    }
 });
 
 it('gives every rule the severity of the D-01 split', function (): void {
@@ -216,6 +271,22 @@ it('finds a fullwidth or zero-width disguised key on the same line', function ()
         ->toBe([['aws_access_key', 3]]);
 });
 
+it('finds a token hidden by Markdown escapes, entities or invisible characters with its blocking rule', function (string $text, string $rule): void {
+    $findings = secretScannerScan(SecretFixtures::bodyWith($text, 3));
+
+    expect(secretScannerPairs($findings))->toBe([[$rule, 3]])
+        ->and($findings[0]->severity())->toBe(Severity::Blocking);
+})->with(fn (): array => SecretFixtures::secretEvasionShapes());
+
+it('keeps editor line numbers and one finding per rule and line in the rendered view', function (): void {
+    $stripe = SecretFixtures::stripeLiveSecret();
+    $lines = ['Example heading', '&#10;&#10;', 'Example prose line.', SecretFixtures::markdownEscaped($stripe), 'Example footer'];
+
+    expect(secretScannerPairs(secretScannerScan(implode("\n", $lines))))->toBe([['stripe_secret', 4]])
+        ->and(secretScannerPairs(secretScannerScan($stripe.' and '.SecretFixtures::markdownEscaped($stripe))))->toBe([['stripe_secret', 1]])
+        ->and(secretScannerScan('Use \\*example\\* for emphasis, Tom &amp; Jerry&nbsp;meet here.'))->toBe([]);
+});
+
 it('keeps the editor line numbers with every kind of line ending', function (): void {
     $body = "one\r\ntwo\rthree\n".SecretFixtures::awsAccessKey()."\r\nfive";
 
@@ -287,4 +358,15 @@ it('finishes on 200 KB of adversarial input in under a second per rule, without 
     'repeated spaces after a keyword' => ['password'.'                                        '],
     'repeated url user' => ['a://a:'],
     'repeated at signs' => ['a://b:c@'],
+    'repeated indented quoted pem header' => ['  > -----BEGIN PRIV'."ATE KEY-----\n"],
+    'repeated escaped pem header' => ['-----BEGIN PRIV'.'ATE KEY-----\\n'],
+    'repeated prefix-only lines' => ["  >  > \n"],
+    'repeated high entropy run' => [SecretFixtures::highEntropyString()],
+    'repeated open quoted password' => ['password = "a b '],
+    'repeated backslash underscore' => ['\\_'],
+    'repeated decimal entity' => ['&#95;'],
+    'repeated named entity' => ['&lowbar;'],
+    'repeated entity line break' => ['&#10;'],
+    'repeated soft hyphen' => ["\u{00AD}"],
+    'repeated escaped stripe prefix' => ['sk\\_live\\_'],
 ]);

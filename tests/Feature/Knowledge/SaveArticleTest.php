@@ -603,6 +603,67 @@ it('refuses every blocking secret with its rule and line, with no override, and 
     }
 });
 
+it('refuses a private key in every embedded shape with no override, and writes nothing', function (): void {
+    [$title, $clean] = saveArticleText('pem_shapes');
+    saveArticleWatch($title, $clean);
+
+    $article = $this->save->create($this->admin, ArticleInput::from($title, $clean, false))->article;
+
+    foreach (SecretFixtures::pemPrivateKeyShapes() as $name => [$text, $offset]) {
+        $body = SecretFixtures::bodyWith($text, 2);
+        $counts = saveArticleCounts();
+
+        foreach ([false, true] as $acknowledge) {
+            $onCreate = saveArticleRefusal(fn () => $this->save->create($this->admin, ArticleInput::from($title.' '.$name, $body, false), $acknowledge));
+            $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, $acknowledge));
+
+            foreach ([$onCreate, $onUpdate] as $refused) {
+                expect($refused)->toBeInstanceOf(SecretGuardRefused::class);
+
+                expect($refused->hasBlocking())->toBeTrue()
+                    ->and($refused->isAcknowledgeable())->toBeFalse()
+                    ->and(array_map(static fn (SecretFinding $finding): array => $finding->toArray(), $refused->findings))
+                    ->toBe([['rule' => 'pem_private_key', 'line' => 2 + $offset]]);
+
+                saveArticleAssertNoSecret($text, $refused);
+            }
+        }
+
+        expect(saveArticleCounts())->toBe($counts)
+            ->and(saveArticleRow($article->id)->version_no)->toBe(1);
+    }
+});
+
+it('refuses a token hidden by Markdown escapes, entities or invisible characters with no override, and writes nothing', function (): void {
+    [$title, $clean] = saveArticleText('evasion_shapes');
+    saveArticleWatch($title, $clean);
+
+    $article = $this->save->create($this->admin, ArticleInput::from($title, $clean, false))->article;
+
+    foreach (SecretFixtures::secretEvasionShapes() as $name => [$text, $rule]) {
+        $body = SecretFixtures::bodyWith($text, 2);
+        $counts = saveArticleCounts();
+
+        foreach ([false, true] as $acknowledge) {
+            $onCreate = saveArticleRefusal(fn () => $this->save->create($this->admin, ArticleInput::from($title.' '.$name, $body, false), $acknowledge));
+            $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, $acknowledge));
+
+            foreach ([$onCreate, $onUpdate] as $refused) {
+                expect($refused)->toBeInstanceOf(SecretGuardRefused::class);
+
+                expect($refused->hasBlocking())->toBeTrue()
+                    ->and($refused->isAcknowledgeable())->toBeFalse()
+                    ->and(saveArticleRulesOnLine($refused, 2))->toBe([$rule]);
+
+                saveArticleAssertNoSecret($text, $refused);
+            }
+        }
+
+        expect(saveArticleCounts())->toBe($counts)
+            ->and(saveArticleRow($article->id)->version_no)->toBe(1);
+    }
+});
+
 it('refuses an ambiguous finding without the acknowledgment and writes nothing', function (): void {
     [$title, $clean] = saveArticleText('ambiguous');
     $secret = SecretFixtures::passwordAssignment();
@@ -627,6 +688,38 @@ it('refuses an ambiguous finding without the acknowledgment and writes nothing',
 
     expect(saveArticleCounts())->toBe($counts)
         ->and(saveArticleRow($article->id)->body_md)->toBe($clean);
+});
+
+it('refuses a long random run and a quoted password with spaces without the acknowledgment, and writes nothing', function (): void {
+    [$title, $clean] = saveArticleText('ambiguous_shapes');
+    saveArticleWatch($title, $clean);
+
+    $article = $this->save->create($this->admin, ArticleInput::from($title, $clean, false))->article;
+
+    foreach ([
+        [SecretFixtures::longRandomRun(), 'high_entropy_string'],
+        [SecretFixtures::quotedPasswordAssignment(), 'password_assignment'],
+    ] as [$text, $rule]) {
+        $body = SecretFixtures::bodyWith($text, 2);
+        $counts = saveArticleCounts();
+
+        $onCreate = saveArticleRefusal(fn () => $this->save->create($this->admin, ArticleInput::from($title.' '.$rule, $body, false), false));
+        $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, false));
+
+        foreach ([$onCreate, $onUpdate] as $refused) {
+            expect($refused)->toBeInstanceOf(SecretGuardRefused::class);
+
+            expect($refused->hasBlocking())->toBeFalse()
+                ->and($refused->isAcknowledgeable())->toBeTrue()
+                ->and(array_map(static fn (SecretFinding $finding): array => $finding->toArray(), $refused->findings))
+                ->toBe([['rule' => $rule, 'line' => 2]]);
+
+            saveArticleAssertNoSecret($text, $refused);
+        }
+
+        expect(saveArticleCounts())->toBe($counts)
+            ->and(saveArticleRow($article->id)->version_no)->toBe(1);
+    }
 });
 
 it('saves an acknowledged ambiguous body, marks the article sensitive and logs the rule keys only', function (): void {
