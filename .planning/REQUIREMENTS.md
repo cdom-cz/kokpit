@@ -10,9 +10,9 @@
 
 - [ ] **KB-01**: Admin can create an article with a title and a body written in Markdown
 - [ ] **KB-02**: Every article has its own view screen and its own edit screen
-- [ ] **KB-03**: The body renders safely (tables, task lists, links, highlighted code; raw HTML is escaped, unsafe links are dropped)
-- [ ] **KB-04**: A callout written as `> [!NOTE]` renders as a highlighted block
-- [ ] **KB-05**: Every code block has a Copy button
+- [x] **KB-03**: The body renders safely (tables, task lists, links, highlighted code; raw HTML is escaped, unsafe links are dropped)
+- [x] **KB-04**: A callout written as `> [!NOTE]` renders as a highlighted block
+- [x] **KB-05**: Every code block has a Copy button
 - [ ] **KB-06**: The editor offers a server-rendered preview
 - [ ] **KB-07**: Admin can archive and restore an article
 - [ ] **KB-08**: A concurrent edit never overwrites another change silently (a stale save is rejected, not merged)
@@ -115,9 +115,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | KB-01 | Phase 18 | Pending |
 | KB-02 | Phase 18 | Pending |
-| KB-03 | Phase 18 | Pending |
-| KB-04 | Phase 18 | Pending |
-| KB-05 | Phase 18 | Pending |
+| KB-03 | Phase 18 | Complete |
+| KB-04 | Phase 18 | Complete |
+| KB-05 | Phase 18 | Complete |
 | KB-06 | Phase 18 | Pending |
 | KB-07 | Phase 18 | Pending |
 | KB-08 | Phase 18 | Pending |
