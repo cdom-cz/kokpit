@@ -7,6 +7,7 @@ use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Support\KnowledgeMarkdown;
 use App\Domain\Knowledge\Support\MarkdownNormaliser;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Activity;
 use App\Filament\Resources\KnowledgeArticleResource;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\CreateKnowledgeArticle;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ListKnowledgeArticles;
@@ -19,6 +20,7 @@ use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Tabs;
 use Filament\Support\Assets\Js;
 use Filament\Support\Facades\FilamentAsset;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\KnowledgeFixtures;
@@ -355,4 +357,159 @@ it('warns about unsaved changes on the create page only, not panel-wide', functi
 
     expect((new ReflectionMethod($page, 'hasUnsavedDataChangesAlert'))->invoke($page))->toBeTrue()
         ->and(Filament::hasUnsavedChangesAlerts())->toBeFalse();
+});
+
+/**
+ * The guard callouts of the rendered page (heading, body text and findings), as one string. The editor state sits in
+ * the Livewire snapshot of the page, so only the callouts are cut out before a search for a secret.
+ */
+function createArticleCalloutHtml(string $html): string
+{
+    preg_match_all('#data-kokpit-guard.*?</ul>#s', $html, $matches);
+
+    return implode("\n", $matches[0]);
+}
+
+/**
+ * The number of `secret_acknowledged` activity rows, read without the Partner scope.
+ */
+function createArticleAcknowledgments(): int
+{
+    return createArticleSystem(static fn (): int => Activity::query()->where('event', 'secret_acknowledged')->count());
+}
+
+it('refuses a Blocking finding with rule and line, keeps the typed text and offers no override', function (): void {
+    $secret = SecretFixtures::githubToken();
+    $body = SecretFixtures::bodyWith($secret, 3);
+
+    $page = Livewire::test(CreateKnowledgeArticle::class)
+        ->fillForm(['title' => 'Example guarded article', 'body' => $body])
+        ->call('create')
+        ->assertHasNoFormErrors()
+        ->assertSee('Text obsahuje tajný údaj a nelze ho uložit')
+        ->assertSee('Token GitHub — řádek 3')
+        ->assertDontSee('Uložit článek i přesto')
+        ->assertDontSee('Text může obsahovat tajný údaj')
+        ->assertSet('data.title', 'Example guarded article')
+        ->assertSet('data.body', $body)
+        ->assertNotNotified();
+
+    $callouts = createArticleCalloutHtml($page->html());
+    $findings = json_encode($page->get('guardFindings'), JSON_THROW_ON_ERROR);
+
+    expect($callouts)->toContain('role="alert"')
+        ->and($page->instance()->canSaveAnyway())->toBeFalse()
+        ->and($page->get('refusedBodyHash'))->toBeNull()
+        ->and(createArticleCount())->toBe(0);
+
+    foreach (SecretFixtures::needles($secret) as $needle) {
+        expect($callouts)->not->toContain($needle)
+            ->and($findings)->not->toContain($needle);
+    }
+});
+
+it('refuses an Ambiguous finding with a warning and the save-anyway button, then saves it for this body only', function (): void {
+    $secret = SecretFixtures::passwordAssignment();
+    $body = SecretFixtures::bodyWith($secret, 2);
+
+    $page = Livewire::test(CreateKnowledgeArticle::class)
+        ->fillForm(['title' => 'Example acknowledged article', 'body' => $body])
+        ->call('create')
+        ->assertSee('Text může obsahovat tajný údaj')
+        ->assertSee('Možné heslo (password=) — řádek 2')
+        ->assertSee('Uložit článek i přesto')
+        ->assertDontSee('Text obsahuje tajný údaj a nelze ho uložit')
+        ->assertNotNotified();
+
+    expect($page->instance()->canSaveAnyway())->toBeTrue()
+        ->and(createArticleCount())->toBe(0);
+
+    foreach (SecretFixtures::needles($secret) as $needle) {
+        expect(createArticleCalloutHtml($page->html()))->not->toContain($needle);
+    }
+
+    $page->call('saveAnyway')
+        ->assertHasNoFormErrors()
+        ->assertNotified('Článek byl uložen jako verze 1 a označen jako citlivý');
+
+    $article = createArticleByTitle('Example acknowledged article');
+
+    expect($article->sensitive)->toBeTrue()
+        ->and($article->version_no)->toBe(1)
+        ->and(createArticleAcknowledgments())->toBe(1);
+});
+
+it('binds the acknowledgment to the exact refused body and scans any other body again', function (): void {
+    $page = Livewire::test(CreateKnowledgeArticle::class)
+        ->fillForm(['title' => 'Example bound article', 'body' => SecretFixtures::bodyWith(SecretFixtures::passwordAssignment(), 2)])
+        ->call('create')
+        ->assertSee('Uložit článek i přesto');
+
+    $page->fillForm(['body' => SecretFixtures::bodyWith(SecretFixtures::highEntropyString(), 4)])
+        ->call('saveAnyway')
+        ->assertSee('Dlouhý náhodný řetězec — řádek 4');
+
+    expect(createArticleCount())->toBe(0)
+        ->and(createArticleAcknowledgments())->toBe(0);
+});
+
+it('does not hash an over-long body for the acknowledgment and answers with the length error', function (): void {
+    $page = Livewire::test(CreateKnowledgeArticle::class)
+        ->fillForm(['title' => 'Example long acknowledged article', 'body' => SecretFixtures::bodyWith(SecretFixtures::passwordAssignment(), 2)])
+        ->call('create')
+        ->assertSee('Uložit článek i přesto');
+
+    $page->fillForm(['body' => str_repeat('a', KnowledgeArticle::MAX_BODY_LENGTH + 1)])
+        ->call('saveAnyway')
+        ->assertHasFormErrors(['body']);
+
+    expect(createArticleCount())->toBe(0)
+        ->and(createArticleAcknowledgments())->toBe(0);
+});
+
+it('shows both callouts for a mixed body, danger first, with no override', function (): void {
+    $body = implode("\n", [
+        'Example intro line',
+        SecretFixtures::githubToken(),
+        'Example middle line',
+        SecretFixtures::passwordAssignment(),
+        'Example closing line',
+    ]);
+
+    $page = Livewire::test(CreateKnowledgeArticle::class)
+        ->fillForm(['title' => 'Example mixed article', 'body' => $body])
+        ->call('create')
+        ->assertSeeInOrder(['Text obsahuje tajný údaj a nelze ho uložit', 'Token GitHub — řádek 2', 'Text může obsahovat tajný údaj', 'Možné heslo (password=) — řádek 4'])
+        ->assertDontSee('Uložit článek i přesto');
+
+    expect($page->instance()->canSaveAnyway())->toBeFalse();
+
+    $page->call('saveAnyway');
+
+    expect(createArticleCount())->toBe(0)
+        ->and(createArticleAcknowledgments())->toBe(0);
+});
+
+it('does not let the browser set the findings or the refused body hash', function (): void {
+    $page = Livewire::test(CreateKnowledgeArticle::class);
+
+    expect(fn () => $page->set('refusedBodyHash', hash('sha256', 'example')))->toThrow(CannotUpdateLockedPropertyException::class)
+        ->and(fn () => $page->set('guardFindings', []))->toThrow(CannotUpdateLockedPropertyException::class);
+});
+
+it('removes the callouts after a clean save that follows a refusal', function (): void {
+    $page = Livewire::test(CreateKnowledgeArticle::class)
+        ->fillForm(['title' => 'Example recovered article', 'body' => SecretFixtures::bodyWith(SecretFixtures::githubToken(), 3)])
+        ->call('create')
+        ->assertSee('Text obsahuje tajný údaj a nelze ho uložit');
+
+    $page->fillForm(['body' => 'Example clean body'])
+        ->call('create')
+        ->assertHasNoFormErrors()
+        ->assertNotified('Článek byl uložen jako verze 1')
+        ->assertSet('guardFindings', [])
+        ->assertSet('refusedBodyHash', null)
+        ->assertDontSee('Text obsahuje tajný údaj a nelze ho uložit');
+
+    expect(createArticleCount())->toBe(1);
 });

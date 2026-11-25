@@ -8,6 +8,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Actions\ArchiveArticle;
 use App\Domain\Knowledge\Actions\RestoreArticle;
 use App\Domain\Knowledge\Enums\ArticleKind;
+use App\Domain\Knowledge\Guard\Severity;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Support\KnowledgeMarkdown;
 use App\Domain\Knowledge\Support\MarkdownNormaliser;
@@ -16,6 +17,7 @@ use App\Domain\Shared\Auth\Audience;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Concerns\InKnowledgeGroup;
 use App\Filament\RelationManagers\KnowledgeArticleHistoryRelationManager;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\SecretGuardForm;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\CreateKnowledgeArticle;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ListKnowledgeArticles;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ViewKnowledgeArticle;
@@ -26,6 +28,7 @@ use Filament\Forms\Components\MarkdownEditor;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
@@ -121,6 +124,10 @@ final class KnowledgeArticleResource extends Resource
         return $schema
             ->columns(1)
             ->components([
+                // The secret-guard feedback of a refused save, danger first (D-01, D-03). Each callout shows only the
+                // rule and the line of its findings, never the matched text.
+                self::guardCallout(Severity::Blocking, 'danger', Heroicon::OutlinedShieldExclamation, 'blocking'),
+                self::guardCallout(Severity::Ambiguous, 'warning', Heroicon::OutlinedExclamationTriangle, 'ambiguous'),
                 TextInput::make('title')
                     ->label(__('knowledge.fields.title'))
                     ->required()
@@ -145,6 +152,12 @@ final class KnowledgeArticleResource extends Resource
                                         ['undo', 'redo'],
                                     ])
                                     ->fileAttachments(false)
+                                    // A changed body drops the refusal: the next save scans the new text again (SEC-03).
+                                    ->afterStateUpdated(static function (LivewireComponent $livewire): void {
+                                        if ($livewire instanceof SecretGuardForm) {
+                                            $livewire->clearGuardFindings();
+                                        }
+                                    })
                                     ->maxLength(KnowledgeArticle::MAX_BODY_LENGTH)
                                     ->minHeight('24rem')
                                     ->extraAttributes(['data-kokpit-task-list' => __('knowledge.editor.task_list')]),
@@ -160,6 +173,28 @@ final class KnowledgeArticleResource extends Resource
                     ->label(__('knowledge.fields.sensitive'))
                     ->helperText(__('knowledge.fields.sensitive_helper')),
             ]);
+    }
+
+    /**
+     * One callout of the secret guard: visible while the page reports findings of its severity, announced to assistive
+     * technology and focusable so the page can bring it into view. The finding lines come from the page.
+     *
+     * @param  'blocking'|'ambiguous'  $kind
+     */
+    private static function guardCallout(Severity $severity, string $color, Heroicon $icon, string $kind): Callout
+    {
+        return Callout::make(trans()->string('knowledge.guard.'.$kind.'_heading'))
+            ->description(trans()->string('knowledge.guard.'.$kind.'_body'))
+            ->color($color)
+            ->icon($icon)
+            ->extraAttributes(['role' => 'alert', 'data-kokpit-guard' => '', 'tabindex' => '-1'])
+            ->footer([
+                View::make('filament.knowledge.guard-findings')
+                    ->viewData(static fn (LivewireComponent $livewire): array => [
+                        'lines' => $livewire instanceof SecretGuardForm ? $livewire->guardFindingLines($severity) : [],
+                    ]),
+            ])
+            ->visible(static fn (LivewireComponent $livewire): bool => $livewire instanceof SecretGuardForm && $livewire->hasGuardFindings($severity));
     }
 
     /**

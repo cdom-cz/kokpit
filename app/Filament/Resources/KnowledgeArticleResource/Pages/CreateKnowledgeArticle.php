@@ -10,6 +10,8 @@ use App\Domain\Knowledge\Actions\SaveArticle;
 use App\Domain\Knowledge\Actions\SaveResult;
 use App\Filament\Concerns\RethrowsDomainValidation;
 use App\Filament\Resources\KnowledgeArticleResource;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\GuardsSecrets;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\SecretGuardForm;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
@@ -18,10 +20,12 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * The create screen of a general knowledge article (KB-01): title, Markdown body with the write and preview tabs and
  * the sensitive toggle. The page never writes the model; the one write path is {@see SaveArticle::create()}, and the
- * Admin lands on the view screen of version 1.
+ * Admin lands on the view screen of version 1. A refusal of the secret guard keeps every typed character and shows the
+ * callouts of {@see GuardsSecrets}; an Ambiguous-only refusal can be saved anyway for the exact body that was refused.
  */
-final class CreateKnowledgeArticle extends CreateRecord
+final class CreateKnowledgeArticle extends CreateRecord implements SecretGuardForm
 {
+    use GuardsSecrets;
     use RethrowsDomainValidation;
 
     protected static string $resource = KnowledgeArticleResource::class;
@@ -75,12 +79,13 @@ final class CreateKnowledgeArticle extends CreateRecord
         $actor = auth()->user();
         assert($actor instanceof User);
 
-        $result = $this->withFormErrors(
+        $result = $this->runGuarded(fn (): SaveResult => $this->withFormErrors(
             fn (): SaveResult => app(SaveArticle::class)->create(
                 $actor,
                 ArticleInput::from($data['title'] ?? null, $data['body'] ?? null, $data['sensitive'] ?? false),
+                acknowledge: $this->acknowledgeThisSave,
             ),
-        );
+        ));
 
         $this->saveResult = $result;
 
@@ -112,5 +117,28 @@ final class CreateKnowledgeArticle extends CreateRecord
             ->label(__('knowledge.actions.cancel_create'))
             ->url(KnowledgeArticleResource::getUrl('index'))
             ->color('gray');
+    }
+
+    /**
+     * The save-anyway button follows the create button; it is offered only for an Ambiguous-only refusal (D-03).
+     *
+     * @return array<Action>
+     */
+    protected function getFormActions(): array
+    {
+        return [
+            $this->getCreateFormAction(),
+            Action::make('saveAnyway')
+                ->label(__('knowledge.actions.save_anyway'))
+                ->color('warning')
+                ->visible(fn (): bool => $this->canSaveAnyway())
+                ->action('saveAnyway'),
+            $this->getCancelFormAction(),
+        ];
+    }
+
+    protected function submitGuardedForm(): void
+    {
+        $this->create();
     }
 }
