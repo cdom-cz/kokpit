@@ -8,10 +8,13 @@ use App\Domain\Knowledge\Actions\SaveArticle;
 use App\Domain\Knowledge\Actions\SaveOutcome;
 use App\Domain\Knowledge\Enums\ArticleKind;
 use App\Domain\Knowledge\Exceptions\ArticleWriteFailed;
+use App\Domain\Knowledge\Exceptions\SecretGuardRefused;
 use App\Domain\Knowledge\Exceptions\StaleArticle;
+use App\Domain\Knowledge\Guard\SecretFinding;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Support\KnowledgeMarkdown;
+use App\Domain\Knowledge\Support\MarkdownNormaliser;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -23,6 +26,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\Canary;
 use Tests\Support\KnowledgeFixtures;
+use Tests\Support\SecretFixtures;
 
 /*
  * The one write path of the knowledge articles (Phase 18, P18-05): versions, no-op, stale save, authorisation, the
@@ -492,4 +496,345 @@ it('surfaces a failing database write only as a fixed message with the SQLSTATE 
     report($caught);
 
     expect(array_column($this->logs->getArrayCopy(), 'message'))->toContain($caught->getMessage());
+});
+
+/**
+ * Every stored activity row of the test database as one JSON text, to search for content that must never be logged.
+ */
+function saveArticleActivityJson(): string
+{
+    return saveArticleSystem(static fn (): string => (string) json_encode(
+        Activity::query()->get()->map(static fn (Activity $row): array => $row->getAttributes())->all(),
+    ));
+}
+
+/**
+ * Asserts that a refusal holds no fragment of the secret in its message, its findings (as JSON) or the whole
+ * activity log. The secret and its fragments are also put on the watch list of the log capture.
+ */
+function saveArticleAssertNoSecret(string $secret, SecretGuardRefused $refused): void
+{
+    saveArticleWatch($secret, ...SecretFixtures::needles($secret));
+
+    $texts = [
+        $refused->getMessage(),
+        (string) json_encode(array_map(static fn (SecretFinding $finding): array => $finding->toArray(), $refused->findings)),
+        saveArticleActivityJson(),
+    ];
+
+    foreach (SecretFixtures::needles($secret) as $needle) {
+        foreach ($texts as $text) {
+            expect($text)->not->toContain($needle);
+        }
+    }
+}
+
+/**
+ * The refusal a callback raises, or null when it raises none.
+ */
+function saveArticleRefusal(Closure $callback): ?SecretGuardRefused
+{
+    try {
+        $callback();
+    } catch (SecretGuardRefused $e) {
+        return $e;
+    }
+
+    return null;
+}
+
+/**
+ * The rule keys of the findings on one line.
+ *
+ * @return list<string>
+ */
+function saveArticleRulesOnLine(SecretGuardRefused $refused, int $line): array
+{
+    return array_values(array_map(
+        static fn (SecretFinding $finding): string => $finding->rule->value,
+        array_filter($refused->findings, static fn (SecretFinding $finding): bool => $finding->line === $line),
+    ));
+}
+
+it('refuses every blocking secret with its rule and line, with no override, and writes nothing', function (): void {
+    $blocking = [
+        ['pemPrivateKey', 'pem_private_key'],
+        ['awsAccessKey', 'aws_access_key'],
+        ['stripeLiveSecret', 'stripe_secret'],
+        ['stripeRestrictedLiveKey', 'stripe_secret'],
+        ['stripeWebhookSecret', 'stripe_secret'],
+        ['stripeTestSecret', 'stripe_test_key'],
+        ['stripeRestrictedTestKey', 'stripe_test_key'],
+        ['githubToken', 'github_token'],
+        ['githubFineGrainedToken', 'github_token'],
+        ['jwt', 'jwt'],
+        ['urlWithCredentials', 'url_credentials'],
+    ];
+
+    [$title, $clean] = saveArticleText('blocking');
+    saveArticleWatch($title, $clean);
+
+    $article = $this->save->create($this->admin, ArticleInput::from($title, $clean, false))->article;
+
+    foreach ($blocking as [$method, $rule]) {
+        $secret = SecretFixtures::$method();
+        $body = SecretFixtures::bodyWith($secret, 2);
+        $hash = hash('sha256', app(MarkdownNormaliser::class)->normalise($body));
+        $counts = saveArticleCounts();
+
+        foreach ([false, true] as $acknowledge) {
+            $onCreate = saveArticleRefusal(fn () => $this->save->create($this->admin, ArticleInput::from($title.$method, $body, false), $acknowledge));
+            $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, $acknowledge));
+
+            foreach ([$onCreate, $onUpdate] as $refused) {
+                expect($refused)->toBeInstanceOf(SecretGuardRefused::class);
+
+                expect($refused->hasBlocking())->toBeTrue()
+                    ->and($refused->isAcknowledgeable())->toBeFalse()
+                    ->and($refused->normalisedBodyHash)->toBe($hash)
+                    ->and(saveArticleRulesOnLine($refused, 2))->toContain($rule);
+
+                saveArticleAssertNoSecret($secret, $refused);
+            }
+        }
+
+        expect(saveArticleCounts())->toBe($counts)
+            ->and(saveArticleRow($article->id)->version_no)->toBe(1);
+    }
+});
+
+it('refuses an ambiguous finding without the acknowledgment and writes nothing', function (): void {
+    [$title, $clean] = saveArticleText('ambiguous');
+    $secret = SecretFixtures::passwordAssignment();
+    $body = SecretFixtures::bodyWith($secret, 2);
+    saveArticleWatch($title, $clean, $body);
+
+    $article = $this->save->create($this->admin, ArticleInput::from($title, $clean, false))->article;
+    $counts = saveArticleCounts();
+
+    $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1));
+    $onCreate = saveArticleRefusal(fn () => $this->save->create($this->admin, ArticleInput::from($title.' b', $body, false)));
+
+    foreach ([$onUpdate, $onCreate] as $refused) {
+        expect($refused)->toBeInstanceOf(SecretGuardRefused::class)
+            ->and($refused->hasBlocking())->toBeFalse()
+            ->and($refused->isAcknowledgeable())->toBeTrue()
+            ->and($refused->normalisedBodyHash)->toBe(hash('sha256', app(MarkdownNormaliser::class)->normalise($body)))
+            ->and(saveArticleRulesOnLine($refused, 2))->toBe(['password_assignment']);
+
+        saveArticleAssertNoSecret($secret, $refused);
+    }
+
+    expect(saveArticleCounts())->toBe($counts)
+        ->and(saveArticleRow($article->id)->body_md)->toBe($clean);
+});
+
+it('saves an acknowledged ambiguous body, marks the article sensitive and logs the rule keys only', function (): void {
+    [$title, $clean] = saveArticleText('acknowledged');
+    $secret = SecretFixtures::passwordAssignment();
+    $body = SecretFixtures::bodyWith($secret, 2);
+    saveArticleWatch($title, $clean, $body, $secret, ...SecretFixtures::needles($secret));
+
+    $article = $this->save->create($this->admin, ArticleInput::from($title, $clean, false))->article;
+
+    $result = $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, true);
+
+    $row = saveArticleRow($article->id);
+    $rows = array_values(array_filter(
+        saveArticleActivity($article->id),
+        static fn (Activity $activity): bool => $activity->event === 'secret_acknowledged',
+    ));
+
+    expect($result->outcome)->toBe(SaveOutcome::Updated)
+        ->and($result->markedSensitive)->toBeTrue()
+        ->and($row->sensitive)->toBeTrue()
+        ->and($row->version_no)->toBe(2)
+        ->and($rows)->toHaveCount(1)
+        ->and($rows[0]->causer_id)->toBe($this->admin->id)
+        ->and($rows[0]->properties->toArray())->toBe(['rules' => ['password_assignment'], 'version_no' => 2]);
+
+    foreach (SecretFixtures::needles($secret) as $needle) {
+        expect(saveArticleActivityJson())->not->toContain($needle);
+    }
+
+    // The acknowledgment covered that one save only: another ambiguous body is refused again (SEC-03).
+    $another = SecretFixtures::bodyWith(SecretFixtures::highEntropyString(), 2);
+    saveArticleWatch($another, SecretFixtures::highEntropyString());
+
+    $refused = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $another, false), 2));
+
+    expect($refused)->toBeInstanceOf(SecretGuardRefused::class)
+        ->and($refused->isAcknowledgeable())->toBeTrue()
+        ->and(saveArticleRulesOnLine($refused, 2))->toBe(['high_entropy_string'])
+        ->and(saveArticleRow($article->id)->version_no)->toBe(2);
+
+    // The same stored body saved again without any change is not scanned: nothing new was typed.
+    $again = $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 2);
+
+    expect($again->outcome)->toBe(SaveOutcome::Unchanged)
+        ->and(saveArticleRow($article->id)->sensitive)->toBeTrue();
+});
+
+it('records the acknowledgment of an ambiguous body on create as version 1', function (): void {
+    [$title] = saveArticleText('ack_create');
+    $secret = SecretFixtures::passwordAssignment();
+    $body = SecretFixtures::bodyWith($secret, 2);
+    saveArticleWatch($title, $body, $secret);
+
+    $result = $this->save->create($this->admin, ArticleInput::from($title, $body, false), true);
+
+    $rows = array_values(array_filter(
+        saveArticleActivity($result->article->id),
+        static fn (Activity $activity): bool => $activity->event === 'secret_acknowledged',
+    ));
+
+    expect($result->outcome)->toBe(SaveOutcome::Created)
+        ->and($result->markedSensitive)->toBeTrue()
+        ->and(saveArticleRow($result->article->id)->sensitive)->toBeTrue()
+        ->and($rows)->toHaveCount(1)
+        ->and($rows[0]->properties->toArray())->toBe(['rules' => ['password_assignment'], 'version_no' => 1]);
+});
+
+it('ignores the acknowledgment when there is no ambiguous finding', function (): void {
+    [$title, $body] = saveArticleText('ack_clean');
+    saveArticleWatch($title, $body);
+
+    $result = $this->save->create($this->admin, ArticleInput::from($title, $body, false), true);
+
+    $rows = array_filter(
+        saveArticleActivity($result->article->id),
+        static fn (Activity $activity): bool => $activity->event === 'secret_acknowledged',
+    );
+
+    expect($result->markedSensitive)->toBeFalse()
+        ->and(saveArticleRow($result->article->id)->sensitive)->toBeFalse()
+        ->and($rows)->toBe([]);
+});
+
+it('refuses a body with a blocking and an ambiguous finding even with the acknowledgment', function (): void {
+    [$title] = saveArticleText('mixed');
+    $blocking = SecretFixtures::stripeLiveSecret();
+    $ambiguous = SecretFixtures::passwordAssignment();
+    $body = "Example intro line\n{$blocking}\n{$ambiguous}";
+    saveArticleWatch($title, $body, $blocking, $ambiguous);
+    $counts = saveArticleCounts();
+
+    $refused = saveArticleRefusal(fn () => $this->save->create($this->admin, ArticleInput::from($title, $body, false), true));
+
+    expect($refused)->toBeInstanceOf(SecretGuardRefused::class)
+        ->and($refused->hasBlocking())->toBeTrue()
+        ->and($refused->isAcknowledgeable())->toBeFalse()
+        ->and(saveArticleRulesOnLine($refused, 2))->toBe(['stripe_secret'])
+        ->and(saveArticleRulesOnLine($refused, 3))->toBe(['password_assignment'])
+        ->and(saveArticleCounts())->toBe($counts);
+
+    saveArticleAssertNoSecret($blocking, $refused);
+    saveArticleAssertNoSecret($ambiguous, $refused);
+});
+
+it('never scans the title', function (): void {
+    $title = SecretFixtures::githubToken();
+    [, $body] = saveArticleText('title_scan');
+    saveArticleWatch($title, $body);
+
+    $result = $this->save->create($this->admin, ArticleInput::from($title, $body, false));
+
+    expect($result->outcome)->toBe(SaveOutcome::Created)
+        ->and(saveArticleRow($result->article->id)->title)->toBe($title);
+});
+
+it('never clears the sensitive flag unless the manual clear is requested', function (): void {
+    [$title, $body] = saveArticleText('flag');
+    [, $next] = saveArticleText('flag_next');
+    [, $third] = saveArticleText('flag_third');
+    saveArticleWatch($title, $body, $next, $third);
+
+    $article = $this->save->create($this->admin, ArticleInput::from($title, $body, true))->article;
+
+    expect(saveArticleRow($article->id)->sensitive)->toBeTrue();
+
+    // A content save with sensitive false and no clear request keeps the flag; so does a save with sensitive true.
+    $one = $this->save->update($this->admin, $article, ArticleInput::from($title, $next, false), 1);
+    $two = $this->save->update($this->admin, $article, ArticleInput::from($title, $third, true), 2);
+
+    // A save without a content change and sensitive false is Unchanged and keeps the flag.
+    $three = $this->save->update($this->admin, $article, ArticleInput::from($title, $third, false), 3);
+
+    expect($one->outcome)->toBe(SaveOutcome::Updated)
+        ->and($two->outcome)->toBe(SaveOutcome::Updated)
+        ->and($three->outcome)->toBe(SaveOutcome::Unchanged)
+        ->and(saveArticleRow($article->id)->sensitive)->toBeTrue()
+        ->and(saveArticleRow($article->id)->version_no)->toBe(3);
+
+    // The manual clear without a content change clears the flag and writes no version.
+    $before = saveArticleRow($article->id);
+    $this->travel(10)->minutes();
+
+    $cleared = $this->save->update($this->admin, $article, ArticleInput::from($title, $third, false, true), 3);
+    $after = saveArticleRow($article->id);
+
+    expect($cleared->outcome)->toBe(SaveOutcome::SensitivityChanged)
+        ->and($after->sensitive)->toBeFalse()
+        ->and($after->version_no)->toBe(3)
+        ->and($after->edited_at->equalTo($before->edited_at))->toBeTrue()
+        ->and(saveArticleVersions($article->id))->toHaveCount(3);
+
+    // Marking by hand without a content change sets the flag and writes no version.
+    $marked = $this->save->update($this->admin, $article, ArticleInput::from($title, $third, true), 3);
+
+    expect($marked->outcome)->toBe(SaveOutcome::SensitivityChanged)
+        ->and(saveArticleRow($article->id)->sensitive)->toBeTrue()
+        ->and(saveArticleVersions($article->id))->toHaveCount(3);
+
+    // A clean content change together with the manual clear writes a version and clears the flag.
+    $both = $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false, true), 3);
+
+    expect($both->outcome)->toBe(SaveOutcome::Updated)
+        ->and(saveArticleRow($article->id)->sensitive)->toBeFalse()
+        ->and(saveArticleRow($article->id)->version_no)->toBe(4);
+});
+
+it('ends sensitive on an acknowledged save even when the manual clear is requested', function (): void {
+    [$title, $body] = saveArticleText('ack_clear');
+    $secret = SecretFixtures::passwordAssignment();
+    $ambiguous = SecretFixtures::bodyWith($secret, 2);
+    saveArticleWatch($title, $body, $ambiguous, $secret);
+
+    $article = $this->save->create($this->admin, ArticleInput::from($title, $body, false))->article;
+
+    $result = $this->save->update($this->admin, $article, ArticleInput::from($title, $ambiguous, false, true), 1, true);
+
+    expect($result->outcome)->toBe(SaveOutcome::Updated)
+        ->and($result->markedSensitive)->toBeTrue()
+        ->and(saveArticleRow($article->id)->sensitive)->toBeTrue();
+});
+
+it('keeps the content out of the log on every save path', function (): void {
+    [$title, $body] = saveArticleText('paths');
+    [$newTitle, $newBody] = saveArticleText('paths_new');
+    $secret = SecretFixtures::passwordAssignment();
+    $ambiguous = SecretFixtures::bodyWith($secret, 2);
+    $blocking = SecretFixtures::bodyWith(SecretFixtures::stripeLiveSecret(), 2);
+    saveArticleWatch($title, $body, $newTitle, $newBody, $ambiguous, $blocking, $secret, SecretFixtures::stripeLiveSecret());
+
+    $article = $this->save->create($this->admin, ArticleInput::from($title, $body, false))->article;
+    $archived = KnowledgeFixtures::archived();
+
+    // Update, title-only change, no-op, sensitivity-only change.
+    $this->save->update($this->admin, $article, ArticleInput::from($title, $newBody, false), 1);
+    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $newBody, false), 2);
+    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $newBody, false), 3);
+    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $newBody, true), 3);
+
+    // Stale, archived, authorisation and guard refusals.
+    expect(fn () => $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $body, false), 1))->toThrow(StaleArticle::class)
+        ->and(fn () => $this->save->update($this->admin, $archived, ArticleInput::from($newTitle, $body, false), 1))->toThrow(ModelNotFoundException::class)
+        ->and(fn () => $this->save->update(Canary::partnerFor(Canary::twoClients()[0]), $article, ArticleInput::from($newTitle, $body, false), 3))->toThrow(AuthorizationException::class)
+        ->and(fn () => $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $blocking, false), 3, true))->toThrow(SecretGuardRefused::class)
+        ->and(fn () => $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $ambiguous, false), 3))->toThrow(SecretGuardRefused::class);
+
+    // The acknowledged save.
+    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $ambiguous, false), 3, true);
+
+    expect(saveArticleRow($article->id)->version_no)->toBe(4);
 });

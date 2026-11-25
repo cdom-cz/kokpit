@@ -443,6 +443,9 @@ return [
             'cash_receipt_locked_manually' => 'Příjmový doklad uzamčen ručně',
             'cash_receipt_unlocked' => 'Příjmový doklad odemčen',
             'cash_receipt_cancelled' => 'Příjmový doklad stornován',
+            'secret_acknowledged' => 'Potvrzen možný tajný údaj',
+            'article_archived' => 'Článek archivován',
+            'article_restored' => 'Článek obnoven',
             'api_token' => [
                 'created' => 'API token vytvořen',
                 'revoked' => 'API token zneplatněn',
@@ -475,6 +478,7 @@ return [
             'invoice' => 'Doklad',
             'cash_receipt' => 'Příjmový doklad',
             'personal_access_token' => 'API token',
+            'knowledge_article' => 'Článek znalostí',
         ],
         'attributes' => [
             'client' => [
@@ -661,6 +665,15 @@ return [
                 'billable' => 'Fakturovatelné',
                 'billing_state' => 'Stav fakturace',
                 'billed_at' => 'Vyfakturováno',
+            ],
+            'knowledge_article' => [
+                'kind' => 'Druh',
+                'folder_id' => 'Složka',
+                'client_id' => 'Klient',
+                'project_id' => 'Projekt',
+                'client_visible' => 'Sdíleno s klientem',
+                'sensitive' => 'Citlivý',
+                'version_no' => 'Verze',
             ],
         ],
     ],

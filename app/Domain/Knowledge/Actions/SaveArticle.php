@@ -7,7 +7,11 @@ namespace App\Domain\Knowledge\Actions;
 use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Enums\ArticleKind;
 use App\Domain\Knowledge\Exceptions\ArticleWriteFailed;
+use App\Domain\Knowledge\Exceptions\SecretGuardRefused;
 use App\Domain\Knowledge\Exceptions\StaleArticle;
+use App\Domain\Knowledge\Guard\SecretFinding;
+use App\Domain\Knowledge\Guard\SecretScanner;
+use App\Domain\Knowledge\Guard\Severity;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Support\MarkdownNormaliser;
@@ -23,8 +27,8 @@ use PDOException;
  *
  * `create()` stores a general article as version 1 together with its version row. `update()` takes the version the
  * editor was opened with as a required argument and runs, in one transaction: authorise, lock the row, stale check,
- * normalise, no-op check, write the article and the immutable full snapshot of the new version. The order is fixed
- * and is never changed.
+ * normalise, no-op check, secret scan, write the article and the immutable full snapshot of the new version. The
+ * order is fixed and is never changed.
  *
  * Lock and numbering: the article row is re-read through the scoped query with `lockForUpdate()` (an archived
  * article is a not-found error, never written). The next version number is the locked row's number plus one, so
@@ -37,6 +41,12 @@ use PDOException;
  * title alone is a content change (D-11). The sensitive flag is only ever cleared by the explicit manual clear of the
  * input (D-04, fail closed); a flag change without a content change writes no version.
  *
+ * The secret guard (SEC-01 to SEC-03): every content-changing save scans the normalised body, never the title (D-02).
+ * A Blocking finding refuses the save with no way around it (D-01), an Ambiguous one refuses it unless this one call
+ * passes `$acknowledge`, which marks the article sensitive and writes one `secret_acknowledged` activity row holding
+ * the rule keys and the new version number only (D-03, D-04). The acknowledgment is a per-call argument and is never
+ * stored. A save without a content change is not scanned (nothing new was typed).
+ *
  * What is logged: the model writes metadata-only activity through the allowlist of KnowledgeArticle. This class calls
  * no logger and puts neither the title nor the body into any message, context or exception property. The title is
  * never scanned for secrets (D-02).
@@ -47,32 +57,38 @@ use PDOException;
  */
 final class SaveArticle
 {
-    public function __construct(private readonly MarkdownNormaliser $normaliser) {}
+    public function __construct(
+        private readonly MarkdownNormaliser $normaliser,
+        private readonly SecretScanner $scanner,
+    ) {}
 
     /**
      * @throws AuthorizationException
+     * @throws SecretGuardRefused
      * @throws ArticleWriteFailed
      */
     public function create(User $actor, ArticleInput $input, bool $acknowledge = false): SaveResult
     {
         Gate::forUser($actor)->authorize('create', KnowledgeArticle::class);
 
-        return $this->inTransaction(function () use ($actor, $input): SaveResult {
+        return $this->inTransaction(function () use ($actor, $input, $acknowledge): SaveResult {
             $body = $this->normaliser->normalise($input->body);
+            $rules = $this->acknowledgedRules($body, $acknowledge);
 
             $article = new KnowledgeArticle;
             $article->forceFill([
                 'kind' => ArticleKind::General,
                 'title' => $input->title,
                 'body_md' => $body,
-                'sensitive' => $input->sensitive,
+                'sensitive' => $input->sensitive || $rules !== [],
                 'version_no' => 1,
                 'edited_at' => now(),
             ])->save();
 
             $this->writeVersion($article, $actor);
+            $this->writeAcknowledgment($article, $actor, $rules);
 
-            return new SaveResult(SaveOutcome::Created, $article, false);
+            return new SaveResult(SaveOutcome::Created, $article, $rules !== []);
         });
     }
 
@@ -82,13 +98,14 @@ final class SaveArticle
      * @throws AuthorizationException
      * @throws ModelNotFoundException an archived or unknown article
      * @throws StaleArticle the stored version differs from the expected one
+     * @throws SecretGuardRefused
      * @throws ArticleWriteFailed
      */
     public function update(User $actor, KnowledgeArticle $article, ArticleInput $input, int $expectedVersion, bool $acknowledge = false): SaveResult
     {
         Gate::forUser($actor)->authorize('update', $article);
 
-        $result = $this->inTransaction(function () use ($actor, $article, $input, $expectedVersion): SaveResult {
+        $result = $this->inTransaction(function () use ($actor, $article, $input, $expectedVersion, $acknowledge): SaveResult {
             // The scoped query: an archived article is a ModelNotFoundException.
             $locked = KnowledgeArticle::query()->whereKey($article->getKey())->lockForUpdate()->firstOrFail();
 
@@ -99,9 +116,10 @@ final class SaveArticle
             }
 
             $body = $this->normaliser->normalise($input->body);
-            $sensitive = $this->derivedSensitive($locked, $input, false);
 
             if ($locked->title === $input->title && $locked->body_md === $body) {
+                $sensitive = $this->derivedSensitive($locked, $input, false);
+
                 if ($sensitive === $locked->sensitive) {
                     return new SaveResult(SaveOutcome::Unchanged, $locked, false);
                 }
@@ -111,17 +129,20 @@ final class SaveArticle
                 return new SaveResult(SaveOutcome::SensitivityChanged, $locked, false);
             }
 
+            $rules = $this->acknowledgedRules($body, $acknowledge);
+
             $locked->forceFill([
                 'title' => $input->title,
                 'body_md' => $body,
-                'sensitive' => $sensitive,
+                'sensitive' => $this->derivedSensitive($locked, $input, $rules !== []),
                 'version_no' => $locked->version_no + 1,
                 'edited_at' => now(),
             ])->save();
 
             $this->writeVersion($locked, $actor);
+            $this->writeAcknowledgment($locked, $actor, $rules);
 
-            return new SaveResult(SaveOutcome::Updated, $locked, false);
+            return new SaveResult(SaveOutcome::Updated, $locked, $rules !== []);
         });
 
         // The caller's instance shows the stored value, whatever it showed before.
@@ -145,6 +166,57 @@ final class SaveArticle
         }
 
         return $input->sensitive || $locked->sensitive;
+    }
+
+    /**
+     * The guard decision for a normalised body (R-18-05-5). Returns the sorted rule keys of the Ambiguous findings this
+     * save acknowledges, or an empty list when the body is clean or `$acknowledge` changes nothing.
+     *
+     * @return list<string>
+     *
+     * @throws SecretGuardRefused a Blocking finding whatever `$acknowledge` says, or an Ambiguous one without it
+     */
+    private function acknowledgedRules(string $body, bool $acknowledge): array
+    {
+        $findings = $this->scanner->scan($body);
+
+        $ambiguous = array_values(array_filter(
+            $findings,
+            static fn (SecretFinding $finding): bool => $finding->severity() === Severity::Ambiguous,
+        ));
+
+        if ($findings === []) {
+            return [];
+        }
+
+        if (count($ambiguous) < count($findings) || ! $acknowledge) {
+            throw new SecretGuardRefused($findings, hash('sha256', $body));
+        }
+
+        $rules = array_unique(array_map(static fn (SecretFinding $finding): string => $finding->rule->value, $ambiguous));
+        sort($rules);
+
+        return $rules;
+    }
+
+    /**
+     * The one audit row of an acknowledged save: the rule keys and the version number, never any content (SEC-03).
+     *
+     * @param  list<string>  $rules
+     */
+    private function writeAcknowledgment(KnowledgeArticle $article, User $actor, array $rules): void
+    {
+        if ($rules === []) {
+            return;
+        }
+
+        activity()
+            ->useLog($article->getMorphClass())
+            ->performedOn($article)
+            ->causedBy($actor)
+            ->event('secret_acknowledged')
+            ->withProperties(['rules' => $rules, 'version_no' => $article->version_no])
+            ->log('secret_acknowledged');
     }
 
     /**
