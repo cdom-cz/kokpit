@@ -30,6 +30,10 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Models\PaymentConfirmation;
+use App\Domain\Knowledge\Enums\ArticleKind;
+use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Payments\Enums\CardPaymentReason;
 use App\Domain\Payments\Enums\CardPaymentResolution;
 use App\Domain\Payments\Enums\CardPaymentType;
@@ -554,6 +558,45 @@ final class CanaryRegistry
                 app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
                     (new SignalWeeklyRecap(['week_start' => self::signalMonday($canary), 'what_went_well' => $canary, 'what_to_change' => $canary]))
                         ->forceFill(['user_id' => self::plannerOwner()->getKey()])->save();
+                });
+            },
+
+            // The three knowledge models are deny-all (DeniesPartners): the canary sits in the title and body of
+            // the article, the title and body of its first version and the name of a root folder, which are
+            // exactly the texts a Partner must never read. The article carries the client of the fixture, so a
+            // client-bound constraint added later would have something to filter on.
+            KnowledgeArticle::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($clientId, $canary): void {
+                    (new KnowledgeArticle)->forceFill([
+                        'kind' => ArticleKind::General,
+                        'title' => $canary,
+                        'body_md' => $canary,
+                        'client_id' => $clientId,
+                        'version_no' => 1,
+                        'edited_at' => now(),
+                    ])->save();
+                });
+            },
+
+            // Version 1 of the canary article (found by title; the article fixture runs before this one, like
+            // TaskBilling after Task). The author is the one planner owner, so the fixture adds no second Admin.
+            KnowledgeArticleVersion::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    $article = KnowledgeArticle::query()->where('title', $canary)->firstOrFail();
+
+                    (new KnowledgeArticleVersion)->forceFill([
+                        'article_id' => $article->getKey(),
+                        'version_no' => 1,
+                        'title' => $canary,
+                        'body_md' => $canary,
+                        'author_id' => self::plannerOwner()->getKey(),
+                    ])->save();
+                });
+            },
+
+            KnowledgeFolder::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    (new KnowledgeFolder)->forceFill(['name' => $canary])->save();
                 });
             },
 

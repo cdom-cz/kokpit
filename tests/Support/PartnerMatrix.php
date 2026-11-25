@@ -20,6 +20,9 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Models\PaymentConfirmation;
+use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Projects\Models\Project;
@@ -504,6 +507,9 @@ final class PartnerMatrix
             Transaction::class => 'Income and expense are finance.',
             DocumentArchive::class => 'ZIP archives bundle the files of every client.',
             ReportExport::class => 'Report exports hold measured time and rates.',
+            KnowledgeArticle::class => 'Internal knowledge articles of the Admin; client sharing arrives in Phase 23.',
+            KnowledgeArticleVersion::class => 'Immutable versions of the knowledge articles of the Admin.',
+            KnowledgeFolder::class => 'The folder tree of the knowledge articles of the Admin.',
             SignalTask::class => 'Personal planner of the Admin.',
             SignalRecurringTask::class => 'Personal planner of the Admin.',
             SignalSetting::class => 'Personal planner of the Admin.',

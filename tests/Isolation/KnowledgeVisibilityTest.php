@@ -6,7 +6,9 @@ use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Shared\Auth\PartnerContext;
+use App\Domain\Shared\Models\Tag;
 use App\Domain\Shared\Policies\AdminOnlyPolicy;
+use App\Domain\Shared\Tags\TagType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
 use Tests\Support\Canary;
@@ -132,4 +134,15 @@ it('registers the admin-only policy for the three knowledge models', function ()
     foreach ([KnowledgeArticle::class, KnowledgeArticleVersion::class, KnowledgeFolder::class] as $class) {
         expect(Gate::getPolicyFor($class))->toBeInstanceOf(AdminOnlyPolicy::class);
     }
+});
+
+it('shows a Partner no tag of the knowledge type, while the Admin reads it', function (): void {
+    app(PartnerContext::class)->runAsSystem(static fn () => Tag::findOrCreate('example-topic', TagType::Knowledge->value));
+
+    $this->actingAs(Canary::admin());
+    expect(Tag::query()->where('type', TagType::Knowledge->value)->count())->toBe(1);
+
+    $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
+    expect(Tag::query()->count())->toBe(0)
+        ->and(Tag::query()->where('type', TagType::Knowledge->value)->count())->toBe(0);
 });
