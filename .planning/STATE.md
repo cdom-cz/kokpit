@@ -5,11 +5,11 @@ milestone_name: Knowledge Center
 current_phase: 18
 current_phase_name: Knowledge Articles and Secret Guard
 status: planning
-stopped_at: Phase 18 context gathered
-last_updated: "2026-11-25T08:48:01.159Z"
+stopped_at: Phase 18 UI-SPEC approved
+last_updated: "2026-11-25T08:54:14.002Z"
 last_activity: 2026-11-25
 last_activity_desc: Roadmap v1.1 created (phases 18-23, 45/45 requirements mapped)
-state_head: 12012dbdd7ab3cc19785cba194fb545577728773
+state_head: 29d78143d055daad4e0f4313db68446b4eb417b2
 progress:
   total_phases: 6
   completed_phases: 0
@@ -988,9 +988,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-25T08:48:01.114Z
-Stopped at: Phase 18 context gathered
-Resume file: .planning/phases/18-knowledge-articles-and-secret-guard/18-CONTEXT.md
+Last session: 2026-11-25T08:54:13.961Z
+Stopped at: Phase 18 UI-SPEC approved
+Resume file: .planning/phases/18-knowledge-articles-and-secret-guard/18-UI-SPEC.md
 
 ## Operator Next Steps
 
