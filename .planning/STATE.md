@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.1
 milestone_name: Knowledge Center
 status: planning
-last_updated: "2026-11-25T08:01:48.310Z"
+last_updated: "2026-11-25T09:30:00.000Z"
 last_activity: 2026-11-25
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,17 +17,19 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-30)
+See: .planning/PROJECT.md (updated 2026-11-25)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Planning next milestone
+**Current focus:** Phase 18 — Knowledge Articles and Secret Guard (milestone v1.1 Knowledge Center, phases 18-23)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 18 (Knowledge Articles and Secret Guard)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-11-25 — Milestone v1.1 started
+Status: Ready to plan
+Last activity: 2026-11-25 — Roadmap v1.1 created (phases 18-23, 45/45 requirements mapped)
+
+Progress: [░░░░░░░░░░] 0%
 
 
 ## Performance Metrics
@@ -365,6 +367,9 @@ Last activity: 2026-11-25 — Milestone v1.1 started
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- [Roadmap v1.1]: Six phases 18-23 (standard granularity); the research's data model and access seam phase is folded into Phase 18 because it carries no requirement of its own
+- [Roadmap v1.1]: VER-01 traced to Phase 18 (the single save path writes the version row with the guard and the concurrency check); NAV-01 to Phase 21 (all three menu entries exist); SEC-04 to Phase 23 (sharing and export exist)
+- [Roadmap v1.1]: The client share switch goes live only in Phase 23; every phase declares its new screens, routes, components and channels in the Partner permission matrix in the same pull request
 - [Roadmap]: Planning docs stay uncommitted (`commit_docs: false`) until Phase 1 hygiene tooling exists and passes
 - [Roadmap]: Hygiene is Phase 1; Foundation is split into Phase 2 (platform, conventions, isolation harness) and Phase 3 (operations, deploy, storage, spikes)
 - [Roadmap]: Stack fixed by owner: PostgreSQL 18, Redis (queue, cache, sessions), RustFS (S3-compatible storage), DDEV for development
@@ -899,6 +904,20 @@ Recent decisions affecting current work:
 
 ### Blockers/Concerns
 
+v1.1 Knowledge Center — owner decisions and research flags before the owning phase is planned:
+
+- [Phase 18]: Folder tree implementation: own `parent_id` with a recursive CTE (research recommendation) or `staudenmeir/laravel-adjacency-list`; the folders table lands with the Phase 18 data model
+- [Phase 18]: One naming for the article kinds (general, incident hub, incident sub-page, retrospective), fixed in the Phase 18 data model
+- [Phase 18]: Research spike on the renderer and sanitiser configuration and the callout extension
+- [Phase 19]: Version retention and coalescing policy, and what a redaction rewrites (version body only, or also diffs and derived data)
+- [Phase 20]: Image library (GD or Imagick) and WebP support on the deploy target, CSP for image delivery, insertion at the editor cursor, orphan image retention period
+- [Phase 21]: Spike on a nested Filament resource for incident sub-pages; running timers excluded from the retrospective time overview
+- [Phase 22]: `kokpit_cs` text-search configuration needs CREATE rights on the managed PostgreSQL; generated-column immutability; `ts_headline` with accents. Czech search without stemming is accepted for v1.1
+- [Phase 23]: Does a Partner get the knowledge search page, the Copy as Markdown for AI action, and a Knowledge tab on their project page? Which metadata fields go into the YAML front matter (never Admin-only data where a Partner can read the export)
+- [Cross-cutting]: Scrub the article `body` from Sentry and logs; Filament SPA session behaviour on long edits
+
+v1 (shipped 2026-10-30; kept for reference):
+
 Product decisions needed before the owning phase is planned:
 
 - [Phase 4]: One Partner account per client, or many-to-many (users to clients)
@@ -937,6 +956,7 @@ Housekeeping: `.planning/codebase/` was committed before hygiene tooling and is 
 - Phase 15 added: Cash payment method for invoices and cash receipt documents: invoices payable in cash, plus a cash receipt document (PPD) issued for them; research first what it is and how to issue it
 - Phase 14 edited: edited fields: title, goal (payment method switchable between bank transfer and online; currency independent of method and bank account; account preselected by matching currency, separately selectable)
 - Phase 17.1 inserted after Phase 17: Close gap: G1/G2 — release time on full partial credit and reject payments on converted proformas (URGENT)
+- Milestone v1.1 Knowledge Center roadmap created 2026-11-25: Phases 18-23, 45 requirements mapped (backlog 999.1 unchanged)
 
 ## Deferred Items
 
@@ -963,10 +983,11 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-30T14:30:29.770Z
-Stopped at: Phase 17.1 complete, ready to verify Phase 11
-Resume file: .planning/phases/17.1-close-gap-g1-g2-release-time-on-full-partial-credit-and-reje/17.1-CONTEXT.md
+Last session: 2026-11-25T09:30:00.000Z
+Stopped at: Roadmap v1.1 created (phases 18-23), awaiting owner approval
+Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Review and approve the v1.1 roadmap (ROADMAP.md, phases 18-23)
+- Then start Phase 18 with /gsd-discuss-phase 18 (research flag: renderer and sanitiser configuration)

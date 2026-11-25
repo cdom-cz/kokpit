@@ -113,13 +113,61 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (filled by roadmap) | | Pending |
+| KB-01 | Phase 18 | Pending |
+| KB-02 | Phase 18 | Pending |
+| KB-03 | Phase 18 | Pending |
+| KB-04 | Phase 18 | Pending |
+| KB-05 | Phase 18 | Pending |
+| KB-06 | Phase 18 | Pending |
+| KB-07 | Phase 18 | Pending |
+| KB-08 | Phase 18 | Pending |
+| ORG-01 | Phase 19 | Pending |
+| ORG-02 | Phase 19 | Pending |
+| ORG-03 | Phase 19 | Pending |
+| ORG-04 | Phase 19 | Pending |
+| VER-01 | Phase 18 | Pending |
+| VER-02 | Phase 19 | Pending |
+| VER-03 | Phase 19 | Pending |
+| VER-04 | Phase 19 | Pending |
+| VER-05 | Phase 19 | Pending |
+| SEC-01 | Phase 18 | Pending |
+| SEC-02 | Phase 18 | Pending |
+| SEC-03 | Phase 18 | Pending |
+| SEC-04 | Phase 23 | Pending |
+| IMG-01 | Phase 20 | Pending |
+| IMG-02 | Phase 20 | Pending |
+| IMG-03 | Phase 20 | Pending |
+| SRCH-01 | Phase 22 | Pending |
+| SRCH-02 | Phase 22 | Pending |
+| SRCH-03 | Phase 22 | Pending |
+| SRCH-04 | Phase 22 | Pending |
+| INC-01 | Phase 21 | Pending |
+| INC-02 | Phase 21 | Pending |
+| INC-03 | Phase 21 | Pending |
+| INC-04 | Phase 21 | Pending |
+| INC-05 | Phase 21 | Pending |
+| INC-06 | Phase 21 | Pending |
+| RETRO-01 | Phase 21 | Pending |
+| RETRO-02 | Phase 21 | Pending |
+| RETRO-03 | Phase 21 | Pending |
+| RETRO-04 | Phase 21 | Pending |
+| SHARE-01 | Phase 23 | Pending |
+| SHARE-02 | Phase 23 | Pending |
+| SHARE-03 | Phase 23 | Pending |
+| SHARE-04 | Phase 23 | Pending |
+| NAV-01 | Phase 21 | Pending |
+| AI-01 | Phase 23 | Pending |
+| AI-02 | Phase 23 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 45 total
-- Mapped to phases: 0
-- Unmapped: 45 ⚠️
+- Mapped to phases: 45
+- Unmapped: 0 ✓
+
+**Per phase:** Phase 18: 12, Phase 19: 8, Phase 20: 3, Phase 21: 11, Phase 22: 4, Phase 23: 7
+
+Cross-phase clauses (traced once, proven again later; see ROADMAP.md mapping notes): the restore clause of SEC-01 is proven by VER-03 in Phase 19, the "searchable" clause of INC-03 by SRCH-04 in Phase 22, and Partner fail-closed behaviour is kept from Phase 18 on and proven in full by SHARE-04 in Phase 23.
 
 ---
 *Requirements defined: 2026-11-25*
-*Last updated: 2026-11-25 after initial definition*
+*Last updated: 2026-11-25 after roadmap creation (phases 18-23)*
