@@ -79,14 +79,14 @@ The milestone is built schema and write seam first, guard before content, sharin
   3. Saving a body that contains an unambiguous secret (a fake credential assembled at runtime in the test) is refused with a message that names the rule and the line but never the value; an ambiguous finding saves only after explicit acknowledgment and marks the article sensitive, and that override covers the one save only and appears in the activity log without the content
   4. A save that changes the content raises the article's version number by one and keeps the content as an immutable version, a save without changes creates no version, and when two edit screens save from the same starting version the second save is rejected with a notice instead of overwriting the first
   5. A Partner account sees no Knowledge menu group and is refused on every knowledge screen and URL; the new screens and routes are declared in the Partner permission matrix and the Partner audit stays green
-**Plans:** 10 plans (5 waves; every Pest run happens after the merge into the HEAD branch, one at a time against the shared `kokpit_test` database; after the wave 1 merge run `ddev composer install` first)
+**Plans:** 4/10 plans executed (5 waves; every Pest run happens after the merge into the HEAD branch, one at a time against the shared `kokpit_test` database; after the wave 1 merge run `ddev composer install` first)
 
 Plans:
 **Wave 1**
-- [ ] 18-01-PLAN.md — Tracer: knowledge article, version and folder tables with their triggers, the three models, `ArticleKind`, morph aliases (wave 1)
-- [ ] 18-02-PLAN.md — Fail-closed Partner seam: Admin-only policies, `TagType::Knowledge`, canary, matrix and declaration rows, `KnowledgeFixtures` (wave 1, coupled with 18-01)
-- [ ] 18-03-PLAN.md — Hardened `KnowledgeMarkdown` renderer: link and image policy, sanitiser, code blocks with Copy chrome and highlighting, task lists, container binding (wave 1)
-- [ ] 18-04-PLAN.md — `SecretScanner`, `MarkdownNormaliser`, `SecretFixtures` and the complete `lang/cs/knowledge.php` (wave 1)
+- [x] 18-01-PLAN.md — Tracer: knowledge article, version and folder tables with their triggers, the three models, `ArticleKind`, morph aliases (wave 1)
+- [x] 18-02-PLAN.md — Fail-closed Partner seam: Admin-only policies, `TagType::Knowledge`, canary, matrix and declaration rows, `KnowledgeFixtures` (wave 1, coupled with 18-01)
+- [x] 18-03-PLAN.md — Hardened `KnowledgeMarkdown` renderer: link and image policy, sanitiser, code blocks with Copy chrome and highlighting, task lists, container binding (wave 1)
+- [x] 18-04-PLAN.md — `SecretScanner`, `MarkdownNormaliser`, `SecretFixtures` and the complete `lang/cs/knowledge.php` (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 18-05-PLAN.md — `SaveArticle` single save path: versions, no-op, stale check, secret guard with one-save acknowledgment, concurrency proof (wave 2)
@@ -173,7 +173,7 @@ Phases execute in numeric order: 18 → 19 → 20 → 21 → 22 → 23
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 18. Knowledge Articles and Secret Guard | v1.1 | 0/TBD | Not started | - |
+| 18. Knowledge Articles and Secret Guard | v1.1 | 4/10 | In Progress | - |
 | 19. Folders, Tags and Version History | v1.1 | 0/TBD | Not started | - |
 | 20. Image Attachments | v1.1 | 0/TBD | Not started | - |
 | 21. Incidents and Retrospectives | v1.1 | 0/TBD | Not started | - |
