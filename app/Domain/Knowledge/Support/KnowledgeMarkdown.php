@@ -9,10 +9,14 @@ use Illuminate\Support\HtmlString;
 use League\CommonMark\Environment\Environment;
 use League\CommonMark\Event\DocumentParsedEvent;
 use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
+use League\CommonMark\Extension\CommonMark\Node\Block\FencedCode;
+use League\CommonMark\Extension\CommonMark\Node\Block\IndentedCode;
 use League\CommonMark\Extension\GithubFlavoredMarkdownExtension;
 use League\CommonMark\MarkdownConverter;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizer;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig;
+use Tempest\Highlight\Highlighter;
+use Tempest\Highlight\Themes\CssTheme;
 
 /**
  * The one place where a knowledge body becomes HTML (KB-03). CommonMark with raw HTML escaped, the link and image
@@ -41,7 +45,7 @@ final class KnowledgeMarkdown
     /**
      * @param  Closure(string, array<string, string>=): string  $translate  relative key and replacements to text
      */
-    public function __construct(private readonly Closure $translate)
+    public function __construct(Closure $translate)
     {
         $environment = new Environment([
             'html_input' => 'escape',
@@ -52,6 +56,10 @@ final class KnowledgeMarkdown
         $environment->addExtension(new CommonMarkCoreExtension);
         $environment->addExtension(new GithubFlavoredMarkdownExtension);
         $environment->addEventListener(DocumentParsedEvent::class, new LinkAndImagePolicy);
+
+        $codeBlocks = new CodeBlockRenderer(new Highlighter(new CssTheme), $translate);
+        $environment->addRenderer(FencedCode::class, $codeBlocks, 10);
+        $environment->addRenderer(IndentedCode::class, $codeBlocks, 10);
 
         $this->converter = new MarkdownConverter($environment);
         $this->sanitizer = new HtmlSanitizer($this->sanitizerConfig());
