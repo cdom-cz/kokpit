@@ -79,7 +79,7 @@ The milestone is built schema and write seam first, guard before content, sharin
   3. Saving a body that contains an unambiguous secret (a fake credential assembled at runtime in the test) is refused with a message that names the rule and the line but never the value; an ambiguous finding saves only after explicit acknowledgment and marks the article sensitive, and that override covers the one save only and appears in the activity log without the content
   4. A save that changes the content raises the article's version number by one and keeps the content as an immutable version, a save without changes creates no version, and when two edit screens save from the same starting version the second save is rejected with a notice instead of overwriting the first
   5. A Partner account sees no Knowledge menu group and is refused on every knowledge screen and URL; the new screens and routes are declared in the Partner permission matrix and the Partner audit stays green
-**Plans:** 13/13 plans executed (5 waves, then 2 gap closure waves: 18-11 to 18-13 close 18-VERIFICATION.md gaps 1 and 2 and review findings IN-01, WR-02 and IN-04; every Pest run happens after the merge into the HEAD branch, one at a time against the shared `kokpit_test` database; after the wave 1 merge run `ddev composer install` first)
+**Plans:** 13/14 plans executed (5 waves, then 3 gap closure waves: 18-11 to 18-13 close 18-VERIFICATION.md gaps 1 and 2 and review findings IN-01, WR-02 and IN-04; 18-14 closes the re-verification gap SC3b with gap-closure review findings CR-01, WR-01 and WR-03; every Pest run happens after the merge into the HEAD branch, one at a time against the shared `kokpit_test` database; after the wave 1 merge run `ddev composer install` first)
 
 Plans:
 **Wave 1**
@@ -102,12 +102,18 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 - [x] 18-10-PLAN.md — Edit screen with stale-save notice, edit entry points, knowledge seam Arch test, CONTRIBUTING hand-over (wave 5)
 
+**Cross-cutting constraints:** <!-- gsd:generated -->
+- Unambiguous secrets block the save (a PEM private key blocks with no override, D-01) in the forms they realistically take in a note
+
 **Gap closure wave 1** *(from 18-VERIFICATION.md, gaps 1 and 2, with review finding IN-04)*
 - [x] 18-11-PLAN.md — Secret scanner: prefix-tolerant and escaped private key rules, Default_Ignorable strip and a rendered-equivalent view per line, Ambiguous findings for long random runs and quoted passwords, proved through `SaveArticle` (gap 1 CR-01, gap 2 WR-01, IN-01)
 - [x] 18-12-PLAN.md — Save refusals as notices: a database failure and a concurrent archive keep the typed text, a NUL byte is refused instead of cut off (IN-04)
 
 **Gap closure wave 2** *(blocked on gap closure wave 1)*
 - [x] 18-13-PLAN.md — Create-screen proof of the closed guard gaps, task-list observer that survives SPA navigation, disposition for all nine review findings (WR-02)
+
+**Gap closure wave 3** *(from the 18-VERIFICATION.md re-verification, gap SC3b; blocked on gap closure wave 2)*
+- [ ] 18-14-PLAN.md — Secret scanner: per-line private key check (one base64 line of 40 or more, or two of 16, with comment, list, quote and continuation decoration trimmed in code and one blank line tolerated), control characters in the fold, proved in the Unit dataset, through `SaveArticle` and on the create screen (gap-closure review CR-01, WR-01, WR-03)
 **UI hint**: yes
 
 ### Phase 19: Folders, Tags and Version History
@@ -180,7 +186,7 @@ Phases execute in numeric order: 18 → 19 → 20 → 21 → 22 → 23
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 18. Knowledge Articles and Secret Guard | v1.1 | 13/13 | In Progress | - |
+| 18. Knowledge Articles and Secret Guard | v1.1 | 13/14 | In Progress | - |
 | 19. Folders, Tags and Version History | v1.1 | 0/TBD | Not started | - |
 | 20. Image Attachments | v1.1 | 0/TBD | Not started | - |
 | 21. Incidents and Retrospectives | v1.1 | 0/TBD | Not started | - |
