@@ -271,6 +271,22 @@ it('finds a fullwidth or zero-width disguised key on the same line', function ()
         ->toBe([['aws_access_key', 3]]);
 });
 
+it('finds a token hidden by Markdown escapes, entities or invisible characters with its blocking rule', function (string $text, string $rule): void {
+    $findings = secretScannerScan(SecretFixtures::bodyWith($text, 3));
+
+    expect(secretScannerPairs($findings))->toBe([[$rule, 3]])
+        ->and($findings[0]->severity())->toBe(Severity::Blocking);
+})->with(fn (): array => SecretFixtures::secretEvasionShapes());
+
+it('keeps editor line numbers and one finding per rule and line in the rendered view', function (): void {
+    $stripe = SecretFixtures::stripeLiveSecret();
+    $lines = ['Example heading', '&#10;&#10;', 'Example prose line.', SecretFixtures::markdownEscaped($stripe), 'Example footer'];
+
+    expect(secretScannerPairs(secretScannerScan(implode("\n", $lines))))->toBe([['stripe_secret', 4]])
+        ->and(secretScannerPairs(secretScannerScan($stripe.' and '.SecretFixtures::markdownEscaped($stripe))))->toBe([['stripe_secret', 1]])
+        ->and(secretScannerScan('Use \\*example\\* for emphasis, Tom &amp; Jerry&nbsp;meet here.'))->toBe([]);
+});
+
 it('keeps the editor line numbers with every kind of line ending', function (): void {
     $body = "one\r\ntwo\rthree\n".SecretFixtures::awsAccessKey()."\r\nfive";
 
@@ -342,9 +358,15 @@ it('finishes on 200 KB of adversarial input in under a second per rule, without 
     'repeated spaces after a keyword' => ['password'.'                                        '],
     'repeated url user' => ['a://a:'],
     'repeated at signs' => ['a://b:c@'],
-    'repeated indented quoted pem header' => ["  > -----BEGIN PRIV"."ATE KEY-----\n"],
+    'repeated indented quoted pem header' => ['  > -----BEGIN PRIV'."ATE KEY-----\n"],
     'repeated escaped pem header' => ['-----BEGIN PRIV'.'ATE KEY-----\\n'],
     'repeated prefix-only lines' => ["  >  > \n"],
     'repeated high entropy run' => [SecretFixtures::highEntropyString()],
     'repeated open quoted password' => ['password = "a b '],
+    'repeated backslash underscore' => ['\\_'],
+    'repeated decimal entity' => ['&#95;'],
+    'repeated named entity' => ['&lowbar;'],
+    'repeated entity line break' => ['&#10;'],
+    'repeated soft hyphen' => ["\u{00AD}"],
+    'repeated escaped stripe prefix' => ['sk\\_live\\_'],
 ]);

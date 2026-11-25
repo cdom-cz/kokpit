@@ -7,11 +7,17 @@ namespace App\Domain\Knowledge\Guard;
 /**
  * Finds secrets in an article body and reports the rule and the line, never the value (SEC-01, D-03).
  *
- * The text is folded before the rules run (zero-width characters removed, compatibility normalisation),
- * line by line, so a fullwidth or zero-width evasion is still found on the editor's line number. Any
- * regular-expression failure and any invalid UTF-8 fail closed with one blocking scan_failed finding on
- * line 0: a failed scan never reads as clean. Every quantifier is bounded or possessive and every
- * left boundary is a look-behind, so no rule backtracks catastrophically on adversarial input.
+ * The text is folded before the rules run, line by line, so an evasion is still found on the editor's line
+ * number: every Unicode default-ignorable character is removed (soft hyphen, joiners, bidi marks, invisible
+ * operators, variation selectors, tag characters), the compatibility normalisation maps fullwidth forms to
+ * ASCII, and what that mapping produced is removed again. Each line has a second, rendered-equivalent view:
+ * Markdown escapes removed and HTML entities decoded, with a decoded line break kept as the two characters
+ * backslash and n, so a token that the rendered article shows intact is found although the source hides it.
+ * Both views are local variables. The findings are the union of both views, keyed by rule and line: a fold
+ * never removes a finding the raw view produced, and no matched text is ever kept. Any regular-expression
+ * failure and any invalid UTF-8 fail closed with one blocking scan_failed finding on line 0: a failed scan
+ * never reads as clean. Every quantifier is bounded or possessive and every left boundary is a look-behind,
+ * so no rule backtracks catastrophically on adversarial input.
  *
  * Rules run in precedence order, every blocking rule before the two ambiguous ones. A match that overlaps
  * an earlier reported match on the same line is dropped, so one token never yields two findings. The
@@ -21,7 +27,19 @@ final class SecretScanner
 {
     private const string LINE_BREAK = '/\r\n|\r|\n/';
 
-    private const string ZERO_WIDTH = '/[\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u';
+    /**
+     * The Unicode Default_Ignorable_Code_Point set as explicit ranges (a reader never sees these characters,
+     * so a token that holds one still reads as the token). Ranges, not a property escape, because the pattern
+     * engine of a build may not know the property (R-18-11-3).
+     */
+    private const string INVISIBLE = '/[\x{00AD}\x{034F}\x{061C}\x{115F}-\x{1160}\x{17B4}-\x{17B5}\x{180B}-\x{180F}'
+        .'\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}-\x{206F}\x{3164}\x{FE00}-\x{FE0F}\x{FEFF}\x{FFA0}'
+        .'\x{FFF0}-\x{FFF8}\x{1BCA0}-\x{1BCA3}\x{1D173}-\x{1D17A}\x{E0000}-\x{E0FFF}]/u';
+
+    /**
+     * A backslash in front of an ASCII punctuation character, the CommonMark escape. Group 1 is the character.
+     */
+    private const string MARKDOWN_ESCAPE = '/\\\\([!-\/:-@\[-`{-~])/';
 
     /**
      * A private key block: the header, then at least two base64 lines of 16 or more characters. A prose
@@ -142,26 +160,38 @@ final class SecretScanner
             throw new \RuntimeException('The text is not valid UTF-8.');
         }
 
-        $folded = [];
+        /** @var list<string> $raw the folded line as typed */
+        $raw = [];
+        /** @var list<string> $rendered the line as a reader sees it rendered; equals the raw one when nothing changes */
+        $rendered = [];
+        $differs = false;
 
         foreach ($this->checked(preg_split(self::LINE_BREAK, $body)) as $line) {
-            $stripped = $this->checked(preg_replace(self::ZERO_WIDTH, '', (string) $line));
-            $normalised = \Normalizer::normalize((string) $stripped, \Normalizer::FORM_KC);
+            $folded = $this->fold((string) $line);
+            $view = $this->rendered($folded);
 
-            if ($normalised === false) {
-                throw new \RuntimeException('The text could not be normalised.');
-            }
-
-            $folded[] = $normalised;
+            $raw[] = $folded;
+            $rendered[] = $view;
+            $differs = $differs || $view !== $folded;
         }
 
         /** @var array<string, SecretFinding> $findings */
         $findings = [];
-        $covered = $this->scanPrivateKeys($folded, $findings);
+        $covered = $this->scanPrivateKeys($raw, $findings);
 
-        foreach ($folded as $index => $line) {
-            if (! isset($covered[$index + 1])) {
-                $this->scanLine($line, $index + 1, $findings);
+        if ($differs) {
+            $covered += $this->scanPrivateKeys($rendered, $findings);
+        }
+
+        foreach ($raw as $index => $line) {
+            if (isset($covered[$index + 1])) {
+                continue;
+            }
+
+            $this->scanLine($line, $index + 1, $findings);
+
+            if ($rendered[$index] !== $line) {
+                $this->scanLine($rendered[$index], $index + 1, $findings);
             }
         }
 
@@ -170,6 +200,39 @@ final class SecretScanner
         usort($findings, static fn (SecretFinding $a, SecretFinding $b): int => [$a->line, $a->rule->value] <=> [$b->line, $b->rule->value]);
 
         return $findings;
+    }
+
+    /**
+     * Removes the characters a reader never sees, applies the compatibility normalisation (fullwidth forms
+     * become ASCII) and removes what that mapping produced (U+FFA0 maps to U+1160).
+     */
+    private function fold(string $line): string
+    {
+        $stripped = $this->checked(preg_replace(self::INVISIBLE, '', $line));
+        $normalised = \Normalizer::normalize((string) $stripped, \Normalizer::FORM_KC);
+
+        if ($normalised === false) {
+            throw new \RuntimeException('The text could not be normalised.');
+        }
+
+        return (string) $this->checked(preg_replace(self::INVISIBLE, '', $normalised));
+    }
+
+    /**
+     * The folded line as the rendered article shows it: Markdown escapes removed, HTML entities decoded.
+     * A line break an entity produces becomes the two characters backslash and n, so the view keeps one
+     * entry per editor line and the escaped key rule still sees an entity-encoded key.
+     */
+    private function rendered(string $folded): string
+    {
+        if (! str_contains($folded, '\\') && ! str_contains($folded, '&')) {
+            return $folded;
+        }
+
+        $unescaped = (string) $this->checked(preg_replace(self::MARKDOWN_ESCAPE, '$1', $folded));
+        $decoded = html_entity_decode($unescaped, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        return $this->fold(str_replace(["\r\n", "\r", "\n"], '\\n', $decoded));
     }
 
     /**

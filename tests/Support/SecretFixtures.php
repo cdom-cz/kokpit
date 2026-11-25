@@ -77,6 +77,66 @@ final class SecretFixtures
     }
 
     /**
+     * The secret with every underscore preceded by a backslash, as rich-text-to-Markdown converters write it.
+     */
+    public static function markdownEscaped(string $secret): string
+    {
+        return str_replace('_', '\\_', $secret);
+    }
+
+    /**
+     * The secret with every underscore replaced by an HTML entity.
+     */
+    public static function entityEncoded(string $secret, string $entity = '&#95;'): string
+    {
+        return str_replace('_', $entity, $secret);
+    }
+
+    /**
+     * The secret with the insert placed at the byte offset.
+     */
+    public static function withInserted(string $secret, string $insert, int $offset = 4): string
+    {
+        return substr($secret, 0, $offset).$insert.substr($secret, $offset);
+    }
+
+    /**
+     * Tokens a reader still sees intact in the rendered article but the raw text hides: shape name to the
+     * text and the rule key it must be found with. Invisible characters are written as code point escapes.
+     *
+     * @return array<string, array{string, string}>
+     */
+    public static function secretEvasionShapes(): array
+    {
+        $aws = self::awsAccessKey();
+        $shapes = [
+            'stripe live secret, escaped underscores' => [self::markdownEscaped(self::stripeLiveSecret()), 'stripe_secret'],
+            'github token, escaped underscores' => [self::markdownEscaped(self::githubToken()), 'github_token'],
+            'fine-grained github token, escaped underscores' => [self::markdownEscaped(self::githubFineGrainedToken()), 'github_token'],
+            'stripe live secret, decimal entity' => [self::entityEncoded(self::stripeLiveSecret()), 'stripe_secret'],
+            'stripe live secret, hex entity' => [self::entityEncoded(self::stripeLiveSecret(), '&#x5F;'), 'stripe_secret'],
+            'stripe live secret, named entity' => [self::entityEncoded(self::stripeLiveSecret(), '&lowbar;'), 'stripe_secret'],
+            'aws access key, soft hyphen entity' => [self::withInserted($aws, '&shy;'), 'aws_access_key'],
+        ];
+
+        foreach ([
+            'soft hyphen' => "\u{00AD}",
+            'combining grapheme joiner' => "\u{034F}",
+            'arabic letter mark' => "\u{061C}",
+            'left-to-right mark' => "\u{200E}",
+            'right-to-left override' => "\u{202E}",
+            'invisible times' => "\u{2062}",
+            'left-to-right isolate' => "\u{2066}",
+            'variation selector' => "\u{FE0F}",
+            'tag character' => "\u{E0041}",
+        ] as $name => $invisible) {
+            $shapes['aws access key, '.$name] = [self::withInserted($aws, $invisible), 'aws_access_key'];
+        }
+
+        return $shapes;
+    }
+
+    /**
      * One random base64 run on a single line, the first characters of the encoding of fresh random bytes
      * (a new value on every call).
      */
