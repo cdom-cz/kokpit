@@ -79,7 +79,7 @@ The milestone is built schema and write seam first, guard before content, sharin
   3. Saving a body that contains an unambiguous secret (a fake credential assembled at runtime in the test) is refused with a message that names the rule and the line but never the value; an ambiguous finding saves only after explicit acknowledgment and marks the article sensitive, and that override covers the one save only and appears in the activity log without the content
   4. A save that changes the content raises the article's version number by one and keeps the content as an immutable version, a save without changes creates no version, and when two edit screens save from the same starting version the second save is rejected with a notice instead of overwriting the first
   5. A Partner account sees no Knowledge menu group and is refused on every knowledge screen and URL; the new screens and routes are declared in the Partner permission matrix and the Partner audit stays green
-**Plans:** 7/10 plans executed (5 waves; every Pest run happens after the merge into the HEAD branch, one at a time against the shared `kokpit_test` database; after the wave 1 merge run `ddev composer install` first)
+**Plans:** 8/10 plans executed (5 waves; every Pest run happens after the merge into the HEAD branch, one at a time against the shared `kokpit_test` database; after the wave 1 merge run `ddev composer install` first)
 
 Plans:
 **Wave 1**
@@ -94,7 +94,7 @@ Plans:
 - [x] 18-07-PLAN.md — Znalosti group, General knowledge list with the archived switch, view screen, Partner screen declarations (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 18-08-PLAN.md — Archive and restore Actions with metadata-only history rows, row and header actions, history relation manager (wave 3)
+- [x] 18-08-PLAN.md — Archive and restore Actions with metadata-only history rows, row and header actions, history relation manager (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 18-09-PLAN.md — Create screen on the shared form: server preview tab, D-07 toolbar with task-list button, leave warning, guard feedback (wave 4)
@@ -173,7 +173,7 @@ Phases execute in numeric order: 18 → 19 → 20 → 21 → 22 → 23
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 18. Knowledge Articles and Secret Guard | v1.1 | 7/10 | In Progress | - |
+| 18. Knowledge Articles and Secret Guard | v1.1 | 8/10 | In Progress | - |
 | 19. Folders, Tags and Version History | v1.1 | 0/TBD | Not started | - |
 | 20. Image Attachments | v1.1 | 0/TBD | Not started | - |
 | 21. Incidents and Retrospectives | v1.1 | 0/TBD | Not started | - |
