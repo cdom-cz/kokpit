@@ -361,9 +361,12 @@ it('registers the editor script, which edits through CodeMirror only and holds n
 
     $source = createArticleScriptSource('js/knowledge-editor.js');
 
-    foreach (['_editor', 'codemirror', 'operation(', '- [ ] ', 'MutationObserver', 'livewire:navigated', 'kokpitKnowledgeEditorBound'] as $needle) {
+    // The observer is rooted on the document element, which SPA navigation keeps; the body element is replaced (WR-02).
+    foreach (['_editor', 'codemirror', 'operation(', '- [ ] ', 'MutationObserver', 'observe(document.documentElement', 'livewire:navigated', 'kokpitKnowledgeEditorBound'] as $needle) {
         expect($source)->toContain($needle);
     }
+
+    expect($source)->not->toContain('observe(document.'.'body');
 
     // Assembled from fragments so this list does not trip a scanner of its own.
     $sinks = [
@@ -431,6 +434,60 @@ it('refuses a Blocking finding with rule and line, keeps the typed text and offe
             ->and($findings)->not->toContain($needle);
     }
 });
+
+/**
+ * The shapes of the two closed verification gaps as the Admin could paste them: a private key embedded in a YAML
+ * block scalar, a blockquote or a JSON string, and tokens hidden by Markdown escapes, an entity or a soft hyphen.
+ * Each case is the text, the rule label of the callout and the 0-based offset of the finding line inside the text.
+ *
+ * @return array<string, array{string, string, int}>
+ */
+function createArticleBlockingShapes(): array
+{
+    $keys = SecretFixtures::pemPrivateKeyShapes();
+
+    return [
+        'yaml block scalar key' => [$keys['yaml block scalar'][0], 'Soukromý klíč (PEM)', $keys['yaml block scalar'][1]],
+        'blockquote key' => [$keys['blockquote'][0], 'Soukromý klíč (PEM)', $keys['blockquote'][1]],
+        'json escaped key' => [$keys['json escaped'][0], 'Soukromý klíč (PEM)', $keys['json escaped'][1]],
+        'markdown escaped stripe key' => [SecretFixtures::markdownEscaped(SecretFixtures::stripeLiveSecret()), 'Token Stripe', 0],
+        'entity encoded github token' => [SecretFixtures::entityEncoded(SecretFixtures::githubToken()), 'Token GitHub', 0],
+        'aws key id with a soft hyphen' => [SecretFixtures::withInserted(SecretFixtures::awsAccessKey(), "\u{00AD}"), 'Přístupový klíč AWS', 0],
+    ];
+}
+
+it('refuses an embedded private key and an escaped token on the create screen with the blocking callout and no save-anyway button', function (string $text, string $label, int $offset): void {
+    $body = SecretFixtures::bodyWith($text, 3);
+
+    $page = Livewire::test(CreateKnowledgeArticle::class)
+        ->fillForm(['title' => 'Example embedded secret', 'body' => $body])
+        ->call('create')
+        ->assertHasNoFormErrors()
+        ->assertSee('Text obsahuje tajný údaj a nelze ho uložit')
+        ->assertSee($label.' — řádek '.(3 + $offset))
+        ->assertDontSee('Uložit článek i přesto')
+        ->assertDontSee('Text může obsahovat tajný údaj')
+        ->assertSet('data.title', 'Example embedded secret')
+        ->assertSet('data.body', $body)
+        ->assertNotNotified();
+
+    $callouts = createArticleCalloutHtml($page->html());
+
+    expect($callouts)->toContain('role="alert"')
+        ->and($page->instance()->canSaveAnyway())->toBeFalse()
+        ->and($page->get('refusedBodyHash'))->toBeNull()
+        ->and(createArticleCount())->toBe(0);
+
+    foreach (SecretFixtures::needles($text) as $needle) {
+        expect($callouts)->not->toContain($needle);
+    }
+
+    // A direct call of the action, as a browser could send it, is scanned again and creates nothing.
+    $page->call('saveAnyway');
+
+    expect(createArticleCount())->toBe(0)
+        ->and(createArticleAcknowledgments())->toBe(0);
+})->with(fn (): array => createArticleBlockingShapes());
 
 it('refuses an Ambiguous finding with a warning and the save-anyway button, then saves it for this body only', function (): void {
     $secret = SecretFixtures::passwordAssignment();
