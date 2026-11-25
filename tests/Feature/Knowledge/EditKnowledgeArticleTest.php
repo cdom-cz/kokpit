@@ -139,7 +139,8 @@ it('offers the edit action as an icon button with label and tooltip on an active
     // The edit icon comes before archive and restore.
     $names = array_map(static fn (object $action): string => $action->getName(), array_values($table->getFlatActions()));
 
-    expect($names)->toBe(['edit', 'archive', 'restore']);
+    // The empty-state create action is not a row action.
+    expect(array_values(array_diff($names, ['create'])))->toBe(['edit', 'archive', 'restore']);
 });
 
 it('links the empty-body text of an active article to its edit screen and gives an archived one no link', function (): void {
@@ -310,7 +311,7 @@ it('offers neither an overwrite nor a merge after a stale save', function (): vo
     $first->fillForm(['body' => 'Example body A'])->call('save');
     $second->fillForm(['body' => 'Example body B'])->call('save');
 
-    $names = array_map(static fn (object $action): string => $action->getName(), array_values($second->instance()->getCachedFormActions()));
+    $names = array_map(static fn (object $action): string => $action->getName(), array_values((fn (): array => $this->getFormActions())->call($second->instance())));
 
     expect($names)->toBe(['save', 'saveAnyway', 'cancel']);
 });
