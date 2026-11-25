@@ -11,7 +11,7 @@
 
 **Scope note:** The v1.1 scope is fixed by `PROJECT.md` (Current Milestone) and is not re-litigated here. This file (a) classifies each area into table stakes, differentiators and anti-features, (b) states expected behaviour for each area, (c) records the interaction with existing Kokpit features, and (d) lists what the brief leaves implicit and will hurt if missed. API and MCP are out of scope. The previous (v1) content of this file is in git history.
 
-**Hard rule honoured:** no content, titles or links from any private Notion workspace were read or used. Everything below is generic domain knowledge and public template conventions. Examples use fictional data only.
+**Hard rule honoured:** no private workspace content was used; everything below is generic domain knowledge and public template conventions. Examples use fictional data only.
 
 ---
 
