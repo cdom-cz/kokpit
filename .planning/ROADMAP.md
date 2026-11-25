@@ -79,7 +79,7 @@ The milestone is built schema and write seam first, guard before content, sharin
   3. Saving a body that contains an unambiguous secret (a fake credential assembled at runtime in the test) is refused with a message that names the rule and the line but never the value; an ambiguous finding saves only after explicit acknowledgment and marks the article sensitive, and that override covers the one save only and appears in the activity log without the content
   4. A save that changes the content raises the article's version number by one and keeps the content as an immutable version, a save without changes creates no version, and when two edit screens save from the same starting version the second save is rejected with a notice instead of overwriting the first
   5. A Partner account sees no Knowledge menu group and is refused on every knowledge screen and URL; the new screens and routes are declared in the Partner permission matrix and the Partner audit stays green
-**Plans:** 10/10 plans executed (5 waves; every Pest run happens after the merge into the HEAD branch, one at a time against the shared `kokpit_test` database; after the wave 1 merge run `ddev composer install` first)
+**Plans:** 10/13 plans executed (5 waves, then 2 gap closure waves: 18-11 to 18-13 close 18-VERIFICATION.md gaps 1 and 2 and review findings IN-01, WR-02 and IN-04; every Pest run happens after the merge into the HEAD branch, one at a time against the shared `kokpit_test` database; after the wave 1 merge run `ddev composer install` first)
 
 Plans:
 **Wave 1**
@@ -101,6 +101,13 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [x] 18-10-PLAN.md — Edit screen with stale-save notice, edit entry points, knowledge seam Arch test, CONTRIBUTING hand-over (wave 5)
+
+**Gap closure wave 1** *(from 18-VERIFICATION.md, gaps 1 and 2, with review finding IN-04)*
+- [ ] 18-11-PLAN.md — Secret scanner: prefix-tolerant and escaped private key rules, Default_Ignorable strip and a rendered-equivalent view per line, Ambiguous findings for long random runs and quoted passwords, proved through `SaveArticle` (gap 1 CR-01, gap 2 WR-01, IN-01)
+- [ ] 18-12-PLAN.md — Save refusals as notices: a database failure and a concurrent archive keep the typed text, a NUL byte is refused instead of cut off (IN-04)
+
+**Gap closure wave 2** *(blocked on gap closure wave 1)*
+- [ ] 18-13-PLAN.md — Create-screen proof of the closed guard gaps, task-list observer that survives SPA navigation, disposition for all nine review findings (WR-02)
 **UI hint**: yes
 
 ### Phase 19: Folders, Tags and Version History
