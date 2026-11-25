@@ -7,6 +7,7 @@ namespace Tests\Support;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Finance\Models\Transaction;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\AccessRules;
@@ -240,6 +241,7 @@ final class PanelInventory
             Transaction::class => Transaction::query()->where('counterparty', $canary)->firstOrFail(),
             Invoice::class => Invoice::query()->where('note', $canary)->whereNotNull('number')->firstOrFail(),
             CardPayment::class => CardPayment::query()->where('resolution_note', $canary)->firstOrFail(),
+            KnowledgeArticle::class => KnowledgeArticle::query()->where('title', $canary)->firstOrFail(),
             CanaryRecord::class => CanaryRecord::query()->where('secret', $canary)->withoutGlobalScopes()->firstOrFail(),
             Client::class => Client::query()->whereKey(Project::query()->where('name', $canary)->firstOrFail()->client_id)->firstOrFail(),
             default => throw new LogicException("PanelInventory::canaryRecord() does not know the model {$model}; teach it how the fixture finds the canary row of that model."),

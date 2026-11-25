@@ -21,6 +21,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationGroup;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -155,6 +156,14 @@ class AdminPanelProvider extends PanelProvider
             )
             ->colors([
                 'primary' => Color::Amber,
+            ])
+            // The order of the menu groups: the entries without a group come first, then Znalosti (the knowledge
+            // articles), Signal and Správa. A group that is not listed here would sort behind all of them. The labels
+            // are closures so the language is read when the menu renders, not when the panel boots.
+            ->navigationGroups([
+                NavigationGroup::make(static fn (): string => __('knowledge.navigation_group')),
+                NavigationGroup::make(static fn (): string => __('kokpit.signal.navigation_group')),
+                NavigationGroup::make(static fn (): string => __('kokpit.system.navigation_group')),
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverResources(in: app_path('Filament/Partner/Resources'), for: 'App\Filament\Partner\Resources')
