@@ -165,7 +165,7 @@ describe('articles and versions', function (): void {
         $article = knowledgeTablesArticle();
         knowledgeTablesVersion($article, $this->authorId);
 
-        RawSql::expectSqlState('23503', fn () => DB::table('knowledge_articles')->where('id', $article)->delete());
+        RawSql::expectSqlState('23001', fn () => DB::table('knowledge_articles')->where('id', $article)->delete());
         RawSql::expectAllowed(fn () => DB::table('knowledge_articles')->where('id', $article)->update(['deleted_at' => now()]));
 
         expect(DB::table('knowledge_articles')->where('id', $article)->exists())->toBeTrue();
@@ -315,8 +315,8 @@ describe('folders', function (): void {
         $filed = knowledgeTablesFolder('Filed');
         knowledgeTablesArticle(['folder_id' => $filed]);
 
-        RawSql::expectSqlState('23503', fn () => DB::table('knowledge_folders')->where('id', $parent)->delete());
-        RawSql::expectSqlState('23503', fn () => DB::table('knowledge_folders')->where('id', $filed)->delete());
+        RawSql::expectSqlState('23001', fn () => DB::table('knowledge_folders')->where('id', $parent)->delete());
+        RawSql::expectSqlState('23001', fn () => DB::table('knowledge_folders')->where('id', $filed)->delete());
     });
 
     it('files only a general article, and only in an existing folder', function (): void {

@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Schema;
  * Rules enforced here, for every writer (Actions, console, raw SQL):
  * - A version row is immutable. The row trigger `knowledge_article_versions_frozen` raises KP001 on every UPDATE and
  *   DELETE, and the truncate guard refuses TRUNCATE. The Phase 19 redaction replaces the function with a variant that
- *   admits a transaction-local setting (the `kokpit.cash_receipt_unlock` pattern); nothing of that is built now.
+ *   admits a transaction-local setting; nothing of that is built now.
  * - `(article_id, version_no)` is unique, so a duplicate number is refused by the database even if two writers race.
  * - The same title and body limits as the article row (200 and 100 000 characters), so a stored snapshot can always be
  *   rendered.
