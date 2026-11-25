@@ -12,6 +12,7 @@ use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
 use League\CommonMark\Extension\CommonMark\Node\Block\FencedCode;
 use League\CommonMark\Extension\CommonMark\Node\Block\IndentedCode;
 use League\CommonMark\Extension\GithubFlavoredMarkdownExtension;
+use League\CommonMark\Extension\TaskList\TaskListItemMarker;
 use League\CommonMark\MarkdownConverter;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizer;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig;
@@ -60,6 +61,7 @@ final class KnowledgeMarkdown
         $codeBlocks = new CodeBlockRenderer(new Highlighter(new CssTheme), $translate);
         $environment->addRenderer(FencedCode::class, $codeBlocks, 10);
         $environment->addRenderer(IndentedCode::class, $codeBlocks, 10);
+        $environment->addRenderer(TaskListItemMarker::class, new TaskListMarkerRenderer($translate), 10);
 
         $this->converter = new MarkdownConverter($environment);
         $this->sanitizer = new HtmlSanitizer($this->sanitizerConfig());

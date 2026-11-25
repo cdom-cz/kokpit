@@ -132,3 +132,88 @@ it('renders the same body to the same string twice', function (): void {
     expect(knowledgeMarkdownHtml($markdown))->toBe(knowledgeMarkdownHtml($markdown))
         ->and(knowledgeMarkdownHtml($markdown))->toContain('<h1>Example heading</h1>')->toContain('<strong>bold</strong>');
 });
+
+it('renders a GFM table with header and body cells', function (): void {
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtml("| Example head | Other head |\n| --- | --- |\n| Example cell | Other cell |\n"));
+
+    expect($dom->querySelectorAll('table'))->toHaveCount(1)
+        ->and($dom->querySelectorAll('th'))->toHaveCount(2)
+        ->and($dom->querySelectorAll('td'))->toHaveCount(2)
+        ->and($dom->querySelector('td')?->textContent)->toBe('Example cell');
+});
+
+it('renders a task item as a disabled aria-hidden checkbox followed by a hidden done or open prefix', function (): void {
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtml("- [x] Example done\n- [ ] Example open\n"));
+    $boxes = $dom->querySelectorAll('input[type="checkbox"]');
+
+    expect($boxes)->toHaveCount(2);
+
+    $done = $boxes->item(0);
+    $open = $boxes->item(1);
+
+    expect($done->hasAttribute('checked'))->toBeTrue()
+        ->and($open->hasAttribute('checked'))->toBeFalse();
+
+    foreach ([[$done, 'task.done', 'Example done'], [$open, 'task.open', 'Example open']] as [$box, $prefix, $text]) {
+        $label = $box->nextElementSibling;
+
+        expect($box->hasAttribute('disabled'))->toBeTrue()
+            ->and($box->getAttribute('aria-hidden'))->toBe('true')
+            ->and($label?->getAttribute('class'))->toBe('kokpit-sr-only')
+            ->and(trim((string) $label?->textContent))->toBe($prefix)
+            ->and(preg_replace('/\s+/', ' ', trim((string) $box->parentNode?->textContent)))->toBe($prefix.' '.$text);
+    }
+});
+
+it('renders strikethrough and autolinks of https urls', function (): void {
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtml('~~Example gone~~ and https://example.com/auto here'));
+
+    expect($dom->querySelector('del')?->textContent)->toBe('Example gone')
+        ->and($dom->querySelector('a')?->getAttribute('href'))->toBe('https://example.com/auto');
+});
+
+it('does not truncate a long paragraph at the default sanitiser limit', function (): void {
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtml(KnowledgeHostileCorpus::longParagraph(30000)));
+
+    expect(mb_strlen($dom->body->textContent))->toBeGreaterThanOrEqual(30000);
+});
+
+it('renders an adversarial flood without error within the memory and time budget', function (string $method): void {
+    $markdown = KnowledgeHostileCorpus::{$method}(100000);
+    $renderer = knowledgeMarkdownRenderer();
+
+    $before = memory_get_usage();
+    memory_reset_peak_usage();
+    $started = microtime(true);
+    $html = (string) $renderer->render($markdown);
+    $seconds = microtime(true) - $started;
+    $extra = memory_get_peak_usage() - $before;
+
+    expect($html)->not->toBe('')
+        ->and($extra)->toBeLessThanOrEqual(256 * 1024 * 1024)
+        ->and($seconds)->toBeLessThan(5.0);
+})->with(['bracketFlood', 'emphasisFlood', 'backtickFlood']);
+
+it('renders a body above the size cap as escaped plain text without markdown processing', function (): void {
+    $body = '**Example** '.str_repeat('a', KnowledgeMarkdown::MAX_INPUT_LENGTH - 11).' <b>x</b>';
+
+    expect(mb_strlen($body))->toBeGreaterThan(KnowledgeMarkdown::MAX_INPUT_LENGTH);
+
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtml($body));
+    $plain = $dom->querySelector('p.kokpit-prose__plain');
+
+    expect($plain)->not->toBeNull()
+        ->and($plain->textContent)->toBe($body)
+        ->and($dom->querySelectorAll('strong, b'))->toHaveCount(0);
+});
+
+it('renders a body of MAX_INPUT_LENGTH + 1 characters as plain text and of exactly the cap as markdown', function (): void {
+    $over = '**Example** '.str_repeat('a', KnowledgeMarkdown::MAX_INPUT_LENGTH + 1 - 12);
+    $exact = '**Example** '.str_repeat('a', KnowledgeMarkdown::MAX_INPUT_LENGTH - 12);
+
+    expect(mb_strlen($over))->toBe(KnowledgeMarkdown::MAX_INPUT_LENGTH + 1)
+        ->and(mb_strlen($exact))->toBe(KnowledgeMarkdown::MAX_INPUT_LENGTH)
+        ->and(knowledgeMarkdownDom(knowledgeMarkdownHtml($over))->querySelectorAll('strong'))->toHaveCount(0)
+        ->and(knowledgeMarkdownHtml($over))->toContain('**Example**')
+        ->and(knowledgeMarkdownDom(knowledgeMarkdownHtml($exact))->querySelectorAll('strong'))->toHaveCount(1);
+});
