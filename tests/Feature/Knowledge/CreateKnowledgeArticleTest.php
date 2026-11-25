@@ -365,7 +365,7 @@ it('warns about unsaved changes on the create page only, not panel-wide', functi
  */
 function createArticleCalloutHtml(string $html): string
 {
-    preg_match_all('#data-kokpit-guard.*?</ul>#s', $html, $matches);
+    preg_match_all('#<[^>]*data-kokpit-guard.*?</ul>#s', $html, $matches);
 
     return implode("\n", $matches[0]);
 }
@@ -479,10 +479,15 @@ it('shows both callouts for a mixed body, danger first, with no override', funct
     $page = Livewire::test(CreateKnowledgeArticle::class)
         ->fillForm(['title' => 'Example mixed article', 'body' => $body])
         ->call('create')
-        ->assertSeeInOrder(['Text obsahuje tajný údaj a nelze ho uložit', 'Token GitHub — řádek 2', 'Text může obsahovat tajný údaj', 'Možné heslo (password=) — řádek 4'])
         ->assertDontSee('Uložit článek i přesto');
 
-    expect($page->instance()->canSaveAnyway())->toBeFalse();
+    $text = preg_replace('/\s+/', ' ', strip_tags(createArticleCalloutHtml($page->html()))) ?? '';
+    $needles = ['Text obsahuje tajný údaj a nelze ho uložit', 'Token GitHub — řádek 2', 'Text může obsahovat tajný údaj', 'Možné heslo (password=) — řádek 4'];
+    $positions = array_map(static fn (string $needle): int|false => mb_strpos($text, $needle), $needles);
+
+    expect($positions)->each->not->toBeFalse()
+        ->and($positions)->toBe(collect($positions)->sort()->values()->all())
+        ->and($page->instance()->canSaveAnyway())->toBeFalse();
 
     $page->call('saveAnyway');
 

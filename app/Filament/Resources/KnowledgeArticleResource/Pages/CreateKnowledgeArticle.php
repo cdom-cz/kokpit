@@ -92,7 +92,7 @@ final class CreateKnowledgeArticle extends CreateRecord implements SecretGuardFo
         return $result->article;
     }
 
-    protected function getCreatedNotification(): ?Notification
+    protected function getCreatedNotification(): Notification
     {
         $key = $this->saveResult?->markedSensitive === true ? 'saved_sensitive' : 'saved';
 
