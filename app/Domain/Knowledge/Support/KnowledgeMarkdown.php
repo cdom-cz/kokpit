@@ -56,6 +56,7 @@ final class KnowledgeMarkdown
         ]);
         $environment->addExtension(new CommonMarkCoreExtension);
         $environment->addExtension(new GithubFlavoredMarkdownExtension);
+        $environment->addExtension(new CalloutExtension($translate));
         $environment->addEventListener(DocumentParsedEvent::class, new LinkAndImagePolicy);
 
         $codeBlocks = new CodeBlockRenderer(new Highlighter(new CssTheme), $translate);
