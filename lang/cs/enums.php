@@ -318,4 +318,11 @@ return [
         'resolved' => 'Vyřešeno',
     ],
 
+    'article_kind' => [
+        'general' => 'Obecný článek',
+        'incident' => 'Incident',
+        'incident_page' => 'Podstránka incidentu',
+        'retrospective' => 'Retrospektiva',
+    ],
+
 ];

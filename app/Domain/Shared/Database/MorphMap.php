@@ -26,6 +26,8 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Models\PaymentConfirmation;
+use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Projects\Models\Project;
@@ -95,6 +97,8 @@ final class MorphMap
         'document_archive' => DocumentArchive::class,
         'exchange_rate' => ExchangeRate::class,
         'report_export' => ReportExport::class,
+        'knowledge_article' => KnowledgeArticle::class,
+        'knowledge_article_version' => KnowledgeArticleVersion::class,
         'signal_day_override' => SignalDayOverride::class,
         'signal_deep_work_day' => SignalDeepWorkDay::class,
         'signal_recurring_task' => SignalRecurringTask::class,
