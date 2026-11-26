@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Actions\CreateFolder;
+use App\Domain\Knowledge\Actions\DeleteFolder;
 use App\Domain\Knowledge\Actions\FolderName;
 use App\Domain\Knowledge\Actions\MoveFolder;
 use App\Domain\Knowledge\Actions\RenameFolder;
 use App\Domain\Knowledge\Exceptions\FolderMoveRefused;
+use App\Domain\Knowledge\Exceptions\FolderNotEmpty;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
+use App\Domain\Knowledge\Queries\FolderTree;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -107,6 +110,7 @@ beforeEach(function (): void {
     $this->create = app(CreateFolder::class);
     $this->rename = app(RenameFolder::class);
     $this->move = app(MoveFolder::class);
+    $this->delete = app(DeleteFolder::class);
 });
 
 it('creates a root folder and a subfolder, trimming the typed name', function (): void {
@@ -392,6 +396,136 @@ it('refuses a Partner, a user without a role and a fresh user when they rename o
     expect(folderActionsRow($folder->id)->name)->toBe('Example ops')
         ->and(folderActionsRow($folder->id)->parent_id)->toBeNull()
         ->and(folderActionsActivityCount())->toBe($activity);
+});
+
+it('deletes an empty folder', function (): void {
+    $root = KnowledgeFixtures::folder('Example ops');
+    $leaf = KnowledgeFixtures::folder('Example servers', $root);
+
+    $this->delete->handle($this->admin, $leaf->id);
+
+    expect(folderActionsSystem(static fn (): bool => KnowledgeFolder::query()->whereKey($leaf->id)->exists()))->toBeFalse()
+        ->and(FolderTree::load()->has($leaf->id))->toBeFalse()
+        ->and(FolderTree::load()->has($root->id))->toBeTrue();
+
+    // The parent is empty now, and a root folder is deleted like any other.
+    $this->delete->handle($this->admin, $root->id);
+
+    expect(folderActionsCount())->toBe(0);
+});
+
+it('refuses to delete a folder with a subfolder and reports the number of subfolders', function (): void {
+    $root = KnowledgeFixtures::folder('Example ops');
+    KnowledgeFixtures::folder('Example servers', $root);
+
+    try {
+        $this->delete->handle($this->admin, $root->id);
+        $this->fail('A folder with a subfolder was deleted.');
+    } catch (FolderNotEmpty $e) {
+        expect($e->subfolderCount)->toBe(1)
+            ->and($e->articleCount)->toBe(0);
+    }
+
+    expect(folderActionsCount())->toBe(2);
+});
+
+it('counts archived articles of a folder, so two active and one archived article are three', function (): void {
+    $folder = KnowledgeFixtures::folder('Example ops');
+    KnowledgeFixtures::article(['folder_id' => $folder->id, 'title' => 'Example one']);
+    KnowledgeFixtures::article(['folder_id' => $folder->id, 'title' => 'Example two']);
+    KnowledgeFixtures::archived(['folder_id' => $folder->id, 'title' => 'Example archived']);
+
+    try {
+        $this->delete->handle($this->admin, $folder->id);
+        $this->fail('A folder with articles was deleted.');
+    } catch (FolderNotEmpty $e) {
+        expect($e->articleCount)->toBe(3)
+            ->and($e->subfolderCount)->toBe(0);
+    }
+
+    expect(folderActionsCount())->toBe(1);
+});
+
+it('refuses a folder that holds only an archived article', function (): void {
+    $folder = KnowledgeFixtures::folder('Example ops');
+    KnowledgeFixtures::archived(['folder_id' => $folder->id, 'title' => 'Example archived']);
+
+    expect(fn () => $this->delete->handle($this->admin, $folder->id))->toThrow(FolderNotEmpty::class)
+        ->and(folderActionsCount())->toBe(1);
+});
+
+it('counts the contents before it tries to delete, so a refused delete sends no DELETE statement', function (): void {
+    $folder = KnowledgeFixtures::folder('Example ops');
+    KnowledgeFixtures::article(['folder_id' => $folder->id]);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    try {
+        $this->delete->handle($this->admin, $folder->id);
+    } catch (FolderNotEmpty) {
+        // Expected.
+    }
+
+    $queries = array_map(static fn (array $query): string => strtolower((string) $query['query']), DB::getQueryLog());
+    DB::disableQueryLog();
+
+    expect(array_filter($queries, static fn (string $query): bool => str_starts_with($query, 'delete')))->toBe([]);
+});
+
+it('maps a foreign key violation of a raw delete to the refusal with the recounted contents and leaves other errors alone', function (): void {
+    $withArticles = KnowledgeFixtures::folder('Example ops');
+    KnowledgeFixtures::article(['folder_id' => $withArticles->id]);
+    KnowledgeFixtures::archived(['folder_id' => $withArticles->id]);
+    $withChild = KnowledgeFixtures::folder('Example parent');
+    KnowledgeFixtures::folder('Example child', $withChild);
+
+    $rawDelete = static fn (string $id): QueryException => folderActionsProvoke(static fn (): int => DB::delete('delete from knowledge_folders where id = ?', [$id]));
+
+    $articleRefusal = DeleteFolder::refusalFor($rawDelete($withArticles->id), $withArticles->id);
+    $childRefusal = DeleteFolder::refusalFor($rawDelete($withChild->id), $withChild->id);
+    $duplicate = folderActionsProvoke(static fn (): bool => DB::insert(
+        'insert into knowledge_folders (id, parent_id, name, created_at, updated_at) values (?, null, ?, now(), now())',
+        [(string) Str::uuid7(), 'EXAMPLE OPS'],
+    ));
+
+    expect($articleRefusal?->articleCount)->toBe(2)
+        ->and($articleRefusal?->subfolderCount)->toBe(0)
+        ->and($childRefusal?->articleCount)->toBe(0)
+        ->and($childRefusal?->subfolderCount)->toBe(1)
+        ->and(DeleteFolder::refusalFor($duplicate, $withArticles->id))->toBeNull();
+});
+
+it('answers an unknown or malformed folder with not found', function (): void {
+    foreach ([(string) Str::uuid(), 'not-a-uuid'] as $id) {
+        expect(fn () => $this->delete->handle($this->admin, $id))->toThrow(ModelNotFoundException::class);
+    }
+});
+
+it('refuses a Partner, a user without a role and a fresh user when they delete a folder directly', function (): void {
+    $folder = KnowledgeFixtures::folder('Example ops');
+    $actors = [
+        'partner' => Canary::partnerFor(Canary::twoClients()[0]),
+        'roleless' => Canary::userWithoutRole(null),
+        'fresh' => new User,
+    ];
+    $activity = folderActionsActivityCount();
+
+    foreach ($actors as $actor) {
+        expect(fn () => $this->delete->handle($actor, $folder->id))->toThrow(AuthorizationException::class);
+    }
+
+    expect(folderActionsCount())->toBe(1)
+        ->and(folderActionsActivityCount())->toBe($activity);
+});
+
+it('writes no activity row when a folder is deleted', function (): void {
+    $folder = KnowledgeFixtures::folder('Example ops');
+    $before = folderActionsActivityCount();
+
+    $this->delete->handle($this->admin, $folder->id);
+
+    expect(folderActionsActivityCount())->toBe($before);
 });
 
 it('writes no activity row when a folder is renamed or moved', function (): void {
