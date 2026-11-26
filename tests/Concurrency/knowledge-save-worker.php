@@ -80,8 +80,9 @@ $article = KnowledgeArticle::query()->findOrFail($articleId);
 $title = $article->title;
 $action = $app->make(SaveArticle::class);
 
-// The version this worker saves from in `once` mode is read before the barrier.
+// The version and the redaction number this worker saves from in `once` mode are read before the barrier.
 $version = $article->version_no;
+$redactionNo = $article->redaction_no;
 
 // The barrier timestamp is shared through the environment; the argument is the fallback.
 $barrierEnv = getenv('KOKPIT_BARRIER_AT');
@@ -105,7 +106,7 @@ $errorOf = static function (Throwable $e) use (&$errors): void {
 
 if ($mode === 'once') {
     try {
-        $action->update($admin, $article, ArticleInput::from($title, "Example body of worker {$label}", false), $version);
+        $action->update($admin, $article, ArticleInput::from($title, "Example body of worker {$label}", false), $version, $redactionNo);
 
         $saved++;
     } catch (StaleArticle) {
@@ -118,9 +119,11 @@ if ($mode === 'once') {
         // A save stays refused only while others win; it is retried from the newly read version.
         for ($attempt = 1; $attempt <= 500; $attempt++) {
             try {
-                $current = (int) KnowledgeArticle::query()->whereKey($articleId)->value('version_no');
+                $currentRow = KnowledgeArticle::query()->whereKey($articleId)->first(['version_no', 'redaction_no']);
+                $current = (int) $currentRow?->version_no;
+                $currentRedactionNo = (int) $currentRow?->redaction_no;
 
-                $action->update($admin, $article, ArticleInput::from($title, "Example body of worker {$label} save {$i}", false), $current);
+                $action->update($admin, $article, ArticleInput::from($title, "Example body of worker {$label} save {$i}", false), $current, $currentRedactionNo);
 
                 $saved++;
 
