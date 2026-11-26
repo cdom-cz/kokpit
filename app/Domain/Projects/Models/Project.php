@@ -8,6 +8,7 @@ use App\Domain\Audit\LoggedAttributes;
 use App\Domain\Audit\LogsAllowlistedActivity;
 use App\Domain\Clients\Models\Client;
 use App\Domain\Documents\Models\Document;
+use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
 use App\Domain\Shared\Auth\IsolatesPartners;
@@ -183,6 +184,17 @@ final class Project extends KokpitModel implements PartnerIsolated
     public function billing(): HasOne
     {
         return $this->hasOne(ProjectBilling::class);
+    }
+
+    /**
+     * The knowledge articles linked to the project, archived ones included through `withTrashed()`. Admin use only
+     * (the "Znalosti" tab of the project page).
+     *
+     * @return HasMany<KnowledgeArticle, $this>
+     */
+    public function knowledgeArticles(): HasMany
+    {
+        return $this->hasMany(KnowledgeArticle::class, 'project_id');
     }
 
     /**

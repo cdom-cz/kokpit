@@ -90,6 +90,7 @@ use App\Filament\Resources\ApiTokenResource;
 use App\Filament\Resources\CardPaymentResource;
 use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\ClientResource\RelationManagers\ClientInvoicesRelationManager;
+use App\Filament\Resources\ClientResource\RelationManagers\ClientKnowledgeRelationManager;
 use App\Filament\Resources\ClientResource\RelationManagers\ClientProjectsRelationManager;
 use App\Filament\Resources\ClientResource\RelationManagers\ContactsRelationManager;
 use App\Filament\Resources\ClientResource\RelationManagers\InvitationsRelationManager;
@@ -108,6 +109,7 @@ use App\Filament\Resources\InvoiceResource\RelationManagers\InvoicePaymentsRelat
 use App\Filament\Resources\KnowledgeArticleResource;
 use App\Filament\Resources\ProjectResource;
 use App\Filament\Resources\ProjectResource\Pages\ProjectBoard;
+use App\Filament\Resources\ProjectResource\RelationManagers\ProjectKnowledgeRelationManager;
 use App\Filament\Resources\ProjectResource\RelationManagers\ProjectTasksTimeRelationManager;
 use App\Filament\Resources\ProjectResource\RelationManagers\ProjectTimeEntriesRelationManager;
 use App\Filament\Resources\ProjectResource\Widgets\ProjectTimeStats;
@@ -257,6 +259,7 @@ final class PartnerMatrix
             TransactionDocumentsRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Receipts of a transaction.'],
             TransactionHistoryRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Change history of a transaction.'],
             ClientInvoicesRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Documents and amounts owed by a client.'],
+            ClientKnowledgeRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Knowledge articles linked to a client.'],
             ClientProjectsRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Unbilled time and billing types of a client.'],
             ContactsRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Personal data of the contacts of a client.'],
             InvitationsRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Invitations that create Partner accounts.'],
@@ -264,6 +267,7 @@ final class PartnerMatrix
             InvoiceEmailsRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Send log with recipients and bodies.'],
             InvoiceEntriesRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Time linked to a document, with rates and amounts.'],
             InvoicePaymentsRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Payments of a document.'],
+            ProjectKnowledgeRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Knowledge articles linked to a project.'],
             ProjectTasksTimeRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Worked time, estimates and billing state per task.'],
             ProjectTimeEntriesRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Measured time of a project.'],
             SubtasksRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Subtasks with the internal task fields.'],

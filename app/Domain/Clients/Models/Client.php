@@ -11,6 +11,7 @@ use App\Domain\Clients\Enums\InvoiceLanguage;
 use App\Domain\Documents\Models\Document;
 use App\Domain\Identity\Models\User;
 use App\Domain\Invoicing\Models\Invoice;
+use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
@@ -151,6 +152,17 @@ final class Client extends KokpitModel implements PartnerIsolated
     public function projects(): HasMany
     {
         return $this->hasMany(Project::class);
+    }
+
+    /**
+     * The knowledge articles linked to the client, archived ones included through `withTrashed()`. Admin use only
+     * (the "Znalosti" tab of the client page); an article of a project of the client carries the client too.
+     *
+     * @return HasMany<KnowledgeArticle, $this>
+     */
+    public function knowledgeArticles(): HasMany
+    {
+        return $this->hasMany(KnowledgeArticle::class, 'client_id');
     }
 
     /**
