@@ -34,6 +34,7 @@ use App\Domain\Knowledge\Enums\ArticleKind;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
+use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
 use App\Domain\Payments\Enums\CardPaymentReason;
 use App\Domain\Payments\Enums\CardPaymentResolution;
 use App\Domain\Payments\Enums\CardPaymentType;
@@ -137,10 +138,21 @@ final class CanaryRegistry
     }
 
     /**
+     * The id of version 1 of the canary knowledge article (found by title, as the redaction fixture does).
+     */
+    private static function canaryVersionId(string $canary): string
+    {
+        return (string) app(PartnerContext::class)->runAsSystem(
+            static fn (): mixed => KnowledgeArticleVersion::query()->where('title', $canary)->firstOrFail()->getKey(),
+        );
+    }
+
+    /**
      * The strings the Admin must find in the visible rows of a model for one canary: the canary itself
      * for every model that stores text; the Monday of the canary for the models that have a date but
      * no text column (the two Signal day models and the exchange rate); the id of the planner owner for the
-     * settings (one row per user, no text column).
+     * settings (one row per user, no text column); the id of the canary version for the redaction record
+     * (it holds the length of the reason, never a text).
      *
      * @param  class-string  $model
      * @return list<string>
@@ -152,6 +164,7 @@ final class CanaryRegistry
             PaymentLink::class => [self::stripeLinkId($canary)],
             CardPayment::class => [self::stripeEventId($canary), $canary],
             SignalSetting::class => [(string) self::plannerOwner()->getKey()],
+            KnowledgeVersionRedaction::class => [self::canaryVersionId($canary)],
             default => [$canary],
         };
     }
@@ -597,6 +610,22 @@ final class CanaryRegistry
             KnowledgeFolder::class => static function (string $clientId, string $canary): void {
                 app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
                     (new KnowledgeFolder)->forceFill(['name' => $canary])->save();
+                });
+            },
+
+            // The redaction record of version 1 of the canary article (found by title; the version fixture runs
+            // before this one). The row holds no reason text (OD-1), so the canary cannot sit in a column: the
+            // needle is the id of that version (see needles()), found in any Admin or leaked row.
+            KnowledgeVersionRedaction::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    $version = KnowledgeArticleVersion::query()->where('title', $canary)->firstOrFail();
+
+                    (new KnowledgeVersionRedaction)->forceFill([
+                        'version_id' => $version->getKey(),
+                        'actor_id' => self::plannerOwner()->getKey(),
+                        'scope' => 'whole',
+                        'reason_length' => 12,
+                    ])->save();
                 });
             },
 

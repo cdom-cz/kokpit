@@ -29,6 +29,7 @@ use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
+use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Projects\Models\Project;
@@ -101,6 +102,7 @@ final class MorphMap
         'knowledge_folder' => KnowledgeFolder::class,
         'knowledge_article' => KnowledgeArticle::class,
         'knowledge_article_version' => KnowledgeArticleVersion::class,
+        'knowledge_version_redaction' => KnowledgeVersionRedaction::class,
         'signal_day_override' => SignalDayOverride::class,
         'signal_deep_work_day' => SignalDeepWorkDay::class,
         'signal_recurring_task' => SignalRecurringTask::class,

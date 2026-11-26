@@ -446,6 +446,8 @@ return [
             'secret_acknowledged' => 'Potvrzen možný tajný údaj',
             'article_archived' => 'Článek archivován',
             'article_restored' => 'Článek obnoven',
+            'version_restored' => 'Verze obnovena',
+            'version_redacted' => 'Verze redigována',
             'api_token' => [
                 'created' => 'API token vytvořen',
                 'revoked' => 'API token zneplatněn',
