@@ -8,6 +8,7 @@ use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Support\KnowledgeMarkdown;
 use App\Filament\Resources\KnowledgeArticleResource;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\ManagesVersionActions;
 use App\Providers\LocalisationServiceProvider;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
@@ -25,6 +26,7 @@ use Livewire\Attributes\Locked;
 final class ViewArticleVersion extends Page
 {
     use InteractsWithRecord;
+    use ManagesVersionActions;
 
     /**
      * The longest number accepted: no article has a billion versions, and a bound keeps the cast safe.
@@ -80,7 +82,19 @@ final class ViewArticleVersion extends Page
                     'to' => $this->versionNo,
                 ]))
                 ->hidden(fn (): bool => $this->versionNo <= 1),
+            $this->restoreVersionAction(fn (): int => $this->versionNo),
+            $this->redactVersionAction(fn (): int => $this->versionNo)->outlined(),
         ];
+    }
+
+    /**
+     * A redaction changed the stored row this page shows (and maybe the article): read both again, so the badge and
+     * the callout of a redacted version appear in the same response.
+     */
+    protected function afterVersionRedacted(): void
+    {
+        $this->versionRow = null;
+        $this->getRecord()->refresh();
     }
 
     /**

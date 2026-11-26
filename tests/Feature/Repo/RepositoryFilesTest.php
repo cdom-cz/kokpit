@@ -1718,6 +1718,80 @@ it('hands Phase 18 over: the knowledge bullet names only what exists', function 
     }
 });
 
+it('hands Phase 19 over: the knowledge organisation bullet names only what exists', function () {
+    $bullet = repoContributingBullet('Phase 19 (knowledge organisation and versions).');
+
+    expect($bullet)->not->toBe('');
+
+    // The names and the rules the text must keep naming. The setting is written without backticks.
+    foreach ([
+        '`SaveArticle::update()`', '`StaleArticle`', '`ArticleClassification`', '`RestoreVersion`', '`RedactVersion`',
+        '`KnowledgeVersionRedaction`', '`FolderTree`', '`MoveFolder`', '`DeleteFolder`', '`KnowledgeFolder::MAX_DEPTH`',
+        '`VersionDiff`', '`ListArticleVersions`', '`ViewArticleVersion`', '`CompareArticleVersions`', '`ManagesVersionActions`',
+        '`ClientKnowledgeRelationManager`', '`ProjectKnowledgeRelationManager`',
+        'kokpit.redacting_knowledge_version', 'second reviewed writer', 'redaction number', 'never cascades', 'append-only',
+        'never its text', 'Version pruning is not built', 'D-10', 'OD-1', 'OD-4', 'no Sentry package', 'deploy-time hand-over',
+        'SPA session behaviour on long edits',
+    ] as $name) {
+        expect($bullet)->toContain($name);
+    }
+
+    expect($bullet)->not->toContain('`kokpit.redacting_knowledge_version`');
+
+    // Every CamelCase name in backticks (a class, or Class::method()) resolves to a class, and the method exists.
+    preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet, $matches, PREG_SET_ORDER);
+
+    expect(count($matches))->toBeGreaterThan(15);
+
+    foreach ($matches as $match) {
+        if (str_ends_with($match[1], 'Test')) {
+            continue;
+        }
+
+        $classes = repoClassesNamed($match[1]);
+
+        expect($classes)->not->toBe([], "CONTRIBUTING.md names {$match[1]} but no such class exists");
+
+        if (isset($match[2])) {
+            $exists = array_filter($classes, static fn (string $class): bool => method_exists($class, $match[2]));
+
+            expect($exists)->not->toBe([], "CONTRIBUTING.md names {$match[1]}::{$match[2]}() but no such method exists");
+        }
+    }
+
+    // The enforcing tests the text names exist, in the file the text implies.
+    $tests = [
+        'KnowledgeSeamTest' => 'tests/Arch/KnowledgeSeamTest.php',
+        'SaveArticleTokensTest' => 'tests/Feature/Knowledge/SaveArticleTokensTest.php',
+        'SaveArticleClassificationTest' => 'tests/Feature/Knowledge/SaveArticleClassificationTest.php',
+        'RestoreVersionTest' => 'tests/Feature/Knowledge/RestoreVersionTest.php',
+        'RedactVersionTest' => 'tests/Feature/Knowledge/RedactVersionTest.php',
+        'KnowledgeRestoreRedactConcurrencyTest' => 'tests/Concurrency/KnowledgeRestoreRedactConcurrencyTest.php',
+        'FolderActionsTest' => 'tests/Feature/Knowledge/FolderActionsTest.php',
+        'KnowledgeTabsTest' => 'tests/Feature/Knowledge/KnowledgeTabsTest.php',
+        'KnowledgeTablesTest' => 'tests/Feature/Schema/KnowledgeTablesTest.php',
+        'VersionRestoreModalTest' => 'tests/Feature/Knowledge/VersionRestoreModalTest.php',
+        'VersionRedactModalTest' => 'tests/Feature/Knowledge/VersionRedactModalTest.php',
+    ];
+
+    foreach ($tests as $name => $path) {
+        expect($bullet)->toContain($name);
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$name} but {$path} does not exist");
+    }
+
+    // The log claim holds: each test that the text names for it captures the log.
+    foreach (['SaveArticleTokensTest', 'RedactVersionTest', 'VersionRedactModalTest'] as $name) {
+        expect(repoFile($tests[$name]))->toContain('MessageLogged');
+    }
+
+    // The statement "no Sentry package" stays true, or this case fails when one is added.
+    $composer = repoFile('composer.json');
+
+    foreach (['sentry/', 'bugsnag/', 'spatie/flare-client-php', 'spatie/laravel-ignition'] as $package) {
+        expect(str_contains($composer, $package))->toBeFalse("composer.json names {$package}: scrub title, body and body_md from it, then update the Phase 18 and Phase 19 bullets of CONTRIBUTING.md");
+    }
+});
+
 it('hands the e-mail layout over: the E-mail bullet names only what exists', function () {
     $bullet = repoContributingBullet('E-mail.');
 

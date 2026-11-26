@@ -7,8 +7,10 @@ namespace App\Filament\Resources\KnowledgeArticleResource\Pages;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Filament\Resources\KnowledgeArticleResource;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\ManagesVersionActions;
 use App\Providers\LocalisationServiceProvider;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Resources\Pages\ManageRelatedRecords;
 use Filament\Support\Enums\FontWeight;
 use Filament\Support\Icons\Heroicon;
@@ -24,13 +26,15 @@ use Illuminate\Database\Eloquent\Builder;
  *
  * The table never loads a body: the select names every column except `body_md`. A body is read only for the one
  * version shown or the two versions compared. There is no bulk action, no create, edit or delete action and no search.
- * The restore and redaction actions are added by later plans into an overflow group.
+ * The restore and redaction actions sit in the overflow group "Další akce" of each row (D-11, D-12).
  *
  * A Partner is refused with 403 before the article is looked up: the deny-all scope of the article would answer 404
  * first.
  */
 final class ListArticleVersions extends ManageRelatedRecords
 {
+    use ManagesVersionActions;
+
     protected static string $resource = KnowledgeArticleResource::class;
 
     protected static string $relationship = 'versions';
@@ -141,6 +145,7 @@ final class ListArticleVersions extends ManageRelatedRecords
                 $this->iconAction('compare_previous', 'knowledge.versions.actions.compare_previous', Heroicon::OutlinedArrowsRightLeft)
                     ->url(fn (KnowledgeArticleVersion $record): string => $this->compareUrl($record->version_no - 1, $record->version_no))
                     ->hidden(static fn (KnowledgeArticleVersion $record): bool => $record->version_no <= 1),
+                $this->moreActions(),
             ])
             ->paginated([25])
             ->defaultPaginationPageOption(25);
@@ -158,6 +163,27 @@ final class ListArticleVersions extends ManageRelatedRecords
             ->label($label)
             ->tooltip($label)
             ->icon($icon)
+            ->iconButton()
+            ->color('gray')
+            ->extraAttributes(['aria-label' => $label]);
+    }
+
+    /**
+     * The overflow group of a row: restore (hidden on the current version and on an archived article) and redaction.
+     * The trigger is an icon, so its tooltip and its aria-label carry the same copy.
+     */
+    private function moreActions(): ActionGroup
+    {
+        $label = trans()->string('knowledge.versions.actions.more');
+        $versionNo = static fn (KnowledgeArticleVersion $record): int => $record->version_no;
+
+        return ActionGroup::make([
+            $this->restoreVersionAction($versionNo)->color('gray'),
+            $this->redactVersionAction($versionNo),
+        ])
+            ->label($label)
+            ->tooltip($label)
+            ->icon(Heroicon::OutlinedEllipsisVertical)
             ->iconButton()
             ->color('gray')
             ->extraAttributes(['aria-label' => $label]);
