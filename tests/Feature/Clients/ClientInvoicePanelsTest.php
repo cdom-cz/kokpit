@@ -25,6 +25,7 @@ use App\Filament\RelationManagers\ClientHistoryRelationManager;
 use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\ClientResource\Pages\ViewClient;
 use App\Filament\Resources\ClientResource\RelationManagers\ClientInvoicesRelationManager;
+use App\Filament\Resources\ClientResource\RelationManagers\ClientKnowledgeRelationManager;
 use App\Filament\Resources\ClientResource\RelationManagers\ClientProjectsRelationManager;
 use App\Filament\Resources\ClientResource\RelationManagers\ContactsRelationManager;
 use App\Filament\Resources\ClientResource\RelationManagers\InvitationsRelationManager;
@@ -247,6 +248,7 @@ describe('the relation tabs', function (): void {
             ClientProjectsRelationManager::class,
             ClientInvoicesRelationManager::class,
             ClientDocumentsRelationManager::class,
+            ClientKnowledgeRelationManager::class,
             ContactsRelationManager::class,
             InvitationsRelationManager::class,
             PartnerAccountsRelationManager::class,

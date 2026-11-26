@@ -15,6 +15,7 @@ use Filament\Facades\Filament;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tests\Support\Canary;
@@ -43,7 +44,7 @@ function versionComparePageArticle(): KnowledgeArticle
  *
  * @param  array<string, string>  $query
  */
-function versionComparePageTest(KnowledgeArticle $article, array $query = []): Livewire\Features\SupportTesting\Testable
+function versionComparePageTest(KnowledgeArticle $article, array $query = []): Testable
 {
     return Livewire::withQueryParams($query)->test(CompareArticleVersions::class, ['record' => $article->getKey()]);
 }
@@ -64,7 +65,7 @@ function versionComparePageUrl(KnowledgeArticle $article, array $query = []): st
  * Runs a forged Livewire update and expects the 404 of the page: either the exception reaches the test or the test
  * response carries the status.
  *
- * @param  Closure(): Livewire\Features\SupportTesting\Testable  $update
+ * @param  Closure(): Testable  $update
  */
 function versionComparePageExpectNotFound(Closure $update): void
 {
@@ -176,11 +177,15 @@ it('lists the versions newest first in both selects, with the live binding and t
 it('answers 404 for a number that is unknown, malformed or forged', function (): void {
     $article = versionComparePageArticle();
 
-    foreach ([['to' => '9'], ['from' => 'x'], ['from' => '0'], ['to' => '-1'], ['from' => '1x'], ['to' => ''], ['from' => '99999999999999999999']] as $query) {
+    foreach ([['to' => '9'], ['from' => 'x'], ['from' => '0'], ['to' => '-1'], ['from' => '1x'], ['from' => '99999999999999999999']] as $query) {
         $this->get(versionComparePageUrl($article, $query))->assertNotFound();
     }
 
     $this->get(versionComparePageUrl($article).'?from[]=1')->assertNotFound();
+
+    // An empty value reaches the page as null (Laravel's ConvertEmptyStringsToNull), so it is a missing number and
+    // takes its default (R-19-06-5), never a value that reaches a query.
+    $this->get(versionComparePageUrl($article, ['to' => '']))->assertOk();
     $this->get(versionComparePageUrl($article, ['from' => '1', 'to' => '3']))->assertOk();
 });
 

@@ -124,6 +124,10 @@ it('costs two queries however many folders there are and never reads an article 
     KnowledgeFixtures::folder('Example other');
     KnowledgeFixtures::article(['folder_id' => $chain[2]->id, 'body_md' => 'Example body text']);
 
+    // The first read of a request loads the roles of the acting user for the Partner scope; that lookup is not part of
+    // the tree, so it is paid before the log starts.
+    FolderTree::load();
+
     DB::flushQueryLog();
     DB::enableQueryLog();
 

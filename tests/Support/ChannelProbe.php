@@ -959,6 +959,14 @@ final class ChannelProbe
                 return CashReceiptPdfUrl::download($this->walkCashReceipt($side), $this->walkUser());
             }
 
+            // The version view of a knowledge article (Phase 19): a Partner is refused before any lookup, so the
+            // number only has to look like a version.
+            if ($parameter === 'version' && $route->getName() === 'filament.admin.resources.knowledge-articles.version') {
+                $parameters['version'] = '1';
+
+                continue;
+            }
+
             if ($parameter !== 'record') {
                 throw new LogicException("The route walk does not know the parameter [{$parameter}] of route [{$route->getName()}]; teach it how to fill it.");
             }

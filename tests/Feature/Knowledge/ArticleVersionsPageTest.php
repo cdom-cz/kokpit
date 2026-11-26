@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
@@ -17,6 +18,7 @@ use Filament\Facades\Filament;
 use Filament\Navigation\NavigationItem;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\KnowledgeFixtures;
@@ -33,14 +35,15 @@ use Tests\Support\KnowledgeHostileCorpus;
  * as system and without any reason text (only its length is stored).
  *
  * @param  array<string, mixed>  $attributes  column overrides of the article
+ * @param  User|null  $author  the author of every version (a fresh admin when omitted)
  */
-function articleVersionsPageArticle(array $attributes = []): KnowledgeArticle
+function articleVersionsPageArticle(array $attributes = [], ?User $author = null): KnowledgeArticle
 {
     $article = KnowledgeFixtures::articleWithVersions([
         ['title' => 'Example first title', 'body' => "# Example first heading\n\nExample first body"],
         ['title' => 'Example second title', 'body' => 'Example second body', 'restored_from' => 1],
         ['title' => 'Example third title', 'body' => 'Example third body'],
-    ], $attributes);
+    ], $attributes, $author);
 
     app(PartnerContext::class)->runAsSystem(static function () use ($article): void {
         $first = KnowledgeArticleVersion::query()->where('article_id', $article->getKey())->where('version_no', 1)->firstOrFail();
@@ -71,7 +74,7 @@ function articleVersionsPageRows(KnowledgeArticle $article): Collection
 /**
  * The versions page of an article as a Livewire test.
  */
-function articleVersionsPageTest(KnowledgeArticle $article): Livewire\Features\SupportTesting\Testable
+function articleVersionsPageTest(KnowledgeArticle $article): Testable
 {
     return Livewire::test(ListArticleVersions::class, ['record' => $article->getKey()]);
 }
@@ -99,7 +102,8 @@ beforeEach(function (): void {
 it('lists the versions newest first with the current, restored and redacted markers, the author and the Prague time', function (): void {
     $this->travelTo(CarbonImmutable::parse('2026-11-20 10:00:00', 'UTC'));
 
-    $article = articleVersionsPageArticle();
+    $author = Canary::admin();
+    $article = articleVersionsPageArticle([], $author);
     $rows = articleVersionsPageRows($article);
 
     articleVersionsPageTest($article)
@@ -110,7 +114,7 @@ it('lists the versions newest first with the current, restored and redacted mark
         ->assertTableColumnStateSet('markers', ['Obnoveno z verze 1'], $rows[1])
         ->assertTableColumnStateSet('markers', ['Redigováno'], $rows[0])
         ->assertSee('Verze 3')
-        ->assertSee(Canary::admin()->name)
+        ->assertSee($author->name)
         ->assertSee('20. 11. 2026 11:00');
 });
 

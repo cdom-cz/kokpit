@@ -12,7 +12,6 @@ use App\Filament\Resources\ProjectResource\Pages\ViewProject;
 use App\Filament\Resources\ProjectResource\RelationManagers\ProjectKnowledgeRelationManager;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
-use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\Canary;
 use Tests\Support\KnowledgeFixtures;
 
@@ -61,10 +60,9 @@ it('refuses a Partner who mounts either tab directly', function (): void {
 
     $this->actingAs(Canary::partnerFor($client->id));
 
-    expect(static fn () => Livewire::test(ClientKnowledgeRelationManager::class, ['ownerRecord' => $client, 'pageClass' => ViewClient::class]))
-        ->toThrow(HttpException::class)
-        ->and(static fn () => Livewire::test(ProjectKnowledgeRelationManager::class, ['ownerRecord' => $project, 'pageClass' => ViewProject::class]))
-        ->toThrow(HttpException::class);
+    // Livewire's test harness turns the 403 of the boot guard into the response status, as for every relation manager.
+    Livewire::test(ClientKnowledgeRelationManager::class, ['ownerRecord' => $client, 'pageClass' => ViewClient::class])->assertForbidden();
+    Livewire::test(ProjectKnowledgeRelationManager::class, ['ownerRecord' => $project, 'pageClass' => ViewProject::class])->assertForbidden();
 });
 
 it('answers 403 to a Partner on the client page and shows no canary title of an article of the own client', function (): void {

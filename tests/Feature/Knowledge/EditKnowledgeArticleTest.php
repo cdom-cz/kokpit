@@ -152,13 +152,16 @@ it('links the empty-body text of an active article to its edit screen and gives 
     $filled = KnowledgeFixtures::article(['title' => 'Example filled article', 'body_md' => 'Example text']);
     $archivedEmpty = KnowledgeFixtures::archived(['title' => 'Example archived empty article', 'body_md' => '']);
 
-    // The header action carries the same URL, so the empty-body link is the second one on the page.
+    // The header action and the sub-navigation (19-06) carry the same URL, so the empty-body link is the one edit link
+    // an empty article has on top of what a filled one shows.
     $emptyPage = Livewire::test(ViewKnowledgeArticle::class, ['record' => $empty->getRouteKey()])->assertSee('Článek zatím nemá žádný text.');
     $filledPage = Livewire::test(ViewKnowledgeArticle::class, ['record' => $filled->getRouteKey()]);
     $archivedPage = Livewire::test(ViewKnowledgeArticle::class, ['record' => $archivedEmpty->getRouteKey()])->assertSee('Článek zatím nemá žádný text.');
 
-    expect(substr_count($emptyPage->html(), 'href="'.editArticleUrl($empty).'"'))->toBe(2)
-        ->and(substr_count($filledPage->html(), 'href="'.editArticleUrl($filled).'"'))->toBe(1)
+    $filledLinks = substr_count($filledPage->html(), 'href="'.editArticleUrl($filled).'"');
+
+    expect($filledLinks)->toBeGreaterThan(0)
+        ->and(substr_count($emptyPage->html(), 'href="'.editArticleUrl($empty).'"'))->toBe($filledLinks + 1)
         ->and(substr_count($archivedPage->html(), 'href="'.editArticleUrl($archivedEmpty).'"'))->toBe(0);
 });
 
