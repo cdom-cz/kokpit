@@ -21,6 +21,7 @@ use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
+use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Projects\Models\Project;
@@ -135,6 +136,7 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         KnowledgeArticle::class,
         KnowledgeArticleVersion::class,
         KnowledgeFolder::class,
+        KnowledgeVersionRedaction::class,
         PaymentConfirmation::class,
         PaymentLink::class,
         CardPayment::class,

@@ -196,7 +196,7 @@ describe('articles and versions', function (): void {
 
         RawSql::expectSqlState('KP001', fn () => DB::table('knowledge_article_versions')->where('id', $version)->update(['title' => 'Changed']));
         RawSql::expectSqlState('KP001', fn () => DB::table('knowledge_article_versions')->where('id', $version)->delete());
-        RawSql::expectSqlState('KP001', fn () => DB::statement('TRUNCATE knowledge_article_versions'));
+        RawSql::expectSqlState('KP001', fn () => DB::statement('TRUNCATE knowledge_article_versions CASCADE'));
 
         expect(DB::table('knowledge_article_versions')->where('id', $version)->value('title'))->toBe('Example runbook');
     });
@@ -458,7 +458,7 @@ describe('redaction and restore marker', function (): void {
         });
         RawSql::expectSqlState('KP001', function (): void {
             knowledgeTablesRedactionSetting('on');
-            DB::statement('TRUNCATE knowledge_article_versions');
+            DB::statement('TRUNCATE knowledge_article_versions CASCADE');
         });
 
         expect(DB::table('knowledge_article_versions')->where('id', $version)->exists())->toBeTrue();
