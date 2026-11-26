@@ -23,6 +23,7 @@ use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
+use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Payments\Models\PaymentLink;
 use App\Domain\Projects\Models\Project;
@@ -514,6 +515,7 @@ final class PartnerMatrix
             KnowledgeArticle::class => 'Internal knowledge articles of the Admin; client sharing arrives in Phase 23.',
             KnowledgeArticleVersion::class => 'Immutable versions of the knowledge articles of the Admin.',
             KnowledgeFolder::class => 'The folder tree of the knowledge articles of the Admin.',
+            KnowledgeVersionRedaction::class => 'Redaction records of the knowledge versions of the Admin: version, actor, scope and the length of the reason, never its text.',
             SignalTask::class => 'Personal planner of the Admin.',
             SignalRecurringTask::class => 'Personal planner of the Admin.',
             SignalSetting::class => 'Personal planner of the Admin.',
