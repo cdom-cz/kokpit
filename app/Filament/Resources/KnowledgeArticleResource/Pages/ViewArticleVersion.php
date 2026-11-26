@@ -108,7 +108,7 @@ final class ViewArticleVersion extends Page
         return [
             'version' => $version,
             'title' => $version->title,
-            'authorName' => $version->author?->name ?? '',
+            'authorName' => $version->author->name ?? '',
             'createdAt' => $version->created_at?->setTimezone('Europe/Prague')->format(LocalisationServiceProvider::DATE_TIME_FORMAT) ?? '',
             'isCurrent' => $version->version_no === $article->version_no,
             'currentNo' => $article->version_no,

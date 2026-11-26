@@ -268,7 +268,8 @@ final class SaveArticle
         }
 
         $stored = $locked->tagsWithType(TagType::Knowledge->value)
-            ->map(static fn (Tag $tag): string => mb_strtolower((string) $tag->name))
+            ->pluck('name')
+            ->map(static fn (mixed $name): string => mb_strtolower((string) $name))
             ->unique()
             ->sort()
             ->values()
@@ -296,8 +297,8 @@ final class SaveArticle
     {
         $spelling = [];
 
-        foreach (Tag::getWithType(TagType::Knowledge->value) as $tag) {
-            $spelling[mb_strtolower((string) $tag->name)] ??= (string) $tag->name;
+        foreach (Tag::getWithType(TagType::Knowledge->value)->pluck('name') as $name) {
+            $spelling[mb_strtolower((string) $name)] ??= (string) $name;
         }
 
         $mapped = array_map(static fn (string $name): string => $spelling[mb_strtolower($name)] ?? $name, $names);

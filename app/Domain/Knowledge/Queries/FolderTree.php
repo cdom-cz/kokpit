@@ -33,7 +33,7 @@ final class FolderTree
     private array $nodes = [];
 
     /**
-     * @var array<string, int> the position of each folder in $nodes
+     * @var array<string, int> the position of each folder in
      */
     private array $positions = [];
 
@@ -223,7 +223,7 @@ final class FolderTree
             $folderPath = [...$path, $folder['name']];
 
             $this->positions[$folder['id']] = $position;
-            $this->nodes[] = [
+            $node = [
                 'id' => $folder['id'],
                 'parentId' => $folder['parentId'],
                 'name' => $folder['name'],
@@ -233,14 +233,16 @@ final class FolderTree
                 'count' => 0,
                 'hasChildren' => isset($children[$folder['id']]),
             ];
+            $this->nodes[] = $node;
 
             $below = $this->walk($children, $own, $folder['id'], $depth + 1, $folderPath);
 
             $folderCount = ($own[$folder['id']] ?? 0) + $below['count'];
             $folderHeight = 1 + $below['height'];
 
-            $this->nodes[$position]['count'] = $folderCount;
-            $this->nodes[$position]['height'] = $folderHeight;
+            $node['count'] = $folderCount;
+            $node['height'] = $folderHeight;
+            $this->nodes[$position] = $node;
 
             $count += $folderCount;
             $height = max($height, $folderHeight);

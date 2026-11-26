@@ -30,6 +30,7 @@ use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\RenderHook;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
+use Filament\Support\Exceptions\Cancel;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\SpatieTagsColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -459,8 +460,8 @@ final class ListKnowledgeArticles extends ListRecords
     {
         $options = [];
 
-        foreach (Tag::getWithType(TagType::Knowledge->value) as $tag) {
-            $options[(string) $tag->getKey()] = (string) $tag->name;
+        foreach (Tag::getWithType(TagType::Knowledge->value)->pluck('name', 'id') as $id => $name) {
+            $options[(string) $id] = (string) $name;
         }
 
         asort($options, SORT_NATURAL | SORT_FLAG_CASE);
@@ -540,7 +541,7 @@ final class ListKnowledgeArticles extends ListRecords
             ->title(__('knowledge.folders.notifications.missing'))
             ->send();
 
-        $action->cancel();
+        throw new Cancel;
     }
 
     /**

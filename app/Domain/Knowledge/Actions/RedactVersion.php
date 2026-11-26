@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use PDOException;
+use RuntimeException;
 
 /**
  * Removes a secret that reached a stored version, the one controlled exception to the immutable history (VER-05,
@@ -103,7 +104,12 @@ final class RedactVersion
                     ->where('version_no', $versionNo)
                     ->firstOrFail();
 
-                $parts = (array) preg_split('/(\r\n|\r|\n)/', $version->body_md, -1, PREG_SPLIT_DELIM_CAPTURE);
+                $parts = preg_split('/(\r\n|\r|\n)/', $version->body_md, -1, PREG_SPLIT_DELIM_CAPTURE);
+
+                if ($parts === false) {
+                    throw new RuntimeException('The version body could not be split into lines.');
+                }
+
                 $lineCount = intdiv(count($parts) + 1, 2);
 
                 if ($scope === RedactionScope::Whole) {

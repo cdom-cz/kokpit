@@ -113,7 +113,7 @@ trait ManagesVersionActions
     /**
      * "Obnovit tuto verzi": the diff of the current text against the chosen version, then a new version.
      *
-     * @param  Closure(): int  $versionNo  the chosen version number, from the table record or the page
+     * @param  Closure(KnowledgeArticleVersion): int  $versionNo  the chosen version number, from the table record or the page
      */
     protected function restoreVersionAction(Closure $versionNo): Action
     {
@@ -188,7 +188,7 @@ trait ManagesVersionActions
      * "Redigovat verzi": the irreversible rewrite of a stored version (any version, the current one and archived
      * articles included).
      *
-     * @param  Closure(): int  $versionNo  the chosen version number, from the table record or the page
+     * @param  Closure(KnowledgeArticleVersion): int  $versionNo  the chosen version number, from the table record or the page
      */
     protected function redactVersionAction(Closure $versionNo): Action
     {
@@ -422,7 +422,7 @@ trait ManagesVersionActions
         if ($fresh || $this->versionActionArticleCache === null) {
             $record = $this->getRecord();
 
-            $this->versionActionArticleCache = KnowledgeArticle::query()->withTrashed()->findOrFail($record->getKey());
+            $this->versionActionArticleCache = KnowledgeArticle::query()->withTrashed()->whereKey($record->getKey())->firstOrFail();
         }
 
         return $this->versionActionArticleCache;

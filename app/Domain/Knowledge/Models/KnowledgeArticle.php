@@ -69,7 +69,6 @@ use Spatie\Tags\HasTags;
 final class KnowledgeArticle extends KokpitModel implements PartnerIsolated
 {
     use DeniesPartners, LogsAllowlistedActivity, SoftDeletes;
-
     use HasTags {
         detachTags as private detachTagsFromTrait;
     }

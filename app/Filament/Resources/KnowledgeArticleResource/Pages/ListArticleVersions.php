@@ -16,7 +16,6 @@ use Filament\Support\Enums\FontWeight;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
-use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -69,13 +68,13 @@ final class ListArticleVersions extends ManageRelatedRecords
     public static function getNavigationItemActiveRoutePattern(): array
     {
         return [
-            static::getRouteName(),
+            self::getRouteName(),
             CompareArticleVersions::getRouteName(),
             ViewArticleVersion::getRouteName(),
         ];
     }
 
-    public function getTitle(): string|Htmlable
+    public function getTitle(): string
     {
         $record = $this->getRecord();
         assert($record instanceof KnowledgeArticle);

@@ -17,6 +17,7 @@ use Filament\Actions\ActionGroup;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Filament\Notifications\Livewire\Notifications;
+use Filament\Notifications\Notification;
 use Filament\Notifications\NotificationMailbox;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
@@ -126,7 +127,7 @@ function versionRestoreModalHtml(Testable $page): string
 /**
  * The notifications sent so far, oldest first (read once; the mailbox is flushed).
  *
- * @return list<\Filament\Notifications\Notification>
+ * @return list<Notification>
  */
 function versionRestoreModalNotifications(): array
 {

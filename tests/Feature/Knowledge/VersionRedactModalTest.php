@@ -14,6 +14,7 @@ use App\Filament\Resources\KnowledgeArticleResource\Pages\ViewArticleVersion;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Filament\Notifications\Livewire\Notifications;
+use Filament\Notifications\Notification;
 use Filament\Notifications\NotificationMailbox;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Event;
@@ -117,7 +118,7 @@ function versionRedactModalHtml(Testable $page): string
 /**
  * The notifications sent so far, oldest first (read once; the mailbox is flushed).
  *
- * @return list<\Filament\Notifications\Notification>
+ * @return list<Notification>
  */
 function versionRedactModalNotifications(): array
 {
@@ -136,7 +137,7 @@ function versionRedactModalNotifications(): array
 function versionRedactModalNotificationText(): string
 {
     return implode("\n", array_map(
-        static fn (\Filament\Notifications\Notification $notice): string => $notice->getTitle().' '.$notice->getBody(),
+        static fn (Notification $notice): string => $notice->getTitle().' '.$notice->getBody(),
         versionRedactModalNotifications(),
     ));
 }

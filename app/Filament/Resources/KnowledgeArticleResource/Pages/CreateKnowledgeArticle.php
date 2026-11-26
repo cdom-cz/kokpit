@@ -99,7 +99,7 @@ final class CreateKnowledgeArticle extends CreateRecord implements SecretGuardFo
         }
 
         if ($prefill !== []) {
-            $this->form->fill([...$this->data, ...$prefill]);
+            $this->form->fill([...($this->data ?? []), ...$prefill]);
         }
     }
 

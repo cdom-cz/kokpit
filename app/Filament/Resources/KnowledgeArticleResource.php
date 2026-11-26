@@ -526,11 +526,11 @@ final class KnowledgeArticleResource extends Resource
             'clientUrl' => $client === null ? null : ClientResource::getUrl('view', ['record' => $client]),
             'projectLabel' => $project === null ? null : $project->key.' · '.$project->name,
             'projectUrl' => $project === null ? null : ProjectResource::getUrl('view', ['record' => $project]),
-            'tags' => $record->tags
-                ->filter(static fn (Tag $tag): bool => $tag->type === TagType::Knowledge->value)
-                ->map(static fn (Tag $tag): string => (string) $tag->name)
-                ->values()
-                ->all(),
+            'tags' => array_values($record->tags
+                ->where('type', TagType::Knowledge->value)
+                ->pluck('name')
+                ->map(static fn (mixed $name): string => (string) $name)
+                ->all()),
         ];
     }
 
