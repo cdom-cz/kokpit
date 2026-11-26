@@ -144,10 +144,10 @@ final class RedactVersion
 
                 DB::select("select set_config('kokpit.redacting_knowledge_version', 'on', true)");
 
-                DB::table('knowledge_article_versions')->where('id', $version->getKey())->update(['body_md' => $new]);
+                KnowledgeArticleVersion::query()->whereKey($version->getKey())->toBase()->update(['body_md' => $new]);
 
                 if ($current) {
-                    DB::table('knowledge_articles')->where('id', $locked->getKey())->update([
+                    KnowledgeArticle::query()->whereKey($locked->getKey())->toBase()->update([
                         'body_md' => $new,
                         'redaction_no' => $locked->redaction_no + 1,
                     ]);
