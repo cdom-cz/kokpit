@@ -1,7 +1,8 @@
 ---
 phase: "20"
 slug: image-attachments
-status: draft
+status: approved
+reviewed_at: 2026-11-26
 shadcn_initialized: false
 preset: none
 created: "2026-11-26"
@@ -196,6 +197,10 @@ The reason is required, validated and discarded after the action: only the fact 
 
 ## Interaction Contract
 
+Visual focal points: on the create and edit screens the body editor is the anchor, with the insert button as its one new control. On the view screen the rendered article body stays the anchor and the Obrázky manager sits below it as secondary content.
+
+Color note: the amber chrome of the `warning` callout used for the secret notice is Filament semantic warning styling, not an accent use, so the reserved-accent list above stays at two elements.
+
 ### Inserting an image (D-01, D-02)
 
 - Three entry points, one outcome: the toolbar button opens the native file picker; a screenshot pasted from the clipboard and a file dropped on the editor go through the same upload.
@@ -243,7 +248,7 @@ The diff shows Markdown source, so a reference appears as the literal text `![al
 
 ## UI Considerations
 
-Applicable state considerations resolved: 9 covered, 3 backstop, 1 unresolved
+Applicable state considerations resolved: 9 covered, 3 backstop, 1 dismissed
 
 | Category | Element(s) | Status | Resolution / Reason |
 |----------|------------|--------|---------------------|
@@ -253,13 +258,13 @@ Applicable state considerations resolved: 9 covered, 3 backstop, 1 unresolved
 | error | Save with a foreign image reference | ✅ covered | The body field shows the documented refusal and the typed text stays. |
 | partial | Rendered image whose object or row is gone (deleted, foreign, unknown UUID) | ✅ covered | Renders as the alt text in the muted `kokpit-image-missing` span, or "Obrázek není k dispozici" for an empty alt; restore shows no error. |
 | partial | Version restored whose images were deleted | ✅ covered | Restore succeeds and the view shows the muted fallback for each deleted image (D-18). |
-| populated | Preview tab on an unsaved new article | ✅ covered | The preview must show images that are pending (uploaded by this Admin, not yet bound to any article) so the Admin sees what they inserted before the first save. This is an explicit exception to "images of the article being rendered" in D-13, limited to the preview of the current Admin. The planner must carry it into the renderer interface. |
+| populated | Preview tab on an unsaved new article | ✅ covered | The preview must show images that are pending (uploaded by this Admin, not yet bound to any article) so the Admin sees what they inserted before the first save. This is an exception to "images of the article being rendered" in D-13, limited to the preview of the current Admin; the owner accepted it and D-13 in CONTEXT.md carries the amendment. The planner must carry it into the renderer interface. |
 | overflow | Very wide or very tall screenshot | ✅ covered | `max-width: 100%` plus `height: auto` plus stored `width` and `height` attributes; a tall image scrolls with the page. |
 | zero-one-many | Several files dropped at once | ✅ covered | Sequential uploads, one reference line each, one notification per failure. |
 | long-text | Long file name as default alt text, long UUID in the diff | 🧪 backstop | Held-out visual test: a 120-character file name and a diff row with a reference must wrap and not widen the page. |
 | overflow | Relation manager with many images | 🧪 backstop | Held-out test with more than 10 rows: the Filament pagination appears and no thumbnail breaks the row height. |
 | populated | Transparent PNG on the dark theme | 🧪 backstop | Held-out visual check in dark mode that the 1px border keeps the edge visible (no background is added). |
-| partial | Keyboard-only upload | ⚠ unresolved | EasyMDE toolbar buttons are `tabindex="-1"` by Filament design, so the insert button is not reachable with Tab, as for the other toolbar buttons. Paste and drop are not keyboard actions either. The planner treats a keyboard path (for example a shortcut or a tabbable button) as an assumption to confirm with the owner; the contract does not require it. |
+| partial | Keyboard-only upload | dismissed | Owner decision: the only user is a single Admin working with a mouse, and EasyMDE toolbar buttons are `tabindex="-1"` by Filament design. Paste and drop remain the fallback. Revisit if keyboard-only users appear. |
 
 ---
 
@@ -295,12 +300,12 @@ No third-party block is declared, so the registry vetting gate has nothing to ru
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
-- [ ] Dimension 7 Inventory Provenance: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS (focal points declared)
+- [x] Dimension 3 Color: PASS (callout note added)
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
+- [x] Dimension 7 Inventory Provenance: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-11-26
