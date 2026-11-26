@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Knowledge\Actions\ArticleInput;
 use App\Domain\Knowledge\Actions\SaveArticle;
+use App\Domain\Knowledge\Actions\SaveOutcome;
 use App\Domain\Knowledge\Exceptions\StaleArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
@@ -21,6 +22,7 @@ use Illuminate\Support\Facades\Log;
 use Livewire\Livewire;
 use Tests\Support\Canary;
 use Tests\Support\KnowledgeFixtures;
+use Tests\Support\SecretFixtures;
 
 /*
  * The two stale tokens and the restore marker of SaveArticle::update() (D-13, D-11, VER-03): an editor opened before a
@@ -327,4 +329,99 @@ it('lets an edit screen opened after the redaction save normally', function (): 
 
     expect(saveArticleTokensRow($article->getKey())->version_no)->toBe(2)
         ->and(saveArticleTokensRow($article->getKey())->body_md)->toBe('Example typed text');
+});
+
+it('records a restore as a new version marked with its source and logs only the two numbers', function (): void {
+    $first = 'Example first title '.Canary::canary('restore_a');
+    $firstBody = 'Example first body '.Canary::canary('restore_b');
+    saveArticleTokensWatch($first, $firstBody);
+
+    $article = KnowledgeFixtures::articleWithVersions([
+        ['title' => $first, 'body' => $firstBody],
+        ['title' => 'Example second title', 'body' => 'Example second body'],
+        ['title' => 'Example third title', 'body' => 'Example third body'],
+    ]);
+
+    $result = $this->save->update($this->admin, $article, ArticleInput::from($first, $firstBody, false), 3, 0, restoredFromVersionNo: 1);
+
+    $versions = saveArticleTokensVersions($article->getKey());
+    $rows = array_values(array_filter(
+        saveArticleTokensActivity($article->getKey()),
+        static fn (Activity $activity): bool => $activity->event === 'version_restored',
+    ));
+
+    expect($result->article->version_no)->toBe(4)
+        ->and($versions)->toHaveCount(4)
+        ->and($versions[3]->restored_from_version_no)->toBe(1)
+        ->and($versions[3]->title)->toBe($first)
+        ->and($versions[3]->body_md)->toBe($firstBody)
+        ->and($versions[0]->restored_from_version_no)->toBeNull()
+        ->and($versions[1]->restored_from_version_no)->toBeNull()
+        ->and($versions[2]->restored_from_version_no)->toBeNull()
+        ->and($versions[2]->title)->toBe('Example third title')
+        ->and($rows)->toHaveCount(1)
+        ->and($rows[0]->causer_id)->toBe($this->admin->id)
+        ->and($rows[0]->properties->toArray())->toBe(['from_version_no' => 1, 'version_no' => 4])
+        ->and(saveArticleTokensActivityJson($article->getKey()))->not->toContain($firstBody);
+});
+
+it('writes neither a version nor a restore entry when the restored text equals the current text', function (): void {
+    $article = KnowledgeFixtures::articleWithVersions([
+        ['title' => 'Example title', 'body' => 'Example body'],
+        ['title' => 'Example title', 'body' => 'Example body'],
+    ]);
+
+    $result = $this->save->update($this->admin, $article, ArticleInput::from('Example title', 'Example body', false), 2, 0, restoredFromVersionNo: 1);
+
+    $restores = array_filter(
+        saveArticleTokensActivity($article->getKey()),
+        static fn (Activity $activity): bool => $activity->event === 'version_restored',
+    );
+
+    expect($result->outcome)->toBe(SaveOutcome::Unchanged)
+        ->and(saveArticleTokensVersions($article->getKey()))->toHaveCount(2)
+        ->and($restores)->toBe([]);
+});
+
+it('leaves the restore marker null for every other save', function (): void {
+    $article = KnowledgeFixtures::article(['title' => 'Example title', 'body_md' => 'Example body']);
+
+    $this->save->update($this->admin, $article, ArticleInput::from('Example title', 'Example new body', false), 1, 0);
+
+    $versions = saveArticleTokensVersions($article->getKey());
+    $restores = array_filter(
+        saveArticleTokensActivity($article->getKey()),
+        static fn (Activity $activity): bool => $activity->event === 'version_restored',
+    );
+
+    expect($versions)->toHaveCount(2)
+        ->and($versions[1]->restored_from_version_no)->toBeNull()
+        ->and($restores)->toBe([]);
+});
+
+it('writes the acknowledgment and the restore entry of an ambiguous restore without any content', function (): void {
+    $secret = SecretFixtures::passwordAssignment();
+    $body = SecretFixtures::bodyWith($secret, 2);
+    $title = Canary::canary('restore_ambiguous');
+    saveArticleTokensWatch($title, $body, $secret, ...SecretFixtures::needles($secret));
+
+    $article = KnowledgeFixtures::articleWithVersions([
+        ['title' => $title, 'body' => $body],
+        ['title' => 'Example clean title', 'body' => 'Example clean body'],
+    ]);
+
+    $result = $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 2, 0, acknowledge: true, restoredFromVersionNo: 1);
+
+    $events = array_map(static fn (Activity $activity): string => (string) $activity->event, saveArticleTokensActivity($article->getKey()));
+    $json = saveArticleTokensActivityJson($article->getKey());
+
+    expect($result->markedSensitive)->toBeTrue()
+        ->and($events)->toContain('secret_acknowledged')
+        ->and($events)->toContain('version_restored')
+        ->and($json)->not->toContain($title)
+        ->and($json)->not->toContain($secret);
+
+    foreach (SecretFixtures::needles($secret) as $needle) {
+        expect($json)->not->toContain($needle);
+    }
 });

@@ -53,6 +53,10 @@ use PDOException;
  * save changes none of them. A change of the classification alone writes no version and leaves the edit time as it
  * was (ClassificationChanged). A null classification keeps the stored one. Only knowledge tags are touched.
  *
+ * A restore (D-11, VER-03) goes through `update()` with `$restoredFromVersionNo`: the new version row records the
+ * version it copied, and one `version_restored` activity row holds the two version numbers only. Restoring the text
+ * the article already has writes neither a version nor that row.
+ *
  * The secret guard (SEC-01 to SEC-03): every content-changing save scans the normalised body, never the title (D-02).
  * A Blocking finding refuses the save with no way around it (D-01), an Ambiguous one refuses it unless this one call
  * passes `$acknowledge`, which marks the article sensitive and writes one `secret_acknowledged` activity row holding
@@ -140,7 +144,7 @@ final class SaveArticle
     ): SaveResult {
         Gate::forUser($actor)->authorize('update', $article);
 
-        $result = $this->inTransaction(function () use ($actor, $article, $input, $expectedVersion, $expectedRedactionNo, $acknowledge): SaveResult {
+        $result = $this->inTransaction(function () use ($actor, $article, $input, $expectedVersion, $expectedRedactionNo, $acknowledge, $restoredFromVersionNo): SaveResult {
             // The scoped query: an archived article is a ModelNotFoundException.
             $locked = KnowledgeArticle::query()->whereKey($article->getKey())->lockForUpdate()->firstOrFail();
 
@@ -204,8 +208,9 @@ final class SaveArticle
                 $this->syncKnowledgeTags($locked, $classification->tags);
             }
 
-            $this->writeVersion($locked, $actor);
+            $this->writeVersion($locked, $actor, $restoredFromVersionNo);
             $this->writeAcknowledgment($locked, $actor, $rules);
+            $this->writeRestoreMarker($locked, $actor, $restoredFromVersionNo);
 
             return new SaveResult(SaveOutcome::Updated, $locked, $rules !== []);
         });
@@ -369,9 +374,29 @@ final class SaveArticle
     }
 
     /**
-     * The immutable full snapshot of the article as it was just saved.
+     * The one history entry of a restore: the two version numbers, never any content (D-11, VER-03). A save that
+     * restores identical text writes no version, so it returns before reaching this method and writes no entry.
      */
-    private function writeVersion(KnowledgeArticle $article, User $author): void
+    private function writeRestoreMarker(KnowledgeArticle $article, User $actor, ?int $restoredFromVersionNo): void
+    {
+        if ($restoredFromVersionNo === null) {
+            return;
+        }
+
+        activity()
+            ->useLog($article->getMorphClass())
+            ->performedOn($article)
+            ->causedBy($actor)
+            ->event('version_restored')
+            ->withProperties(['from_version_no' => $restoredFromVersionNo, 'version_no' => $article->version_no])
+            ->log('version_restored');
+    }
+
+    /**
+     * The immutable full snapshot of the article as it was just saved. `$restoredFromVersionNo` is the number of the
+     * version a restore copied, and null for every other save.
+     */
+    private function writeVersion(KnowledgeArticle $article, User $author, ?int $restoredFromVersionNo = null): void
     {
         (new KnowledgeArticleVersion)->forceFill([
             'article_id' => $article->getKey(),
@@ -379,6 +404,7 @@ final class SaveArticle
             'title' => $article->title,
             'body_md' => $article->body_md,
             'author_id' => $author->getKey(),
+            'restored_from_version_no' => $restoredFromVersionNo,
         ])->save();
     }
 
