@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Knowledge\Actions;
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Enums\ArticleKind;
 use App\Domain\Knowledge\Exceptions\ArticleWriteFailed;
@@ -14,12 +15,17 @@ use App\Domain\Knowledge\Guard\SecretScanner;
 use App\Domain\Knowledge\Guard\Severity;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Knowledge\Support\MarkdownNormaliser;
+use App\Domain\Projects\Models\Project;
+use App\Domain\Shared\Models\Tag;
+use App\Domain\Shared\Tags\TagType;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use PDOException;
 
 /**
@@ -41,6 +47,11 @@ use PDOException;
  * title and normalised body equal the stored ones writes no version and does not move the edit time. A change of the
  * title alone is a content change (D-11). The sensitive flag is only ever cleared by the explicit manual clear of the
  * input (D-04, fail closed); a flag change without a content change writes no version.
+ *
+ * The classification (ORG-03, ORG-04, D-04, D-06): when the input carries one, the folder, client, project and
+ * knowledge tags are written inside the same transaction, after the stale checks and the guard decision, so a refused
+ * save changes none of them. A change of the classification alone writes no version and leaves the edit time as it
+ * was (ClassificationChanged). A null classification keeps the stored one. Only knowledge tags are touched.
  *
  * The secret guard (SEC-01 to SEC-03): every content-changing save scans the normalised body, never the title (D-02).
  * A Blocking finding refuses the save with no way around it (D-01), an Ambiguous one refuses it unless this one call
@@ -66,6 +77,7 @@ final class SaveArticle
     /**
      * @throws AuthorizationException
      * @throws SecretGuardRefused
+     * @throws ValidationException a folder, client or project of the classification that does not exist
      * @throws ArticleWriteFailed
      */
     public function create(User $actor, ArticleInput $input, bool $acknowledge = false): SaveResult
@@ -73,6 +85,12 @@ final class SaveArticle
         Gate::forUser($actor)->authorize('create', KnowledgeArticle::class);
 
         return $this->inTransaction(function () use ($actor, $input, $acknowledge): SaveResult {
+            $classification = $input->classification;
+
+            if ($classification !== null) {
+                $this->assertClassificationTargets($classification);
+            }
+
             $body = $this->normaliser->normalise($input->body);
             $rules = $this->acknowledgedRules($body, $acknowledge);
 
@@ -84,7 +102,12 @@ final class SaveArticle
                 'sensitive' => $input->sensitive || $rules !== [],
                 'version_no' => 1,
                 'edited_at' => now(),
+                ...($classification === null ? [] : $this->classificationColumns($classification)),
             ])->save();
+
+            if ($classification !== null) {
+                $this->syncKnowledgeTags($article, $classification->tags);
+            }
 
             $this->writeVersion($article, $actor);
             $this->writeAcknowledgment($article, $actor, $rules);
@@ -103,6 +126,7 @@ final class SaveArticle
      * @throws ModelNotFoundException an archived or unknown article
      * @throws StaleArticle the stored version or redaction number differs from the expected one
      * @throws SecretGuardRefused
+     * @throws ValidationException a folder, client or project of the classification that does not exist
      * @throws ArticleWriteFailed
      */
     public function update(
@@ -132,10 +156,29 @@ final class SaveArticle
                 throw new StaleArticle($locked->version_no, redactionChanged: true);
             }
 
+            $classification = $input->classification;
+
+            if ($classification !== null) {
+                $this->assertClassificationTargets($classification);
+            }
+
             $body = $this->normaliser->normalise($input->body);
 
             if ($locked->title === $input->title && $locked->body_md === $body) {
                 $sensitive = $this->derivedSensitive($locked, $input, false);
+
+                if ($classification !== null && $this->classificationDiffers($locked, $classification)) {
+                    $columns = $this->classificationColumns($classification);
+
+                    if ($sensitive !== $locked->sensitive) {
+                        $columns['sensitive'] = $sensitive;
+                    }
+
+                    $locked->forceFill($columns)->save();
+                    $this->syncKnowledgeTags($locked, $classification->tags);
+
+                    return new SaveResult(SaveOutcome::ClassificationChanged, $locked, false);
+                }
 
                 if ($sensitive === $locked->sensitive) {
                     return new SaveResult(SaveOutcome::Unchanged, $locked, false);
@@ -154,7 +197,12 @@ final class SaveArticle
                 'sensitive' => $this->derivedSensitive($locked, $input, $rules !== []),
                 'version_no' => $locked->version_no + 1,
                 'edited_at' => now(),
+                ...($classification === null ? [] : $this->classificationColumns($classification)),
             ])->save();
+
+            if ($classification !== null) {
+                $this->syncKnowledgeTags($locked, $classification->tags);
+            }
 
             $this->writeVersion($locked, $actor);
             $this->writeAcknowledgment($locked, $actor, $rules);
@@ -166,6 +214,90 @@ final class SaveArticle
         $article->refresh();
 
         return new SaveResult($result->outcome, $article, $result->markedSensitive);
+    }
+
+    /**
+     * The folder, client and project a classification names must exist, and the project must belong to the client
+     * (D-06). An archived client or project is still valid here: a stored link to one stays, and the form offers
+     * only the selectable ones. A missing target is a field error, never a raw database error.
+     *
+     * @throws ValidationException
+     */
+    private function assertClassificationTargets(ArticleClassification $classification): void
+    {
+        if ($classification->folderId !== null && ! KnowledgeFolder::query()->whereKey($classification->folderId)->exists()) {
+            throw ValidationException::withMessages(['folder_id' => __('knowledge.links.errors.folder_missing')]);
+        }
+
+        if ($classification->clientId !== null && ! Client::query()->withTrashed()->whereKey($classification->clientId)->exists()) {
+            throw ValidationException::withMessages(['client_id' => __('knowledge.links.errors.client_missing')]);
+        }
+
+        if ($classification->projectId !== null && ! Project::query()->withTrashed()->whereKey($classification->projectId)->where('client_id', $classification->clientId)->exists()) {
+            throw ValidationException::withMessages(['project_id' => __('knowledge.links.errors.project_mismatch')]);
+        }
+    }
+
+    /**
+     * @return array{folder_id: string|null, client_id: string|null, project_id: string|null}
+     */
+    private function classificationColumns(ArticleClassification $classification): array
+    {
+        return [
+            'folder_id' => $classification->folderId,
+            'client_id' => $classification->clientId,
+            'project_id' => $classification->projectId,
+        ];
+    }
+
+    /**
+     * Whether the classification differs from the stored one: another folder, client or project, or another tag set
+     * (compared case-insensitively, as the tags are merged).
+     */
+    private function classificationDiffers(KnowledgeArticle $locked, ArticleClassification $classification): bool
+    {
+        if ($locked->folder_id !== $classification->folderId
+            || $locked->client_id !== $classification->clientId
+            || $locked->project_id !== $classification->projectId) {
+            return true;
+        }
+
+        $stored = $locked->tagsWithType(TagType::Knowledge->value)
+            ->map(static fn (Tag $tag): string => mb_strtolower((string) $tag->name))
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        $wanted = collect($classification->tags)
+            ->map(static fn (string $name): string => mb_strtolower($name))
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        return $stored !== $wanted;
+    }
+
+    /**
+     * Writes the knowledge tags of the article (D-04) and only those: client, project and task tags stay. A name
+     * that matches an existing knowledge tag case-insensitively takes that tag's stored spelling. Tag names are
+     * never logged. Two parallel saves that create the same new tag may leave a duplicate: there is no unique index
+     * on tags and one Admin makes it rare (accepted).
+     *
+     * @param  list<string>  $names
+     */
+    private function syncKnowledgeTags(KnowledgeArticle $article, array $names): void
+    {
+        $spelling = [];
+
+        foreach (Tag::getWithType(TagType::Knowledge->value) as $tag) {
+            $spelling[mb_strtolower((string) $tag->name)] ??= (string) $tag->name;
+        }
+
+        $mapped = array_map(static fn (string $name): string => $spelling[mb_strtolower($name)] ?? $name, $names);
+
+        $article->syncTagsWithType($mapped, TagType::Knowledge->value);
     }
 
     /**

@@ -20,4 +20,7 @@ enum SaveOutcome: string
 
     /** Only the sensitive flag changed: no version, the edit time is untouched. */
     case SensitivityChanged = 'sensitivity_changed';
+
+    /** Only the folder, the links or the tags changed (and maybe the sensitive flag): no version, the edit time is untouched. */
+    case ClassificationChanged = 'classification_changed';
 }

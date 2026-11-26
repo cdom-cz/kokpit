@@ -243,6 +243,7 @@ final class EditKnowledgeArticle extends EditRecord implements SecretGuardForm
         return match ($result->outcome) {
             SaveOutcome::Unchanged => Notification::make()->info()->title(trans()->string('knowledge.notifications.unchanged')),
             SaveOutcome::SensitivityChanged => Notification::make()->info()->title(trans()->string('knowledge.notifications.sensitivity_changed')),
+            SaveOutcome::ClassificationChanged => Notification::make()->success()->title(trans()->string('knowledge.notifications.classification_changed')),
             default => Notification::make()->success()->title(trans()->string(
                 'knowledge.notifications.'.($result->markedSensitive ? 'saved_sensitive' : 'saved'),
                 ['version' => $result->article->version_no],
