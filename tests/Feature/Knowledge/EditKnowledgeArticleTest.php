@@ -395,7 +395,7 @@ it('never clears a flag that was set after the screen was opened with the toggle
     $page = editArticlePage($article)->assertFormSet(['sensitive' => false]);
 
     // Another save marks the article sensitive in the meantime; it changes no content, so the version stays 1.
-    $marked = app(SaveArticle::class)->update($admin, $article, ArticleInput::from($article->title, $stored, true), 1);
+    $marked = app(SaveArticle::class)->update($admin, $article, ArticleInput::from($article->title, $stored, true), 1, (int) $article->redaction_no);
 
     expect($marked->outcome)->toBe(SaveOutcome::SensitivityChanged)
         ->and(editArticleRow($article->getKey())->sensitive)->toBeTrue();
