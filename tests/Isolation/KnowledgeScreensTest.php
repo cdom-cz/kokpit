@@ -39,6 +39,12 @@ function knowledgeScreensUrls(): array
         'view of an active article' => KnowledgeArticleResource::getUrl('view', ['record' => $active->getKey()]),
         'view of an archived article' => KnowledgeArticleResource::getUrl('view', ['record' => $archived->getKey()]),
         'edit of an active article' => KnowledgeArticleResource::getUrl('edit', ['record' => $active->getKey()]),
+        'versions of an active article' => KnowledgeArticleResource::getUrl('versions', ['record' => $active->getKey()]),
+        'versions of an archived article' => KnowledgeArticleResource::getUrl('versions', ['record' => $archived->getKey()]),
+        'version 1 of an active article' => KnowledgeArticleResource::getUrl('version', ['record' => $active->getKey(), 'version' => 1]),
+        'version 1 of an archived article' => KnowledgeArticleResource::getUrl('version', ['record' => $archived->getKey(), 'version' => 1]),
+        'compare of an active article' => KnowledgeArticleResource::getUrl('compare', ['record' => $active->getKey()]),
+        'compare of an archived article' => KnowledgeArticleResource::getUrl('compare', ['record' => $archived->getKey()]),
     ];
 }
 
@@ -82,7 +88,7 @@ it('gives the Admin the Znalosti group with the General knowledge entry', functi
         ->and(knowledgeScreensNavigationLabels())->toContain('Obecné znalosti');
 });
 
-it('answers a Partner with 403 on the list, the create URL and every view URL while the Admin opens them', function (): void {
+it('answers a Partner with 403 on the list, the create URL and every view, history and compare URL while the Admin opens them', function (): void {
     $urls = knowledgeScreensUrls();
 
     $this->actingAs(Canary::admin());
@@ -139,6 +145,36 @@ it('shows a Partner no text of an article even when asking for the view URL of t
 
     expect($content)->not->toContain(Canary::canary('knowledge_screen'))
         ->and($content)->not->toContain(Canary::canary('knowledge_body'));
+});
+
+it('shows a Partner no text of an article on its versions, version and compare URLs, even for the own client', function (): void {
+    [$clientA] = Canary::twoClients();
+    $article = KnowledgeFixtures::article(['title' => Canary::canary('knowledge_version_screen'), 'body_md' => Canary::canary('knowledge_version_body'), 'client_id' => $clientA, 'version_no' => 2]);
+
+    $this->actingAs(Canary::partnerFor($clientA));
+
+    $urls = [
+        KnowledgeArticleResource::getUrl('versions', ['record' => $article->getKey()]),
+        KnowledgeArticleResource::getUrl('version', ['record' => $article->getKey(), 'version' => 1]),
+        KnowledgeArticleResource::getUrl('compare', ['record' => $article->getKey(), 'from' => 1, 'to' => 2]),
+    ];
+
+    foreach ($urls as $url) {
+        $content = (string) $this->get($url)->assertForbidden()->getContent();
+
+        expect($content)->not->toContain(Canary::canary('knowledge_version_screen'))
+            ->and($content)->not->toContain(Canary::canary('knowledge_version_body'));
+    }
+});
+
+it('answers a Partner with 403 on the compare and version URLs of an article that does not exist, before any lookup', function (): void {
+    $this->actingAs(Canary::partnerFor(Canary::twoClients()[0]));
+
+    $missing = '00000000-0000-7000-8000-000000000000';
+
+    $this->get(KnowledgeArticleResource::getUrl('compare', ['record' => $missing]))->assertForbidden();
+    $this->get(KnowledgeArticleResource::getUrl('version', ['record' => $missing, 'version' => 1]))->assertForbidden();
+    $this->get(KnowledgeArticleResource::getUrl('version', ['record' => $missing, 'version' => 'abc']))->assertForbidden();
 });
 
 /**

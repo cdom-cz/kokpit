@@ -142,6 +142,14 @@ function walkedUrl(LaravelRoute $route, string $recordId, string $side = 'a'): s
             return CashReceiptPdfUrl::download(walkedCashReceipt($side), $user);
         }
 
+        // The knowledge version route (filament.admin.resources.knowledge-articles.version): the canary article has
+        // version 1, so the version the walk requests is 1.
+        if ($parameter === 'version' && $route->getName() === 'filament.admin.resources.knowledge-articles.version') {
+            $parameters['version'] = '1';
+
+            continue;
+        }
+
         if ($parameter !== 'record') {
             throw new LogicException("The route walk does not know the parameter [{$parameter}] of route [{$route->getName()}]; teach it how to fill it.");
         }
@@ -682,5 +690,14 @@ it('answers a Partner without a client 403 or 404 on the cash receipt PDF route 
 
 it('still refuses a parameter it does not know, so a new kind of route is looked at on purpose', function (): void {
     expect(static fn () => walkedUrl(new LaravelRoute('GET', '/x/{unknown}', []), 'x'))
+        ->toThrow(LogicException::class, 'does not know the parameter');
+});
+
+it('fills the version parameter of the knowledge version route only, and still refuses it on any other route', function (): void {
+    $route = Route::getRoutes()->getByName('filament.admin.resources.knowledge-articles.version');
+
+    expect($route)->not->toBeNull()
+        ->and(walkedUrl($route, 'article-id'))->toEndWith('/article-id/versions/1')
+        ->and(static fn () => walkedUrl(new LaravelRoute('GET', '/x/{version}', []), 'x'))
         ->toThrow(LogicException::class, 'does not know the parameter');
 });
