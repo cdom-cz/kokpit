@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\KnowledgeArticleResource\Pages;
 
 use App\Domain\Identity\Models\User;
+use App\Domain\Knowledge\Actions\ArticleClassification;
 use App\Domain\Knowledge\Actions\ArticleInput;
 use App\Domain\Knowledge\Actions\SaveArticle;
 use App\Domain\Knowledge\Actions\SaveOutcome;
@@ -12,6 +13,7 @@ use App\Domain\Knowledge\Actions\SaveResult;
 use App\Domain\Knowledge\Exceptions\ArticleWriteFailed;
 use App\Domain\Knowledge\Exceptions\StaleArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Shared\Tags\TagType;
 use App\Filament\Concerns\RethrowsDomainValidation;
 use App\Filament\Resources\KnowledgeArticleResource;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\GuardsSecrets;
@@ -115,6 +117,10 @@ final class EditKnowledgeArticle extends EditRecord implements SecretGuardForm
             'title' => $article->title,
             'body' => $article->body_md,
             'sensitive' => $article->sensitive,
+            'folder_id' => $article->folder_id,
+            'client_id' => $article->client_id,
+            'project_id' => $article->project_id,
+            'tags' => $article->tagsWithType(TagType::Knowledge->value)->pluck('name')->map(static fn (mixed $name): string => (string) $name)->values()->all(),
         ];
     }
 
@@ -177,8 +183,22 @@ final class EditKnowledgeArticle extends EditRecord implements SecretGuardForm
         $sensitive = (bool) ($data['sensitive'] ?? false);
 
         try {
+            // The classification is built inside the closure, so a field error of it lands under its field.
             $result = $this->runGuarded(fn (): SaveResult => $this->withFormErrors(
-                fn (): SaveResult => app(SaveArticle::class)->update($actor, $record, ArticleInput::from($data['title'] ?? null, $data['body'] ?? null, $sensitive, clearSensitive: $this->loadedSensitive && ! $sensitive), $this->loadedVersion, $this->loadedRedactionNo, acknowledge: $this->acknowledgeThisSave),
+                fn (): SaveResult => app(SaveArticle::class)->update(
+                    $actor,
+                    $record,
+                    ArticleInput::from(
+                        $data['title'] ?? null,
+                        $data['body'] ?? null,
+                        $sensitive,
+                        clearSensitive: $this->loadedSensitive && ! $sensitive,
+                        classification: ArticleClassification::from($data['folder_id'] ?? null, $data['client_id'] ?? null, $data['project_id'] ?? null, $data['tags'] ?? []),
+                    ),
+                    $this->loadedVersion,
+                    $this->loadedRedactionNo,
+                    acknowledge: $this->acknowledgeThisSave,
+                ),
             ));
         } catch (StaleArticle $stale) {
             // Nothing was written. The form stays as typed, and the starting version and redaction number stay as
