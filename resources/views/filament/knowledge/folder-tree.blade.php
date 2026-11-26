@@ -31,6 +31,11 @@
         $isSelected = $selected === $id;
         $expandLabel = __('knowledge.folders.expand', ['name' => $name]);
         $collapseLabel = __('knowledge.folders.collapse', ['name' => $name]);
+        // The id is a UUID read from the database, so it is safe inside the expression of the menu items.
+        $mountCreateSubfolder = "mountAction('createSubfolder', { folder: '{$id}' })";
+        $mountRename = "mountAction('renameFolder', { folder: '{$id}' })";
+        $mountMove = "mountAction('moveFolder', { folder: '{$id}' })";
+        $mountDelete = "mountAction('deleteFolder', { folder: '{$id}' })";
     @endphp
     <li
         wire:key="knowledge-folder-{{ $id }}"
@@ -69,6 +74,51 @@
             </button>
 
             <span class="kokpit-tree-count">{{ $node['count'] }}</span>
+
+            {{-- A real focusable button in every state; the stylesheet only keeps it quiet until the row is hovered, focused or selected. --}}
+            <x-filament::dropdown placement="bottom-end" teleport class="kokpit-tree-menu">
+                <x-slot name="trigger">
+                    <x-filament::icon-button
+                        icon="heroicon-m-ellipsis-horizontal"
+                        color="gray"
+                        size="sm"
+                        :label="__('knowledge.folders.menu', ['name' => $name])"
+                    />
+                </x-slot>
+
+                <x-filament::dropdown.list>
+                    @if ($node['depth'] < $maxDepth)
+                        <x-filament::dropdown.list.item
+                            icon="heroicon-m-folder-plus"
+                            :wire:click="$mountCreateSubfolder"
+                        >
+                            {{ __('knowledge.folders.new_subfolder') }}
+                        </x-filament::dropdown.list.item>
+                    @endif
+
+                    <x-filament::dropdown.list.item
+                        icon="heroicon-m-pencil-square"
+                        :wire:click="$mountRename"
+                    >
+                        {{ __('knowledge.folders.rename') }}
+                    </x-filament::dropdown.list.item>
+
+                    <x-filament::dropdown.list.item
+                        icon="heroicon-m-arrows-right-left"
+                        :wire:click="$mountMove"
+                    >
+                        {{ __('knowledge.folders.move') }}
+                    </x-filament::dropdown.list.item>
+
+                    <x-filament::dropdown.list.item
+                        icon="heroicon-m-trash"
+                        color="danger"
+                        :wire:click="$mountDelete"
+                    >
+                        {{ __('knowledge.folders.delete') }}
+                    </x-filament::dropdown.list.item>
+                </x-filament::dropdown.list>
+            </x-filament::dropdown>
         </div>
 
         @if ($kids !== [])
@@ -93,6 +143,14 @@
             <div class="kokpit-tree-body">
                 <div class="kokpit-tree-heading">
                     <h2 class="kokpit-tree-title">{{ __('knowledge.folders.heading') }}</h2>
+                    <x-filament::icon-button
+                        icon="heroicon-m-plus"
+                        color="gray"
+                        size="sm"
+                        :label="__('knowledge.folders.new')"
+                        :tooltip="__('knowledge.folders.new')"
+                        wire:click="mountAction('createFolder')"
+                    />
                 </div>
 
                 <ul class="kokpit-tree-list">
@@ -138,6 +196,11 @@
                     <div class="kokpit-tree-empty">
                         <p class="kokpit-tree-empty-heading">{{ __('knowledge.folders.empty_heading') }}</p>
                         <p class="kokpit-tree-empty">{{ __('knowledge.folders.empty_body') }}</p>
+                        <div class="kokpit-tree-empty-action">
+                            <x-filament::button size="sm" wire:click="mountAction('createFolder')">
+                                {{ __('knowledge.folders.create_submit') }}
+                            </x-filament::button>
+                        </div>
                     </div>
                 @endif
             </div>

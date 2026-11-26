@@ -4,9 +4,23 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\KnowledgeArticleResource\Pages;
 
+use App\Domain\Identity\Models\User;
+use App\Domain\Knowledge\Actions\CreateFolder;
+use App\Domain\Knowledge\Actions\DeleteFolder;
+use App\Domain\Knowledge\Actions\FolderName;
+use App\Domain\Knowledge\Actions\MoveFolder;
+use App\Domain\Knowledge\Actions\RenameFolder;
+use App\Domain\Knowledge\Exceptions\FolderMoveRefused;
+use App\Domain\Knowledge\Exceptions\FolderNotEmpty;
+use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Knowledge\Queries\FolderTree;
 use App\Filament\Resources\KnowledgeArticleResource;
+use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Components\Flex;
@@ -18,7 +32,9 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Url;
 
 /**
@@ -32,6 +48,9 @@ final class ListKnowledgeArticles extends ListRecords
 {
     /** The value of `?folder=` for the articles without a folder (D-02). */
     private const string NO_FOLDER = 'none';
+
+    /** The option of the move form that stands for "no parent": a value no folder id can have. */
+    private const string ROOT_OPTION = 'root';
 
     protected static string $resource = KnowledgeArticleResource::class;
 
@@ -123,6 +142,177 @@ final class ListKnowledgeArticles extends ListRecords
     }
 
     /**
+     * A new root folder (D-03, ORG-01).
+     */
+    public function createFolderAction(): Action
+    {
+        return Action::make('createFolder')
+            ->label(__('knowledge.folders.new'))
+            ->modalHeading(__('knowledge.folders.new'))
+            ->modalSubmitActionLabel(__('knowledge.folders.create_submit'))
+            ->successNotificationTitle(__('knowledge.folders.notifications.created'))
+            ->schema([self::nameField()])
+            ->action(function (array $data, Action $action): void {
+                $this->forgetTree();
+
+                $this->guarded($action, function () use ($data): void {
+                    app(CreateFolder::class)->handle($this->actor(), $data['name'] ?? null, null);
+                });
+
+                $this->afterChange([]);
+                $action->success();
+            });
+    }
+
+    /**
+     * A new folder inside the folder named by the `folder` argument.
+     */
+    public function createSubfolderAction(): Action
+    {
+        return Action::make('createSubfolder')
+            ->label(__('knowledge.folders.new_subfolder'))
+            ->modalHeading(__('knowledge.folders.new_subfolder'))
+            ->modalSubmitActionLabel(__('knowledge.folders.create_submit'))
+            ->successNotificationTitle(__('knowledge.folders.notifications.created'))
+            ->schema([self::nameField()])
+            ->action(function (array $data, array $arguments, Action $action): void {
+                $this->forgetTree();
+
+                $parent = $this->folderFromArguments($arguments);
+
+                if ($parent === null) {
+                    $this->folderMissing($action);
+                }
+
+                $this->guarded($action, function () use ($data, $parent): void {
+                    app(CreateFolder::class)->handle($this->actor(), $data['name'] ?? null, $parent['id']);
+                });
+
+                $this->afterChange([$parent['id']]);
+                $action->success();
+            });
+    }
+
+    /**
+     * Renames the folder named by the `folder` argument.
+     */
+    public function renameFolderAction(): Action
+    {
+        $action = Action::make('renameFolder')
+            ->label(__('knowledge.folders.rename'))
+            ->modalHeading(__('knowledge.folders.rename_heading'))
+            ->modalSubmitActionLabel(__('knowledge.folders.rename'))
+            ->successNotificationTitle(__('knowledge.folders.notifications.renamed'))
+            ->schema([self::nameField()]);
+
+        return $action
+            ->fillForm(fn (): array => ['name' => $this->folderFromArguments($action->getArguments())['name'] ?? ''])
+            ->action(function (array $data, array $arguments, Action $action): void {
+                $this->forgetTree();
+
+                $folder = $this->folderFromArguments($arguments);
+
+                if ($folder === null) {
+                    $this->folderMissing($action);
+                }
+
+                $this->guarded($action, function () use ($data, $folder): void {
+                    app(RenameFolder::class)->handle($this->actor(), $folder['id'], $data['name'] ?? null);
+                });
+
+                $this->afterChange([]);
+                $action->success();
+            });
+    }
+
+    /**
+     * Moves the folder named by the `folder` argument under another folder or to the root (D-03). The select disables
+     * what cannot work (the folder itself, its subfolders and every target that would pass the depth cap); that is a
+     * convenience, the Action decides again under the lock.
+     */
+    public function moveFolderAction(): Action
+    {
+        $action = Action::make('moveFolder')
+            ->label(__('knowledge.folders.move'))
+            ->modalHeading(__('knowledge.folders.move_heading'))
+            ->modalSubmitActionLabel(__('knowledge.folders.move'))
+            ->successNotificationTitle(__('knowledge.folders.notifications.moved'));
+
+        return $action
+            ->schema([
+                Select::make('parent_id')
+                    ->label(__('knowledge.folders.parent'))
+                    ->searchable()
+                    ->selectablePlaceholder(false)
+                    ->required()
+                    ->options(fn (): array => $this->moveOptions())
+                    ->disableOptionWhen(fn (string $value): bool => $this->moveOptionDisabled($this->folderFromArguments($action->getArguments())['id'] ?? null, $value))
+                    ->helperText(__('knowledge.folders.move_helper', ['max' => KnowledgeFolder::MAX_DEPTH])),
+            ])
+            ->fillForm(fn (): array => ['parent_id' => $this->folderFromArguments($action->getArguments())['parentId'] ?? self::ROOT_OPTION])
+            ->action(function (array $data, array $arguments, Action $action): void {
+                $this->forgetTree();
+
+                $folder = $this->folderFromArguments($arguments);
+
+                if ($folder === null) {
+                    $this->folderMissing($action);
+                }
+
+                $target = $data['parent_id'] ?? null;
+                $parentId = is_string($target) && $target !== '' && $target !== self::ROOT_OPTION ? $target : null;
+
+                $this->guarded($action, function () use ($folder, $parentId): void {
+                    app(MoveFolder::class)->handle($this->actor(), $folder['id'], $parentId);
+                });
+
+                // The selection stays; the tree opens up to the folder in its new place.
+                $this->afterChange([$folder['id']]);
+                $action->success();
+            });
+    }
+
+    /**
+     * Deletes the folder named by the `folder` argument. A folder that holds anything runs the action at once and
+     * gets the refusal, so nobody confirms a delete that cannot happen (ORG-02).
+     */
+    public function deleteFolderAction(): Action
+    {
+        $action = Action::make('deleteFolder')
+            ->label(__('knowledge.folders.delete'))
+            ->color('danger')
+            ->requiresConfirmation()
+            ->modalDescription(__('knowledge.folders.delete_description'))
+            ->modalSubmitActionLabel(__('knowledge.folders.delete_submit'))
+            ->successNotificationTitle(__('knowledge.folders.notifications.deleted'));
+
+        return $action
+            ->modalHeading(fn (): string => __('knowledge.folders.delete_heading', ['name' => $this->folderFromArguments($action->getArguments())['name'] ?? '']))
+            ->modalHidden(fn (): bool => $this->folderHoldsAnything($action->getArguments()))
+            ->action(function (array $arguments, Action $action): void {
+                $this->forgetTree();
+
+                $folder = $this->folderFromArguments($arguments);
+
+                if ($folder === null) {
+                    $this->folderMissing($action);
+                }
+
+                $this->guarded($action, function () use ($folder): void {
+                    app(DeleteFolder::class)->handle($this->actor(), $folder['id']);
+                });
+
+                if ($this->folder === $folder['id']) {
+                    $this->folder = null;
+                    $this->resetPage(pageName: $this->getTablePaginationPageName());
+                }
+
+                $this->afterChange([]);
+                $action->success();
+            });
+    }
+
+    /**
      * @return array<CreateAction>
      */
     protected function getHeaderActions(): array
@@ -132,6 +322,197 @@ final class ListKnowledgeArticles extends ListRecords
                 ->label(__('knowledge.actions.create'))
                 ->icon(Heroicon::OutlinedPlus),
         ];
+    }
+
+    /**
+     * The name field of the create and rename forms.
+     */
+    private static function nameField(): TextInput
+    {
+        return TextInput::make('name')
+            ->label(__('knowledge.folders.name'))
+            ->required()
+            ->maxLength(FolderName::MAX_LENGTH)
+            ->autofocus();
+    }
+
+    private function actor(): User
+    {
+        $user = auth()->user();
+
+        abort_unless($user instanceof User, 403);
+
+        return $user;
+    }
+
+    private function forgetTree(): void
+    {
+        $this->tree = null;
+    }
+
+    /**
+     * The tree node of the `folder` argument of a row menu item. The id comes from the browser: anything but the id of
+     * a folder that exists is null (T-19-29).
+     *
+     * @param  array<string, mixed>  $arguments
+     * @return array{id: string, parentId: string|null, name: string, depth: int, height: int, path: list<string>, count: int, hasChildren: bool}|null
+     */
+    private function folderFromArguments(array $arguments): ?array
+    {
+        $id = $arguments['folder'] ?? null;
+
+        if (! is_string($id) || ! Str::isUuid($id)) {
+            return null;
+        }
+
+        return $this->tree()->node($id);
+    }
+
+    /**
+     * Tells the Admin the folder is gone (another session deleted it, or the id was forged), reloads the tree on the
+     * next render and ends the action.
+     */
+    private function folderMissing(Action $action): never
+    {
+        $this->forgetTree();
+
+        Notification::make()
+            ->warning()
+            ->title(__('knowledge.folders.notifications.missing'))
+            ->send();
+
+        $action->cancel();
+    }
+
+    /**
+     * Runs a call of a folder Action and turns its refusals into what the Admin sees: a field error under the form
+     * field (the modal stays open), a danger notification for a refused move or delete, the "gone" notice for a folder
+     * that no longer exists.
+     */
+    private function guarded(Action $action, callable $call): void
+    {
+        try {
+            $call();
+        } catch (ValidationException $e) {
+            // The pattern of ViewProject and ListApiTokens: the key of the field of the mounted action's form.
+            $mapped = [];
+
+            foreach ($e->errors() as $field => $messages) {
+                $mapped["mountedActions.0.data.{$field}"] = $messages[0] ?? '';
+            }
+
+            throw ValidationException::withMessages($mapped);
+        } catch (ModelNotFoundException) {
+            $this->folderMissing($action);
+        } catch (FolderMoveRefused $e) {
+            Notification::make()
+                ->danger()
+                ->persistent()
+                ->title(__('knowledge.folders.errors.move_title'))
+                ->body(__('knowledge.folders.errors.'.$e->reason, ['max' => $e->maxDepth]))
+                ->send();
+
+            $action->halt();
+        } catch (FolderNotEmpty $e) {
+            Notification::make()
+                ->danger()
+                ->persistent()
+                ->title(__('knowledge.folders.errors.delete_title'))
+                ->body(__('knowledge.folders.errors.not_empty', ['contents' => self::contentsText($e->articleCount, $e->subfolderCount)]))
+                ->send();
+
+            $this->forgetTree();
+            $action->cancel();
+        }
+    }
+
+    /**
+     * "1 článek (včetně archivovaných) a 2 podsložky": what keeps a folder from being deleted.
+     */
+    private static function contentsText(int $articles, int $folders): string
+    {
+        $parts = [];
+
+        if ($articles > 0) {
+            $parts[] = trans_choice('knowledge.folders.contents_articles', $articles, ['count' => $articles]);
+        }
+
+        if ($folders > 0) {
+            $parts[] = trans_choice('knowledge.folders.contents_folders', $folders, ['count' => $folders]);
+        }
+
+        return count($parts) === 2
+            ? __('knowledge.folders.contents_join', ['articles' => $parts[0], 'folders' => $parts[1]])
+            : ($parts[0] ?? '');
+    }
+
+    /**
+     * Whether the folder of the delete menu item holds a subfolder or an article, archived ones included: the tree
+     * count leaves archived articles out, so the articles are asked again here.
+     *
+     * @param  array<string, mixed>  $arguments
+     */
+    private function folderHoldsAnything(array $arguments): bool
+    {
+        $folder = $this->folderFromArguments($arguments);
+
+        if ($folder === null) {
+            return false;
+        }
+
+        return $folder['hasChildren'] || KnowledgeArticle::query()->withTrashed()->where('folder_id', $folder['id'])->exists();
+    }
+
+    /**
+     * The targets of the move form: the root, then every folder as its path.
+     *
+     * @return array<string, string>
+     */
+    private function moveOptions(): array
+    {
+        $options = [self::ROOT_OPTION => __('knowledge.folders.root')];
+
+        foreach ($this->tree()->nodes() as $node) {
+            $options[$node['id']] = implode(' / ', $node['path']);
+        }
+
+        return $options;
+    }
+
+    /**
+     * Whether a target of the move form cannot be chosen: the folder itself, a folder in its subtree or one that would
+     * make the tree deeper than the cap. The root is always possible.
+     */
+    private function moveOptionDisabled(?string $folderId, string $value): bool
+    {
+        if ($folderId === null || $value === self::ROOT_OPTION) {
+            return false;
+        }
+
+        return $this->tree()->moveRefusal($folderId, $value) !== null;
+    }
+
+    /**
+     * After a change of the tree: reads it again for the next render and tells the nodes to open up to the given
+     * folders (the new parent of a subfolder, the moved folder), so the result is visible without a click.
+     *
+     * @param  list<string>  $revealIds
+     */
+    private function afterChange(array $revealIds): void
+    {
+        $this->forgetTree();
+
+        $open = [];
+
+        foreach ($revealIds as $id) {
+            for ($current = $id; $current !== null; $current = $this->tree()->node($current)['parentId'] ?? null) {
+                $open[] = $current;
+            }
+        }
+
+        if ($open !== []) {
+            $this->dispatch('kokpit-tree-reveal', ids: array_values(array_unique($open)));
+        }
     }
 
     /**
@@ -195,6 +576,7 @@ final class ListKnowledgeArticles extends ListRecords
                 default => (string) ($tree->node($selected)['name'] ?? ''),
             },
             'chipPath' => $real === null ? null : $tree->pathLabel($real),
+            'maxDepth' => KnowledgeFolder::MAX_DEPTH,
         ];
     }
 }
