@@ -22,14 +22,20 @@ use Illuminate\Support\Str;
  * The actor needs the `delete` ability (the Admin only), checked before any lookup. Inside one transaction the folder
  * row is locked and the contents are counted before anything is deleted: the articles of the folder, archived ones and
  * every kind included, because the RESTRICT foreign key counts them all, and its direct subfolders. A non-zero count
- * throws FolderNotEmpty with both numbers. The foreign keys stay the backstop: a violation (SQLSTATE 23503) is mapped
+ * throws FolderNotEmpty with both numbers. The foreign keys stay the backstop: a violation (SQLSTATE 23001 of ON DELETE RESTRICT, or 23503) is mapped
  * by `refusalFor()` to the same refusal, with the numbers recounted in a fresh read.
  *
  * Folder changes write no activity row: KnowledgeFolder is not logged by design (research A10).
  */
 final class DeleteFolder
 {
-    private const string FOREIGN_KEY_VIOLATION = '23503';
+    /**
+     * The SQLSTATEs of a foreign key that refuses the delete: PostgreSQL raises 23001 (restrict_violation) for the
+     * ON DELETE RESTRICT keys of the folders and 23503 (foreign_key_violation) for a deferred or NO ACTION check.
+     *
+     * @var list<string>
+     */
+    private const array FOREIGN_KEY_VIOLATIONS = ['23001', '23503'];
 
     /**
      * @throws AuthorizationException
@@ -70,12 +76,12 @@ final class DeleteFolder
     }
 
     /**
-     * Maps a foreign key violation (SQLSTATE 23503) of the delete to FolderNotEmpty with the contents counted again.
+     * Maps a foreign key violation (SQLSTATE 23001 or 23503) of the delete to FolderNotEmpty with the contents counted again.
      * Any other error, and a violation after which the folder turns out to be empty, is null and stays the caller's.
      */
     public static function refusalFor(QueryException $e, string $folderId): ?FolderNotEmpty
     {
-        if (SqlState::of($e) !== self::FOREIGN_KEY_VIOLATION) {
+        if (! in_array(SqlState::of($e), self::FOREIGN_KEY_VIOLATIONS, true)) {
             return null;
         }
 
