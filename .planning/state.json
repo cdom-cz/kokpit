@@ -1,12 +1,43 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v1.1",
-  "phases": [],
+  "milestone": "v1.1 — Knowledge Center",
+  "phases": [
+    {
+      "number": "18",
+      "name": "Knowledge Articles and Secret Guard",
+      "status": "in_progress"
+    },
+    {
+      "number": "19",
+      "name": "Folders, Tags and Version History",
+      "status": "in_progress"
+    },
+    {
+      "number": "20",
+      "name": "Image Attachments",
+      "status": "in_progress"
+    },
+    {
+      "number": "21",
+      "name": "Incidents and Retrospectives",
+      "status": "pending"
+    },
+    {
+      "number": "22",
+      "name": "Knowledge Search",
+      "status": "pending"
+    },
+    {
+      "number": "23",
+      "name": "Client Sharing and AI Export",
+      "status": "pending"
+    }
+  ],
   "next": {
-    "command": "/gsd-discuss-phase",
-    "label": "Discuss the first phase",
-    "reason": "Project initialized — plan your first phase"
+    "command": "/gsd-progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 3 of 6 · 0% · executing"
   },
-  "updated_at": "2026-11-25T08:01:48.320Z"
+  "updated_at": "2026-11-26T23:49:27.680Z"
 }
