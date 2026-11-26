@@ -1,0 +1,194 @@
+/*
+ * Stylesheet of the knowledge version diff (VER-04, D-09), registered as a Filament asset next to kokpit-prose.
+ *
+ * Every selector starts with .kokpit-diff or .dark .kokpit-diff (the folder tree rules under .kokpit-tree follow in a
+ * later plan), so nothing leaks into the panel. Colours come from Filament's custom properties, so light and dark mode
+ * follow the panel. Sizes are 14px and 16px, weights 400 and 600, spacing the 4/8/16/24/32px steps. The meaning of an
+ * added or removed line never rests on colour alone: the marker character and a visually hidden label carry it too.
+ */
+
+/* Theme values: light first, dark overrides below. */
+.kokpit-diff-block {
+    --kd-text: var(--gray-950);
+    --kd-muted: var(--gray-600);
+    --kd-border: var(--gray-200);
+    --kd-gutter-bg: var(--gray-100);
+    --kd-collapsed-bg: var(--gray-100);
+    --kd-added-bg: color-mix(in srgb, var(--success-500) 14%, transparent);
+    --kd-removed-bg: color-mix(in srgb, var(--danger-500) 14%, transparent);
+    --kd-added-marker: var(--success-700);
+    --kd-removed-marker: var(--danger-700);
+}
+
+.dark .kokpit-diff-block {
+    --kd-text: white;
+    --kd-muted: var(--gray-400);
+    --kd-border: var(--gray-700);
+    --kd-gutter-bg: var(--gray-800);
+    --kd-collapsed-bg: var(--gray-800);
+    --kd-added-marker: var(--success-400);
+    --kd-removed-marker: var(--danger-400);
+}
+
+/* Block: summary, title lines, then the table, an empty state or a notice. */
+.kokpit-diff-block {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+    color: var(--kd-text);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.5;
+}
+
+.kokpit-diff__summary,
+.kokpit-diff__notice,
+.kokpit-diff__empty {
+    margin: 0;
+    color: var(--kd-muted);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.5;
+}
+
+.kokpit-diff__empty {
+    padding: 32px 16px;
+    text-align: center;
+}
+
+.kokpit-diff__title {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.kokpit-diff__title-unchanged {
+    margin: 0;
+    color: var(--kd-muted);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.kokpit-diff__line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 8px;
+    overflow-wrap: anywhere;
+}
+
+.kokpit-diff__line--added {
+    background: var(--kd-added-bg);
+}
+
+.kokpit-diff__line--removed {
+    background: var(--kd-removed-bg);
+}
+
+.kokpit-diff__line-marker {
+    flex: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 600;
+}
+
+.kokpit-diff__line--added .kokpit-diff__line-marker {
+    color: var(--kd-added-marker);
+}
+
+.kokpit-diff__line--removed .kokpit-diff__line-marker {
+    color: var(--kd-removed-marker);
+}
+
+/* Optional scroll area: the caller sets max-height inline (the restore modal uses 60vh). */
+.kokpit-diff__scroll {
+    min-width: 0;
+    overflow-y: auto;
+}
+
+/* Table */
+.kokpit-diff {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    border: 1px solid var(--kd-border);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.5;
+}
+
+.kokpit-diff__col-number {
+    width: 64px;
+}
+
+.kokpit-diff__col-marker {
+    width: 32px;
+}
+
+.kokpit-diff td {
+    padding: 0 8px;
+    vertical-align: top;
+}
+
+.kokpit-diff__number {
+    background: var(--kd-gutter-bg);
+    color: var(--kd-muted);
+    text-align: right;
+    user-select: none;
+}
+
+.kokpit-diff__marker {
+    padding: 0 4px;
+    text-align: center;
+    user-select: none;
+}
+
+.kokpit-diff__text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.kokpit-diff__row--added {
+    background: var(--kd-added-bg);
+}
+
+.kokpit-diff__row--removed {
+    background: var(--kd-removed-bg);
+}
+
+.kokpit-diff__row--added .kokpit-diff__marker {
+    color: var(--kd-added-marker);
+    font-weight: 600;
+}
+
+.kokpit-diff__row--removed .kokpit-diff__marker {
+    color: var(--kd-removed-marker);
+    font-weight: 600;
+}
+
+.kokpit-diff__collapsed {
+    background: var(--kd-collapsed-bg);
+    color: var(--kd-muted);
+    font-family: inherit;
+    text-align: center;
+}
+
+/* Visually hidden, still read by screen readers. */
+.kokpit-diff__sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
