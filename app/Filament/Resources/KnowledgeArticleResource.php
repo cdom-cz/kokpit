@@ -20,7 +20,9 @@ use App\Filament\RelationManagers\KnowledgeArticleHistoryRelationManager;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\SecretGuardForm;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\CreateKnowledgeArticle;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\EditKnowledgeArticle;
+use App\Filament\Resources\KnowledgeArticleResource\Pages\ListArticleVersions;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ListKnowledgeArticles;
+use App\Filament\Resources\KnowledgeArticleResource\Pages\ViewArticleVersion;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ViewKnowledgeArticle;
 use App\Providers\LocalisationServiceProvider;
 use Filament\Actions\Action;
@@ -29,6 +31,9 @@ use Filament\Actions\EditAction;
 use Filament\Forms\Components\MarkdownEditor;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Navigation\NavigationGroup;
+use Filament\Navigation\NavigationItem;
+use Filament\Resources\Pages\Page;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Html;
@@ -423,6 +428,27 @@ final class KnowledgeArticleResource extends Resource
             'create' => CreateKnowledgeArticle::route('/create'),
             'view' => ViewKnowledgeArticle::route('/{record}'),
             'edit' => EditKnowledgeArticle::route('/{record}/edit'),
+            // ViewArticleVersion answers 404 for a version that is not all digits (R-19-06-1).
+            'versions' => ListArticleVersions::route('/{record}/versions'),
+            'version' => ViewArticleVersion::route('/{record}/versions/{version}'),
         ];
+    }
+
+    /**
+     * The sub-navigation of every screen of one article: Zobrazit, Upravit and Verze (VER-02, D-08). An archived
+     * article has no edit screen (its URL answers 404), so Upravit is left out for it.
+     *
+     * @return array<NavigationItem|NavigationGroup>
+     */
+    public static function getRecordSubNavigation(Page $page): array
+    {
+        $record = $page->getSubNavigationParameters()['record'] ?? null;
+        $archived = $record instanceof KnowledgeArticle && $record->trashed();
+
+        return $page->generateNavigationItems(array_values(array_filter([
+            ViewKnowledgeArticle::class,
+            $archived ? null : EditKnowledgeArticle::class,
+            ListArticleVersions::class,
+        ])));
     }
 }
