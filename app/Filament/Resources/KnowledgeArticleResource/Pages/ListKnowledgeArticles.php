@@ -15,6 +15,8 @@ use App\Domain\Knowledge\Exceptions\FolderNotEmpty;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Knowledge\Queries\FolderTree;
+use App\Domain\Shared\Models\Tag;
+use App\Domain\Shared\Tags\TagType;
 use App\Filament\Resources\KnowledgeArticleResource;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
@@ -29,6 +31,9 @@ use Filament\Schemas\Components\RenderHook;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\SpatieTagsColumn;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Database\Eloquent\Builder;
@@ -121,7 +126,8 @@ final class ListKnowledgeArticles extends ListRecords
     {
         return parent::table($table)
             ->modifyQueryUsing(function (Builder $query, bool $isResolvingRecord): Builder {
-                $query->addSelect('knowledge_articles.folder_id');
+                // The folder column needs the folder id, the tags column the tags of every row in one query.
+                $query->addSelect('knowledge_articles.folder_id')->with('tags');
 
                 // A row action resolves its record by key and must find it whatever is selected.
                 if ($isResolvingRecord) {
@@ -138,7 +144,46 @@ final class ListKnowledgeArticles extends ListRecords
                 return $selected === null
                     ? $query
                     : $query->whereIn('knowledge_articles.folder_id', $this->tree()->subtreeIds($selected));
-            });
+            })
+            ->pushColumns([
+                TextColumn::make('folder_path')
+                    ->label(__('knowledge.columns.folder'))
+                    ->state(fn (KnowledgeArticle $record): ?string => $record->folder_id === null ? null : $this->tree()->pathLabel((string) $record->folder_id))
+                    ->color('gray')
+                    ->lineClamp(1)
+                    ->visibleFrom('md')
+                    ->toggleable(),
+                SpatieTagsColumn::make('tags')
+                    ->label(__('knowledge.columns.tags'))
+                    ->type(TagType::Knowledge->value)
+                    ->limitList(3),
+            ])
+            ->pushFilters([$this->tagsFilter()])
+            ->emptyStateHeading(fn (): string => match ($this->emptyStateKind()) {
+                'filtered' => trans()->string('knowledge.empty.filtered_heading'),
+                'folder' => trans()->string('knowledge.empty.folder_heading'),
+                'unfiled' => trans()->string('knowledge.empty.unfiled_heading'),
+                'archived' => trans()->string('knowledge.empty.archived_heading'),
+                default => trans()->string('knowledge.empty.list_heading'),
+            })
+            ->emptyStateDescription(fn (): ?string => match ($this->emptyStateKind()) {
+                'filtered' => trans()->string('knowledge.empty.filtered_body'),
+                'folder' => trans()->string('knowledge.empty.folder_body'),
+                'unfiled' => trans()->string('knowledge.empty.unfiled_body'),
+                'archived' => null,
+                default => trans()->string('knowledge.empty.list_description'),
+            })
+            ->emptyStateActions([
+                $this->emptyStateCreateAction(),
+                Action::make('resetFilters')
+                    ->label(__('knowledge.empty.reset_filters'))
+                    ->color('gray')
+                    ->visible(fn (): bool => $this->emptyStateKind() === 'filtered')
+                    ->action(function (): void {
+                        // The folder is a property of the page, not a filter: it stays selected.
+                        $this->resetTableFiltersForm();
+                    }),
+            ]);
     }
 
     /**
@@ -320,8 +365,122 @@ final class ListKnowledgeArticles extends ListRecords
         return [
             CreateAction::make()
                 ->label(__('knowledge.actions.create'))
-                ->icon(Heroicon::OutlinedPlus),
+                ->icon(Heroicon::OutlinedPlus)
+                ->url(fn (): string => $this->createUrl()),
         ];
+    }
+
+    /**
+     * The create screen, with the selected folder as the folder of the new article (the prefill is a truth of the
+     * create screen itself).
+     */
+    private function createUrl(): string
+    {
+        $selected = $this->selectedFolder();
+
+        return KnowledgeArticleResource::getUrl('create', $selected !== null && $selected !== self::NO_FOLDER ? ['folder' => $selected] : []);
+    }
+
+    /**
+     * The "Nový článek" button of the empty states that have one: an empty list, an empty folder.
+     */
+    private function emptyStateCreateAction(): CreateAction
+    {
+        return CreateAction::make()
+            ->label(__('knowledge.actions.create'))
+            ->icon(Heroicon::OutlinedPlus)
+            ->url(fn (): string => $this->createUrl())
+            ->visible(fn (): bool => in_array($this->emptyStateKind(), ['list', 'folder'], true));
+    }
+
+    /**
+     * Which empty state the table shows: a tag filter that matches nothing first, then the selected folder, then the
+     * Phase 18 states of the archived switch and of the whole list.
+     */
+    private function emptyStateKind(): string
+    {
+        if (self::tagIds(data_get($this->getTableFilterState('tags'), 'values')) !== []) {
+            return 'filtered';
+        }
+
+        $selected = $this->selectedFolder();
+
+        if ($selected === self::NO_FOLDER) {
+            return 'unfiled';
+        }
+
+        if ($selected !== null) {
+            return 'folder';
+        }
+
+        return data_get($this->getTableFilterState('show_archived'), 'isActive', false) ? 'archived' : 'list';
+    }
+
+    /**
+     * The knowledge tags of the filter: every tag chosen must be on the article (D-05). The options are the knowledge
+     * tags only (D-04), and the query repeats the type, so a forged id of a client tag matches nothing (T-19-30).
+     */
+    private function tagsFilter(): SelectFilter
+    {
+        return SelectFilter::make('tags')
+            ->label(__('knowledge.tags.label'))
+            ->multiple()
+            ->searchable()
+            ->options(fn (): array => self::tagOptions())
+            ->query(function (Builder $query, array $data): Builder {
+                foreach (self::tagIds($data['values'] ?? []) as $tagId) {
+                    $query->whereHas('tags', fn (Builder $tags): Builder => $tags
+                        ->where('tags.id', $tagId)
+                        ->where('tags.type', TagType::Knowledge->value));
+                }
+
+                return $query;
+            })
+            ->indicateUsing(function (array $data): array {
+                $options = self::tagOptions();
+                $names = [];
+
+                foreach (self::tagIds($data['values'] ?? []) as $tagId) {
+                    if (isset($options[$tagId])) {
+                        $names[] = $options[$tagId];
+                    }
+                }
+
+                return $names === [] ? [] : [__('knowledge.tags.filter_indicator', ['tags' => implode(', ', $names)])];
+            });
+    }
+
+    /**
+     * The names of the knowledge tags by id, in alphabetical order.
+     *
+     * @return array<string, string>
+     */
+    private static function tagOptions(): array
+    {
+        $options = [];
+
+        foreach (Tag::getWithType(TagType::Knowledge->value) as $tag) {
+            $options[(string) $tag->getKey()] = (string) $tag->name;
+        }
+
+        asort($options, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $options;
+    }
+
+    /**
+     * The ids of a filter state that look like tag ids: the state comes from the browser, and a value that is not a
+     * UUID must never reach the query.
+     *
+     * @return list<string>
+     */
+    private static function tagIds(mixed $values): array
+    {
+        if (! is_array($values)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter($values, static fn (mixed $value): bool => is_string($value) && Str::isUuid($value))));
     }
 
     /**
