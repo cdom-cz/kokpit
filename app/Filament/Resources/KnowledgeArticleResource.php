@@ -4,16 +4,23 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources;
 
+use App\Domain\Clients\Models\Client;
 use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Actions\ArchiveArticle;
+use App\Domain\Knowledge\Actions\ArticleClassification;
 use App\Domain\Knowledge\Actions\RestoreArticle;
 use App\Domain\Knowledge\Enums\ArticleKind;
 use App\Domain\Knowledge\Guard\Severity;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Queries\FolderTree;
 use App\Domain\Knowledge\Support\KnowledgeMarkdown;
 use App\Domain\Knowledge\Support\MarkdownNormaliser;
+use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\AccessRule;
 use App\Domain\Shared\Auth\Audience;
+use App\Domain\Shared\Database\CzechCollation;
+use App\Domain\Shared\Models\Tag;
+use App\Domain\Shared\Tags\TagType;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Concerns\InKnowledgeGroup;
 use App\Filament\RelationManagers\KnowledgeArticleHistoryRelationManager;
@@ -30,6 +37,8 @@ use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\MarkdownEditor;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Navigation\NavigationGroup;
@@ -42,6 +51,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\FontWeight;
@@ -177,10 +187,162 @@ final class KnowledgeArticleResource extends Resource
                     ]),
                 // Shown while the tab roundtrip runs: an inactive tab renders nothing, so the indicator sits outside it.
                 Html::make(static fn (): HtmlString => self::previewLoadingIndicator()),
+                self::classificationSection(),
                 Toggle::make('sensitive')
                     ->label(__('knowledge.fields.sensitive'))
                     ->helperText(__('knowledge.fields.sensitive_helper')),
             ]);
+    }
+
+    /**
+     * The Zařazení section: the folder, the knowledge tags and the client and project links of the article (ORG-03,
+     * ORG-04, D-04, D-06). The tags are the plain Filament tags input bound to the form state, not the Spatie plugin
+     * input: the plugin writes tags on its own, outside the save transaction, while SaveArticle must write them
+     * together with the content. Only the client select is live (it clears the project); every other field of the
+     * section, like the editor, sends no request while the Admin types.
+     */
+    private static function classificationSection(): Section
+    {
+        return Section::make(__('knowledge.links.section'))
+            ->columns(['md' => 2])
+            ->schema([
+                Select::make('folder_id')
+                    ->label(__('knowledge.links.folder'))
+                    ->placeholder(__('knowledge.links.folder_placeholder'))
+                    ->options(static function (): array {
+                        $tree = FolderTree::load();
+                        $options = [];
+
+                        foreach ($tree->nodes() as $node) {
+                            $options[$node['id']] = (string) $tree->pathLabel($node['id']);
+                        }
+
+                        return $options;
+                    })
+                    ->searchable()
+                    ->native(false),
+                TagsInput::make('tags')
+                    ->label(__('knowledge.tags.label'))
+                    ->helperText(__('knowledge.tags.helper'))
+                    // Only the knowledge vocabulary is suggested; a client, project or task tag never shows up here.
+                    ->suggestions(static fn (): array => Tag::getWithType(TagType::Knowledge->value)
+                        ->pluck('name')
+                        ->map(static fn (mixed $name): string => (string) $name)
+                        ->values()
+                        ->all())
+                    ->splitKeys(['Enter', ','])
+                    ->nestedRecursiveRules(['max:'.ArticleClassification::MAX_TAG_LENGTH]),
+                Select::make('client_id')
+                    ->label(__('knowledge.links.client'))
+                    ->placeholder(__('knowledge.links.client_placeholder'))
+                    ->options(static fn (?KnowledgeArticle $record, Get $get): array => self::classificationClientOptions($record, $get('client_id')))
+                    ->searchable()
+                    ->native(false)
+                    ->live()
+                    ->afterStateUpdated(static function (Get $get, Set $set): void {
+                        self::classificationClientChanged($get, $set);
+                    }),
+                Select::make('project_id')
+                    ->label(__('knowledge.links.project'))
+                    ->placeholder(__('knowledge.links.project_placeholder'))
+                    ->disabled(static fn (Get $get): bool => self::classificationId($get('client_id')) === null)
+                    ->helperText(static fn (Get $get): ?string => self::classificationId($get('client_id')) === null
+                        ? trans()->string('knowledge.links.project_needs_client')
+                        : null)
+                    ->options(static fn (?KnowledgeArticle $record, Get $get): array => self::classificationProjectOptions(
+                        $record,
+                        self::classificationId($get('client_id')),
+                        $get('project_id'),
+                    ))
+                    ->searchable()
+                    ->native(false),
+            ]);
+    }
+
+    /**
+     * A project of another client is cleared when the client changes or is cleared (D-06).
+     */
+    private static function classificationClientChanged(Get $get, Set $set): void
+    {
+        $projectId = self::classificationId($get('project_id'));
+
+        if ($projectId === null) {
+            return;
+        }
+
+        $clientId = self::classificationId($get('client_id'));
+
+        if ($clientId === null || ! Project::query()->withTrashed()->whereKey($projectId)->where('client_id', $clientId)->exists()) {
+            $set('project_id', null);
+        }
+    }
+
+    /**
+     * A non-empty string is an id; anything else is "nothing chosen".
+     */
+    private static function classificationId(mixed $value): ?string
+    {
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /**
+     * The clients an article may be linked to: not archived, in Czech order. The stored client stays offered while it
+     * is the chosen one, even when it was archived since.
+     *
+     * @return array<string, string>
+     */
+    private static function classificationClientOptions(?KnowledgeArticle $record, mixed $current): array
+    {
+        $options = [];
+
+        foreach (CzechCollation::orderBy(Client::query(), 'clients.name')->orderBy('clients.id')->get(['clients.id', 'clients.name']) as $client) {
+            $options[(string) $client->id] = (string) $client->name;
+        }
+
+        $stored = $record?->client_id;
+
+        if ($stored !== null && $current === $stored && ! array_key_exists($stored, $options)) {
+            $name = Client::query()->withTrashed()->whereKey($stored)->value('name');
+
+            if (is_string($name)) {
+                $options[$stored] = $name;
+            }
+        }
+
+        return $options;
+    }
+
+    /**
+     * The selectable projects of the chosen client as "KEY · name"; none without a client. The stored project stays
+     * offered while it is the chosen one.
+     *
+     * @return array<string, string>
+     */
+    private static function classificationProjectOptions(?KnowledgeArticle $record, ?string $clientId, mixed $current): array
+    {
+        $options = [];
+
+        if ($clientId === null) {
+            return $options;
+        }
+
+        $query = Project::query()->selectable()->where('projects.client_id', $clientId);
+
+        foreach (CzechCollation::orderBy($query, 'projects.name')->orderBy('projects.id')->get(['projects.id', 'projects.key', 'projects.name']) as $project) {
+            $options[(string) $project->id] = $project->key.' · '.$project->name;
+        }
+
+        $stored = $record?->project_id;
+
+        if ($stored !== null && $current === $stored && ! array_key_exists($stored, $options)) {
+            $project = Project::query()->withTrashed()->whereKey($stored)->where('client_id', $clientId)->first(['id', 'key', 'name']);
+
+            if ($project instanceof Project) {
+                $options[$stored] = $project->key.' · '.$project->name;
+            }
+        }
+
+        return $options;
     }
 
     /**
@@ -321,6 +483,7 @@ final class KnowledgeArticleResource extends Resource
                     'editedAt' => $record->edited_at->setTimezone('Europe/Prague')->format(LocalisationServiceProvider::DATE_TIME_FORMAT),
                     'sensitive' => $record->sensitive,
                     'archived' => $record->trashed(),
+                    ...self::classificationMeta($record),
                 ]),
             Section::make()
                 ->columnSpanFull()
@@ -335,6 +498,40 @@ final class KnowledgeArticleResource extends Resource
                         ]),
                 ]),
         ]);
+    }
+
+    /**
+     * What the second meta row of the view screen shows: the folder path with its list link, the client and project
+     * with their links, and the knowledge tag names. An archived client or project stays shown, as it stays linked.
+     * A value that is not set is null (the tags: empty).
+     *
+     * @return array{folderPath: string|null, folderUrl: string|null, clientName: string|null, clientUrl: string|null, projectLabel: string|null, projectUrl: string|null, tags: list<string>}
+     */
+    private static function classificationMeta(KnowledgeArticle $record): array
+    {
+        $record->loadMissing([
+            'client' => static fn ($query) => $query->withTrashed(),
+            'project' => static fn ($query) => $query->withTrashed(),
+            'tags',
+        ]);
+
+        $folderPath = $record->folder_id === null ? null : FolderTree::load()->pathLabel($record->folder_id);
+        $client = $record->client;
+        $project = $record->project;
+
+        return [
+            'folderPath' => $folderPath,
+            'folderUrl' => $folderPath === null ? null : self::getUrl('index', ['folder' => $record->folder_id]),
+            'clientName' => $client?->name,
+            'clientUrl' => $client === null ? null : ClientResource::getUrl('view', ['record' => $client]),
+            'projectLabel' => $project === null ? null : $project->key.' · '.$project->name,
+            'projectUrl' => $project === null ? null : ProjectResource::getUrl('view', ['record' => $project]),
+            'tags' => $record->tags
+                ->filter(static fn (Tag $tag): bool => $tag->type === TagType::Knowledge->value)
+                ->map(static fn (Tag $tag): string => (string) $tag->name)
+                ->values()
+                ->all(),
+        ];
     }
 
     /**
