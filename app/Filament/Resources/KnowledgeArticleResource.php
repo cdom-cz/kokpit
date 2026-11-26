@@ -18,6 +18,7 @@ use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Concerns\InKnowledgeGroup;
 use App\Filament\RelationManagers\KnowledgeArticleHistoryRelationManager;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\SecretGuardForm;
+use App\Filament\Resources\KnowledgeArticleResource\Pages\CompareArticleVersions;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\CreateKnowledgeArticle;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\EditKnowledgeArticle;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ListArticleVersions;
@@ -428,8 +429,10 @@ final class KnowledgeArticleResource extends Resource
             'create' => CreateKnowledgeArticle::route('/create'),
             'view' => ViewKnowledgeArticle::route('/{record}'),
             'edit' => EditKnowledgeArticle::route('/{record}/edit'),
-            // ViewArticleVersion answers 404 for a version that is not all digits (R-19-06-1).
+            // The static compare path is registered before the parameter path, and ViewArticleVersion answers 404 for
+            // a version that is not all digits, so the order is not the only guard (R-19-06-1).
             'versions' => ListArticleVersions::route('/{record}/versions'),
+            'compare' => CompareArticleVersions::route('/{record}/versions/compare'),
             'version' => ViewArticleVersion::route('/{record}/versions/{version}'),
         ];
     }

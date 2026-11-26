@@ -154,6 +154,17 @@ it('gives every icon row action a tooltip and an equal aria-label', function ():
     }
 });
 
+it('offers compare with previous on every row but version 1', function (): void {
+    $article = articleVersionsPageArticle();
+    $rows = articleVersionsPageRows($article);
+
+    articleVersionsPageTest($article)
+        ->assertTableActionHidden('compare_previous', $rows[0])
+        ->assertTableActionVisible('compare_previous', $rows[1])
+        ->assertTableActionVisible('compare_previous', $rows[2])
+        ->assertTableActionVisible('view', $rows[0]);
+});
+
 it('carries a row link to the version view', function (): void {
     $article = articleVersionsPageArticle();
     $rows = articleVersionsPageRows($article);

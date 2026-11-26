@@ -71,6 +71,15 @@ final class ViewArticleVersion extends Page
                 ->label(__('knowledge.versions.actions.back'))
                 ->color('gray')
                 ->url(fn (): string => KnowledgeArticleResource::getUrl('versions', ['record' => $this->article()])),
+            Action::make('compare_previous')
+                ->label(__('knowledge.versions.actions.compare_previous'))
+                ->color('gray')
+                ->url(fn (): string => KnowledgeArticleResource::getUrl('compare', [
+                    'record' => $this->article(),
+                    'from' => $this->versionNo - 1,
+                    'to' => $this->versionNo,
+                ]))
+                ->hidden(fn (): bool => $this->versionNo <= 1),
         ];
     }
 

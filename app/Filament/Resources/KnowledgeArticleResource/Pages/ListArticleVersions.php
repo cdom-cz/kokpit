@@ -66,6 +66,7 @@ final class ListArticleVersions extends ManageRelatedRecords
     {
         return [
             static::getRouteName(),
+            CompareArticleVersions::getRouteName(),
             ViewArticleVersion::getRouteName(),
         ];
     }
@@ -137,6 +138,9 @@ final class ListArticleVersions extends ManageRelatedRecords
             ->recordActions([
                 $this->iconAction('view', 'knowledge.versions.actions.view', Heroicon::OutlinedEye)
                     ->url(fn (KnowledgeArticleVersion $record): string => $this->versionUrl($record->version_no)),
+                $this->iconAction('compare_previous', 'knowledge.versions.actions.compare_previous', Heroicon::OutlinedArrowsRightLeft)
+                    ->url(fn (KnowledgeArticleVersion $record): string => $this->compareUrl($record->version_no - 1, $record->version_no))
+                    ->hidden(static fn (KnowledgeArticleVersion $record): bool => $record->version_no <= 1),
             ])
             ->paginated([25])
             ->defaultPaginationPageOption(25);
@@ -170,5 +174,10 @@ final class ListArticleVersions extends ManageRelatedRecords
     private function versionUrl(int $number): string
     {
         return KnowledgeArticleResource::getUrl('version', ['record' => $this->getRecord(), 'version' => $number]);
+    }
+
+    private function compareUrl(int $from, int $to): string
+    {
+        return KnowledgeArticleResource::getUrl('compare', ['record' => $this->getRecord(), 'from' => $from, 'to' => $to]);
     }
 }
