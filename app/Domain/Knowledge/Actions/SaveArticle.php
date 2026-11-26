@@ -26,9 +26,10 @@ use PDOException;
  * The only write path of an article's title, body, sensitive flag, version number and edit time (KB-01, VER-01, D-11).
  *
  * `create()` stores a general article as version 1 together with its version row. `update()` takes the version the
- * editor was opened with as a required argument and runs, in one transaction: authorise, lock the row, stale check,
- * normalise, no-op check, secret scan, write the article and the immutable full snapshot of the new version. The
- * order is fixed and is never changed.
+ * editor was opened with and the redaction number it was opened with as required arguments and runs, in one
+ * transaction: authorise, lock the row, stale check (version, then redaction number, D-13), normalise, no-op check,
+ * secret scan, write the article and the immutable full snapshot of the new version. The order is fixed and is
+ * never changed.
  *
  * Lock and numbering: the article row is re-read through the scoped query with `lockForUpdate()` (an archived
  * article is a not-found error, never written). The next version number is the locked row's number plus one, so
@@ -94,18 +95,28 @@ final class SaveArticle
 
     /**
      * @param  int  $expectedVersion  the version number the editor was opened with; no default, so no caller can skip the check
+     * @param  int  $expectedRedactionNo  the redaction number the editor was opened with; no default either, so an
+     *                                    editor opened before a redaction of the current version can never put the old text back (D-13)
+     * @param  int|null  $restoredFromVersionNo  the number of the version this save restores, or null for every other save
      *
      * @throws AuthorizationException
      * @throws ModelNotFoundException an archived or unknown article
-     * @throws StaleArticle the stored version differs from the expected one
+     * @throws StaleArticle the stored version or redaction number differs from the expected one
      * @throws SecretGuardRefused
      * @throws ArticleWriteFailed
      */
-    public function update(User $actor, KnowledgeArticle $article, ArticleInput $input, int $expectedVersion, bool $acknowledge = false): SaveResult
-    {
+    public function update(
+        User $actor,
+        KnowledgeArticle $article,
+        ArticleInput $input,
+        int $expectedVersion,
+        int $expectedRedactionNo,
+        bool $acknowledge = false,
+        ?int $restoredFromVersionNo = null,
+    ): SaveResult {
         Gate::forUser($actor)->authorize('update', $article);
 
-        $result = $this->inTransaction(function () use ($actor, $article, $input, $expectedVersion, $acknowledge): SaveResult {
+        $result = $this->inTransaction(function () use ($actor, $article, $input, $expectedVersion, $expectedRedactionNo, $acknowledge): SaveResult {
             // The scoped query: an archived article is a ModelNotFoundException.
             $locked = KnowledgeArticle::query()->whereKey($article->getKey())->lockForUpdate()->firstOrFail();
 
@@ -113,6 +124,12 @@ final class SaveArticle
 
             if ($locked->version_no !== $expectedVersion) {
                 throw new StaleArticle($locked->version_no);
+            }
+
+            // D-13: a redaction of the current version changes the article without a new version, so the version
+            // number alone cannot tell an editor opened before it. The version check comes first.
+            if ($locked->redaction_no !== $expectedRedactionNo) {
+                throw new StaleArticle($locked->version_no, redactionChanged: true);
             }
 
             $body = $this->normaliser->normalise($input->body);

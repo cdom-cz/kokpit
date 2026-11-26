@@ -454,6 +454,12 @@ it('gives the expected version of SaveArticle::update() no default', function ()
     expect(knowledgeSeamHasDefault($update, 'expectedVersion'))->toBeFalse();
 });
 
+it('gives the expected redaction number of SaveArticle::update() no default', function (): void {
+    $update = new ReflectionMethod(SaveArticle::class, 'update');
+
+    expect(knowledgeSeamHasDefault($update, 'expectedRedactionNo'))->toBeFalse();
+});
+
 it('reports a default on a parameter, and a parameter that does not exist', function (): void {
     $defaulted = new ReflectionFunction(static fn (int $expectedVersion = 1): int => $expectedVersion);
     $required = new ReflectionFunction(static fn (int $expectedVersion): int => $expectedVersion);

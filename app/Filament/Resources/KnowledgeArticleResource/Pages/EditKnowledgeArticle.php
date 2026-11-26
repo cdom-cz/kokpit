@@ -31,7 +31,7 @@ use Livewire\Attributes\Locked;
  * The edit screen of a general knowledge article (KB-02): the same form as the create screen, saved only through
  * {@see SaveArticle::update()} with the version the screen was opened with.
  *
- * `$loadedVersion` and `$loadedSensitive` are locked and set once, in `mount()`. They are never refreshed, not even
+ * `$loadedVersion`, `$loadedRedactionNo` and `$loadedSensitive` are locked and set once, in `mount()`. They are never refreshed, not even
  * after a refused save, so pressing "Uložit změny" again after a stale refusal is refused again and a flag set by
  * another save in the meantime is never cleared by a toggle that was already off when the screen opened (D-04 fail
  * closed, D-09). A stale save writes nothing, keeps every typed character and offers the current article in a new
@@ -61,6 +61,14 @@ final class EditKnowledgeArticle extends EditRecord implements SecretGuardForm
     public int $loadedVersion;
 
     /**
+     * The redaction number the article had when this screen was opened. Locked and written only in `mount()`: a
+     * redaction of the current version after that makes every save of this screen refuse, so the redacted text
+     * can never be put back from here (D-13).
+     */
+    #[Locked]
+    public int $loadedRedactionNo;
+
+    /**
      * Whether the sensitive toggle showed the flag on when this screen was opened. Locked and written only in
      * `mount()`: the manual clear of the flag is derived from it, never from the record read on a later request.
      */
@@ -88,6 +96,7 @@ final class EditKnowledgeArticle extends EditRecord implements SecretGuardForm
         abort_if($article->trashed(), 404);
 
         $this->loadedVersion = $article->version_no;
+        $this->loadedRedactionNo = $article->redaction_no;
         $this->loadedSensitive = $article->sensitive;
     }
 
@@ -169,16 +178,26 @@ final class EditKnowledgeArticle extends EditRecord implements SecretGuardForm
 
         try {
             $result = $this->runGuarded(fn (): SaveResult => $this->withFormErrors(
-                fn (): SaveResult => app(SaveArticle::class)->update($actor, $record, ArticleInput::from($data['title'] ?? null, $data['body'] ?? null, $sensitive, clearSensitive: $this->loadedSensitive && ! $sensitive), $this->loadedVersion, acknowledge: $this->acknowledgeThisSave),
+                fn (): SaveResult => app(SaveArticle::class)->update($actor, $record, ArticleInput::from($data['title'] ?? null, $data['body'] ?? null, $sensitive, clearSensitive: $this->loadedSensitive && ! $sensitive), $this->loadedVersion, $this->loadedRedactionNo, acknowledge: $this->acknowledgeThisSave),
             ));
-        } catch (StaleArticle) {
-            // Nothing was written. The form stays as typed, and the starting version stays as it was, so the next
-            // press of the save button is refused again (D-09).
-            Notification::make()
-                ->warning()
+        } catch (StaleArticle $stale) {
+            // Nothing was written. The form stays as typed, and the starting version and redaction number stay as
+            // they were, so the next press of the save button is refused again (D-09, D-13). A redaction of the
+            // current version is a danger notice: the typed text may be the very text that was redacted.
+            $redacted = $stale->redactionChanged;
+
+            $notice = Notification::make();
+
+            if ($redacted) {
+                $notice->danger();
+            } else {
+                $notice->warning();
+            }
+
+            $notice
                 ->persistent()
-                ->title(trans()->string('knowledge.notifications.stale_title'))
-                ->body(trans()->string('knowledge.notifications.stale_body'))
+                ->title(trans()->string($redacted ? 'knowledge.notifications.stale_redacted_title' : 'knowledge.notifications.stale_title'))
+                ->body(trans()->string($redacted ? 'knowledge.notifications.stale_redacted_body' : 'knowledge.notifications.stale_body'))
                 ->actions([
                     Action::make('load_current')
                         ->label(trans()->string('knowledge.actions.load_current'))
