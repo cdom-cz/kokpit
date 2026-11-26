@@ -23,9 +23,25 @@ const KNOWLEDGE_SEAM_SUPPORT_DIRECTORY = 'app/Domain/Knowledge/Support/';
 const KNOWLEDGE_SEAM_RENDERER_FILE = 'app/Domain/Knowledge/Support/KnowledgeMarkdown.php';
 
 /**
- * The only file that writes the body and the version number of an article.
+ * The reviewed writers of each guarded column, by path relative to the repository root (R-19-09-4). The body is written
+ * by the save path (a new version) and by the redaction (the one controlled exception to immutability), the version
+ * number only by the save path and the redaction counter only by the redaction. Add a file only after it was reviewed.
  */
-const KNOWLEDGE_SEAM_WRITER_FILE = 'app/Domain/Knowledge/Actions/SaveArticle.php';
+const KNOWLEDGE_SEAM_WRITERS = [
+    'body_md' => ['app/Domain/Knowledge/Actions/SaveArticle.php', 'app/Domain/Knowledge/Actions/RedactVersion.php'],
+    'version_no' => ['app/Domain/Knowledge/Actions/SaveArticle.php'],
+    'redaction_no' => ['app/Domain/Knowledge/Actions/RedactVersion.php'],
+];
+
+/**
+ * The only file that names the transaction setting that opens the history trigger for a redaction.
+ */
+const KNOWLEDGE_SEAM_SETTING_FILE = 'app/Domain/Knowledge/Actions/RedactVersion.php';
+
+/**
+ * The text of the setting that opens the history trigger for a redaction.
+ */
+const KNOWLEDGE_SEAM_SETTING_NAME = 'kokpit.redacting_knowledge_version';
 
 /**
  * Files outside the knowledge module that build an HtmlSanitizerConfig of their own, each with the reason it is no
@@ -181,15 +197,16 @@ function knowledgeSeamRawEchoes(string $blade): array
 }
 
 /**
- * The writes of the body or the version number in a PHP source: an array key `'body_md' =>` or `'version_no' =>` (a
- * cast declaration `'version_no' => 'integer'` is no write), an assignment to the property, or an increment of it.
+ * The writes of the guarded columns in a PHP source: an array key `'body_md' =>`, `'version_no' =>` or
+ * `'redaction_no' =>` (a cast declaration such as `'version_no' => 'integer'` is no write), an assignment to the
+ * property, or an increment of it. Writing a column through raw SQL to dodge this scan is not allowed.
  *
+ * @param  list<string>  $columns  the columns to look for
  * @return list<string> one `what (line N)` entry per write
  */
-function knowledgeSeamWrites(string $source): array
+function knowledgeSeamWrites(string $source, array $columns = ['body_md', 'version_no', 'redaction_no']): array
 {
     $tokens = knowledgeSeamTokens($source);
-    $columns = ['body_md', 'version_no'];
     $found = [];
 
     foreach ($tokens as $i => $token) {
@@ -205,6 +222,71 @@ function knowledgeSeamWrites(string $source): array
         if (in_array($text, ['->', '?->'], true) && in_array($next, $columns, true) && in_array($afterNext, ['=', '+=', '-=', '.=', '++', '--'], true)) {
             $found[] = '->'.$next.' '.$afterNext.' (line '.$token['line'].')';
         }
+    }
+
+    return $found;
+}
+
+/**
+ * The lines of a PHP source with a string token that contains the redaction setting name, in any quoting.
+ *
+ * @return list<int>
+ */
+function knowledgeSeamSettingReferences(string $source): array
+{
+    $lines = [];
+
+    foreach (knowledgeSeamTokens($source) as $token) {
+        if (str_contains($token['text'], KNOWLEDGE_SEAM_SETTING_NAME) && in_array($token['text'][0], ['\'', '"'], true)) {
+            $lines[] = $token['line'];
+        }
+    }
+
+    return $lines;
+}
+
+/**
+ * The statements of a PHP source (the tokens up to the next semicolon) that persist a reason text (OD-1): a
+ * statement that names the redaction model, the redaction table or, in a knowledge file, `withProperties`, and holds
+ * a string token `'reason'` or `"reason"` followed by `=>`. A key such as `'reason_length'` or `'reason_recorded'` is
+ * another token and passes, and so does a ValidationException keyed by the field, which names none of those.
+ *
+ * @return list<string> one entry per violation
+ */
+function knowledgeSeamReasonWrites(string $source, bool $knowledgeFile): array
+{
+    $found = [];
+    $statement = [];
+
+    foreach ([...knowledgeSeamTokens($source), ['text' => ';', 'line' => 0]] as $token) {
+        if ($token['text'] !== ';') {
+            $statement[] = $token;
+
+            continue;
+        }
+
+        $names = false;
+        $reasonLine = null;
+
+        foreach ($statement as $i => $part) {
+            $text = $part['text'];
+
+            if (knowledgeSeamLastSegment($text) === 'KnowledgeVersionRedaction'
+                || trim($text, '\'"') === 'knowledge_version_redactions'
+                || ($knowledgeFile && $text === 'withProperties')) {
+                $names = true;
+            }
+
+            if (in_array($text, ["'reason'", '"reason"'], true) && ($statement[$i + 1]['text'] ?? '') === '=>') {
+                $reasonLine ??= $part['line'];
+            }
+        }
+
+        if ($names && $reasonLine !== null) {
+            $found[] = 'a reason key in a statement that persists it (line '.$reasonLine.')';
+        }
+
+        $statement = [];
     }
 
     return $found;
@@ -385,50 +467,134 @@ it('reports a raw Blade echo and ignores a Blade comment that names it', functio
         ->and(knowledgeSeamRawEchoes($comment))->toBe([]);
 });
 
-it('writes the body and the version number of an article only in SaveArticle', function (): void {
+it('writes the body, the version number and the redaction number of an article only in the reviewed writers', function (): void {
     $files = knowledgeSeamAppFiles();
     $found = [];
 
-    foreach ($files as $path => $source) {
-        if ($path === KNOWLEDGE_SEAM_WRITER_FILE) {
-            continue;
-        }
+    foreach (KNOWLEDGE_SEAM_WRITERS as $column => $writers) {
+        foreach ($files as $path => $source) {
+            if (in_array($path, $writers, true)) {
+                continue;
+            }
 
-        foreach (knowledgeSeamWrites($source) as $place) {
-            $found[] = $path.': '.$place;
+            foreach (knowledgeSeamWrites($source, [$column]) as $place) {
+                $found[] = $path.': '.$place;
+            }
         }
     }
 
-    $writer = implode("\n", knowledgeSeamWrites($files[KNOWLEDGE_SEAM_WRITER_FILE] ?? ''));
+    $save = $files['app/Domain/Knowledge/Actions/SaveArticle.php'] ?? '';
+    $redact = $files['app/Domain/Knowledge/Actions/RedactVersion.php'] ?? '';
 
     expect($found)->toBe([])
-        // The scan sees both keys where they are written.
-        ->and($writer)->toContain("'body_md' =>")
-        ->and($writer)->toContain("'version_no' =>");
+        // The scan sees each key where it is written.
+        ->and(implode("\n", knowledgeSeamWrites($save, ['body_md'])))->toContain("'body_md' =>")
+        ->and(implode("\n", knowledgeSeamWrites($redact, ['body_md'])))->toContain("'body_md' =>")
+        ->and(implode("\n", knowledgeSeamWrites($save, ['version_no'])))->toContain("'version_no' =>")
+        ->and(implode("\n", knowledgeSeamWrites($redact, ['redaction_no'])))->toContain("'redaction_no' =>");
+
+    // Every writer of the map still writes its column, so no entry outlives its reason.
+    foreach (KNOWLEDGE_SEAM_WRITERS as $column => $writers) {
+        foreach ($writers as $writer) {
+            expect(knowledgeSeamWrites($files[$writer] ?? '', [$column]))->not->toBe([], $writer.' no longer writes '.$column.': remove it from the map');
+        }
+    }
 });
 
-it('reports a write of the body or the version number in any other file, and ignores a cast', function (): void {
+it('reports a write of the body, the version number or the redaction number in any other file, and ignores a cast', function (): void {
     $violations = <<<'PHP'
         <?php
 
         $article->forceFill(['body_md' => $text]);
         $article->forceFill(["version_no" => 3]);
+        $article->forceFill(['redaction_no' => 3]);
         $article->version_no = 3;
         $article->version_no++;
         $article->body_md .= 'x';
+        $article->redaction_no += 1;
         PHP;
     $clean = <<<'PHP'
         <?php
 
         // 'body_md' => $text
-        $casts = ['version_no' => 'integer'];
+        $casts = ['version_no' => 'integer', 'redaction_no' => 'integer'];
         $copy = $version->body_md;
         $query->where('version_no', 3);
+        $next = $article->redaction_no + 1;
         if ($article->version_no === 3) {}
         PHP;
 
-    expect(knowledgeSeamWrites($violations))->toHaveCount(5)
+    expect(knowledgeSeamWrites($violations))->toHaveCount(7)
+        ->and(knowledgeSeamWrites($violations, ['redaction_no']))->toHaveCount(2)
         ->and(knowledgeSeamWrites($clean))->toBe([]);
+});
+
+it('names the redaction setting only in RedactVersion', function (): void {
+    $files = knowledgeSeamAppFiles();
+    $found = [];
+
+    foreach ($files as $path => $source) {
+        if ($path === KNOWLEDGE_SEAM_SETTING_FILE) {
+            continue;
+        }
+
+        foreach (knowledgeSeamSettingReferences($source) as $line) {
+            $found[] = $path.':'.$line;
+        }
+    }
+
+    expect($found)->toBe([])
+        // The scan sees the setting where it is switched on and off.
+        ->and(count(knowledgeSeamSettingReferences($files[KNOWLEDGE_SEAM_SETTING_FILE] ?? '')))->toBeGreaterThanOrEqual(2);
+});
+
+it('reports a file that names the redaction setting in any string, and ignores comments', function (): void {
+    $violation = "<?php\n\nDB::select(\"select set_config('kokpit.redacting_knowledge_version', 'on', true)\");\n\$name = 'kokpit.redacting_knowledge_version';\n";
+    $comment = "<?php\n\n// kokpit.redacting_knowledge_version in a comment\n/** kokpit.redacting_knowledge_version */\n\$a = 'kokpit.other';\n";
+
+    expect(knowledgeSeamSettingReferences($violation))->toBe([3, 4])
+        ->and(knowledgeSeamSettingReferences($comment))->toBe([]);
+});
+
+it('persists no reason text of a redaction (OD-1)', function (): void {
+    $files = knowledgeSeamAppFiles();
+    $found = [];
+
+    foreach ($files as $path => $source) {
+        foreach (knowledgeSeamReasonWrites($source, str_starts_with($path, 'app/Domain/Knowledge/')) as $place) {
+            $found[] = $path.': '.$place;
+        }
+    }
+
+    // The statements that name the redaction model are scanned: they carry the length and the flag, never the text.
+    $redact = $files['app/Domain/Knowledge/Actions/RedactVersion.php'] ?? '';
+
+    expect($found)->toBe([])
+        ->and($redact)->toContain('KnowledgeVersionRedaction')
+        ->and($redact)->toContain("'reason_length' =>")
+        ->and($redact)->toContain("'reason_recorded' =>");
+});
+
+it('reports a reason key written through the redaction model, the redaction table or the activity properties', function (): void {
+    $violations = <<<'PHP'
+        <?php
+
+        (new KnowledgeVersionRedaction)->forceFill(['version_id' => $id, 'reason' => $text])->save();
+        DB::table('knowledge_version_redactions')->insert(['version_id' => $id, "reason" => $text]);
+        activity()->withProperties(['reason' => $text])->log('version_redacted');
+        PHP;
+    $clean = <<<'PHP'
+        <?php
+
+        (new KnowledgeVersionRedaction)->forceFill(['version_id' => $id, 'reason_length' => $length])->save();
+        activity()->withProperties(['reason_recorded' => true])->log('version_redacted');
+        throw ValidationException::withMessages(['reason' => __('knowledge.redact.errors.reason_required')]);
+        $form = ['reason' => $text];
+        PHP;
+
+    expect(knowledgeSeamReasonWrites($violations, true))->toHaveCount(3)
+        ->and(knowledgeSeamReasonWrites($violations, false))->toHaveCount(2)
+        ->and(knowledgeSeamReasonWrites($clean, true))->toBe([]);
 });
 
 it('is not globally searchable, and the resource does not declare its own search flag', function (): void {
