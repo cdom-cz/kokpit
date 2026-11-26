@@ -11,6 +11,7 @@ use App\Filament\Resources\KnowledgeArticleResource\Pages\CompareArticleVersions
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ListArticleVersions;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ViewArticleVersion;
 use Carbon\CarbonImmutable;
+use Filament\Actions\ActionGroup;
 use Filament\Facades\Filament;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -268,7 +269,7 @@ it('offers compare with previous on every version but the first, on the versions
 
     $collect = function (array $items) use (&$collect, &$names): void {
         foreach ($items as $item) {
-            if ($item instanceof \Filament\Actions\ActionGroup) {
+            if ($item instanceof ActionGroup) {
                 $collect($item->getActions());
 
                 continue;
