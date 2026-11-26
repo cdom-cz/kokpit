@@ -12,10 +12,12 @@ use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\DeniesPartners;
 use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
+use ArrayAccess;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\Tags\HasTags;
 
 /**
  * A knowledge article of any kind (KB-01): a general article, an incident, an incident sub-page or a
@@ -29,6 +31,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * client and project links, the share and sensitive flags and the version number. The title and the
  * body are never logged, because an article may hold anything an Admin pastes into it, including
  * what the secret guard only warns about.
+ *
+ * The article carries tags of the type `knowledge` (ORG-03). No tag name is ever written to the activity log:
+ * tags are not in the allowlist, and the article row does not change when a tag is attached.
  *
  * Nothing is fillable: every content write is a `forceFill` inside the Knowledge Actions, so a
  * request can never change the body, the version number or the sharing by mass assignment.
@@ -65,11 +70,30 @@ final class KnowledgeArticle extends KokpitModel implements PartnerIsolated
 {
     use DeniesPartners, LogsAllowlistedActivity, SoftDeletes;
 
+    use HasTags {
+        detachTags as private detachTagsFromTrait;
+    }
+
     public const int MAX_TITLE_LENGTH = 200;
 
     public const int MAX_BODY_LENGTH = 100000;
 
     protected $table = 'knowledge_articles';
+
+    /**
+     * The package detaches every tag when a model is deleted. Archiving is a soft delete and keeps the
+     * tags, so a restore brings them back (D-04); only a force delete detaches them.
+     *
+     * @param  array<mixed>|ArrayAccess<int|string, mixed>  $tags
+     */
+    public function detachTags(array|ArrayAccess $tags, ?string $type = null): static
+    {
+        if ($this->trashed() && ! $this->isForceDeleting()) {
+            return $this;
+        }
+
+        return $this->detachTagsFromTrait($tags, $type);
+    }
 
     /**
      * @return HasMany<KnowledgeArticleVersion, $this>
