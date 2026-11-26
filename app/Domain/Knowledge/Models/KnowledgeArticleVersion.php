@@ -10,16 +10,22 @@ use App\Domain\Shared\Auth\PartnerIsolated;
 use App\Domain\Shared\Models\KokpitModel;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * One immutable version of a knowledge article (VER-01, D-11): a full snapshot of the title and the
  * Markdown body at one content-changing save, with its author. The database refuses every update,
- * delete and truncate of these rows; there is no `updated_at`.
+ * delete and truncate of these rows, with one exception: a rewrite of `body_md` alone inside a
+ * transaction that switched the redaction setting on (D-12). There is no `updated_at`.
  *
  * Closed to Partners by DeniesPartners and the admin-only policy. Not logged: the rows are the
  * history themselves, and they hold the content the activity log must never carry.
  *
- * Nothing is fillable: rows are written only by `SaveArticle`, with `forceFill`.
+ * Nothing is fillable: rows are written only by `SaveArticle`, with `forceFill`; the redaction Action
+ * alone may rewrite `body_md`, through the setting.
+ *
+ * `restored_from_version_no` is set when the row was written by a restore (D-11): the number of the
+ * version it copied. `redactions()` holds the append-only records of its redactions.
  *
  * @property string $id
  * @property string $article_id
@@ -27,6 +33,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $title
  * @property string $body_md
  * @property string $author_id
+ * @property int|null $restored_from_version_no
  * @property CarbonImmutable|null $created_at
  */
 final class KnowledgeArticleVersion extends KokpitModel implements PartnerIsolated
@@ -54,12 +61,21 @@ final class KnowledgeArticleVersion extends KokpitModel implements PartnerIsolat
     }
 
     /**
+     * @return HasMany<KnowledgeVersionRedaction, $this>
+     */
+    public function redactions(): HasMany
+    {
+        return $this->hasMany(KnowledgeVersionRedaction::class, 'version_id');
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
     {
         return [
             'version_no' => 'integer',
+            'restored_from_version_no' => 'integer',
             'created_at' => 'immutable_datetime',
         ];
     }

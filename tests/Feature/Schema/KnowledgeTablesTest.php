@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Enums\ArticleKind;
+use App\Domain\Knowledge\Enums\RedactionScope;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
+use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use Illuminate\Support\Facades\DB;
@@ -97,6 +99,53 @@ function knowledgeTablesState(): array
 
         return ['client' => $project->client_id, 'project' => $project->id];
     });
+}
+
+/**
+ * Inserts one redaction row of a version and returns its id; overrides replace single columns.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function knowledgeTablesRedaction(string $versionId, string $actorId, array $overrides = []): string
+{
+    $id = (string) Str::uuid7();
+
+    DB::table('knowledge_version_redactions')->insert(array_merge([
+        'id' => $id,
+        'version_id' => $versionId,
+        'actor_id' => $actorId,
+        'scope' => 'lines',
+        'reason_length' => 12,
+        'created_at' => now(),
+    ], $overrides));
+
+    return $id;
+}
+
+/**
+ * Sets the transaction-local redaction setting with set_config(..., is_local true), as the redaction Action will.
+ * The Feature tests share one outer
+ * transaction, so a test that switches the setting on and keeps the statement must switch it off again before it
+ * leaves its closure (a refused statement rolls its savepoint back, and the setting with it).
+ */
+function knowledgeTablesRedactionSetting(string $value): void
+{
+    DB::select("select set_config('kokpit.redacting_knowledge_version', ?, true)", [$value]);
+}
+
+/**
+ * The column names of a table, sorted.
+ *
+ * @return list<string>
+ */
+function knowledgeTablesColumns(string $table): array
+{
+    return DB::table('information_schema.columns')
+        ->whereRaw('table_schema = current_schema()')
+        ->where('table_name', $table)
+        ->orderBy('column_name')
+        ->pluck('column_name')
+        ->all();
 }
 
 beforeEach(function (): void {
@@ -343,5 +392,183 @@ describe('folders', function (): void {
             ->and($articles->modelKeys())->toBe([$article])
             ->and((new KnowledgeFolder)->getMorphClass())->toBe('knowledge_folder')
             ->and(KnowledgeFolder::MAX_DEPTH)->toBe(6);
+    });
+});
+
+describe('redaction and restore marker', function (): void {
+    it('refuses a body rewrite of a version while the redaction setting is off', function (): void {
+        $version = knowledgeTablesVersion(knowledgeTablesArticle(), $this->authorId, ['body_md' => 'Example body']);
+
+        RawSql::expectSqlState('KP001', fn () => DB::table('knowledge_article_versions')->where('id', $version)->update(['body_md' => '[redacted]']));
+
+        expect(DB::table('knowledge_article_versions')->where('id', $version)->value('body_md'))->toBe('Example body');
+    });
+
+    it('admits a body-only rewrite while the setting is on and refuses it again once the setting is off', function (): void {
+        $version = knowledgeTablesVersion(knowledgeTablesArticle(), $this->authorId, ['body_md' => 'Example body']);
+
+        RawSql::expectAllowed(function () use ($version): void {
+            knowledgeTablesRedactionSetting('on');
+            DB::table('knowledge_article_versions')->where('id', $version)->update(['body_md' => '[redacted]']);
+            knowledgeTablesRedactionSetting('off');
+        });
+
+        expect(DB::table('knowledge_article_versions')->where('id', $version)->value('body_md'))->toBe('[redacted]');
+
+        RawSql::expectSqlState('KP001', fn () => DB::table('knowledge_article_versions')->where('id', $version)->update(['body_md' => 'Rewritten again']));
+
+        expect(DB::table('knowledge_article_versions')->where('id', $version)->value('body_md'))->toBe('[redacted]');
+    });
+
+    it('refuses a rewrite of every column but the body while the setting is on', function (): void {
+        $version = knowledgeTablesVersion(knowledgeTablesArticle(), $this->authorId, ['version_no' => 2]);
+        $otherAuthor = User::factory()->create()->id;
+
+        $changes = [
+            ['title' => 'Changed title'],
+            ['version_no' => 3],
+            ['author_id' => $otherAuthor],
+            ['created_at' => now()->subDay()],
+            ['restored_from_version_no' => 1],
+            ['body_md' => '[redacted]', 'title' => 'Changed title'],
+        ];
+
+        foreach ($changes as $change) {
+            RawSql::expectSqlState('KP001', function () use ($version, $change): void {
+                knowledgeTablesRedactionSetting('on');
+                DB::table('knowledge_article_versions')->where('id', $version)->update($change);
+            });
+        }
+
+        $row = DB::table('knowledge_article_versions')->where('id', $version)->first();
+
+        expect($row->title)->toBe('Example runbook')
+            ->and($row->version_no)->toBe(2)
+            ->and($row->author_id)->toBe($this->authorId)
+            ->and($row->body_md)->toBe('')
+            ->and($row->restored_from_version_no)->toBeNull();
+    });
+
+    it('refuses to delete or truncate a version while the setting is on', function (): void {
+        $version = knowledgeTablesVersion(knowledgeTablesArticle(), $this->authorId);
+
+        RawSql::expectSqlState('KP001', function () use ($version): void {
+            knowledgeTablesRedactionSetting('on');
+            DB::table('knowledge_article_versions')->where('id', $version)->delete();
+        });
+        RawSql::expectSqlState('KP001', function (): void {
+            knowledgeTablesRedactionSetting('on');
+            DB::statement('TRUNCATE knowledge_article_versions');
+        });
+
+        expect(DB::table('knowledge_article_versions')->where('id', $version)->exists())->toBeTrue();
+    });
+
+    it('treats every setting value but exactly on as off', function (): void {
+        $version = knowledgeTablesVersion(knowledgeTablesArticle(), $this->authorId, ['body_md' => 'Example body']);
+
+        foreach (['true', 'ON ', 'ON', '1', 'off', ''] as $value) {
+            RawSql::expectSqlState('KP001', function () use ($version, $value): void {
+                knowledgeTablesRedactionSetting($value);
+                DB::table('knowledge_article_versions')->where('id', $version)->update(['body_md' => '[redacted]']);
+            });
+        }
+
+        expect(DB::table('knowledge_article_versions')->where('id', $version)->value('body_md'))->toBe('Example body');
+    });
+
+    it('accepts a missing restore marker and a marker below the version number, and refuses the rest', function (): void {
+        $article = knowledgeTablesArticle();
+        knowledgeTablesVersion($article, $this->authorId);
+
+        RawSql::expectAllowed(fn () => knowledgeTablesVersion($article, $this->authorId, ['version_no' => 2, 'restored_from_version_no' => 1]));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesVersion($article, $this->authorId, ['version_no' => 3, 'restored_from_version_no' => 3]));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesVersion($article, $this->authorId, ['version_no' => 3, 'restored_from_version_no' => 4]));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesVersion($article, $this->authorId, ['version_no' => 3, 'restored_from_version_no' => 0]));
+        RawSql::expectAllowed(fn () => knowledgeTablesVersion($article, $this->authorId, ['version_no' => 3, 'restored_from_version_no' => null]));
+
+        expect(DB::table('knowledge_article_versions')->where('article_id', $article)->orderBy('version_no')->pluck('restored_from_version_no')->all())
+            ->toBe([null, 1, null]);
+    });
+
+    it('starts every article with redaction number 0 and refuses a negative one', function (): void {
+        $article = knowledgeTablesArticle();
+
+        expect(DB::table('knowledge_articles')->where('id', $article)->value('redaction_no'))->toBe(0);
+
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesArticle(['redaction_no' => -1]));
+        RawSql::expectSqlState('23514', fn () => DB::table('knowledge_articles')->where('id', $article)->update(['redaction_no' => -1]));
+        RawSql::expectAllowed(fn () => DB::table('knowledge_articles')->where('id', $article)->update(['redaction_no' => 1]));
+    });
+
+    it('records a redaction and refuses a bad scope, a bad reason length and unknown references', function (): void {
+        $version = knowledgeTablesVersion(knowledgeTablesArticle(), $this->authorId);
+
+        $lines = knowledgeTablesRedaction($version, $this->authorId);
+        $whole = knowledgeTablesRedaction($version, $this->authorId, ['scope' => 'whole', 'reason_length' => 500]);
+
+        expect($lines)->toMatch(Uuids::V7_PATTERN)
+            ->and(DB::table('knowledge_version_redactions')->where('id', $whole)->value('scope'))->toBe('whole')
+            ->and(DB::table('knowledge_version_redactions')->where('id', $lines)->value('created_at'))->not->toBeNull();
+
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesRedaction($version, $this->authorId, ['scope' => 'partial']));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesRedaction($version, $this->authorId, ['reason_length' => 0]));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesRedaction($version, $this->authorId, ['reason_length' => 501]));
+        RawSql::expectSqlState('23503', fn () => knowledgeTablesRedaction((string) Str::uuid7(), $this->authorId));
+        RawSql::expectSqlState('23503', fn () => knowledgeTablesRedaction($version, (string) Str::uuid7()));
+    });
+
+    it('lets the redaction column default allocate a version 7 id and the creation time', function (): void {
+        $version = knowledgeTablesVersion(knowledgeTablesArticle(), $this->authorId);
+
+        DB::table('knowledge_version_redactions')->insert(['version_id' => $version, 'actor_id' => $this->authorId, 'scope' => 'lines', 'reason_length' => 1]);
+
+        expect(DB::table('knowledge_version_redactions')->value('id'))->toMatch(Uuids::V7_PATTERN)
+            ->and(DB::table('knowledge_version_redactions')->value('created_at'))->not->toBeNull();
+    });
+
+    it('refuses to update, delete or truncate a redaction row and keeps the row', function (): void {
+        $version = knowledgeTablesVersion(knowledgeTablesArticle(), $this->authorId);
+        $redaction = knowledgeTablesRedaction($version, $this->authorId);
+
+        RawSql::expectSqlState('KP001', fn () => DB::table('knowledge_version_redactions')->where('id', $redaction)->update(['reason_length' => 13]));
+        RawSql::expectSqlState('KP001', fn () => DB::table('knowledge_version_redactions')->where('id', $redaction)->delete());
+        RawSql::expectSqlState('KP001', fn () => DB::statement('TRUNCATE knowledge_version_redactions'));
+
+        expect(DB::table('knowledge_version_redactions')->where('id', $redaction)->value('reason_length'))->toBe(12);
+    });
+
+    it('has no column that could hold the text of the reason', function (): void {
+        expect(knowledgeTablesColumns('knowledge_version_redactions'))
+            ->toBe(['actor_id', 'created_at', 'id', 'reason_length', 'scope', 'version_id']);
+    });
+
+    it('refuses to delete a version that has a redaction row', function (): void {
+        $version = knowledgeTablesVersion(knowledgeTablesArticle(), $this->authorId);
+        knowledgeTablesRedaction($version, $this->authorId);
+
+        RawSql::expectSqlState('KP001', fn () => DB::table('knowledge_article_versions')->where('id', $version)->delete());
+
+        expect(DB::table('knowledge_article_versions')->where('id', $version)->exists())->toBeTrue();
+    });
+
+    it('reads redactions through the models and carries no reason key', function (): void {
+        $article = knowledgeTablesArticle();
+        knowledgeTablesRedaction(knowledgeTablesVersion($article, $this->authorId), $this->authorId);
+        knowledgeTablesVersion($article, $this->authorId, ['version_no' => 2]);
+
+        [$flags, $model] = app(PartnerContext::class)->runAsSystem(static function () use ($article): array {
+            $versions = KnowledgeArticleVersion::query()->where('article_id', $article)->withExists('redactions')->orderBy('version_no')->get();
+
+            return [
+                $versions->map(static fn (KnowledgeArticleVersion $version): bool => (bool) $version->redactions_exists)->all(),
+                KnowledgeVersionRedaction::query()->firstOrFail(),
+            ];
+        });
+
+        expect($flags)->toBe([true, false])
+            ->and($model->scope)->toBe(RedactionScope::Lines)
+            ->and($model->reason_length)->toBe(12)
+            ->and($model->toArray())->not->toHaveKey('reason');
     });
 });

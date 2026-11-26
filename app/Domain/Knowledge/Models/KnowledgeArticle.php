@@ -41,6 +41,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string $title
  * @property string $body_md
  * @property int $version_no
+ * @property int $redaction_no
  * @property CarbonImmutable $edited_at
  * @property bool $sensitive
  * @property string|null $folder_id
@@ -120,6 +121,7 @@ final class KnowledgeArticle extends KokpitModel implements PartnerIsolated
             'sensitive' => 'boolean',
             'client_visible' => 'boolean',
             'version_no' => 'integer',
+            'redaction_no' => 'integer',
             'edited_at' => 'immutable_datetime',
         ];
     }
