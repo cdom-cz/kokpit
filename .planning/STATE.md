@@ -2,19 +2,19 @@
 gsd_state_version: "1.0"
 milestone: v1.1
 milestone_name: Knowledge Center
-current_phase: 18
-current_phase_name: Knowledge Articles and Secret Guard
+current_phase: 19
+current_phase_name: Folders, Tags and Version History
 status: executing
-stopped_at: Phase 19 context gathered
-last_updated: "2026-11-25T21:32:41.782Z"
-last_activity: 2026-11-25
-last_activity_desc: Phase 18 execution started
-state_head: 57a719d6a73feffb7e4f309d587f0f90f1fb9cd7
+stopped_at: Phase 20 context gathered
+last_updated: "2026-11-26T22:41:59.374Z"
+last_activity: 2026-11-26
+last_activity_desc: Phase 19 execution started
+state_head: 1872525efe5e88c07f56be6a706dfa2633800381
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 14
-  completed_plans: 14
+  total_plans: 26
+  completed_plans: 26
   percent: 0
 ---
 
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-11-25)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 18 — Knowledge Articles and Secret Guard
+**Current focus:** Phase 19 — Folders, Tags and Version History
 
 ## Current Position
 
-Phase: 18 (Knowledge Articles and Secret Guard) — EXECUTING
-Plan: 14 of 14
-Status: Executing Phase 18
-Last activity: 2026-11-25 — Phase 18 execution started
+Phase: 19 (Folders, Tags and Version History) — EXECUTING
+Plan: 1 of 12
+Status: Executing Phase 19
+Last activity: 2026-11-26 — Phase 19 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -988,9 +988,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-25T21:32:41.700Z
-Stopped at: Phase 19 context gathered
-Resume file: .planning/phases/19-folders-tags-and-version-history/19-CONTEXT.md
+Last session: 2026-11-26T22:41:58.899Z
+Stopped at: Phase 20 context gathered
+Resume file: .planning/phases/20-image-attachments/20-CONTEXT.md
 
 ## Operator Next Steps
 
