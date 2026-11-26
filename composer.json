@@ -30,6 +30,7 @@
         "league/html-to-markdown": "^5.2",
         "maennchen/zipstream-php": "^3.2",
         "openspout/openspout": "^4.32",
+        "sebastian/diff": "^9.0.1",
         "spatie/eloquent-sortable": "^5.0",
         "spatie/laravel-activitylog": "^5.1",
         "spatie/laravel-medialibrary": "^11.23",
