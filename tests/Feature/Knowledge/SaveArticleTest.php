@@ -246,7 +246,7 @@ it('raises the version by one on a body change and keeps every earlier snapshot'
 
     $this->travel(10)->minutes();
 
-    $result = $this->save->update($this->admin, $article, ArticleInput::from($title, $newBody, false), 1);
+    $result = $this->save->update($this->admin, $article, ArticleInput::from($title, $newBody, false), 1, (int) $article->redaction_no);
 
     $after = saveArticleRow($article->id);
     $versions = saveArticleVersions($article->id);
@@ -271,9 +271,9 @@ it('treats a change of the title alone as a content change', function (): void {
     saveArticleWatch($title, $body, $newTitle);
 
     $article = $this->save->create($this->admin, ArticleInput::from($title, $body, false))->article;
-    $this->save->update($this->admin, $article, ArticleInput::from($title, "{$body} more", false), 1);
+    $this->save->update($this->admin, $article, ArticleInput::from($title, "{$body} more", false), 1, (int) $article->redaction_no);
 
-    $result = $this->save->update($this->admin, $article, ArticleInput::from($newTitle, "{$body} more", false), 2);
+    $result = $this->save->update($this->admin, $article, ArticleInput::from($newTitle, "{$body} more", false), 2, (int) $article->redaction_no);
 
     $versions = saveArticleVersions($article->id);
 
@@ -296,7 +296,7 @@ it('writes no version and does not move the edit time for a resave that differs 
 
     $this->travel(10)->minutes();
 
-    $result = $this->save->update($this->admin, $article, ArticleInput::from($title, $resave, false), 1);
+    $result = $this->save->update($this->admin, $article, ArticleInput::from($title, $resave, false), 1, (int) $article->redaction_no);
 
     $after = saveArticleRow($article->id);
 
@@ -319,7 +319,7 @@ it('stores code bytes as typed and sees a change inside a code block as a conten
 
     expect(saveArticleRow($article->id)->body_md)->toBe($stored);
 
-    $result = $this->save->update($this->admin, $article, ArticleInput::from($title, $lf, false), 1);
+    $result = $this->save->update($this->admin, $article, ArticleInput::from($title, $lf, false), 1, (int) $article->redaction_no);
 
     $versions = saveArticleVersions($article->id);
 
@@ -336,13 +336,13 @@ it('refuses a stale save and writes nothing', function (): void {
     saveArticleWatch($title, $body, $theirs, $mine);
 
     $article = $this->save->create($this->admin, ArticleInput::from($title, $body, false))->article;
-    $this->save->update($this->admin, $article, ArticleInput::from($title, $theirs, false), 1);
+    $this->save->update($this->admin, $article, ArticleInput::from($title, $theirs, false), 1, (int) $article->redaction_no);
     $counts = saveArticleCounts();
 
     $caught = null;
 
     try {
-        $this->save->update($this->admin, $article, ArticleInput::from($title, $mine, false), 1);
+        $this->save->update($this->admin, $article, ArticleInput::from($title, $mine, false), 1, (int) $article->redaction_no);
     } catch (StaleArticle $e) {
         $caught = $e;
     }
@@ -362,7 +362,7 @@ it('cannot update an archived article', function (): void {
     $archived = KnowledgeFixtures::archived(['title' => 'Example archived article']);
     $counts = saveArticleCounts();
 
-    expect(fn () => $this->save->update($this->admin, $archived, ArticleInput::from($title, $body, false), 1))
+    expect(fn () => $this->save->update($this->admin, $archived, ArticleInput::from($title, $body, false), 1, 0))
         ->toThrow(ModelNotFoundException::class)
         ->and(saveArticleRow($archived->id)->title)->toBe('Example archived article')
         ->and(saveArticleCounts())->toBe($counts);
@@ -384,7 +384,7 @@ it('refuses a Partner and a user without a role on create and update and writes 
     foreach ($actors as $name => $actor) {
         expect(fn () => $this->save->create($actor, ArticleInput::from($title.$name, $body, false)))
             ->toThrow(AuthorizationException::class)
-            ->and(fn () => $this->save->update($actor, $article, ArticleInput::from($title.$name, $body.' x', false), 1))
+            ->and(fn () => $this->save->update($actor, $article, ArticleInput::from($title.$name, $body.' x', false), 1, (int) $article->redaction_no))
             ->toThrow(AuthorizationException::class);
     }
 
@@ -439,7 +439,7 @@ it('logs only allowlisted metadata to the activity log, never the title or the b
     saveArticleWatch($title, $body, $newTitle, $newBody);
 
     $article = $this->save->create($this->admin, ArticleInput::from($title, $body, false))->article;
-    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $newBody, false), 1);
+    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $newBody, false), 1, (int) $article->redaction_no);
 
     $rows = saveArticleActivity($article->id);
     $events = array_map(static fn (Activity $row): ?string => $row->event, $rows);
@@ -475,7 +475,7 @@ it('surfaces a failing database write only as a fixed message with the SQLSTATE 
     $caught = null;
 
     try {
-        $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $newBody, false), 1);
+        $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $newBody, false), 1, (int) $article->redaction_no);
     } catch (Throwable $e) {
         $caught = $e;
     }
@@ -584,7 +584,7 @@ it('refuses every blocking secret with its rule and line, with no override, and 
 
         foreach ([false, true] as $acknowledge) {
             $onCreate = saveArticleRefusal(fn () => $this->save->create($this->admin, ArticleInput::from($title.$method, $body, false), $acknowledge));
-            $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, $acknowledge));
+            $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, (int) $article->redaction_no, $acknowledge));
 
             foreach ([$onCreate, $onUpdate] as $refused) {
                 expect($refused)->toBeInstanceOf(SecretGuardRefused::class);
@@ -615,7 +615,7 @@ it('refuses a private key in every embedded shape with no override, and writes n
 
         foreach ([false, true] as $acknowledge) {
             $onCreate = saveArticleRefusal(fn () => $this->save->create($this->admin, ArticleInput::from($title.' '.$name, $body, false), $acknowledge));
-            $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, $acknowledge));
+            $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, (int) $article->redaction_no, $acknowledge));
 
             foreach ([$onCreate, $onUpdate] as $refused) {
                 expect($refused)->toBeInstanceOf(SecretGuardRefused::class);
@@ -646,7 +646,7 @@ it('refuses a token hidden by Markdown escapes, entities or invisible characters
 
         foreach ([false, true] as $acknowledge) {
             $onCreate = saveArticleRefusal(fn () => $this->save->create($this->admin, ArticleInput::from($title.' '.$name, $body, false), $acknowledge));
-            $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, $acknowledge));
+            $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, (int) $article->redaction_no, $acknowledge));
 
             foreach ([$onCreate, $onUpdate] as $refused) {
                 expect($refused)->toBeInstanceOf(SecretGuardRefused::class);
@@ -673,7 +673,7 @@ it('refuses an ambiguous finding without the acknowledgment and writes nothing',
     $article = $this->save->create($this->admin, ArticleInput::from($title, $clean, false))->article;
     $counts = saveArticleCounts();
 
-    $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1));
+    $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, (int) $article->redaction_no));
     $onCreate = saveArticleRefusal(fn () => $this->save->create($this->admin, ArticleInput::from($title.' b', $body, false)));
 
     foreach ([$onUpdate, $onCreate] as $refused) {
@@ -704,7 +704,7 @@ it('refuses a long random run and a quoted password with spaces without the ackn
         $counts = saveArticleCounts();
 
         $onCreate = saveArticleRefusal(fn () => $this->save->create($this->admin, ArticleInput::from($title.' '.$rule, $body, false), false));
-        $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, false));
+        $onUpdate = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, (int) $article->redaction_no, false));
 
         foreach ([$onCreate, $onUpdate] as $refused) {
             expect($refused)->toBeInstanceOf(SecretGuardRefused::class);
@@ -730,7 +730,7 @@ it('saves an acknowledged ambiguous body, marks the article sensitive and logs t
 
     $article = $this->save->create($this->admin, ArticleInput::from($title, $clean, false))->article;
 
-    $result = $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, true);
+    $result = $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 1, (int) $article->redaction_no, true);
 
     $row = saveArticleRow($article->id);
     $rows = array_values(array_filter(
@@ -754,7 +754,7 @@ it('saves an acknowledged ambiguous body, marks the article sensitive and logs t
     $another = SecretFixtures::bodyWith(SecretFixtures::highEntropyString(), 2);
     saveArticleWatch($another, SecretFixtures::highEntropyString());
 
-    $refused = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $another, false), 2));
+    $refused = saveArticleRefusal(fn () => $this->save->update($this->admin, $article, ArticleInput::from($title, $another, false), 2, (int) $article->redaction_no));
 
     expect($refused)->toBeInstanceOf(SecretGuardRefused::class)
         ->and($refused->isAcknowledgeable())->toBeTrue()
@@ -762,7 +762,7 @@ it('saves an acknowledged ambiguous body, marks the article sensitive and logs t
         ->and(saveArticleRow($article->id)->version_no)->toBe(2);
 
     // The same stored body saved again without any change is not scanned: nothing new was typed.
-    $again = $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 2);
+    $again = $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false), 2, (int) $article->redaction_no);
 
     expect($again->outcome)->toBe(SaveOutcome::Unchanged)
         ->and(saveArticleRow($article->id)->sensitive)->toBeTrue();
@@ -847,11 +847,11 @@ it('never clears the sensitive flag unless the manual clear is requested', funct
     expect(saveArticleRow($article->id)->sensitive)->toBeTrue();
 
     // A content save with sensitive false and no clear request keeps the flag; so does a save with sensitive true.
-    $one = $this->save->update($this->admin, $article, ArticleInput::from($title, $next, false), 1);
-    $two = $this->save->update($this->admin, $article, ArticleInput::from($title, $third, true), 2);
+    $one = $this->save->update($this->admin, $article, ArticleInput::from($title, $next, false), 1, (int) $article->redaction_no);
+    $two = $this->save->update($this->admin, $article, ArticleInput::from($title, $third, true), 2, (int) $article->redaction_no);
 
     // A save without a content change and sensitive false is Unchanged and keeps the flag.
-    $three = $this->save->update($this->admin, $article, ArticleInput::from($title, $third, false), 3);
+    $three = $this->save->update($this->admin, $article, ArticleInput::from($title, $third, false), 3, (int) $article->redaction_no);
 
     expect($one->outcome)->toBe(SaveOutcome::Updated)
         ->and($two->outcome)->toBe(SaveOutcome::Updated)
@@ -863,7 +863,7 @@ it('never clears the sensitive flag unless the manual clear is requested', funct
     $before = saveArticleRow($article->id);
     $this->travel(10)->minutes();
 
-    $cleared = $this->save->update($this->admin, $article, ArticleInput::from($title, $third, false, true), 3);
+    $cleared = $this->save->update($this->admin, $article, ArticleInput::from($title, $third, false, true), 3, (int) $article->redaction_no);
     $after = saveArticleRow($article->id);
 
     expect($cleared->outcome)->toBe(SaveOutcome::SensitivityChanged)
@@ -873,14 +873,14 @@ it('never clears the sensitive flag unless the manual clear is requested', funct
         ->and(saveArticleVersions($article->id))->toHaveCount(3);
 
     // Marking by hand without a content change sets the flag and writes no version.
-    $marked = $this->save->update($this->admin, $article, ArticleInput::from($title, $third, true), 3);
+    $marked = $this->save->update($this->admin, $article, ArticleInput::from($title, $third, true), 3, (int) $article->redaction_no);
 
     expect($marked->outcome)->toBe(SaveOutcome::SensitivityChanged)
         ->and(saveArticleRow($article->id)->sensitive)->toBeTrue()
         ->and(saveArticleVersions($article->id))->toHaveCount(3);
 
     // A clean content change together with the manual clear writes a version and clears the flag.
-    $both = $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false, true), 3);
+    $both = $this->save->update($this->admin, $article, ArticleInput::from($title, $body, false, true), 3, (int) $article->redaction_no);
 
     expect($both->outcome)->toBe(SaveOutcome::Updated)
         ->and(saveArticleRow($article->id)->sensitive)->toBeFalse()
@@ -895,7 +895,7 @@ it('ends sensitive on an acknowledged save even when the manual clear is request
 
     $article = $this->save->create($this->admin, ArticleInput::from($title, $body, false))->article;
 
-    $result = $this->save->update($this->admin, $article, ArticleInput::from($title, $ambiguous, false, true), 1, true);
+    $result = $this->save->update($this->admin, $article, ArticleInput::from($title, $ambiguous, false, true), 1, (int) $article->redaction_no, true);
 
     expect($result->outcome)->toBe(SaveOutcome::Updated)
         ->and($result->markedSensitive)->toBeTrue()
@@ -914,20 +914,20 @@ it('keeps the content out of the log on every save path', function (): void {
     $archived = KnowledgeFixtures::archived();
 
     // Update, title-only change, no-op, sensitivity-only change.
-    $this->save->update($this->admin, $article, ArticleInput::from($title, $newBody, false), 1);
-    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $newBody, false), 2);
-    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $newBody, false), 3);
-    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $newBody, true), 3);
+    $this->save->update($this->admin, $article, ArticleInput::from($title, $newBody, false), 1, (int) $article->redaction_no);
+    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $newBody, false), 2, (int) $article->redaction_no);
+    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $newBody, false), 3, (int) $article->redaction_no);
+    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $newBody, true), 3, (int) $article->redaction_no);
 
     // Stale, archived, authorisation and guard refusals.
-    expect(fn () => $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $body, false), 1))->toThrow(StaleArticle::class)
-        ->and(fn () => $this->save->update($this->admin, $archived, ArticleInput::from($newTitle, $body, false), 1))->toThrow(ModelNotFoundException::class)
-        ->and(fn () => $this->save->update(Canary::partnerFor(Canary::twoClients()[0]), $article, ArticleInput::from($newTitle, $body, false), 3))->toThrow(AuthorizationException::class)
-        ->and(fn () => $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $blocking, false), 3, true))->toThrow(SecretGuardRefused::class)
-        ->and(fn () => $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $ambiguous, false), 3))->toThrow(SecretGuardRefused::class);
+    expect(fn () => $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $body, false), 1, (int) $article->redaction_no))->toThrow(StaleArticle::class)
+        ->and(fn () => $this->save->update($this->admin, $archived, ArticleInput::from($newTitle, $body, false), 1, 0))->toThrow(ModelNotFoundException::class)
+        ->and(fn () => $this->save->update(Canary::partnerFor(Canary::twoClients()[0]), $article, ArticleInput::from($newTitle, $body, false), 3, (int) $article->redaction_no))->toThrow(AuthorizationException::class)
+        ->and(fn () => $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $blocking, false), 3, (int) $article->redaction_no, true))->toThrow(SecretGuardRefused::class)
+        ->and(fn () => $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $ambiguous, false), 3, (int) $article->redaction_no))->toThrow(SecretGuardRefused::class);
 
     // The acknowledged save.
-    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $ambiguous, false), 3, true);
+    $this->save->update($this->admin, $article, ArticleInput::from($newTitle, $ambiguous, false), 3, (int) $article->redaction_no, true);
 
     expect(saveArticleRow($article->id)->version_no)->toBe(4);
 });
