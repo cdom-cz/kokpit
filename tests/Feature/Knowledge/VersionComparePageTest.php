@@ -264,7 +264,22 @@ it('offers compare with previous on every version but the first, on the versions
 
     $actions = Livewire::test(ListArticleVersions::class, ['record' => $article->getKey()])->instance()->getTable()->getRecordActions();
 
-    expect(array_map(static fn ($action): string => $action->getName(), $actions))->toContain('compare_previous');
+    $names = [];
+
+    $collect = function (array $items) use (&$collect, &$names): void {
+        foreach ($items as $item) {
+            if ($item instanceof \Filament\Actions\ActionGroup) {
+                $collect($item->getActions());
+
+                continue;
+            }
+
+            $names[] = $item->getName();
+        }
+    };
+    $collect($actions);
+
+    expect($names)->toContain('compare_previous');
 
     $this->get(KnowledgeArticleResource::getUrl('version', ['record' => $article, 'version' => 2]))
         ->assertOk()
