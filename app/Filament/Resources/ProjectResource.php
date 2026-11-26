@@ -24,6 +24,7 @@ use App\Filament\Resources\ProjectResource\Pages\EditProject;
 use App\Filament\Resources\ProjectResource\Pages\ListProjects;
 use App\Filament\Resources\ProjectResource\Pages\ProjectBoard;
 use App\Filament\Resources\ProjectResource\Pages\ViewProject;
+use App\Filament\Resources\ProjectResource\RelationManagers\ProjectKnowledgeRelationManager;
 use App\Filament\Resources\ProjectResource\RelationManagers\ProjectTasksTimeRelationManager;
 use App\Filament\Resources\ProjectResource\RelationManagers\ProjectTimeEntriesRelationManager;
 use App\Filament\Resources\ProjectResource\Widgets\ProjectTimeStats;
@@ -392,6 +393,7 @@ final class ProjectResource extends Resource
     {
         return [
             ProjectDocumentsRelationManager::class,
+            ProjectKnowledgeRelationManager::class,
             ProjectHistoryRelationManager::class,
             ProjectTasksTimeRelationManager::class,
             ProjectTimeEntriesRelationManager::class,

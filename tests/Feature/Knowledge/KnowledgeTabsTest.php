@@ -11,7 +11,11 @@ use App\Filament\Resources\ClientResource;
 use App\Filament\Resources\ClientResource\Pages\ViewClient;
 use App\Filament\Resources\ClientResource\RelationManagers\ClientKnowledgeRelationManager;
 use App\Filament\Resources\KnowledgeArticleResource;
+use App\Filament\Resources\ProjectResource;
+use App\Filament\Resources\ProjectResource\Pages\ViewProject;
+use App\Filament\Resources\ProjectResource\RelationManagers\ProjectKnowledgeRelationManager;
 use Carbon\CarbonImmutable;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Livewire\Features\SupportTesting\Testable;
@@ -36,6 +40,14 @@ beforeEach(function (): void {
 function knowledgeTabsClientTab(Client $client): Testable
 {
     return Livewire::test(ClientKnowledgeRelationManager::class, ['ownerRecord' => $client, 'pageClass' => ViewClient::class]);
+}
+
+/**
+ * Mounts the knowledge tab of a project as the Admin sees it on the read-only detail page.
+ */
+function knowledgeTabsProjectTab(Project $project): Testable
+{
+    return Livewire::test(ProjectKnowledgeRelationManager::class, ['ownerRecord' => $project, 'pageClass' => ViewProject::class]);
 }
 
 /**
@@ -139,4 +151,86 @@ it('never selects the body of an article on the tab', function (): void {
     foreach ($queries as $sql) {
         expect($sql)->not->toContain('body_md');
     }
+});
+
+it('registers the knowledge tab among the relations of the project resource', function (): void {
+    expect(ProjectResource::getRelations())->toContain(ProjectKnowledgeRelationManager::class);
+});
+
+it('lists on the project tab only the articles of that project, and the client-only article on the client tab', function (): void {
+    $client = knowledgeTabsClient();
+    $project = knowledgeTabsProject($client);
+    $sibling = knowledgeTabsProject($client);
+    $ofProject = KnowledgeFixtures::article(['title' => 'Example project article', 'client_id' => $client->id, 'project_id' => $project->id]);
+    $ofSibling = KnowledgeFixtures::article(['title' => 'Example sibling article', 'client_id' => $client->id, 'project_id' => $sibling->id]);
+    $clientOnly = KnowledgeFixtures::article(['title' => 'Example client article', 'client_id' => $client->id]);
+    $incident = KnowledgeFixtures::article(['title' => 'Example incident article', 'client_id' => $client->id, 'project_id' => $project->id, 'kind' => ArticleKind::Incident]);
+
+    knowledgeTabsProjectTab($project)
+        ->assertCanSeeTableRecords([$ofProject])
+        ->assertCanNotSeeTableRecords([$ofSibling, $clientOnly, $incident]);
+
+    knowledgeTabsClientTab($client)->assertCanSeeTableRecords([$ofProject, $ofSibling, $clientOnly]);
+});
+
+it('hides archived articles until the switch is on and then lists them, on both tabs', function (): void {
+    $client = knowledgeTabsClient();
+    $project = knowledgeTabsProject($client);
+    $active = KnowledgeFixtures::article(['title' => 'Example active article', 'client_id' => $client->id, 'project_id' => $project->id]);
+    $archived = KnowledgeFixtures::archived(['title' => 'Example archived article', 'client_id' => $client->id, 'project_id' => $project->id]);
+
+    foreach ([knowledgeTabsClientTab($client), knowledgeTabsProjectTab($project)] as $tab) {
+        $tab->assertCanSeeTableRecords([$active])
+            ->assertCanNotSeeTableRecords([$archived])
+            ->filterTable('show_archived')
+            ->assertCanSeeTableRecords([$active, $archived]);
+    }
+});
+
+it('offers Přidat článek on both read-only pages with the client and the project in the create URL', function (): void {
+    $client = knowledgeTabsClient();
+    $project = knowledgeTabsProject($client);
+
+    knowledgeTabsClientTab($client)
+        ->assertActionVisible(TestAction::make('addArticle')->table())
+        ->assertActionHasUrl(TestAction::make('addArticle')->table(), KnowledgeArticleResource::getUrl('create', ['client' => $client->id]));
+
+    knowledgeTabsProjectTab($project)
+        ->assertActionVisible(TestAction::make('addArticle')->table())
+        ->assertActionHasUrl(TestAction::make('addArticle')->table(), KnowledgeArticleResource::getUrl('create', ['client' => $client->id, 'project' => $project->id]));
+});
+
+it('shows an empty tab with its heading, its own description and the add action', function (): void {
+    $client = knowledgeTabsClient();
+    $project = knowledgeTabsProject($client);
+
+    knowledgeTabsClientTab($client)
+        ->assertSee(__('knowledge.links.tab.empty_heading'))
+        ->assertSee(__('knowledge.links.tab.empty_client'))
+        ->assertSee(__('knowledge.links.tab.add'));
+
+    knowledgeTabsProjectTab($project)
+        ->assertSee(__('knowledge.links.tab.empty_heading'))
+        ->assertSee(__('knowledge.links.tab.empty_project'))
+        ->assertSee(__('knowledge.links.tab.add'));
+});
+
+it('shows the project tab no body and no tag of another type', function (): void {
+    $client = knowledgeTabsClient();
+    $project = knowledgeTabsProject($client);
+    $article = KnowledgeFixtures::taggedArticle(['example-tag-one'], [
+        'title' => 'Example tabbed article',
+        'body_md' => 'Example body text',
+        'client_id' => $client->id,
+        'project_id' => $project->id,
+    ]);
+    app(PartnerContext::class)->runAsSystem(static function () use ($article): void {
+        $article->attachTags(['example-project-tag'], TagType::Project->value);
+    });
+
+    knowledgeTabsProjectTab($project)
+        ->assertCanSeeTableRecords([$article])
+        ->assertSee('example-tag-one')
+        ->assertDontSee('example-project-tag')
+        ->assertDontSee('Example body text');
 });
