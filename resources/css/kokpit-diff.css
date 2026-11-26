@@ -1,8 +1,8 @@
 /*
  * Stylesheet of the knowledge version diff (VER-04, D-09), registered as a Filament asset next to kokpit-prose.
  *
- * Every selector starts with .kokpit-diff or .dark .kokpit-diff (the folder tree rules under .kokpit-tree follow in a
- * later plan), so nothing leaks into the panel. Colours come from Filament's custom properties, so light and dark mode
+ * Every selector starts with .kokpit-diff, .kokpit-tree or the same behind .dark (the folder tree of the article list,
+ * D-01, lives at the end of the file), so nothing leaks into the panel. Colours come from Filament's custom properties, so light and dark mode
  * follow the panel. Sizes are 14px and 16px, weights 400 and 600, spacing the 4/8/16/24/32px steps. The meaning of an
  * added or removed line never rests on colour alone: the marker character and a visually hidden label carry it too.
  */
@@ -191,4 +191,291 @@
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
+}
+
+/*
+ * The folder tree of the knowledge list (D-01, D-02). Sizes 14px and 16px, weights 400 and 600, spacing the 4/8/16/24px
+ * steps. The tree is one nav: from 1024px it is the 280px panel left of the table (sticky), below it the nav is a
+ * collapsed disclosure whose summary shows the current selection. Indent is set inline per row (16px a level, capped at
+ * 80px); a name never wraps, so the tree never scrolls sideways.
+ */
+.kokpit-tree,
+.kokpit-tree-chip-row {
+    --kt-surface: var(--gray-100);
+    --kt-border: var(--gray-200);
+    --kt-hover: var(--gray-200);
+    --kt-selected: var(--gray-200);
+    --kt-muted: var(--gray-600);
+    --kt-text: var(--gray-950);
+    --kt-accent: var(--primary-600);
+}
+
+.dark .kokpit-tree,
+.dark .kokpit-tree-chip-row {
+    --kt-surface: var(--gray-800);
+    --kt-border: var(--gray-700);
+    --kt-hover: var(--gray-700);
+    --kt-selected: var(--gray-700);
+    --kt-muted: var(--gray-400);
+    --kt-text: white;
+    --kt-accent: var(--primary-400);
+}
+
+.kokpit-tree {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid var(--kt-border);
+    border-radius: 8px;
+    background: var(--kt-surface);
+    color: var(--kt-text);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.5;
+}
+
+@media (min-width: 1024px) {
+    .kokpit-tree {
+        flex: 0 0 280px;
+        width: 280px;
+        position: sticky;
+        top: 16px;
+        align-self: flex-start;
+    }
+}
+
+.kokpit-tree-main {
+    min-width: 0;
+}
+
+.kokpit-tree-disclosure {
+    min-width: 0;
+}
+
+.kokpit-tree-summary {
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+@media (min-width: 1024px) {
+    .kokpit-tree-summary {
+        display: none;
+    }
+}
+
+.kokpit-tree-body {
+    min-width: 0;
+    max-height: calc(100vh - 64px);
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+.kokpit-tree-disclosure[open] > .kokpit-tree-body {
+    margin-top: 16px;
+}
+
+@media (min-width: 1024px) {
+    .kokpit-tree-disclosure[open] > .kokpit-tree-body {
+        margin-top: 0;
+    }
+}
+
+.kokpit-tree-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.kokpit-tree-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.kokpit-tree-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.kokpit-tree-divider {
+    margin: 8px 0;
+    border: 0;
+    border-top: 1px solid var(--kt-border);
+}
+
+.kokpit-tree-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 36px;
+    border-radius: 6px;
+    box-sizing: border-box;
+}
+
+.kokpit-tree-row:hover {
+    background: var(--kt-hover);
+}
+
+.kokpit-tree-row--selected {
+    background: var(--kt-selected);
+    box-shadow: inset 2px 0 0 var(--kt-accent);
+}
+
+.kokpit-tree-row--selected .kokpit-tree-name {
+    font-weight: 600;
+}
+
+.kokpit-tree-toggle,
+.kokpit-tree-spacer {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+}
+
+.kokpit-tree-toggle {
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--kt-muted);
+    cursor: pointer;
+}
+
+.kokpit-tree-toggle svg,
+.kokpit-tree-icon {
+    flex: none;
+    width: 20px;
+    height: 20px;
+}
+
+.kokpit-tree-toggle svg {
+    transition: transform 0.15s ease;
+}
+
+.kokpit-tree-toggle[aria-expanded="true"] svg {
+    transform: rotate(90deg);
+}
+
+.kokpit-tree-name {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    min-height: 32px;
+    padding: 0 4px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font-size: 14px;
+    font-weight: 400;
+    text-align: start;
+    cursor: pointer;
+}
+
+.kokpit-tree-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.kokpit-tree-icon {
+    color: var(--kt-muted);
+}
+
+.kokpit-tree-count {
+    flex: none;
+    color: var(--kt-muted);
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+}
+
+.kokpit-tree-toggle:focus-visible,
+.kokpit-tree-name:focus-visible,
+.kokpit-tree-chip-remove:focus-visible,
+.kokpit-tree-menu button:focus-visible {
+    outline: 2px solid var(--kt-accent);
+    outline-offset: -2px;
+}
+
+/* The row menu is a real button in every state; it is only quiet until the row is hovered, focused or selected. */
+.kokpit-tree-menu {
+    flex: none;
+    opacity: 0;
+}
+
+.kokpit-tree-row:hover .kokpit-tree-menu,
+.kokpit-tree-row:focus-within .kokpit-tree-menu,
+.kokpit-tree-row--selected .kokpit-tree-menu {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    .kokpit-tree-menu {
+        opacity: 1;
+    }
+}
+
+.kokpit-tree-empty {
+    margin: 0;
+    color: var(--kt-muted);
+}
+
+.kokpit-tree-empty-heading {
+    margin: 0 0 4px;
+    color: var(--kt-text);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.kokpit-tree-empty-action {
+    margin-top: 8px;
+}
+
+/* The removable chip above the table while a folder is selected. */
+.kokpit-tree-chip-row {
+    display: flex;
+    margin-bottom: 8px;
+}
+
+.kokpit-tree-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 32px;
+    padding: 0 4px 0 16px;
+    border: 1px solid var(--kt-border);
+    border-radius: 16px;
+    background: var(--kt-surface);
+    color: var(--kt-text);
+    font-size: 14px;
+    font-weight: 400;
+}
+
+.kokpit-tree-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 16px;
+    background: transparent;
+    color: var(--kt-muted);
+    cursor: pointer;
+}
+
+.kokpit-tree-chip-remove svg {
+    width: 20px;
+    height: 20px;
 }

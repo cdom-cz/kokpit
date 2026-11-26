@@ -56,6 +56,11 @@ function versionDiffViewSelectors(string $relativePath): array
 
     foreach ($matches[1] as $header) {
         foreach (preg_split('/,(?![^(]*\))/', trim($header)) ?: [] as $selector) {
+            // A media query wraps rules; the rules inside it are matched on their own.
+            if (str_starts_with(trim($selector), '@media')) {
+                continue;
+            }
+
             $selectors[] = trim($selector);
         }
     }
