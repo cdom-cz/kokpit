@@ -28,14 +28,15 @@ final class KnowledgeServiceProvider extends ServiceProvider
     }
 
     /**
-     * The prose stylesheet, the copy script of rendered articles and the editor script with the task-list button, as
-     * Filament assets of the app package (no build step). filament:assets publishes them to public/css/app and
+     * The prose stylesheet, the diff stylesheet of the version comparison, the copy script of rendered articles and the
+     * editor script with the task-list button, as Filament assets of the app package (no build step). filament:assets publishes them to public/css/app and
      * public/js/app, which composer install runs through filament:upgrade; the published copies are ignored by git.
      */
     public function boot(): void
     {
         FilamentAsset::register([
             Css::make('kokpit-prose', resource_path('css/kokpit-prose.css')),
+            Css::make('kokpit-diff', resource_path('css/kokpit-diff.css')),
             Js::make('knowledge-copy', resource_path('js/knowledge-copy.js')),
             Js::make('knowledge-editor', resource_path('js/knowledge-editor.js')),
         ]);
