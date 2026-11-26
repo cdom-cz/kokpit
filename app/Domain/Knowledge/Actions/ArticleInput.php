@@ -21,6 +21,9 @@ use InvalidArgumentException;
  * here, before any parser sees it. A title or a body that contains a NUL byte is refused with a field error, never
  * stripped or replaced: the PostgreSQL driver would cut the text off at the NUL without a message, and changing a
  * byte would alter code content (D-10) and break the hash binding of the save-anyway acknowledgment.
+ *
+ * `classification` carries the folder, the links and the knowledge tags (D-04, D-06). Null means "keep the stored
+ * classification", which is what a restore, the concurrency worker and an API caller without those fields pass.
  */
 final readonly class ArticleInput
 {
@@ -29,13 +32,14 @@ final readonly class ArticleInput
         public string $body,
         public bool $sensitive,
         public bool $clearSensitive,
+        public ?ArticleClassification $classification,
     ) {}
 
     /**
      * @throws ValidationException a field error on `title` or `body`
      * @throws InvalidArgumentException when the sensitive flag is asked to be marked and cleared at once
      */
-    public static function from(mixed $title, mixed $body, mixed $sensitive, mixed $clearSensitive = false): self
+    public static function from(mixed $title, mixed $body, mixed $sensitive, mixed $clearSensitive = false, ?ArticleClassification $classification = null): self
     {
         $sensitive = (bool) $sensitive;
         $clearSensitive = (bool) $clearSensitive;
@@ -69,6 +73,6 @@ final readonly class ArticleInput
             throw ValidationException::withMessages(['body' => __('knowledge.errors.body_too_long', ['max' => KnowledgeArticle::MAX_BODY_LENGTH])]);
         }
 
-        return new self($title, $body, $sensitive, $clearSensitive);
+        return new self($title, $body, $sensitive, $clearSensitive, $classification);
     }
 }
