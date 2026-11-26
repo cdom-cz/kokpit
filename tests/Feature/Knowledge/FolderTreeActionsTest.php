@@ -6,6 +6,7 @@ use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\ListKnowledgeArticles;
 use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Text;
 use Illuminate\Support\Str;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -141,8 +142,18 @@ it('disables the folder itself, its subfolders and every target past the depth c
         ->and(folderTreeActionsDisabled($page, $moverId, (string) $chain[4]->getKey()))->toBeTrue()
         ->and(folderTreeActionsDisabled($page, $moverId, 'root'))->toBeFalse();
 
-    $page->mountAction('moveFolder', arguments: ['folder' => $moverId])
-        ->assertSee('Strom může mít nejvýše '.KnowledgeFolder::MAX_DEPTH.' úrovní.');
+    // The modals render in the panel layout, not in the page html, so the mounted action is read directly.
+    $page->mountAction('moveFolder', arguments: ['folder' => $moverId]);
+
+    $select = $page->instance()->getSchema('mountedActionSchema0')?->getComponent('parent_id');
+    $helper = $select?->getChildSchema('below_content')?->getComponents()[0] ?? null;
+
+    expect($select)->not->toBeNull()
+        ->and($select->isOptionDisabled($moverId, 'Example mover'))->toBeTrue()
+        ->and($select->isOptionDisabled((string) $chain[4]->getKey(), 'Example chain'))->toBeTrue()
+        ->and($select->isOptionDisabled((string) $chain[3]->getKey(), 'Example chain'))->toBeFalse()
+        ->and($helper)->toBeInstanceOf(Text::class)
+        ->and((string) $helper->getContent())->toBe('Strom může mít nejvýše '.KnowledgeFolder::MAX_DEPTH.' úrovní. Složky, kam přesun nejde, nelze vybrat.');
 });
 
 it('moves a folder and keeps the selection', function (): void {
@@ -168,18 +179,20 @@ it('moves a folder to the root', function (): void {
     expect($child->fresh()->parent_id)->toBeNull();
 });
 
-it('explains a forged move into the own subtree and a forged move past the cap', function (): void {
+it('refuses a forged move into the own subtree and a forged move past the cap under the select and moves nothing', function (): void {
     $mover = KnowledgeFixtures::folder('Example mover');
     $moverChild = KnowledgeFixtures::folder('Example mover child', $mover);
     $chain = KnowledgeFixtures::folderChain(5);
 
+    // The select validates against its enabled options, so a forged target never reaches the Action: the form refuses
+    // it under the field (the Action decides again for what slips through, see FolderActionsTest).
     folderTreeActionsPage()
         ->callAction('moveFolder', ['parent_id' => (string) $moverChild->getKey()], ['folder' => (string) $mover->getKey()])
-        ->assertNotified(folderTreeActionsRefusal('Složku se nepodařilo přesunout', 'Složku nelze přesunout do sebe ani do její vlastní podsložky.'));
+        ->assertHasActionErrors(['parent_id']);
 
     folderTreeActionsPage()
         ->callAction('moveFolder', ['parent_id' => (string) $chain[4]->getKey()], ['folder' => (string) $mover->getKey()])
-        ->assertNotified(folderTreeActionsRefusal('Složku se nepodařilo přesunout', 'Složku nelze přesunout sem: strom by byl hlubší než '.KnowledgeFolder::MAX_DEPTH.' úrovní. Složka s podsložkami se počítá i s nimi.'));
+        ->assertHasActionErrors(['parent_id']);
 
     expect($mover->fresh()->parent_id)->toBeNull();
 });
@@ -190,13 +203,13 @@ it('asks for confirmation before it deletes an empty folder, then deletes it', f
 
     $page = folderTreeActionsPage();
 
-    $page->mountAction('deleteFolder', arguments: $arguments)
-        ->assertSee('Smazat složku „Example empty“');
+    $page->mountAction('deleteFolder', arguments: $arguments);
 
     expect($page->instance()->mountedActions)->not->toBe([])
+        ->and($page->instance()->getMountedAction()?->getModalHeading())->toBe('Smazat složku „Example empty“')
         ->and(folderTreeActionsFolder('Example empty'))->not->toBeNull();
 
-    $page->callAction('deleteFolder', arguments: $arguments)
+    $page->callMountedAction()
         ->assertNotified('Složka byla smazána');
 
     expect(folderTreeActionsFolder('Example empty'))->toBeNull();

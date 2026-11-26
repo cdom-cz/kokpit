@@ -320,12 +320,13 @@ it('keeps the folder, client, project and tags of the article', function (): voi
 
 it('refuses a Partner and a user without a role', function (): void {
     $article = restoreVersionThree();
-    $counts = restoreVersionCounts();
 
+    // The actors are created first: creating a user writes its own activity rows.
     $actors = [
         'partner' => Canary::partnerFor(Canary::twoClients()[0]),
         'roleless' => Canary::userWithoutRole(null),
     ];
+    $counts = restoreVersionCounts();
 
     foreach ($actors as $actor) {
         expect(fn () => $this->restore->handle($actor, $article, 1, 3, 0))->toThrow(AuthorizationException::class);

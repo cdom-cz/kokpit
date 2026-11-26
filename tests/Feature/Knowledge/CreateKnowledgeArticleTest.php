@@ -23,6 +23,7 @@ use Filament\Notifications\Livewire\Notifications;
 use Filament\Notifications\Notification;
 use Filament\Notifications\NotificationMailbox;
 use Filament\Schemas\Components\Html;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Support\Assets\Js;
 use Filament\Support\Facades\FilamentAsset;
@@ -159,7 +160,7 @@ it('refuses a body longer than the limit and stores nothing', function (): void 
     expect(createArticleCount())->toBe(0);
 });
 
-it('builds the form as title, tabs and the sensitive toggle', function (): void {
+it('builds the form as title, tabs, the classification section and the sensitive toggle', function (): void {
     $form = Livewire::test(CreateKnowledgeArticle::class)->instance()->form;
 
     // The Html component between the tabs and the toggle is the loading indicator of the tab switch, not a field.
@@ -168,7 +169,7 @@ it('builds the form as title, tabs and the sensitive toggle', function (): void 
         static fn (string $class): bool => $class !== Html::class,
     ));
 
-    expect($classes)->toBe([TextInput::class, Tabs::class, Toggle::class]);
+    expect($classes)->toBe([TextInput::class, Tabs::class, Section::class, Toggle::class]);
 });
 
 it('has no create-another action and names the submit and cancel actions in Czech', function (): void {

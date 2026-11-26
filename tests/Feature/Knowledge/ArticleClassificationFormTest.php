@@ -240,14 +240,17 @@ it('disables the project with a helper until a client is chosen and then lists o
     $page = articleClassificationFormPage($article);
     $project = static fn (Testable $page) => $page->instance()->form->getComponent('project_id');
 
+    // Filament 5 renders the helper text from the below-content schema, so the rendered page is checked.
+    $page->assertSee('Nejdřív vyberte klienta.');
+
     expect($project($page)?->isDisabled())->toBeTrue()
-        ->and((string) $project($page)?->getHelperText())->toBe('Nejdřív vyberte klienta.')
         ->and($project($page)?->getOptions())->toBe([]);
 
     $page->set('data.client_id', $world['clientA']);
 
+    $page->assertDontSee('Nejdřív vyberte klienta.');
+
     expect($project($page)?->isDisabled())->toBeFalse()
-        ->and($project($page)?->getHelperText())->toBeNull()
         ->and(array_keys($project($page)?->getOptions() ?? []))->toEqualCanonicalizing([$world['projectA1'], $world['projectA2']]);
 
     $page->set('data.client_id', $world['clientB']);

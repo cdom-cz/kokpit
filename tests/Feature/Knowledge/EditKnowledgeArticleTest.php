@@ -143,8 +143,8 @@ it('offers the edit action as an icon button with label and tooltip on an active
     // The edit icon comes before archive and restore.
     $names = array_map(static fn (object $action): string => $action->getName(), array_values($table->getFlatActions()));
 
-    // The empty-state create action is not a row action.
-    expect(array_values(array_diff($names, ['create'])))->toBe(['edit', 'archive', 'restore']);
+    // The empty-state create and reset-filters actions are not row actions.
+    expect(array_values(array_diff($names, ['create', 'resetFilters'])))->toBe(['edit', 'archive', 'restore']);
 });
 
 it('links the empty-body text of an active article to its edit screen and gives an archived one no link', function (): void {
