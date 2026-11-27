@@ -57,14 +57,16 @@ return [
             'migrations' => 'Migrace',
             'redis' => 'Redis',
             'collation' => 'České řazení',
+            'gd' => 'Knihovna obrázků GD',
         ],
         'step_ok' => ':check: v pořádku',
         'step_failed' => ':check: selhalo, příčina: :reason',
         'pending' => 'čekajících migrací: :count',
         'no_answer' => 'ping nevrátil platnou odpověď',
         'collation_missing' => 'databázový server nemá kolaci :collation (potřebuje PostgreSQL s podporou ICU)',
+        'gd_missing' => 'PHP GD nepodporuje :formats',
         'failed' => 'Kontrola nasazení selhala, nová verze nepřevezme provoz.',
-        'passed' => 'Nasazení je připravené, všechny čtyři kontroly prošly.',
+        'passed' => 'Nasazení je připravené, všech pět kontrol prošlo.',
     ],
 
     'overrun_timers' => [
