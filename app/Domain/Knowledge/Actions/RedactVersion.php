@@ -11,6 +11,7 @@ use App\Domain\Knowledge\Guard\SecretScanner;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
 use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
+use App\Domain\Knowledge\Support\ImageReferences;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -42,6 +43,10 @@ use RuntimeException;
  * switched off again right after the two updates, so nothing later in the same (possibly enclosing) transaction can
  * rewrite a version. Both rewrites use the query builder: no model event fires and no attribute activity is written.
  * Hiding a body write in raw SQL elsewhere is not allowed.
+ *
+ * Image references (D-16): in the same transaction the reference rows of the rewritten version that its new text no
+ * longer names are deleted (the cleanup, not this class, stamps `orphaned_at`), so a redacted screenshot becomes an
+ * orphan once no other version references it.
  *
  * Lock order (research Pitfall 7): the article row first (archived articles included), then the version row, the same
  * as RestoreVersion and SaveArticle. A restore that starts while a redaction holds the article lock waits and then
@@ -158,6 +163,13 @@ final class RedactVersion
                         'redaction_no' => $locked->redaction_no + 1,
                     ]);
                 }
+
+                // The index follows the rewritten text: a reference the redaction removed is deleted (an empty list
+                // deletes every row of the version), so an image no text names any more becomes collectable.
+                DB::table('knowledge_article_version_images')
+                    ->where('version_id', $version->getKey())
+                    ->whereNotIn('image_id', ImageReferences::in($new))
+                    ->delete();
 
                 DB::select("select set_config('kokpit.redacting_knowledge_version', 'off', true)");
 
