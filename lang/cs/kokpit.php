@@ -450,6 +450,7 @@ return [
             'article_restored' => 'Článek obnoven',
             'version_restored' => 'Verze obnovena',
             'version_redacted' => 'Verze redigována',
+            'image_deleted' => 'Obrázek smazán navždy',
             'api_token' => [
                 'created' => 'API token vytvořen',
                 'revoked' => 'API token zneplatněn',

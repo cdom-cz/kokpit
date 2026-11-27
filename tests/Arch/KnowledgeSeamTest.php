@@ -35,13 +35,14 @@ const KNOWLEDGE_SEAM_WRITERS = [
 
 /**
  * The reviewed writers of the image reference table `knowledge_article_version_images` (R-20-06-4, D-16, D-17): the
- * save step that indexes a new version and the redaction that removes the references its rewrite dropped. The cleanup
- * decides what to delete from this table, so no other file may insert or delete a row of it. Add a file only after it
- * was reviewed.
+ * save step that indexes a new version, the redaction that removes the references its rewrite dropped and the delete of
+ * an image for good (R-20-10-4, D-19) that removes every reference of the image it deletes. The cleanup decides what to
+ * delete from this table, so no other file may insert or delete a row of it. Add a file only after it was reviewed.
  */
 const KNOWLEDGE_SEAM_IMAGE_REFERENCE_WRITERS = [
     'app/Domain/Knowledge/Actions/BindArticleImages.php',
     'app/Domain/Knowledge/Actions/RedactVersion.php',
+    'app/Domain/Knowledge/Actions/DeleteImageForGood.php',
 ];
 
 /**
@@ -717,11 +718,15 @@ it('persists no reason text of a redaction (OD-1)', function (): void {
 
     // The statements that name the redaction model are scanned: they carry the length and the flag, never the text.
     $redact = $files['app/Domain/Knowledge/Actions/RedactVersion.php'] ?? '';
+    // The delete of an image for good records the same flag and no length: the statement that writes the activity
+    // properties is scanned with the others above.
+    $deleteImage = $files['app/Domain/Knowledge/Actions/DeleteImageForGood.php'] ?? '';
 
     expect($found)->toBe([])
         ->and($redact)->toContain('KnowledgeVersionRedaction')
         ->and($redact)->toContain("'reason_length' =>")
-        ->and($redact)->toContain("'reason_recorded' =>");
+        ->and($redact)->toContain("'reason_recorded' =>")
+        ->and($deleteImage)->toContain("'reason_recorded' =>");
 });
 
 it('reports a reason key written through the redaction model, the redaction table or the activity properties', function (): void {
