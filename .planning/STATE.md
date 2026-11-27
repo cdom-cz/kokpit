@@ -6,10 +6,10 @@ current_phase: 20
 current_phase_name: Image Attachments
 status: executing
 stopped_at: Phase 20 UI-SPEC approved
-last_updated: "2026-11-26T23:49:27.641Z"
-last_activity: 2026-11-26
-last_activity_desc: Phase 19 execution started
-state_head: fb582ed08636ad54460a6b814c3dbba901cb5ac1
+last_updated: "2026-11-27T10:04:38.275Z"
+last_activity: 2026-11-27
+last_activity_desc: Phase 20 execution started
+state_head: 8df70277797651f08d29980eecf394b528869a69
 progress:
   total_phases: 6
   completed_phases: 0
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-11-25)
 
 **Core value:** Tracked time turns into an issued, payable invoice in one pass, with no unbilled time or unpaid invoice ever slipping through unnoticed.
-**Current focus:** Phase 19 — Folders, Tags and Version History
+**Current focus:** Phase 20 — Image Attachments
 
 ## Current Position
 
-Phase: 20 (Image Attachments) — READY TO EXECUTE
-Plan: 1 of 12
-Status: Ready to execute
-Last activity: 2026-11-26 — Phase 19 execution started
+Phase: 20 (Image Attachments) — EXECUTING
+Plan: 1 of 11
+Status: Executing Phase 20
+Last activity: 2026-11-27 — Phase 20 execution started
 
 Progress: [░░░░░░░░░░] 0%
 

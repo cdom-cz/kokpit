@@ -158,14 +158,14 @@ Plans:
   1. From the article editor Admin uploads a PNG, JPEG, WebP or GIF image and sees it inline in the preview and on the view screen; an SVG, a non-image file renamed to an image extension, or a file over the size cap is rejected with a message
   2. A stored image carries no EXIF data (a fictional test photo with a GPS position comes back without it) and is served only through an authorised route: a guest, a Partner without access to the article, or a stale signed link is refused, and no direct bucket URL appears in the page
   3. After an image is removed from an article body, the cleanup job deletes it once no stored version references it, while an image still referenced by an earlier version survives and shows when that version is viewed or restored
-**Plans:** 11 plans (4 waves; every migration, Composer, Pest and PHPStan run happens through DDEV after the merge of its wave into the HEAD branch, one process at a time; after the wave 1 merge run `ddev exec php artisan migrate` and `ddev composer require "ext-gd:*"` (20-03) first)
+**Plans:** 4/11 plans executed (4 waves; every migration, Composer, Pest and PHPStan run happens through DDEV after the merge of its wave into the HEAD branch, one process at a time; after the wave 1 merge run `ddev exec php artisan migrate` and `ddev composer require "ext-gd:*"` (20-03) first)
 
 Plans:
 **Wave 1**
-- [ ] 20-01-PLAN.md — Tracer: image and version-reference tables with composite same-article keys and the frozen-column trigger, the two models, fail-closed declarations, canary and channel rows, shared image fixtures (wave 1)
-- [ ] 20-02-PLAN.md — Pure GD pipeline: magic-byte sniff, header-only pixel and memory gate, animated GIF/APNG/WebP refusal, JPEG orientation, 2400 px downscale, same-format re-encode without metadata, proven on runtime fixtures incl. a GPS photo (wave 1)
-- [ ] 20-03-PLAN.md — GD capability check as the fifth `kokpit:deploy:verify` step, php85-gd in zerops.yml, ext-gd declared through `ddev composer` (wave 1)
-- [ ] 20-04-PLAN.md — Renderer: per-call image context, internal reference to img on the route path, muted missing-image fallback, img src sanitiser rule, prose image styles, the complete Phase 20 Czech copy (wave 1)
+- [x] 20-01-PLAN.md — Tracer: image and version-reference tables with composite same-article keys and the frozen-column trigger, the two models, fail-closed declarations, canary and channel rows, shared image fixtures (wave 1)
+- [x] 20-02-PLAN.md — Pure GD pipeline: magic-byte sniff, header-only pixel and memory gate, animated GIF/APNG/WebP refusal, JPEG orientation, 2400 px downscale, same-format re-encode without metadata, proven on runtime fixtures incl. a GPS photo (wave 1)
+- [x] 20-03-PLAN.md — GD capability check as the fifth `kokpit:deploy:verify` step, php85-gd in zerops.yml, ext-gd declared through `ddev composer` (wave 1)
+- [x] 20-04-PLAN.md — Renderer: per-call image context, internal reference to img on the route path, muted missing-image fallback, img src sanitiser rule, prose image styles, the complete Phase 20 Czech copy (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 20-05-PLAN.md — Upload: StoreArticleImage and the storeImageUpload page method on the create and edit screens, temporary original deleted, refusals with the Czech messages, inert alt text (wave 2)
@@ -229,7 +229,7 @@ Phases execute in numeric order: 18 → 19 → 20 → 21 → 22 → 23
 |-------|-----------|----------------|--------|-----------|
 | 18. Knowledge Articles and Secret Guard | v1.1 | 14/14 | In Progress | - |
 | 19. Folders, Tags and Version History | v1.1 | 0/12 | Planned | - |
-| 20. Image Attachments | v1.1 | 0/11 | Planned | - |
+| 20. Image Attachments | v1.1 | 4/11 | In Progress | - |
 | 21. Incidents and Retrospectives | v1.1 | 0/TBD | Not started | - |
 | 22. Knowledge Search | v1.1 | 0/TBD | Not started | - |
 | 23. Client Sharing and AI Export | v1.1 | 0/TBD | Not started | - |
