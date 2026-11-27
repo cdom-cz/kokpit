@@ -63,6 +63,13 @@ use PDOException;
  * the rule keys and the new version number only (D-03, D-04). The acknowledgment is a per-call argument and is never
  * stored. A save without a content change is not scanned (nothing new was typed).
  *
+ * Phase 20 appends one step to that order, only in a save that writes a version (a new article, a content change, a
+ * restore): after the guard decision the image rows the body references are locked, and a reference to an image of
+ * another article, or to a pending image of another user, refuses the save with a field error on `body`; after the
+ * version row the Admin's pending images are bound to the article and every referenced image is indexed for that
+ * version (D-02, D-04, D-16). A reference to an unknown or deleted image is skipped, so a restore never fails on it
+ * (D-18). The no-op, classification-only and sensitivity-only branches write no version and run no image step.
+ *
  * What is logged: the model writes metadata-only activity through the allowlist of KnowledgeArticle. This class calls
  * no logger and puts neither the title nor the body into any message, context or exception property. The title is
  * never scanned for secrets (D-02).
@@ -76,6 +83,7 @@ final class SaveArticle
     public function __construct(
         private readonly MarkdownNormaliser $normaliser,
         private readonly SecretScanner $scanner,
+        private readonly BindArticleImages $images,
     ) {}
 
     /**
@@ -97,6 +105,7 @@ final class SaveArticle
 
             $body = $this->normaliser->normalise($input->body);
             $rules = $this->acknowledgedRules($body, $acknowledge);
+            $images = $this->images->lockReferenced($body, null, $actor);
 
             $article = new KnowledgeArticle;
             $article->forceFill([
@@ -113,7 +122,8 @@ final class SaveArticle
                 $this->syncKnowledgeTags($article, $classification->tags);
             }
 
-            $this->writeVersion($article, $actor);
+            $version = $this->writeVersion($article, $actor);
+            $this->images->bindAndIndex($article, $version, $images);
             $this->writeAcknowledgment($article, $actor, $rules);
 
             return new SaveResult(SaveOutcome::Created, $article, $rules !== []);
@@ -194,6 +204,7 @@ final class SaveArticle
             }
 
             $rules = $this->acknowledgedRules($body, $acknowledge);
+            $images = $this->images->lockReferenced($body, $locked, $actor);
 
             $locked->forceFill([
                 'title' => $input->title,
@@ -208,7 +219,8 @@ final class SaveArticle
                 $this->syncKnowledgeTags($locked, $classification->tags);
             }
 
-            $this->writeVersion($locked, $actor, $restoredFromVersionNo);
+            $version = $this->writeVersion($locked, $actor, $restoredFromVersionNo);
+            $this->images->bindAndIndex($locked, $version, $images);
             $this->writeAcknowledgment($locked, $actor, $rules);
             $this->writeRestoreMarker($locked, $actor, $restoredFromVersionNo);
 
@@ -397,9 +409,10 @@ final class SaveArticle
      * The immutable full snapshot of the article as it was just saved. `$restoredFromVersionNo` is the number of the
      * version a restore copied, and null for every other save.
      */
-    private function writeVersion(KnowledgeArticle $article, User $author, ?int $restoredFromVersionNo = null): void
+    private function writeVersion(KnowledgeArticle $article, User $author, ?int $restoredFromVersionNo = null): KnowledgeArticleVersion
     {
-        (new KnowledgeArticleVersion)->forceFill([
+        $version = new KnowledgeArticleVersion;
+        $version->forceFill([
             'article_id' => $article->getKey(),
             'version_no' => $article->version_no,
             'title' => $article->title,
@@ -407,6 +420,8 @@ final class SaveArticle
             'author_id' => $author->getKey(),
             'restored_from_version_no' => $restoredFromVersionNo,
         ])->save();
+
+        return $version;
     }
 
     /**
