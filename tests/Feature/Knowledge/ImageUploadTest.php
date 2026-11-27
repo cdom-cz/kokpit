@@ -16,7 +16,6 @@ use Livewire\Features\SupportFileUploads\FileUploadConfiguration;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
-use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Tests\Support\Canary;
 use Tests\Support\ImageFixtures;
 use Tests\Support\KnowledgeFixtures;
@@ -262,14 +261,7 @@ it('refuses a Partner on the create screen with 403', function (): void {
     $partner = Canary::partnerFor(Canary::twoClients()[0]);
     $this->actingAs($partner);
 
-    $status = null;
+    Livewire::test(CreateKnowledgeArticle::class)->assertForbidden();
 
-    try {
-        Livewire::test(CreateKnowledgeArticle::class);
-    } catch (HttpExceptionInterface $refused) {
-        $status = $refused->getStatusCode();
-    }
-
-    expect($status)->toBe(403)
-        ->and(imageUploadRows())->toBe([]);
+    expect(imageUploadRows())->toBe([]);
 });

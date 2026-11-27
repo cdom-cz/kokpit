@@ -10,6 +10,7 @@ use App\Domain\Knowledge\Exceptions\ArticleWriteFailed;
 use App\Domain\Knowledge\Guard\SecretScanner;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersionImage;
 use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
 use App\Domain\Knowledge\Support\ImageReferences;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -166,7 +167,7 @@ final class RedactVersion
 
                 // The index follows the rewritten text: a reference the redaction removed is deleted (an empty list
                 // deletes every row of the version), so an image no text names any more becomes collectable.
-                DB::table('knowledge_article_version_images')
+                KnowledgeArticleVersionImage::query()->toBase()
                     ->where('version_id', $version->getKey())
                     ->whereNotIn('image_id', ImageReferences::in($new))
                     ->delete();

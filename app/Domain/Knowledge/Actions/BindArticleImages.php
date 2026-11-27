@@ -8,8 +8,8 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleImage;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersionImage;
 use App\Domain\Knowledge\Support\ImageReferences;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use LogicException;
 
@@ -116,6 +116,6 @@ final class BindArticleImages
             ];
         }
 
-        DB::table('knowledge_article_version_images')->insert($rows);
+        KnowledgeArticleVersionImage::query()->toBase()->insert($rows);
     }
 }
