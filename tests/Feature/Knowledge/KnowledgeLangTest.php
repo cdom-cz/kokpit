@@ -285,3 +285,63 @@ it('leaves no Phase 19 string empty or equal to its own key', function (): void 
         expect($text)->toBeString()->not->toBe('')->not->toBe('knowledge.'.$path);
     }
 });
+
+dataset('knowledge images keys', [
+    'render.image.missing' => ['knowledge.render.image.missing', 'Obrázek není k dispozici'],
+    'images.editor.insert' => ['knowledge.images.editor.insert', 'Vložit obrázek'],
+    'images.editor.uploading' => ['knowledge.images.editor.uploading', 'Nahrávám obrázek…'],
+    'images.editor.done' => ['knowledge.images.editor.done', 'Obrázek byl vložen'],
+    'images.notice' => ['knowledge.images.notice', 'Obrázek může obsahovat tajné údaje a jeho obsah nejde automaticky zkontrolovat. Pokud ano, označte článek jako citlivý.'],
+    'images.errors.title' => ['knowledge.images.errors.title', 'Obrázek nebyl nahrán'],
+    'images.errors.not_an_image' => ['knowledge.images.errors.not_an_image', 'Soubor není podporovaný obrázek. Použijte PNG, JPEG, WebP nebo GIF.'],
+    'images.errors.svg' => ['knowledge.images.errors.svg', 'SVG se nenahrává, protože může obsahovat skripty. Použijte PNG, JPEG, WebP nebo GIF.'],
+    'images.errors.too_large' => ['knowledge.images.errors.too_large', 'Soubor má více než 10 MB. Zmenšete ho a nahrajte znovu.'],
+    'images.errors.too_many_pixels' => ['knowledge.images.errors.too_many_pixels', 'Obrázek má příliš mnoho pixelů. Zmenšete ho a nahrajte znovu.'],
+    'images.errors.animated' => ['knowledge.images.errors.animated', 'Animované GIFy se nepodporují. Nahrajte statický obrázek nebo jeden snímek.'],
+    'images.errors.failed' => ['knowledge.images.errors.failed', 'Obrázek se nepodařilo zpracovat. Zkuste to znovu.'],
+    'images.errors.foreign_reference' => ['knowledge.images.errors.foreign_reference', 'Text odkazuje na obrázek jiného článku. Obrázky nejde sdílet mezi články. Nahrajte ho do tohoto článku znovu.'],
+    'images.manager.heading' => ['knowledge.images.manager.heading', 'Obrázky'],
+    'images.manager.columns.preview' => ['knowledge.images.manager.columns.preview', 'Náhled'],
+    'images.manager.columns.file' => ['knowledge.images.manager.columns.file', 'Soubor'],
+    'images.manager.columns.dimensions' => ['knowledge.images.manager.columns.dimensions', 'Rozměry'],
+    'images.manager.columns.size' => ['knowledge.images.manager.columns.size', 'Velikost'],
+    'images.manager.columns.uploaded_at' => ['knowledge.images.manager.columns.uploaded_at', 'Nahráno'],
+    'images.manager.columns.usage' => ['knowledge.images.manager.columns.usage', 'Použití'],
+    'images.manager.usage.current' => ['knowledge.images.manager.usage.current', 'V aktuálním textu'],
+    'images.manager.usage.older' => ['knowledge.images.manager.usage.older', 'Jen ve starších verzích'],
+    'images.manager.usage.unused' => ['knowledge.images.manager.usage.unused', 'Nepoužitý'],
+    'images.manager.empty_heading' => ['knowledge.images.manager.empty_heading', 'Článek zatím nemá žádné obrázky'],
+    'images.manager.empty_body' => ['knowledge.images.manager.empty_body', 'Vložte obrázek v editoru tlačítkem, vložením ze schránky nebo přetažením.'],
+    'images.delete.action' => ['knowledge.images.delete.action', 'Smazat navždy'],
+    'images.delete.heading' => ['knowledge.images.delete.heading', 'Smazat obrázek navždy?'],
+    'images.delete.irreversible' => ['knowledge.images.delete.irreversible', 'Obrázek se okamžitě odstraní z úložiště. Všechny odkazy na něj v aktuálním textu i ve všech verzích se pak zobrazí jen jako popisek. Smazání nelze vrátit zpět.'],
+    'images.delete.rotate' => ['knowledge.images.delete.rotate', 'Smazání odstraní jen kopii z Kokpitu. Pokud obrázek obsahoval tajný údaj, změňte nebo zneplatněte ho i u jeho vydavatele (heslo, klíč, token).'],
+    'images.delete.reason' => ['knowledge.images.delete.reason', 'Důvod smazání'],
+    'images.delete.reason_helper' => ['knowledge.images.delete.reason_helper', 'Do protokolu změn se zapíše jen to, že důvod existuje, ne jeho text. Nepište do něj tajný údaj.'],
+    'images.delete.submit' => ['knowledge.images.delete.submit', 'Smazat obrázek navždy'],
+    'images.delete.cancel' => ['knowledge.images.delete.cancel', 'Zrušit'],
+    'images.delete.errors.reason_required' => ['knowledge.images.delete.errors.reason_required', 'Vyplňte důvod smazání.'],
+    'images.delete.notifications.deleted' => ['knowledge.images.delete.notifications.deleted', 'Obrázek byl smazán'],
+    'images.delete.notifications.failed' => ['knowledge.images.delete.notifications.failed', 'Obrázek se nepodařilo smazat. Nic se nezměnilo, zkuste to znovu.'],
+]);
+
+it('resolves every Phase 20 key to its agreed Czech wording', function (string $key, string $text): void {
+    expect(__($key))->toBe($text);
+})->with('knowledge images keys');
+
+it('leaves no Phase 20 image string empty or equal to its own key', function (): void {
+    $strings = Arr::dot(Arr::only(require lang_path('cs/knowledge.php'), ['images']));
+
+    expect($strings)->not->toBe([]);
+
+    foreach ($strings as $path => $text) {
+        expect($text)->toBeString()->not->toBe('')->not->toBe('knowledge.images.'.$path);
+    }
+
+    expect(__('knowledge.render.image.missing'))->not->toBe('knowledge.render.image.missing');
+});
+
+it('fills the placeholders of the image strings', function (): void {
+    expect(__('knowledge.images.delete.errors.reason_too_long', ['max' => 500]))->toBe('Důvod může mít nejvýše 500 znaků.')
+        ->and(__('knowledge.images.manager.dimensions', ['width' => 1200, 'height' => 800]))->toBe('1200 × 800 px');
+});
