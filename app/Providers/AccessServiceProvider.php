@@ -30,7 +30,9 @@ use App\Domain\Invoicing\Policies\CashReceiptPolicy;
 use App\Domain\Invoicing\Policies\InvoiceItemPolicy;
 use App\Domain\Invoicing\Policies\InvoicePolicy;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleImage;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersionImage;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
 use App\Domain\Payments\Models\CardPayment;
@@ -162,6 +164,11 @@ final class AccessServiceProvider extends ServiceProvider
         // The record that a version was redacted (actor, scope, the length of the reason, never its text) is
         // the Admin's alone: a Partner can never read, create, change or delete one (Phase 19, OD-1).
         Gate::policy(KnowledgeVersionRedaction::class, AdminOnlyPolicy::class);
+
+        // The images of the knowledge articles and the index of which stored version references which image are the
+        // Admin's alone until Phase 23: a Partner can never read, create, change or delete one (Phase 20, D-10).
+        Gate::policy(KnowledgeArticleImage::class, AdminOnlyPolicy::class);
+        Gate::policy(KnowledgeArticleVersionImage::class, AdminOnlyPolicy::class);
 
         // An export request names the clients and periods of one Admin: Admin-only, and the owner scope of the
         // model keeps even a second Admin away from it.

@@ -27,7 +27,9 @@ use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleImage;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersionImage;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
 use App\Domain\Payments\Models\CardPayment;
@@ -103,6 +105,8 @@ final class MorphMap
         'knowledge_article' => KnowledgeArticle::class,
         'knowledge_article_version' => KnowledgeArticleVersion::class,
         'knowledge_version_redaction' => KnowledgeVersionRedaction::class,
+        'knowledge_article_image' => KnowledgeArticleImage::class,
+        'knowledge_article_version_image' => KnowledgeArticleVersionImage::class,
         'signal_day_override' => SignalDayOverride::class,
         'signal_deep_work_day' => SignalDeepWorkDay::class,
         'signal_recurring_task' => SignalRecurringTask::class,
