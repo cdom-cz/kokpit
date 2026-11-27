@@ -32,7 +32,7 @@ use Throwable;
  * was recorded; the reason text and the file name reach no table, no log line, no exception message and no result.
  *
  * Order inside the transaction (the lock order of SaveArticle, research Pitfall 7): the article row, then the image
- * row, then the reference rows, the image row, the object and the activity row. The object is deleted INSIDE the
+ * row, then the reference rows, the image row, the activity row and last the object. The object is deleted INSIDE the
  * transaction on purpose: for a leaked secret the object must be gone before the success is reported, and a failed
  * delete rolls the rows back so the image stays complete. Accepted residual: if the commit itself fails after the object
  * went, the row remains without its object, the image route answers 404 and a retry completes the delete.
@@ -94,8 +94,6 @@ final class DeleteImageForGood
 
                 KnowledgeArticleImage::query()->whereKey($stored->getKey())->toBase()->delete();
 
-                $this->deleteObject($stored->storagePath());
-
                 activity()
                     ->useLog($locked->getMorphClass())
                     ->performedOn($locked)
@@ -103,6 +101,10 @@ final class DeleteImageForGood
                     ->event('image_deleted')
                     ->withProperties(['reason_recorded' => true])
                     ->log('image_deleted');
+
+                // Last statement before the commit: the irreversible object delete follows every write that can
+                // fail, so a failure anywhere earlier rolls back with the object still in place.
+                $this->deleteObject($stored->storagePath());
             });
         } catch (PDOException $e) {
             // The original exception is not chained: its message holds the bound values.

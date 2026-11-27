@@ -8,6 +8,7 @@ use App\Domain\Knowledge\Models\KnowledgeArticleImage;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 /**
  * The daily cleanup of knowledge images nobody needs (IMG-03, D-02, D-16, D-17). Only PruneKnowledgeImages calls it, in
@@ -35,8 +36,10 @@ use Illuminate\Support\Facades\Storage;
  * stamp pass can at worst stamp an image whose reference commits in the same instant; the clear pass of the next run
  * and the recheck of pass 4 make that harmless.
  *
- * The object goes first, then the row, so an image whose object could not be deleted keeps its row and is retried by
- * the next run. A missing object is no error. This Action deletes no reference row. Nothing is logged: the counts are
+ * The object goes first, then the row, so an image whose object could not be deleted (an exception or a false result,
+ * whatever the disk's `throw` setting) keeps its row and is retried by the next run. One such image never stops the
+ * run: the other images and all four passes carry on, and `failures()` reports how many objects were refused so the job
+ * can fail visibly afterwards. A missing object is no error. This Action deletes no reference row. Nothing is logged: the counts are
  * the only output.
  */
 final class PruneImages
@@ -47,18 +50,30 @@ final class PruneImages
 
     private const int CHUNK = 100;
 
+    private int $failures = 0;
+
     /**
      * @return array{pending: int, stamped: int, cleared: int, deleted: int} the number of pending images deleted,
      *                                                                       images newly stamped, stamps cleared and orphans deleted
      */
     public function run(): array
     {
+        $this->failures = 0;
+
         $pending = $this->prunePending();
         $cleared = $this->clearStamps();
         $stamped = $this->stampOrphans();
         $deleted = $this->deleteOrphans();
 
         return ['pending' => $pending, 'stamped' => $stamped, 'cleared' => $cleared, 'deleted' => $deleted];
+    }
+
+    /**
+     * The number of images whose object the storage refused to delete in the last run(); their rows were kept.
+     */
+    public function failures(): int
+    {
+        return $this->failures;
     }
 
     /**
@@ -97,7 +112,10 @@ final class PruneImages
             }
 
             // Object first: a row whose object could not be deleted stays and is retried by the next run.
-            Storage::disk()->delete($image->storagePath());
+            if (! $this->deleteObject($image->storagePath())) {
+                return false;
+            }
+
             $image->delete();
 
             return true;
@@ -173,10 +191,32 @@ final class PruneImages
                 return false;
             }
 
-            Storage::disk()->delete($image->storagePath());
+            if (! $this->deleteObject($image->storagePath())) {
+                return false;
+            }
+
             $image->delete();
 
             return true;
         });
+    }
+
+    /**
+     * Deletes the object; a refusal in any form (an exception, a false result) is counted, never thrown, and the
+     * caller keeps the row. The object key holds no user text and neither does the swallowed exception.
+     */
+    private function deleteObject(string $path): bool
+    {
+        try {
+            $deleted = Storage::disk()->delete($path) !== false;
+        } catch (Throwable) {
+            $deleted = false;
+        }
+
+        if (! $deleted) {
+            $this->failures++;
+        }
+
+        return $deleted;
     }
 }

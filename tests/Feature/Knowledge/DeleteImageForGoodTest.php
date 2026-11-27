@@ -295,3 +295,25 @@ it('rolls everything back and raises ArticleWriteFailed without content when the
         ->and(deleteImageForGoodReferenceCount())->toBe(2)
         ->and(deleteImageForGoodActivity($article->id, 'image_deleted'))->toBe([]);
 });
+
+it('keeps the object, the row and every reference when the history row cannot be written', function (): void {
+    [$article, $image] = deleteImageForGoodSetup($this->admin);
+    $path = $image->storagePath();
+
+    Activity::creating(static function (): void {
+        throw new RuntimeException('Example history failure');
+    });
+
+    $failed = null;
+
+    try {
+        $this->delete->handle($this->admin, $image, DELETE_IMAGE_FOR_GOOD_REASON);
+    } catch (RuntimeException $e) {
+        $failed = $e;
+    }
+
+    expect($failed)->toBeInstanceOf(RuntimeException::class)
+        ->and(Storage::disk()->exists($path))->toBeTrue()
+        ->and(deleteImageForGoodImageCount())->toBe(1)
+        ->and(deleteImageForGoodReferenceCount())->toBe(2);
+});

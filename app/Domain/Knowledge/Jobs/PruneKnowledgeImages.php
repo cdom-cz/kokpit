@@ -7,6 +7,7 @@ namespace App\Domain\Knowledge\Jobs;
 use App\Domain\Knowledge\Actions\PruneImages;
 use App\Domain\Operations\Jobs\Idempotent;
 use App\Domain\Operations\Jobs\KokpitJob;
+use RuntimeException;
 
 /**
  * Deletes the knowledge images nobody needs (IMG-03, D-02, D-16, D-17): every pending upload that no save bound within
@@ -27,5 +28,11 @@ final class PruneKnowledgeImages extends KokpitJob
     public function handle(PruneImages $prune): void
     {
         $prune->run();
+
+        // Every pass has run and the refused objects keep their rows for the next run; the failure is raised only now,
+        // so one stuck object never blocks the cleanup of the others but is still visible in the failed jobs.
+        if ($prune->failures() > 0) {
+            throw new RuntimeException("Knowledge image cleanup could not delete {$prune->failures()} stored object(s).");
+        }
     }
 }

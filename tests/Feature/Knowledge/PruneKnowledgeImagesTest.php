@@ -15,6 +15,7 @@ use App\Domain\Knowledge\Support\ImageReferences;
 use App\Domain\Shared\Auth\PartnerContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\Canary;
 use Tests\Support\KnowledgeFixtures;
@@ -307,4 +308,59 @@ it('decides from SQL over the reference table and never parses Markdown', functi
         ->and($source)->not->toContain('KnowledgeMarkdown')
         ->and($source)->toContain("whereDoesntHave('references')")
         ->and($source)->toContain('lockForUpdate');
+});
+
+it('carries on with the other images when the storage refuses one object, keeps its row and fails the job afterwards', function (): void {
+    $stuck = KnowledgeFixtures::image(null, $this->admin);
+    $fine = KnowledgeFixtures::image(null, $this->admin);
+    $stuckPath = $stuck->storagePath();
+    $real = Storage::disk();
+    $disk = (string) config('filesystems.default');
+
+    $this->travel(25)->hours();
+
+    $double = Mockery::mock(Filesystem::class);
+    $double->shouldReceive('delete')->andReturnUsing(static function (string $path) use ($real, $stuckPath): bool {
+        if ($path === $stuckPath) {
+            throw new RuntimeException('Example storage outage');
+        }
+
+        return $real->delete($path);
+    });
+    Storage::set($disk, $double);
+
+    $failed = null;
+
+    try {
+        PruneKnowledgeImages::dispatchSync();
+    } catch (RuntimeException $e) {
+        $failed = $e;
+    }
+
+    expect($failed)->toBeInstanceOf(RuntimeException::class)
+        ->and($failed?->getMessage())->not->toContain('Example storage outage')
+        ->and(pruneKnowledgeImagesRowExists($stuck->id))->toBeTrue()
+        ->and($real->exists($stuckPath))->toBeTrue()
+        ->and(pruneKnowledgeImagesRowExists($fine->id))->toBeFalse()
+        ->and($real->exists($fine->storagePath()))->toBeFalse();
+});
+
+it('keeps the row of an image whose object delete returns false and counts the failure', function (): void {
+    $image = KnowledgeFixtures::image(null, $this->admin);
+    $real = Storage::disk();
+    $disk = (string) config('filesystems.default');
+
+    $this->travel(25)->hours();
+
+    $double = Mockery::mock(Filesystem::class);
+    $double->shouldReceive('delete')->once()->andReturn(false);
+    Storage::set($disk, $double);
+
+    $prune = app(PruneImages::class);
+    $counts = pruneKnowledgeImagesSystem(static fn (): array => $prune->run());
+
+    expect($counts['pending'])->toBe(0)
+        ->and($prune->failures())->toBe(1)
+        ->and(pruneKnowledgeImagesRowExists($image->id))->toBeTrue()
+        ->and($real->exists($image->storagePath()))->toBeTrue();
 });
