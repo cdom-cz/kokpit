@@ -26,6 +26,7 @@ use App\Domain\Shared\Tags\TagType;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Concerns\InKnowledgeGroup;
 use App\Filament\RelationManagers\KnowledgeArticleHistoryRelationManager;
+use App\Filament\RelationManagers\KnowledgeArticleImagesRelationManager;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\ImageUploadForm;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\SecretGuardForm;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\CompareArticleVersions;
@@ -658,6 +659,7 @@ final class KnowledgeArticleResource extends Resource
     {
         return [
             KnowledgeArticleHistoryRelationManager::class,
+            KnowledgeArticleImagesRelationManager::class,
         ];
     }
 
