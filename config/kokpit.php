@@ -342,6 +342,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Knowledge base
+    |--------------------------------------------------------------------------
+    |
+    | Fixed settings of the knowledge base (Phase 20, image attachments).
+    |
+    | The limit of requests a minute to the image route, per
+    |   signed-in user. An article with many screenshots loads them all at
+    |   once, so the value is generous. Never read below 1.
+    |
+    */
+
+    'knowledge' => [
+        'image_rate_limit_per_minute' => 600,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Time report
     |--------------------------------------------------------------------------
     |
