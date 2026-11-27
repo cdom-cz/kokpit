@@ -186,7 +186,9 @@ it('pages a long list: the first page shows ten rows', function (): void {
         KnowledgeFixtures::image($article, $this->admin, ['created_at' => now()->subMinutes($number)]);
     }
 
-    knowledgeImagesManagerTable($article)->assertCountTableRecords(10);
+    $page = knowledgeImagesManagerTable($article)->assertCountTableRecords(12);
+
+    expect($page->instance()->getTableRecords()->count())->toBe(10);
 });
 
 it('opens the delete modal with the warnings and the reason field of the contract', function (): void {
