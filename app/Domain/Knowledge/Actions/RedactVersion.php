@@ -200,29 +200,14 @@ final class RedactVersion
     }
 
     /**
-     * The length of the trimmed reason. The text itself is not returned and not kept by the caller.
+     * The length of the trimmed reason, validated by the rule shared with {@see DeleteImageForGood}. The text itself is
+     * not returned and not kept by the caller.
      *
      * @throws ValidationException
      */
     private function reasonLength(mixed $reason): int
     {
-        if (is_string($reason) && str_contains($reason, "\0")) {
-            throw ValidationException::withMessages(['reason' => __('knowledge.errors.nul_character')]);
-        }
-
-        $trimmed = is_string($reason) ? trim($reason) : '';
-
-        if ($trimmed === '') {
-            throw ValidationException::withMessages(['reason' => __('knowledge.redact.errors.reason_required')]);
-        }
-
-        $length = mb_strlen($trimmed);
-
-        if ($length > self::MAX_REASON_LENGTH) {
-            throw ValidationException::withMessages(['reason' => __('knowledge.redact.errors.reason_too_long', ['max' => self::MAX_REASON_LENGTH])]);
-        }
-
-        return $length;
+        return ReasonText::length($reason, self::MAX_REASON_LENGTH, 'knowledge.redact.errors.reason_required', 'knowledge.redact.errors.reason_too_long');
     }
 
     /**

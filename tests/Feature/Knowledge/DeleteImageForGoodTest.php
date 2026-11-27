@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Actions\DeleteImageForGood;
+use App\Domain\Knowledge\Exceptions\ArticleWriteFailed;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Models\KnowledgeArticleImage;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
@@ -12,12 +13,16 @@ use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Models\Activity;
 use App\Http\Controllers\KnowledgeAttachmentController;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Mockery\MockInterface;
 use Tests\Support\Canary;
 use Tests\Support\KnowledgeFixtures;
 
@@ -202,4 +207,91 @@ it('leaves the other images of the article and their references alone', function
     expect(Storage::disk()->exists($other->storagePath()))->toBeTrue()
         ->and(deleteImageForGoodImageCount())->toBe(1)
         ->and(deleteImageForGoodReferenceCount())->toBe(1);
+});
+
+it('refuses an empty, blank, over-long or NUL-carrying reason on the reason field and deletes nothing', function (): void {
+    [$article, $image] = deleteImageForGoodSetup($this->admin);
+    $cases = [
+        'empty' => ['', 'Vyplňte důvod smazání.'],
+        'blank' => ["  \t ", 'Vyplňte důvod smazání.'],
+        'not a string' => [null, 'Vyplňte důvod smazání.'],
+        'too long' => [str_repeat('a', DeleteImageForGood::MAX_REASON_LENGTH + 1), 'Důvod může mít nejvýše 500 znaků.'],
+        'nul' => ["Example reason\0", __('knowledge.errors.nul_character')],
+    ];
+
+    foreach ($cases as $label => [$reason, $message]) {
+        $errors = deleteImageForGoodErrors(fn () => $this->delete->handle($this->admin, $image, $reason));
+
+        expect($errors)->toBe(['reason' => [$message]], $label);
+    }
+
+    expect(Storage::disk()->exists($image->storagePath()))->toBeTrue()
+        ->and(deleteImageForGoodImageCount())->toBe(1)
+        ->and(deleteImageForGoodReferenceCount())->toBe(2)
+        ->and(deleteImageForGoodActivity($article->id, 'image_deleted'))->toBe([]);
+});
+
+it('accepts a reason of exactly the maximum length', function (): void {
+    [, $image] = deleteImageForGoodSetup($this->admin);
+
+    $this->delete->handle($this->admin, $image, str_repeat('a', DeleteImageForGood::MAX_REASON_LENGTH));
+
+    expect(deleteImageForGoodImageCount())->toBe(0);
+});
+
+it('refuses a Partner and a user without a role and changes nothing', function (): void {
+    [$article, $image] = deleteImageForGoodSetup($this->admin);
+
+    foreach ([Canary::partnerFor(Canary::twoClients()[0]), Canary::userWithoutRole(null)] as $actor) {
+        expect(fn () => $this->delete->handle($actor, $image, DELETE_IMAGE_FOR_GOOD_REASON))
+            ->toThrow(AuthorizationException::class);
+    }
+
+    expect(Storage::disk()->exists($image->storagePath()))->toBeTrue()
+        ->and(deleteImageForGoodImageCount())->toBe(1)
+        ->and(deleteImageForGoodReferenceCount())->toBe(2)
+        ->and(deleteImageForGoodActivity($article->id, 'image_deleted'))->toBe([]);
+});
+
+it('does not delete a pending image', function (): void {
+    $image = KnowledgeFixtures::image(null, $this->admin);
+
+    expect(fn () => $this->delete->handle($this->admin, $image, DELETE_IMAGE_FOR_GOOD_REASON))
+        ->toThrow(ModelNotFoundException::class);
+
+    expect(Storage::disk()->exists($image->storagePath()))->toBeTrue()
+        ->and(deleteImageForGoodImageCount())->toBe(1);
+});
+
+it('rolls everything back and raises ArticleWriteFailed without content when the storage refuses the delete', function (): void {
+    [$article, $image] = deleteImageForGoodSetup($this->admin);
+    $real = Storage::disk();
+    $disk = (string) config('filesystems.default');
+
+    foreach ([
+        'false result' => static fn (MockInterface $double) => $double->shouldReceive('delete')->once()->andReturn(false),
+        'exception' => static fn (MockInterface $double) => $double->shouldReceive('delete')->once()->andThrow(new RuntimeException('Example secret path '.DELETE_IMAGE_FOR_GOOD_REASON)),
+    ] as $label => $configure) {
+        $double = Mockery::mock(Filesystem::class);
+        $configure($double);
+        Storage::set($disk, $double);
+
+        $failure = null;
+
+        try {
+            $this->delete->handle($this->admin, $image, DELETE_IMAGE_FOR_GOOD_REASON);
+        } catch (ArticleWriteFailed $e) {
+            $failure = $e;
+        }
+
+        expect($failure)->toBeInstanceOf(ArticleWriteFailed::class, $label)
+            ->and($failure?->sqlState)->toBe('storage')
+            ->and($failure?->getMessage())->not->toContain(DELETE_IMAGE_FOR_GOOD_REASON)
+            ->and($failure?->getPrevious())->toBeNull();
+    }
+
+    expect($real->exists($image->storagePath()))->toBeTrue()
+        ->and(deleteImageForGoodImageCount())->toBe(1)
+        ->and(deleteImageForGoodReferenceCount())->toBe(2)
+        ->and(deleteImageForGoodActivity($article->id, 'image_deleted'))->toBe([]);
 });
