@@ -158,7 +158,7 @@ Plans:
   1. From the article editor Admin uploads a PNG, JPEG, WebP or GIF image and sees it inline in the preview and on the view screen; an SVG, a non-image file renamed to an image extension, or a file over the size cap is rejected with a message
   2. A stored image carries no EXIF data (a fictional test photo with a GPS position comes back without it) and is served only through an authorised route: a guest, a Partner without access to the article, or a stale signed link is refused, and no direct bucket URL appears in the page
   3. After an image is removed from an article body, the cleanup job deletes it once no stored version references it, while an image still referenced by an earlier version survives and shows when that version is viewed or restored
-**Plans:** 10/11 plans executed (4 waves; every migration, Composer, Pest and PHPStan run happens through DDEV after the merge of its wave into the HEAD branch, one process at a time; after the wave 1 merge run `ddev exec php artisan migrate` and `ddev composer require "ext-gd:*"` (20-03) first)
+**Plans:** 11/11 plans executed (4 waves; every migration, Composer, Pest and PHPStan run happens through DDEV after the merge of its wave into the HEAD branch, one process at a time; after the wave 1 merge run `ddev exec php artisan migrate` and `ddev composer require "ext-gd:*"` (20-03) first)
 
 Plans:
 **Wave 1**
@@ -178,7 +178,7 @@ Plans:
 - [x] 20-10-PLAN.md — DeleteImageForGood with a required, discarded reason and a metadata-only history row; shared reason helper with RedactVersion (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 20-11-PLAN.md — Obrázky relation manager (thumbnails through the route, usage badges, delete-for-good modal), Partner matrix declaration, CONTRIBUTING hand-over (wave 4)
+- [x] 20-11-PLAN.md — Obrázky relation manager (thumbnails through the route, usage badges, delete-for-good modal), Partner matrix declaration, CONTRIBUTING hand-over (wave 4)
 **UI hint**: yes
 
 ### Phase 21: Incidents and Retrospectives
@@ -229,7 +229,7 @@ Phases execute in numeric order: 18 → 19 → 20 → 21 → 22 → 23
 |-------|-----------|----------------|--------|-----------|
 | 18. Knowledge Articles and Secret Guard | v1.1 | 14/14 | In Progress | - |
 | 19. Folders, Tags and Version History | v1.1 | 0/12 | Planned | - |
-| 20. Image Attachments | v1.1 | 10/11 | In Progress | - |
+| 20. Image Attachments | v1.1 | 11/11 | In Progress | - |
 | 21. Incidents and Retrospectives | v1.1 | 0/TBD | Not started | - |
 | 22. Knowledge Search | v1.1 | 0/TBD | Not started | - |
 | 23. Client Sharing and AI Export | v1.1 | 0/TBD | Not started | - |
