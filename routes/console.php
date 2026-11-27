@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Api\Jobs\PurgeExpiredIdempotencyKeys;
 use App\Domain\Documents\Jobs\PruneExpiredDocumentArchives;
+use App\Domain\Knowledge\Jobs\PruneKnowledgeImages;
 use App\Domain\Operations\Health\Heartbeats;
 use App\Domain\Operations\Jobs\RecordWorkerHeartbeat;
 use App\Domain\Payments\Jobs\DeactivatePaymentLinks;
@@ -97,6 +98,14 @@ Schedule::job(new PruneExpiredReportExports)
 Schedule::job(new PruneExpiredDocumentArchives)
     ->daily()
     ->name('kokpit-document-archive-prune')
+    ->onOneServer();
+
+// Deletes the knowledge images nobody needs: a pending upload that no save bound within 24 hours (D-02) and an image
+// that no stored version references any more, 7 days after it was stamped as an orphan (D-17). An image any stored
+// version still references is never deleted. Runs as system, because the image model is closed to Partners.
+Schedule::job(new PruneKnowledgeImages)
+    ->daily()
+    ->name('kokpit-knowledge-image-prune')
     ->onOneServer();
 
 // Deletes the Stripe events that were processed more than webhook-client.delete_after_days (90) days ago (D-17,
