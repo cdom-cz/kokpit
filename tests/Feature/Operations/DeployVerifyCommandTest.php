@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Knowledge\Images\GdCapability;
 use App\Domain\Shared\Database\CzechCollation;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -14,7 +15,7 @@ use Illuminate\Support\Str;
  * every container right after the execOnce migration, and Zerops ends the deploy at
  * the first failing init command, so a pending migration, an unreachable database,
  * an unreachable Redis, a broken session connection or a database server without the
- * Czech collation keeps the previous version serving. The output names checks and results, never connection details.
+ * Czech collation or a GD that cannot handle the image formats keeps the previous version serving. The output names checks and results, never connection details.
  */
 
 /**
@@ -52,14 +53,27 @@ function registerPendingMigration(): string
     return $directory;
 }
 
-it('passes on the migrated database with Redis reachable and prints four ok lines including the collation', function (): void {
+it('passes on the migrated database with Redis reachable and prints five ok lines including the collation and GD', function (): void {
     [$exit, $output] = runDeployVerify();
 
     expect($exit)->toBe(0)
-        ->and(substr_count($output, 'v pořádku'))->toBe(4)
+        ->and(substr_count($output, 'v pořádku'))->toBe(5)
         ->and($output)->toContain('České řazení: v pořádku')
-        ->and($output)->toContain('všechny čtyři kontroly prošly')
+        ->and($output)->toContain('Knihovna obrázků GD: v pořádku')
+        ->and($output)->toContain('všech pět kontrol prošlo')
         ->and($output)->not->toContain('selhalo');
+});
+
+it('fails the readiness gate when GD cannot handle every image format, naming only the missing formats', function (): void {
+    app()->instance(GdCapability::class, new GdCapability(['PNG Support' => true]));
+
+    [$exit, $output] = runDeployVerify();
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('Knihovna obrázků GD: selhalo, příčina: PHP GD nepodporuje JPEG, WebP, GIF')
+        ->and($output)->toContain('Kontrola nasazení selhala')
+        ->and(substr_count($output, 'v pořádku'))->toBe(4)
+        ->and($output)->not->toContain('všech pět kontrol prošlo');
 });
 
 it('tells a present collation from an absent one', function (): void {

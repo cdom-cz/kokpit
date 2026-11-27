@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\Knowledge\Images\GdCapability;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Database\CzechCollation;
 use Closure;
@@ -15,9 +16,11 @@ use Throwable;
 
 /**
  * Readiness gate of a deploy (D-18): exits 0 only when the database answers,
- * no migration is pending, Redis answers and the database server provides the
+ * no migration is pending, Redis answers, the database server provides the
  * Czech collation (a server without ICU would sort Czech names wrongly, so it
- * never goes live; there is no fallback to the default collation).
+ * never goes live; there is no fallback to the default collation) and PHP has
+ * a GD that reads and writes PNG, JPEG, WebP and GIF (the fifth check; image
+ * attachments cannot work without it).
  *
  * It runs as an init command of every container, right after the execOnce
  * migration. Zerops ends the deploy at the first failing init command, so a
@@ -33,7 +36,7 @@ class DeployVerifyCommand extends Command
 {
     protected $signature = 'kokpit:deploy:verify';
 
-    protected $description = 'Check that the database and Redis answer, that no migration is pending and that the Czech collation exists (readiness gate of a deploy)';
+    protected $description = 'Check that the database and Redis answer, that no migration is pending and that the Czech collation exists and that GD handles the image formats (readiness gate of a deploy)';
 
     public function handle(): int
     {
@@ -55,6 +58,7 @@ class DeployVerifyCommand extends Command
             $this->check('migrations', fn (): ?string => $this->pendingMigrations()),
             $this->check('redis', fn (): ?string => $this->pingRedis()),
             $this->check('collation', fn (): ?string => $this->czechCollation()),
+            $this->check('gd', fn (): ?string => $this->imageLibrary()),
         ];
 
         if (in_array(false, $results, true)) {
@@ -136,6 +140,17 @@ class DeployVerifyCommand extends Command
     private function czechCollation(): ?string
     {
         return CzechCollation::isAvailable() ? null : (string) __('kokpit.deploy_verify.collation_missing', ['collation' => CzechCollation::NAME]);
+    }
+
+    /**
+     * Fails when GD is absent or cannot read and write PNG, JPEG, WebP and GIF.
+     * The reason names the missing formats only, never a path or a version.
+     */
+    private function imageLibrary(): ?string
+    {
+        $missing = app(GdCapability::class)->missing();
+
+        return $missing === [] ? null : (string) __('kokpit.deploy_verify.gd_missing', ['formats' => implode(', ', $missing)]);
     }
 
     /**
