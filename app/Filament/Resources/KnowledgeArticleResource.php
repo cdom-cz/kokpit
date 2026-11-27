@@ -11,6 +11,7 @@ use App\Domain\Knowledge\Actions\ArticleClassification;
 use App\Domain\Knowledge\Actions\RestoreArticle;
 use App\Domain\Knowledge\Enums\ArticleKind;
 use App\Domain\Knowledge\Guard\Severity;
+use App\Domain\Knowledge\Images\ImagePipeline;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
 use App\Domain\Knowledge\Queries\ArticleImages;
 use App\Domain\Knowledge\Queries\FolderTree;
@@ -25,6 +26,7 @@ use App\Domain\Shared\Tags\TagType;
 use App\Filament\Concerns\EnforcesResourceAccessRule;
 use App\Filament\Concerns\InKnowledgeGroup;
 use App\Filament\RelationManagers\KnowledgeArticleHistoryRelationManager;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\ImageUploadForm;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\SecretGuardForm;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\CompareArticleVersions;
 use App\Filament\Resources\KnowledgeArticleResource\Pages\CreateKnowledgeArticle;
@@ -179,7 +181,19 @@ final class KnowledgeArticleResource extends Resource
                                     })
                                     ->maxLength(KnowledgeArticle::MAX_BODY_LENGTH)
                                     ->minHeight('24rem')
-                                    ->extraAttributes(['data-kokpit-task-list' => __('knowledge.editor.task_list')]),
+                                    // The texts and limits of the editor script travel as data attributes, so the script holds no
+                                    // Czech words and no number of its own (resources/js/knowledge-editor.js, image flow).
+                                    ->extraAttributes([
+                                        'data-kokpit-task-list' => __('knowledge.editor.task_list'),
+                                        'data-kokpit-image' => __('knowledge.images.editor.insert'),
+                                        'data-kokpit-image-uploading' => __('knowledge.images.editor.uploading'),
+                                        'data-kokpit-image-done' => __('knowledge.images.editor.done'),
+                                        'data-kokpit-image-error-title' => __('knowledge.images.errors.title'),
+                                        'data-kokpit-image-too-large' => __('knowledge.images.errors.too_large'),
+                                        'data-kokpit-image-failed' => __('knowledge.images.errors.failed'),
+                                        'data-kokpit-image-max-bytes' => (string) ImagePipeline::MAX_UPLOAD_BYTES,
+                                        'data-kokpit-image-accept' => 'image/png,image/jpeg,image/webp,image/gif',
+                                    ]),
                             ]),
                         'preview' => Tab::make(__('knowledge.tabs.preview'))
                             ->schema([
@@ -192,6 +206,14 @@ final class KnowledgeArticleResource extends Resource
                 // Shown while the tab roundtrip runs: an inactive tab renders nothing, so the indicator sits outside it.
                 Html::make(static fn (): HtmlString => self::previewLoadingIndicator()),
                 self::classificationSection(),
+                // An image is not covered by the secret scan: after the first stored upload the Admin is told so, right
+                // above the sensitive toggle that is the answer to it (D-05). A rendered component, so a later morph keeps
+                // it; there is no action in it.
+                Callout::make(__('knowledge.images.notice'))
+                    ->color('warning')
+                    ->icon(Heroicon::OutlinedExclamationTriangle)
+                    ->extraAttributes(['role' => 'status', 'data-kokpit-image-notice' => ''])
+                    ->visible(static fn (LivewireComponent $livewire): bool => $livewire instanceof ImageUploadForm && $livewire->showsImageNotice()),
                 Toggle::make('sensitive')
                     ->label(__('knowledge.fields.sensitive'))
                     ->helperText(__('knowledge.fields.sensitive_helper')),
