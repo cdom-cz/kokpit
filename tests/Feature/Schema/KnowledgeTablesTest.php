@@ -6,7 +6,9 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Enums\ArticleKind;
 use App\Domain\Knowledge\Enums\RedactionScope;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleImage;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersionImage;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
 use App\Domain\Projects\Models\Project;
@@ -22,6 +24,7 @@ use Tests\Support\Uuids;
  * the constraint. Each refused statement runs in its own savepoint (RawSql), because a failed
  * statement aborts a PostgreSQL transaction. Values are fictional. Helpers carry the prefix
  * `knowledgeTables`, because Pest loads every test file into one namespace.
+ * The image and reference tables (Phase 20; D-02, D-04, D-06, D-16, D-17) are covered at the end.
  */
 
 /**
@@ -146,6 +149,50 @@ function knowledgeTablesColumns(string $table): array
         ->orderBy('column_name')
         ->pluck('column_name')
         ->all();
+}
+
+/**
+ * Inserts one image row with valid defaults (a bound one, or a pending one with a NULL article) and returns its id;
+ * overrides replace single columns.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function knowledgeTablesImage(?string $articleId, string $uploaderId, array $overrides = []): string
+{
+    $id = (string) Str::uuid7();
+
+    DB::table('knowledge_article_images')->insert(array_merge([
+        'id' => $id,
+        'article_id' => $articleId,
+        'uploaded_by' => $uploaderId,
+        'file_name' => 'screenshot-example.png',
+        'mime_type' => 'image/png',
+        'width' => 2,
+        'height' => 1,
+        'size_bytes' => 70,
+        'sha256' => str_repeat('a', 64),
+        'created_at' => now(),
+    ], $overrides));
+
+    return $id;
+}
+
+/**
+ * Inserts one reference row (a stored version names an image) and returns its id.
+ */
+function knowledgeTablesImageReference(string $versionId, string $imageId, string $articleId): string
+{
+    $id = (string) Str::uuid7();
+
+    DB::table('knowledge_article_version_images')->insert([
+        'id' => $id,
+        'version_id' => $versionId,
+        'image_id' => $imageId,
+        'article_id' => $articleId,
+        'created_at' => now(),
+    ]);
+
+    return $id;
 }
 
 beforeEach(function (): void {
@@ -570,5 +617,268 @@ describe('redaction and restore marker', function (): void {
             ->and($model->scope)->toBe(RedactionScope::Lines)
             ->and($model->reason_length)->toBe(12)
             ->and($model->toArray())->not->toHaveKey('reason');
+    });
+});
+
+describe('images and their references', function (): void {
+    it('stores a pending and a bound image with a version 7 id and a creation time', function (): void {
+        $article = knowledgeTablesArticle();
+
+        $pending = knowledgeTablesImage(null, $this->authorId);
+        $bound = knowledgeTablesImage($article, $this->authorId);
+
+        expect($pending)->toMatch(Uuids::V7_PATTERN)
+            ->and(DB::table('knowledge_article_images')->where('id', $pending)->value('article_id'))->toBeNull()
+            ->and(DB::table('knowledge_article_images')->where('id', $bound)->value('article_id'))->toBe($article)
+            ->and(DB::table('knowledge_article_images')->where('id', $bound)->value('created_at'))->not->toBeNull();
+
+        DB::table('knowledge_article_images')->insert([
+            'uploaded_by' => $this->authorId,
+            'file_name' => 'screenshot-example.png',
+            'mime_type' => 'image/png',
+            'width' => 1,
+            'height' => 1,
+            'size_bytes' => 1,
+            'sha256' => str_repeat('b', 64),
+        ]);
+
+        expect(DB::table('knowledge_article_images')->where('sha256', str_repeat('b', 64))->value('id'))->toMatch(Uuids::V7_PATTERN);
+    });
+
+    it('refuses a mime type outside PNG, JPEG, WebP and GIF', function (): void {
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['mime_type' => 'image/svg+xml']));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['mime_type' => 'image/bmp']));
+
+        foreach (['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as $mime) {
+            RawSql::expectAllowed(fn () => knowledgeTablesImage(null, $this->authorId, ['mime_type' => $mime]));
+        }
+    });
+
+    it('refuses a width or height outside 1 to 2400', function (): void {
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['width' => 0]));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['width' => 2401]));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['height' => 0]));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['height' => 2401]));
+        RawSql::expectAllowed(fn () => knowledgeTablesImage(null, $this->authorId, ['width' => 2400, 'height' => 2400]));
+        RawSql::expectAllowed(fn () => knowledgeTablesImage(null, $this->authorId, ['width' => 1, 'height' => 1]));
+    });
+
+    it('refuses a size outside 1 byte to 32 MiB', function (): void {
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['size_bytes' => 0]));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['size_bytes' => 32 * 1024 * 1024 + 1]));
+        RawSql::expectAllowed(fn () => knowledgeTablesImage(null, $this->authorId, ['size_bytes' => 32 * 1024 * 1024]));
+        RawSql::expectAllowed(fn () => knowledgeTablesImage(null, $this->authorId, ['size_bytes' => 1]));
+    });
+
+    it('refuses a malformed sha256 and a file name of 0 or over 255 characters', function (): void {
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['sha256' => str_repeat('a', 63)]));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['sha256' => str_repeat('a', 65)]));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['sha256' => str_repeat('A', 64)]));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['sha256' => str_repeat('g', 64)]));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['file_name' => '']));
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['file_name' => str_repeat('a', 256)]));
+        RawSql::expectAllowed(fn () => knowledgeTablesImage(null, $this->authorId, ['file_name' => str_repeat('a', 255)]));
+    });
+
+    it('refuses an orphaned_at on a pending image and admits it on a bound one', function (): void {
+        $article = knowledgeTablesArticle();
+
+        RawSql::expectSqlState('23514', fn () => knowledgeTablesImage(null, $this->authorId, ['orphaned_at' => now()]));
+        RawSql::expectAllowed(fn () => knowledgeTablesImage($article, $this->authorId, ['orphaned_at' => now()]));
+    });
+
+    it('refuses an unknown article and an unknown uploader', function (): void {
+        RawSql::expectSqlState('23503', fn () => knowledgeTablesImage((string) Str::uuid7(), $this->authorId));
+        RawSql::expectSqlState('23503', fn () => knowledgeTablesImage(null, (string) Str::uuid7()));
+    });
+
+    it('lets a pending image be bound once and refuses every other change of article_id', function (): void {
+        $articleA = knowledgeTablesArticle();
+        $articleB = knowledgeTablesArticle();
+        $image = knowledgeTablesImage(null, $this->authorId);
+
+        RawSql::expectAllowed(fn () => DB::table('knowledge_article_images')->where('id', $image)->update(['article_id' => $articleA]));
+
+        expect(DB::table('knowledge_article_images')->where('id', $image)->value('article_id'))->toBe($articleA);
+
+        RawSql::expectSqlState('KP001', fn () => DB::table('knowledge_article_images')->where('id', $image)->update(['article_id' => $articleB]));
+        RawSql::expectSqlState('KP001', fn () => DB::table('knowledge_article_images')->where('id', $image)->update(['article_id' => null]));
+
+        expect(DB::table('knowledge_article_images')->where('id', $image)->value('article_id'))->toBe($articleA);
+    });
+
+    it('refuses to change any stored fact of an image', function (): void {
+        $article = knowledgeTablesArticle();
+        $image = knowledgeTablesImage($article, $this->authorId);
+        $otherUser = User::factory()->create()->id;
+
+        $changes = [
+            ['mime_type' => 'image/jpeg'],
+            ['width' => 3],
+            ['height' => 2],
+            ['size_bytes' => 71],
+            ['sha256' => str_repeat('c', 64)],
+            ['file_name' => 'renamed-example.png'],
+            ['uploaded_by' => $otherUser],
+            ['created_at' => now()->subDay()],
+            ['orphaned_at' => now(), 'width' => 3],
+        ];
+
+        foreach ($changes as $change) {
+            RawSql::expectSqlState('KP001', fn () => DB::table('knowledge_article_images')->where('id', $image)->update($change));
+        }
+
+        $row = DB::table('knowledge_article_images')->where('id', $image)->first();
+
+        expect($row->mime_type)->toBe('image/png')
+            ->and($row->width)->toBe(2)
+            ->and($row->height)->toBe(1)
+            ->and($row->size_bytes)->toBe(70)
+            ->and($row->sha256)->toBe(str_repeat('a', 64))
+            ->and($row->file_name)->toBe('screenshot-example.png')
+            ->and($row->uploaded_by)->toBe($this->authorId)
+            ->and($row->orphaned_at)->toBeNull();
+    });
+
+    it('lets the orphan stamp be set and cleared on a bound image', function (): void {
+        $image = knowledgeTablesImage(knowledgeTablesArticle(), $this->authorId);
+
+        RawSql::expectAllowed(fn () => DB::table('knowledge_article_images')->where('id', $image)->update(['orphaned_at' => now()]));
+
+        expect(DB::table('knowledge_article_images')->where('id', $image)->value('orphaned_at'))->not->toBeNull();
+
+        RawSql::expectAllowed(fn () => DB::table('knowledge_article_images')->where('id', $image)->update(['orphaned_at' => null]));
+
+        expect(DB::table('knowledge_article_images')->where('id', $image)->value('orphaned_at'))->toBeNull();
+    });
+
+    it('refuses to stamp a pending image as orphaned', function (): void {
+        $image = knowledgeTablesImage(null, $this->authorId);
+
+        RawSql::expectSqlState('23514', fn () => DB::table('knowledge_article_images')->where('id', $image)->update(['orphaned_at' => now()]));
+    });
+
+    it('deletes an unreferenced image', function (): void {
+        $image = knowledgeTablesImage(knowledgeTablesArticle(), $this->authorId);
+
+        RawSql::expectAllowed(fn () => DB::table('knowledge_article_images')->where('id', $image)->delete());
+
+        expect(DB::table('knowledge_article_images')->where('id', $image)->exists())->toBeFalse();
+    });
+
+    it('inserts a reference of a version and an image of the same article and refuses the same pair twice', function (): void {
+        $article = knowledgeTablesArticle();
+        $version = knowledgeTablesVersion($article, $this->authorId);
+        $image = knowledgeTablesImage($article, $this->authorId);
+
+        $reference = knowledgeTablesImageReference($version, $image, $article);
+
+        expect($reference)->toMatch(Uuids::V7_PATTERN);
+
+        RawSql::expectSqlState('23505', fn () => knowledgeTablesImageReference($version, $image, $article));
+
+        $other = knowledgeTablesImage($article, $this->authorId);
+        RawSql::expectAllowed(fn () => knowledgeTablesImageReference($version, $other, $article));
+    });
+
+    it('refuses a reference across two articles', function (): void {
+        $articleA = knowledgeTablesArticle();
+        $articleB = knowledgeTablesArticle();
+        $versionA = knowledgeTablesVersion($articleA, $this->authorId);
+        $versionB = knowledgeTablesVersion($articleB, $this->authorId);
+        $imageA = knowledgeTablesImage($articleA, $this->authorId);
+
+        // A version and an image of article A, but the row claims article B.
+        RawSql::expectSqlState('23503', fn () => knowledgeTablesImageReference($versionA, $imageA, $articleB));
+        // A version of article B naming an image of article A, claiming A or B.
+        RawSql::expectSqlState('23503', fn () => knowledgeTablesImageReference($versionB, $imageA, $articleA));
+        RawSql::expectSqlState('23503', fn () => knowledgeTablesImageReference($versionB, $imageA, $articleB));
+
+        expect(DB::table('knowledge_article_version_images')->count())->toBe(0);
+    });
+
+    it('refuses a reference to a pending image and to an unknown version or image', function (): void {
+        $article = knowledgeTablesArticle();
+        $version = knowledgeTablesVersion($article, $this->authorId);
+        $pending = knowledgeTablesImage(null, $this->authorId);
+        $bound = knowledgeTablesImage($article, $this->authorId);
+
+        RawSql::expectSqlState('23503', fn () => knowledgeTablesImageReference($version, $pending, $article));
+        RawSql::expectSqlState('23503', fn () => knowledgeTablesImageReference((string) Str::uuid7(), $bound, $article));
+        RawSql::expectSqlState('23503', fn () => knowledgeTablesImageReference($version, (string) Str::uuid7(), $article));
+    });
+
+    it('refuses to delete an image that a reference names and allows it once the reference is gone', function (): void {
+        $article = knowledgeTablesArticle();
+        $version = knowledgeTablesVersion($article, $this->authorId);
+        $image = knowledgeTablesImage($article, $this->authorId);
+        $reference = knowledgeTablesImageReference($version, $image, $article);
+
+        RawSql::expectSqlState('23503', fn () => DB::table('knowledge_article_images')->where('id', $image)->delete());
+
+        expect(DB::table('knowledge_article_images')->where('id', $image)->exists())->toBeTrue();
+
+        RawSql::expectAllowed(fn () => DB::table('knowledge_article_version_images')->where('id', $reference)->delete());
+        RawSql::expectAllowed(fn () => DB::table('knowledge_article_images')->where('id', $image)->delete());
+
+        expect(DB::table('knowledge_article_images')->where('id', $image)->exists())->toBeFalse();
+    });
+
+    it('refuses to hard delete an article that has an image', function (): void {
+        $article = knowledgeTablesArticle();
+        knowledgeTablesImage($article, $this->authorId);
+
+        RawSql::expectSqlState('23001', fn () => DB::table('knowledge_articles')->where('id', $article)->delete());
+    });
+
+    it('keeps the version rows usable after the composite unique key was added', function (): void {
+        $article = knowledgeTablesArticle();
+        $version = knowledgeTablesVersion($article, $this->authorId);
+
+        expect(DB::table('knowledge_article_versions')->where('id', $version)->value('article_id'))->toBe($article);
+
+        RawSql::expectAllowed(fn () => knowledgeTablesVersion($article, $this->authorId, ['version_no' => 2]));
+    });
+
+    it('builds the object key from the id and the mime type only', function (): void {
+        $png = (new KnowledgeArticleImage)->forceFill(['id' => 'abc', 'mime_type' => 'image/png', 'file_name' => 'x/../evil.png']);
+        $jpeg = (new KnowledgeArticleImage)->forceFill(['id' => 'abc', 'mime_type' => 'image/jpeg']);
+        $webp = (new KnowledgeArticleImage)->forceFill(['id' => 'abc', 'mime_type' => 'image/webp']);
+        $gif = (new KnowledgeArticleImage)->forceFill(['id' => 'abc', 'mime_type' => 'image/gif']);
+        $svg = (new KnowledgeArticleImage)->forceFill(['id' => 'abc', 'mime_type' => 'image/svg+xml']);
+
+        expect($png->storagePath())->toBe('knowledge/images/abc.png')
+            ->and($jpeg->storagePath())->toBe('knowledge/images/abc.jpg')
+            ->and($webp->storagePath())->toBe('knowledge/images/abc.webp')
+            ->and($gif->storagePath())->toBe('knowledge/images/abc.gif')
+            ->and(KnowledgeArticleImage::STORAGE_DIRECTORY)->toBe('knowledge/images')
+            ->and(fn () => $svg->storagePath())->toThrow(LogicException::class);
+    });
+
+    it('reads images and references through the models and their relations', function (): void {
+        $article = knowledgeTablesArticle();
+        $version = knowledgeTablesVersion($article, $this->authorId);
+        $image = knowledgeTablesImage($article, $this->authorId);
+        knowledgeTablesImageReference($version, $image, $article);
+
+        [$images, $references, $imageOfReference, $referencesOfImage] = app(PartnerContext::class)->runAsSystem(static function () use ($article, $version, $image): array {
+            $reference = KnowledgeArticleVersionImage::query()->firstOrFail();
+
+            return [
+                KnowledgeArticle::query()->findOrFail($article)->images()->get(),
+                KnowledgeArticleVersion::query()->findOrFail($version)->imageReferences()->get(),
+                $reference->image()->first(),
+                KnowledgeArticleImage::query()->findOrFail($image)->references()->get(),
+            ];
+        });
+
+        expect($images->modelKeys())->toBe([$image])
+            ->and($references->first())->toBeInstanceOf(KnowledgeArticleVersionImage::class)
+            ->and($references->first()?->image_id)->toBe($image)
+            ->and($imageOfReference?->getKey())->toBe($image)
+            ->and($referencesOfImage)->toHaveCount(1)
+            ->and($images->first()?->width)->toBe(2)
+            ->and((new KnowledgeArticleImage)->getMorphClass())->toBe('knowledge_article_image')
+            ->and((new KnowledgeArticleVersionImage)->getMorphClass())->toBe('knowledge_article_version_image');
     });
 });

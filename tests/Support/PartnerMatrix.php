@@ -21,7 +21,9 @@ use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleImage;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersionImage;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
 use App\Domain\Payments\Models\CardPayment;
@@ -520,6 +522,8 @@ final class PartnerMatrix
             KnowledgeArticleVersion::class => 'Immutable versions of the knowledge articles of the Admin.',
             KnowledgeFolder::class => 'The folder tree of the knowledge articles of the Admin.',
             KnowledgeVersionRedaction::class => 'Redaction records of the knowledge versions of the Admin: version, actor, scope and the length of the reason, never its text.',
+            KnowledgeArticleImage::class => 'Re-encoded images of the knowledge articles of the Admin, pending or bound; the file name is shown only to the Admin.',
+            KnowledgeArticleVersionImage::class => 'Which stored knowledge version references which image of the same article.',
             SignalTask::class => 'Personal planner of the Admin.',
             SignalRecurringTask::class => 'Personal planner of the Admin.',
             SignalSetting::class => 'Personal planner of the Admin.',

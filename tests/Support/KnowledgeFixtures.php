@@ -7,11 +7,15 @@ namespace Tests\Support;
 use App\Domain\Identity\Models\User;
 use App\Domain\Knowledge\Enums\ArticleKind;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleImage;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersionImage;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Shared\Tags\TagType;
+use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
+use RuntimeException;
 
 /**
  * Shared rows of the knowledge module for every test of Phases 18 and 19.
@@ -181,5 +185,82 @@ final class KnowledgeFixtures
 
             return $article;
         });
+    }
+
+    /**
+     * One image row of an article (a pending one when the article is null) with the real facts of a 2 x 1 PNG made
+     * with GD at runtime (no file of bytes is committed): file name `screenshot-example.png`, image/png, its width,
+     * height, size and sha256. When `$withObject` is true the same bytes are put on the default disk at the
+     * `storagePath()` of the row, so a route or a cleanup under test finds a real object. Column overrides win over
+     * the defaults, the object path is taken from the row as it ends up.
+     *
+     * @param  array<string, mixed>  $attributes  column overrides, written with forceFill
+     */
+    public static function image(?KnowledgeArticle $article, User $uploader, array $attributes = [], bool $withObject = true): KnowledgeArticleImage
+    {
+        $bytes = self::pngBytes();
+
+        return app(PartnerContext::class)->runAsSystem(static function () use ($article, $uploader, $attributes, $withObject, $bytes): KnowledgeArticleImage {
+            $image = new KnowledgeArticleImage;
+            $image->forceFill([
+                'article_id' => $article?->getKey(),
+                'uploaded_by' => $uploader->getKey(),
+                'file_name' => 'screenshot-example.png',
+                'mime_type' => 'image/png',
+                'width' => 2,
+                'height' => 1,
+                'size_bytes' => strlen($bytes),
+                'sha256' => hash('sha256', $bytes),
+                ...$attributes,
+            ])->save();
+
+            if ($withObject) {
+                Storage::disk()->put($image->storagePath(), $bytes);
+            }
+
+            return $image;
+        });
+    }
+
+    /**
+     * One reference row: the stored version names the image. The row carries the article of the version, so the
+     * composite keys of the database hold only when both belong to the same article.
+     */
+    public static function reference(KnowledgeArticleVersion $version, KnowledgeArticleImage $image): KnowledgeArticleVersionImage
+    {
+        return app(PartnerContext::class)->runAsSystem(static function () use ($version, $image): KnowledgeArticleVersionImage {
+            $reference = new KnowledgeArticleVersionImage;
+            $reference->forceFill([
+                'version_id' => $version->getKey(),
+                'image_id' => $image->getKey(),
+                'article_id' => $version->article_id,
+            ])->save();
+
+            return $reference;
+        });
+    }
+
+    /**
+     * The bytes of a 2 x 1 truecolor PNG, encoded by GD.
+     *
+     * @throws RuntimeException when GD cannot make the image
+     */
+    private static function pngBytes(): string
+    {
+        $canvas = imagecreatetruecolor(2, 1);
+
+        if ($canvas === false) {
+            throw new RuntimeException('GD could not create the fixture image.');
+        }
+
+        ob_start();
+        imagepng($canvas);
+        $bytes = (string) ob_get_clean();
+
+        if ($bytes === '') {
+            throw new RuntimeException('GD could not encode the fixture image.');
+        }
+
+        return $bytes;
     }
 }

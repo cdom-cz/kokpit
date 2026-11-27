@@ -32,7 +32,9 @@ use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Knowledge\Enums\ArticleKind;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleImage;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersionImage;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
 use App\Domain\Payments\Enums\CardPaymentReason;
@@ -152,7 +154,8 @@ final class CanaryRegistry
      * for every model that stores text; the Monday of the canary for the models that have a date but
      * no text column (the two Signal day models and the exchange rate); the id of the planner owner for the
      * settings (one row per user, no text column); the id of the canary version for the redaction record
-     * (it holds the length of the reason, never a text).
+     * (it holds the length of the reason, never a text), and the same for the reference row of an image (it holds
+     * ids only). The image row keeps the canary in its file name.
      *
      * @param  class-string  $model
      * @return list<string>
@@ -164,7 +167,7 @@ final class CanaryRegistry
             PaymentLink::class => [self::stripeLinkId($canary)],
             CardPayment::class => [self::stripeEventId($canary), $canary],
             SignalSetting::class => [(string) self::plannerOwner()->getKey()],
-            KnowledgeVersionRedaction::class => [self::canaryVersionId($canary)],
+            KnowledgeVersionRedaction::class, KnowledgeArticleVersionImage::class => [self::canaryVersionId($canary)],
             default => [$canary],
         };
     }
@@ -625,6 +628,42 @@ final class CanaryRegistry
                         'actor_id' => self::plannerOwner()->getKey(),
                         'scope' => 'whole',
                         'reason_length' => 12,
+                    ])->save();
+                });
+            },
+
+            // A bound image of the canary article (found by title; the article fixture runs before this one). The
+            // canary sits in the file name, the only text column; no object is stored, because no test of the
+            // canary harness reads the bytes. The uploader is the one planner owner.
+            KnowledgeArticleImage::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    $article = KnowledgeArticle::query()->where('title', $canary)->firstOrFail();
+
+                    (new KnowledgeArticleImage)->forceFill([
+                        'article_id' => $article->getKey(),
+                        'uploaded_by' => self::plannerOwner()->getKey(),
+                        'file_name' => $canary.'.png',
+                        'mime_type' => 'image/png',
+                        'width' => 1,
+                        'height' => 1,
+                        'size_bytes' => 1,
+                        'sha256' => str_repeat('0', 64),
+                    ])->save();
+                });
+            },
+
+            // The reference of version 1 of the canary article to that image (found by title and file name; the
+            // version and image fixtures run before this one). The row holds ids only, so its needle is the id of
+            // the version (see needles()).
+            KnowledgeArticleVersionImage::class => static function (string $clientId, string $canary): void {
+                app(PartnerContext::class)->runAsSystem(static function () use ($canary): void {
+                    $version = KnowledgeArticleVersion::query()->where('title', $canary)->firstOrFail();
+                    $image = KnowledgeArticleImage::query()->where('file_name', $canary.'.png')->firstOrFail();
+
+                    (new KnowledgeArticleVersionImage)->forceFill([
+                        'version_id' => $version->getKey(),
+                        'image_id' => $image->getKey(),
+                        'article_id' => $version->article_id,
                     ])->save();
                 });
             },
