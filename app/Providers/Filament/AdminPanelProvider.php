@@ -13,6 +13,7 @@ use App\Http\Controllers\CashReceiptPdfController;
 use App\Http\Controllers\DocumentArchiveFileController;
 use App\Http\Controllers\DocumentFileController;
 use App\Http\Controllers\InvoicePdfController;
+use App\Http\Controllers\KnowledgeAttachmentController;
 use App\Http\Middleware\EnsureAdminHasTwoFactor;
 use App\Http\Middleware\SetNoReferrerPolicy;
 use App\Support\InitialsAvatarProvider;
@@ -108,6 +109,15 @@ class AdminPanelProvider extends PanelProvider
                 Route::get('/files/cash-receipts/{cashReceipt}', CashReceiptPdfController::class)
                     ->middleware([SetNoReferrerPolicy::class, 'signed', 'throttle:document-files'])
                     ->name('files.cash-receipt');
+
+                // The stored images of the knowledge articles (Phase 20; D-10 to D-12) have a route of their own, and
+                // it is the only way an image reaches a browser. It is NOT signed (D-11): a copied or stored link opens
+                // nothing without a live session. The no-referrer header goes first, then the limiter. The path is
+                // /admin/knowledge/attachments/{uuid}, the one address the renderer accepts for an image
+                // (InternalImageSrcSanitizer::PATTERN); images are img sources, not navigations, so no SPA exception.
+                Route::get('/knowledge/attachments/{attachment}', KnowledgeAttachmentController::class)
+                    ->middleware([SetNoReferrerPolicy::class, 'throttle:knowledge-attachments'])
+                    ->name('knowledge.attachment');
             })
             ->spa()
             // A SPA navigation fetches the link and swaps it into the page, which would swallow a file

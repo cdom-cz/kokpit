@@ -14,11 +14,13 @@ use App\Domain\Invoicing\Models\InvoiceAdmin;
 use App\Domain\Invoicing\Support\CashReceiptPdfUrl;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleImage;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Projects\Models\Project;
 use App\Domain\Shared\Auth\PartnerContext;
 use App\Domain\Tasks\Models\Task;
 use App\Domain\TimeTracking\Models\TimeEntry;
+use App\Http\Controllers\KnowledgeAttachmentController;
 use Filament\Facades\Filament;
 use Illuminate\Routing\Route as LaravelRoute;
 use Illuminate\Support\Facades\Route;
@@ -95,7 +97,8 @@ function walkedRoutes(): array
  * through DocumentUrl, and the invoice PDF route (an {invoice} parameter) gets the issued canary invoice of that side
  * signed through InvoicePdfUrl, and the cash receipt PDF route (a {cashReceipt} parameter) gets the canary receipt of that
  * side signed through CashReceiptPdfUrl, so that the walk reaches the controller instead of stopping at the signature
- * check. Any other parameter fails the walk so that a new kind of route is looked at on purpose.
+ * check, and the knowledge image route (an {attachment} parameter) gets the canary image of that side by its unsigned
+ * path. Any other parameter fails the walk so that a new kind of route is looked at on purpose.
  */
 function walkedUrl(LaravelRoute $route, string $recordId, string $side = 'a'): string
 {
@@ -142,6 +145,12 @@ function walkedUrl(LaravelRoute $route, string $recordId, string $side = 'a'): s
             return CashReceiptPdfUrl::download(walkedCashReceipt($side), $user);
         }
 
+        // The knowledge image route (filament.admin.knowledge.attachment): the canary image of the side. The route has
+        // no signature (D-11), so the path is all there is to fill.
+        if ($parameter === 'attachment' && $route->getName() === KnowledgeAttachmentController::ROUTE) {
+            return KnowledgeAttachmentController::path(walkedKnowledgeImage($side)->getKey());
+        }
+
         // The knowledge version route (filament.admin.resources.knowledge-articles.version): the canary article has
         // version 1, so the version the walk requests is 1.
         if ($parameter === 'version' && $route->getName() === 'filament.admin.resources.knowledge-articles.version') {
@@ -170,6 +179,19 @@ function walkedDocument(string $side): Document
 
     return app(PartnerContext::class)->runAsSystem(
         static fn (): Document => Document::query()->where('name', $canary.'.txt')->firstOrFail(),
+    );
+}
+
+/**
+ * The canary image of a side: the row whose file name is the canary plus .png (no object is stored for it, so an Admin
+ * who requests it gets 404 from the missing object and a Partner is refused before any lookup).
+ */
+function walkedKnowledgeImage(string $side): KnowledgeArticleImage
+{
+    $canary = $side === 'a' ? test()->canaryA : test()->canaryB;
+
+    return app(PartnerContext::class)->runAsSystem(
+        static fn (): KnowledgeArticleImage => KnowledgeArticleImage::query()->where('file_name', $canary.'.png')->firstOrFail(),
     );
 }
 
@@ -377,7 +399,8 @@ it('walks at least the dashboard, the canary list and the canary record route', 
         ->and($names)->toContain('filament.admin.files.document')
         ->and($names)->toContain('filament.admin.files.archive')
         ->and($names)->toContain('filament.admin.files.invoice')
-        ->and($names)->toContain('filament.admin.files.cash-receipt');
+        ->and($names)->toContain('filament.admin.files.cash-receipt')
+        ->and($names)->toContain(KnowledgeAttachmentController::ROUTE);
 });
 
 it('refuses a record route of a resource it does not know, so a new resource is looked at on purpose', function (): void {
@@ -699,5 +722,29 @@ it('fills the version parameter of the knowledge version route only, and still r
     expect($route)->not->toBeNull()
         ->and(walkedUrl($route, 'article-id'))->toEndWith('/article-id/versions/1')
         ->and(static fn () => walkedUrl(new LaravelRoute('GET', '/x/{version}', []), 'x'))
+        ->toThrow(LogicException::class, 'does not know the parameter');
+});
+
+it('refuses the knowledge image route to Partner A for the canary images of both clients with a 403 and no trace of either', function (): void {
+    $this->actingAs(Canary::partnerFor($this->clientA));
+
+    foreach (['a', 'b'] as $side) {
+        $url = walkedUrl(Route::getRoutes()->getByName(KnowledgeAttachmentController::ROUTE), $this->recordA->id, $side);
+        $response = $this->get($url)->assertForbidden();
+        $body = (string) $response->getContent();
+
+        expect(str_contains($body, $this->canaryA))->toBeFalse()
+            ->and(str_contains($body, $this->canaryB))->toBeFalse()
+            ->and(str_contains($body, $this->clientB))->toBeFalse();
+    }
+});
+
+it('fills the attachment parameter of the knowledge image route only, and still refuses it on any other route', function (): void {
+    $route = Route::getRoutes()->getByName(KnowledgeAttachmentController::ROUTE);
+
+    expect($route)->not->toBeNull()
+        ->and(walkedUrl($route, 'x', 'a'))->toEndWith('/knowledge/attachments/'.walkedKnowledgeImage('a')->getKey())
+        ->and(walkedUrl($route, 'x', 'b'))->toEndWith('/knowledge/attachments/'.walkedKnowledgeImage('b')->getKey())
+        ->and(static fn () => walkedUrl(new LaravelRoute('GET', '/x/{attachment}', []), 'x'))
         ->toThrow(LogicException::class, 'does not know the parameter');
 });

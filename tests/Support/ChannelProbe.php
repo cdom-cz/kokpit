@@ -21,6 +21,7 @@ use App\Domain\Invoicing\Models\InvoiceItem;
 use App\Domain\Invoicing\Support\CashReceiptPdfUrl;
 use App\Domain\Invoicing\Support\InvoicePdfUrl;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleImage;
 use App\Domain\Payments\Models\CardPayment;
 use App\Domain\Projects\Enums\ProjectPriority;
 use App\Domain\Projects\Enums\ProjectStatus;
@@ -43,6 +44,7 @@ use App\Filament\RelationManagers\ActivityHistoryRelationManager;
 use App\Filament\Resources\ActivityResource;
 use App\Filament\Resources\DocumentArchiveResource;
 use App\Filament\Resources\ReportExportResource;
+use App\Http\Controllers\KnowledgeAttachmentController;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\GlobalSearch\GlobalSearchResult;
@@ -858,6 +860,10 @@ final class ChannelProbe
             return [CashReceipt::class];
         }
 
+        if ($name === KnowledgeAttachmentController::ROUTE) {
+            return [KnowledgeArticleImage::class];
+        }
+
         $slug = $this->walkResourceSlug($route);
 
         if ($slug === null) {
@@ -935,7 +941,8 @@ final class ChannelProbe
      * The URL of a walked route for the signed-in user. A route with a {record} parameter gets the given record id;
      * the file route (a {document} parameter) gets the visible canary document of the side, the archive route (an
      * {archive} parameter) the canary archive, the invoice PDF route (an {invoice} parameter) the issued canary
-     * invoice, the cash receipt PDF route (a {cashReceipt} parameter) the canary receipt, all signed for the signed-in user, so that the walk reaches the controller. Any other parameter
+     * invoice, the cash receipt PDF route (a {cashReceipt} parameter) the canary receipt, all signed for the signed-in user, so that the walk reaches the controller, and the knowledge image route (an {attachment}
+     * parameter) the canary image of the side by its unsigned path. Any other parameter
      * fails the walk, so a new kind of route is looked at on purpose.
      */
     public function walkUrl(LaravelRoute $route, string $recordId, string $side = 'a'): string
@@ -957,6 +964,12 @@ final class ChannelProbe
 
             if ($parameter === 'cashReceipt' && $route->getName() === CashReceiptPdfUrl::ROUTE) {
                 return CashReceiptPdfUrl::download($this->walkCashReceipt($side), $this->walkUser());
+            }
+
+            // The image route of the knowledge articles (Phase 20): the canary image of the side, requested by its path
+            // (the route has no signature). A Partner is refused before any lookup.
+            if ($parameter === 'attachment' && $route->getName() === KnowledgeAttachmentController::ROUTE) {
+                return KnowledgeAttachmentController::path($this->walkKnowledgeImage($side)->getKey());
             }
 
             // The version view of a knowledge article (Phase 19): a Partner is refused before any lookup, so the
@@ -990,7 +1003,7 @@ final class ChannelProbe
 
     private function walkIsFileRoute(LaravelRoute $route): bool
     {
-        return in_array($route->getName(), [DocumentUrl::ROUTE, DocumentUrl::ARCHIVE_ROUTE, InvoicePdfUrl::ROUTE, CashReceiptPdfUrl::ROUTE], true);
+        return in_array($route->getName(), [DocumentUrl::ROUTE, DocumentUrl::ARCHIVE_ROUTE, InvoicePdfUrl::ROUTE, CashReceiptPdfUrl::ROUTE, KnowledgeAttachmentController::ROUTE], true);
     }
 
     private function walkHasRecord(LaravelRoute $route): bool
@@ -1032,6 +1045,18 @@ final class ChannelProbe
 
         return app(PartnerContext::class)->runAsSystem(
             static fn (): CashReceipt => CashReceipt::query()->where('purpose', $canary)->firstOrFail(),
+        );
+    }
+
+    /**
+     * The canary image of a side: the fixture row whose file name is the canary plus .png.
+     */
+    private function walkKnowledgeImage(string $side): KnowledgeArticleImage
+    {
+        $name = $this->canary($side).'.png';
+
+        return app(PartnerContext::class)->runAsSystem(
+            static fn (): KnowledgeArticleImage => KnowledgeArticleImage::query()->where('file_name', $name)->firstOrFail(),
         );
     }
 
@@ -1175,7 +1200,8 @@ final class ChannelProbe
     /**
      * The file routes as Partner A, once per test: the signed document link of the client A visible file, of its
      * hidden twin and of the client B visible file, the signed archive link of both canary archives, the signed
-     * invoice PDF link of both issued canary invoices (a fictional PDF is stored for each first), and the report
+     * invoice PDF link of both issued canary invoices (a fictional PDF is stored for each first), the unsigned path of
+     * both canary knowledge images (Partner A is refused both, the route being Admin-only), and the report
      * export list mounted with Livewire. The own visible file and the own invoice PDF are served; everything else
      * must be refused with 403 or 404, so the statuses are asserted here and the bodies and Content-Disposition
      * headers go into the segments of the entity the file belongs to.
@@ -1208,6 +1234,8 @@ final class ChannelProbe
             ['invoice pdf b', $urls['invoice b'], [Invoice::class, InvoiceItem::class], false],
             ['cash receipt pdf a', $urls['cash receipt a'], [CashReceipt::class], true],
             ['cash receipt pdf b', $urls['cash receipt b'], [CashReceipt::class], false],
+            ['knowledge image a', $urls['knowledge image a'], [KnowledgeArticleImage::class], false],
+            ['knowledge image b', $urls['knowledge image b'], [KnowledgeArticleImage::class], false],
         ];
         $segments = [];
         $offenders = [];
@@ -1240,7 +1268,8 @@ final class ChannelProbe
 
     /**
      * The signed URLs of the canary files for one user, keyed "{kind} {side}": the visible document, the canary
-     * archive, the issued invoice's PDF and the canary cash receipt's PDF of each side. A control signs them for the Admin.
+     * archive, the issued invoice's PDF and the canary cash receipt's PDF of each side, signed for the user, and the
+     * unsigned path of the canary knowledge image of each side. A control signs them for the Admin.
      *
      * @return array<string, string>
      */
@@ -1253,6 +1282,7 @@ final class ChannelProbe
             $urls["archive {$side}"] = DocumentUrl::archive($this->walkArchive($side), $user);
             $urls["invoice {$side}"] = InvoicePdfUrl::download($this->walkInvoice($side), $user);
             $urls["cash receipt {$side}"] = CashReceiptPdfUrl::download($this->walkCashReceipt($side), $user);
+            $urls["knowledge image {$side}"] = KnowledgeAttachmentController::path($this->walkKnowledgeImage($side)->getKey());
         }
 
         return $urls;

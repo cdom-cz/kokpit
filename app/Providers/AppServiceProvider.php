@@ -58,5 +58,11 @@ class AppServiceProvider extends ServiceProvider
         // middleware `throttle:document-files`.
         RateLimiter::for('document-files', fn (Request $request): Limit => Limit::perMinute(max(1, (int) config('kokpit.documents.download_rate_limit_per_minute')))
             ->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip())));
+
+        // The images of the knowledge articles (D-10): an article with many screenshots loads them all at once, so the
+        // limit is generous, counted per signed-in user and per IP address for the rare request without a session.
+        // Used by the route middleware `throttle:knowledge-attachments`.
+        RateLimiter::for('knowledge-attachments', fn (Request $request): Limit => Limit::perMinute(max(1, (int) config('kokpit.knowledge.image_rate_limit_per_minute')))
+            ->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip())));
     }
 }
