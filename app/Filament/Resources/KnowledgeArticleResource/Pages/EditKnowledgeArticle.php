@@ -17,6 +17,8 @@ use App\Domain\Shared\Tags\TagType;
 use App\Filament\Concerns\RethrowsDomainValidation;
 use App\Filament\Resources\KnowledgeArticleResource;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\GuardsSecrets;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\HandlesImageUploads;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\ImageUploadForm;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\RefusesFailedSaves;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\SecretGuardForm;
 use Filament\Actions\Action;
@@ -42,9 +44,10 @@ use Livewire\Attributes\Locked;
  * in a persistent notice ({@see RefusesFailedSaves}). A save without changes, or with a change of the sensitive flag alone,
  * writes no version and says so (D-10, VER-01). The secret guard behaves as on the create screen (SEC-01 to SEC-03).
  */
-final class EditKnowledgeArticle extends EditRecord implements SecretGuardForm
+final class EditKnowledgeArticle extends EditRecord implements ImageUploadForm, SecretGuardForm
 {
     use GuardsSecrets;
+    use HandlesImageUploads;
     use RefusesFailedSaves;
     use RethrowsDomainValidation;
 
