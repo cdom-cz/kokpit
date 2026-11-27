@@ -80,6 +80,7 @@ use App\Filament\RelationManagers\ClientHistoryRelationManager;
 use App\Filament\RelationManagers\InvoiceDocumentsRelationManager;
 use App\Filament\RelationManagers\InvoiceHistoryRelationManager;
 use App\Filament\RelationManagers\KnowledgeArticleHistoryRelationManager;
+use App\Filament\RelationManagers\KnowledgeArticleImagesRelationManager;
 use App\Filament\RelationManagers\ProjectDocumentsRelationManager;
 use App\Filament\RelationManagers\ProjectHistoryRelationManager;
 use App\Filament\RelationManagers\TaskDocumentsRelationManager;
@@ -253,6 +254,7 @@ final class PartnerMatrix
             InvoiceDocumentsRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Files of a billing document, its PDF first.'],
             InvoiceHistoryRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Change history of a billing document.'],
             KnowledgeArticleHistoryRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Change history of a knowledge article.'],
+            KnowledgeArticleImagesRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Images of a knowledge article and their deletion for good.'],
             ProjectDocumentsRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Admin management of every project file.'],
             ProjectHistoryRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Change history of a project.'],
             TaskDocumentsRelationManager::class => ['admin' => true, 'partner' => false, 'reason' => 'Admin management of every task file.'],
