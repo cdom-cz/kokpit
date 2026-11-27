@@ -103,6 +103,16 @@ final class KnowledgeArticle extends KokpitModel implements PartnerIsolated
     }
 
     /**
+     * The images of this article, pending uploads excluded (a pending image has no article yet).
+     *
+     * @return HasMany<KnowledgeArticleImage, $this>
+     */
+    public function images(): HasMany
+    {
+        return $this->hasMany(KnowledgeArticleImage::class, 'article_id');
+    }
+
+    /**
      * @return BelongsTo<KnowledgeFolder, $this>
      */
     public function folder(): BelongsTo

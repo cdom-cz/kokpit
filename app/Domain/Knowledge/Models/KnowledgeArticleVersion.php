@@ -69,6 +69,16 @@ final class KnowledgeArticleVersion extends KokpitModel implements PartnerIsolat
     }
 
     /**
+     * The reference rows of the images this stored version names (D-16).
+     *
+     * @return HasMany<KnowledgeArticleVersionImage, $this>
+     */
+    public function imageReferences(): HasMany
+    {
+        return $this->hasMany(KnowledgeArticleVersionImage::class, 'version_id');
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
