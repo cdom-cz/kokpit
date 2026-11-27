@@ -1792,6 +1792,64 @@ it('hands Phase 19 over: the knowledge organisation bullet names only what exist
     }
 });
 
+it('hands Phase 20 over: the knowledge images bullet names only what exists', function () {
+    $bullet = repoContributingBullet('Phase 20 (knowledge images).');
+
+    expect($bullet)->not->toBe('');
+
+    // The names and the rules the text must keep naming.
+    foreach ([
+        '`KnowledgeArticleImage`', '`KnowledgeArticleVersionImage`', '`ImagePipeline`', '`GdCapability`', '`StoreArticleImage`',
+        '`HandlesImageUploads`', '`BindArticleImages`', '`ImageReferences`', '`ImageContext`', '`ArticleImages`',
+        '`InternalImageSrcSanitizer`', '`KnowledgeAttachmentController`', '`PruneImages`', '`PruneKnowledgeImages`',
+        '`DeleteImageForGood`', '`ReasonText`', '`KnowledgeArticleImagesRelationManager`',
+        'kokpit-attachment:', 'reason_recorded', 'never parses Markdown', 'D-15', 'A5',
+    ] as $name) {
+        expect($bullet)->toContain($name);
+    }
+
+    // Every CamelCase name in backticks resolves to a class (or trait), so the text cannot name what does not exist.
+    preg_match_all('/`([A-Z][A-Za-z0-9]+)(?:::([a-z][A-Za-z0-9]*)\(\))?`/', $bullet, $matches, PREG_SET_ORDER);
+
+    expect(count($matches))->toBeGreaterThan(15);
+
+    foreach ($matches as $match) {
+        if (str_ends_with($match[1], 'Test')) {
+            continue;
+        }
+
+        $classes = repoClassesNamed($match[1]);
+
+        expect($classes)->not->toBe([], "CONTRIBUTING.md names {$match[1]} but no such class exists");
+
+        if (isset($match[2])) {
+            $exists = array_filter($classes, static fn (string $class): bool => method_exists($class, $match[2]));
+
+            expect($exists)->not->toBe([], "CONTRIBUTING.md names {$match[1]}::{$match[2]}() but no such method exists");
+        }
+    }
+
+    // The enforcing tests the text names exist, in the file the text implies.
+    $tests = [
+        'KnowledgeSeamTest' => 'tests/Arch/KnowledgeSeamTest.php',
+        'StoreArticleImageTest' => 'tests/Feature/Knowledge/StoreArticleImageTest.php',
+        'ImageUploadTest' => 'tests/Feature/Knowledge/ImageUploadTest.php',
+        'ImageEditorWiringTest' => 'tests/Feature/Knowledge/ImageEditorWiringTest.php',
+        'SaveArticleImagesTest' => 'tests/Feature/Knowledge/SaveArticleImagesTest.php',
+        'KnowledgeAttachmentRouteTest' => 'tests/Feature/Knowledge/KnowledgeAttachmentRouteTest.php',
+        'KnowledgeImageScreensTest' => 'tests/Feature/Knowledge/KnowledgeImageScreensTest.php',
+        'RedactVersionImagesTest' => 'tests/Feature/Knowledge/RedactVersionImagesTest.php',
+        'PruneKnowledgeImagesTest' => 'tests/Feature/Knowledge/PruneKnowledgeImagesTest.php',
+        'DeleteImageForGoodTest' => 'tests/Feature/Knowledge/DeleteImageForGoodTest.php',
+        'KnowledgeArticleImagesRelationManagerTest' => 'tests/Feature/Knowledge/KnowledgeArticleImagesRelationManagerTest.php',
+    ];
+
+    foreach ($tests as $name => $path) {
+        expect($bullet)->toContain($name);
+        expect(is_file(base_path($path)))->toBeTrue("CONTRIBUTING.md names {$name} but {$path} does not exist");
+    }
+});
+
 it('hands the e-mail layout over: the E-mail bullet names only what exists', function () {
     $bullet = repoContributingBullet('E-mail.');
 
