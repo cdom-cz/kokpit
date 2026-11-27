@@ -158,7 +158,7 @@ Plans:
   1. From the article editor Admin uploads a PNG, JPEG, WebP or GIF image and sees it inline in the preview and on the view screen; an SVG, a non-image file renamed to an image extension, or a file over the size cap is rejected with a message
   2. A stored image carries no EXIF data (a fictional test photo with a GPS position comes back without it) and is served only through an authorised route: a guest, a Partner without access to the article, or a stale signed link is refused, and no direct bucket URL appears in the page
   3. After an image is removed from an article body, the cleanup job deletes it once no stored version references it, while an image still referenced by an earlier version survives and shows when that version is viewed or restored
-**Plans:** 7/11 plans executed (4 waves; every migration, Composer, Pest and PHPStan run happens through DDEV after the merge of its wave into the HEAD branch, one process at a time; after the wave 1 merge run `ddev exec php artisan migrate` and `ddev composer require "ext-gd:*"` (20-03) first)
+**Plans:** 10/11 plans executed (4 waves; every migration, Composer, Pest and PHPStan run happens through DDEV after the merge of its wave into the HEAD branch, one process at a time; after the wave 1 merge run `ddev exec php artisan migrate` and `ddev composer require "ext-gd:*"` (20-03) first)
 
 Plans:
 **Wave 1**
@@ -173,9 +173,9 @@ Plans:
 - [x] 20-07-PLAN.md — Authorised delivery route with the D-12 headers and sandbox CSP, Partner 403 first, 304 only after authorisation, no signed URL; route walk and channel probe (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 20-08-PLAN.md — Images on every surface (preview with own pending images, view screen, version view, restore) and the editor wiring: insert button, paste, drop, serial upload queue, status line, secret notice; end-of-phase browser check (wave 3)
-- [ ] 20-09-PLAN.md — Daily cleanup job: pending after 24 hours, orphans 7 days after the stamp, recheck under row lock; real-process concurrency proof against a racing save (wave 3)
-- [ ] 20-10-PLAN.md — DeleteImageForGood with a required, discarded reason and a metadata-only history row; shared reason helper with RedactVersion (wave 3)
+- [x] 20-08-PLAN.md — Images on every surface (preview with own pending images, view screen, version view, restore) and the editor wiring: insert button, paste, drop, serial upload queue, status line, secret notice; end-of-phase browser check (wave 3)
+- [x] 20-09-PLAN.md — Daily cleanup job: pending after 24 hours, orphans 7 days after the stamp, recheck under row lock; real-process concurrency proof against a racing save (wave 3)
+- [x] 20-10-PLAN.md — DeleteImageForGood with a required, discarded reason and a metadata-only history row; shared reason helper with RedactVersion (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 20-11-PLAN.md — Obrázky relation manager (thumbnails through the route, usage badges, delete-for-good modal), Partner matrix declaration, CONTRIBUTING hand-over (wave 4)
@@ -229,7 +229,7 @@ Phases execute in numeric order: 18 → 19 → 20 → 21 → 22 → 23
 |-------|-----------|----------------|--------|-----------|
 | 18. Knowledge Articles and Secret Guard | v1.1 | 14/14 | In Progress | - |
 | 19. Folders, Tags and Version History | v1.1 | 0/12 | Planned | - |
-| 20. Image Attachments | v1.1 | 7/11 | In Progress | - |
+| 20. Image Attachments | v1.1 | 10/11 | In Progress | - |
 | 21. Incidents and Retrospectives | v1.1 | 0/TBD | Not started | - |
 | 22. Knowledge Search | v1.1 | 0/TBD | Not started | - |
 | 23. Client Sharing and AI Export | v1.1 | 0/TBD | Not started | - |
