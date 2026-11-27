@@ -5,16 +5,16 @@ milestone_name: Knowledge Center
 current_phase: 20
 current_phase_name: Image Attachments
 status: executing
-stopped_at: Phase 20 UI-SPEC approved
-last_updated: "2026-11-27T10:04:38.275Z"
+stopped_at: Phase 21 context gathered
+last_updated: "2026-11-27T17:11:53.318Z"
 last_activity: 2026-11-27
 last_activity_desc: Phase 20 execution started
-state_head: 8df70277797651f08d29980eecf394b528869a69
+state_head: 6b9b12a0ff0c2ce9cf8e385691d0d4b45b5ed49e
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 37
-  completed_plans: 26
+  completed_plans: 37
   percent: 0
 ---
 
@@ -988,9 +988,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-26T22:48:42.590Z
-Stopped at: Phase 20 UI-SPEC approved
-Resume file: .planning/phases/20-image-attachments/20-UI-SPEC.md
+Last session: 2026-11-27T17:11:52.868Z
+Stopped at: Phase 21 context gathered
+Resume file: .planning/phases/21-incidents-and-retrospectives/21-CONTEXT.md
 
 ## Operator Next Steps
 
