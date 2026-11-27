@@ -34,6 +34,17 @@ const KNOWLEDGE_SEAM_WRITERS = [
 ];
 
 /**
+ * The reviewed writers of the image reference table `knowledge_article_version_images` (R-20-06-4, D-16, D-17): the
+ * save step that indexes a new version and the redaction that removes the references its rewrite dropped. The cleanup
+ * decides what to delete from this table, so no other file may insert or delete a row of it. Add a file only after it
+ * was reviewed.
+ */
+const KNOWLEDGE_SEAM_IMAGE_REFERENCE_WRITERS = [
+    'app/Domain/Knowledge/Actions/BindArticleImages.php',
+    'app/Domain/Knowledge/Actions/RedactVersion.php',
+];
+
+/**
  * The only file that names the transaction setting that opens the history trigger for a redaction.
  */
 const KNOWLEDGE_SEAM_SETTING_FILE = 'app/Domain/Knowledge/Actions/RedactVersion.php';
@@ -247,6 +258,52 @@ function knowledgeSeamWrites(string $source, array $columns = ['body_md', 'versi
         if (in_array($text, ['->', '?->'], true) && in_array($next, $columns, true) && in_array($afterNext, ['=', '+=', '-=', '.=', '++', '--'], true)) {
             $found[] = '->'.$next.' '.$afterNext.' (line '.$token['line'].')';
         }
+    }
+
+    return $found;
+}
+
+/**
+ * The writes of the image reference table in a PHP source: a statement (the tokens up to the next semicolon) that names
+ * the model `KnowledgeArticleVersionImage` (last segment) or the string `'knowledge_article_version_images'` and calls
+ * `insert`, `insertOrIgnore`, `upsert`, `update`, `delete`, `forceDelete`, `save`, `forceFill`, `create` or `truncate`
+ * right after `->` or `::`. A read, a comment and a string that only mentions the table are no writes.
+ *
+ * @return list<string> one `what (line N)` entry per statement
+ */
+function knowledgeSeamImageReferenceWrites(string $source): array
+{
+    $methods = ['insert', 'insertorignore', 'upsert', 'update', 'delete', 'forcedelete', 'save', 'forcefill', 'create', 'truncate'];
+    $found = [];
+    $statement = [];
+
+    foreach ([...knowledgeSeamTokens($source), ['text' => ';', 'line' => 0]] as $token) {
+        if ($token['text'] !== ';') {
+            $statement[] = $token;
+
+            continue;
+        }
+
+        $names = false;
+        $write = null;
+
+        foreach ($statement as $i => $part) {
+            $text = $part['text'];
+
+            if (knowledgeSeamLastSegment($text) === 'KnowledgeArticleVersionImage' || trim($text, '\'"') === 'knowledge_article_version_images') {
+                $names = true;
+            }
+
+            if (in_array($text, ['->', '?->', '::'], true) && in_array(strtolower($statement[$i + 1]['text'] ?? ''), $methods, true)) {
+                $write ??= $statement[$i + 1]['text'].' (line '.$statement[$i + 1]['line'].')';
+            }
+        }
+
+        if ($names && $write !== null) {
+            $found[] = $write;
+        }
+
+        $statement = [];
     }
 
     return $found;
@@ -576,6 +633,49 @@ it('reports a write of the body, the version number or the redaction number in a
     expect(knowledgeSeamWrites($violations))->toHaveCount(7)
         ->and(knowledgeSeamWrites($violations, ['redaction_no']))->toHaveCount(2)
         ->and(knowledgeSeamWrites($clean))->toBe([]);
+});
+
+it('writes the image reference table only in the reviewed writers', function (): void {
+    $files = knowledgeSeamAppFiles();
+    $found = [];
+
+    foreach ($files as $path => $source) {
+        if (in_array($path, KNOWLEDGE_SEAM_IMAGE_REFERENCE_WRITERS, true)) {
+            continue;
+        }
+
+        foreach (knowledgeSeamImageReferenceWrites($source) as $place) {
+            $found[] = $path.': '.$place;
+        }
+    }
+
+    expect($found)->toBe([]);
+
+    // Every writer of the list still writes the table, so no entry outlives its reason.
+    foreach (KNOWLEDGE_SEAM_IMAGE_REFERENCE_WRITERS as $writer) {
+        expect(knowledgeSeamImageReferenceWrites($files[$writer] ?? ''))->not->toBe([], $writer.' no longer writes the image reference table: remove it from the list');
+    }
+});
+
+it('reports an insert, a delete and a forceFill of the image reference table, and ignores a read, a comment and a string mention', function (): void {
+    $violations = <<<'PHP'
+        <?php
+
+        DB::table('knowledge_article_version_images')->insert($rows);
+        KnowledgeArticleVersionImage::query()->where('image_id', $id)->delete();
+        (new \App\Domain\Knowledge\Models\KnowledgeArticleVersionImage)->forceFill($attributes)->save();
+        PHP;
+    $clean = <<<'PHP'
+        <?php
+
+        // DB::table('knowledge_article_version_images')->insert($rows);
+        $exists = KnowledgeArticleVersionImage::query()->where('image_id', $id)->exists();
+        $message = 'knowledge_article_version_images is only mentioned here';
+        $other = KnowledgeArticleImage::query()->whereKey($id)->delete();
+        PHP;
+
+    expect(knowledgeSeamImageReferenceWrites($violations))->toHaveCount(3)
+        ->and(knowledgeSeamImageReferenceWrites($clean))->toBe([]);
 });
 
 it('names the redaction setting only in RedactVersion', function (): void {
