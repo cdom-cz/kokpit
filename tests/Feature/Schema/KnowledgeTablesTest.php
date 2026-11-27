@@ -814,7 +814,7 @@ describe('images and their references', function (): void {
         $image = knowledgeTablesImage($article, $this->authorId);
         $reference = knowledgeTablesImageReference($version, $image, $article);
 
-        RawSql::expectSqlState('23503', fn () => DB::table('knowledge_article_images')->where('id', $image)->delete());
+        RawSql::expectSqlState('23001', fn () => DB::table('knowledge_article_images')->where('id', $image)->delete());
 
         expect(DB::table('knowledge_article_images')->where('id', $image)->exists())->toBeTrue();
 

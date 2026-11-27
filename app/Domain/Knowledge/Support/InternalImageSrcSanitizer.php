@@ -21,12 +21,12 @@ final class InternalImageSrcSanitizer implements AttributeSanitizerInterface
      */
     public const string PATTERN = '#^/admin/knowledge/attachments/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$#D';
 
-    public function getSupportedElements(): ?array
+    public function getSupportedElements(): array
     {
         return ['img'];
     }
 
-    public function getSupportedAttributes(): ?array
+    public function getSupportedAttributes(): array
     {
         return ['src'];
     }
