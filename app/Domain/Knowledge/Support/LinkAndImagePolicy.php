@@ -12,10 +12,13 @@ use League\CommonMark\Node\Inline\Text;
 /**
  * The link and image policy of the knowledge renderer, applied to the parsed document before it is rendered
  * (R-18-03-3). An image survives only as the internal reference `kokpit-attachment:<uuid>` that the per-call image
- * context lists (D-13): it gets the authorised route path as its source plus its stored size. Every other image
- * becomes its alt text, so no external image element, no tracking pixel and no data source is ever emitted. A link survives only when its URL starts with http://, https:// or mailto:; every other link
- * (javascript:, data:, vbscript:, relative, protocol-relative, reference-style, autolink) is replaced by its link
- * text, so the output holds no inert anchor either. The sanitiser repeats the scheme check as a second layer.
+ * context lists (D-13): it gets the authorised route path as its source plus its stored size. An internal reference
+ * the context does not list (another article's image, an unknown or deleted one) becomes a MissingImage node, shown
+ * as its alt text (D-04, D-18, D-19). Every other image becomes its alt text, so no external image element, no
+ * tracking pixel and no data source is ever emitted. A link survives only when its URL starts with http://,
+ * https:// or mailto:; every other link (javascript:, data:, vbscript:, relative, protocol-relative,
+ * reference-style, autolink) is replaced by its link text, so the output holds no inert anchor either. The
+ * sanitiser repeats the scheme check as a second layer.
  */
 final class LinkAndImagePolicy
 {
@@ -51,10 +54,17 @@ final class LinkAndImagePolicy
 
         foreach ($images as $image) {
             $id = ImageReferences::idFromUrl($image->getUrl());
-            $entry = $id === null ? null : $this->images->find($id);
+
+            if ($id === null) {
+                $image->replaceWith(new Text($this->altText($image)));
+
+                continue;
+            }
+
+            $entry = $this->images->find($id);
 
             if ($entry === null) {
-                $image->replaceWith(new Text($this->altText($image)));
+                $image->replaceWith(new MissingImage($this->altText($image)));
 
                 continue;
             }

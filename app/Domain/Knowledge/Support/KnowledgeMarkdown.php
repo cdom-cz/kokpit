@@ -26,7 +26,7 @@ use Tempest\Highlight\Themes\CssTheme;
  * helpers (raw HTML allowed, unsafe links allowed, global sanitiser) must never touch article text.
  *
  * Labels come from the injected translator over relative keys (code.copy, code.copied, code.copy_failed, code.label,
- * code.label_plain, task.done, task.open), so the class stays unit-testable without the application; the service
+ * code.label_plain, task.done, task.open, image.missing), so the class stays unit-testable without the application; the service
  * provider binds a translator over the knowledge.render lang keys. The class calls no Laravel helper or facade.
  *
  * An image is shown only for a `kokpit-attachment:<uuid>` reference that the caller's ImageContext lists, and only as an
@@ -70,6 +70,7 @@ final class KnowledgeMarkdown
         $environment->addRenderer(FencedCode::class, $codeBlocks, 10);
         $environment->addRenderer(IndentedCode::class, $codeBlocks, 10);
         $environment->addRenderer(TaskListItemMarker::class, new TaskListMarkerRenderer($translate), 10);
+        $environment->addRenderer(MissingImage::class, new MissingImageRenderer($translate), 10);
 
         $this->converter = new MarkdownConverter($environment);
         $this->sanitizer = new HtmlSanitizer($this->sanitizerConfig());

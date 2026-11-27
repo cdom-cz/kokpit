@@ -372,7 +372,108 @@ it('keeps only the internal image route as an img src in the sanitiser rule', fu
     'a data source' => ['data:image/png;base64,AAAA', false],
 ]);
 
-it('keeps the img src through the sanitiser only on the internal route even when a body is crafted', function (): void {
+it('renders a reference to an unlisted image as the muted fallback span with its alt text and no img', function (): void {
+    $html = knowledgeMarkdownHtmlWithImages('![Example alt](kokpit-attachment:'.knowledgeMarkdownImageId(2).')', knowledgeMarkdownImages(1));
+    $dom = knowledgeMarkdownDom($html);
+    $span = $dom->querySelector('p > span.kokpit-image-missing');
+
+    expect($dom->querySelectorAll('img'))->toHaveCount(0)
+        ->and($span?->textContent)->toBe('Example alt')
+        ->and($html)->toContain('<span class="kokpit-image-missing">Example alt</span>');
+});
+
+it('renders a reference without a context, or with another article image, as the fallback span and never raises', function (?ImageContext $context): void {
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages('![Example alt](kokpit-attachment:'.knowledgeMarkdownImageId().')', $context));
+
+    expect($dom->querySelectorAll('img'))->toHaveCount(0)
+        ->and($dom->querySelectorAll('span.kokpit-image-missing'))->toHaveCount(1);
+})->with([
+    'no context' => [null],
+    'an empty context' => [ImageContext::none()],
+]);
+
+it('renders the missing text of the translator for an empty alt', function (string $markdown): void {
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages($markdown, ImageContext::none()));
+
+    expect($dom->querySelectorAll('img'))->toHaveCount(0)
+        ->and($dom->querySelector('span.kokpit-image-missing')?->textContent)->toBe('image.missing');
+})->with([
+    'empty alt' => ['![](kokpit-attachment:0190f3a0-0000-7000-8000-000000000001)'],
+    'blank alt' => ['![ ](kokpit-attachment:0190f3a0-0000-7000-8000-000000000001)'],
+]);
+
+it('escapes markup characters of the alt text inside the fallback span', function (): void {
+    // An entity decodes to a literal text node, so the angle brackets reach the fallback renderer as characters.
+    $html = knowledgeMarkdownHtmlWithImages('![Example &lt;b&gt;alt &amp; more](kokpit-attachment:'.knowledgeMarkdownImageId().')', ImageContext::none());
+    $dom = knowledgeMarkdownDom($html);
+
+    expect($dom->querySelectorAll('b'))->toHaveCount(0)
+        ->and($dom->querySelector('span.kokpit-image-missing')?->textContent)->toBe('Example <b>alt & more')
+        ->and($html)->toContain('Example &lt;b&gt;alt &amp; more');
+});
+
+it('keeps an external image and a data image as plain alt text without the fallback span', function (string $label): void {
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtml(KnowledgeHostileCorpus::cases()[$label]));
+
+    expect($dom->querySelectorAll('img, span.kokpit-image-missing'))->toHaveCount(0)
+        ->and($dom->body->textContent)->toContain('Example alt');
+})->with([
+    'image with an https source',
+    'image with a data source',
+]);
+
+it('renders a reference with a malformed id as plain alt text', function (string $url): void {
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages('![Example alt]('.$url.')', knowledgeMarkdownImages(1)));
+
+    expect($dom->querySelectorAll('img, span.kokpit-image-missing'))->toHaveCount(0)
+        ->and($dom->body->textContent)->toContain('Example alt');
+})->with([
+    'too short' => ['kokpit-attachment:0190f3a0-0000-7000-8000'],
+    'not hex' => ['kokpit-attachment:0190f3a0-0000-7000-8000-00000000000g'],
+    'trailing path' => ['kokpit-attachment:0190f3a0-0000-7000-8000-000000000001/x'],
+    'no id' => ['kokpit-attachment:'],
+]);
+
+it('keeps the link around a missing image as its fallback text', function (): void {
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages(
+        '[![Example alt](kokpit-attachment:'.knowledgeMarkdownImageId(2).')](https://example.com/page)',
+        knowledgeMarkdownImages(1),
+    ));
+
+    expect($dom->querySelector('a')?->getAttribute('href'))->toBe('https://example.com/page')
+        ->and($dom->querySelectorAll('a span.kokpit-image-missing'))->toHaveCount(1);
+});
+
+it('holds the image rules of the prose stylesheet, each selector under .kokpit-prose', function (): void {
+    $css = (string) file_get_contents(dirname(__DIR__, 3).'/resources/css/kokpit-prose.css');
+    $rules = [
+        '.kokpit-prose img' => ['max-width: 100%', 'height: auto', 'border: 1px solid var(--kp-border)', 'border-radius: 8px', 'vertical-align: middle'],
+        '.kokpit-prose p > img:only-child' => ['display: block'],
+        '.kokpit-prose p > img:not(:only-child)' => ['display: inline-block', 'margin: 4px 0'],
+        '.kokpit-prose .kokpit-image-missing' => ['color: var(--kp-muted)', 'font-weight: 400'],
+    ];
+
+    foreach ($rules as $selector => $declarations) {
+        expect(preg_match('/^'.preg_quote($selector, '/').' \{([^}]*)\}/m', $css, $match))->toBe(1, $selector.' is missing');
+
+        foreach ($declarations as $declaration) {
+            expect($match[1])->toContain($declaration.';');
+        }
+    }
+
+    // No selector with an img or the fallback class escapes the prose scope, and an image gets no background or filter.
+    preg_match_all('/^([^\s@\/}][^{]*)\{([^}]*)\}/m', $css, $all, PREG_SET_ORDER);
+
+    foreach ($all as [, $selectors, $body]) {
+        if (preg_match('/\bimg\b|kokpit-image-missing/', $selectors) === 1) {
+            expect($selectors)->toContain('.kokpit-prose')
+                ->and($body)->not->toContain('background')
+                ->and($body)->not->toContain('filter');
+        }
+    }
+});
+
+it('emits the internal route as the only img src and no external host', function (): void {
     $id = knowledgeMarkdownImageId();
 
     // A listed reference is the only way an img src is produced; the sanitiser output holds exactly one img.
