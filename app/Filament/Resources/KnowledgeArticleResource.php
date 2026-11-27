@@ -506,7 +506,11 @@ final class KnowledgeArticleResource extends Resource
                 ->schema([
                     View::make('filament.knowledge.prose')
                         ->viewData(static fn (KnowledgeArticle $record): array => [
-                            'html' => app(KnowledgeMarkdown::class)->render((string) $record->body_md),
+                            // The article's own images only (D-13): a pending image of the Admin does not show here.
+                            'html' => app(KnowledgeMarkdown::class)->render(
+                                (string) $record->body_md,
+                                app(ArticleImages::class)->forBody((string) $record->body_md, (string) $record->getKey()),
+                            ),
                             'emptyText' => __('knowledge.empty.body'),
                             // An empty body invites the Admin to write one; an archived article has no edit screen.
                             'emptyActionUrl' => $record->trashed() ? null : self::getUrl('edit', ['record' => $record]),
