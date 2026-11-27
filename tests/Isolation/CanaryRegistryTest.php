@@ -19,7 +19,9 @@ use App\Domain\Invoicing\Models\InvoiceItemSource;
 use App\Domain\Invoicing\Models\InvoicePayment;
 use App\Domain\Invoicing\Models\PaymentConfirmation;
 use App\Domain\Knowledge\Models\KnowledgeArticle;
+use App\Domain\Knowledge\Models\KnowledgeArticleImage;
 use App\Domain\Knowledge\Models\KnowledgeArticleVersion;
+use App\Domain\Knowledge\Models\KnowledgeArticleVersionImage;
 use App\Domain\Knowledge\Models\KnowledgeFolder;
 use App\Domain\Knowledge\Models\KnowledgeVersionRedaction;
 use App\Domain\Payments\Models\CardPayment;
@@ -134,7 +136,9 @@ it('does not pass vacuously: the real isolated models and the canary model are a
         InvoiceItemSource::class,
         InvoicePayment::class,
         KnowledgeArticle::class,
+        KnowledgeArticleImage::class,
         KnowledgeArticleVersion::class,
+        KnowledgeArticleVersionImage::class,
         KnowledgeFolder::class,
         KnowledgeVersionRedaction::class,
         PaymentConfirmation::class,
