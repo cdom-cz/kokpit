@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Domain\Knowledge\Support\ImageContext;
+use App\Domain\Knowledge\Support\InternalImageSrcSanitizer;
 use App\Domain\Knowledge\Support\KnowledgeMarkdown;
 use Dom\HTMLDocument;
+use Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig;
 use Tests\Support\KnowledgeHostileCorpus;
 
 /*
@@ -216,4 +219,166 @@ it('renders a body of MAX_INPUT_LENGTH + 1 characters as plain text and of exact
         ->and(knowledgeMarkdownDom(knowledgeMarkdownHtml($over))->querySelectorAll('strong'))->toHaveCount(0)
         ->and(knowledgeMarkdownHtml($over))->toContain('**Example**')
         ->and(knowledgeMarkdownDom(knowledgeMarkdownHtml($exact))->querySelectorAll('strong'))->toHaveCount(1);
+});
+
+/**
+ * A fictional uuid, distinct per number.
+ */
+function knowledgeMarkdownImageId(int $number = 1): string
+{
+    return '0190f3a0-0000-7000-8000-'.str_pad((string) $number, 12, '0', STR_PAD_LEFT);
+}
+
+/**
+ * The context that lists the given image numbers, each on its own internal route path and with a 10 by 5 size.
+ */
+function knowledgeMarkdownImages(int ...$numbers): ImageContext
+{
+    $images = [];
+
+    foreach ($numbers as $number) {
+        $id = knowledgeMarkdownImageId($number);
+        $images[$id] = ['src' => '/admin/knowledge/attachments/'.$id, 'width' => 10, 'height' => 5];
+    }
+
+    return ImageContext::of($images);
+}
+
+function knowledgeMarkdownHtmlWithImages(string $markdown, ?ImageContext $images, ?KnowledgeMarkdown $renderer = null): string
+{
+    return (string) ($renderer ?? knowledgeMarkdownRenderer())->render($markdown, $images);
+}
+
+it('renders a listed internal reference as an img on the authorised route with its size, lazy and async', function (): void {
+    $id = knowledgeMarkdownImageId();
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages('![Example alt](kokpit-attachment:'.$id.')', knowledgeMarkdownImages(1)));
+    $images = $dom->querySelectorAll('img');
+
+    expect($images)->toHaveCount(1);
+
+    $image = $images->item(0);
+
+    expect($image->getAttribute('src'))->toBe('/admin/knowledge/attachments/'.$id)
+        ->and($image->getAttribute('alt'))->toBe('Example alt')
+        ->and($image->getAttribute('width'))->toBe('10')
+        ->and($image->getAttribute('height'))->toBe('5')
+        ->and($image->getAttribute('loading'))->toBe('lazy')
+        ->and($image->getAttribute('decoding'))->toBe('async');
+});
+
+it('resolves a reference written with an uppercase uuid the same way', function (): void {
+    $id = knowledgeMarkdownImageId();
+    $image = knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages('![Example alt](kokpit-attachment:'.strtoupper($id).')', knowledgeMarkdownImages(1)))->querySelector('img');
+
+    expect($image?->getAttribute('src'))->toBe('/admin/knowledge/attachments/'.$id);
+});
+
+it('does not leak the image context of one render into the next render of the same renderer', function (): void {
+    $renderer = knowledgeMarkdownRenderer();
+    $markdown = '![Example alt](kokpit-attachment:'.knowledgeMarkdownImageId().')';
+
+    expect(knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages($markdown, knowledgeMarkdownImages(1), $renderer))->querySelectorAll('img'))->toHaveCount(1)
+        ->and(knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages($markdown, null, $renderer))->querySelectorAll('img'))->toHaveCount(0)
+        ->and(knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages($markdown, ImageContext::none(), $renderer))->querySelectorAll('img'))->toHaveCount(0);
+});
+
+it('does not leak the context when the conversion throws', function (): void {
+    $renderer = new KnowledgeMarkdown(static function (string $key): string {
+        throw new RuntimeException('translator failure');
+    });
+    $markdown = "```php\necho 1;\n```\n\n![Example alt](kokpit-attachment:".knowledgeMarkdownImageId().')';
+
+    expect(fn () => $renderer->render($markdown, knowledgeMarkdownImages(1)))->toThrow(RuntimeException::class);
+
+    $policy = (new ReflectionProperty($renderer, 'policy'))->getValue($renderer);
+    $images = (new ReflectionProperty($policy, 'images'))->getValue($policy);
+
+    expect($images->ids())->toBe([]);
+});
+
+it('renders no img for a uuid that is not in the context', function (): void {
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages('![Example alt](kokpit-attachment:'.knowledgeMarkdownImageId(2).')', knowledgeMarkdownImages(1)));
+
+    expect($dom->querySelectorAll('img'))->toHaveCount(0)
+        ->and($dom->body->textContent)->toContain('Example alt');
+});
+
+it('keeps the link and the img of an internal image inside an https link', function (): void {
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages(
+        '[![Example alt](kokpit-attachment:'.knowledgeMarkdownImageId().')](https://example.com/page)',
+        knowledgeMarkdownImages(1),
+    ));
+
+    expect($dom->querySelector('a')?->getAttribute('href'))->toBe('https://example.com/page')
+        ->and($dom->querySelectorAll('a img'))->toHaveCount(1);
+});
+
+it('keeps an internal reference inside a fenced code block as code text', function (): void {
+    $reference = '![Example alt](kokpit-attachment:'.knowledgeMarkdownImageId().')';
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages("```\n".$reference."\n```", knowledgeMarkdownImages(1)));
+
+    expect($dom->querySelectorAll('img'))->toHaveCount(0)
+        ->and($dom->querySelector('pre')?->textContent)->toContain($reference);
+});
+
+it('keeps raw img html with the internal path as escaped text', function (): void {
+    $tag = '<img src="/admin/knowledge/attachments/'.knowledgeMarkdownImageId().'" alt="Example alt">';
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages('Before '.$tag.' after', knowledgeMarkdownImages(1)));
+
+    expect($dom->querySelectorAll('img'))->toHaveCount(0)
+        ->and($dom->body->textContent)->toContain($tag);
+});
+
+it('keeps an external image as plain alt text even when a context is passed', function (): void {
+    $dom = knowledgeMarkdownDom(knowledgeMarkdownHtmlWithImages('![Example alt](https://example.com/tracker.png)', knowledgeMarkdownImages(1)));
+
+    expect($dom->querySelectorAll('img'))->toHaveCount(0)
+        ->and($dom->body->textContent)->toContain('Example alt');
+});
+
+it('refuses to build a context with a foreign src, an uppercase uuid in the src or a zero size', function (array $image): void {
+    expect(fn () => ImageContext::of([knowledgeMarkdownImageId() => $image]))->toThrow(InvalidArgumentException::class);
+})->with([
+    'absolute src' => [['src' => 'https://example.com/a.png', 'width' => 10, 'height' => 5]],
+    'uppercase uuid in the src' => [['src' => '/admin/knowledge/attachments/0190F3A0-0000-7000-8000-000000000001', 'width' => 10, 'height' => 5]],
+    'zero width' => [['src' => '/admin/knowledge/attachments/0190f3a0-0000-7000-8000-000000000001', 'width' => 0, 'height' => 5]],
+    'zero height' => [['src' => '/admin/knowledge/attachments/0190f3a0-0000-7000-8000-000000000001', 'width' => 10, 'height' => 0]],
+]);
+
+it('lowercases the keys of a context and finds an entry by any case', function (): void {
+    $id = knowledgeMarkdownImageId();
+    $context = ImageContext::of([strtoupper($id) => ['src' => '/admin/knowledge/attachments/'.$id, 'width' => 10, 'height' => 5]]);
+
+    expect($context->ids())->toBe([$id])
+        ->and($context->find(strtoupper($id)))->toBe(['src' => '/admin/knowledge/attachments/'.$id, 'width' => 10, 'height' => 5])
+        ->and($context->find(knowledgeMarkdownImageId(2)))->toBeNull()
+        ->and(ImageContext::none()->ids())->toBe([]);
+});
+
+it('keeps only the internal image route as an img src in the sanitiser rule', function (string $value, bool $kept): void {
+    $rule = new InternalImageSrcSanitizer;
+
+    expect($rule->getSupportedElements())->toBe(['img'])
+        ->and($rule->getSupportedAttributes())->toBe(['src'])
+        ->and($rule->sanitizeAttribute('img', 'src', $value, new HtmlSanitizerConfig))->toBe($kept ? $value : null);
+})->with([
+    'the internal route' => ['/admin/knowledge/attachments/0190f3a0-0000-7000-8000-000000000001', true],
+    'an absolute url' => ['https://example.com/x.png', false],
+    'a protocol-relative url' => ['//example.com/a.png', false],
+    'the route with a query' => ['/admin/knowledge/attachments/0190f3a0-0000-7000-8000-000000000001?x=1', false],
+    'the route with a trailing slash' => ['/admin/knowledge/attachments/0190f3a0-0000-7000-8000-000000000001/', false],
+    'the route with a trailing newline' => ["/admin/knowledge/attachments/0190f3a0-0000-7000-8000-000000000001\n", false],
+    'another file route' => ['/admin/files/documents/0190f3a0-0000-7000-8000-000000000001', false],
+    'a data source' => ['data:image/png;base64,AAAA', false],
+]);
+
+it('keeps the img src through the sanitiser only on the internal route even when a body is crafted', function (): void {
+    $id = knowledgeMarkdownImageId();
+
+    // A listed reference is the only way an img src is produced; the sanitiser output holds exactly one img.
+    $html = knowledgeMarkdownHtmlWithImages('![Example alt](kokpit-attachment:'.$id.')', knowledgeMarkdownImages(1));
+
+    expect($html)->toContain('src="/admin/knowledge/attachments/'.$id.'"')
+        ->and($html)->not->toContain('https://')
+        ->and(substr_count($html, '<img'))->toBe(1);
 });
