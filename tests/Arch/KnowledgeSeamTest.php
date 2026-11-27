@@ -52,6 +52,15 @@ const KNOWLEDGE_SEAM_SANITISER_ALLOWLIST = [
 ];
 
 /**
+ * Parts of the renderer's own sanitiser rules inside the Support directory that name the sanitiser config type in an
+ * interface signature, each with the reason. A part may name the type but must build no config: the one config lives
+ * in the renderer file. Add a line only after the file was reviewed.
+ */
+const KNOWLEDGE_SEAM_SANITISER_PARTS = [
+    'app/Domain/Knowledge/Support/InternalImageSrcSanitizer.php' => 'the img src rule of the renderer: it names the config type only in the interface signature and builds no config',
+];
+
+/**
  * The properties each class of the Guard namespace may have (R-18-04-2): a finding holds the rule and the line, and
  * nothing else can hold matched text. A class that is not listed has none.
  */
@@ -170,6 +179,22 @@ function knowledgeSeamSanitiserReferences(string $source): array
     }
 
     return $lines;
+}
+
+/**
+ * Whether a PHP source creates an HtmlSanitizerConfig: a `new` followed by the type name, qualified or not.
+ */
+function knowledgeSeamBuildsSanitiserConfig(string $source): bool
+{
+    $tokens = knowledgeSeamTokens($source);
+
+    foreach ($tokens as $i => $token) {
+        if (strtolower($token['text']) === 'new' && knowledgeSeamLastSegment($tokens[$i + 1]['text'] ?? '') === 'HtmlSanitizerConfig') {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**
@@ -419,7 +444,7 @@ it('builds an HTML sanitiser config only in the renderer, apart from the reviewe
     $found = [];
 
     foreach ($files as $path => $source) {
-        if ($path === KNOWLEDGE_SEAM_RENDERER_FILE || array_key_exists($path, KNOWLEDGE_SEAM_SANITISER_ALLOWLIST)) {
+        if ($path === KNOWLEDGE_SEAM_RENDERER_FILE || array_key_exists($path, KNOWLEDGE_SEAM_SANITISER_ALLOWLIST) || array_key_exists($path, KNOWLEDGE_SEAM_SANITISER_PARTS)) {
             continue;
         }
 
@@ -443,6 +468,30 @@ it('reports a sanitiser config in any other file, qualified or not, and ignores 
 
     expect(knowledgeSeamSanitiserReferences($violation))->toBe([3, 5])
         ->and(knowledgeSeamSanitiserReferences($comment))->toBe([]);
+});
+
+it('lets a sanitiser part of the renderer name the config type but never build a config', function (): void {
+    $files = knowledgeSeamAppFiles();
+
+    expect(KNOWLEDGE_SEAM_SANITISER_PARTS)->not->toBe([]);
+
+    foreach (array_keys(KNOWLEDGE_SEAM_SANITISER_PARTS) as $path) {
+        expect($path)->toStartWith(KNOWLEDGE_SEAM_SUPPORT_DIRECTORY)
+            ->and($files)->toHaveKey($path)
+            // Still names the type, so the entry is needed.
+            ->and(knowledgeSeamSanitiserReferences($files[$path]))->not->toBe([], $path.' no longer names a sanitiser config: remove it from the parts')
+            ->and(knowledgeSeamBuildsSanitiserConfig($files[$path]))->toBeFalse($path.' builds a sanitiser config: only the renderer may');
+    }
+});
+
+it('reports a part that builds a sanitiser config, qualified or not, and ignores a comment and a type hint', function (): void {
+    $plain = "<?php\n\n\$config = new HtmlSanitizerConfig;\n";
+    $qualified = "<?php\n\n\$config = new \\Symfony\\Component\\HtmlSanitizer\\HtmlSanitizerConfig();\n";
+    $clean = "<?php\n\n// new HtmlSanitizerConfig in a comment\nfunction rule(HtmlSanitizerConfig \$config): void {}\n";
+
+    expect(knowledgeSeamBuildsSanitiserConfig($plain))->toBeTrue()
+        ->and(knowledgeSeamBuildsSanitiserConfig($qualified))->toBeTrue()
+        ->and(knowledgeSeamBuildsSanitiserConfig($clean))->toBeFalse();
 });
 
 it('uses no raw Blade echo in a knowledge view', function (): void {

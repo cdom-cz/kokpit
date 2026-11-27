@@ -239,6 +239,11 @@ return [
             'done' => 'Hotovo:',
             'open' => 'Nehotovo:',
         ],
+
+        // D-19: the fallback of an image that is foreign, unknown or deleted and has no alt text.
+        'image' => [
+            'missing' => 'Obrázek není k dispozici',
+        ],
     ],
 
     // D-08, D-10: the history page (the Versions tab of the article).
@@ -357,6 +362,68 @@ return [
             'remaining_body' => 'Kontrola po redigování našla: :findings. Zvažte redigování celého textu verze.',
             'failed_title' => 'Verzi se nepodařilo redigovat',
             'failed_body' => 'Nic se nezměnilo. Zkuste to znovu.',
+        ],
+    ],
+
+    // Phase 20 (IMG-01, IMG-02, D-05, D-19): the editor, the upload refusals, the secret notice, the save refusal,
+    // the Obrázky manager and the delete modal. The wording is the UI-SPEC copywriting contract.
+    'images' => [
+        'editor' => [
+            'insert' => 'Vložit obrázek',
+            'uploading' => 'Nahrávám obrázek…',
+            'done' => 'Obrázek byl vložen',
+        ],
+
+        'notice' => 'Obrázek může obsahovat tajné údaje a jeho obsah nejde automaticky zkontrolovat. Pokud ano, označte článek jako citlivý.',
+
+        'errors' => [
+            'title' => 'Obrázek nebyl nahrán',
+            'not_an_image' => 'Soubor není podporovaný obrázek. Použijte PNG, JPEG, WebP nebo GIF.',
+            'svg' => 'SVG se nenahrává, protože může obsahovat skripty. Použijte PNG, JPEG, WebP nebo GIF.',
+            'too_large' => 'Soubor má více než 10 MB. Zmenšete ho a nahrajte znovu.',
+            'too_many_pixels' => 'Obrázek má příliš mnoho pixelů. Zmenšete ho a nahrajte znovu.',
+            'animated' => 'Animované GIFy se nepodporují. Nahrajte statický obrázek nebo jeden snímek.',
+            'failed' => 'Obrázek se nepodařilo zpracovat. Zkuste to znovu.',
+            'foreign_reference' => 'Text odkazuje na obrázek jiného článku. Obrázky nejde sdílet mezi články. Nahrajte ho do tohoto článku znovu.',
+        ],
+
+        'manager' => [
+            'heading' => 'Obrázky',
+            'columns' => [
+                'preview' => 'Náhled',
+                'file' => 'Soubor',
+                'dimensions' => 'Rozměry',
+                'size' => 'Velikost',
+                'uploaded_at' => 'Nahráno',
+                'usage' => 'Použití',
+            ],
+            'dimensions' => ':width × :height px',
+            'usage' => [
+                'current' => 'V aktuálním textu',
+                'older' => 'Jen ve starších verzích',
+                'unused' => 'Nepoužitý',
+            ],
+            'empty_heading' => 'Článek zatím nemá žádné obrázky',
+            'empty_body' => 'Vložte obrázek v editoru tlačítkem, vložením ze schránky nebo přetažením.',
+        ],
+
+        'delete' => [
+            'action' => 'Smazat navždy',
+            'heading' => 'Smazat obrázek navždy?',
+            'irreversible' => 'Obrázek se okamžitě odstraní z úložiště. Všechny odkazy na něj v aktuálním textu i ve všech verzích se pak zobrazí jen jako popisek. Smazání nelze vrátit zpět.',
+            'rotate' => 'Smazání odstraní jen kopii z Kokpitu. Pokud obrázek obsahoval tajný údaj, změňte nebo zneplatněte ho i u jeho vydavatele (heslo, klíč, token).',
+            'reason' => 'Důvod smazání',
+            'reason_helper' => 'Do protokolu změn se zapíše jen to, že důvod existuje, ne jeho text. Nepište do něj tajný údaj.',
+            'errors' => [
+                'reason_required' => 'Vyplňte důvod smazání.',
+                'reason_too_long' => 'Důvod může mít nejvýše :max znaků.',
+            ],
+            'submit' => 'Smazat obrázek navždy',
+            'cancel' => 'Zrušit',
+            'notifications' => [
+                'deleted' => 'Obrázek byl smazán',
+                'failed' => 'Obrázek se nepodařilo smazat. Nic se nezměnilo, zkuste to znovu.',
+            ],
         ],
     ],
 

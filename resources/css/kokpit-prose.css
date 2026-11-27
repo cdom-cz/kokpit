@@ -168,6 +168,29 @@
     border: 0;
 }
 
+/* Images: fit the column, keep a visible edge on both themes (no background, no filter), and a muted fallback */
+.kokpit-prose img {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid var(--kp-border);
+    border-radius: 8px;
+    vertical-align: middle;
+}
+
+.kokpit-prose p > img:only-child {
+    display: block;
+}
+
+.kokpit-prose p > img:not(:only-child) {
+    display: inline-block;
+    margin: 4px 0;
+}
+
+.kokpit-prose .kokpit-image-missing {
+    color: var(--kp-muted);
+    font-weight: 400;
+}
+
 /* Block quote */
 .kokpit-prose blockquote {
     padding-left: 16px;

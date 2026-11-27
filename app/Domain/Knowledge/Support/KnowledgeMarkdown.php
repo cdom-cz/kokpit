@@ -26,8 +26,12 @@ use Tempest\Highlight\Themes\CssTheme;
  * helpers (raw HTML allowed, unsafe links allowed, global sanitiser) must never touch article text.
  *
  * Labels come from the injected translator over relative keys (code.copy, code.copied, code.copy_failed, code.label,
- * code.label_plain, task.done, task.open), so the class stays unit-testable without the application; the service
+ * code.label_plain, task.done, task.open, image.missing), so the class stays unit-testable without the application; the service
  * provider binds a translator over the knowledge.render lang keys. The class calls no Laravel helper or facade.
+ *
+ * An image is shown only for a `kokpit-attachment:<uuid>` reference that the caller's ImageContext lists, and only as an
+ * img on the internal authorised route (D-13); the sanitiser keeps no other img source. No page-wide Content-Security-Policy
+ * is added for images (D-15): the image response carries its own.
  *
  * There is no HTML cache: rendering takes a few tens of milliseconds for realistic bodies and the Admin is the only viewer.
  */
@@ -43,6 +47,8 @@ final class KnowledgeMarkdown
 
     private readonly HtmlSanitizer $sanitizer;
 
+    private readonly LinkAndImagePolicy $policy;
+
     /**
      * @param  Closure(string, array<string, string>=): string  $translate  relative key and replacements to text
      */
@@ -57,18 +63,24 @@ final class KnowledgeMarkdown
         $environment->addExtension(new CommonMarkCoreExtension);
         $environment->addExtension(new GithubFlavoredMarkdownExtension);
         $environment->addExtension(new CalloutExtension($translate));
-        $environment->addEventListener(DocumentParsedEvent::class, new LinkAndImagePolicy);
+        $this->policy = new LinkAndImagePolicy;
+        $environment->addEventListener(DocumentParsedEvent::class, $this->policy);
 
         $codeBlocks = new CodeBlockRenderer(new Highlighter(new CssTheme), $translate);
         $environment->addRenderer(FencedCode::class, $codeBlocks, 10);
         $environment->addRenderer(IndentedCode::class, $codeBlocks, 10);
         $environment->addRenderer(TaskListItemMarker::class, new TaskListMarkerRenderer($translate), 10);
+        $environment->addRenderer(MissingImage::class, new MissingImageRenderer($translate), 10);
 
         $this->converter = new MarkdownConverter($environment);
         $this->sanitizer = new HtmlSanitizer($this->sanitizerConfig());
     }
 
-    public function render(string $markdown): HtmlString
+    /**
+     * @param  ImageContext|null  $images  the images this call may show; none when omitted. It is reset after the call,
+     *                                     so it never leaks into the next render of this singleton.
+     */
+    public function render(string $markdown, ?ImageContext $images = null): HtmlString
     {
         if (trim($markdown) === '') {
             return new HtmlString('');
@@ -80,12 +92,20 @@ final class KnowledgeMarkdown
             );
         }
 
-        return new HtmlString($this->sanitizer->sanitize($this->converter->convert($markdown)->getContent()));
+        $this->policy->useImages($images ?? ImageContext::none());
+
+        try {
+            return new HtmlString($this->sanitizer->sanitize($this->converter->convert($markdown)->getContent()));
+        } finally {
+            $this->policy->useImages(ImageContext::none());
+        }
     }
 
     /**
      * The sanitiser of knowledge bodies (R-18-03-4). Raw HTML is already escaped before it runs, so the author
      * cannot produce a button, a data attribute or a class: those entries exist only for the fixed server markup.
+     * Media schemes stay empty and relative media are allowed, so the URL sanitiser admits only a relative img source,
+     * and InternalImageSrcSanitizer then keeps only the internal image route (D-13).
      * The input limit is lifted because the default of 20 000 characters truncates a long article silently.
      */
     private function sanitizerConfig(): HtmlSanitizerConfig
@@ -95,9 +115,11 @@ final class KnowledgeMarkdown
             ->allowRelativeLinks(false)
             ->allowLinkSchemes(['https', 'http', 'mailto'])
             ->allowMediaSchemes([])
-            ->allowRelativeMedias(false)
+            ->allowRelativeMedias(true)
             ->forceAttribute('a', 'rel', 'noopener noreferrer nofollow')
             ->dropAttribute('target', 'a')
+            ->allowElement('img', ['src', 'alt', 'width', 'height', 'loading', 'decoding'])
+            ->withAttributeSanitizer(new InternalImageSrcSanitizer)
             ->allowElement('input', ['type', 'checked', 'disabled', 'aria-hidden'])
             ->allowElement('button', ['type', 'class', 'data-kokpit-copy', 'data-label-copied', 'data-label-failed'])
             ->allowElement('pre', ['tabindex', 'aria-label'])
