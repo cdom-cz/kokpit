@@ -16,6 +16,8 @@ use App\Domain\Projects\Models\Project;
 use App\Filament\Concerns\RethrowsDomainValidation;
 use App\Filament\Resources\KnowledgeArticleResource;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\GuardsSecrets;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\HandlesImageUploads;
+use App\Filament\Resources\KnowledgeArticleResource\Concerns\ImageUploadForm;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\RefusesFailedSaves;
 use App\Filament\Resources\KnowledgeArticleResource\Concerns\SecretGuardForm;
 use Filament\Actions\Action;
@@ -32,9 +34,10 @@ use Illuminate\Support\Str;
  * A write the database refuses creates nothing, keeps the typed text and says so in a persistent notice
  * ({@see RefusesFailedSaves}).
  */
-final class CreateKnowledgeArticle extends CreateRecord implements SecretGuardForm
+final class CreateKnowledgeArticle extends CreateRecord implements ImageUploadForm, SecretGuardForm
 {
     use GuardsSecrets;
+    use HandlesImageUploads;
     use RefusesFailedSaves;
     use RethrowsDomainValidation;
 
