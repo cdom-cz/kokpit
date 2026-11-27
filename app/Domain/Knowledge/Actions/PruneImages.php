@@ -49,7 +49,7 @@ final class PruneImages
 
     /**
      * @return array{pending: int, stamped: int, cleared: int, deleted: int} the number of pending images deleted,
-     *                                                                         images newly stamped, stamps cleared and orphans deleted
+     *                                                                       images newly stamped, stamps cleared and orphans deleted
      */
     public function run(): array
     {
