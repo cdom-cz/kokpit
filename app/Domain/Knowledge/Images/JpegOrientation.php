@@ -173,9 +173,7 @@ final class JpegOrientation
 
     private static function flip(GdImage $image, int $mode): GdImage
     {
-        if (! imageflip($image, $mode)) {
-            throw new ImageRefused(ImageRefusal::Failed);
-        }
+        imageflip($image, $mode);
 
         return $image;
     }

@@ -284,7 +284,8 @@ final class ImageFixtures
 
     private static function pngWithSentinel(string $png, string $sentinel): string
     {
-        $chunks = self::pngChunk('tEXt', "Comment\0".$sentinel).self::pngChunk('eXIf', $sentinel);
+        // libpng only accepts an eXIf chunk that starts with a TIFF header.
+        $chunks = self::pngChunk('tEXt', "Comment\0".$sentinel).self::pngChunk('eXIf', 'II'.pack('vV', 42, 8).$sentinel);
 
         return substr($png, 0, 33).$chunks.substr($png, 33);
     }

@@ -56,7 +56,8 @@ final class Animation
             $block = ord($data[$position++]);
 
             if ($block === 0x3B) {
-                return $frames >= 2;
+                // The walk stops at the second frame, so at the trailer there are at most one.
+                return false;
             }
 
             if ($block === 0x21) {
@@ -155,7 +156,7 @@ final class Animation
      * WebP: an extended file whose VP8X flag byte (offset 20) has the animation bit 0x02, or any top-level ANIM or
      * ANMF chunk, is animated.
      */
-    private static function webp(string $data): ?bool
+    private static function webp(string $data): bool
     {
         $length = strlen($data);
 

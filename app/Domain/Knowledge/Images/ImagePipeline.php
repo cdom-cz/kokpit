@@ -7,7 +7,7 @@ namespace App\Domain\Knowledge\Images;
 use ErrorException;
 use finfo;
 use GdImage;
-use ValueError;
+use Throwable;
 
 /**
  * The one place where a raw upload becomes the bytes that are stored (IMG-01, IMG-02). It takes the bytes of an upload
@@ -85,7 +85,7 @@ final class ImagePipeline
 
         try {
             $animated = self::guarded(static fn (): ?bool => Animation::isAnimated($format, $bytes));
-        } catch (ErrorException|ValueError) {
+        } catch (ErrorException) {
             $animated = null;
         }
 
@@ -99,7 +99,7 @@ final class ImagePipeline
 
         try {
             $source = self::guarded(static fn (): GdImage|false => imagecreatefromstring($bytes));
-        } catch (ErrorException|ValueError) {
+        } catch (ErrorException) {
             $source = false;
         }
 
@@ -109,17 +109,17 @@ final class ImagePipeline
 
         try {
             $output = self::guarded(fn (): string => $this->reencode($source, $format, $bytes));
-        } catch (ErrorException|ValueError) {
+        } catch (ErrorException) {
             throw new ImageRefused(ImageRefusal::Failed);
         }
 
         try {
             $info = self::guarded(static fn (): array|false => getimagesizefromstring($output));
-        } catch (ErrorException|ValueError) {
+        } catch (ErrorException) {
             $info = false;
         }
 
-        if (! is_array($info) || ! is_int($info[0]) || ! is_int($info[1]) || $info[0] < 1 || $info[1] < 1) {
+        if ($info === false || $info[0] < 1 || $info[1] < 1) {
             throw new ImageRefused(ImageRefusal::Failed);
         }
 
@@ -146,12 +146,11 @@ final class ImagePipeline
 
         try {
             $info = self::guarded(static fn (): array|false => getimagesizefromstring($bytes));
-        } catch (ErrorException|ValueError) {
+        } catch (ErrorException) {
             $info = false;
         }
 
-        if (! is_array($info) || ! is_int($info[0]) || ! is_int($info[1]) || ! is_int($info[2])
-            || $info[0] < 1 || $info[1] < 1 || $info[2] !== $format->imageType()) {
+        if ($info === false || $info[0] < 1 || $info[1] < 1 || $info[2] !== $format->imageType()) {
             throw new ImageRefused(ImageRefusal::NotAnImage);
         }
 
@@ -235,7 +234,7 @@ final class ImagePipeline
 
         try {
             $type = self::guarded(static fn (): string|false => (new finfo(FILEINFO_MIME_TYPE))->buffer($bytes));
-        } catch (ErrorException|ValueError) {
+        } catch (ErrorException) {
             return false;
         }
 
@@ -276,9 +275,7 @@ final class ImagePipeline
             imagefill($canvas, 0, 0, (int) imagecolorallocatealpha($canvas, 0, 0, 0, 127));
         }
 
-        if (! imagecopyresampled($canvas, $source, 0, 0, 0, 0, $targetWidth, $targetHeight, $width, $height)) {
-            throw new ImageRefused(ImageRefusal::Failed);
-        }
+        imagecopyresampled($canvas, $source, 0, 0, 0, 0, $targetWidth, $targetHeight, $width, $height);
 
         return $this->encode($canvas, $format);
     }
@@ -288,13 +285,14 @@ final class ImagePipeline
         ob_start();
 
         try {
-            $written = match ($format) {
+            // A failing encoder emits a warning, which the local error handler turns into an exception.
+            match ($format) {
                 ImageFormat::Png => imagepng($canvas, null, self::PNG_COMPRESSION),
                 ImageFormat::Jpeg => imagejpeg($canvas, null, self::JPEG_QUALITY),
                 ImageFormat::Webp => imagewebp($canvas, null, self::WEBP_QUALITY),
                 ImageFormat::Gif => imagegif($canvas),
             };
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
             ob_end_clean();
 
             throw $exception;
@@ -302,7 +300,7 @@ final class ImagePipeline
 
         $output = ob_get_clean();
 
-        if (! $written || ! is_string($output) || $output === '') {
+        if (! is_string($output) || $output === '') {
             throw new ImageRefused(ImageRefusal::Failed);
         }
 
